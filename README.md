@@ -32,6 +32,8 @@ To run the application in production mode, use the following command:
 npm start
 ```
 
+We will have an environment file in staging and production. This will allow us to keep our local, staging, and production code bases consistent but have a place to put secrets, or URLs to different services. i.e. Locally, you will have a 'fake cwl' service running that runs on a localhost URL and there are Staging and Production CWL services that run on different URLs. So the URL for the authentication end points should be something we keep in our environment files such that each environment knows where to go.
+
 ## Continuius Integration
 
 Pushing to the main branch in this repo will trigger a deploy automatically to the staging server.
