@@ -1,3 +1,9 @@
+/* Global Variables */
+:root {
+    --primary-bg-color: rebeccapurple;
+    --primary-text-color: white;
+}
+
 body {
     font-family: sans-serif;
     display: flex;
@@ -6,5 +12,10 @@ body {
     align-items: center;
     height: 100vh;
     margin: 0;
-    background: lightblue;
+    background: var(--primary-bg-color);
+    color: var(--primary-text-color)
+}
+
+a {
+    color: var(--primary-text-color);
 }
