@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings - GRASP</title>
+    <title>Question Generation - GRASP</title>
     <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/question-generation.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -52,7 +53,7 @@
                         <i class="fas fa-book"></i>
                         <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
                     </li>
-                    <li class="nav-item" data-page="question-generation">
+                    <li class="nav-item active" data-page="question-generation">
                         <i class="fas fa-puzzle-piece"></i>
                         <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Builder</a></span>
                     </li>
@@ -64,24 +65,66 @@
                         <i class="fas fa-users"></i>
                         <span>Users</span>
                     </li>
-                    <li class="nav-item active" data-page="settings">
-                        <i class="fas fa-cog"></i>
-                        <span>Settings</span>
-                    </li>
                 </ul>
             </nav>
         </aside>
 
         <!-- Main Content Area -->
         <main class="main-content">
+            
             <div class="content-wrapper">
-                <h1>Settings</h1>
-                <p>This is the settings page.</p>
-                <a href="dashboard.html">Go to Dashboard</a>
+                <div class="upload-section">
+                    <h2>Upload Materials</h2>
+                    
+                    <!-- Course Selection -->
+                    <div class="course-selection">
+                        <label for="course-select">Course:</label>
+                        <select id="course-select" class="course-dropdown">
+                            <option value="CHEM 121">CHEM 121</option>
+                            <option value="CHEM 123">CHEM 123</option>
+                            <option value="CHEM 125">CHEM 125</option>
+                        </select>
+                    </div>
+
+                    <!-- Upload Options -->
+                    <div class="upload-options">
+                        <div class="upload-option">
+                            <i class="fas fa-file-alt"></i>
+                            <span>Text</span>
+                        </div>
+                        <div class="upload-option">
+                            <i class="fas fa-file-pdf"></i>
+                            <span>PDF</span>
+                        </div>
+                        <div class="upload-option">
+                            <i class="fas fa-link"></i>
+                            <span>URL</span>
+                        </div>
+                        <div class="upload-option">
+                            <i class="fas fa-video"></i>
+                            <span>Panopto</span>
+                        </div>
+                    </div>
+
+                    <!-- File Upload Area -->
+                    <div class="file-upload-area">
+                        <div class="upload-content">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drag and drop or choose file</p>
+                            <button class="choose-file-btn">Choose File</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Proceed Button -->
+                    <div class="proceed-section">
+                        <button class="proceed-btn" disabled>Proceed</button>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
     <script src="scripts/navigation.js"></script>
+    <script src="scripts/question-generation.js"></script>
 </body>
 </html>

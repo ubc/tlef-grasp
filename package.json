@@ -16,7 +16,9 @@
   "type": "commonjs",
   "dependencies": {
     "dotenv": "^17.0.1",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "multer": "^2.0.2"
   },
   "devDependencies": {
     "browser-sync": "^3.0.4",

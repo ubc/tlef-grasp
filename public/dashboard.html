@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Instructor Dashboard</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            
+            <div class="content-wrapper">
+                <!-- Left Column -->
+                <div class="left-column">
+                    <!-- Welcome Section -->
+                    <section class="welcome-section">
+                        <h2>Hello, Dr. Brown</h2>
+                        <p class="date">Tuesday, August 2</p>
+                    </section>
+                    
+                    <!-- Quick Start Section -->
+                    <section class="quick-start-section">
+                        <h3>Quick Start</h3>
+                        <div class="quick-start-grid">
+                            <div class="quick-start-card">
+                                <i class="fas fa-upload"></i>
+                                <span>Upload</span>
+                            </div>
+                            <div class="quick-start-card">
+                                <i class="fas fa-eye"></i>
+                                <span>Review</span>
+                            </div>
+                            <div class="quick-start-card">
+                                <i class="fas fa-question-circle"></i>
+                                <span>Quizzes</span>
+                            </div>
+                            <div class="quick-start-card">
+                                <i class="fas fa-lightbulb"></i>
+                                <span>Questions</span>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <!-- Generation Status Section -->
+                    <section class="generation-status-section">
+                        <h3>Generation Status</h3>
+                        <div class="generation-cards">
+                            <div class="generation-card">
+                                <h4>CHEM 121 Lecture 3</h4>
+                                <p>15 Questions Generated</p>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 85%"></div>
+                                </div>
+                            </div>
+                            <div class="generation-card">
+                                <h4>CHEM 121 Lecture 4</h4>
+                                <p>10 Questions Generated</p>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 75%"></div>
+                                </div>
+                            </div>
+                            <div class="generation-card">
+                                <h4>CHEM 123 Lecture 3</h4>
+                                <p>6 Questions Generated</p>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 40%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <!-- Review Status Section -->
+                    <section class="review-status-section">
+                        <div class="review-header">
+                            <h3>Review Status</h3>
+                            <select class="course-selector">
+                                <option>CHEM 121</option>
+                                <option>CHEM 123</option>
+                            </select>
+                        </div>
+                        <div class="review-progress">
+                            <div class="circular-progress">
+                                <div class="progress-circle">
+                                    <span class="progress-text">68%</span>
+                                </div>
+                            </div>
+                            <div class="progress-legend">
+                                <div class="legend-item">
+                                    <span class="legend-color in-progress"></span>
+                                    <span>In progress</span>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-color reviewed"></span>
+                                    <span>Reviewed</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+                
+                <!-- Right Column -->
+                <div class="right-column">
+                    <!-- Calendar Section -->
+                    <section class="calendar-section">
+                        <h3>Calendar</h3>
+                        <div class="calendar">
+                            <div class="calendar-header">
+                                <h4>August</h4>
+                            </div>
+                            <div class="calendar-weekdays">
+                                <span>Mon</span>
+                                <span>Tue</span>
+                                <span>Wed</span>
+                                <span>Thu</span>
+                                <span>Fri</span>
+                                <span>Sat</span>
+                                <span>Sun</span>
+                            </div>
+                            <div class="calendar-days">
+                                <span class="other-month">29</span>
+                                <span class="other-month">30</span>
+                                <span class="other-month">31</span>
+                                <span class="current-day">1</span>
+                                <span>2</span>
+                                <span>3</span>
+                                <span>4</span>
+                                <span>5</span>
+                                <span>6</span>
+                                <span>7</span>
+                                <span>8</span>
+                                <span>9</span>
+                                <span>10</span>
+                                <span>11</span>
+                                <span>12</span>
+                                <span>13</span>
+                                <span>14</span>
+                                <span>15</span>
+                                <span>16</span>
+                                <span>17</span>
+                                <span>18</span>
+                                <span>19</span>
+                                <span>20</span>
+                                <span>21</span>
+                                <span>22</span>
+                                <span>23</span>
+                                <span>24</span>
+                                <span>25</span>
+                                <span>26</span>
+                                <span>27</span>
+                                <span>28</span>
+                                <span>29</span>
+                                <span>30</span>
+                                <span>31</span>
+                                <span class="other-month">1</span>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <!-- Flagged Questions Section -->
+                    <section class="flagged-questions-section">
+                        <h3>Flagged Questions</h3>
+                        <div class="flagged-list">
+                            <div class="flagged-item">
+                                <input type="radio" name="flagged" id="flagged1">
+                                <label for="flagged1">
+                                    <span class="flagged-title">CHEM 121 Lecture 1</span>
+                                    <span class="flagged-time">Today, 3:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="flagged-item">
+                                <input type="radio" name="flagged" id="flagged2">
+                                <label for="flagged2">
+                                    <span class="flagged-title">CHEM 121 Lecture 2</span>
+                                    <span class="flagged-time">Yesterday, 12:34 PM</span>
+                                </label>
+                            </div>
+                            <div class="flagged-item">
+                                <input type="radio" name="flagged" id="flagged3">
+                                <label for="flagged3">
+                                    <span class="flagged-title">CHEM 123 Lecture 1</span>
+                                    <span class="flagged-time">Today, 2:00 PM</span>
+                                </label>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/dashboard.js"></script>
+</body>
+</html>

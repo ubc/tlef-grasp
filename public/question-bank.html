@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Bank - GRASP</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/question-bank.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation Sidebar -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <!-- Logo Section -->
+                <div class="logo-section">
+                    <div class="logo">
+                        <i class="fas fa-graduation-cap"></i>
+                        <span>GRASP</span>
+                    </div>
+                </div>
+
+                <!-- User Controls -->
+                <div class="user-controls">
+                    <div class="user-control">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-control">
+                        <i class="fas fa-cog"></i>
+                    </div>
+                    <div class="user-control">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge">9</span>
+                    </div>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="search-section">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search for...">
+                    </div>
+                </div>
+
+                <!-- Navigation Menu -->
+                <ul class="nav-menu">
+                    <li class="nav-item" data-page="dashboard">
+                        <i class="fas fa-home"></i>
+                        <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+                    </li>
+                    <li class="nav-item active" data-page="question-bank">
+                        <i class="fas fa-book"></i>
+                        <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+                    </li>
+                    <li class="nav-item" data-page="question-generation">
+                        <i class="fas fa-puzzle-piece"></i>
+                        <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Builder</a></span>
+                    </li>
+                    <li class="nav-item" data-page="course-materials">
+                        <i class="fas fa-folder"></i>
+                        <span>Course Materials</span>
+                    </li>
+                    <li class="nav-item" data-page="users">
+                        <i class="fas fa-users"></i>
+                        <span>Users</span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Header Section -->
+                <div class="header-section">
+                    <div class="header-left">
+                        <select class="course-selector">
+                            <option>CHEM 121</option>
+                            <option>CHEM 123</option>
+                            <option>CHEM 125</option>
+                        </select>
+                    </div>
+                    
+                    <div class="header-tabs">
+                        <button class="tab-button active" data-tab="overview">Overview</button>
+                        <button class="tab-button" data-tab="review">Review</button>
+                    </div>
+                    
+                    <div class="header-actions">
+                        <button class="action-btn" title="Edit">
+                            <i class="fas fa-pencil"></i>
+                        </button>
+                        <button class="action-btn" title="Select All">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="action-btn" title="Flag">
+                            <i class="fas fa-flag"></i>
+                        </button>
+                        <button class="action-btn" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters Section -->
+                <div class="filters-section">
+                    <div class="filter-group">
+                        <label>Learning Objectives</label>
+                        <select class="filter-select">
+                            <option>All Objectives</option>
+                            <option>1.1 - Thermodynamics</option>
+                            <option>1.2 - Entropy</option>
+                            <option>2.1 - Phase Changes</option>
+                            <option>2.2 - Chemical Reactions</option>
+                            <option>2.3 - Equilibrium</option>
+                            <option>3.1 - Statistical Mechanics</option>
+                            <option>3.2 - Molecular Dynamics</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Week</label>
+                        <select class="filter-select">
+                            <option>All Weeks</option>
+                            <option>Week 1</option>
+                            <option>Week 2</option>
+                            <option>Week 3</option>
+                            <option>Week 4</option>
+                            <option>Week 5</option>
+                        </select>
+                    </div>
+                    
+                    <div class="search-group">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" placeholder="Search Questions">
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Content Panels -->
+                <div class="panels-container">
+                    <!-- Left Panel - Question Title List -->
+                    <div class="panel question-list-panel">
+                        <div class="panel-header">
+                            <h3>Question Title</h3>
+                        </div>
+                        <div class="panel-content">
+                            <div class="question-item">
+                                <input type="checkbox" id="q1">
+                                <label for="q1">ΔH and Spontaneity</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q2">
+                                <label for="q2">ΔE Limitations</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q3">
+                                <label for="q3">Define Microstate</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q4">
+                                <label for="q4">Entropy in Reactions</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q5">
+                                <label for="q5">Compare Reversibility</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q6">
+                                <label for="q6">Phase and ΔS</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q7">
+                                <label for="q7">Find Entropy Change</label>
+                            </div>
+                            <div class="question-item">
+                                <input type="checkbox" id="q8">
+                                <label for="q8">Heat and Entropy</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Middle Panel - Learning Objectives & Bloom's Level -->
+                    <div class="panel objectives-panel">
+                        <div class="panel-header">
+                            <h3>Learning Objectives & Bloom's Level</h3>
+                        </div>
+                        <div class="panel-content">
+                            <div class="objectives-table">
+                                <div class="table-header">
+                                    <div class="header-cell">Learning Objectives</div>
+                                    <div class="header-cell">Bloom's Level</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">1.1</div>
+                                    <div class="cell">Understand</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">1.1</div>
+                                    <div class="cell">Analyze</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">1.2</div>
+                                    <div class="cell">Understand</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">2.1</div>
+                                    <div class="cell">Analyze</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">2.2</div>
+                                    <div class="cell">Understand</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">2.3</div>
+                                    <div class="cell">Analyze</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">3.1</div>
+                                    <div class="cell">Understand</div>
+                                </div>
+                                <div class="table-row">
+                                    <div class="cell">3.2</div>
+                                    <div class="cell">Analyze</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel - Approved History -->
+                    <div class="panel history-panel">
+                        <div class="panel-header">
+                            <h3>Approved History</h3>
+                        </div>
+                        <div class="panel-content">
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h1">
+                                <label for="h1">
+                                    <span class="history-text">15 questions approved</span>
+                                    <span class="history-time">Today, 3:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h2">
+                                <label for="h2">
+                                    <span class="history-text">12 questions approved</span>
+                                    <span class="history-time">Yesterday, 12:34 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h3">
+                                <label for="h3">
+                                    <span class="history-text">3 questions approved</span>
+                                    <span class="history-time">Today, 2:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h4">
+                                <label for="h4">
+                                    <span class="history-text">15 questions approved</span>
+                                    <span class="history-time">Today, 3:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h5">
+                                <label for="h5">
+                                    <span class="history-text">12 questions approved</span>
+                                    <span class="history-time">Yesterday, 12:34 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h6">
+                                <label for="h6">
+                                    <span class="history-text">3 questions approved</span>
+                                    <span class="history-time">Today, 2:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h7">
+                                <label for="h7">
+                                    <span class="history-text">15 questions approved</span>
+                                    <span class="history-time">Today, 3:00 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h8">
+                                <label for="h8">
+                                    <span class="history-text">12 questions approved</span>
+                                    <span class="history-time">Yesterday, 12:34 PM</span>
+                                </label>
+                            </div>
+                            <div class="history-item">
+                                <input type="radio" name="history" id="h9">
+                                <label for="h9">
+                                    <span class="history-text">3 questions approved</span>
+                                    <span class="history-time">Today, 2:00 PM</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/question-bank.js"></script>
+</body>
+</html>

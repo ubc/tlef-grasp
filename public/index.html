@@ -3,13 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>tlef-grasp</title>
-    <link rel="stylesheet" href="styles/style.css">
+    <title>GRASP - Redirecting...</title>
+    <meta http-equiv="refresh" content="0; url=/dashboard">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #3498db, #2c3e50);
+            color: white;
+            text-align: center;
+        }
+        .redirect-message {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        .logo {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        a {
+            color: white;
+            text-decoration: none;
+            border-bottom: 1px solid white;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to tlef-grasp</h1>
-    <p>Message from server: <span id="message">Loading...</span></p>
-    <a href="/settings">Go to Settings</a>
-    <script src="scripts/front-end.js"></script>
+    <div class="redirect-message">
+        <div class="logo">GRASP</div>
+        <p>Redirecting to Instructor Dashboard...</p>
+        <div class="spinner"></div>
+        <p><a href="/dashboard">Click here if you're not redirected automatically</a></p>
+    </div>
 </body>
 </html>
