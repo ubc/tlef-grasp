@@ -5,7 +5,6 @@ const router = express.Router();
 async function generateQuestions(content, options = {}) {
   const {
     numQuestions = 10,
-    questionTypes = ["multiple-choice", "short-answer"],
     difficulty = "medium",
     course = "General",
   } = options;
