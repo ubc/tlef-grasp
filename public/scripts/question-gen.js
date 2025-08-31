@@ -13,7 +13,9 @@ const state = {
     summary: '',
     objectives: [],
     questions: [],
-    exportFormat: 'qti'
+    exportFormat: 'qti',
+    objectiveGroups: [], // New for Step 3
+    objectiveToDelete: null // New for Step 3
 };
 
 // Step titles for dynamic updates
@@ -33,6 +35,50 @@ const bloomLevels = [
     'Analyze',
     'Evaluate',
     'Create'
+];
+
+// Predefined objectives for the dropdown
+const PREDEFINED_OBJECTIVES = [
+    {
+        metaId: 'enthalpy-spontaneity',
+        metaTitle: 'Understand spontaneity limits of enthalpy and internal energy',
+        kind: 'meta'
+    },
+    {
+        metaId: 'entropy-state-function',
+        metaTitle: 'Understand entropy as a state function',
+        kind: 'meta'
+    },
+    {
+        metaId: 'reversible-processes',
+        metaTitle: 'Compare reversible and irreversible processes',
+        kind: 'meta'
+    },
+    {
+        metaId: 'gibbs-energy',
+        metaTitle: 'Understand Gibbs free energy relationships',
+        kind: 'meta'
+    },
+    {
+        metaId: 'second-law',
+        metaTitle: 'Apply the second law of thermodynamics',
+        kind: 'meta'
+    },
+    {
+        metaId: 'expansion-work',
+        metaTitle: 'Analyze expansion work processes',
+        kind: 'meta'
+    },
+    {
+        metaId: 'isothermal-processes',
+        metaTitle: 'Quantify isothermal processes',
+        kind: 'meta'
+    },
+    {
+        metaId: 'misconceptions',
+        metaTitle: 'Identify and address misconceptions',
+        kind: 'meta'
+    }
 ];
 
 // Initialize the application
@@ -119,7 +165,9 @@ function validateCurrentStep() {
         case 2:
             return state.summary.trim().length > 0;
         case 3:
-            return state.objectives.length > 0;
+            return state.objectiveGroups.length > 0 && state.objectiveGroups.every(group => 
+                group.items.length > 0 && group.items.every(item => item.count >= item.minQuestions)
+            );
         case 4:
             return state.questions.length > 0;
         default:
@@ -560,79 +608,577 @@ function prepareContentForSummary() {
 
 // ===== STEP 3: OBJECTIVES FUNCTIONS =====
 
+// Initialize Step 3 state
 function initializeObjectives() {
-    const addObjectiveBtn = document.getElementById('add-objective-btn');
-    if (addObjectiveBtn) {
-        addObjectiveBtn.addEventListener('click', addObjective);
+    // Initialize with sample data if no groups exist
+    if (state.objectiveGroups.length === 0) {
+        state.objectiveGroups = [
+            {
+                id: 1,
+                metaId: 'enthalpy-spontaneity',
+                title: "Learning Objective 1: Understand spontaneity limits of enthalpy and internal energy",
+                isOpen: true,
+                items: [
+                    {
+                        id: 1.1,
+                        text: "Recognize that enthalpy (ΔH) alone does not determine spontaneity.",
+                        bloom: ["Remember", "Understand"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 1.2,
+                        text: "Recognize that internal energy (ΔE) alone is insufficient to determine spontaneity.",
+                        bloom: ["Remember"],
+                        minQuestions: 2,
+                        count: 3,
+                        mode: 'manual'
+                    }
+                ]
+            },
+            {
+                id: 2,
+                metaId: 'entropy-state-function',
+                title: "Learning Objective 2: Understand entropy as a state function",
+                isOpen: false,
+                items: [
+                    {
+                        id: 2.1,
+                        text: "Distinguish state functions from path functions using entropy examples.",
+                        bloom: ["Understand", "Apply"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 2.2,
+                        text: "Apply the second law to evaluate spontaneity qualitatively.",
+                        bloom: ["Apply"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 2.3,
+                        text: "Compare reversible and irreversible expansion work.",
+                        bloom: ["Analyze"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 2.4,
+                        text: "Quantify entropy changes for isothermal ideal-gas processes.",
+                        bloom: ["Apply", "Analyze"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    }
+                ]
+            },
+            {
+                id: 3,
+                metaId: 'reversible-processes',
+                title: "Learning Objective 3: Compare reversible and irreversible processes",
+                isOpen: false,
+                items: [
+                    {
+                        id: 3.1,
+                        text: "Interpret Gibbs free energy (ΔG) for coupled reactions.",
+                        bloom: ["Understand", "Apply"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 3.2,
+                        text: "Identify common misconceptions about ΔH, ΔE, ΔG, and spontaneity.",
+                        bloom: ["Evaluate"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    },
+                    {
+                        id: 3.3,
+                        text: "Compare reversible and irreversible expansion work.",
+                        bloom: ["Analyze"],
+                        minQuestions: 2,
+                        count: 2,
+                        mode: 'manual'
+                    }
+                ]
+            }
+        ];
     }
-}
-
-function addObjective() {
-    const objective = {
-        id: Date.now() + Math.random(),
-        text: '',
-        bloomLevel: 'Remember'
-    };
     
-    state.objectives.push(objective);
-    renderObjectives();
-}
-
-function removeObjective(objectiveId) {
-    const index = state.objectives.findIndex(o => o.id === objectiveId);
-    if (index > -1) {
-        state.objectives.splice(index, 1);
-        renderObjectives();
+    // Initialize add objectives button
+    const addObjectivesBtn = document.getElementById('add-objectives-btn');
+    if (addObjectivesBtn) {
+        addObjectivesBtn.addEventListener('click', toggleAddObjectivesDropdown);
     }
+    
+    // Initialize dropdown functionality
+    initializeAddObjectivesDropdown();
+    
+    // Initialize modals
+    initializeModals();
+    
+    // Render initial state
+    renderObjectiveGroups();
 }
 
-function updateObjective(objectiveId, field, value) {
-    const objective = state.objectives.find(o => o.id === objectiveId);
-    if (objective) {
-        objective[field] = value;
+function initializeAddObjectivesDropdown() {
+    const dropdown = document.getElementById('add-objectives-dropdown');
+    const searchInput = document.getElementById('objective-search');
+    const dropdownOptions = document.getElementById('dropdown-options');
+    const createCustomBtn = document.getElementById('create-custom-btn');
+    
+    // Populate predefined options with new schema
+    dropdownOptions.innerHTML = PREDEFINED_OBJECTIVES.map(objective => 
+        `<div class="dropdown-option" data-meta-id="${objective.metaId}" data-meta-title="${objective.metaTitle}">${objective.metaTitle}</div>`
+    ).join('');
+    
+    // Search functionality
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            const options = dropdownOptions.querySelectorAll('.dropdown-option');
+            
+            options.forEach(option => {
+                const text = option.textContent.toLowerCase();
+                if (text.includes(searchTerm)) {
+                    option.classList.remove('dropdown-option--hidden');
+                } else {
+                    option.classList.add('dropdown-option--hidden');
+                }
+            });
+        });
     }
-}
-
-function renderObjectives() {
-    const objectivesList = document.getElementById('objectives-list');
-    if (!objectivesList) return;
     
-    objectivesList.innerHTML = '';
+    // Option selection
+    dropdownOptions.addEventListener('click', (e) => {
+        if (e.target.classList.contains('dropdown-option')) {
+            const metaId = e.target.dataset.metaId;
+            const metaTitle = e.target.dataset.metaTitle;
+            handleMetaObjectiveSelection(metaId, metaTitle);
+            hideAddObjectivesDropdown();
+        }
+    });
     
-    state.objectives.forEach(objective => {
-        const objectiveItem = createObjectiveItem(objective);
-        objectivesList.appendChild(objectiveItem);
+    // Create custom objective
+    if (createCustomBtn) {
+        createCustomBtn.addEventListener('click', () => {
+            hideAddObjectivesDropdown();
+            showCustomObjectiveModal();
+        });
+    }
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!dropdown?.contains(e.target) && !e.target.closest('#add-objectives-btn')) {
+            hideAddObjectivesDropdown();
+        }
     });
 }
 
-function createObjectiveItem(objective) {
-    const item = document.createElement('div');
-    item.className = 'objective-item';
+function toggleAddObjectivesDropdown() {
+    const dropdown = document.getElementById('add-objectives-dropdown');
+    const addBtn = document.getElementById('add-objectives-btn');
     
-    item.innerHTML = `
-        <div class="objective-item__content">
-            <textarea 
-                class="objective-item__text" 
-                placeholder="Enter learning objective..."
-                onchange="updateObjective(${objective.id}, 'text', this.value)"
-            >${objective.text}</textarea>
+    if (dropdown.style.display === 'none' || !dropdown.style.display) {
+        showAddObjectivesDropdown();
+    } else {
+        hideAddObjectivesDropdown();
+    }
+}
+
+function showAddObjectivesDropdown() {
+    const dropdown = document.getElementById('add-objectives-dropdown');
+    const addBtn = document.getElementById('add-objectives-btn');
+    
+    if (dropdown && addBtn) {
+        dropdown.style.display = 'block';
+        addBtn.style.position = 'relative';
+        
+        // Focus search input
+        const searchInput = document.getElementById('objective-search');
+        if (searchInput) {
+            setTimeout(() => searchInput.focus(), 100);
+        }
+    }
+}
+
+function hideAddObjectivesDropdown() {
+    const dropdown = document.getElementById('add-objectives-dropdown');
+    if (dropdown) {
+        dropdown.style.display = 'none';
+    }
+}
+
+function showCustomObjectiveModal() {
+    const modal = document.getElementById('custom-objective-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        const textInput = document.getElementById('custom-objective-text');
+        if (textInput) {
+            setTimeout(() => textInput.focus(), 100);
+        }
+    }
+}
+
+function hideModal(modal) {
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function handleMetaObjectiveSelection(metaId, metaTitle) {
+    // Check if this meta objective already exists
+    const existingGroup = state.objectiveGroups.find(group => group.metaId === metaId);
+    
+    if (existingGroup) {
+        // Group exists - expand it, scroll into view, and focus header
+        existingGroup.isOpen = true;
+        renderObjectiveGroups();
+        
+        // Scroll into view and focus
+        setTimeout(() => {
+            const groupElement = document.querySelector(`[data-group-id="${existingGroup.id}"]`);
+            if (groupElement) {
+                groupElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const headerElement = groupElement.querySelector('.objective-group__title');
+                if (headerElement) {
+                    headerElement.focus();
+                }
+            }
+        }, 100);
+        
+        announceToScreenReader(`Meta objective revealed: ${metaTitle}`);
+    } else {
+        // Create new meta learning objective group
+        const newGroupId = Date.now() + Math.random();
+        const newGroupNumber = state.objectiveGroups.length + 1;
+        
+        const newGroup = {
+            id: newGroupId,
+            metaId: metaId,
+            title: `Learning Objective ${newGroupNumber}: ${metaTitle}`,
+            isOpen: true,
+            items: []
+        };
+        
+        // Append to the end of the groups array
+        state.objectiveGroups.push(newGroup);
+        
+        // Renumber all groups
+        renumberObjectiveGroups();
+        
+        renderObjectiveGroups();
+        
+        // Scroll into view and focus
+        setTimeout(() => {
+            const groupElement = document.querySelector(`[data-group-id="${newGroupId}"]`);
+            if (groupElement) {
+                groupElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const headerElement = groupElement.querySelector('.objective-group__title');
+                if (headerElement) {
+                    headerElement.focus();
+                }
+            }
+        }, 100);
+        
+        announceToScreenReader(`Meta objective added: ${metaTitle}`);
+    }
+}
+
+function renumberObjectiveGroups() {
+    state.objectiveGroups.forEach((group, index) => {
+        const groupNumber = index + 1;
+        const titleMatch = group.title.match(/^Learning Objective \d+: (.+)$/);
+        if (titleMatch) {
+            group.title = `Learning Objective ${groupNumber}: ${titleMatch[1]}`;
+        }
+    });
+}
+
+function renderObjectiveGroups() {
+    const groupsContainer = document.getElementById('objectives-groups');
+    if (!groupsContainer) return;
+    
+    groupsContainer.innerHTML = '';
+    
+    state.objectiveGroups.forEach(group => {
+        const groupElement = createObjectiveGroup(group);
+        groupsContainer.appendChild(groupElement);
+    });
+}
+
+function createObjectiveGroup(group) {
+    const groupElement = document.createElement('div');
+    groupElement.className = `objective-group ${group.isOpen ? 'objective-group--expanded' : 'objective-group--collapsed'}`;
+    groupElement.setAttribute('data-group-id', group.id);
+    
+    const itemCount = group.items.length;
+    const totalCount = group.items.reduce((sum, item) => sum + item.count, 0);
+    const isWarning = totalCount < 5;
+    
+    const emptyState = itemCount === 0 ? `
+        <div class="objective-group__empty">
+            <p>No granular objectives yet</p>
         </div>
-        <div class="objective-item__controls">
-            <select 
-                class="objective-item__bloom"
-                onchange="updateObjective(${objective.id}, 'bloomLevel', this.value)"
-            >
-                ${bloomLevels.map(level => 
-                    `<option value="${level}" ${objective.bloomLevel === level ? 'selected' : ''}>${level}</option>`
-                ).join('')}
-            </select>
-            <button type="button" class="objective-item__remove" onclick="removeObjective(${objective.id})">
-                <i class="fas fa-trash"></i> Remove
-            </button>
+    ` : '';
+    
+    groupElement.innerHTML = `
+        <div class="objective-group__header" onclick="toggleObjectiveGroup(${group.id})">
+            <h3 class="objective-group__title" tabindex="0">${group.title}</h3>
+            <div class="objective-group__toggle">
+                <span>${itemCount} objectives</span>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+        </div>
+        <div class="objective-group__content">
+            ${emptyState}
+            ${group.items.map(item => createObjectiveItem(item, group.id)).join('')}
+            ${itemCount > 0 ? `
+                <div class="objective-group__footer ${isWarning ? 'objective-group__footer--warning' : ''}">
+                    Total: ${totalCount} Required minimum: 5 (${totalCount >= 5 ? '≥5' : '<5'})
+                </div>
+            ` : ''}
         </div>
     `;
     
-    return item;
+    return groupElement;
+}
+
+function createObjectiveItem(item, groupId) {
+    const bloomChips = bloomLevels.map(level => {
+        const isSelected = item.bloom.includes(level);
+        const isDisabled = item.mode === 'auto';
+        return `
+            <button type="button" 
+                class="bloom-chip ${isSelected ? 'bloom-chip--selected' : ''} ${isDisabled ? 'bloom-chip--disabled' : ''}"
+                onclick="toggleBloomChip(${groupId}, ${item.id}, '${level}')"
+                ${isDisabled ? 'disabled' : ''}
+                aria-checked="${isSelected}"
+            >
+                ${level}
+            </button>
+        `;
+    }).join('');
+    
+    const bloomModeToggle = item.mode === 'manual' ? `
+        <div class="bloom-mode-toggle">
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--active">Choose Bloom</button>
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--inactive" onclick="setBloomMode(${groupId}, ${item.id}, 'auto')">AI decide later</button>
+        </div>
+    ` : `
+        <div class="bloom-mode-toggle">
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--inactive" onclick="setBloomMode(${groupId}, ${item.id}, 'manual')">Choose Bloom</button>
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--active">AI decide later</button>
+            <span class="auto-pill">Auto (pending)</span>
+        </div>
+    `;
+    
+    return `
+        <div class="objective-item" data-item-id="${item.id}">
+            <button type="button" class="objective-item__delete" onclick="confirmDeleteObjective(${groupId}, ${item.id})" aria-label="Remove objective">
+                ×
+            </button>
+            <div class="objective-item__content">
+                <div class="objective-item__text" contenteditable="true" onblur="updateObjectiveText(${groupId}, ${item.id}, this.textContent)">
+                    ${item.text}
+                </div>
+                <div class="objective-item__controls">
+                    <div class="objective-item__bloom-chips">
+                        ${bloomChips}
+                    </div>
+                    <div class="objective-item__min">Min: ${item.minQuestions}</div>
+                    ${bloomModeToggle}
+                </div>
+            </div>
+            <div class="objective-item__tools">
+                <div class="objective-item__stepper">
+                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id})" ${item.count <= item.minQuestions ? 'disabled' : ''}>
+                        –
+                    </button>
+                    <span class="stepper-value">${item.count}</span>
+                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id})" ${item.count >= 9 ? 'disabled' : ''}>
+                        +
+                    </button>
+                </div>
+                <button type="button" class="objective-item__action-btn" onclick="editObjective(${groupId}, ${item.id})" title="Edit objective">
+                    <i class="fas fa-pencil-alt"></i>
+                </button>
+                <button type="button" class="objective-item__action-btn objective-item__action-btn--disabled" title="Connect AI later" disabled>
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function toggleObjectiveGroup(groupId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (group) {
+        group.isOpen = !group.isOpen;
+        renderObjectiveGroups();
+    }
+}
+
+function toggleBloomChip(groupId, itemId, level) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    const item = group?.items.find(i => i.id === itemId);
+    
+    if (item && item.mode === 'manual') {
+        const index = item.bloom.indexOf(level);
+        if (index > -1) {
+            item.bloom.splice(index, 1);
+        } else {
+            item.bloom.push(level);
+        }
+        renderObjectiveGroups();
+    }
+}
+
+function setBloomMode(groupId, itemId, mode) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    const item = group?.items.find(i => i.id === itemId);
+    
+    if (item) {
+        item.mode = mode;
+        if (mode === 'auto') {
+            item.bloom = [];
+        }
+        renderObjectiveGroups();
+    }
+}
+
+function updateObjectiveText(groupId, itemId, text) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    const item = group?.items.find(i => i.id === itemId);
+    
+    if (item) {
+        item.text = text;
+    }
+}
+
+function incrementCount(groupId, itemId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    const item = group?.items.find(i => i.id === itemId);
+    
+    if (item && item.count < 9) {
+        item.count++;
+        renderObjectiveGroups();
+        announceToScreenReader(`Count increased to ${item.count}`);
+    }
+}
+
+function decrementCount(groupId, itemId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    const item = group?.items.find(i => i.id === itemId);
+    
+    if (item && item.count > item.minQuestions) {
+        item.count--;
+        renderObjectiveGroups();
+        announceToScreenReader(`Count decreased to ${item.count}`);
+    }
+}
+
+function editObjective(groupId, itemId) {
+    const itemElement = document.querySelector(`[data-item-id="${itemId}"] .objective-item__text`);
+    if (itemElement) {
+        itemElement.focus();
+        itemElement.classList.add('objective-item__text--editing');
+        
+        // Select all text
+        const range = document.createRange();
+        range.selectNodeContents(itemElement);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+}
+
+function confirmDeleteObjective(groupId, itemId) {
+    state.objectiveToDelete = { groupId, itemId };
+    const modal = document.getElementById('delete-confirmation-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function deleteObjective(groupId, itemId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (group) {
+        const index = group.items.findIndex(i => i.id === itemId);
+        if (index > -1) {
+            const removedItem = group.items[index];
+            group.items.splice(index, 1);
+            
+            // If group becomes empty, remove it and renumber
+            if (group.items.length === 0) {
+                const groupIndex = state.objectiveGroups.findIndex(g => g.id === groupId);
+                if (groupIndex > -1) {
+                    state.objectiveGroups.splice(groupIndex, 1);
+                    renumberObjectiveGroups();
+                }
+            }
+            
+            renderObjectiveGroups();
+            announceToScreenReader(`Removed objective: ${removedItem.text}`);
+        }
+    }
+}
+
+function initializeModals() {
+    // Custom objective modal
+    const customModal = document.getElementById('custom-objective-modal');
+    const customModalClose = document.getElementById('custom-modal-close');
+    const customModalCancel = document.getElementById('custom-modal-cancel');
+    const customModalSave = document.getElementById('custom-modal-save');
+    
+    if (customModalClose) {
+        customModalClose.addEventListener('click', () => hideModal(customModal));
+    }
+    if (customModalCancel) {
+        customModalCancel.addEventListener('click', () => hideModal(customModal));
+    }
+    if (customModalSave) {
+        customModalSave.addEventListener('click', () => {
+            const textInput = document.getElementById('custom-objective-text');
+            if (textInput && textInput.value.trim()) {
+                // Create custom meta objective
+                const customMetaId = 'custom-' + Date.now();
+                const customMetaTitle = textInput.value.trim();
+                handleMetaObjectiveSelection(customMetaId, customMetaTitle);
+                textInput.value = '';
+                hideModal(customModal);
+            }
+        });
+    }
+    
+    // Delete confirmation modal
+    const deleteModal = document.getElementById('delete-confirmation-modal');
+    const deleteModalClose = document.getElementById('delete-modal-close');
+    const deleteModalCancel = document.getElementById('delete-modal-cancel');
+    const deleteModalConfirm = document.getElementById('delete-modal-confirm');
+    
+    if (deleteModalClose) {
+        deleteModalClose.addEventListener('click', () => hideModal(deleteModal));
+    }
+    if (deleteModalCancel) {
+        deleteModalCancel.addEventListener('click', () => hideModal(deleteModal));
+    }
+    if (deleteModalConfirm) {
+        deleteModalConfirm.addEventListener('click', () => {
+            if (state.objectiveToDelete) {
+                deleteObjective(state.objectiveToDelete.groupId, state.objectiveToDelete.itemId);
+                state.objectiveToDelete = null;
+                hideModal(deleteModal);
+            }
+        });
+    }
 }
 
 // ===== STEP 5: EXPORT FORMAT FUNCTIONS =====
@@ -723,8 +1269,10 @@ async function generateQuestions() {
 function prepareContentForQuestions() {
     let content = `Summary: ${state.summary}\n\n`;
     content += `Objectives:\n`;
-    state.objectives.forEach(obj => {
-        content += `- ${obj.text} (${obj.bloomLevel})\n`;
+    state.objectiveGroups.forEach(group => {
+        group.items.forEach(item => {
+            content += `- ${item.text} (${item.bloom.join(', ')}) Min: ${item.minQuestions}, Count: ${item.count}\n`;
+        });
     });
     content += `\nGenerate multiple choice questions based on this content.`;
     
@@ -744,9 +1292,6 @@ function renderQuestions() {
 }
 
 function createQuestionItem(question) {
-    const item = document.createElement('div');
-    item.className = 'question-item';
-    
     const options = question.options.map((option, index) => {
         const isCorrect = index === question.correctAnswer;
         return `<li class="question-item__option ${isCorrect ? 'question-item__option--correct' : ''}">${option}</li>`;
@@ -783,7 +1328,7 @@ async function exportQuestions() {
             body: JSON.stringify({
                 course: state.course,
                 summary: state.summary,
-                objectives: state.objectives,
+                objectives: state.objectiveGroups, // Export the full objectiveGroups array
                 questions: state.questions
             })
         });
@@ -833,7 +1378,7 @@ function createMockJSON() {
     return JSON.stringify({
         course: state.course,
         summary: state.summary,
-        objectives: state.objectives,
+        objectives: state.objectiveGroups, // Export the full objectiveGroups array
         questions: state.questions
     }, null, 2);
 }
@@ -897,5 +1442,11 @@ function announceToScreenReader(message) {
 // Export functions for global access
 window.removeFile = removeFile;
 window.removeUrl = removeUrl;
-window.updateObjective = updateObjective;
-window.removeObjective = removeObjective;
+window.toggleObjectiveGroup = toggleObjectiveGroup;
+window.toggleBloomChip = toggleBloomChip;
+window.setBloomMode = setBloomMode;
+window.updateObjectiveText = updateObjectiveText;
+window.incrementCount = incrementCount;
+window.decrementCount = decrementCount;
+window.editObjective = editObjective;
+window.confirmDeleteObjective = confirmDeleteObjective;

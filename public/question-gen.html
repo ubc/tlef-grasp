@@ -146,13 +146,71 @@
                     <!-- Step 3: Create Objectives -->
                     <div class="step-panel" data-step="3">
                         <div class="objectives-section">
-                            <h3>Learning Objectives</h3>
-                            <div class="objectives-list" id="objectives-list">
-                                <!-- Objectives will be added here -->
-                            </div>
-                            <button type="button" class="btn btn--secondary" id="add-objective-btn">
-                                <i class="fas fa-plus"></i> Add Objective
+                            <h1 class="objectives-section__title">Review learning objectives for every page</h1>
+                            <p class="objectives-section__subtitle">Organize meta learning objectives and refine granular learning objectives.</p>
+                            
+                            <button type="button" class="btn btn--primary" id="add-objectives-btn">
+                                <i class="fas fa-plus"></i> Add learning objectives
                             </button>
+                            
+                            <div class="objectives-groups" id="objectives-groups">
+                                <!-- Meta learning objective groups will be added here -->
+                            </div>
+                            
+                            <!-- Add Objectives Dropdown -->
+                            <div class="add-objectives-dropdown" id="add-objectives-dropdown" style="display: none;">
+                                <div class="dropdown-search">
+                                    <input type="text" id="objective-search" placeholder="Search objectives..." class="dropdown-search__input">
+                                </div>
+                                <div class="dropdown-options" id="dropdown-options">
+                                    <!-- Pre-defined objectives will be listed here -->
+                                </div>
+                                <div class="dropdown-separator"></div>
+                                <div class="dropdown-custom">
+                                    <button type="button" class="dropdown-custom__btn" id="create-custom-btn">
+                                        <i class="fas fa-plus"></i> Create custom objective...
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Custom Objective Modal -->
+                            <div class="modal" id="custom-objective-modal">
+                                <div class="modal__content">
+                                    <div class="modal__header">
+                                        <h3>Create Custom Objective</h3>
+                                        <button type="button" class="modal__close" id="custom-modal-close">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="modal__body">
+                                        <label for="custom-objective-text">Objective statement:</label>
+                                        <textarea id="custom-objective-text" class="text-input" rows="4" placeholder="Enter your custom learning objective..."></textarea>
+                                    </div>
+                                    <div class="modal__footer">
+                                        <button type="button" class="btn btn--secondary" id="custom-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--primary" id="custom-modal-save">Create</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Delete Confirmation Modal -->
+                            <div class="modal" id="delete-confirmation-modal">
+                                <div class="modal__content">
+                                    <div class="modal__header">
+                                        <h3>Delete objective?</h3>
+                                        <button type="button" class="modal__close" id="delete-modal-close">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="modal__body">
+                                        <p>This will remove the objective from this group.</p>
+                                    </div>
+                                    <div class="modal__footer">
+                                        <button type="button" class="btn btn--secondary" id="delete-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--danger" id="delete-modal-confirm">Delete</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
