@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Generation - GRASP</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/question-gen.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Stepper -->
+                <div class="stepper">
+                    <div class="stepper__step stepper__step--active" data-step="1">
+                        <div class="stepper__step-number">1</div>
+                        <div class="stepper__step-label">Upload materials</div>
+                    </div>
+                    <div class="stepper__step" data-step="2">
+                        <div class="stepper__step-number">2</div>
+                        <div class="stepper__step-label">Review Summary</div>
+                    </div>
+                    <div class="stepper__step" data-step="3">
+                        <div class="stepper__step-number">3</div>
+                        <div class="stepper__step-label">Create Objectives</div>
+                    </div>
+                    <div class="stepper__step" data-step="4">
+                        <div class="stepper__step-number">4</div>
+                        <div class="stepper__step-label">Generate Questions</div>
+                    </div>
+                    <div class="stepper__step" data-step="5">
+                        <div class="stepper__step-number">5</div>
+                        <div class="stepper__step-label">Select Output Format</div>
+                    </div>
+                </div>
+
+                <!-- Content Header -->
+                <div class="content-header">
+                    <h1 class="content-header__title">Upload Materials</h1>
+                    <div class="content-header__course">
+                        <label for="course-select">Course</label>
+                        <select id="course-select" class="course-select">
+                            <option value="CHEM 121">CHEM 121</option>
+                            <option value="CHEM 123">CHEM 123</option>
+                            <option value="PHYS 101">PHYS 101</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Step Content -->
+                <div class="step-content">
+                    <!-- Step 1: Upload Materials -->
+                    <div class="step-panel step-panel--active" data-step="1">
+                        <div class="upload-zone">
+                            <div class="upload-zone__drop-area" id="drop-area">
+                                <i class="fas fa-cloud-upload-alt upload-zone__icon"></i>
+                                <p class="upload-zone__text">Drag and drop or choose file</p>
+                                <button type="button" class="btn btn--primary" id="choose-file-btn">Choose file</button>
+                                <input type="file" id="file-input" multiple accept=".pdf,.txt,.doc,.docx" style="display: none;">
+                            </div>
+                        </div>
+
+                        <div class="material-tiles">
+                            <div class="material-tile" data-type="text">
+                                <i class="fas fa-file-alt material-tile__icon"></i>
+                                <span class="material-tile__label">Text</span>
+                            </div>
+                            <div class="material-tile" data-type="pdf">
+                                <i class="fas fa-file-pdf material-tile__icon"></i>
+                                <span class="material-tile__label">PDF</span>
+                            </div>
+                            <div class="material-tile" data-type="url">
+                                <i class="fas fa-link material-tile__icon"></i>
+                                <span class="material-tile__label">URL</span>
+                            </div>
+                            <div class="material-tile" data-type="panopto">
+                                <i class="fas fa-video material-tile__icon"></i>
+                                <span class="material-tile__label">Panopto</span>
+                            </div>
+                        </div>
+
+                        <div class="file-list" id="file-list">
+                            <!-- Files will be listed here -->
+                        </div>
+
+                        <!-- Text Input Modal -->
+                        <div class="modal" id="text-modal">
+                            <div class="modal__content">
+                                <div class="modal__header">
+                                    <h3>Add Text Content</h3>
+                                    <button type="button" class="modal__close" id="text-modal-close">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="modal__body">
+                                    <label for="text-content">Paste your text content:</label>
+                                    <textarea id="text-content" class="text-input" rows="10" placeholder="Paste your text content here..."></textarea>
+                                </div>
+                                <div class="modal__footer">
+                                    <button type="button" class="btn btn--secondary" id="text-modal-cancel">Cancel</button>
+                                    <button type="button" class="btn btn--primary" id="text-modal-save">Save</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- URL Input Modal -->
+                        <div class="modal" id="url-modal">
+                            <div class="modal__content">
+                                <div class="modal__header">
+                                    <h3>Add URL</h3>
+                                    <button type="button" class="modal__close" id="url-modal-close">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="modal__body">
+                                    <label for="url-input">Enter URL:</label>
+                                    <input type="url" id="url-input" class="url-input" placeholder="https://example.com">
+                                </div>
+                                <div class="modal__footer">
+                                    <button type="button" class="btn btn--secondary" id="url-modal-cancel">Cancel</button>
+                                    <button type="button" class="btn btn--primary" id="url-modal-save">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Review Summary -->
+                    <div class="step-panel" data-step="2">
+                        <div class="summary-section">
+                            <h3>Content Summary</h3>
+                            <div class="summary-content">
+                                <div class="summary-loading" id="summary-loading">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    <p>Generating summary...</p>
+                                </div>
+                                <div class="summary-text" id="summary-text" style="display: none;">
+                                    <textarea id="summary-editor" class="summary-editor" rows="15" placeholder="Summary will appear here..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Create Objectives -->
+                    <div class="step-panel" data-step="3">
+                        <div class="objectives-section">
+                            <h3>Learning Objectives</h3>
+                            <div class="objectives-list" id="objectives-list">
+                                <!-- Objectives will be added here -->
+                            </div>
+                            <button type="button" class="btn btn--secondary" id="add-objective-btn">
+                                <i class="fas fa-plus"></i> Add Objective
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Generate Questions -->
+                    <div class="step-panel" data-step="4">
+                        <div class="questions-section">
+                            <h3>Generated Questions</h3>
+                            <div class="questions-loading" id="questions-loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Generating questions...</p>
+                            </div>
+                            <div class="questions-list" id="questions-list" style="display: none;">
+                                <!-- Questions will be listed here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Select Output Format -->
+                    <div class="step-panel" data-step="5">
+                        <div class="export-section">
+                            <h3>Export Format</h3>
+                            <div class="export-options">
+                                <div class="export-option">
+                                    <input type="radio" id="export-qti" name="export-format" value="qti" checked>
+                                    <label for="export-qti">
+                                        <i class="fas fa-file-code"></i>
+                                        <span>QTI Format</span>
+                                        <small>Import into Canvas, Blackboard, etc.</small>
+                                    </label>
+                                </div>
+                                <div class="export-option">
+                                    <input type="radio" id="export-csv" name="export-format" value="csv">
+                                    <label for="export-csv">
+                                        <i class="fas fa-file-csv"></i>
+                                        <span>CSV Format</span>
+                                        <small>Spreadsheet compatible</small>
+                                    </label>
+                                </div>
+                                <div class="export-option">
+                                    <input type="radio" id="export-json" name="export-format" value="json">
+                                    <label for="export-json">
+                                        <i class="fas fa-file-code"></i>
+                                        <span>JSON Format</span>
+                                        <small>API integration</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="footer-actions">
+                    <button type="button" class="btn btn--secondary" id="back-btn" disabled>Back</button>
+                    <button type="button" class="btn btn--primary" id="continue-btn">Continue</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Screen reader announcements -->
+    <div class="sr-only" id="sr-announcements" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/question-gen.js"></script>
+</body>
+</html>

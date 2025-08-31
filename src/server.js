@@ -39,8 +39,8 @@ app.get("/dashboard", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
-app.get("/question-generation", (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-generation.html"));
+app.get("/question-gen", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-gen.html"));
 });
 
 app.get("/settings", (req, res) => {

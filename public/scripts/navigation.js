@@ -11,7 +11,7 @@ class GRASPNavigation {
     const path = window.location.pathname;
     if (path.includes("dashboard")) return "dashboard";
     if (path.includes("question-bank")) return "question-bank";
-    if (path.includes("question-generation")) return "question-generation";
+    if (path.includes("question-gen")) return "question-generation";
     if (path.includes("settings")) return "settings";
     return "dashboard"; // default
   }
@@ -85,7 +85,7 @@ class GRASPNavigation {
           </li>
           <li class="nav-item" data-page="question-generation">
             <i class="fas fa-puzzle-piece"></i>
-            <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Builder</a></span>
+            <span><a href="question-gen.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
           </li>
           <li class="nav-item" data-page="course-materials">
             <i class="fas fa-folder"></i>
