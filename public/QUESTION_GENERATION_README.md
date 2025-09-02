@@ -40,10 +40,10 @@ The Question Generation feature is a 5-step workflow that allows instructors to 
 ## Technical Implementation
 
 ### Files Created
-- `public/question-gen.html` - Main HTML structure
-- `public/styles/question-gen.css` - Styling with BEM methodology
-- `public/scripts/question-gen.js` - JavaScript functionality
-- Updated `src/server.js` - Added route for question-gen page
+- `public/question-generation.html` - Main HTML structure
+- `public/styles/question-generation.css` - Styling with BEM methodology
+- `public/scripts/question-generation.js` - JavaScript functionality
+- Updated `src/server.js` - Added route for question-generation page
 - Updated `src/routes/questions.js` - Added API endpoints
 
 ### API Endpoints
@@ -88,7 +88,7 @@ The application includes a development flag (`DEV_MODE = true`) that provides:
 
 ## Usage
 
-1. Navigate to `/question-gen` in the GRASP application
+1. Navigate to `/question-generation` in the GRASP application
 2. Follow the 5-step process:
    - Upload materials (files, text, URLs)
    - Review and edit the generated summary
