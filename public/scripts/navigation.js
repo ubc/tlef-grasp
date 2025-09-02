@@ -10,7 +10,7 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("dashboard")) return "dashboard";
-    if (path.includes("question-bank")) return "question-bank";
+    if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
     return "dashboard"; // default

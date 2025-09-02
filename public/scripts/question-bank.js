@@ -1,433 +1,1412 @@
 // Question Bank Page JavaScript
-// Handles interactions and functionality for the question bank page
+// Handles interactions and functionality for the new 3-panel layout and Review tab
 
 class QuestionBankPage {
   constructor() {
+    this.state = {
+      course: 'all',
+      filters: { objective: 'all', bloom: 'all', status: 'all', q: '' },
+      sort: { key: 'views', dir: 'desc' },
+      selectedQuestionIds: new Set(),
+      selectedHistoryId: null,
+      currentTab: 'review'
+    };
+    
+    this.questions = [];
+    this.history = [];
+    this.quizzes = [];
     this.init();
   }
 
   init() {
     this.initializeNavigation();
-    this.initializeTabs();
-    this.initializeCheckboxes();
-    this.initializeRadioButtons();
-    this.initializeFilters();
-    this.initializeSearch();
-    this.initializeActionButtons();
+    this.initializeData();
+    this.initializeEventListeners();
+    this.renderAll();
   }
 
   initializeNavigation() {
-    // Initialize navigation if available
     if (window.GRASPNavigation) {
       new window.GRASPNavigation();
     }
   }
 
-  initializeTabs() {
-    const tabButtons = document.querySelectorAll(".tab-button");
+  initializeData() {
+    // Sample quiz data
+    this.quizzes = [
+      {
+        id: 1,
+        title: 'Quiz 3A',
+        week: 'Week 3',
+        lecture: 'Lecture 2',
+        releases: [
+          { label: 'Quiz 3A', date: '2025-09-12' }
+        ],
+        questions: [
+          {
+            id: 1,
+            title: 'ΔH and Spontaneity',
+            loCode: 'LO 2.1',
+            bloom: 'Understand',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          },
+          {
+            id: 2,
+            title: 'ΔE Limitations',
+            loCode: 'LO 2.1',
+            bloom: 'Analyze',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          },
+          {
+            id: 3,
+            title: 'Define Microstate',
+            loCode: 'LO 2.2',
+            bloom: 'Understand',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          }
+        ],
+        isOpen: false,
+        selection: new Set()
+      },
+      {
+        id: 2,
+        title: 'Quiz 4B',
+        week: 'Week 4',
+        lecture: 'Lecture 3',
+        releases: [
+          { label: 'Quiz 4B', date: '2025-09-19' }
+        ],
+        questions: [
+          {
+            id: 4,
+            title: 'Entropy in Reactions',
+            loCode: 'LO 2.3',
+            bloom: 'Analyze',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          },
+          {
+            id: 5,
+            title: 'Compare Reversibility',
+            loCode: 'LO 3.1',
+            bloom: 'Understand',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          }
+        ],
+        isOpen: false,
+        selection: new Set()
+      },
+      {
+        id: 3,
+        title: 'Quiz 5C',
+        week: 'Week 5',
+        lecture: 'Lecture 4',
+        releases: [
+          { label: 'Quiz 5C', date: '2025-09-26' }
+        ],
+        questions: [
+          {
+            id: 6,
+            title: 'Phase and ΔS',
+            loCode: 'LO 3.2',
+            bloom: 'Analyze',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          },
+          {
+            id: 7,
+            title: 'Find Entropy Change',
+            loCode: 'LO 3.2',
+            bloom: 'Understand',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          },
+          {
+            id: 8,
+            title: 'Heat and Entropy',
+            loCode: 'LO 3.2',
+            bloom: 'Analyze',
+            status: 'Draft',
+            lastEdited: '2025-01-15 14:30',
+            approved: false,
+            flagged: false
+          }
+        ],
+        isOpen: false,
+        selection: new Set()
+      }
+    ];
 
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        // Remove active class from all tabs
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
+    // Sample question data for Overview tab (matching screenshot)
+    this.questions = [
+      {
+        id: 1,
+        title: 'Photosynthesis energy conversion',
+        glo: 'LO 2.1: Plant cell processes',
+        bloom: 'Understand',
+        views: 128,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 1
+      },
+      {
+        id: 2,
+        title: 'ΔH and Spontaneity',
+        glo: 'LO 4.3: Newton\'s Laws — Applications',
+        bloom: 'Apply',
+        views: 96,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 1
+      },
+      {
+        id: 3,
+        title: 'Define Microstate',
+        glo: 'LO 3.2: Cell division mechanisms',
+        bloom: 'Analyze',
+        views: 73,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 1
+      },
+      {
+        id: 4,
+        title: 'Entropy in Reactions',
+        glo: 'LO 2.3: Chemical equilibrium',
+        bloom: 'Analyze',
+        views: 156,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 2
+      },
+      {
+        id: 5,
+        title: 'Compare Reversibility',
+        glo: 'LO 3.1: Thermodynamic processes',
+        bloom: 'Understand',
+        views: 89,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 2
+      },
+      {
+        id: 6,
+        title: 'Phase and ΔS',
+        glo: 'LO 3.2: Phase transitions',
+        bloom: 'Analyze',
+        views: 112,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 3
+      },
+      {
+        id: 7,
+        title: 'Find Entropy Change',
+        glo: 'LO 3.1: Statistical mechanics',
+        bloom: 'Understand',
+        views: 67,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 4
+      },
+      {
+        id: 8,
+        title: 'Heat and Entropy',
+        glo: 'LO 3.2: Molecular dynamics',
+        bloom: 'Analyze',
+        views: 94,
+        flagged: false,
+        published: false,
+        status: 'Draft',
+        course: 'CHEM 121',
+        week: 5
+      }
+    ];
 
-        // Add active class to clicked tab
-        button.classList.add("active");
+    // Sample history data
+    this.history = [
+      {
+        id: 1,
+        questionIds: [1, 2, 3, 4, 5],
+        count: 5,
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+        label: 'Today, 3:00 PM'
+      },
+      {
+        id: 2,
+        questionIds: [6, 7],
+        count: 2,
+        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+        label: 'Yesterday, 12:34 PM'
+      },
+      {
+        id: 3,
+        questionIds: [8],
+        count: 1,
+        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
+        label: 'Today, 2:00 PM'
+      }
+    ];
+  }
 
-        // Handle tab switching
-        const tabName = button.getAttribute("data-tab");
+  initializeEventListeners() {
+    // Course selector
+    const courseSelector = document.getElementById('course-selector');
+    if (courseSelector) {
+      courseSelector.addEventListener('change', (e) => {
+        this.state.course = e.target.value;
+        this.renderAll();
+      });
+    }
+
+    // Tab switching
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        const tabName = button.getAttribute('data-tab');
         this.switchTab(tabName);
       });
     });
-  }
 
-  switchTab(tabName) {
-    console.log(`Switching to ${tabName} tab`);
+    // Filters (using the main filters section)
+    const objectiveFilter = document.getElementById('objective-filter');
+    const bloomFilter = document.getElementById('bloom-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const searchInput = document.getElementById('search-input');
 
-    // Update page title
-    if (tabName === "overview") {
-      document.title = "Overview - Question Bank - GRASP";
-    } else if (tabName === "review") {
-      document.title = "Review - Question Bank - GRASP";
-      // Here you could load review-specific content
-      this.loadReviewContent();
-    }
-
-    // You can add more tab-specific logic here
-    // For example, showing different panels or loading different data
-  }
-
-  loadReviewContent() {
-    // This would load review-specific content when switching to the Review tab
-    // For now, we'll just log the action
-    console.log("Loading review content...");
-
-    // You could:
-    // - Show different panels
-    // - Load different data
-    // - Change the layout
-    // - etc.
-  }
-
-  initializeCheckboxes() {
-    const questionCheckboxes = document.querySelectorAll(
-      '.question-item input[type="checkbox"]'
-    );
-
-    questionCheckboxes.forEach((checkbox) => {
-      checkbox.addEventListener("change", (e) => {
-        const questionItem = e.target.closest(".question-item");
-        const questionText = questionItem.querySelector("label").textContent;
-
-        if (e.target.checked) {
-          console.log(`Selected question: ${questionText}`);
-          questionItem.style.backgroundColor = "#e3f2fd";
-        } else {
-          console.log(`Deselected question: ${questionText}`);
-          questionItem.style.backgroundColor = "";
-        }
-
-        this.updateBulkActions();
-      });
-    });
-  }
-
-  initializeRadioButtons() {
-    const historyRadios = document.querySelectorAll(
-      '.history-item input[type="radio"]'
-    );
-
-    historyRadios.forEach((radio) => {
-      radio.addEventListener("change", (e) => {
-        const historyItem = e.target.closest(".history-item");
-        const historyText =
-          historyItem.querySelector(".history-text").textContent;
-        const historyTime =
-          historyItem.querySelector(".history-time").textContent;
-
-        console.log(`Selected history: ${historyText} at ${historyTime}`);
-
-        // You could load details for the selected history item here
-        this.loadHistoryDetails(historyText, historyTime);
-      });
-    });
-  }
-
-  loadHistoryDetails(text, time) {
-    // This would load details for the selected history item
-    console.log(`Loading details for: ${text} (${time})`);
-
-    // You could:
-    // - Show a modal with details
-    // - Update other panels
-    // - Load related questions
-    // - etc.
-  }
-
-  initializeFilters() {
-    const learningObjectivesFilter = document.querySelector(".filter-select");
-    const weekFilter = document.querySelector(".filter-select:last-of-type");
-
-    if (learningObjectivesFilter) {
-      learningObjectivesFilter.addEventListener("change", (e) => {
-        const selectedObjective = e.target.value;
-        console.log(`Filtering by learning objective: ${selectedObjective}`);
+    if (objectiveFilter) {
+      objectiveFilter.addEventListener('change', (e) => {
+        this.state.filters.objective = e.target.value;
         this.applyFilters();
       });
     }
 
-    if (weekFilter) {
-      weekFilter.addEventListener("change", (e) => {
-        const selectedWeek = e.target.value;
-        console.log(`Filtering by week: ${selectedWeek}`);
+    if (bloomFilter) {
+      bloomFilter.addEventListener('change', (e) => {
+        this.state.filters.bloom = e.target.value;
         this.applyFilters();
       });
     }
-  }
 
-  applyFilters() {
-    // This would apply the selected filters to the question list
-    console.log("Applying filters...");
-
-    // You could:
-    // - Filter the question list
-    // - Update the objectives table
-    // - Show/hide questions based on criteria
-    // - etc.
-  }
-
-  initializeSearch() {
-    const searchInput = document.querySelector(".search-box input");
-    const searchDropdown = document.querySelector(".search-box i:last-child");
+    if (statusFilter) {
+      statusFilter.addEventListener('change', (e) => {
+        this.state.filters.status = e.target.value;
+        this.applyFilters();
+      });
+    }
 
     if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        this.performSearch(searchTerm);
-      });
-
-      searchInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-          const searchTerm = e.target.value.trim();
-          if (searchTerm) {
-            this.performSearch(searchTerm);
-          }
-        }
+      searchInput.addEventListener('input', (e) => {
+        this.state.filters.q = e.target.value;
+        this.applyFilters();
       });
     }
 
-    if (searchDropdown) {
-      searchDropdown.addEventListener("click", () => {
-        this.toggleSearchOptions();
-      });
-    }
+    // Sortable headers
+    this.initializeSortableHeaders();
+
+    // Action buttons
+    this.initializeActionButtons();
+
+    // Cross-quiz action buttons
+    this.initializeCrossQuizActions();
+
+    // Modal events
+    this.initializeModalEvents();
   }
 
-  performSearch(searchTerm) {
-    if (searchTerm.length === 0) {
-      // Show all questions if search is empty
-      this.showAllQuestions();
-      return;
-    }
-
-    console.log(`Searching for: ${searchTerm}`);
-
-    // Filter questions based on search term
-    const questionItems = document.querySelectorAll(".question-item");
-
-    questionItems.forEach((item) => {
-      const questionText = item
-        .querySelector("label")
-        .textContent.toLowerCase();
-      const shouldShow = questionText.includes(searchTerm);
-
-      item.style.display = shouldShow ? "flex" : "none";
+  initializeSortableHeaders() {
+    const sortableHeaders = document.querySelectorAll('.sortable-header');
+    sortableHeaders.forEach(header => {
+      header.addEventListener('click', () => {
+        const sortKey = header.getAttribute('data-sort');
+        this.handleSort(sortKey);
+      });
     });
-
-    // You could also search through:
-    // - Learning objectives
-    // - Bloom's levels
-    // - Question content
-    // - etc.
-  }
-
-  showAllQuestions() {
-    const questionItems = document.querySelectorAll(".question-item");
-    questionItems.forEach((item) => {
-      item.style.display = "flex";
-    });
-  }
-
-  toggleSearchOptions() {
-    console.log("Toggle search options");
-    // This could show advanced search options or filters
   }
 
   initializeActionButtons() {
-    const editBtn = document.querySelector('.action-btn[title="Edit"]');
-    const selectAllBtn = document.querySelector(
-      '.action-btn[title="Select All"]'
-    );
-    const flagBtn = document.querySelector('.action-btn[title="Flag"]');
-    const deleteBtn = document.querySelector('.action-btn[title="Delete"]');
+    const editBtn = document.getElementById('edit-btn');
+    const flagBtn = document.getElementById('flag-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    const publishBtn = document.getElementById('publish-btn');
 
-    if (editBtn) {
-      editBtn.addEventListener("click", () => {
-        this.handleEdit();
-      });
+    if (editBtn) editBtn.addEventListener('click', () => this.handleEdit());
+    if (flagBtn) flagBtn.addEventListener('click', () => this.handleFlag());
+    if (deleteBtn) deleteBtn.addEventListener('click', () => this.handleDelete());
+    if (publishBtn) publishBtn.addEventListener('click', () => this.handlePublish());
+
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
     }
+  }
 
-    if (selectAllBtn) {
-      selectAllBtn.addEventListener("click", () => {
-        this.handleSelectAll();
-      });
+  initializeCrossQuizActions() {
+    const crossApproveBtn = document.getElementById('cross-approve-btn');
+    const crossFlagBtn = document.getElementById('cross-flag-btn');
+    const crossDeleteBtn = document.getElementById('cross-delete-btn');
+
+    if (crossApproveBtn) {
+      crossApproveBtn.addEventListener('click', () => this.handleCrossQuizAction('approve'));
     }
-
     if (flagBtn) {
-      flagBtn.addEventListener("click", () => {
-        this.handleFlag();
-      });
+      crossFlagBtn.addEventListener('click', () => this.handleCrossQuizAction('flag'));
+    }
+    if (crossDeleteBtn) {
+      crossDeleteBtn.addEventListener('click', () => this.handleCrossQuizAction('delete'));
+    }
+  }
+
+  initializeModalEvents() {
+    const modal = document.getElementById('confirm-modal');
+    const modalClose = document.getElementById('modal-close');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalConfirm = document.getElementById('modal-confirm');
+
+    if (modalClose) {
+      modalClose.addEventListener('click', () => this.hideModal());
+    }
+    if (modalCancel) {
+      modalCancel.addEventListener('click', () => this.hideModal());
+    }
+    if (modalConfirm) {
+      modalConfirm.addEventListener('click', () => this.confirmModalAction());
     }
 
-    if (deleteBtn) {
-      deleteBtn.addEventListener("click", () => {
-        this.handleDelete();
+    // Close modal on outside click
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          this.hideModal();
+        }
       });
     }
   }
 
-  handleEdit() {
-    console.log("Edit button clicked");
-    // This could:
-    // - Enable edit mode
-    // - Show edit forms
-    // - Open edit modal
-    // - etc.
+  switchTab(tabName) {
+    this.state.currentTab = tabName;
+    console.log(`Switching to ${tabName} tab`);
+    
+    // Hide all tab panels
+    const tabPanels = document.querySelectorAll('.tab-panel');
+    tabPanels.forEach(panel => panel.style.display = 'none');
+    
+    // Show the selected tab panel
+    const selectedPanel = document.getElementById(`${tabName}-panel`);
+    if (selectedPanel) {
+      selectedPanel.style.display = 'block';
+    }
+    
+    // Update page title
+    if (tabName === 'overview') {
+      document.title = 'Overview - Question Bank - GRASP';
+      this.renderOverview();
+    } else if (tabName === 'review') {
+      document.title = 'Review - Question Bank - GRASP';
+      this.renderReview();
+    } else if (tabName === 'approved-history') {
+      document.title = 'Approved History - Question Bank - GRASP';
+      this.renderApprovedHistory();
+    }
   }
 
-  handleSelectAll() {
-    const questionCheckboxes = document.querySelectorAll(
-      '.question-item input[type="checkbox"]'
-    );
-    const allChecked = Array.from(questionCheckboxes).every((cb) => cb.checked);
+  renderAll() {
+    if (this.state.currentTab === 'overview') {
+      this.renderOverview();
+    } else if (this.state.currentTab === 'review') {
+      this.renderReview();
+    } else if (this.state.currentTab === 'approved-history') {
+      this.renderApprovedHistory();
+    }
+  }
 
-    questionCheckboxes.forEach((checkbox) => {
-      checkbox.checked = !allChecked;
+  renderOverview() {
+    this.renderQuestionsTable();
+    this.updateActionButtons();
+  }
 
-      // Trigger change event to update UI
-      const event = new Event("change");
-      checkbox.dispatchEvent(event);
+  renderReview() {
+    this.renderQuizzes();
+    this.updateCrossQuizActions();
+  }
+
+  renderApprovedHistory() {
+    // Placeholder for approved history content
+    const approvedHistoryPanel = document.getElementById('approved-history-panel');
+    if (approvedHistoryPanel) {
+      approvedHistoryPanel.innerHTML = `
+        <div class="empty-state">
+          <h3>Approved History</h3>
+          <p>This tab will show the approved history content.</p>
+        </div>
+      `;
+    }
+  }
+
+  renderQuizzes() {
+    const quizzesContainer = document.getElementById('quizzes-container');
+    if (!quizzesContainer) return;
+
+    const filteredQuizzes = this.getFilteredQuizzes();
+    
+    if (filteredQuizzes.length === 0) {
+      quizzesContainer.innerHTML = `
+        <div class="empty-state">
+          <h3>No quizzes to review</h3>
+          <p>There are no quizzes matching the current filters.</p>
+        </div>
+      `;
+      return;
+    }
+
+    quizzesContainer.innerHTML = filteredQuizzes.map(quiz => `
+      <div class="quiz-card" data-quiz-id="${quiz.id}" onclick="window.questionBankPage.navigateToQuestionReview(${quiz.id})">
+        <div class="quiz-header">
+          <div class="quiz-header-left">
+            <div class="quiz-chips">
+              ${quiz.week ? `<span class="quiz-chip">${quiz.week}</span>` : ''}
+              ${quiz.lecture ? `<span class="quiz-chip">${quiz.lecture}</span>` : ''}
+            </div>
+            <h3 class="quiz-title">${quiz.title}</h3>
+            <div class="quiz-releases">
+              ${quiz.releases.map(release => `
+                <div class="release-item">${release.label} - ${release.date}</div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="quiz-header-right">
+            <div class="quiz-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: ${this.getQuizProgress(quiz)}%"></div>
+              </div>
+              <div class="progress-text">${this.getQuizProgress(quiz)}% Reviewed</div>
+            </div>
+            <button class="open-details-btn ${quiz.isOpen ? 'expanded' : ''}" 
+                    onclick="event.stopPropagation(); window.questionBankPage.toggleQuizDetails(${quiz.id})">
+              Open details <i class="fas fa-chevron-down"></i>
+            </button>
+          </div>
+        </div>
+        <div class="quiz-details ${quiz.isOpen ? 'expanded' : ''}">
+          <div class="details-header">
+            <h4 class="details-title">Questions</h4>
+            <div class="details-select-all">
+              <input type="checkbox" class="quiz-select-all" 
+                     onclick="event.stopPropagation()"
+                     onchange="window.questionBankPage.handleQuizSelectAll(${quiz.id}, this.checked)">
+              <label>Select all</label>
+            </div>
+          </div>
+          <div class="quiz-questions">
+            ${this.renderQuizQuestions(quiz)}
+          </div>
+          <div class="quiz-bulk-actions ${quiz.selection.size > 0 ? 'visible' : ''}">
+            <button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'approve')">
+              Approve selected
+            </button>
+            <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'flag')">
+              Flag selected
+            </button>
+            <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'delete')">
+              Delete selected
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // Re-attach event listeners
+    this.attachQuizEventListeners();
+  }
+
+  renderQuizQuestions(quiz) {
+    const filteredQuestions = this.getFilteredQuizQuestions(quiz);
+    
+    if (filteredQuestions.length === 0) {
+      return `
+        <div class="empty-state">
+          <p>No questions match the current filters.</p>
+        </div>
+      `;
+    }
+
+    return `
+      <table class="questions-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;"></th>
+            <th>Question Title</th>
+            <th>Associated GLO</th>
+            <th>Bloom</th>
+            <th>Status</th>
+            <th>Last Edited</th>
+            <th style="width: 200px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredQuestions.map(question => `
+            <tr data-question-id="${question.id}">
+              <td>
+                <input type="checkbox" class="question-checkbox" 
+                       ${quiz.selection.has(question.id) ? 'checked' : ''}
+                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${quiz.id}, ${question.id})">
+              </td>
+              <td class="question-title">${question.title}</td>
+              <td><span class="question-lo">${question.loCode}</span></td>
+              <td class="question-bloom">${question.bloom}</td>
+              <td>
+                <span class="question-status status-${question.status.toLowerCase()}">${question.status}</span>
+              </td>
+              <td>${question.lastEdited}</td>
+              <td class="question-actions">
+                <button class="question-action-btn approve" 
+                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'approve')">
+                  ${question.approved ? 'Unapprove' : 'Approve'}
+                </button>
+                <button class="question-action-btn flag" 
+                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'flag')">
+                  ${question.flagged ? 'Unflag' : 'Flag'}
+                </button>
+                <button class="question-action-btn edit" 
+                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'edit')">
+                  Edit
+                </button>
+                <button class="question-action-btn delete" 
+                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'delete')">
+                  Delete
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  getFilteredQuizzes() {
+    let filtered = [...this.quizzes];
+
+    // Apply course filter
+    if (this.state.course !== 'all') {
+      // For now, all quizzes are available for all courses
+      // In a real implementation, you'd filter by course
+    }
+
+    return filtered;
+  }
+
+  getFilteredQuizQuestions(quiz) {
+    let filtered = [...quiz.questions];
+
+    // Apply objective filter
+    if (this.state.filters.objective !== 'all') {
+      filtered = filtered.filter(q => q.loCode.includes(this.state.filters.objective));
+    }
+
+    // Apply bloom filter
+    if (this.state.filters.bloom !== 'all') {
+      filtered = filtered.filter(q => q.bloom === this.state.filters.bloom);
+    }
+
+    // Apply status filter
+    if (this.state.filters.status !== 'all') {
+      filtered = filtered.filter(q => q.status === this.state.filters.status);
+    }
+
+    // Apply search filter
+    if (this.state.filters.q) {
+      const searchTerm = this.state.filters.q.toLowerCase();
+      filtered = filtered.filter(q => 
+        q.title.toLowerCase().includes(searchTerm) ||
+        q.loCode.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return filtered;
+  }
+
+  getQuizProgress(quiz) {
+    const approvedCount = quiz.questions.filter(q => q.approved).length;
+    const totalCount = quiz.questions.length;
+    return totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0;
+  }
+
+  toggleQuizDetails(quizId) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    if (quiz) {
+      quiz.isOpen = !quiz.isOpen;
+      this.renderQuizzes();
+    }
+  }
+
+  toggleQuizQuestionSelection(quizId, questionId) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    if (quiz) {
+      if (quiz.selection.has(questionId)) {
+        quiz.selection.delete(questionId);
+      } else {
+        quiz.selection.add(questionId);
+      }
+      this.updateCrossQuizActions();
+      this.renderQuizzes();
+    }
+  }
+
+  handleQuizSelectAll(quizId, checked) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    if (quiz) {
+      const filteredQuestions = this.getFilteredQuizQuestions(quiz);
+      if (checked) {
+        filteredQuestions.forEach(q => quiz.selection.add(q.id));
+      } else {
+        filteredQuestions.forEach(q => quiz.selection.delete(q.id));
+      }
+      this.updateCrossQuizActions();
+      this.renderQuizzes();
+    }
+  }
+
+  handleQuestionAction(quizId, questionId, action) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    const question = quiz.questions.find(q => q.id === questionId);
+    
+    if (!quiz || !question) return;
+
+    switch (action) {
+      case 'approve':
+        question.approved = !question.approved;
+        question.status = question.approved ? 'Approved' : 'Draft';
+        this.showNotification(`Question ${question.approved ? 'approved' : 'unapproved'}`, 'success');
+        break;
+      case 'flag':
+        question.flagged = !question.flagged;
+        question.status = question.flagged ? 'Flagged' : 'Draft';
+        this.showNotification(`Question ${question.flagged ? 'flagged' : 'unflagged'}`, 'success');
+        break;
+      case 'edit':
+        this.handleQuestionEdit(quizId, questionId);
+        return;
+      case 'delete':
+        this.showModal(
+          'Delete Question',
+          `Are you sure you want to delete "${question.title}"?`,
+          () => {
+            const questionIndex = quiz.questions.findIndex(q => q.id === questionId);
+            if (questionIndex > -1) {
+              quiz.questions.splice(questionIndex, 1);
+              quiz.selection.delete(questionId);
+              this.showNotification('Question deleted', 'success');
+              this.renderQuizzes();
+              this.updateCrossQuizActions();
+            }
+          }
+        );
+        return;
+    }
+
+    // Update progress and re-render
+    this.renderQuizzes();
+    this.updateCrossQuizActions();
+  }
+
+  handleQuestionEdit(quizId, questionId) {
+    // Implementation for inline editing
+    console.log(`Editing question ${questionId} in quiz ${quizId}`);
+  }
+
+  handleQuizBulkAction(quizId, action) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    if (!quiz || quiz.selection.size === 0) return;
+
+    const selectedQuestions = quiz.questions.filter(q => quiz.selection.has(q.id));
+    
+    switch (action) {
+      case 'approve':
+        selectedQuestions.forEach(q => {
+          q.approved = true;
+          q.status = 'Approved';
+        });
+        this.showNotification(`Approved ${selectedQuestions.length} questions`, 'success');
+        break;
+      case 'flag':
+        selectedQuestions.forEach(q => {
+          q.flagged = true;
+          q.status = 'Flagged';
+        });
+        this.showNotification(`Flagged ${selectedQuestions.length} questions`, 'success');
+        break;
+      case 'delete':
+        this.showModal(
+          'Delete Questions',
+          `Are you sure you want to delete ${selectedQuestions.length} question(s)?`,
+          () => {
+            selectedQuestions.forEach(q => {
+              const questionIndex = quiz.questions.findIndex(question => question.id === q.id);
+              if (questionIndex > -1) {
+                quiz.questions.splice(questionIndex, 1);
+              }
+            });
+            quiz.selection.clear();
+            this.showNotification(`Deleted ${selectedQuestions.length} questions`, 'success');
+            this.renderQuizzes();
+            this.updateCrossQuizActions();
+          }
+        );
+        return;
+    }
+
+    // Update progress and re-render
+    this.renderQuizzes();
+    this.updateCrossQuizActions();
+  }
+
+  updateCrossQuizActions() {
+    const crossQuizActions = document.getElementById('cross-quiz-actions');
+    const crossQuizCount = document.getElementById('cross-quiz-count');
+    
+    if (!crossQuizActions || !crossQuizCount) return;
+
+    // Count total selected questions across all quizzes
+    let totalSelected = 0;
+    this.quizzes.forEach(quiz => {
+      totalSelected += quiz.selection.size;
     });
 
-    console.log(
-      allChecked ? "Deselected all questions" : "Selected all questions"
-    );
+    if (totalSelected > 0) {
+      crossQuizActions.style.display = 'flex';
+      crossQuizCount.textContent = `${totalSelected} question${totalSelected !== 1 ? 's' : ''} selected`;
+      
+      // Enable/disable cross-quiz action buttons
+      const crossButtons = ['cross-approve-btn', 'cross-flag-btn', 'cross-delete-btn'];
+      crossButtons.forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+          btn.disabled = false;
+        }
+      });
+    } else {
+      crossQuizActions.style.display = 'none';
+      
+      // Disable cross-quiz action buttons
+      const crossButtons = ['cross-approve-btn', 'cross-flag-btn', 'cross-delete-btn'];
+      crossButtons.forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+          btn.disabled = true;
+        }
+      });
+    }
+  }
+
+  // Selection handlers
+  handleSelectAll(checked) {
+    const visibleQuestions = this.getFilteredQuestions();
+    
+    if (checked) {
+      visibleQuestions.forEach(q => this.state.selectedQuestionIds.add(q.id));
+    } else {
+      visibleQuestions.forEach(q => this.state.selectedQuestionIds.delete(q.id));
+    }
+    
+    this.renderQuestionsTable();
+    this.updateActionButtons();
+  }
+
+  clearOutOfViewSelections() {
+    const visibleQuestions = this.getFilteredQuestions();
+    const visibleIds = new Set(visibleQuestions.map(q => q.id));
+    
+    // Remove selections for questions no longer visible
+    for (const selectedId of this.state.selectedQuestionIds) {
+      if (!visibleIds.has(selectedId)) {
+        this.state.selectedQuestionIds.delete(selectedId);
+      }
+    }
+  }
+
+  // Action handlers for Overview tab
+  handleEdit() {
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
+
+    // For now, just show a toast
+    this.showToast(`Edit mode enabled for ${selectedQuestions.length} question(s)`);
   }
 
   handleFlag() {
-    const selectedQuestions = this.getSelectedQuestions();
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
 
-    if (selectedQuestions.length === 0) {
-      this.showNotification("Please select questions to flag", "warning");
-      return;
-    }
+    selectedQuestions.forEach(id => {
+      const question = this.questions.find(q => q.id === id);
+      if (question) {
+        question.flagged = !question.flagged;
+      }
+    });
 
-    console.log(`Flagging ${selectedQuestions.length} questions`);
-    this.showNotification(
-      `${selectedQuestions.length} questions flagged`,
-      "success"
-    );
-
-    // You could:
-    // - Mark questions as flagged in the database
-    // - Update the UI to show flagged status
-    // - Send notifications
-    // - etc.
+    this.renderQuestionsTable();
+    this.showToast(`Flagged ${selectedQuestions.length} question(s)`);
   }
 
   handleDelete() {
-    const selectedQuestions = this.getSelectedQuestions();
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
 
-    if (selectedQuestions.length === 0) {
-      this.showNotification("Please select questions to delete", "warning");
+    if (confirm(`Are you sure you want to delete ${selectedQuestions.length} question(s)?`)) {
+      selectedQuestions.forEach(id => {
+        const index = this.questions.findIndex(q => q.id === id);
+        if (index > -1) {
+          this.questions.splice(index, 1);
+        }
+      });
+
+      this.state.selectedQuestionIds.clear();
+      this.renderQuestionsTable();
+      this.updateActionButtons();
+      this.showToast(`Deleted ${selectedQuestions.length} question(s)`);
+    }
+  }
+
+  handlePublish() {
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
+
+    if (confirm(`Are you sure you want to publish ${selectedQuestions.length} question(s)?`)) {
+      selectedQuestions.forEach(id => {
+        const question = this.questions.find(q => q.id === id);
+        if (question) {
+          question.published = true;
+        }
+      });
+
+      this.renderQuestionsTable();
+      this.showToast(`Published ${selectedQuestions.length} question(s)`);
+    }
+  }
+
+  handleCrossQuizAction(action) {
+    let totalSelected = 0;
+    let affectedQuizzes = [];
+
+    // Collect all selected questions across quizzes
+    this.quizzes.forEach(quiz => {
+      if (quiz.selection.size > 0) {
+        totalSelected += quiz.selection.size;
+        affectedQuizzes.push(quiz);
+        }
+      });
+
+      if (totalSelected === 0) return;
+
+    switch (action) {
+      case 'approve':
+        affectedQuizzes.forEach(quiz => {
+          quiz.questions.forEach(q => {
+            if (quiz.selection.has(q.id)) {
+              q.approved = true;
+              q.status = 'Approved';
+            }
+          });
+        });
+        this.showNotification(`Approved ${totalSelected} questions across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}`, 'success');
+        break;
+      case 'flag':
+        affectedQuizzes.forEach(quiz => {
+          quiz.questions.forEach(q => {
+            if (quiz.selection.has(q.id)) {
+              q.flagged = true;
+              q.status = 'Flagged';
+            }
+          });
+        });
+        this.showNotification(`Flagged ${totalSelected} questions across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}`, 'success');
+        break;
+      case 'delete':
+        this.showModal(
+          'Delete Questions',
+          `Are you sure you want to delete ${totalSelected} question(s) across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}?`,
+          () => {
+            affectedQuizzes.forEach(quiz => {
+              const questionsToRemove = quiz.questions.filter(q => quiz.selection.has(q.id));
+              questionsToRemove.forEach(q => {
+                const questionIndex = quiz.questions.findIndex(question => question.id === q.id);
+                if (questionIndex > -1) {
+                  quiz.questions.splice(questionIndex, 1);
+                }
+              });
+              quiz.selection.clear();
+            });
+            this.showNotification(`Deleted ${totalSelected} questions`, 'success');
+            this.renderQuizzes();
+            this.updateCrossQuizActions();
+          }
+        );
+        return;
+    }
+
+    // Clear all selections and re-render
+    this.quizzes.forEach(quiz => quiz.selection.clear());
+    this.renderQuizzes();
+    this.updateCrossQuizActions();
+  }
+
+  applyFilters() {
+    // Clear selections for rows no longer visible
+    this.clearOutOfViewSelections();
+    
+    if (this.state.currentTab === 'review') {
+      this.renderQuizzes();
+    } else if (this.state.currentTab === 'overview') {
+      this.renderQuestionsTable();
+    }
+  }
+
+  // Sorting functionality
+  handleSort(sortKey) {
+    if (this.state.sort.key === sortKey) {
+      // Toggle direction if same column
+      this.state.sort.dir = this.state.sort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      // New column, set to ascending
+      this.state.sort.key = sortKey;
+      this.state.sort.dir = 'asc';
+    }
+    
+    this.updateSortIcons();
+    this.renderQuestionsTable();
+  }
+
+  updateSortIcons() {
+    const headers = document.querySelectorAll('.sortable-header');
+    headers.forEach(header => {
+      const sortKey = header.getAttribute('data-sort');
+      const icon = header.querySelector('[data-sort-icon]');
+      
+      if (this.state.sort.key === sortKey) {
+        icon.className = this.state.sort.dir === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+        header.setAttribute('aria-sort', this.state.sort.dir === 'asc' ? 'ascending' : 'descending');
+      } else {
+        icon.className = 'fas fa-sort';
+        header.setAttribute('aria-sort', 'none');
+      }
+    });
+  }
+
+  // Overview tab methods (existing functionality)
+  renderQuestions() {
+    const questionList = document.getElementById('question-list');
+    if (!questionList) return;
+
+    const filteredQuestions = this.getFilteredQuestions();
+    const sortedQuestions = this.sortQuestions(filteredQuestions);
+
+    if (sortedQuestions.length === 0) {
+      questionList.innerHTML = `
+        <div class="empty-state">
+          <p>No questions match the current filters.</p>
+          <a href="#" class="clear-filters-link" onclick="window.questionBankPage.clearFilters()">Clear filters</a>
+        </div>
+      `;
       return;
     }
 
-    const confirmDelete = confirm(
-      `Are you sure you want to delete ${selectedQuestions.length} questions? This action cannot be undone.`
-    );
+    questionList.innerHTML = sortedQuestions.map(question => `
+      <div class="question-item" data-question-id="${question.id}">
+        <input type="checkbox" id="q${question.id}" 
+               ${this.state.selectedQuestionIds.has(question.id) ? 'checked' : ''}
+               onchange="window.questionBankPage.toggleQuestionSelection(${question.id})">
+        <label for="q${question.id}">${question.title}</label>
+      </div>
+    `).join('');
 
-    if (confirmDelete) {
-      console.log(`Deleting ${selectedQuestions.length} questions`);
-      this.showNotification(
-        `${selectedQuestions.length} questions deleted`,
-        "success"
-      );
+    this.attachQuestionEventListeners();
+  }
 
-      // You could:
-      // - Remove questions from the database
-      // - Update the UI
-      // - Log the action
-      // - etc.
+  renderQuestionsTable() {
+    const tableBody = document.getElementById('questions-table-body');
+    if (!tableBody) return;
+
+    const filteredQuestions = this.getFilteredQuestions();
+    const sortedQuestions = this.sortQuestions(filteredQuestions);
+
+    if (sortedQuestions.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="empty-state">
+            <p>No questions match the current filters.</p>
+            <a href="#" class="clear-filters-link" onclick="window.questionBankPage.clearFilters()">Clear filters</a>
+          </td>
+        </tr>
+      `;
+      return;
     }
+
+    tableBody.innerHTML = sortedQuestions.map(question => `
+      <tr data-question-id="${question.id}" class="${this.state.selectedQuestionIds.has(question.id) ? 'selected' : ''}">
+        <td class="select-cell">
+          <input type="checkbox" 
+                 ${this.state.selectedQuestionIds.has(question.id) ? 'checked' : ''}
+                 onchange="window.questionBankPage.toggleQuestionSelection(${question.id})">
+        </td>
+        <td class="question-title-cell">
+          <div class="question-title-text ${question.flagged ? 'flagged' : ''}">${question.title}</div>
+        </td>
+        <td class="glo-cell">
+          <div class="glo-text">${question.glo}</div>
+        </td>
+        <td class="bloom-cell">
+          <span class="bloom-chip">${question.bloom}</span>
+        </td>
+        <td class="views-cell">${question.views}</td>
+      </tr>
+    `).join('');
+
+    this.updateSelectAllCheckbox();
+    this.updateActionButtons();
+  }
+
+  renderObjectives() {
+    const tableBody = document.getElementById('objectives-table-body');
+    if (!tableBody) return;
+
+    const selectedQuestions = this.getSelectedQuestions();
+    let objectivesData = [];
+
+    if (selectedQuestions.length === 0) {
+      objectivesData = this.getGlobalObjectivesSummary();
+    } else if (selectedQuestions.length === 1) {
+      const question = selectedQuestions[0];
+      objectivesData = [{
+        objective: question.objective,
+        bloomLevel: question.bloomLevel
+      }];
+    } else {
+      objectivesData = this.getMergedObjectivesView(selectedQuestions);
+    }
+
+    tableBody.innerHTML = objectivesData.map(item => `
+      <div class="table-row">
+        <div class="cell">${item.objective}</div>
+        <div class="cell ${item.bloomLevel === 'Mixed' ? 'mixed' : ''}">${item.bloomLevel}</div>
+      </div>
+    `).join('');
+  }
+
+  renderHistory() {
+    const historyList = document.getElementById('history-list');
+    if (!historyList) return;
+
+    historyList.innerHTML = this.history.map(item => `
+      <div class="history-item ${this.state.selectedHistoryId === item.id ? 'selected' : ''}" 
+           data-history-id="${item.id}">
+        <input type="radio" name="radio" id="h${item.id}" 
+               ${this.state.selectedHistoryId === item.id ? 'checked' : ''}
+               onchange="window.questionBankPage.selectHistoryItem(${item.id})">
+        <label for="h${item.id}">
+          <span class="history-text">${item.count} questions approved</span>
+          <span class="radio-time">${item.label}</span>
+        </label>
+      </div>
+    `).join('');
+  }
+
+  getFilteredQuestions() {
+    let filtered = [...this.questions];
+
+    if (this.state.filters.objective !== 'all') {
+      filtered = filtered.filter(q => q.glo.includes(this.state.filters.objective));
+    }
+
+    if (this.state.filters.bloom !== 'all') {
+      filtered = filtered.filter(q => q.bloom === this.state.filters.bloom);
+    }
+
+    if (this.state.filters.status !== 'all') {
+      filtered = filtered.filter(q => q.status === this.state.filters.status);
+    }
+
+    if (this.state.filters.q) {
+      const searchTerm = this.state.filters.q.toLowerCase();
+      filtered = filtered.filter(q => 
+        q.title.toLowerCase().includes(searchTerm) ||
+        q.glo.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return filtered;
+  }
+
+  sortQuestions(questions) {
+    return [...questions].sort((a, b) => {
+      const { key, dir } = this.state.sort;
+      
+      let aValue, bValue;
+      
+      switch (key) {
+        case 'title':
+          aValue = a.title.toLowerCase();
+          bValue = b.title.toLowerCase();
+          break;
+        case 'glo':
+          aValue = a.glo.toLowerCase();
+          bValue = b.glo.toLowerCase();
+          break;
+        case 'bloom':
+          aValue = a.bloom.toLowerCase();
+          bValue = b.bloom.toLowerCase();
+          break;
+        case 'views':
+          aValue = a.views;
+          bValue = b.views;
+          break;
+        default:
+          aValue = a.title.toLowerCase();
+          bValue = b.title.toLowerCase();
+      }
+      
+      if (dir === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+  }
+
+  getGlobalObjectivesSummary() {
+    const summary = {};
+    this.questions.forEach(q => {
+      if (!summary[q.objective]) {
+        summary[q.objective] = new Set();
+      }
+      summary[q.objective].add(q.bloomLevel);
+    });
+
+    return Object.entries(summary).map(([objective, bloomLevels]) => ({
+      objective,
+      bloomLevel: bloomLevels.size > 1 ? 'Mixed' : Array.from(bloomLevels)[0]
+    }));
+  }
+
+  getMergedObjectivesView(questions) {
+    const summary = {};
+    questions.forEach(q => {
+      if (!summary[q.objective]) {
+        summary[q.objective] = new Set();
+      }
+      summary[q.objective].add(q.bloomLevel);
+    });
+
+    return Object.entries(summary).map(([objective, bloomLevels]) => ({
+      objective,
+      bloomLevel: bloomLevels.size > 1 ? 'Mixed' : Array.from(bloomLevels)[0]
+    }));
+  }
+
+  toggleQuestionSelection(questionId) {
+    if (this.state.selectedQuestionIds.has(questionId)) {
+      this.state.selectedQuestionIds.delete(questionId);
+    } else {
+      this.state.selectedQuestionIds.add(questionId);
+    }
+
+    this.updateSelectAllCheckbox();
+    this.updateActionButtons();
+  }
+
+  selectHistoryItem(historyId) {
+    if (this.state.selectedHistoryId === historyId) {
+      this.state.selectedHistoryId = null;
+    } else {
+      this.state.selectedHistoryId = historyId;
+    }
+
+    this.renderHistory();
+    this.renderQuestions();
+  }
+
+  updateSelectAllCheckbox() {
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (!selectAllCheckbox) return;
+
+    const visibleQuestions = this.getFilteredQuestions();
+    const selectedCount = visibleQuestions.filter(q => this.state.selectedQuestionIds.has(q.id)).length;
+    
+    if (selectedCount === 0) {
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = false;
+      selectAllCheckbox.setAttribute('aria-checked', 'false');
+    } else if (selectedCount === visibleQuestions.length) {
+      selectAllCheckbox.checked = true;
+      selectAllCheckbox.indeterminate = false;
+      selectAllCheckbox.setAttribute('aria-checked', 'true');
+    } else {
+      selectAllCheckbox.checked = false;
+      selectAllCheckbox.indeterminate = true;
+      selectAllCheckbox.setAttribute('aria-checked', 'mixed');
+    }
+  }
+
+  updateActionButtons() {
+    const hasSelection = this.state.selectedQuestionIds.size > 0;
+    const actionButtons = ['edit-btn', 'flag-btn', 'delete-btn', 'publish-btn'];
+
+    actionButtons.forEach(btnId => {
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        btn.disabled = !hasSelection;
+      }
+    });
+
+    // Update selection count
+    const selectionCount = document.getElementById('selection-count');
+    if (selectionCount) {
+      const count = this.state.selectedQuestionIds.size;
+      selectionCount.textContent = `${count} question${count !== 1 ? 's' : ''} selected`;
+    }
+  }
+
+  clearFilters() {
+    this.state.filters = { objective: 'all', bloom: 'all', status: 'all', q: '' };
+    this.state.selectedHistoryId = null;
+    
+    const objectiveFilter = document.getElementById('objective-filter');
+    const bloomFilter = document.getElementById('bloom-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const searchInput = document.getElementById('search-input');
+
+    if (objectiveFilter) objectiveFilter.value = 'all';
+    if (bloomFilter) bloomFilter.value = 'all';
+    if (statusFilter) statusFilter.value = 'all';
+    if (searchInput) searchInput.value = '';
+
+    this.renderAll();
   }
 
   getSelectedQuestions() {
-    const selectedCheckboxes = document.querySelectorAll(
-      '.question-item input[type="checkbox"]:checked'
-    );
-    return Array.from(selectedCheckboxes).map((cb) => {
-      const questionItem = cb.closest(".question-item");
-      return {
-        id: cb.id,
-        text: questionItem.querySelector("label").textContent,
+    return this.questions.filter(q => this.state.selectedQuestionIds.has(q.id));
+  }
+
+  attachQuestionEventListeners() {
+    // Event listeners are already attached via inline onchange in the HTML
+  }
+
+  attachQuizEventListeners() {
+    // Event listeners are already attached via inline onclick in the HTML
+  }
+
+  // Modal Management
+  showModal(title, message, onConfirm) {
+    const modal = document.getElementById('confirm-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMessage = document.getElementById('modal-message');
+
+    if (modal && modalTitle && modalMessage) {
+      modalTitle.textContent = title;
+      modalMessage.textContent = message;
+      modal.style.display = 'flex';
+      
+      this.pendingModalAction = onConfirm;
+    }
+  }
+
+  hideModal() {
+    const modal = document.getElementById('confirm-modal');
+    if (modal) {
+      modal.style.display = 'none';
+      this.pendingModalAction = null;
+    }
+  }
+
+  confirmModalAction() {
+    if (this.pendingModalAction) {
+      this.pendingModalAction();
+    }
+    this.hideModal();
+  }
+
+  // Navigation to Question Review
+  navigateToQuestionReview(quizId) {
+    const quiz = this.quizzes.find(q => q.id === quizId);
+    if (quiz && quiz.questions.length > 0) {
+      const firstQuestionId = quiz.questions[0].id;
+      window.location.href = `question-review.html?quizId=${quizId}&questionId=${firstQuestionId}`;
+    }
+  }
+
+  // Notification System
+  showNotification(message, type = 'info') {
+    console.log(`${type.toUpperCase()}: ${message}`);
+    
+    // Create a simple notification
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 500;
+      z-index: 1000;
+      background-color: ${
+        type === 'success'
+          ? '#27ae60'
+          : type === 'warning'
+          ? '#f39c12'
+          : '#3498db'
       };
-    });
-  }
+      animation: slideIn 0.3s ease-out;
+    `;
 
-  updateBulkActions() {
-    const selectedQuestions = this.getSelectedQuestions();
-    const hasSelection = selectedQuestions.length > 0;
+    document.body.appendChild(notification);
 
-    // Update action buttons based on selection
-    const actionButtons = document.querySelectorAll(".action-btn");
-    actionButtons.forEach((btn) => {
-      if (btn.title === "Flag" || btn.title === "Delete") {
-        btn.style.opacity = hasSelection ? "1" : "0.5";
-        btn.style.cursor = hasSelection ? "pointer" : "not-allowed";
-      }
-    });
-
-    // Update select all button text
-    const selectAllBtn = document.querySelector(
-      '.action-btn[title="Select All"]'
-    );
-    if (selectAllBtn) {
-      const allCheckboxes = document.querySelectorAll(
-        '.question-item input[type="checkbox"]'
-      );
-      const allChecked = Array.from(allCheckboxes).every((cb) => cb.checked);
-
-      if (allChecked) {
-        selectAllBtn.innerHTML = '<i class="fas fa-minus-square"></i>';
-        selectAllBtn.title = "Deselect All";
-      } else {
-        selectAllBtn.innerHTML = '<i class="fas fa-check"></i>';
-        selectAllBtn.title = "Select All";
-      }
-    }
-  }
-
-  showNotification(message, type = "info") {
-    // Use the notification system from navigation.js if available
-    if (
-      window.GRASPNavigation &&
-      window.GRASPNavigation.prototype.showNotification
-    ) {
-      window.GRASPNavigation.prototype.showNotification.call(
-        this,
-        message,
-        type
-      );
-    } else {
-      // Fallback notification
-      console.log(`${type.toUpperCase()}: ${message}`);
-
-      // Create a simple notification
-      const notification = document.createElement("div");
-      notification.className = `notification notification-${type}`;
-      notification.textContent = message;
-      notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 20px;
-        border-radius: 8px;
-        color: white;
-        font-weight: 500;
-        z-index: 1000;
-        background-color: ${
-          type === "success"
-            ? "#27ae60"
-            : type === "warning"
-            ? "#f39c12"
-            : "#3498db"
-        };
-        animation: slideIn 0.3s ease-out;
-      `;
-
-      document.body.appendChild(notification);
-
-      setTimeout(() => {
-        notification.remove();
-      }, 3000);
-    }
+    setTimeout(() => {
+      notification.remove();
+    }, 3000);
   }
 }
 
 // Initialize the page when DOM is loaded
-document.addEventListener("DOMContentLoaded", () => {
-  new QuestionBankPage();
+document.addEventListener('DOMContentLoaded', () => {
+  window.questionBankPage = new QuestionBankPage();
 });
 
 // Export for use in other files
