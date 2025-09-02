@@ -8,6 +8,7 @@ const DEV_MODE = true;
 const state = {
     step: 1,
     course: 'CHEM 121',
+    selectedCourse: 'CHEM 121', // Global course selection for Steps 2-5
     files: [],
     urls: [],
     summary: '',
@@ -15,7 +16,25 @@ const state = {
     questions: [],
     exportFormat: 'qti',
     objectiveGroups: [], // New for Step 3
-    objectiveToDelete: null // New for Step 3
+    objectiveToDelete: null, // New for Step 3
+    selectedGroupIds: new Set(), // New for Step 3 multi-select
+    // Step 4: Question Generation
+    questionGroups: [], // Meta LO groups with granular LOs and questions
+    selectedQuestions: new Set(), // Set of selected question IDs
+    filters: {
+        glo: 'all',
+        bloom: 'all',
+        status: 'all',
+        q: '' // search query
+    },
+    // Step 5: Select Output Format
+    formats: {
+        canvasSingle: { selected: false, releaseNow: true, date: '', time: '' },
+        canvasSpaced: { selected: false, releaseNow: true, date: '', time: '' },
+        h5p: { selected: false }
+    },
+    namingConvention: 'module_week_quiz',
+    saveAsDefault: false
 };
 
 // Step titles for dynamic updates
@@ -81,6 +100,561 @@ const PREDEFINED_OBJECTIVES = [
     }
 ];
 
+// Seed catalog for auto-populating granular objectives
+const SEED_BY_META = {
+    'enthalpy-spontaneity': {
+        metaTitle: 'Understand spontaneity limits of enthalpy and internal energy',
+        seeds: [
+            {
+                title: 'Distinguish between endergonic and exergonic reactions',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Understand', 'Analyze']
+            },
+            {
+                title: 'Calculate Gibbs free energy changes',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Predict reaction spontaneity from thermodynamic data',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'entropy-state-function': {
+        metaTitle: 'Understand entropy as a state function',
+        seeds: [
+            {
+                title: 'Define entropy and its relationship to disorder',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate entropy changes for phase transitions',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Apply the second law of thermodynamics',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Understand', 'Apply']
+            }
+        ]
+    },
+    'reversible-processes': {
+        metaTitle: 'Compare reversible and irreversible processes',
+        seeds: [
+            {
+                title: 'Define reversible and irreversible processes',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate work for reversible vs irreversible expansion',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Analyze efficiency differences between process types',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'gibbs-energy': {
+        metaTitle: 'Understand Gibbs free energy relationships',
+        seeds: [
+            {
+                title: 'Define Gibbs free energy and its components',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate ΔG from ΔH and ΔS values',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Predict reaction direction from Gibbs free energy',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'second-law': {
+        metaTitle: 'Apply the second law of thermodynamics',
+        seeds: [
+            {
+                title: 'State the second law of thermodynamics',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate entropy changes for various processes',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Apply']
+            },
+            {
+                title: 'Analyze entropy changes in chemical reactions',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'expansion-work': {
+        metaTitle: 'Analyze expansion work processes',
+        seeds: [
+            {
+                title: 'Define expansion work and its types',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate work for isothermal expansion',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Compare work done in different expansion processes',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'isothermal-processes': {
+        metaTitle: 'Quantify isothermal processes',
+        seeds: [
+            {
+                title: 'Define isothermal processes and their characteristics',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Calculate work and heat for isothermal expansion',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Analyze']
+            },
+            {
+                title: 'Analyze energy changes in isothermal processes',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Analyze', 'Evaluate']
+            }
+        ]
+    },
+    'misconceptions': {
+        metaTitle: 'Identify and address misconceptions',
+        seeds: [
+            {
+                title: 'Identify common misconceptions about thermodynamics',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Remember', 'Understand']
+            },
+            {
+                title: 'Explain why misconceptions are incorrect',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Understand', 'Apply']
+            },
+            {
+                title: 'Design activities to address misconceptions',
+                min: 2,
+                count: 2,
+                mode: 'manual',
+                bloomChips: ['Apply', 'Create']
+            }
+        ]
+    }
+};
+
+// Alternate seed catalog for refreshing granular objectives
+const ALT_SEEDS_BY_META = {
+    'enthalpy-spontaneity': [
+        {
+            title: 'Analyze enthalpy changes in chemical reactions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Compare endothermic and exothermic processes',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Understand', 'Apply']
+        },
+        {
+            title: 'Calculate heat of reaction from bond energies',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Predict spontaneity using Hess\'s Law',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        }
+    ],
+    'entropy-state-function': [
+        {
+            title: 'Calculate entropy changes for phase transitions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Analyze entropy changes in chemical reactions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Compare entropy of different states of matter',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Understand', 'Apply']
+        }
+    ],
+    'reversible-processes': [
+        {
+            title: 'Calculate work for reversible expansion',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Compare efficiency of different process types',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Analyze energy changes in reversible cycles',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        }
+    ],
+    'gibbs-energy': [
+        {
+            title: 'Calculate ΔG from ΔH and ΔS values',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Predict reaction direction from Gibbs free energy',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Analyze temperature dependence of spontaneity',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        }
+    ],
+    'second-law': [
+        {
+            title: 'Calculate entropy changes for various processes',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Analyze entropy changes in chemical reactions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Apply the second law to evaluate spontaneity',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        }
+    ],
+    'expansion-work': [
+        {
+            title: 'Calculate work for isothermal expansion',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Compare work done in different expansion processes',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Analyze energy changes in expansion work',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        }
+    ],
+    'isothermal-processes': [
+        {
+            title: 'Calculate work and heat for isothermal expansion',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Analyze']
+        },
+        {
+            title: 'Analyze energy changes in isothermal processes',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        },
+        {
+            title: 'Compare isothermal vs adiabatic processes',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Analyze', 'Evaluate']
+        }
+    ],
+    'misconceptions': [
+        {
+            title: 'Explain why misconceptions are incorrect',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Understand', 'Apply']
+        },
+        {
+            title: 'Design activities to address misconceptions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Apply', 'Create']
+        },
+        {
+            title: 'Evaluate common student misconceptions',
+            min: 2,
+            count: 2,
+            mode: 'manual',
+            bloomChips: ['Evaluate', 'Create']
+        }
+    ]
+};
+
+// Generic templates for custom meta objectives
+const GENERIC_GRANULAR_TEMPLATES = [
+    {
+        title: 'Identify key concepts and principles',
+        min: 2,
+        count: 2,
+        mode: 'manual',
+        bloomChips: ['Remember', 'Understand']
+    },
+    {
+        title: 'Explain the underlying mechanisms and relationships',
+        min: 2,
+        count: 2,
+        mode: 'manual',
+        bloomChips: ['Understand', 'Analyze']
+    },
+    {
+        title: 'Apply knowledge to solve problems and make predictions',
+        min: 2,
+        count: 2,
+        mode: 'manual',
+        bloomChips: ['Apply', 'Evaluate']
+    }
+];
+
+// Sample question data for Step 4
+const SAMPLE_QUESTION_DATA = [
+    {
+        id: 'meta-1',
+        title: 'Meta LO 1',
+        isOpen: true,
+        stats: {
+            configured: 8,
+            min: 5,
+            bloomSummary: 'R/U/A'
+        },
+        los: [
+            {
+                id: 'lo-1-1',
+                code: 'LO 1.1',
+                generated: 3,
+                min: 2,
+                badges: ['1 top-up'],
+                questions: [
+                    {
+                        id: 'q-1-1-1',
+                        title: 'Endergonic vs Exergonic',
+                        stem: 'Select the best answer:',
+                        options: {
+                            A: { id: 'A', text: 'Endergonic reactions release energy', isCorrect: false, feedback: 'Incorrect — Endergonic reactions absorb energy from the surroundings.' },
+                            B: { id: 'B', text: 'Exergonic reactions absorb energy', isCorrect: false, feedback: 'Incorrect — Exergonic reactions release energy to the surroundings.' },
+                            C: { id: 'C', text: 'Endergonic reactions absorb energy', isCorrect: true, feedback: 'Correct — Endergonic reactions require energy input.' },
+                            D: { id: 'D', text: 'Both reactions release energy', isCorrect: false, feedback: 'Incorrect — Only exergonic reactions release energy.' }
+                        },
+                        status: 'Draft',
+                        bloom: 'Analyze',
+                        metaCode: 'Meta LO 1',
+                        loCode: 'LO 1.1',
+                        lastEdited: '2024-01-15 14:30',
+                        by: 'System'
+                    },
+                    {
+                        id: 'q-1-1-2',
+                        title: 'Thermodynamic Spontaneity',
+                        stem: 'Select the best answer:',
+                        options: {
+                            A: { id: 'A', text: 'Spontaneous reactions always occur quickly', isCorrect: false, feedback: 'Incorrect — Spontaneity is about thermodynamic favorability, not speed.' },
+                            B: { id: 'B', text: 'Non-spontaneous reactions cannot occur', isCorrect: false, feedback: 'Incorrect — Non-spontaneous reactions can occur with energy input.' },
+                            C: { id: 'C', text: 'Spontaneous reactions are thermodynamically favorable', isCorrect: true, feedback: 'Correct — Spontaneous reactions are thermodynamically favorable.' },
+                            D: { id: 'D', text: 'All reactions are spontaneous', isCorrect: false, feedback: 'Incorrect — Not all reactions are spontaneous.' }
+                        },
+                        status: 'Draft',
+                        bloom: 'Understand',
+                        metaCode: 'Meta LO 1',
+                        loCode: 'LO 1.1',
+                        lastEdited: '2024-01-15 14:25',
+                        by: 'System'
+                    }
+                ]
+            },
+            {
+                id: 'lo-1-2',
+                code: 'LO 1.2',
+                generated: 2,
+                min: 2,
+                badges: [],
+                questions: [
+                    {
+                        id: 'q-1-2-1',
+                        title: 'Energy Conservation in Reactions',
+                        stem: 'Select the best answer:',
+                        options: {
+                            A: { id: 'A', text: 'Energy is always conserved', isCorrect: true, feedback: 'Correct — Energy conservation is a fundamental law of physics.' },
+                            B: { id: 'B', text: 'Energy can be created in reactions', isCorrect: false, feedback: 'Incorrect — Energy cannot be created or destroyed.' },
+                            C: { id: 'C', text: 'Energy is lost in exergonic reactions', isCorrect: false, feedback: 'Incorrect — Energy is transferred, not lost.' },
+                            D: { id: 'D', text: 'Energy disappears in endergonic reactions', isCorrect: false, feedback: 'Incorrect — Energy is transferred, not destroyed.' }
+                        },
+                        status: 'Approved',
+                        bloom: 'Remember',
+                        metaCode: 'Meta LO 1',
+                        loCode: 'LO 1.2',
+                        lastEdited: '2024-01-15 13:45',
+                        by: 'System'
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        id: 'meta-2',
+        title: 'Meta LO 2',
+        isOpen: false,
+        stats: {
+            configured: 6,
+            min: 5,
+            bloomSummary: 'U/A/E'
+        },
+        los: [
+            {
+                id: 'lo-2-1',
+                code: 'LO 2.1',
+                generated: 4,
+                min: 3,
+                badges: [],
+                questions: [
+                    {
+                        id: 'q-2-1-1',
+                        title: 'Entropy and Disorder',
+                        stem: 'Select the best answer:',
+                        options: {
+                            A: { id: 'A', text: 'Entropy always increases', isCorrect: false, feedback: 'Incorrect — Entropy increases in isolated systems, not always.' },
+                            B: { id: 'B', text: 'Entropy measures disorder', isCorrect: true, feedback: 'Correct — Entropy is a measure of disorder or randomness.' },
+                            C: { id: 'C', text: 'Entropy decreases with temperature', isCorrect: false, feedback: 'Incorrect — Entropy generally increases with temperature.' },
+                            D: { id: 'D', text: 'Entropy is independent of state', isCorrect: false, feedback: 'Incorrect — Entropy varies with physical state.' }
+                        },
+                        status: 'Draft',
+                        bloom: 'Analyze',
+                        metaCode: 'Meta LO 2',
+                        loCode: 'LO 2.1',
+                        lastEdited: '2024-01-15 14:20',
+                        by: 'System'
+                    }
+                ]
+            }
+        ]
+    }
+];
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     initializeNavigation();
@@ -103,6 +677,11 @@ function initializeEventListeners() {
     if (courseSelect) {
         courseSelect.addEventListener('change', (e) => {
             state.course = e.target.value;
+            state.selectedCourse = e.target.value;
+            // Update course display if not on Step 1
+            if (state.step > 1) {
+                updateCourseDisplay();
+            }
         });
     }
 
@@ -130,9 +709,11 @@ function initializeEventListeners() {
 }
 
 function goToNextStep() {
+    console.log('goToNextStep called, current step:', state.step);
+    
     if (state.step === 5) {
-        // Final step - handle export
-        exportQuestions();
+        // Final step - show export summary modal
+        showExportSummaryModal();
         return;
     }
     
@@ -140,13 +721,18 @@ function goToNextStep() {
         const currentStep = state.step;
         const nextStep = currentStep + 1;
         
+        console.log('Moving from step', currentStep, 'to step', nextStep);
+        
         // Validate current step before proceeding
         if (validateCurrentStep()) {
+            console.log('Step validation passed, updating step to:', nextStep);
             state.step = nextStep;
             updateUI();
             
             // Handle step-specific actions
             handleStepTransition(currentStep, nextStep);
+        } else {
+            console.log('Step validation failed for step:', currentStep);
         }
     }
 }
@@ -159,32 +745,51 @@ function goToPreviousStep() {
 }
 
 function validateCurrentStep() {
+    console.log('validateCurrentStep called for step:', state.step);
+    
     switch (state.step) {
         case 1:
-            return state.files.length > 0 || state.urls.length > 0;
+            const step1Valid = state.files.length > 0 || state.urls.length > 0;
+            console.log('Step 1 validation:', step1Valid, 'files:', state.files.length, 'urls:', state.urls.length);
+            return step1Valid;
         case 2:
-            return state.summary.trim().length > 0;
+            const step2Valid = state.summary.trim().length > 0;
+            console.log('Step 2 validation:', step2Valid, 'summary length:', state.summary.trim().length);
+            return step2Valid;
         case 3:
-            return state.objectiveGroups.length > 0 && state.objectiveGroups.every(group => 
+            const step3Valid = state.objectiveGroups.length > 0 && state.objectiveGroups.every(group => 
                 group.items.length > 0 && group.items.every(item => item.count >= item.minQuestions)
             );
+            console.log('Step 3 validation:', step3Valid, 'objectiveGroups:', state.objectiveGroups.length);
+            return step3Valid;
         case 4:
-            return state.questions.length > 0;
+            // Step 4 validation - check if we have question groups with questions
+            const step4Valid = state.questionGroups.length > 0 && state.questionGroups.some(group => 
+                group.los.some(lo => lo.questions.length > 0)
+            );
+            console.log('Step 4 validation:', step4Valid, 'questionGroups:', state.questionGroups.length);
+            return step4Valid;
         default:
+            console.log('Default case, returning true');
             return true;
     }
 }
 
 function handleStepTransition(fromStep, toStep) {
+    console.log('handleStepTransition called from step', fromStep, 'to step', toStep);
+    
     switch (toStep) {
         case 2:
+            console.log('Initializing Step 2');
             generateSummary();
             break;
         case 4:
-            generateQuestions();
+            console.log('Initializing Step 4');
+            initializeStep4();
             break;
         case 5:
-            // Final step - no special handling needed
+            console.log('Initializing Step 5');
+            initializeStep5();
             break;
     }
 }
@@ -192,8 +797,10 @@ function handleStepTransition(fromStep, toStep) {
 // ===== UI UPDATE FUNCTIONS =====
 
 function updateUI() {
+    console.log('updateUI called for step:', state.step);
     updateStepper();
     updatePageTitle();
+    updateCourseDisplay();
     updateStepContent();
     updateNavigationButtons();
 }
@@ -214,9 +821,35 @@ function updateStepper() {
 }
 
 function updatePageTitle() {
+    // Update the main page title based on the current step
     const title = document.querySelector('.content-header__title');
     if (title) {
         title.textContent = stepTitles[state.step];
+    }
+    
+    // Also update the export title in Step 5 if it exists
+    const exportTitle = document.querySelector('.export-title');
+    if (exportTitle && state.step === 5) {
+        exportTitle.textContent = stepTitles[state.step];
+    }
+}
+
+function updateCourseDisplay() {
+    const courseDropdown = document.getElementById('course-dropdown');
+    const courseDisplay = document.getElementById('course-display');
+    const courseValue = document.getElementById('course-value');
+    
+    if (courseDropdown && courseDisplay && courseValue) {
+        if (state.step === 1) {
+            // Step 1: Show dropdown, hide display
+            courseDropdown.style.display = 'flex';
+            courseDisplay.style.display = 'none';
+        } else {
+            // Steps 2-5: Hide dropdown, show display
+            courseDropdown.style.display = 'none';
+            courseDisplay.style.display = 'flex';
+            courseValue.textContent = state.selectedCourse;
+        }
     }
 }
 
@@ -237,13 +870,22 @@ function updateNavigationButtons() {
     
     if (backBtn) {
         backBtn.disabled = state.step === 1;
+        if (state.step === 5) {
+            backBtn.textContent = 'Back';
+            backBtn.className = 'btn btn--secondary';
+        } else {
+            backBtn.textContent = 'Back';
+            backBtn.className = 'btn btn--secondary';
+        }
     }
     
     if (continueBtn) {
         if (state.step === 5) {
-            continueBtn.textContent = 'Export';
+            continueBtn.textContent = 'Export Now';
+            continueBtn.className = 'btn btn--primary';
         } else {
             continueBtn.textContent = 'Continue';
+            continueBtn.className = 'btn btn--primary';
         }
     }
 }
@@ -618,6 +1260,7 @@ function initializeObjectives() {
                 metaId: 'enthalpy-spontaneity',
                 title: "Learning Objective 1: Understand spontaneity limits of enthalpy and internal energy",
                 isOpen: true,
+                selected: false,
                 items: [
                     {
                         id: 1.1,
@@ -625,7 +1268,9 @@ function initializeObjectives() {
                         bloom: ["Remember", "Understand"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 1.2,
@@ -633,7 +1278,9 @@ function initializeObjectives() {
                         bloom: ["Remember"],
                         minQuestions: 2,
                         count: 3,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     }
                 ]
             },
@@ -642,6 +1289,7 @@ function initializeObjectives() {
                 metaId: 'entropy-state-function',
                 title: "Learning Objective 2: Understand entropy as a state function",
                 isOpen: false,
+                selected: false,
                 items: [
                     {
                         id: 2.1,
@@ -649,7 +1297,9 @@ function initializeObjectives() {
                         bloom: ["Understand", "Apply"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 2.2,
@@ -657,7 +1307,9 @@ function initializeObjectives() {
                         bloom: ["Apply"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 2.3,
@@ -665,7 +1317,9 @@ function initializeObjectives() {
                         bloom: ["Analyze"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 2.4,
@@ -673,7 +1327,9 @@ function initializeObjectives() {
                         bloom: ["Apply", "Analyze"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     }
                 ]
             },
@@ -682,6 +1338,7 @@ function initializeObjectives() {
                 metaId: 'reversible-processes',
                 title: "Learning Objective 3: Compare reversible and irreversible processes",
                 isOpen: false,
+                selected: false,
                 items: [
                     {
                         id: 3.1,
@@ -689,7 +1346,9 @@ function initializeObjectives() {
                         bloom: ["Understand", "Apply"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 3.2,
@@ -697,7 +1356,9 @@ function initializeObjectives() {
                         bloom: ["Evaluate"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     },
                     {
                         id: 3.3,
@@ -705,7 +1366,9 @@ function initializeObjectives() {
                         bloom: ["Analyze"],
                         minQuestions: 2,
                         count: 2,
-                        mode: 'manual'
+                        mode: 'manual',
+                        level: 1,
+                        selected: false
                     }
                 ]
             }
@@ -723,6 +1386,9 @@ function initializeObjectives() {
     
     // Initialize modals
     initializeModals();
+    
+    // Initialize multi-select toolbar
+    updateMultiSelectToolbar();
     
     // Render initial state
     renderObjectiveGroups();
@@ -827,6 +1493,67 @@ function showCustomObjectiveModal() {
     }
 }
 
+function handleCustomObjectiveSubmission() {
+    const modal = document.getElementById('custom-objective-modal');
+    const textInput = document.getElementById('custom-objective-text');
+    
+    if (textInput && textInput.value.trim()) {
+        const customTitle = textInput.value.trim();
+        
+        // Create new custom meta learning objective group
+        const newGroupId = Date.now() + Math.random();
+        const newGroupNumber = state.objectiveGroups.length + 1;
+        
+        const newGroup = {
+            id: newGroupId,
+            metaId: `custom-${newGroupId}`,
+            title: `Learning Objective ${newGroupNumber}: ${customTitle}`,
+            isOpen: true,
+            selected: false, // Add selected property for multi-select
+            items: [
+                {
+                    id: parseFloat(`${newGroupNumber}.1`),
+                    text: "Draft granular objective (edit me).",
+                    bloom: [],
+                    minQuestions: 2,
+                    count: 2,
+                    mode: 'manual',
+                    level: 1,
+                    selected: false
+                }
+            ]
+        };
+        
+        // Append to the end of the groups array
+        state.objectiveGroups.push(newGroup);
+        
+        // Renumber all groups
+        renumberObjectiveGroups();
+        
+        // Clear the input and hide modal
+        textInput.value = '';
+        hideModal(modal);
+        
+        renderObjectiveGroups();
+        
+        // Scroll into view and focus the first granular row
+        setTimeout(() => {
+            const groupElement = document.querySelector(`[data-group-id="${newGroupId}"]`);
+            if (groupElement) {
+                groupElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Focus the first granular objective row
+                const firstItemElement = groupElement.querySelector('.objective-item__text');
+                if (firstItemElement) {
+                    firstItemElement.focus();
+                }
+            }
+        }, 100);
+        
+        announceToScreenReader(`Added custom objective: ${customTitle} with 1 granular objective.`);
+    }
+}
+
 function hideModal(modal) {
     if (modal) {
         modal.style.display = 'none';
@@ -856,16 +1583,29 @@ function handleMetaObjectiveSelection(metaId, metaTitle) {
         
         announceToScreenReader(`Meta objective revealed: ${metaTitle}`);
     } else {
-        // Create new meta learning objective group
+        // Create new meta learning objective group with auto-seeded granular objectives
         const newGroupId = Date.now() + Math.random();
         const newGroupNumber = state.objectiveGroups.length + 1;
+        
+        // Get seeds from the catalog
+        const seeds = SEED_BY_META[metaId]?.seeds || [];
         
         const newGroup = {
             id: newGroupId,
             metaId: metaId,
             title: `Learning Objective ${newGroupNumber}: ${metaTitle}`,
             isOpen: true,
-            items: []
+            selected: false, // Add selected property for multi-select
+            items: seeds.map((seed, index) => ({
+                id: parseFloat(`${newGroupNumber}.${index + 1}`),
+                text: seed.title,
+                bloom: seed.bloomChips,
+                minQuestions: seed.min,
+                count: seed.count,
+                mode: seed.mode,
+                level: 1,
+                selected: false
+            }))
         };
         
         // Append to the end of the groups array
@@ -876,19 +1616,23 @@ function handleMetaObjectiveSelection(metaId, metaTitle) {
         
         renderObjectiveGroups();
         
-        // Scroll into view and focus
+        // Scroll into view and focus the first granular row
         setTimeout(() => {
             const groupElement = document.querySelector(`[data-group-id="${newGroupId}"]`);
             if (groupElement) {
                 groupElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                const headerElement = groupElement.querySelector('.objective-group__title');
-                if (headerElement) {
-                    headerElement.focus();
+                
+                // Focus the first granular objective row
+                const firstItemElement = groupElement.querySelector('.objective-item__text');
+                if (firstItemElement) {
+                    firstItemElement.focus();
                 }
             }
         }, 100);
         
-        announceToScreenReader(`Meta objective added: ${metaTitle}`);
+        // Announce with count of granular objectives
+        const granularCount = seeds.length;
+        announceToScreenReader(`Added ${metaTitle} with ${granularCount} granular objectives.`);
     }
 }
 
@@ -902,16 +1646,427 @@ function renumberObjectiveGroups() {
     });
 }
 
+// ===== MULTI-SELECT FUNCTIONS =====
+
+function toggleGroupSelection(groupId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (group) {
+        group.selected = !group.selected;
+        
+        if (group.selected) {
+            state.selectedGroupIds.add(groupId);
+        } else {
+            state.selectedGroupIds.delete(groupId);
+        }
+        
+        updateMultiSelectToolbar();
+        renderObjectiveGroups();
+    }
+}
+
+function selectAllGroups() {
+    const selectAllCheckbox = document.getElementById('select-all-groups');
+    const isChecked = selectAllCheckbox.checked;
+    
+    state.objectiveGroups.forEach(group => {
+        group.selected = isChecked;
+        if (isChecked) {
+            state.selectedGroupIds.add(group.id);
+        } else {
+            state.selectedGroupIds.delete(group.id);
+        }
+    });
+    
+    updateMultiSelectToolbar();
+    renderObjectiveGroups();
+}
+
+function deleteSelectedGroups() {
+    const selectedCount = state.selectedGroupIds.size;
+    
+    if (selectedCount === 0) return;
+    
+    // Show confirmation dialog
+    const confirmMessage = `Delete ${selectedCount} meta learning objective${selectedCount > 1 ? 's' : ''} and all granular objectives?`;
+    
+    if (confirm(confirmMessage)) {
+        // Remove selected groups
+        state.objectiveGroups = state.objectiveGroups.filter(group => !group.selected);
+        
+        // Clear selection
+        state.selectedGroupIds.clear();
+        
+        // Renumber remaining groups
+        renumberObjectiveGroups();
+        
+        // Update UI
+        updateMultiSelectToolbar();
+        renderObjectiveGroups();
+        
+        // Announce deletion
+        announceToScreenReader(`Deleted ${selectedCount} meta objectives.`);
+    }
+}
+
+function updateMultiSelectToolbar() {
+    const toolbar = document.getElementById('multi-select-toolbar');
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    const selectAllCheckbox = document.getElementById('select-all-groups');
+    
+    if (toolbar && deleteSelectedBtn && selectAllCheckbox) {
+        const hasSelectedGroups = state.selectedGroupIds.size > 0;
+        const allGroupsSelected = state.objectiveGroups.length > 0 && 
+                                 state.objectiveGroups.every(group => group.selected);
+        
+        // Show/hide toolbar based on whether there are groups
+        toolbar.style.display = state.objectiveGroups.length > 0 ? 'block' : 'none';
+        
+        // Update delete button state
+        deleteSelectedBtn.disabled = !hasSelectedGroups;
+        
+        // Update select all checkbox
+        selectAllCheckbox.checked = allGroupsSelected;
+        selectAllCheckbox.indeterminate = hasSelectedGroups && !allGroupsSelected;
+    }
+}
+
+// ===== GRANULAR SELECTION FUNCTIONS =====
+
+function toggleGranularSelection(groupId, itemId) {
+    console.log('toggleGranularSelection called with groupId:', groupId, 'itemId:', itemId);
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) {
+        console.error('Group not found:', groupId);
+        return;
+    }
+    
+    const item = group.items.find(i => i.id === itemId);
+    if (!item) {
+        console.error('Item not found:', itemId);
+        return;
+    }
+    
+    console.log('Found item:', item, 'current selected state:', item.selected);
+    item.selected = !item.selected;
+    console.log('Item selected state changed to:', item.selected);
+    
+    // Update granular toolbar visibility and counts
+    updateGranularToolbar(groupId);
+    
+    // Update only the checkbox state without re-rendering everything
+    const checkbox = document.querySelector(`[data-item-id="${item.id}"] .objective-item__checkbox`);
+    if (checkbox) {
+        checkbox.checked = item.selected;
+    }
+}
+
+function selectAllGranularInGroup(groupId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) return;
+    
+    const selectAllCheckbox = document.querySelector(`#granular-toolbar-${groupId} .select-all-granular-checkbox`);
+    const isChecked = selectAllCheckbox ? selectAllCheckbox.checked : false;
+    
+    group.items.forEach(item => {
+        item.selected = isChecked;
+    });
+    
+    updateGranularToolbar(groupId);
+    
+    // Update only the checkbox states without re-rendering everything
+    group.items.forEach(item => {
+        const checkbox = document.querySelector(`[data-item-id="${item.id}"] .objective-item__checkbox`);
+        if (checkbox) {
+            checkbox.checked = item.selected;
+        }
+    });
+}
+
+function updateGranularToolbar(groupId) {
+    console.log('updateGranularToolbar called with groupId:', groupId);
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) {
+        console.error('Group not found for toolbar update:', groupId);
+        return;
+    }
+    
+    const toolbar = document.getElementById(`granular-toolbar-${groupId}`);
+    const selectionCount = document.querySelector(`#granular-toolbar-${groupId} .granular-selection-count`);
+    const selectAllCheckbox = document.querySelector(`#granular-toolbar-${groupId} .select-all-granular-checkbox`);
+    
+    console.log('Toolbar elements found:', {
+        toolbar: !!toolbar,
+        selectionCount: !!selectionCount,
+        selectAllCheckbox: !!selectAllCheckbox
+    });
+    
+    if (toolbar && selectionCount && selectAllCheckbox) {
+        const selectedCount = group.items.filter(item => item.selected).length;
+        const allSelected = group.items.length > 0 && group.items.every(item => item.selected);
+        
+        console.log('Selection state:', { selectedCount, allSelected });
+        
+        // Show/hide toolbar based on selection
+        toolbar.style.display = selectedCount > 0 ? 'flex' : 'none';
+        
+        // Update selection count
+        selectionCount.textContent = `${selectedCount} selected`;
+        
+        // Update select all checkbox
+        selectAllCheckbox.checked = allSelected;
+        selectAllCheckbox.indeterminate = selectedCount > 0 && !allSelected;
+        
+        console.log('Toolbar updated, display set to:', toolbar.style.display);
+    } else {
+        console.error('Some toolbar elements not found for group:', groupId);
+        console.log('Available elements:', {
+            toolbar: toolbar,
+            selectionCount: selectionCount,
+            selectAllCheckbox: selectAllCheckbox
+        });
+    }
+}
+
+function deleteSelectedGranular(groupId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) return;
+    
+    const selectedItems = group.items.filter(item => item.selected);
+    if (selectedItems.length === 0) return;
+    
+    // Remove selected items
+    group.items = group.items.filter(item => !item.selected);
+    
+    // Update UI
+    updateGranularToolbar(groupId);
+    
+    // Re-render is needed here since we're actually removing items
+    renderObjectiveGroups();
+    
+    // Announce deletion
+    announceToScreenReader(`Deleted ${selectedItems.length} granular objectives.`);
+}
+
+// ===== GRANULARIZATION FUNCTIONS =====
+
+function showGranularizationModal(groupId) {
+    console.log('showGranularizationModal called with groupId:', groupId);
+    console.log('GroupId type:', typeof groupId, 'Value:', groupId);
+    console.log('Current state.objectiveGroups:', state.objectiveGroups.map(g => ({ id: g.id, type: typeof g.id })));
+    
+    const modal = document.getElementById('granularization-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.dataset.groupId = groupId;
+        console.log('Modal displayed, groupId set to:', modal.dataset.groupId);
+        console.log('Modal dataset groupId type:', typeof modal.dataset.groupId);
+        
+        // Focus the modal
+        const closeBtn = document.getElementById('granularization-modal-close');
+        if (closeBtn) closeBtn.focus();
+    } else {
+        console.error('Granularization modal not found!');
+    }
+}
+
+function hideGranularizationModal() {
+    const modal = document.getElementById('granularization-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        delete modal.dataset.groupId;
+    }
+}
+
+function confirmGranularization() {
+    console.log('confirmGranularization called');
+    const modal = document.getElementById('granularization-modal');
+    const groupId = parseInt(modal.dataset.groupId);
+    
+    console.log('Modal groupId (raw):', modal.dataset.groupId);
+    console.log('Modal groupId (parsed):', groupId);
+    
+    if (!groupId || isNaN(groupId)) {
+        console.error('Invalid groupId found in modal:', modal.dataset.groupId);
+        return;
+    }
+    
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) {
+        console.error('Group not found for ID:', groupId);
+        console.log('Available group IDs:', state.objectiveGroups.map(g => g.id));
+        return;
+    }
+    
+    console.log('Found group:', group);
+    console.log('Group ID type:', typeof group.id, 'Value:', group.id);
+    
+    const selectedItems = group.items.filter(item => item.selected);
+    console.log('Selected items:', selectedItems);
+    
+    if (selectedItems.length === 0) {
+        console.error('No items selected');
+        return;
+    }
+    
+    // Get modal options
+    const countPerItem = parseInt(document.querySelector('input[name="granular-count"]:checked').value);
+    const useDefaults = document.getElementById('use-defaults').checked;
+    
+    console.log('Modal options - countPerItem:', countPerItem, 'useDefaults:', useDefaults);
+    
+    // Create sub-LOs for each selected item
+    let totalSubLOs = 0;
+    
+    selectedItems.forEach(item => {
+        const subLOs = createSubLOs(item, countPerItem, useDefaults);
+        console.log('Created subLOs for item', item.id, ':', subLOs);
+        group.items.push(...subLOs);
+        totalSubLOs += subLOs.length;
+    });
+    
+    console.log('Total subLOs created:', totalSubLOs);
+    console.log('Group items after creation:', group.items);
+    
+    // Clear selection
+    group.items.forEach(item => item.selected = false);
+    
+    // Hide modal
+    hideGranularizationModal();
+    
+    // Update UI
+    updateGranularToolbar(groupId);
+    renderObjectiveGroups();
+    
+    // Focus first new sub-LO
+    setTimeout(() => {
+        const firstSubLO = document.querySelector(`[data-parent-id="${selectedItems[0].id}"]`);
+        if (firstSubLO) {
+            firstSubLO.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const textElement = firstSubLO.querySelector('.objective-item__text');
+            if (textElement) textElement.focus();
+        }
+    }, 100);
+    
+    // Announce creation
+    announceToScreenReader(`Created ${countPerItem} sub-objectives per selected objective.`);
+}
+
+function createSubLOs(parentItem, count, useDefaults) {
+    const templates = [
+        {
+            title: `Identify key terms and quantities related to ${parentItem.text}.`,
+            bloomChips: useDefaults ? ['Remember', 'Understand'] : []
+        },
+        {
+            title: `Explain the underlying principle(s) behind ${parentItem.text} with one example.`,
+            bloomChips: useDefaults ? ['Understand', 'Analyze'] : []
+        },
+        {
+            title: `Apply ${parentItem.text} to solve a simple problem or predict an outcome.`,
+            bloomChips: useDefaults ? ['Apply'] : []
+        }
+    ];
+    
+    const subLOs = [];
+    for (let i = 0; i < count; i++) {
+        const template = templates[i];
+        const subLO = {
+            id: parseFloat(`${parentItem.id}.${i + 1}`),
+            text: template.title,
+            bloom: template.bloomChips,
+            minQuestions: 1,
+            count: 1,
+            mode: 'manual',
+            level: 2, // Sub-LO level
+            parentId: parentItem.id,
+            selected: false
+        };
+        subLOs.push(subLO);
+    }
+    
+    return subLOs;
+}
+
+// ===== REFRESH META OBJECTIVES FUNCTIONS =====
+
+function refreshMetaObjectives(groupId) {
+    const group = state.objectiveGroups.find(g => g.id === groupId);
+    if (!group) return;
+    
+    const metaTitle = group.title.replace(/^Learning Objective \d+: /, '');
+    const confirmMessage = `Replace granular objectives in '${metaTitle}' with a fresh template set? This removes current granular items.`;
+    
+    if (confirm(confirmMessage)) {
+        // Get alternate seeds or generic templates
+        let newSeeds;
+        if (group.metaId && group.metaId.startsWith('custom-')) {
+            // Custom meta - use generic templates
+            newSeeds = GENERIC_GRANULAR_TEMPLATES;
+        } else if (ALT_SEEDS_BY_META[group.metaId]) {
+            // Known meta - use alternate seeds
+            newSeeds = ALT_SEEDS_BY_META[group.metaId];
+        } else {
+            // Fallback to generic templates
+            newSeeds = GENERIC_GRANULAR_TEMPLATES;
+        }
+        
+        // Replace items with new seeds
+        group.items = newSeeds.map((seed, index) => ({
+            id: parseFloat(`${group.id}.${index + 1}`),
+            text: seed.title,
+            bloom: seed.bloomChips,
+            minQuestions: seed.min,
+            count: seed.count,
+            mode: seed.mode,
+            level: 1, // Granular level
+            selected: false
+        }));
+        
+        // Expand the group
+        group.isOpen = true;
+        
+        // Update UI
+        renderObjectiveGroups();
+        
+        // Scroll into view
+        setTimeout(() => {
+            const groupElement = document.querySelector(`[data-group-id="${groupId}"]`);
+            if (groupElement) {
+                groupElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
+        
+        // Announce refresh
+        announceToScreenReader(`Refreshed granular objectives for ${metaTitle}.`);
+    }
+}
+
 function renderObjectiveGroups() {
     const groupsContainer = document.getElementById('objectives-groups');
+    const emptyState = document.getElementById('objectives-empty-state');
     if (!groupsContainer) return;
     
     groupsContainer.innerHTML = '';
     
-    state.objectiveGroups.forEach(group => {
-        const groupElement = createObjectiveGroup(group);
-        groupsContainer.appendChild(groupElement);
-    });
+    if (state.objectiveGroups.length === 0) {
+        // Show empty state
+        if (emptyState) {
+            emptyState.style.display = 'block';
+        }
+    } else {
+        // Hide empty state and render groups
+        if (emptyState) {
+            emptyState.style.display = 'none';
+        }
+        
+        state.objectiveGroups.forEach(group => {
+            const groupElement = createObjectiveGroup(group);
+            groupsContainer.appendChild(groupElement);
+        });
+    }
+    
+    // Update multi-select toolbar after rendering
+    updateMultiSelectToolbar();
 }
 
 function createObjectiveGroup(group) {
@@ -929,16 +2084,58 @@ function createObjectiveGroup(group) {
         </div>
     ` : '';
     
+    console.log('Creating objective group HTML for group:', group.id, 'with', group.items.length, 'items');
     groupElement.innerHTML = `
-        <div class="objective-group__header" onclick="toggleObjectiveGroup(${group.id})">
-            <h3 class="objective-group__title" tabindex="0">${group.title}</h3>
-            <div class="objective-group__toggle">
-                <span>${itemCount} objectives</span>
-                <i class="fas fa-chevron-down"></i>
+        <div class="objective-group__header">
+            <div class="objective-group__header-left">
+                <input type="checkbox" 
+                    class="objective-group__checkbox" 
+                    ${group.selected ? 'checked' : ''} 
+                    onchange="toggleGroupSelection(${group.id})"
+                    aria-label="Select ${group.title}"
+                >
+                <h3 class="objective-group__title" 
+                    tabindex="0" 
+                    onclick="toggleObjectiveGroup(${group.id})"
+                >${group.title}</h3>
+            </div>
+            <div class="objective-group__header-right">
+                <button type="button" 
+                    class="objective-group__refresh-btn" 
+                    onclick="refreshMetaObjectives(${group.id})"
+                    title="Refresh granular objectives"
+                    aria-label="Refresh granular objectives for ${group.title}"
+                >
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id})">
+                    <span>${itemCount} objectives</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
             </div>
         </div>
         <div class="objective-group__content">
             ${emptyState}
+            ${group.items.length > 0 ? `
+                <div class="granular-toolbar" id="granular-toolbar-${group.id}" style="display: none;">
+                    <div class="granular-toolbar__left">
+                        <label class="select-all-granular-label">
+                            <input type="checkbox" class="select-all-granular-checkbox" onchange="selectAllGranularInGroup(${group.id})">
+                            <span>Select all in this meta</span>
+                        </label>
+                        <span class="granular-selection-count">0 selected</span>
+                    </div>
+                    <div class="granular-toolbar__right">
+                        <button type="button" class="btn btn--primary btn--small" onclick="showGranularizationModal(${group.id})">
+                            Make more granular
+                        </button>
+                        <button type="button" class="btn btn--danger btn--small" onclick="deleteSelectedGranular(${group.id})">
+                            Delete selected
+                        </button>
+                    </div>
+                </div>
+                <!-- DEBUG: Toolbar created for group ${group.id} with ${group.items.length} items -->
+            ` : ''}
             ${group.items.map(item => createObjectiveItem(item, group.id)).join('')}
             ${itemCount > 0 ? `
                 <div class="objective-group__footer ${isWarning ? 'objective-group__footer--warning' : ''}">
@@ -980,14 +2177,29 @@ function createObjectiveItem(item, groupId) {
         </div>
     `;
     
+    const isSubLO = item.level === 2;
+    const indentClass = isSubLO ? 'objective-item--sub' : '';
+    const subLOBadge = isSubLO ? '<span class="sub-lo-badge">Sub-LO</span>' : '';
+    
     return `
-        <div class="objective-item" data-item-id="${item.id}">
+        <div class="objective-item ${indentClass}" data-item-id="${item.id}" data-parent-id="${item.parentId || ''}">
+            <div class="objective-item__checkbox-wrapper">
+                <input type="checkbox" 
+                    class="objective-item__checkbox" 
+                    ${item.selected ? 'checked' : ''} 
+                    onchange="toggleGranularSelection(${groupId}, ${item.id})"
+                    aria-label="Select ${item.text}"
+                >
+            </div>
             <button type="button" class="objective-item__delete" onclick="confirmDeleteObjective(${groupId}, ${item.id})" aria-label="Remove objective">
                 ×
             </button>
             <div class="objective-item__content">
-                <div class="objective-item__text" contenteditable="true" onblur="updateObjectiveText(${groupId}, ${item.id}, this.textContent)">
-                    ${item.text}
+                <div class="objective-item__header">
+                    <div class="objective-item__text" contenteditable="true" onblur="updateObjectiveText(${groupId}, ${item.id}, this.textContent)">
+                        ${item.text}
+                    </div>
+                    ${subLOBadge}
                 </div>
                 <div class="objective-item__controls">
                     <div class="objective-item__bloom-chips">
@@ -1145,17 +2357,7 @@ function initializeModals() {
         customModalCancel.addEventListener('click', () => hideModal(customModal));
     }
     if (customModalSave) {
-        customModalSave.addEventListener('click', () => {
-            const textInput = document.getElementById('custom-objective-text');
-            if (textInput && textInput.value.trim()) {
-                // Create custom meta objective
-                const customMetaId = 'custom-' + Date.now();
-                const customMetaTitle = textInput.value.trim();
-                handleMetaObjectiveSelection(customMetaId, customMetaTitle);
-                textInput.value = '';
-                hideModal(customModal);
-            }
-        });
+        customModalSave.addEventListener('click', handleCustomObjectiveSubmission);
     }
     
     // Delete confirmation modal
@@ -1179,6 +2381,37 @@ function initializeModals() {
             }
         });
     }
+    
+    // Granularization modal
+    const granularizationModal = document.getElementById('granularization-modal');
+    const granularizationModalClose = document.getElementById('granularization-modal-close');
+    const granularizationModalCancel = document.getElementById('granularization-modal-cancel');
+    const granularizationModalConfirm = document.getElementById('granularization-modal-confirm');
+    
+    if (granularizationModalClose) {
+        granularizationModalClose.addEventListener('click', hideGranularizationModal);
+    }
+    if (granularizationModalCancel) {
+        granularizationModalCancel.addEventListener('click', hideGranularizationModal);
+    }
+    if (granularizationModalConfirm) {
+        granularizationModalConfirm.addEventListener('click', confirmGranularization);
+    }
+    
+    // Handle checkbox interactions
+    document.addEventListener('change', (e) => {
+        if (e.target.id === 'use-defaults') {
+            const chooseLater = document.getElementById('choose-later');
+            if (chooseLater) {
+                chooseLater.checked = !e.target.checked;
+            }
+        } else if (e.target.id === 'choose-later') {
+            const useDefaults = document.getElementById('use-defaults');
+            if (useDefaults) {
+                useDefaults.checked = !e.target.checked;
+            }
+        }
+    });
 }
 
 // ===== STEP 5: EXPORT FORMAT FUNCTIONS =====
@@ -1312,6 +2545,922 @@ function createQuestionItem(question) {
     `;
     
     return item;
+}
+
+// ===== STEP 5: SELECT OUTPUT FORMAT FUNCTIONS =====
+
+function initializeStep5() {
+    console.log('initializeStep5 called');
+    
+    // Set up event listeners for Step 5
+    setupStep5EventListeners();
+    
+    // Initialize the view
+    updateStep5UI();
+    
+    // Ensure initial state is reflected in UI
+    updateSelectedFormatsCount();
+    updateExportButtonState();
+    updateNamingConventionPanel();
+    
+    console.log('Step 5 initialized with state:', {
+        formats: state.formats,
+        namingConvention: state.namingConvention,
+        saveAsDefault: state.saveAsDefault
+    });
+}
+
+function setupStep5EventListeners() {
+    // Format selection checkboxes
+    const canvasSingleCheckbox = document.getElementById('canvas-single-checkbox');
+    const canvasSpacedCheckbox = document.getElementById('canvas-spaced-checkbox');
+    const h5pCheckbox = document.getElementById('h5p-checkbox');
+
+    if (canvasSingleCheckbox) canvasSingleCheckbox.addEventListener('change', handleFormatSelection);
+    if (canvasSpacedCheckbox) canvasSpacedCheckbox.addEventListener('change', handleFormatSelection);
+    if (h5pCheckbox) h5pCheckbox.addEventListener('change', handleFormatSelection);
+
+    // Release immediately toggles
+    const canvasSingleReleaseNow = document.getElementById('canvas-single-release-now');
+    const canvasSpacedReleaseNow = document.getElementById('canvas-spaced-release-now');
+
+    if (canvasSingleReleaseNow) canvasSingleReleaseNow.addEventListener('change', handleReleaseNowToggle);
+    if (canvasSpacedReleaseNow) canvasSpacedReleaseNow.addEventListener('change', handleReleaseNowToggle);
+
+    // Date and time inputs
+    const dateInputs = document.querySelectorAll('.date-input');
+    const timeInputs = document.querySelectorAll('.time-input');
+
+    dateInputs.forEach(input => input.addEventListener('change', handleDateChange));
+    timeInputs.forEach(input => input.addEventListener('change', handleTimeChange));
+
+    // Naming convention select
+    const namingConventionSelect = document.getElementById('naming-convention-select');
+    if (namingConventionSelect) namingConventionSelect.addEventListener('change', handleNamingConventionChange);
+
+    // Save as default checkbox
+    const saveAsDefaultCheckbox = document.getElementById('save-as-default');
+    if (saveAsDefaultCheckbox) saveAsDefaultCheckbox.addEventListener('change', handleSaveAsDefaultChange);
+
+    // Export summary modal
+    const exportSummaryModalClose = document.getElementById('export-summary-modal-close');
+    const exportSummaryConfirm = document.getElementById('export-summary-confirm');
+
+    if (exportSummaryModalClose) exportSummaryModalClose.addEventListener('click', hideExportSummaryModal);
+    if (exportSummaryConfirm) exportSummaryConfirm.addEventListener('click', hideExportSummaryModal);
+
+    // Make entire cards clickable
+    const exportOptionCards = document.querySelectorAll('.export-option-card');
+    exportOptionCards.forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking on checkbox or input
+            if (e.target.type === 'checkbox' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+                return;
+            }
+            
+            const checkbox = card.querySelector('.export-option-card__checkbox');
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                handleFormatSelection();
+            }
+        });
+    });
+}
+
+function handleFormatSelection() {
+    const canvasSingleCheckbox = document.getElementById('canvas-single-checkbox');
+    const canvasSpacedCheckbox = document.getElementById('canvas-spaced-checkbox');
+    const h5pCheckbox = document.getElementById('h5p-checkbox');
+
+    // Update state
+    state.formats.canvasSingle.selected = canvasSingleCheckbox ? canvasSingleCheckbox.checked : false;
+    state.formats.canvasSpaced.selected = canvasSpacedCheckbox ? canvasSpacedCheckbox.checked : false;
+    state.formats.h5p.selected = h5pCheckbox ? h5pCheckbox.checked : false;
+
+    console.log('Format selection updated:', {
+        canvasSingle: state.formats.canvasSingle.selected,
+        canvasSpaced: state.formats.canvasSpaced.selected,
+        h5p: state.formats.h5p.selected
+    });
+
+    // Update UI
+    updateStep5UI();
+    updateExportButtonState();
+}
+
+function handleReleaseNowToggle() {
+    const canvasSingleReleaseNow = document.getElementById('canvas-single-release-now');
+    const canvasSpacedReleaseNow = document.getElementById('canvas-spaced-release-now');
+
+    // Update state
+    state.formats.canvasSingle.releaseNow = canvasSingleReleaseNow ? canvasSingleReleaseNow.checked : false;
+    state.formats.canvasSpaced.releaseNow = canvasSpacedReleaseNow ? canvasSpacedReleaseNow.checked : false;
+
+    // Update UI
+    updateScheduleControls();
+}
+
+function handleDateChange() {
+    const canvasSingleDate = document.getElementById('canvas-single-release-date');
+    const canvasSpacedDate = document.getElementById('canvas-spaced-release-date');
+
+    // Update state
+    state.formats.canvasSingle.date = canvasSingleDate ? canvasSingleDate.value : '';
+    state.formats.canvasSpaced.date = canvasSpacedDate ? canvasSpacedDate.value : '';
+
+    // Validate dates
+    validateDates();
+}
+
+function handleTimeChange() {
+    const canvasSingleTime = document.getElementById('canvas-single-release-time');
+    const canvasSpacedTime = document.getElementById('canvas-spaced-release-time');
+
+    // Update state
+    state.formats.canvasSingle.time = canvasSingleTime ? canvasSingleTime.value : '';
+    state.formats.canvasSpaced.time = canvasSpacedTime ? canvasSpacedTime.value : '';
+}
+
+function handleNamingConventionChange() {
+    const namingConventionSelect = document.getElementById('naming-convention-select');
+    if (namingConventionSelect) {
+        state.namingConvention = namingConventionSelect.value;
+        updateNamingConventionPreview();
+    }
+}
+
+function handleSaveAsDefaultChange() {
+    const saveAsDefaultCheckbox = document.getElementById('save-as-default');
+    if (saveAsDefaultCheckbox) {
+        state.saveAsDefault = saveAsDefaultCheckbox.checked;
+    }
+}
+
+function updateStep5UI() {
+    console.log('updateStep5UI called');
+    updateSelectedFormatsCount();
+    updateCardSelectionStates();
+    updateNamingConventionPanel();
+    updateScheduleControls();
+    updateExportButtonState();
+}
+
+function updateSelectedFormatsCount() {
+    // Calculate count based on actual checkbox states
+    const canvasSingleSelected = state.formats.canvasSingle.selected;
+    const canvasSpacedSelected = state.formats.canvasSpaced.selected;
+    const h5pSelected = state.formats.h5p.selected;
+    
+    const count = [canvasSingleSelected, canvasSpacedSelected, h5pSelected].filter(Boolean).length;
+    
+    const countElement = document.getElementById('selected-formats-count');
+    if (countElement) {
+        countElement.textContent = count;
+    }
+    
+    console.log('Selected formats count updated:', count, 'Canvas Single:', canvasSingleSelected, 'Canvas Spaced:', canvasSpacedSelected, 'H5P:', h5pSelected);
+}
+
+function updateCardSelectionStates() {
+    const cards = document.querySelectorAll('.export-option-card');
+    cards.forEach(card => {
+        const format = card.dataset.format;
+        const checkbox = card.querySelector('.export-option-card__checkbox');
+        
+        if (checkbox && checkbox.checked) {
+            card.classList.add('export-option-card--selected');
+        } else {
+            card.classList.remove('export-option-card--selected');
+        }
+    });
+}
+
+function updateNamingConventionPanel() {
+    const namingConventionPanel = document.getElementById('naming-convention-panel');
+    const hasCanvasFormat = state.formats.canvasSingle.selected || state.formats.canvasSpaced.selected;
+    
+    if (namingConventionPanel) {
+        namingConventionPanel.style.display = hasCanvasFormat ? 'block' : 'none';
+        console.log('Naming convention panel visibility:', hasCanvasFormat ? 'visible' : 'hidden');
+        
+        // Update the preview when the panel becomes visible
+        if (hasCanvasFormat) {
+            updateNamingConventionPreview();
+        }
+    }
+}
+
+function updateScheduleControls() {
+    // Canvas Single
+    const canvasSingleScheduleControls = document.getElementById('canvas-single-schedule-controls');
+    if (canvasSingleScheduleControls) {
+        if (state.formats.canvasSingle.releaseNow) {
+            canvasSingleScheduleControls.classList.add('schedule-controls--disabled');
+        } else {
+            canvasSingleScheduleControls.classList.remove('schedule-controls--disabled');
+        }
+    }
+
+    // Canvas Spaced
+    const canvasSpacedScheduleControls = document.getElementById('canvas-spaced-schedule-controls');
+    if (canvasSpacedScheduleControls) {
+        if (state.formats.canvasSpaced.releaseNow) {
+            canvasSpacedScheduleControls.classList.add('schedule-controls--disabled');
+        } else {
+            canvasSpacedScheduleControls.classList.remove('schedule-controls--disabled');
+        }
+    }
+}
+
+function updateNamingConventionPreview() {
+    const exampleElement = document.getElementById('naming-convention-example');
+    if (!exampleElement) return;
+
+    switch (state.namingConvention) {
+        case 'course_quiz':
+            exampleElement.textContent = 'CHEM 101 – Quiz 1';
+            break;
+        case 'module_week_quiz':
+            exampleElement.textContent = 'Week 05 – Quiz';
+            break;
+        case 'topic_date':
+            exampleElement.textContent = 'Thermodynamics – 2024-01-15';
+            break;
+        default:
+            exampleElement.textContent = 'Week 05 – Quiz';
+    }
+}
+
+function validateDates() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Validate Canvas Single date
+    if (state.formats.canvasSingle.date && !state.formats.canvasSingle.releaseNow) {
+        const selectedDate = new Date(state.formats.canvasSingle.date);
+        if (selectedDate < today) {
+            showDateWarning('canvas-single-release-date', 'Date cannot be in the past');
+        } else {
+            hideDateWarning('canvas-single-release-date');
+        }
+    }
+
+    // Validate Canvas Spaced date
+    if (state.formats.canvasSpaced.date && !state.formats.canvasSpaced.releaseNow) {
+        const selectedDate = new Date(state.formats.canvasSpaced.date);
+        if (selectedDate < today) {
+            showDateWarning('canvas-spaced-release-date', 'Date cannot be in the past');
+        } else {
+            hideDateWarning('canvas-spaced-release-date');
+        }
+    }
+}
+
+function showDateWarning(dateInputId, message) {
+    const dateInput = document.getElementById(dateInputId);
+    if (dateInput) {
+        // Remove existing warning
+        const existingWarning = dateInput.parentNode.querySelector('.date-warning');
+        if (existingWarning) {
+            existingWarning.remove();
+        }
+
+        // Add new warning
+        const warning = document.createElement('div');
+        warning.className = 'date-warning';
+        warning.textContent = message;
+        warning.style.color = '#e74c3c';
+        warning.style.fontSize = '12px';
+        warning.style.marginTop = '4px';
+        dateInput.parentNode.appendChild(warning);
+    }
+}
+
+function hideDateWarning(dateInputId) {
+    const dateInput = document.getElementById(dateInputId);
+    if (dateInput) {
+        const existingWarning = dateInput.parentNode.querySelector('.date-warning');
+        if (existingWarning) {
+            existingWarning.remove();
+        }
+    }
+}
+
+function updateExportButtonState() {
+    const continueBtn = document.getElementById('continue-btn');
+    if (continueBtn) {
+        // Check if any format is selected
+        const hasSelectedFormats = state.formats.canvasSingle.selected || 
+                                  state.formats.canvasSpaced.selected || 
+                                  state.formats.h5p.selected;
+        
+        continueBtn.disabled = !hasSelectedFormats;
+        
+        console.log('Export button state updated:', {
+            hasSelectedFormats,
+            disabled: !hasSelectedFormats,
+            canvasSingle: state.formats.canvasSingle.selected,
+            canvasSpaced: state.formats.canvasSpaced.selected,
+            h5p: state.formats.h5p.selected
+        });
+        
+        if (state.step === 5) {
+            continueBtn.textContent = 'Export Now';
+        }
+    }
+}
+
+function showExportSummaryModal() {
+    const modal = document.getElementById('export-summary-modal');
+    const modalBody = document.getElementById('export-summary-modal-body');
+    
+    if (modal && modalBody) {
+        modalBody.innerHTML = generateExportSummaryHTML();
+        modal.style.display = 'flex';
+        
+        // Focus trap
+        const closeBtn = document.getElementById('export-summary-modal-close');
+        if (closeBtn) closeBtn.focus();
+    }
+}
+
+function hideExportSummaryModal() {
+    const modal = document.getElementById('export-summary-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function generateExportSummaryHTML() {
+    let html = '<div class="export-summary">';
+    
+    // Selected formats
+    html += '<h4>Selected Formats:</h4><ul>';
+    if (state.formats.canvasSingle.selected) {
+        html += '<li>Canvas (single quiz)';
+        if (state.formats.canvasSingle.releaseNow) {
+            html += ' - Release immediately';
+        } else {
+            html += ` - Scheduled for ${state.formats.canvasSingle.date}${state.formats.canvasSingle.time ? ` at ${state.formats.canvasSingle.time}` : ''}`;
+        }
+        html += '</li>';
+    }
+    
+    if (state.formats.canvasSpaced.selected) {
+        html += '<li>Canvas (spaced review quiz)';
+        if (state.formats.canvasSpaced.releaseNow) {
+            html += ' - Release immediately';
+        } else {
+            html += ` - Scheduled for ${state.formats.canvasSpaced.date}${state.formats.canvasSpaced.time ? ` at ${state.formats.canvasSpaced.time}` : ''}`;
+        }
+        html += '</li>';
+    }
+    
+    if (state.formats.h5p.selected) {
+        html += '<li>H5P (individual elements)</li>';
+    }
+    html += '</ul>';
+    
+    // Naming convention
+    if (state.formats.canvasSingle.selected || state.formats.canvasSpaced.selected) {
+        html += '<h4>Canvas Naming Convention:</h4>';
+        html += `<p>${getNamingConventionDisplayText()}</p>`;
+    }
+    
+    // Save as default
+    if (state.saveAsDefault) {
+        html += '<h4>Settings:</h4>';
+        html += '<p>Save export settings as default</p>';
+    }
+    
+    html += '</div>';
+    return html;
+}
+
+function getNamingConventionDisplayText() {
+    switch (state.namingConvention) {
+        case 'course_quiz':
+            return 'Course – Quiz 1, 2, 3…';
+        case 'module_week_quiz':
+            return 'Module Week – Quiz';
+        case 'topic_date':
+            return 'Topic – YYYY-MM-DD';
+        default:
+            return 'Module Week – Quiz';
+    }
+}
+
+// ===== STEP 4: QUESTION GENERATION FUNCTIONS =====
+
+function initializeStep4() {
+    console.log('initializeStep4 called');
+    
+    // Initialize with sample data
+    state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
+    console.log('Sample data loaded, questionGroups length:', state.questionGroups.length);
+    
+    // Set up event listeners for Step 4
+    setupStep4EventListeners();
+    
+    // Render the initial view
+    renderStep4();
+}
+
+function setupStep4EventListeners() {
+    // Filter controls
+    const gloFilter = document.getElementById('glo-filter');
+    const bloomFilter = document.getElementById('bloom-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const searchInput = document.getElementById('search-input');
+    if (gloFilter) gloFilter.addEventListener('change', handleFilterChange);
+    if (bloomFilter) bloomFilter.addEventListener('change', handleFilterChange);
+    if (statusFilter) statusFilter.addEventListener('change', handleFilterChange);
+    if (searchInput) searchInput.addEventListener('input', handleSearchChange);
+
+    // Action buttons
+    const regenerateAllBtn = document.getElementById('regenerate-all-btn');
+    const exportBtn = document.getElementById('export-btn');
+    const addToBankBtn = document.getElementById('add-to-bank-btn');
+    const addSelectedToBankBtn = document.getElementById('add-selected-to-bank-btn');
+
+    if (regenerateAllBtn) regenerateAllBtn.addEventListener('click', handleRegenerateAll);
+    if (exportBtn) exportBtn.addEventListener('click', handleExport);
+    if (addToBankBtn) addToBankBtn.addEventListener('click', handleAddToBank);
+    if (addSelectedToBankBtn) addSelectedToBankBtn.addEventListener('click', handleAddSelectedToBank);
+
+    // Export dropdown
+    const exportDropdownClose = document.getElementById('export-dropdown-close');
+    if (exportDropdownClose) exportDropdownClose.addEventListener('click', hideExportDropdown);
+
+    // Export option buttons
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('export-option-btn')) {
+            handleExportFormat(e.target.dataset.format);
+        }
+    });
+}
+
+function renderStep4() {
+    const metaLoGroups = document.getElementById('meta-lo-groups');
+    if (!metaLoGroups) return;
+
+    const filteredGroups = getFilteredGroups();
+    
+    if (filteredGroups.length === 0) {
+        showEmptyState();
+        return;
+    }
+
+    hideEmptyState();
+    
+    metaLoGroups.innerHTML = filteredGroups.map(group => `
+        <div class="meta-lo-group ${group.isOpen ? 'meta-lo-group--expanded' : 'meta-lo-group--collapsed'}" data-group-id="${group.id}">
+            <div class="meta-lo-group__header" onclick="toggleMetaLoGroup('${group.id}')">
+                <h3 class="meta-lo-group__title">${group.title}</h3>
+                <div class="meta-lo-group__stats">
+                    <div class="meta-lo-group__stat">
+                        <span>Configured: ${group.stats.configured}</span>
+                    </div>
+                    <div class="meta-lo-group__stat">
+                        <span>Minimum: ${group.stats.min}</span>
+                    </div>
+                    <div class="meta-lo-group__stat">
+                        <span>Bloom: ${group.stats.bloomSummary}</span>
+                    </div>
+                    <div class="meta-lo-group__toggle">
+                        <span>${group.isOpen ? 'Collapse' : 'Expand'}</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="meta-lo-group__content">
+                ${group.los.map(lo => renderGranularLoSection(lo, group)).join('')}
+            </div>
+        </div>
+    `).join('');
+
+    // Set up question card event listeners
+    setupQuestionCardListeners();
+}
+
+function renderGranularLoSection(lo, group) {
+    return `
+        <div class="granular-lo-section">
+            <div class="granular-lo-section__header">
+                <h4 class="granular-lo-section__title">${lo.code}</h4>
+                <div class="granular-lo-section__stats">
+                    <div class="granular-lo-section__stat">
+                        <span>Generated: ${lo.generated}</span>
+                    </div>
+                    <div class="granular-lo-section__stat">
+                        <span>Min: ${lo.min}</span>
+                    </div>
+                    ${lo.badges.map(badge => `<span class="badge">${badge}</span>`).join('')}
+                </div>
+            </div>
+            <div class="question-cards">
+                ${lo.questions.map(question => renderQuestionCard(question, group)).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderQuestionCard(question, group) {
+    const isSelected = state.selectedQuestions.has(question.id);
+    const isEditing = question.isEditing || false;
+    
+    return `
+        <div class="question-card" data-question-id="${question.id}">
+            <div class="question-card__header">
+                <input type="checkbox" class="question-card__checkbox" 
+                       ${isSelected ? 'checked' : ''} 
+                       onchange="toggleQuestionSelection('${question.id}')">
+                <div class="question-card__content">
+                    ${isEditing ? 
+                        `<input type="text" class="question-card__title--editing" value="${question.title}" onblur="saveQuestionEdit('${question.id}')">` :
+                        `<h5 class="question-card__title">${question.title}</h5>`
+                    }
+                    <div class="question-card__chips">
+                        <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
+                        <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
+                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
+                    </div>
+                </div>
+                <div class="question-card__metadata">
+                    <div class="question-card__status">
+                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status}</span>
+                    </div>
+                    <div>Last Edited: ${question.lastEdited}</div>
+                    <div>By: ${question.by}</div>
+                </div>
+            </div>
+            <div class="question-card__body">
+                <p class="question-card__stem">${question.stem}</p>
+                <div class="question-card__options">
+                    ${Object.values(question.options).map(option => `
+                        <div class="question-card__option ${isEditing ? 'question-card__option--editing' : ''}">
+                            <input type="radio" name="q-${question.id}" value="${option.id}" ${option.isCorrect ? 'checked' : ''} disabled>
+                            ${isEditing ? 
+                                `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">` :
+                                `<label>${option.id}. ${option.text}</label>`
+                            }
+                        </div>
+                        <div class="question-card__feedback">${option.id} ${option.isCorrect ? 'Correct' : 'Incorrect'} — ${option.feedback}</div>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="question-card__footer">
+                <div class="question-card__actions">
+                    <button type="button" class="question-card__action-btn question-card__action-btn--edit" 
+                            onclick="editQuestion('${question.id}')">
+                        ${isEditing ? 'Cancel' : 'Edit'}
+                    </button>
+                    <button type="button" class="question-card__action-btn question-card__action-btn--regenerate" 
+                            onclick="regenerateQuestion('${question.id}')" disabled 
+                            title="Connect AI later">
+                        Regenerate
+                    </button>
+                    <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
+                            onclick="toggleQuestionFlag('${question.id}')"
+                            ${question.status === 'Flagged' ? 'style="background: #ffebee; color: #d32f2f;"' : ''}>
+                        ${question.status === 'Flagged' ? 'Unflag' : 'Flag'}
+                    </button>
+                    <button type="button" class="question-card__action-btn question-card__action-btn--approve" 
+                            onclick="toggleQuestionApproval('${question.id}')"
+                            ${question.status === 'Approved' ? 'style="background: #e8f5e8; color: #388e3c;"' : ''}>
+                        ${question.status === 'Approved' ? 'Unapprove' : 'Approve'}
+                    </button>
+                    <button type="button" class="question-card__action-btn question-card__action-btn--delete" 
+                            onclick="deleteQuestion('${question.id}')">
+                        Delete
+                    </button>
+                </div>
+                ${isEditing ? 
+                    `<button type="button" class="question-card__save-btn" onclick="saveQuestionEdit('${question.id}')">Save</button>` : 
+                    ''
+                }
+            </div>
+        </div>
+    `;
+}
+
+function setupQuestionCardListeners() {
+    // Event listeners for question cards are set up inline in the render functions
+}
+
+// ===== STEP 4 EVENT HANDLERS =====
+
+function toggleMetaLoGroup(groupId) {
+    const group = state.questionGroups.find(g => g.id === groupId);
+    if (group) {
+        group.isOpen = !group.isOpen;
+        renderStep4();
+    }
+}
+
+function toggleQuestionSelection(questionId) {
+    if (state.selectedQuestions.has(questionId)) {
+        state.selectedQuestions.delete(questionId);
+    } else {
+        state.selectedQuestions.add(questionId);
+    }
+    
+    updateSelectionUI();
+}
+
+function updateSelectionUI() {
+    const stickyBottomActions = document.getElementById('sticky-bottom-actions');
+    const selectionCount = document.querySelector('.selection-count');
+    
+    if (state.selectedQuestions.size > 0) {
+        stickyBottomActions.style.display = 'flex';
+        if (selectionCount) {
+            selectionCount.textContent = `${state.selectedQuestions.size} question${state.selectedQuestions.size === 1 ? '' : 's'} selected`;
+        }
+    } else {
+        stickyBottomActions.style.display = 'none';
+    }
+}
+
+function handleFilterChange() {
+    const gloFilter = document.getElementById('glo-filter');
+    const bloomFilter = document.getElementById('bloom-filter');
+    const statusFilter = document.getElementById('status-filter');
+    
+    state.filters.glo = gloFilter ? gloFilter.value : 'all';
+    state.filters.bloom = bloomFilter ? bloomFilter.value : 'all';
+    state.filters.status = statusFilter ? statusFilter.value : 'all';
+    
+    renderStep4();
+}
+
+function handleSearchChange() {
+    const searchInput = document.getElementById('search-input');
+    state.filters.q = searchInput ? searchInput.value : '';
+    
+    renderStep4();
+}
+
+
+
+function handleRegenerateAll() {
+    // Set transient "Regenerating..." state on all visible cards
+    const questionCards = document.querySelectorAll('.question-card');
+    
+    questionCards.forEach(card => {
+        const regenerateBtn = card.querySelector('.question-card__action-btn--regenerate');
+        if (regenerateBtn) {
+            const originalText = regenerateBtn.textContent;
+            regenerateBtn.textContent = 'Regenerating...';
+            regenerateBtn.disabled = true;
+            
+            setTimeout(() => {
+                regenerateBtn.textContent = originalText;
+                regenerateBtn.disabled = false;
+            }, 1000);
+        }
+    });
+    
+    showToast('Regeneration process initiated', 'info');
+}
+
+function handleExport() {
+    showExportDropdown();
+}
+
+function showExportDropdown() {
+    const exportDropdown = document.getElementById('export-dropdown');
+    if (exportDropdown) {
+        exportDropdown.style.display = 'block';
+    }
+}
+
+function hideExportDropdown() {
+    const exportDropdown = document.getElementById('export-dropdown');
+    if (exportDropdown) {
+        exportDropdown.style.display = 'none';
+    }
+}
+
+function handleExportFormat(format) {
+    hideExportDropdown();
+    showToast(`Export prepared as ${format.toUpperCase()}`, 'success');
+}
+
+function handleAddToBank() {
+    // Add all questions to question bank
+    const allQuestionIds = new Set();
+    state.questionGroups.forEach(group => {
+        group.los.forEach(lo => {
+            lo.questions.forEach(question => {
+                allQuestionIds.add(question.id);
+            });
+        });
+    });
+    
+    state.selectedQuestions = allQuestionIds;
+    handleAddSelectedToBank();
+}
+
+function handleAddSelectedToBank() {
+    if (state.selectedQuestions.size === 0) {
+        showToast('No questions selected', 'warning');
+    }
+    
+    showToast(`Added ${state.selectedQuestions.size} question${state.selectedQuestions.size === 0 ? '' : 's'} to Question Bank`, 'success');
+    state.selectedQuestions.clear();
+    updateSelectionUI();
+}
+
+function editQuestion(questionId) {
+    const question = findQuestionById(questionId);
+    if (question) {
+        question.isEditing = !question.isEditing;
+        renderStep4();
+    }
+}
+
+function saveQuestionEdit(questionId) {
+    const question = findQuestionById(questionId);
+    if (question) {
+        // In a real app, you'd save the edited values here
+        question.isEditing = false;
+        renderStep4();
+        showToast('Question updated successfully', 'success');
+    }
+}
+
+function saveOptionEdit(questionId, optionId, newText) {
+    const question = findQuestionById(questionId);
+    if (question && question.options[optionId]) {
+        question.options[optionId].text = newText;
+        showToast('Option updated successfully', 'success');
+    }
+}
+
+function regenerateQuestion(questionId) {
+    // This would connect to AI in a real implementation
+    showToast('AI connection required for regeneration', 'info');
+}
+
+function toggleQuestionFlag(questionId) {
+    const question = findQuestionById(questionId);
+    if (question) {
+        if (question.status === 'Flagged') {
+            question.status = 'Draft';
+        } else {
+            question.status = 'Flagged';
+        }
+        renderStep4();
+        showToast(`Question ${question.status.toLowerCase()}`, 'success');
+    }
+}
+
+function toggleQuestionApproval(questionId) {
+    const question = findQuestionById(questionId);
+    if (question) {
+        if (question.status === 'Approved') {
+            question.status = 'Draft';
+        } else {
+            question.status = 'Approved';
+        }
+        renderStep4();
+        showToast(`Question ${question.status.toLowerCase()}`, 'success');
+    }
+}
+
+function deleteQuestion(questionId) {
+    if (confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
+        // Remove from all groups
+        state.questionGroups.forEach(group => {
+            group.los.forEach(lo => {
+                lo.questions = lo.questions.filter(q => q.id !== questionId);
+            });
+        });
+        
+        // Remove from selection
+        state.selectedQuestions.delete(questionId);
+        
+        renderStep4();
+        showToast('Question deleted successfully', 'success');
+    }
+}
+
+function findQuestionById(questionId) {
+    for (const group of state.questionGroups) {
+        for (const lo of group.los) {
+            const question = lo.questions.find(q => q.id === questionId);
+            if (question) return question;
+        }
+    }
+    return null;
+}
+
+function getFilteredGroups() {
+    let filteredGroups = [...state.questionGroups];
+    
+    // Apply filters
+    if (state.filters.glo !== 'all') {
+        filteredGroups = filteredGroups.filter(group => 
+            group.id === `meta-${state.filters.glo}`
+        );
+    }
+    
+    if (state.filters.bloom !== 'all') {
+        filteredGroups = filteredGroups.filter(group => {
+            return group.los.some(lo => 
+                lo.questions.some(q => 
+                    q.bloom.toLowerCase() === state.filters.bloom.toLowerCase()
+                )
+            );
+        });
+    }
+    
+    if (state.filters.status !== 'all') {
+        filteredGroups = filteredGroups.filter(group => {
+            return group.los.some(lo => 
+                lo.questions.some(q => 
+                    q.status.toLowerCase() === state.filters.status.toLowerCase()
+                )
+            );
+        });
+    }
+    
+    // Apply search
+    if (state.filters.q) {
+        const query = state.filters.q.toLowerCase();
+        filteredGroups = filteredGroups.filter(group => {
+            return group.los.some(lo => 
+                lo.questions.some(q => 
+                    q.title.toLowerCase().includes(query) ||
+                    q.loCode.toLowerCase().includes(query) ||
+                    q.metaCode.toLowerCase().includes(query)
+                )
+            );
+        });
+    }
+    
+    return filteredGroups;
+}
+
+function showEmptyState() {
+    const emptyState = document.getElementById('empty-state');
+    const metaLoGroups = document.getElementById('meta-lo-groups');
+    
+    if (emptyState) emptyState.style.display = 'block';
+    if (metaLoGroups) metaLoGroups.style.display = 'none';
+}
+
+function hideEmptyState() {
+    const emptyState = document.getElementById('empty-state');
+    const metaLoGroups = document.getElementById('meta-lo-groups');
+    
+    if (emptyState) emptyState.style.display = 'none';
+    if (metaLoGroups) metaLoGroups.style.display = 'block';
+}
+
+// ===== TOAST NOTIFICATIONS =====
+
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    
+    const icon = document.createElement('i');
+    icon.className = `fas fa-${getToastIcon(type)} toast__icon`;
+    
+    const messageEl = document.createElement('span');
+    messageEl.className = 'toast__message';
+    messageEl.textContent = message;
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast__close';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.onclick = () => toast.remove();
+    
+    toast.appendChild(icon);
+    toast.appendChild(messageEl);
+    toast.appendChild(closeBtn);
+    
+    toastContainer.appendChild(toast);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 5000);
+}
+
+function getToastIcon(type) {
+    switch (type) {
+        case 'success': return 'check-circle';
+        case 'warning': return 'exclamation-triangle';
+        case 'error': return 'times-circle';
+        default: return 'info-circle';
+    }
 }
 
 // ===== STEP 5: EXPORT FUNCTIONS =====
@@ -1450,3 +3599,30 @@ window.incrementCount = incrementCount;
 window.decrementCount = decrementCount;
 window.editObjective = editObjective;
 window.confirmDeleteObjective = confirmDeleteObjective;
+window.toggleGroupSelection = toggleGroupSelection;
+window.selectAllGroups = selectAllGroups;
+window.deleteSelectedGroups = deleteSelectedGroups;
+window.toggleGranularSelection = toggleGranularSelection;
+window.selectAllGranularInGroup = selectAllGranularInGroup;
+window.deleteSelectedGranular = deleteSelectedGranular;
+window.showGranularizationModal = showGranularizationModal;
+window.refreshMetaObjectives = refreshMetaObjectives;
+
+// Step 4 function exports
+window.toggleMetaLoGroup = toggleMetaLoGroup;
+window.toggleQuestionSelection = toggleQuestionSelection;
+window.editQuestion = editQuestion;
+window.saveQuestionEdit = saveQuestionEdit;
+window.saveOptionEdit = saveOptionEdit;
+window.regenerateQuestion = regenerateQuestion;
+window.toggleQuestionFlag = toggleQuestionFlag;
+window.toggleQuestionApproval = toggleQuestionApproval;
+window.deleteQuestion = deleteQuestion;
+
+// Step 5 function exports
+window.handleFormatSelection = handleFormatSelection;
+window.handleReleaseNowToggle = handleReleaseNowToggle;
+window.handleDateChange = handleDateChange;
+window.handleTimeChange = handleTimeChange;
+window.handleNamingConventionChange = handleNamingConventionChange;
+window.handleSaveAsDefaultChange = handleSaveAsDefaultChange;

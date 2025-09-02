@@ -19,7 +19,7 @@ class QuestionBankPage {
   initializeNavigation() {
     // Initialize navigation if available
     if (window.GRASPNavigation) {
-      new GRASPNavigation();
+      new window.GRASPNavigation();
     }
   }
 

@@ -95,6 +95,10 @@ class GRASPNavigation {
             <i class="fas fa-users"></i>
             <span>Users</span>
           </li>
+          <li class="nav-item" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+          </li>
         </ul>
       </nav>
     `;
