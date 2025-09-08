@@ -9,8 +9,14 @@ class GRASPNavigation {
 
   detectCurrentPage() {
     const path = window.location.pathname;
+    if (path.includes("quiz-summary")) return "quiz-summary";
+    if (path.includes("quiz")) return "quiz";
+    if (path.includes("student-dashboard")) return "my-quizzes";
+    if (path.includes("course-materials")) return "course-materials";
+    if (path.includes("achievements")) return "achievements";
     if (path.includes("dashboard")) return "dashboard";
-    if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
+    if (path.includes("question-bank") || path.includes("question-review"))
+      return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
     return "dashboard"; // default
@@ -21,6 +27,7 @@ class GRASPNavigation {
     this.initializeNavigation();
     this.initializeSearch();
     this.initializeUserControls();
+    this.initializeRoleSwitch();
     this.setActiveNavigationItem();
   }
 
@@ -36,6 +43,10 @@ class GRASPNavigation {
       console.error("App container not found");
       return;
     }
+
+    // Get current role
+    this.currentRole =
+      localStorage.getItem("grasp-current-role") || "instructor";
 
     // Create sidebar with consistent styling
     const sidebar = document.createElement("aside");
@@ -69,37 +80,29 @@ class GRASPNavigation {
         <div class="search-section">
           <div class="search-box">
             <i class="fas fa-search"></i>
-            <input type="text" placeholder="Search for...">
+            <input type="text" placeholder="${
+              this.currentRole === "student" ? "Q Search..." : "Search for..."
+            }">
           </div>
         </div>
 
         <!-- Navigation Menu -->
         <ul class="nav-menu">
-          <li class="nav-item" data-page="dashboard">
-            <i class="fas fa-home"></i>
-            <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
-          </li>
-          <li class="nav-item" data-page="question-bank">
-            <i class="fas fa-book"></i>
-            <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
-          </li>
-          <li class="nav-item" data-page="question-generation">
-            <i class="fas fa-puzzle-piece"></i>
-            <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
-          </li>
-          <li class="nav-item" data-page="course-materials">
-            <i class="fas fa-folder"></i>
-            <span>Course Materials</span>
-          </li>
-          <li class="nav-item" data-page="users">
-            <i class="fas fa-users"></i>
-            <span>Users</span>
-          </li>
-          <li class="nav-item" data-page="settings">
-            <i class="fas fa-cog"></i>
-            <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
-          </li>
+          ${this.getNavigationMenu()}
         </ul>
+
+        <!-- Role Switch Section -->
+        <div class="role-switch-section">
+          <button class="role-switch-button" id="roleSwitchButton">
+            <i class="fas fa-exchange-alt"></i>
+            <span>Instructors/Students</span>
+          </button>
+          <div class="current-role" id="currentRole">
+            <span>Viewing: <strong>${
+              this.currentRole === "instructor" ? "Instructor" : "Student"
+            }</strong></span>
+          </div>
+        </div>
       </nav>
     `;
 
@@ -108,6 +111,56 @@ class GRASPNavigation {
 
     // Add consistent navigation styles
     this.addNavigationStyles();
+  }
+
+  getNavigationMenu() {
+    if (this.currentRole === "student") {
+      return `
+        <li class="nav-item" data-page="my-quizzes">
+          <i class="fas fa-list-check"></i>
+          <span><a href="student-dashboard.html" style="text-decoration: none; color: inherit;">My Quizzes</a></span>
+        </li>
+        <li class="nav-item" data-page="course-materials">
+          <i class="fas fa-book"></i>
+          <span><a href="course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
+        </li>
+        <li class="nav-item" data-page="achievements">
+          <i class="fas fa-trophy"></i>
+          <span><a href="achievements.html" style="text-decoration: none; color: inherit;">Achievements</a></span>
+        </li>
+        <li class="nav-item" data-page="settings">
+          <i class="fas fa-cog"></i>
+          <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+        </li>
+      `;
+    } else {
+      return `
+        <li class="nav-item" data-page="dashboard">
+          <i class="fas fa-home"></i>
+          <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+        </li>
+        <li class="nav-item" data-page="question-bank">
+          <i class="fas fa-book"></i>
+          <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+        </li>
+        <li class="nav-item" data-page="question-generation">
+          <i class="fas fa-puzzle-piece"></i>
+          <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
+        </li>
+        <li class="nav-item" data-page="course-materials">
+          <i class="fas fa-folder"></i>
+          <span>Course Materials</span>
+        </li>
+        <li class="nav-item" data-page="users">
+          <i class="fas fa-users"></i>
+          <span>Users</span>
+        </li>
+        <li class="nav-item" data-page="settings">
+          <i class="fas fa-cog"></i>
+          <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+        </li>
+      `;
+    }
   }
 
   addNavigationStyles() {
@@ -312,6 +365,53 @@ class GRASPNavigation {
         font-weight: 600;
       }
 
+      /* Role Switch Section */
+      .role-switch-section {
+        padding: 25px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin-top: auto;
+      }
+
+      .role-switch-button {
+        width: 100%;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .role-switch-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .role-switch-button i {
+        font-size: 16px;
+      }
+
+      .current-role {
+        text-align: center;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.7);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      }
+
+      .current-role strong {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
       /* Main content adjustment for sidebar */
       .main-content {
         margin-left: 280px;
@@ -400,6 +500,59 @@ class GRASPNavigation {
         }
       });
     });
+  }
+
+  initializeRoleSwitch() {
+    const roleSwitchButton = document.getElementById("roleSwitchButton");
+    const currentRoleElement = document.getElementById("currentRole");
+
+    if (roleSwitchButton && currentRoleElement) {
+      // Get current role from localStorage or default to instructor
+      this.currentRole =
+        localStorage.getItem("grasp-current-role") || "instructor";
+      this.updateRoleDisplay();
+
+      roleSwitchButton.addEventListener("click", () => {
+        this.switchRole();
+      });
+    }
+  }
+
+  switchRole() {
+    // Toggle between instructor and student
+    this.currentRole =
+      this.currentRole === "instructor" ? "student" : "instructor";
+
+    // Save to localStorage
+    localStorage.setItem("grasp-current-role", this.currentRole);
+
+    // Update display
+    this.updateRoleDisplay();
+
+    // Navigate to appropriate dashboard
+    this.navigateToRoleDashboard();
+
+    // Show notification
+    this.showNotification(`Switched to ${this.currentRole} view`, "success");
+  }
+
+  updateRoleDisplay() {
+    const currentRoleElement = document.getElementById("currentRole");
+    if (currentRoleElement) {
+      const roleText =
+        this.currentRole === "instructor" ? "Instructor" : "Student";
+      currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+    }
+  }
+
+  navigateToRoleDashboard() {
+    if (this.currentRole === "student") {
+      // Navigate to student dashboard
+      window.location.href = "student-dashboard.html";
+    } else {
+      // Navigate to instructor dashboard
+      window.location.href = "dashboard.html";
+    }
   }
 
   setActiveNavigationItem() {

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Course Materials</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/course-materials.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Header Section -->
+                <div class="header-section">
+                    <h1>Course Materials</h1>
+                    
+                    <!-- Filters and Search -->
+                    <div class="filters-section">
+                        <div class="filter-group">
+                            <select class="filter-select" id="courseFilter">
+                                <option value="all">All Courses</option>
+                                <option value="CS101">CS101</option>
+                                <option value="BIOL101">BIOL101</option>
+                                <option value="PHYS101">PHYS101</option>
+                            </select>
+                            
+                            <select class="filter-select" id="weekFilter">
+                                <option value="all">All Weeks</option>
+                                <option value="1">Week 1</option>
+                                <option value="2">Week 2</option>
+                                <option value="3">Week 3</option>
+                                <option value="4">Week 4</option>
+                            </select>
+                            
+                            <select class="filter-select" id="objectiveFilter">
+                                <option value="all">All Objectives</option>
+                                <option value="LO1.1">LO 1.1</option>
+                                <option value="LO1.2">LO 1.2</option>
+                                <option value="LO1.3">LO 1.3</option>
+                                <option value="LO2.1">LO 2.1</option>
+                                <option value="LO2.2">LO 2.2</option>
+                                <option value="LO3.2">LO 3.2</option>
+                            </select>
+                            
+                            <select class="filter-select" id="typeFilter">
+                                <option value="all">All Types</option>
+                                <option value="pdf">PDF</option>
+                                <option value="video">Video</option>
+                                <option value="textbook">Textbook</option>
+                                <option value="link">Link</option>
+                            </select>
+                        </div>
+                        
+                        <div class="search-group">
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="searchInput" placeholder="Search materials...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Materials Grid -->
+                <div class="materials-grid" id="materialsGrid">
+                    <!-- Material cards will be populated by JavaScript -->
+                </div>
+
+                <!-- No Results State -->
+                <div class="no-results" id="noResults" style="display: none;">
+                    <div class="no-results-content">
+                        <i class="fas fa-search"></i>
+                        <h3>No materials found</h3>
+                        <p>Try adjusting your filters or search terms to find what you're looking for.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/course-materials.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - My Achievements</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/achievements.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Header Section -->
+                <div class="header-section">
+                    <h1>My Achievements</h1>
+                    
+                    <!-- Achievement Stats -->
+                    <div class="achievement-stats">
+                        <div class="stats-info">
+                            <span class="achievement-count">4 of 10 Achievements Earned</span>
+                        </div>
+                        <div class="completion-section">
+                            <span class="completion-label">Completion</span>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 40%"></div>
+                            </div>
+                            <span class="completion-percentage">40%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Tabs -->
+                <div class="filter-tabs">
+                    <button class="tab-button active" data-filter="all">All</button>
+                    <button class="tab-button" data-filter="earned">Earned</button>
+                    <button class="tab-button" data-filter="locked">Locked</button>
+                </div>
+
+                <!-- Achievements Grid -->
+                <div class="achievements-grid" id="achievementsGrid">
+                    <!-- Achievement cards will be populated by JavaScript -->
+                </div>
+
+                <!-- No Results State -->
+                <div class="no-results" id="noResults" style="display: none;">
+                    <div class="no-results-content">
+                        <i class="fas fa-trophy"></i>
+                        <h3>No achievements found</h3>
+                        <p>Try adjusting your filter to see different achievements.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/achievements.js"></script>
+</body>
+</html>
