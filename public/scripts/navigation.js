@@ -10,7 +10,7 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("dashboard")) return "dashboard";
-    if (path.includes("question-bank")) return "question-bank";
+    if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
     return "dashboard"; // default
@@ -85,7 +85,7 @@ class GRASPNavigation {
           </li>
           <li class="nav-item" data-page="question-generation">
             <i class="fas fa-puzzle-piece"></i>
-            <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Builder</a></span>
+            <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
           </li>
           <li class="nav-item" data-page="course-materials">
             <i class="fas fa-folder"></i>
@@ -94,6 +94,10 @@ class GRASPNavigation {
           <li class="nav-item" data-page="users">
             <i class="fas fa-users"></i>
             <span>Users</span>
+          </li>
+          <li class="nav-item" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
           </li>
         </ul>
       </nav>

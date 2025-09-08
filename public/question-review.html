@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Review - GRASP</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/question-review.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation Sidebar -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <!-- Logo Section -->
+                <div class="logo-section">
+                    <div class="logo">
+                        <i class="fas fa-graduation-cap"></i>
+                        <span>GRASP</span>
+                    </div>
+                </div>
+
+                <!-- User Controls -->
+                <div class="user-controls">
+                    <div class="user-control">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-control">
+                        <i class="fas fa-cog"></i>
+                    </div>
+                    <div class="user-control">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge">9</span>
+                    </div>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="search-section">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search for...">
+                    </div>
+                </div>
+
+                <!-- Navigation Menu -->
+                <ul class="nav-menu">
+                    <li class="nav-item" data-page="dashboard">
+                        <i class="fas fa-home"></i>
+                        <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+                    </li>
+                    <li class="nav-item active" data-page="question-bank">
+                        <i class="fas fa-book"></i>
+                        <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+                    </li>
+                    <li class="nav-item" data-page="question-generation">
+                        <i class="fas fa-puzzle-piece"></i>
+                        <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
+                    </li>
+                    <li class="nav-item" data-page="course-materials">
+                        <i class="fas fa-folder"></i>
+                        <span>Course Materials</span>
+                    </li>
+                    <li class="nav-item" data-page="users">
+                        <i class="fas fa-users"></i>
+                        <span>Users</span>
+                    </li>
+                    <li class="nav-item" data-page="settings">
+                        <i class="fas fa-cog"></i>
+                        <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">Question Review</h1>
+                </div>
+
+                <!-- Main Content Layout -->
+                <div class="review-layout">
+                    <!-- Main Column (Left, ~70%) -->
+                    <div class="main-column">
+                        <!-- Question Card -->
+                        <div class="question-card" id="question-card">
+                            <div class="question-header">
+                                <div class="question-title-section">
+                                    <h2 class="question-title" id="question-title">Photosynthesis energy conversion</h2>
+                                    <div class="question-flags" id="question-flags">
+                                        <!-- Flagged chip will appear here if needed -->
+                                    </div>
+                                </div>
+                                <div class="question-actions">
+                                    <button class="action-btn regenerate-btn" disabled title="Connect AI later">
+                                        <i class="fas fa-sync-alt"></i>
+                                        Regenerate
+                                    </button>
+                                    <button class="action-btn edit-btn" id="edit-btn">
+                                        <i class="fas fa-pencil"></i>
+                                        Edit
+                                    </button>
+                                    <button class="action-btn flag-btn" id="flag-btn">
+                                        <i class="fas fa-flag"></i>
+                                        Flag
+                                    </button>
+                                    <button class="action-btn delete-btn" id="delete-btn">
+                                        <i class="fas fa-trash"></i>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="question-content">
+                                <div class="question-prompt" id="question-prompt">
+                                    Which of the following best describes how plants convert light energy into chemical energy during photosynthesis?
+                                </div>
+
+                                <div class="question-options" id="question-options">
+                                    <!-- Options will be populated by JavaScript -->
+                                </div>
+
+                                <div class="question-approve">
+                                    <button class="btn btn-primary approve-btn" id="approve-btn">
+                                        <i class="fas fa-check"></i>
+                                        Approve
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Edit History Section -->
+                        <div class="section-card">
+                            <div class="section-header">
+                                <h3>Edit History</h3>
+                            </div>
+                            <div class="section-content">
+                                <div class="edit-history" id="edit-history">
+                                    <!-- Edit history will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comments Section -->
+                        <div class="section-card">
+                            <div class="section-header">
+                                <h3>Comments</h3>
+                            </div>
+                            <div class="section-content">
+                                <div class="comments-list" id="comments-list">
+                                    <!-- Comments will be populated by JavaScript -->
+                                </div>
+                                <div class="comment-input">
+                                    <input type="text" id="comment-input" placeholder="Add a comment...">
+                                    <button class="btn btn-primary add-comment-btn" id="add-comment-btn">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar (Right, ~30%) -->
+                    <div class="sidebar-column">
+                        <div class="sidebar-card">
+                            <div class="sidebar-header">
+                                <h3>Questions</h3>
+                                <div class="sidebar-controls">
+                                    <button class="control-btn sort-up" id="sort-up" title="Sort ascending">
+                                        <i class="fas fa-chevron-up"></i>
+                                    </button>
+                                    <button class="control-btn sort-down" id="sort-down" title="Sort descending">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                    <div class="overflow-menu">
+                                        <button class="control-btn overflow-btn" id="overflow-btn">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </button>
+                                        <div class="overflow-dropdown" id="overflow-dropdown">
+                                            <button class="dropdown-item" data-action="filter-unpublished">Show Unpublished Only</button>
+                                            <button class="dropdown-item" data-action="filter-ready">Show Ready Only</button>
+                                            <button class="dropdown-item" data-action="filter-published">Show Published Only</button>
+                                            <button class="dropdown-item" data-action="show-all">Show All</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sidebar-content">
+                                <div class="questions-list" id="questions-list">
+                                    <!-- Questions list will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer (Sticky) -->
+                <div class="review-footer">
+                    <div class="footer-left">
+                        <button class="btn btn-secondary back-btn" id="back-btn">
+                            <i class="fas fa-arrow-left"></i>
+                            Back
+                        </button>
+                    </div>
+                    <div class="footer-right">
+                        <button class="btn btn-primary publish-btn" id="publish-btn" disabled>
+                            <i class="fas fa-upload"></i>
+                            Publish
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirm-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Confirm Action</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unsaved Changes Modal -->
+    <div class="modal" id="unsaved-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Unsaved Changes</h3>
+                <button class="modal-close" id="unsaved-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>You have unsaved changes. Do you want to discard them?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="unsaved-discard">Discard</button>
+                <button class="btn btn-primary" id="unsaved-stay">Stay</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Region for Accessibility -->
+    <div class="sr-only" aria-live="polite" aria-atomic="true" id="live-region"></div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/question-review.js"></script>
+</body>
+</html> 

@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 function initializeDashboard() {
   // Initialize shared navigation
-  new GRASPNavigation();
+  new window.GRASPNavigation();
 
   // Initialize dashboard-specific functionality
   initializeDashboardContent();
