@@ -9,7 +9,7 @@ class QuestionBankPage {
       sort: { key: 'views', dir: 'desc' },
       selectedQuestionIds: new Set(),
       selectedHistoryId: null,
-      currentTab: 'review'
+      currentTab: 'overview'
     };
     
     this.questions = [];
@@ -385,7 +385,7 @@ class QuestionBankPage {
     if (crossApproveBtn) {
       crossApproveBtn.addEventListener('click', () => this.handleCrossQuizAction('approve'));
     }
-    if (flagBtn) {
+    if (crossFlagBtn) {
       crossFlagBtn.addEventListener('click', () => this.handleCrossQuizAction('flag'));
     }
     if (crossDeleteBtn) {
