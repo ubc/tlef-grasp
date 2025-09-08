@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Materials - GRASP</title>
+    <link rel="stylesheet" href="../styles/navigation.css">
+    <link rel="stylesheet" href="../styles/course-materials.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container" id="materials-upload">
+        <main class="main-content">
+            <div class="content-wrapper">
+                <div class="card wizard">
+                    <div class="wizard-steps">
+                        <span id="s1" class="step active">1) Upload</span>
+                        <span id="s2" class="step">2) Summary</span>
+                    </div>
+
+                    <div id="step-1">
+                        <div class="tile-grid" role="group" aria-label="Material type">
+                            <div class="tile active" data-type="text" tabindex="0"><i class="fas fa-file-alt"></i><div>Text</div></div>
+                            <div class="tile" data-type="pdf" tabindex="0"><i class="fas fa-file-pdf"></i><div>PDF</div></div>
+                            <div class="tile" data-type="link" tabindex="0"><i class="fas fa-link"></i><div>URL</div></div>
+                            <div class="tile" data-type="video" tabindex="0"><i class="fas fa-video"></i><div>Video</div></div>
+                        </div>
+
+                        <div id="dropzone" class="dropzone" tabindex="0" aria-label="Upload materials dropzone">
+                            Drag and drop files here, or click to choose
+                            <input id="file-input" type="file" multiple style="display:none" />
+                        </div>
+
+                        <div class="pending-list" id="pending-list" aria-live="polite"></div>
+
+                        <div class="actions-row">
+                            <button id="cancel-btn" class="btn">Cancel</button>
+                            <button id="next-btn" class="btn btn-primary" disabled>Next</button>
+                        </div>
+                    </div>
+
+                    <div id="step-2" style="display:none;">
+                        <div class="filter-group" style="width:100%;">
+                            <label for="summary-area">Summary</label>
+                            <textarea id="summary-area" class="summary-textarea" placeholder="High-level summary of …"></textarea>
+                        </div>
+                        <div class="actions-row">
+                            <button id="back-btn" class="btn">Back</button>
+                            <div>
+                                <button id="regen-btn" class="btn btn-secondary" disabled title="Connect AI later"><i class="fas fa-sync"></i> Regenerate</button>
+                                <button id="save-btn" class="btn btn-primary">Save material</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="live-region" class="sr-live" aria-live="polite"></div>
+
+    <script src="../scripts/navigation.js"></script>
+    <script src="../js/course-materials.js"></script>
+</body>
+</html> 

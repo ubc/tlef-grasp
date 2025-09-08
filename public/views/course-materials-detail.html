@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Material - GRASP</title>
+    <link rel="stylesheet" href="../styles/navigation.css">
+    <link rel="stylesheet" href="../styles/course-materials.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container" id="materials-detail">
+        <main class="main-content">
+            <div class="content-wrapper">
+                <div class="detail-header">
+                    <div>
+                        <div class="detail-title">
+                            <h2 id="detail-title" style="margin:0;color:#2c3e50;"></h2>
+                            <span id="detail-chip" class="type-chip"></span>
+                        </div>
+                        <div id="detail-subtitle" class="detail-subtitle"></div>
+                    </div>
+                    <div class="header-actions">
+                        <button id="download-btn" class="btn btn-secondary"><i class="fas fa-download"></i> Download</button>
+                        <button id="edit-btn" class="btn btn-secondary"><i class="fas fa-pencil"></i> Edit</button>
+                    </div>
+                </div>
+
+                <div class="detail-layout">
+                    <div>
+                        <div class="card">
+                            <div class="card-header-row">
+                                <h3 class="card-title">Summary</h3>
+                                <span class="card-subtle">Short summary</span>
+                            </div>
+                            <textarea id="summary-text" class="summary-textarea" aria-label="Short summary"></textarea>
+                            <div class="card-footer-row">
+                                <button id="save-summary" class="btn btn-primary btn-small" disabled>Save</button>
+                            </div>
+                        </div>
+
+                        <div class="card" style="margin-top:20px;">
+                            <div class="card-header-row">
+                                <h3 class="card-title">Preview</h3>
+                                <span id="preview-total-pages" class="card-subtle"></span>
+                            </div>
+                            <div id="preview-tabs" class="tabstrip" role="tablist" aria-label="Preview pages"></div>
+                            <div id="preview-content" class="preview-content" aria-live="polite"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="card">
+                            <div class="card-header-row">
+                                <h3 class="card-title">Learning Objective Tags</h3>
+                            </div>
+                            <div id="lo-chips" class="chips" aria-live="polite"></div>
+                            <div class="add-tag-row">
+                                <input id="add-tag-input" class="add-tag-input" type="text" placeholder="Add tag (e.g., LO 2.1)">
+                                <button id="add-tag-btn" class="btn btn-secondary btn-small">Add</button>
+                            </div>
+                        </div>
+
+                        <div class="card" style="margin-top:20px;">
+                            <div class="card-header-row">
+                                <h3 class="card-title">Linked Questions</h3>
+                            </div>
+                            <div class="table-container">
+                                <table class="table" aria-label="Linked Questions">
+                                    <thead>
+                                        <tr>
+                                            <th>Question Title</th>
+                                            <th class="muted">Bloom’s Level</th>
+                                            <th class="muted">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="linked-questions-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="live-region" class="sr-live" aria-live="polite"></div>
+
+    <script src="../scripts/navigation.js"></script>
+    <script src="../js/course-materials.js"></script>
+</body>
+</html> 

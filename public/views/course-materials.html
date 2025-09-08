@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Materials - GRASP</title>
+    <link rel="stylesheet" href="../styles/navigation.css">
+    <link rel="stylesheet" href="../styles/course-materials.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container" id="materials-index">
+        <!-- Sidebar injected by navigation.js if not present -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <div class="header-section">
+                    <div class="header-left">
+                        <label for="course-select" style="font-weight:600;color:#495057;">Course:</label>
+                        <select id="course-select" class="course-select"></select>
+                    </div>
+                    <div class="header-actions">
+                        <button id="upload-btn" class="btn btn-primary"><i class="fas fa-upload"></i> Upload</button>
+                    </div>
+                </div>
+
+                <div class="filters-section">
+                    <div class="filter-group">
+                        <label for="week-select">Week</label>
+                        <select id="week-select" class="filter-select"></select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="objective-select">Learning Objectives</label>
+                        <select id="objective-select" class="filter-select"></select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="type-select">Type</label>
+                        <select id="type-select" class="filter-select">
+                            <option value="all">All types</option>
+                            <option value="pdf">PDF</option>
+                            <option value="video">Video</option>
+                            <option value="textbook">Textbook</option>
+                            <option value="link">Link</option>
+                            <option value="slides">Slides</option>
+                            <option value="text">Text</option>
+                        </select>
+                    </div>
+                    <div class="filter-group" style="margin-left:auto;">
+                        <label for="search-input">&nbsp;</label>
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input id="search-input" class="search-input" type="text" placeholder="Search materials…">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="materials-grid" id="materials-grid" role="list"></div>
+            </div>
+        </main>
+    </div>
+
+    <div id="live-region" class="sr-live" aria-live="polite"></div>
+
+    <script src="../scripts/navigation.js"></script>
+    <script src="../js/course-materials.js"></script>
+</body>
+</html> 

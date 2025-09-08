@@ -10,6 +10,7 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("dashboard")) return "dashboard";
+    if (path.includes("course-materials")) return "course-materials";
     if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
@@ -89,7 +90,7 @@ class GRASPNavigation {
           </li>
           <li class="nav-item" data-page="course-materials">
             <i class="fas fa-folder"></i>
-            <span>Course Materials</span>
+            <span><a href="views/course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
           </li>
           <li class="nav-item" data-page="users">
             <i class="fas fa-users"></i>
@@ -108,6 +109,35 @@ class GRASPNavigation {
 
     // Add consistent navigation styles
     this.addNavigationStyles();
+
+    // Normalize links based on current path depth
+    const inViews = window.location.pathname.includes('/views/');
+    const rootPrefix = inViews ? '../' : '';
+    const viewsPrefix = inViews ? '' : 'views/';
+
+    const items = document.querySelectorAll('.sidebar .nav-item');
+    items.forEach((item) => {
+      const page = item.getAttribute('data-page');
+      const anchor = item.querySelector('a');
+      if (!anchor) return;
+      switch (page) {
+        case 'dashboard':
+          anchor.setAttribute('href', `${rootPrefix}dashboard.html`);
+          break;
+        case 'question-bank':
+          anchor.setAttribute('href', `${rootPrefix}question-bank.html`);
+          break;
+        case 'question-generation':
+          anchor.setAttribute('href', `${rootPrefix}question-generation.html`);
+          break;
+        case 'settings':
+          anchor.setAttribute('href', `${rootPrefix}settings.html`);
+          break;
+        case 'course-materials':
+          anchor.setAttribute('href', `${viewsPrefix}course-materials.html`);
+          break;
+      }
+    });
   }
 
   addNavigationStyles() {
