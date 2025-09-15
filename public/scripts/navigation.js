@@ -34,6 +34,7 @@ class GRASPNavigation {
   createNavigation() {
     // Check if navigation already exists
     if (document.querySelector(".sidebar")) {
+      console.log("Sidebar already exists, skipping creation");
       return; // Navigation already exists
     }
 
@@ -43,6 +44,8 @@ class GRASPNavigation {
       console.error("App container not found");
       return;
     }
+
+    console.log("Creating sidebar navigation...");
 
     // Get current role
     this.currentRole =
@@ -108,6 +111,8 @@ class GRASPNavigation {
 
     // Insert sidebar at the beginning of the app container
     appContainer.insertBefore(sidebar, appContainer.firstChild);
+
+    console.log("Sidebar created and inserted:", sidebar);
 
     // Add consistent navigation styles
     this.addNavigationStyles();
