@@ -13,6 +13,7 @@ class GRASPNavigation {
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
+    if (path.includes("users")) return "users";
     if (path.includes("settings")) return "settings";
     return "dashboard"; // default
   }
@@ -26,8 +27,10 @@ class GRASPNavigation {
   }
 
   createNavigation() {
+    console.log('Creating navigation...');
     // Check if navigation already exists
     if (document.querySelector(".sidebar")) {
+      console.log('Navigation already exists, skipping');
       return; // Navigation already exists
     }
 
@@ -37,6 +40,7 @@ class GRASPNavigation {
       console.error("App container not found");
       return;
     }
+    console.log('App container found, creating sidebar...');
 
     // Create sidebar with consistent styling
     const sidebar = document.createElement("aside");
@@ -78,27 +82,27 @@ class GRASPNavigation {
         <ul class="nav-menu">
           <li class="nav-item" data-page="dashboard">
             <i class="fas fa-home"></i>
-            <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+            <span><a href="/dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
           </li>
           <li class="nav-item" data-page="question-bank">
             <i class="fas fa-book"></i>
-            <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+            <span><a href="/question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
           </li>
           <li class="nav-item" data-page="question-generation">
             <i class="fas fa-puzzle-piece"></i>
-            <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
+            <span><a href="/question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
           </li>
           <li class="nav-item" data-page="course-materials">
             <i class="fas fa-folder"></i>
-            <span><a href="views/course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
+            <span><a href="/course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
           </li>
           <li class="nav-item" data-page="users">
             <i class="fas fa-users"></i>
-            <span>Users</span>
+            <span><a href="/users.html" style="text-decoration: none; color: inherit;">Users</a></span>
           </li>
           <li class="nav-item" data-page="settings">
             <i class="fas fa-cog"></i>
-            <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+            <span><a href="/settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
           </li>
         </ul>
       </nav>
@@ -106,15 +110,14 @@ class GRASPNavigation {
 
     // Insert sidebar at the beginning of the app container
     appContainer.insertBefore(sidebar, appContainer.firstChild);
+    
+    // Ensure all links are properly set after insertion
+    this.fixNavigationLinks();
 
     // Add consistent navigation styles
     this.addNavigationStyles();
 
-    // Normalize links based on current path depth
-    const inViews = window.location.pathname.includes('/views/');
-    const rootPrefix = inViews ? '../' : '';
-    const viewsPrefix = inViews ? '' : 'views/';
-
+    // Ensure all links use absolute root-relative paths
     const items = document.querySelectorAll('.sidebar .nav-item');
     items.forEach((item) => {
       const page = item.getAttribute('data-page');
@@ -122,19 +125,22 @@ class GRASPNavigation {
       if (!anchor) return;
       switch (page) {
         case 'dashboard':
-          anchor.setAttribute('href', `${rootPrefix}dashboard.html`);
+          anchor.setAttribute('href', '/dashboard.html');
           break;
         case 'question-bank':
-          anchor.setAttribute('href', `${rootPrefix}question-bank.html`);
+          anchor.setAttribute('href', '/question-bank.html');
           break;
         case 'question-generation':
-          anchor.setAttribute('href', `${rootPrefix}question-generation.html`);
+          anchor.setAttribute('href', '/question-generation.html');
           break;
         case 'settings':
-          anchor.setAttribute('href', `${rootPrefix}settings.html`);
+          anchor.setAttribute('href', '/settings.html');
           break;
         case 'course-materials':
-          anchor.setAttribute('href', `${viewsPrefix}course-materials.html`);
+          anchor.setAttribute('href', '/course-materials.html');
+          break;
+        case 'users':
+          anchor.setAttribute('href', '/users.html');
           break;
       }
     });
@@ -366,13 +372,35 @@ class GRASPNavigation {
     document.head.appendChild(navStyles);
   }
 
+  fixNavigationLinks() {
+    const links = document.querySelectorAll(".sidebar a");
+    console.log('Found', links.length, 'navigation links');
+    const origin = window.location.origin;
+
+    links.forEach(link => {
+      let href = link.getAttribute("href");
+      console.log('Original href:', href);
+      
+      if (href && !href.startsWith("http")) {
+        // strip any leading './' or '../'
+        href = href.replace(/^(\.\/|\.\.\/)*/, "");
+        // make it root-relative
+        const newHref = `${origin}/${href}`;
+        link.setAttribute("href", newHref);
+        console.log('Fixed link:', href, '->', newHref);
+      }
+    });
+  }
+
   initializeNavigation() {
     const navItems = document.querySelectorAll(".nav-item");
 
     navItems.forEach((item) => {
+      // Add click handler for the entire nav item
       item.addEventListener("click", (e) => {
         // Don't handle clicks on links (let them navigate naturally)
         if (e.target.tagName === "A" || e.target.closest("a")) {
+          console.log('Link clicked, letting it navigate naturally');
           return;
         }
 
@@ -389,6 +417,18 @@ class GRASPNavigation {
         // Update page title based on navigation
         this.updatePageTitle(navText);
       });
+
+      // Also add click handler specifically for links
+      const link = item.querySelector("a");
+      if (link) {
+        link.addEventListener("click", (e) => {
+          e.preventDefault(); // Prevent default navigation
+          const href = link.getAttribute("href");
+          console.log('Direct link click:', href);
+          // Force navigation to absolute path
+          window.location.href = href;
+        });
+      }
     });
   }
 

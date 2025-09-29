@@ -39,12 +39,62 @@ app.get("/dashboard", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
+app.get("/dashboard.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/dashboard.html"));
+});
+
 app.get("/question-generation", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/question-generation.html"));
 });
 
+app.get("/question-generation.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-generation.html"));
+});
+
+app.get("/question-bank.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-bank.html"));
+});
+
 app.get("/settings", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/settings.html"));
+});
+
+app.get("/settings.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/settings.html"));
+});
+
+// TA detail route - new format: users/:id (must come before /users)
+app.get("/users/:id", (req, res) => {
+  console.log('TA route hit:', req.params.id);
+  res.sendFile(path.join(__dirname, "../public/views/users-ta.html"));
+});
+
+// Users page route (and legacy html path)
+app.get(["/users", "/users.html"], (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/users.html"));
+});
+
+// Course Materials routes
+app.get(["/course-materials", "/course-materials.html"], (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/course-materials.html"));
+});
+
+// Legacy routes (deprecated)
+app.get("/users/ta/:id", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/users-ta.html"));
+});
+
+app.get("/users/:id/ta", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/ta-detail.html"));
+});
+
+app.get("/course-materials/upload", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/course-materials-upload.html"));
+});
+
+// Course Materials detail (serve the detail shell; client reads id from query if present)
+app.get(["/course-materials/:id", "/course-materials/detail"], (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/views/course-materials-detail.html"));
 });
 
 // API endpoints

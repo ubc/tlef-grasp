@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TA Detail - GRASP</title>
+    <link rel="stylesheet" href="../styles/navigation.css">
+    <link rel="stylesheet" href="../styles/ta-detail.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container" id="ta-detail-page">
+        <main class="main-content">
+            <div class="content-wrapper">
+                <div class="page-header">
+                    <h1 id="ta-name" class="page-title">Alex Rivera — TA</h1>
+                </div>
+
+                <div class="card metrics-row" aria-label="Metrics">
+                    <div class="metric">
+                        <div class="metric-label">Questions Reviewed</div>
+                        <div class="metric-bar">
+                            <div id="m-reviewed" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Questions reviewed"><div class="fill"></div></div>
+                            <div id="m-reviewed-pct" class="metric-pct">72%</div>
+                        </div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Quizzes Prepared</div>
+                        <div class="metric-bar">
+                            <div id="m-prepared" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Quizzes prepared"><div class="fill"></div></div>
+                            <div id="m-prepared-pct" class="metric-pct">40%</div>
+                        </div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Flagged Items Resolved</div>
+                        <div class="metric-bar">
+                            <div id="m-resolved" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Flagged items resolved"><div class="fill"></div></div>
+                            <div id="m-resolved-pct" class="metric-pct">55%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="weeks-container"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Placeholder Modal -->
+    <div id="placeholder-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="placeholder-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="placeholder-title" class="modal-title">Details</h3>
+                <button id="placeholder-close" class="btn btn-small">Close</button>
+            </div>
+            <div id="placeholder-body" class="modal-body"></div>
+            <div class="modal-footer">
+                <button id="placeholder-ok" class="btn btn-primary btn-small">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../scripts/navigation.js"></script>
+    <script src="../js/ta-detail.js"></script>
+</body>
+</html> 

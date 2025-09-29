@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - GRASP</title>
+    <link rel="stylesheet" href="../styles/navigation.css">
+    <link rel="stylesheet" href="../styles/users.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container" id="users-page">
+        <main class="main-content">
+            <div class="content-wrapper">
+                <h1 class="page-title">Users</h1>
+
+                <div class="topbar">
+                    <div class="left">
+                        <div class="filter-group">
+                            <label for="search-input">Search</label>
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input id="search-input" class="search-input" type="text" placeholder="Search users…" aria-label="Search users">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-role">Role</label>
+                        <select id="filter-role" class="select">
+                            <option>All</option>
+                            <option>Instructor</option>
+                            <option>TA</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-section">Section</label>
+                        <select id="filter-section" class="select">
+                            <option>All</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-status">Status</label>
+                        <select id="filter-status" class="select">
+                            <option>All</option>
+                            <option>Active</option>
+                            <option>Inactive</option>
+                            <option>Pending</option>
+                        </select>
+                    </div>
+                    <button id="btn-adjust" class="btn btn-secondary">Adjust Permissions</button>
+                    <button id="btn-add" class="btn btn-primary">+ Add TA</button>
+                </div>
+
+                <div class="table-card">
+                    <table class="table" aria-label="Users">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Permissions</th>
+                                <th>Progress</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Profile panel -->
+    <div id="profile-panel" class="profile-panel" role="dialog" aria-modal="true" aria-label="User profile"></div>
+
+    <!-- Templates Modal -->
+    <div id="templates-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="templates-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="templates-title" class="modal-title">Role permission templates</h3>
+                <button id="templates-cancel" class="btn btn-small">Close</button>
+            </div>
+            <div class="modal-body">
+                <div class="segmented" role="tablist">
+                    <button id="seg-instructor" role="tab">Instructor</button>
+                    <button id="seg-ta" role="tab">TA</button>
+                </div>
+                <div id="templates-body" class="checkbox-list" style="margin-top:10px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="templates-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="user-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="user-modal-title" class="modal-title">Edit role & permissions</h3>
+                <button id="user-cancel" class="btn btn-small">Close</button>
+            </div>
+            <div class="modal-body">
+                <div class="field">
+                    <label for="user-role">Role</label>
+                    <select id="user-role" class="select">
+                        <option>Instructor</option>
+                        <option>TA</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label><input id="user-use-default" type="checkbox" checked> Use role default</label>
+                </div>
+                <div id="user-permissions" class="checkbox-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="user-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Move Section Modal -->
+    <div id="move-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="move-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="move-title" class="modal-title">Move to section…</h3>
+                <button id="move-cancel" class="btn btn-small">Close</button>
+            </div>
+            <div class="modal-body">
+                <div class="field">
+                    <label for="move-section">Section</label>
+                    <select id="move-section" class="select"></select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="move-save" class="btn btn-primary">Move</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add TA Modal -->
+    <div id="add-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="add-title" class="modal-title">Add TA</h3>
+                <button id="add-cancel" class="btn btn-small">Close</button>
+            </div>
+            <div class="modal-body">
+                <div class="field">
+                    <label for="add-name">Full name</label>
+                    <input id="add-name" class="name-input" type="text" placeholder="Full name">
+                </div>
+                <div class="field">
+                    <label for="add-email">Email</label>
+                    <input id="add-email" class="email-input" type="email" placeholder="email@example.ca">
+                </div>
+                <div class="field">
+                    <label for="add-section">Section</label>
+                    <select id="add-section" class="select"></select>
+                </div>
+                <div class="field">
+                    <label>Permissions</label>
+                    <div id="add-perms" class="checkbox-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="add-save" class="btn btn-primary">Send invite</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../scripts/navigation.js"></script>
+    <script src="../js/users.js"></script>
+</body>
+</html> 

@@ -1,0 +1,211 @@
+/* TA Dashboard Component Styles - Component-level styles only */
+
+/* Metrics Card */
+.metrics-card { 
+    background: white; 
+    border-radius: 12px; 
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+    padding: 20px; 
+    margin-bottom: 24px; 
+    border: 1px solid #e1e5e9; 
+}
+
+.metrics-row { 
+    display: grid; 
+    grid-template-columns: repeat(3, 1fr); 
+    gap: 24px; 
+}
+
+.metric { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 8px; 
+}
+
+.metric-label { 
+    font-size: 13px; 
+    font-weight: 600; 
+    color: #495057; 
+}
+
+.metric-bar { 
+    display: flex; 
+    align-items: center; 
+    gap: 8px; 
+}
+
+.progress { 
+    flex: 1; 
+    height: 8px; 
+    border-radius: 6px; 
+    background: #e9ecef; 
+    overflow: hidden; 
+}
+
+.progress .fill { 
+    height: 100%; 
+    background: #3498db; 
+    width: 0; 
+    transition: width .3s ease; 
+}
+
+.metric-pct { 
+    font-size: 12px; 
+    color: #6c757d; 
+    min-width: 36px; 
+    text-align: right; 
+    font-weight: 500; 
+}
+
+/* Week Cards */
+.weeks-container { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 24px; 
+}
+
+.week-card { 
+    background: white; 
+    border-radius: 12px; 
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+    padding: 20px; 
+    border: 1px solid #e1e5e9; 
+}
+
+.week-header { 
+    font-size: 16px; 
+    font-weight: 600; 
+    color: #2c3e50; 
+    margin: 0 0 16px 0; 
+}
+
+.week-items { 
+    display: flex; 
+    flex-direction: column; 
+}
+
+.week-item { 
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+    gap: 12px; 
+    padding: 12px 0; 
+}
+
+.week-item + .week-item { 
+    border-top: 1px solid #f1f3f4; 
+}
+
+.item-left { 
+    display: flex; 
+    flex-direction: column; 
+    flex: 1; 
+}
+
+.item-title { 
+    font-weight: 500; 
+    color: #2c3e50; 
+    font-size: 14px; 
+}
+
+.item-sub { 
+    font-size: 12px; 
+    color: #6c757d; 
+    margin-top: 2px; 
+}
+
+.btn { 
+    padding: 8px 12px; 
+    border: 1px solid #e1e5e9; 
+    border-radius: 8px; 
+    background: white; 
+    color: #495057; 
+    font-size: 14px; 
+    font-weight: 500; 
+    cursor: pointer; 
+    transition: all .2s ease; 
+    text-decoration: none; 
+    display: inline-block; 
+}
+
+.btn:hover { 
+    background: #f8f9fa; 
+    border-color: #cbd3da; 
+}
+
+.btn-small { 
+    padding: 6px 10px; 
+    font-size: 12px; 
+    border-radius: 6px; 
+}
+
+.btn-primary { 
+    background: #3498db; 
+    color: #fff; 
+    border-color: #3498db; 
+}
+
+.btn-primary:hover { 
+    background: #2980b9; 
+    border-color: #2980b9; 
+}
+
+/* Empty State */
+.empty-state { 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    min-height: 400px; 
+}
+
+.empty-content { 
+    text-align: center; 
+    color: #6c757d; 
+}
+
+.empty-content i { 
+    font-size: 48px; 
+    margin-bottom: 16px; 
+    color: #bdc3c7; 
+}
+
+.empty-content h3 { 
+    margin: 0 0 8px 0; 
+    font-size: 18px; 
+    color: #495057; 
+}
+
+.empty-content p { 
+    margin: 0 0 16px 0; 
+    font-size: 14px; 
+}
+
+/* Responsive Design */
+@media (max-width: 768px) { 
+    .metrics-row { 
+        grid-template-columns: 1fr; 
+        gap: 16px; 
+    }
+    
+    .week-item { 
+        flex-direction: column; 
+        align-items: flex-start; 
+        gap: 8px; 
+    }
+    
+    .btn { 
+        align-self: flex-end; 
+    }
+}
+
+/* Status indicators */
+.status-reviewed { color: #27ae60; }
+.status-in-progress { color: #f39c12; }
+.status-not-started { color: #6c757d; }
+
+/* Divider */
+.divider {
+    height: 1px;
+    background-color: #f1f3f4;
+    margin: 0;
+}
