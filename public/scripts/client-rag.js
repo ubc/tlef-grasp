@@ -152,3 +152,4 @@ class ClientRAG {
 
 // Export for use in other files
 window.ClientRAG = ClientRAG;
+

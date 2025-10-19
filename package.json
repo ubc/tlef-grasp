@@ -18,6 +18,7 @@
     "dotenv": "^17.0.1",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
+    "fastembed": "^2.0.0",
     "mongodb": "^6.18.0",
     "multer": "^2.0.2",
     "ubc-genai-toolkit-chunking": "^0.1.0",

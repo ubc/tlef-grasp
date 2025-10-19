@@ -5,6 +5,67 @@
 class QuestionGenerator {
   constructor(contentGenerator) {
     this.contentGenerator = contentGenerator;
+    this.llmService = null;
+    this.initializeLLMService();
+  }
+
+  async initializeLLMService() {
+    try {
+      console.log("=== QUESTION GENERATOR LLM INITIALIZATION ===");
+
+      // Use server-side RAG + LLM endpoint
+      this.llmService = {
+        isAvailable: () => true,
+        generateMultipleChoiceQuestion: async (
+          objective,
+          content,
+          bloomLevel
+        ) => {
+          console.log("=== CALLING SERVER-SIDE RAG + LLM ===");
+
+          try {
+            const response = await fetch("/api/rag-llm/generate-with-rag", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                objective: objective,
+                content: content,
+                bloomLevel: bloomLevel,
+                course: window.state?.course || "CHEM 121",
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Server error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log("✅ Server-side RAG + LLM response:", data);
+
+            if (data.success) {
+              return JSON.stringify(data.question);
+            } else {
+              throw new Error(data.error || "Server-side generation failed");
+            }
+          } catch (error) {
+            console.error("❌ Server-side RAG + LLM failed:", error);
+            throw error;
+          }
+        },
+      };
+
+      console.log("✅ Server-side RAG + LLM service initialized");
+    } catch (error) {
+      console.error("❌ Failed to initialize LLM service:", error);
+
+      // Fallback to direct Ollama API
+      if (window.DirectOllamaService) {
+        console.log("Using DirectOllamaService as fallback...");
+        this.llmService = new window.DirectOllamaService();
+      }
+    }
   }
 
   async generateQuestions(course, summary, objectiveGroups) {
@@ -308,7 +369,42 @@ class QuestionGenerator {
     groupTitle,
     questionNumber
   ) {
-    // Extract key concepts from content for question generation
+    // Try to use LLM service first
+    if (this.llmService && this.llmService.isAvailable()) {
+      try {
+        console.log(`Generating LLM question for objective: ${objectiveText}`);
+        const llmResponse =
+          await this.llmService.generateMultipleChoiceQuestion(
+            objectiveText,
+            content,
+            bloomLevel
+          );
+
+        // Parse LLM response
+        const questionData = JSON.parse(llmResponse);
+
+        return {
+          id: `${objectiveId}-${questionNumber}`,
+          text: questionData.question,
+          type: "multiple-choice",
+          options: questionData.options,
+          correctAnswer: questionData.correctAnswer,
+          bloomLevel: bloomLevel,
+          difficulty: this.determineDifficulty(bloomLevel),
+          metaCode: groupTitle,
+          loCode: objectiveText,
+          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+          by: "LLM + RAG System",
+          explanation: questionData.explanation,
+        };
+      } catch (error) {
+        console.warn("LLM generation failed, falling back to template:", error);
+        // Fall through to template generation
+      }
+    }
+
+    // Fallback to template-based generation
+    console.log(`Using template generation for objective: ${objectiveText}`);
     const keyConcepts = this.extractKeyConceptsForQuestion(content);
     const examples = this.extractExamplesForQuestion(content);
 
@@ -362,7 +458,7 @@ class QuestionGenerator {
       metaCode: groupTitle,
       loCode: objectiveText,
       lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-      by: "RAG-Enhanced System",
+      by: "Template System",
     };
   }
 

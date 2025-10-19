@@ -30,19 +30,20 @@ class ContentGenerator {
 
   async initializeRAG() {
     try {
-      // Import RAG module dynamically
-      const { RAGModule } = await import("ubc-genai-toolkit-rag");
+      console.log("=== CLIENT-SIDE RAG INITIALIZATION ===");
+      console.log("RAG processing will be handled server-side");
 
-      ragModule = await RAGModule.create(RAG_CONFIG);
-      console.log("RAG Module initialized successfully");
+      // Mark as initialized for client-side fallback
       this.isInitialized = true;
-      return ragModule;
+      ragModule = null; // No client-side RAG module
+
+      console.log("✅ Client-side RAG initialized (server-side processing)");
+      return null;
     } catch (error) {
       console.warn(
-        "RAG Module not available (this is expected in development):",
+        "Client-side RAG initialization failed (expected):",
         error.message
       );
-      // Continue without RAG if initialization fails
       ragModule = null;
       this.isInitialized = false;
     }
@@ -62,63 +63,98 @@ class ContentGenerator {
   }
 
   async addDocumentToKnowledgeBase(content, metadata = {}) {
-    // Try server RAG first
-    if (ragModule) {
-      try {
-        const chunkIds = await ragModule.addDocument(content, metadata);
-        console.log(
-          `Document added to server RAG with ${chunkIds.length} chunks`
-        );
-        return chunkIds;
-      } catch (error) {
-        console.error("Failed to add document to server RAG:", error);
-      }
-    }
+    // Use server-side RAG processing
+    try {
+      console.log("=== ADDING DOCUMENT TO SERVER-SIDE RAG ===");
+      console.log("Content length:", content.length);
+      console.log("Metadata:", metadata);
 
-    // Fallback to client RAG
-    if (clientRAG) {
-      try {
-        const chunkIds = await clientRAG.addDocument(content, metadata);
-        console.log(
-          `Document added to client RAG with ${chunkIds.length} chunks`
-        );
-        return chunkIds;
-      } catch (error) {
-        console.error("Failed to add document to client RAG:", error);
-        throw error;
-      }
-    }
+      const response = await fetch("/api/rag-llm/add-document", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: content,
+          metadata: metadata,
+        }),
+      });
 
-    console.warn("No RAG system available");
-    return [];
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Document added to server-side RAG:", data);
+      return data.chunkIds || [];
+    } catch (error) {
+      console.error("❌ Failed to add document to server-side RAG:", error);
+
+      // Fallback to client RAG
+      if (clientRAG) {
+        try {
+          const chunkIds = await clientRAG.addDocument(content, metadata);
+          console.log(
+            `Document added to client RAG with ${chunkIds.length} chunks`
+          );
+          return chunkIds;
+        } catch (clientError) {
+          console.error("Failed to add document to client RAG:", clientError);
+          throw clientError;
+        }
+      }
+
+      console.warn("No RAG system available");
+      return [];
+    }
   }
 
   async searchKnowledgeBase(query, limit = 5) {
-    // Try server RAG first
-    if (ragModule) {
-      try {
-        const results = await ragModule.retrieveContext(query, { limit });
-        console.log(`Server RAG search returned ${results.length} results`);
-        return results;
-      } catch (error) {
-        console.error("Failed to search server RAG:", error);
-      }
-    }
+    // Use server-side RAG search
+    try {
+      console.log("=== SEARCHING SERVER-SIDE RAG ===");
+      console.log("Query:", query);
+      console.log("Limit:", limit);
 
-    // Fallback to client RAG
-    if (clientRAG) {
-      try {
-        const results = await clientRAG.retrieveContext(query, { limit });
-        console.log(`Client RAG search returned ${results.length} results`);
-        return results;
-      } catch (error) {
-        console.error("Failed to search client RAG:", error);
-        return [];
-      }
-    }
+      const response = await fetch("/api/rag-llm/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: query,
+          limit: limit,
+        }),
+      });
 
-    console.warn("No RAG system available for search");
-    return [];
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(
+        "✅ Server-side RAG search results:",
+        data.results?.length || 0
+      );
+      return data.results || [];
+    } catch (error) {
+      console.error("❌ Failed to search server-side RAG:", error);
+
+      // Fallback to client RAG
+      if (clientRAG) {
+        try {
+          const results = await clientRAG.retrieveContext(query, { limit });
+          console.log(`Client RAG search returned ${results.length} results`);
+          return results;
+        } catch (clientError) {
+          console.error("Failed to search client RAG:", clientError);
+          return [];
+        }
+      }
+
+      console.warn("No RAG system available for search");
+      return [];
+    }
   }
 
   async processUploadedContent(files, urls, course) {
