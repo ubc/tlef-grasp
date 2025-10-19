@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Quiz Summary</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/quiz-summary.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="quiz-summary-container">
+                <!-- Left Sidebar - Quiz Summary -->
+                <div class="summary-sidebar">
+                    <div class="summary-header">
+                        <h2>Quiz Summary</h2>
+                    </div>
+                    
+                    <div class="score-section">
+                        <div class="score-display">
+                            <div class="score-fraction" id="scoreFraction">2/3</div>
+                            <div class="score-percentage" id="scorePercentage">67% Score</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-details">
+                        <div class="detail-item">
+                            <span class="detail-label">Completed:</span>
+                            <span class="detail-value" id="completedDate">2024-01-15 14:30</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Attempt:</span>
+                            <span class="detail-value" id="attemptNumber">#1</span>
+                        </div>
+                    </div>
+                    
+                    <div class="questions-section">
+                        <h3>Questions</h3>
+                        <div class="question-indicators" id="questionIndicators">
+                            <!-- Question indicators will be generated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Section - Question Details -->
+                <div class="question-details">
+                    <div class="question-header">
+                        <h2 id="questionTitle">Question 3 of 3</h2>
+                        <div class="question-status" id="questionStatus">
+                            <span class="status-badge correct" id="statusBadge">Correct</span>
+                        </div>
+                    </div>
+                    
+                    <div class="question-content">
+                        <div class="question-prompt">
+                            <h3>Question</h3>
+                            <p id="questionText">
+                                Briefly explain the difference between time complexity O(n) and O(log n).
+                            </p>
+                        </div>
+                        
+                        <div class="answer-section">
+                            <h3>Your Answer</h3>
+                            <div class="answer-box user-answer" id="userAnswer">
+                                O(n) means the algorithm takes time proportional to input size, while O(log n) means it takes logarithmic time which is much faster for large inputs.
+                            </div>
+                        </div>
+                        
+                        <div class="feedback-section">
+                            <h3>Feedback</h3>
+                            <div class="answer-box feedback" id="feedback">
+                                Good explanation! You correctly identified the key differences between linear and logarithmic time complexities.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="question-navigation">
+                        <button class="nav-button prev-button" id="prevQuestionButton">
+                            <i class="fas fa-chevron-left"></i>
+                            Previous Question
+                        </button>
+                        <button class="nav-button next-button" id="nextQuestionButton">
+                            Next Question
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/quiz-summary.js"></script>
+</body>
+</html>
+
+
+

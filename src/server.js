@@ -2,12 +2,13 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const session = require("express-session");
-const { connectToMongoDB } = require("./database/mongodb");
 const exampleRoutes = require("./routes/example/hello");
-const mongoExampleRoutes = require("./routes/example/mongodb-example");
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/questions");
 const courseRoutes = require("./routes/courses");
+const studentRoutes = require("./routes/student");
+const simpleOllamaRoutes = require("./routes/simple-ollama");
+const ragLlmRoutes = require("./routes/rag-llm");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -99,28 +100,35 @@ app.get(["/course-materials/:id", "/course-materials/detail"], (req, res) => {
   res.sendFile(path.join(__dirname, "../public/views/course-materials-detail.html"));
 });
 
+app.get("/student-dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
+});
+
+app.get("/quiz", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quiz.html"));
+});
+
+app.get("/quiz-summary", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quiz-summary.html"));
+});
+
+app.get("/course-materials", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/course-materials.html"));
+});
+
+app.get("/achievements", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/achievements.html"));
+});
+
 // API endpoints
 app.use("/api/example", exampleRoutes);
-app.use("/api/mongo", mongoExampleRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/courses", courseRoutes);
+app.use("/api/student", studentRoutes);
+app.use("/api/rag-llm", ragLlmRoutes);
 
-// Start server after MongoDB connection
-async function startServer() {
-  try {
-    // Connect to MongoDB
-    await connectToMongoDB();
-
-    // Start the server
-    app.listen(port, () => {
-      console.log(`🚀 Server is running on http://localhost:${port}`);
-      console.log("GRASP Test");
-    });
-  } catch (error) {
-    console.error("Failed to start server:", error);
-    process.exit(1);
-  }
-}
-
-startServer();
+app.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`);
+  console.log("GRASP Test");
+});

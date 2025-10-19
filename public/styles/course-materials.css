@@ -287,4 +287,4 @@
 .toast { position: fixed; top: 20px; right: 20px; padding: 14px 16px; background: #27ae60; color: white; border-radius: 8px; z-index: 1000; }
 
 /* Live region */
-.sr-live { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; } 
+.sr-live { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }

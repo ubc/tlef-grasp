@@ -9,9 +9,15 @@ class GRASPNavigation {
 
   detectCurrentPage() {
     const path = window.location.pathname;
+    if (path.includes("quiz-summary")) return "quiz-summary";
+    if (path.includes("quiz")) return "quiz";
+    if (path.includes("student-dashboard")) return "my-quizzes";
+    if (path.includes("course-materials")) return "course-materials";
+    if (path.includes("achievements")) return "achievements";
     if (path.includes("dashboard")) return "dashboard";
     if (path.includes("course-materials")) return "course-materials";
-    if (path.includes("question-bank") || path.includes("question-review")) return "question-bank";
+    if (path.includes("question-bank") || path.includes("question-review"))
+      return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("users")) return "users";
     if (path.includes("settings")) return "settings";
@@ -23,6 +29,7 @@ class GRASPNavigation {
     this.initializeNavigation();
     this.initializeSearch();
     this.initializeUserControls();
+    this.initializeRoleSwitch();
     this.setActiveNavigationItem();
   }
 
@@ -30,6 +37,7 @@ class GRASPNavigation {
     console.log('Creating navigation...');
     // Check if navigation already exists
     if (document.querySelector(".sidebar")) {
+      console.log("Sidebar already exists, skipping creation");
       console.log('Navigation already exists, skipping');
       return; // Navigation already exists
     }
@@ -41,6 +49,12 @@ class GRASPNavigation {
       return;
     }
     console.log('App container found, creating sidebar...');
+
+    console.log("Creating sidebar navigation...");
+
+    // Get current role
+    this.currentRole =
+      localStorage.getItem("grasp-current-role") || "instructor";
 
     // Create sidebar with consistent styling
     const sidebar = document.createElement("aside");
@@ -74,7 +88,9 @@ class GRASPNavigation {
         <div class="search-section">
           <div class="search-box">
             <i class="fas fa-search"></i>
-            <input type="text" placeholder="Search for...">
+            <input type="text" placeholder="${
+              this.currentRole === "student" ? "Q Search..." : "Search for..."
+            }">
           </div>
         </div>
 
@@ -348,6 +364,53 @@ class GRASPNavigation {
         font-weight: 600;
       }
 
+      /* Role Switch Section */
+      .role-switch-section {
+        padding: 25px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin-top: auto;
+      }
+
+      .role-switch-button {
+        width: 100%;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .role-switch-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .role-switch-button i {
+        font-size: 16px;
+      }
+
+      .current-role {
+        text-align: center;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.7);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      }
+
+      .current-role strong {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
       /* Main content adjustment for sidebar */
       .main-content {
         margin-left: 280px;
@@ -470,6 +533,59 @@ class GRASPNavigation {
         }
       });
     });
+  }
+
+  initializeRoleSwitch() {
+    const roleSwitchButton = document.getElementById("roleSwitchButton");
+    const currentRoleElement = document.getElementById("currentRole");
+
+    if (roleSwitchButton && currentRoleElement) {
+      // Get current role from localStorage or default to instructor
+      this.currentRole =
+        localStorage.getItem("grasp-current-role") || "instructor";
+      this.updateRoleDisplay();
+
+      roleSwitchButton.addEventListener("click", () => {
+        this.switchRole();
+      });
+    }
+  }
+
+  switchRole() {
+    // Toggle between instructor and student
+    this.currentRole =
+      this.currentRole === "instructor" ? "student" : "instructor";
+
+    // Save to localStorage
+    localStorage.setItem("grasp-current-role", this.currentRole);
+
+    // Update display
+    this.updateRoleDisplay();
+
+    // Navigate to appropriate dashboard
+    this.navigateToRoleDashboard();
+
+    // Show notification
+    this.showNotification(`Switched to ${this.currentRole} view`, "success");
+  }
+
+  updateRoleDisplay() {
+    const currentRoleElement = document.getElementById("currentRole");
+    if (currentRoleElement) {
+      const roleText =
+        this.currentRole === "instructor" ? "Instructor" : "Student";
+      currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+    }
+  }
+
+  navigateToRoleDashboard() {
+    if (this.currentRole === "student") {
+      // Navigate to student dashboard
+      window.location.href = "student-dashboard.html";
+    } else {
+      // Navigate to instructor dashboard
+      window.location.href = "dashboard.html";
+    }
   }
 
   setActiveNavigationItem() {

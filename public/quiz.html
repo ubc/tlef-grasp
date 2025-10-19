@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Quiz</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/quiz.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="quiz-container">
+                <!-- Quiz Header -->
+                <div class="quiz-header">
+                    <div class="quiz-info">
+                        <h1 id="quizTitle">CS101 Lecture 3</h1>
+                        <div class="quiz-meta">
+                            <span class="quiz-course" id="quizCourse">CS101</span>
+                            <span class="quiz-duration" id="quizDuration">30 minutes</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="progress-section">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="currentQuestion">1</span> of <span id="totalQuestions">10</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Timer -->
+                    <div class="timer-section">
+                        <i class="fas fa-clock"></i>
+                        <span id="timer">00:00:00</span>
+                    </div>
+                </div>
+
+                <!-- Quiz Content -->
+                <div class="quiz-content">
+                    <div class="question-section">
+                        <div class="question-header">
+                            <h2 id="questionNumber">Question 1</h2>
+                        </div>
+                        
+                        <div class="question-content">
+                            <p id="questionText">
+                                What is the time complexity of binary search algorithm?
+                            </p>
+                        </div>
+                        
+                        <!-- Answer Options -->
+                        <div class="answer-options" id="answerOptions">
+                            <div class="answer-option" data-option="A">
+                                <div class="option-letter">A</div>
+                                <div class="option-text">O(n)</div>
+                            </div>
+                            <div class="answer-option" data-option="B">
+                                <div class="option-letter">B</div>
+                                <div class="option-text">O(log n)</div>
+                            </div>
+                            <div class="answer-option" data-option="C">
+                                <div class="option-letter">C</div>
+                                <div class="option-text">O(n²)</div>
+                            </div>
+                            <div class="answer-option" data-option="D">
+                                <div class="option-letter">D</div>
+                                <div class="option-text">O(1)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quiz Navigation -->
+                <div class="quiz-navigation">
+                    <button class="nav-button prev-button" id="prevButton" disabled>
+                        <i class="fas fa-chevron-left"></i>
+                        Previous
+                    </button>
+                    
+                    <div class="question-indicators" id="questionIndicators">
+                        <!-- Question indicators will be generated dynamically -->
+                    </div>
+                    
+                    <button class="nav-button next-button" id="nextButton">
+                        Next
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+
+                <!-- Submit Section -->
+                <div class="submit-section" id="submitSection" style="display: none;">
+                    <div class="submit-info">
+                        <h3>Ready to Submit?</h3>
+                        <p>You have answered <span id="answeredCount">0</span> out of <span id="totalCount">10</span> questions.</p>
+                        <div class="submit-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span>Once submitted, you cannot change your answers.</span>
+                        </div>
+                    </div>
+                    <button class="submit-button" id="submitButton">
+                        <i class="fas fa-check"></i>
+                        Submit Quiz
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="modalOverlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Confirm Submission</h3>
+                <button class="modal-close" id="modalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-content">
+                <p>Are you sure you want to submit your quiz?</p>
+                <div class="submission-summary">
+                    <div class="summary-item">
+                        <span class="summary-label">Questions Answered:</span>
+                        <span class="summary-value" id="modalAnsweredCount">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Time Spent:</span>
+                        <span class="summary-value" id="modalTimeSpent">00:00:00</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-button cancel-button" id="cancelSubmit">Cancel</button>
+                <button class="modal-button confirm-button" id="confirmSubmit">Submit Quiz</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/quiz.js"></script>
+</body>
+</html>
+
+
+
