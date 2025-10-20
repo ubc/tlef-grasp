@@ -1,24 +1,255 @@
-// GRASP Dashboard JavaScript
+// GRASP Dashboard JavaScript - Dynamic Data Loading
 document.addEventListener("DOMContentLoaded", function () {
   // Initialize dashboard functionality
   initializeDashboard();
 });
 
-function initializeDashboard() {
-  // Initialize shared navigation
-  new window.GRASPNavigation();
+async function initializeDashboard() {
+  try {
+    // Initialize shared navigation
+    new window.GRASPNavigation();
 
-  // Initialize dashboard-specific functionality
-  initializeDashboardContent();
+    // Load user data from onboarding
+    await loadUserData();
 
-  // Initialize interactive elements
-  initializeInteractiveElements();
+    // Load course data
+    await loadCourseData();
 
-  // Update current date
-  updateCurrentDate();
+    // Initialize dashboard-specific functionality
+    initializeDashboardContent();
 
-  // Initialize progress animations
-  initializeProgressAnimations();
+    // Initialize interactive elements
+    initializeInteractiveElements();
+
+    // Update current date
+    updateCurrentDate();
+
+    // Initialize progress animations
+    initializeProgressAnimations();
+  } catch (error) {
+    console.error("Error initializing dashboard:", error);
+  }
+}
+
+async function loadUserData() {
+  try {
+    // Get user data from session storage (set during onboarding)
+    const courseProfile = sessionStorage.getItem("courseProfile");
+
+    if (courseProfile) {
+      const profile = JSON.parse(courseProfile);
+      updateWelcomeMessage(profile.instructorName);
+    } else {
+      // If no profile found, redirect to onboarding
+      window.location.href = "/onboarding";
+    }
+  } catch (error) {
+    console.error("Error loading user data:", error);
+  }
+}
+
+async function loadCourseData() {
+  try {
+    const response = await fetch("/api/courses");
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.courses.length > 0) {
+      // Update course selector
+      updateCourseSelector(data.courses);
+
+      // Update generation status
+      updateGenerationStatus(data.courses);
+
+      // Update review status with first course
+      if (data.courses.length > 0) {
+        updateReviewStatus(data.courses[0].code);
+      }
+    } else {
+      // No courses available - show empty states
+      showEmptyStates();
+    }
+  } catch (error) {
+    console.error("Error loading course data:", error);
+    showEmptyStates();
+  }
+}
+
+function updateWelcomeMessage(instructorName) {
+  const welcomeElement = document.getElementById("welcome-message");
+  if (welcomeElement && instructorName) {
+    welcomeElement.textContent = `Hello, ${instructorName}`;
+  }
+}
+
+function updateCourseSelector(courses) {
+  const courseSelector = document.getElementById("course-selector");
+  if (courseSelector) {
+    // Clear existing options except the first one
+    courseSelector.innerHTML = '<option value="">Select a course...</option>';
+
+    // Add course options
+    courses.forEach((course) => {
+      const option = document.createElement("option");
+      option.value = course.code;
+      option.textContent = `${course.code} - ${course.name}`;
+      courseSelector.appendChild(option);
+    });
+  }
+}
+
+function updateGenerationStatus(courses) {
+  const generationCardsContainer = document.getElementById("generation-cards");
+  const noDataMessage = document.getElementById("no-generation-data");
+
+  if (!generationCardsContainer) return;
+
+  // Clear existing content
+  generationCardsContainer.innerHTML = "";
+
+  // Check if any courses have materials
+  const coursesWithMaterials = courses.filter(
+    (course) => course.materials && course.materials.length > 0
+  );
+
+  if (coursesWithMaterials.length === 0) {
+    noDataMessage.style.display = "block";
+    generationCardsContainer.appendChild(noDataMessage);
+  } else {
+    noDataMessage.style.display = "none";
+
+    // Display generation status for each course with materials
+    coursesWithMaterials.forEach((course) => {
+      course.materials.forEach((material) => {
+        const generationCard = createGenerationCard(course, material);
+        generationCardsContainer.appendChild(generationCard);
+      });
+    });
+  }
+}
+
+function createGenerationCard(course, material) {
+  const card = document.createElement("div");
+  card.className = "generation-card";
+
+  // Calculate progress based on question sets
+  const totalQuestions = course.questionSets
+    ? course.questionSets.reduce((sum, qs) => sum + qs.questions, 0)
+    : 0;
+  const progress = Math.min(totalQuestions * 10, 100); // Simple progress calculation
+
+  card.innerHTML = `
+    <h4>${course.code} - ${material.title}</h4>
+    <p>${totalQuestions} Questions Generated</p>
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: ${progress}%"></div>
+    </div>
+  `;
+
+  // Add click event
+  card.addEventListener("click", () => {
+    openGenerationDetails(course.code, material.title);
+  });
+
+  return card;
+}
+
+function updateReviewStatus(courseCode) {
+  const reviewProgressContainer = document.getElementById("review-progress");
+  const noReviewData = document.getElementById("no-review-data");
+
+  if (!reviewProgressContainer) return;
+
+  // Clear existing content
+  reviewProgressContainer.innerHTML = "";
+
+  if (!courseCode) {
+    noReviewData.style.display = "block";
+    reviewProgressContainer.appendChild(noReviewData);
+    return;
+  }
+
+  // Fetch course details to get review data
+  fetch(`/api/courses/${courseCode.toLowerCase().replace(/\s+/g, "")}`)
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.success && data.course) {
+        const course = data.course;
+        const reviewData = calculateReviewProgress(course);
+
+        noReviewData.style.display = "none";
+
+        const progressHTML = `
+          <div class="circular-progress">
+            <div class="progress-circle" style="background: conic-gradient(#3498db 0deg ${
+              reviewData.progress * 3.6
+            }deg, #e9ecef ${reviewData.progress * 3.6}deg 360deg)">
+              <span class="progress-text">${reviewData.progress}%</span>
+            </div>
+          </div>
+          <div class="progress-legend">
+            <div class="legend-item">
+              <span class="legend-color in-progress"></span>
+              <span>In progress (${reviewData.inProgress})</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color reviewed"></span>
+              <span>Reviewed (${reviewData.reviewed})</span>
+            </div>
+          </div>
+        `;
+
+        reviewProgressContainer.innerHTML = progressHTML;
+      } else {
+        noReviewData.style.display = "block";
+        reviewProgressContainer.appendChild(noReviewData);
+      }
+    })
+    .catch((error) => {
+      console.error("Error fetching course details:", error);
+      noReviewData.style.display = "block";
+      reviewProgressContainer.appendChild(noReviewData);
+    });
+}
+
+function calculateReviewProgress(course) {
+  if (!course.questionSets || course.questionSets.length === 0) {
+    return { progress: 0, reviewed: 0, inProgress: 0 };
+  }
+
+  const totalSets = course.questionSets.length;
+  const reviewedSets = course.questionSets.filter(
+    (qs) => qs.status === "reviewed"
+  ).length;
+  const inProgressSets = course.questionSets.filter(
+    (qs) => qs.status === "generated"
+  ).length;
+
+  const progress =
+    totalSets > 0 ? Math.round((reviewedSets / totalSets) * 100) : 0;
+
+  return {
+    progress,
+    reviewed: reviewedSets,
+    inProgress: inProgressSets,
+  };
+}
+
+function showEmptyStates() {
+  // Show empty states for all sections
+  const noGenerationData = document.getElementById("no-generation-data");
+  const noReviewData = document.getElementById("no-review-data");
+
+  if (noGenerationData) {
+    noGenerationData.style.display = "block";
+  }
+
+  if (noReviewData) {
+    noReviewData.style.display = "block";
+  }
 }
 
 function initializeDashboardContent() {
@@ -36,29 +267,8 @@ function initializeInteractiveElements() {
     });
   });
 
-  // Generation status cards
-  const generationCards = document.querySelectorAll(".generation-card");
-  generationCards.forEach((card) => {
-    card.addEventListener("click", function () {
-      const lectureTitle = this.querySelector("h4").textContent;
-      openGenerationDetails(lectureTitle);
-    });
-  });
-
-  // Flagged questions
-  const flaggedItems = document.querySelectorAll(".flagged-item");
-  flaggedItems.forEach((item) => {
-    item.addEventListener("click", function () {
-      const radio = this.querySelector('input[type="radio"]');
-      radio.checked = true;
-
-      const title = this.querySelector(".flagged-title").textContent;
-      openFlaggedQuestion(title);
-    });
-  });
-
   // Course selector
-  const courseSelector = document.querySelector(".course-selector");
+  const courseSelector = document.getElementById("course-selector");
   if (courseSelector) {
     courseSelector.addEventListener("change", function () {
       const selectedCourse = this.value;
@@ -72,62 +282,36 @@ function handleQuickStartAction(action) {
 
   switch (action.toLowerCase()) {
     case "upload":
-      // Handle file upload
-      console.log("Opening file upload dialog...");
+      // Navigate to course materials page
+      window.location.href = "/course-materials";
       break;
     case "review":
-      // Handle review action
-      console.log("Opening review interface...");
+      // Navigate to question review page
+      window.location.href = "/question-review";
       break;
     case "quizzes":
-      // Handle quiz creation
-      console.log("Opening quiz builder...");
+      // Navigate to quiz page
+      window.location.href = "/quiz";
       break;
     case "questions":
-      // Handle question creation
-      console.log("Opening question builder...");
+      // Navigate to question generation page
+      window.location.href = "/question-generation";
       break;
     default:
       console.log(`Unknown action: ${action}`);
   }
 }
 
-function openGenerationDetails(lectureTitle) {
-  console.log(`Opening generation details for: ${lectureTitle}`);
+function openGenerationDetails(courseCode, materialTitle) {
+  console.log(
+    `Opening generation details for: ${courseCode} - ${materialTitle}`
+  );
   // You could open a modal or navigate to a detailed view
-}
-
-function openFlaggedQuestion(title) {
-  console.log(`Opening flagged question: ${title}`);
-  // You could open a modal or navigate to the question
-}
-
-function updateReviewStatus(course) {
-  console.log(`Updating review status for course: ${course}`);
-
-  // Simulate loading different review data
-  const progressCircle = document.querySelector(".progress-circle");
-  const progressText = document.querySelector(".progress-text");
-
-  if (progressCircle && progressText) {
-    // Simulate different progress values for different courses
-    let progress = 68; // Default for CHEM 121
-
-    if (course === "CHEM 123") {
-      progress = 45; // Different progress for CHEM 123
-    }
-
-    // Update the circular progress
-    progressText.textContent = `${progress}%`;
-
-    // Update the conic gradient
-    const degrees = (progress / 100) * 360;
-    progressCircle.style.background = `conic-gradient(#3498db 0deg ${degrees}deg, #e9ecef ${degrees}deg 360deg)`;
-  }
+  window.location.href = "/question-generation";
 }
 
 function updateCurrentDate() {
-  const dateElement = document.querySelector(".welcome-section .date");
+  const dateElement = document.getElementById("current-date");
   if (dateElement) {
     const now = new Date();
     const options = { weekday: "long", month: "long", day: "numeric" };
@@ -138,20 +322,24 @@ function updateCurrentDate() {
 
 function initializeProgressAnimations() {
   // Animate progress bars on page load
-  const progressBars = document.querySelectorAll(".progress-fill");
+  setTimeout(() => {
+    const progressBars = document.querySelectorAll(".progress-fill");
 
-  progressBars.forEach((bar) => {
-    const width = bar.style.width;
-    bar.style.width = "0%";
+    progressBars.forEach((bar) => {
+      const width = bar.style.width;
+      bar.style.width = "0%";
 
-    setTimeout(() => {
-      bar.style.width = width;
-    }, 500);
-  });
+      setTimeout(() => {
+        bar.style.width = width;
+      }, 500);
+    });
+  }, 1000); // Delay to allow content to load
 }
 
 // Export functions for potential external use
 window.GRASPDashboard = {
   updateReviewStatus,
   handleQuickStartAction,
+  loadCourseData,
+  updateGenerationStatus,
 };

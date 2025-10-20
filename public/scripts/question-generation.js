@@ -12,8 +12,8 @@ let pdfService = null;
 // Main state object
 const state = {
   step: 1,
-  course: "CHEM 121",
-  selectedCourse: "CHEM 121", // Global course selection for Steps 2-5
+  course: "",
+  selectedCourse: "", // Global course selection for Steps 2-5
   files: [],
   urls: [],
   summary: "",
@@ -772,6 +772,9 @@ document.addEventListener("DOMContentLoaded", async function () {
   console.log("Initializing content and question generators...");
   initializeModules();
 
+  console.log("Loading course data...");
+  await loadCourseData();
+
   console.log("Calling updateUI...");
   updateUI();
 
@@ -779,6 +782,89 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 // ===== MODULE INITIALIZATION =====
+
+async function loadCourseData() {
+  try {
+    console.log("Loading course data for question generation...");
+    const response = await fetch("/api/courses");
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("Course data received:", data);
+
+    if (data.success && data.courses && data.courses.length > 0) {
+      console.log("Courses found:", data.courses.length);
+      updateCourseDropdown(data.courses);
+    } else {
+      console.log("No courses available - showing empty state");
+      // No courses available - show empty state
+      showNoCoursesMessage();
+    }
+  } catch (error) {
+    console.error("Error loading course data:", error);
+    showNoCoursesMessage();
+  }
+}
+
+function updateCourseDropdown(courses) {
+  const courseSelect = document.getElementById("course-select");
+  if (courseSelect) {
+    // Clear existing options except the first one
+    courseSelect.innerHTML = '<option value="">Select a course...</option>';
+
+    // Add course options
+    courses.forEach((course) => {
+      const option = document.createElement("option");
+      option.value = course.code;
+      option.textContent = `${course.code} - ${course.name}`;
+      courseSelect.appendChild(option);
+    });
+  }
+}
+
+function showNoCoursesMessage() {
+  const courseSelect = document.getElementById("course-select");
+  if (courseSelect) {
+    courseSelect.innerHTML =
+      '<option value="">No courses available. Please complete onboarding first.</option>';
+  }
+}
+
+function showNotification(message, type = "info") {
+  // Create notification element
+  const notification = document.createElement("div");
+  notification.className = `notification notification-${type}`;
+  notification.textContent = message;
+
+  // Style the notification
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    z-index: 10000;
+    background-color: ${
+      type === "warning" ? "#f39c12" : type === "error" ? "#e74c3c" : "#3498db"
+    };
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease-out;
+  `;
+
+  // Add to page
+  document.body.appendChild(notification);
+
+  // Remove after 5 seconds
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.remove();
+    }
+  }, 5000);
+}
 
 function initializeModules() {
   console.log("Initializing modules...");
@@ -821,9 +907,16 @@ function initializeEventListeners() {
     courseSelect.addEventListener("change", (e) => {
       state.course = e.target.value;
       state.selectedCourse = e.target.value;
+      console.log("Course selected:", state.course);
+
       // Update course display if not on Step 1
       if (state.step > 1) {
         updateCourseDisplay();
+      }
+
+      // Show success message when course is selected
+      if (state.course) {
+        showNotification(`Course selected: ${state.course}`, "info");
       }
     });
   }
@@ -892,15 +985,33 @@ function validateCurrentStep() {
 
   switch (state.step) {
     case 1:
-      const step1Valid = state.files.length > 0 || state.urls.length > 0;
+      const hasMaterials = state.files.length > 0 || state.urls.length > 0;
+      const hasCourse = state.course && state.course.trim().length > 0;
+      const step1Valid = hasMaterials && hasCourse;
+
       console.log(
         "Step 1 validation:",
         step1Valid,
         "files:",
         state.files.length,
         "urls:",
-        state.urls.length
+        state.urls.length,
+        "course:",
+        state.course
       );
+
+      if (!hasCourse) {
+        showNotification(
+          "Please select a course before proceeding.",
+          "warning"
+        );
+      } else if (!hasMaterials) {
+        showNotification(
+          "Please upload files or add URLs before proceeding.",
+          "warning"
+        );
+      }
+
       return step1Valid;
     case 2:
       const step2Valid = state.summary.trim().length > 0;
@@ -1136,14 +1247,18 @@ function handleFileSelect(e) {
 }
 
 async function addFiles(files) {
-  for (const file of files) {
-    const fileObj = {
-      id: Date.now() + Math.random(),
-      name: file.name,
-      size: formatFileSize(file.size),
-      type: file.type,
-      file: file,
-    };
+  // Show spinner when starting file upload
+  showUploadSpinner();
+  
+  try {
+    for (const file of files) {
+      const fileObj = {
+        id: Date.now() + Math.random(),
+        name: file.name,
+        size: formatFileSize(file.size),
+        type: file.type,
+        file: file,
+      };
 
     // Extract content from file if possible
     try {
@@ -1185,18 +1300,35 @@ async function addFiles(files) {
       fileObj.content = `File: ${file.name} (content could not be extracted)`;
     }
 
-    // Process file with content generator
+    // Process file with content generator - ensure course is selected
     try {
-      await contentGenerator.processFileForRAG(file, state.course);
+      if (!state.course) {
+        console.warn(
+          "No course selected, file will be processed without course association"
+        );
+        // Show warning to user
+        showNotification(
+          "Please select a course before uploading files for proper organization.",
+          "warning"
+        );
+      }
+      await contentGenerator.processFileForRAG(file, state.course || "");
     } catch (error) {
       console.error("Error processing file:", error);
     }
 
-    state.files.push(fileObj);
-  }
+      state.files.push(fileObj);
+    }
 
-  renderFileList();
-  announceToScreenReader(`${files.length} file(s) added`);
+    renderFileList();
+    announceToScreenReader(`${files.length} file(s) added`);
+  } catch (error) {
+    console.error("Error processing files:", error);
+    showNotification("Error processing files. Please try again.", "error");
+  } finally {
+    // Hide spinner when upload is complete
+    hideUploadSpinner();
+  }
 }
 
 function readTextFile(file) {
@@ -1206,6 +1338,45 @@ function readTextFile(file) {
     reader.onerror = (e) => reject(e);
     reader.readAsText(file);
   });
+}
+
+// Upload spinner control functions
+function showUploadSpinner() {
+  const spinner = document.getElementById("upload-spinner");
+  const dropArea = document.getElementById("drop-area");
+  const chooseFileBtn = document.getElementById("choose-file-btn");
+  
+  if (spinner) {
+    spinner.style.display = "flex";
+    // Disable the choose file button while uploading
+    if (chooseFileBtn) {
+      chooseFileBtn.disabled = true;
+      chooseFileBtn.style.opacity = "0.5";
+    }
+    // Disable drag and drop
+    if (dropArea) {
+      dropArea.style.pointerEvents = "none";
+    }
+  }
+}
+
+function hideUploadSpinner() {
+  const spinner = document.getElementById("upload-spinner");
+  const dropArea = document.getElementById("drop-area");
+  const chooseFileBtn = document.getElementById("choose-file-btn");
+  
+  if (spinner) {
+    spinner.style.display = "none";
+    // Re-enable the choose file button
+    if (chooseFileBtn) {
+      chooseFileBtn.disabled = false;
+      chooseFileBtn.style.opacity = "1";
+    }
+    // Re-enable drag and drop
+    if (dropArea) {
+      dropArea.style.pointerEvents = "auto";
+    }
+  }
 }
 
 function removeFile(fileId) {

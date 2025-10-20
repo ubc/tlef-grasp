@@ -20,8 +20,8 @@
                 <div class="left-column">
                     <!-- Welcome Section -->
                     <section class="welcome-section">
-                        <h2>Hello, Dr. Brown</h2>
-                        <p class="date">Tuesday, August 2</p>
+                        <h2 id="welcome-message">Hello, Instructor</h2>
+                        <p class="date" id="current-date"></p>
                     </section>
                     
                     <!-- Quick Start Section -->
@@ -50,27 +50,9 @@
                     <!-- Generation Status Section -->
                     <section class="generation-status-section">
                         <h3>Generation Status</h3>
-                        <div class="generation-cards">
-                            <div class="generation-card">
-                                <h4>CHEM 121 Lecture 3</h4>
-                                <p>15 Questions Generated</p>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 85%"></div>
-                                </div>
-                            </div>
-                            <div class="generation-card">
-                                <h4>CHEM 121 Lecture 4</h4>
-                                <p>10 Questions Generated</p>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 75%"></div>
-                                </div>
-                            </div>
-                            <div class="generation-card">
-                                <h4>CHEM 123 Lecture 3</h4>
-                                <p>6 Questions Generated</p>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 40%"></div>
-                                </div>
+                        <div class="generation-cards" id="generation-cards">
+                            <div class="no-data-message" id="no-generation-data" style="display: none;">
+                                <p>No course materials uploaded yet. Start by uploading your first lecture materials!</p>
                             </div>
                         </div>
                     </section>
@@ -79,26 +61,13 @@
                     <section class="review-status-section">
                         <div class="review-header">
                             <h3>Review Status</h3>
-                            <select class="course-selector">
-                                <option>CHEM 121</option>
-                                <option>CHEM 123</option>
+                            <select class="course-selector" id="course-selector">
+                                <option value="">Select a course...</option>
                             </select>
                         </div>
-                        <div class="review-progress">
-                            <div class="circular-progress">
-                                <div class="progress-circle">
-                                    <span class="progress-text">68%</span>
-                                </div>
-                            </div>
-                            <div class="progress-legend">
-                                <div class="legend-item">
-                                    <span class="legend-color in-progress"></span>
-                                    <span>In progress</span>
-                                </div>
-                                <div class="legend-item">
-                                    <span class="legend-color reviewed"></span>
-                                    <span>Reviewed</span>
-                                </div>
+                        <div class="review-progress" id="review-progress">
+                            <div class="no-data-message" id="no-review-data" style="display: none;">
+                                <p>Select a course to view review progress</p>
                             </div>
                         </div>
                     </section>
@@ -165,27 +134,9 @@
                     <!-- Flagged Questions Section -->
                     <section class="flagged-questions-section">
                         <h3>Flagged Questions</h3>
-                        <div class="flagged-list">
-                            <div class="flagged-item">
-                                <input type="radio" name="flagged" id="flagged1">
-                                <label for="flagged1">
-                                    <span class="flagged-title">CHEM 121 Lecture 1</span>
-                                    <span class="flagged-time">Today, 3:00 PM</span>
-                                </label>
-                            </div>
-                            <div class="flagged-item">
-                                <input type="radio" name="flagged" id="flagged2">
-                                <label for="flagged2">
-                                    <span class="flagged-title">CHEM 121 Lecture 2</span>
-                                    <span class="flagged-time">Yesterday, 12:34 PM</span>
-                                </label>
-                            </div>
-                            <div class="flagged-item">
-                                <input type="radio" name="flagged" id="flagged3">
-                                <label for="flagged3">
-                                    <span class="flagged-title">CHEM 123 Lecture 1</span>
-                                    <span class="flagged-time">Today, 2:00 PM</span>
-                                </label>
+                        <div class="flagged-list" id="flagged-list">
+                            <div class="no-data-message" id="no-flagged-data">
+                                <p>No flagged questions at this time</p>
                             </div>
                         </div>
                     </section>
@@ -195,6 +146,7 @@
     </div>
 
     <script src="scripts/navigation.js"></script>
+    <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/dashboard.js"></script>
 </body>
 </html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Instructor Onboarding</title>
+    <link rel="stylesheet" href="styles/onboarding.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="onboarding-container">
+        <!-- Progress Indicator -->
+        <div class="progress-indicator">
+            <div class="progress-step active" data-step="1">
+                <div class="step-circle">1</div>
+                <span>Course Selection</span>
+            </div>
+            <div class="progress-step" data-step="2">
+                <div class="step-circle">2</div>
+                <span>Course Structure</span>
+            </div>
+            <div class="progress-step" data-step="3">
+                <div class="step-circle">3</div>
+                <span>Course Details</span>
+            </div>
+        </div>
+
+        <!-- Main Content Card -->
+        <div class="onboarding-card">
+            <!-- Step 1: Course Selection -->
+            <div class="step-content active" id="step-1">
+                <div class="step-icon">
+                    <i class="fas fa-bullseye"></i>
+                </div>
+                <h2>Course Setup</h2>
+                <p class="step-subtitle">Which course are you setting up today?</p>
+                
+                <form class="onboarding-form" id="course-selection-form">
+                    <div class="form-group">
+                        <label for="course-name">Course Name</label>
+                        <select id="course-name" name="courseName" required>
+                            <option value="">Select course...</option>
+                            <option value="CHEM 121">CHEM 121 - General Chemistry I</option>
+                            <option value="CHEM 123">CHEM 123 - General Chemistry II</option>
+                            <option value="CHEM 125">CHEM 125 - Organic Chemistry I</option>
+                            <option value="custom">Create New Course</option>
+                        </select>
+                        <i class="fas fa-chevron-down select-arrow"></i>
+                    </div>
+                    
+                    <!-- Custom Course Input (shown when "Create New Course" is selected) -->
+                    <div class="form-group" id="custom-course-group" style="display: none;">
+                        <label for="custom-course-code">Course Code</label>
+                        <input type="text" id="custom-course-code" name="customCourseCode" placeholder="e.g., MATH 101">
+                    </div>
+                    
+                    <div class="form-group" id="custom-course-name-group" style="display: none;">
+                        <label for="custom-course-title">Course Title</label>
+                        <input type="text" id="custom-course-title" name="customCourseTitle" placeholder="e.g., Introduction to Calculus">
+                    </div>
+                    
+                    <button type="submit" class="continue-btn">
+                        Continue Setup
+                    </button>
+                </form>
+            </div>
+
+            <!-- Step 2: Course Structure -->
+            <div class="step-content" id="step-2">
+                <div class="step-icon">
+                    <i class="fas fa-calendar-alt"></i>
+                </div>
+                <h2>Course Structure</h2>
+                <p class="step-subtitle">Setting up: <span id="selected-course-display"></span></p>
+                
+                <form class="onboarding-form" id="course-structure-form">
+                    <div class="form-group">
+                        <label for="course-weeks">How many weeks is the course?</label>
+                        <input type="number" id="course-weeks" name="courseWeeks" min="1" max="52" placeholder="e.g., 12" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="lectures-per-week">How many lectures per week?</label>
+                        <input type="number" id="lectures-per-week" name="lecturesPerWeek" min="1" max="7" placeholder="e.g., 3" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="course-credits">Course Credits</label>
+                        <select id="course-credits" name="courseCredits" required>
+                            <option value="">Select credits...</option>
+                            <option value="1">1 Credit</option>
+                            <option value="2">2 Credits</option>
+                            <option value="3">3 Credits</option>
+                            <option value="4">4 Credits</option>
+                            <option value="6">6 Credits</option>
+                        </select>
+                        <i class="fas fa-chevron-down select-arrow"></i>
+                    </div>
+                    
+                    <div class="form-buttons">
+                        <button type="button" class="back-btn" onclick="goToStep(1)">
+                            Back
+                        </button>
+                        <button type="submit" class="continue-btn">
+                            Create Course Structure
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Step 3: Course Details -->
+            <div class="step-content" id="step-3">
+                <div class="step-icon">
+                    <i class="fas fa-graduation-cap"></i>
+                </div>
+                <h2>Course Details</h2>
+                <p class="step-subtitle">Finalize your course profile</p>
+                
+                <form class="onboarding-form" id="course-details-form">
+                    <div class="form-group">
+                        <label for="instructor-name">Instructor Name</label>
+                        <input type="text" id="instructor-name" name="instructorName" placeholder="e.g., Dr. Smith" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="semester">Semester</label>
+                        <select id="semester" name="semester" required>
+                            <option value="">Select semester...</option>
+                            <option value="Fall 2024">Fall 2024</option>
+                            <option value="Spring 2025">Spring 2025</option>
+                            <option value="Summer 2025">Summer 2025</option>
+                            <option value="Fall 2025">Fall 2025</option>
+                        </select>
+                        <i class="fas fa-chevron-down select-arrow"></i>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="expected-students">Expected Number of Students</label>
+                        <input type="number" id="expected-students" name="expectedStudents" min="1" max="1000" placeholder="e.g., 45" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="course-description">Course Description (Optional)</label>
+                        <textarea id="course-description" name="courseDescription" rows="4" placeholder="Brief description of the course content and objectives..."></textarea>
+                    </div>
+                    
+                    <div class="form-buttons">
+                        <button type="button" class="back-btn" onclick="goToStep(2)">
+                            Back
+                        </button>
+                        <button type="submit" class="continue-btn">
+                            Complete Setup
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Completion Step -->
+            <div class="step-content" id="step-complete">
+                <div class="completion-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <h2>Welcome to GRASP!</h2>
+                <p class="completion-message">Your course has been successfully set up. You can now start uploading materials and generating questions.</p>
+                
+                <div class="completion-actions">
+                    <button class="continue-btn" onclick="redirectToDashboard()">
+                        Go to Dashboard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts/onboarding.js"></script>
+</body>
+</html>
