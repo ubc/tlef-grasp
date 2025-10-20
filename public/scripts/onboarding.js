@@ -9,6 +9,7 @@ class OnboardingManager {
 
   init() {
     this.setupEventListeners();
+    this.setupTabSwitching();
     this.updateProgressIndicator();
   }
 
@@ -47,6 +48,217 @@ class OnboardingManager {
       courseNameSelect.addEventListener("change", (e) =>
         this.handleCourseNameChange(e)
       );
+    }
+  }
+
+  setupTabSwitching() {
+    const tabButtons = document.querySelectorAll(".tab-button");
+    const loginTab = document.getElementById("login-tab");
+    const setupTab = document.getElementById("setup-tab");
+
+    console.log("Setting up tab switching...");
+    console.log("Login tab:", loginTab);
+    console.log("Setup tab:", setupTab);
+
+    // Ensure setup tab is visible by default and step 1 is active
+    if (setupTab) {
+      setupTab.style.display = "block";
+      setupTab.classList.add("active");
+      // Make sure step 1 is active
+      const step1 = document.getElementById("step-1");
+      if (step1) {
+        step1.classList.add("active");
+      }
+    }
+    if (loginTab) {
+      loginTab.style.display = "none";
+      loginTab.classList.remove("active");
+    }
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.getAttribute("data-tab");
+        console.log("Tab clicked:", tab);
+
+        // Update active tab button
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        button.classList.add("active");
+
+        // Show/hide appropriate content
+        if (tab === "login") {
+          console.log("Switching to login tab");
+          if (loginTab) {
+            loginTab.style.display = "block";
+            loginTab.style.visibility = "visible";
+            loginTab.classList.add("active");
+            console.log("Login tab display set to block, visibility visible");
+            console.log("Login tab element:", loginTab);
+            console.log(
+              "Login tab computed style:",
+              window.getComputedStyle(loginTab).display
+            );
+            this.loadExistingCourses();
+          }
+          if (setupTab) {
+            setupTab.style.display = "none";
+            setupTab.style.visibility = "hidden";
+            setupTab.classList.remove("active");
+            console.log("Setup tab display set to none, visibility hidden");
+          }
+        } else {
+          console.log("Switching to setup tab");
+          if (loginTab) {
+            loginTab.style.display = "none";
+            loginTab.style.visibility = "hidden";
+            loginTab.classList.remove("active");
+            console.log("Login tab display set to none, visibility hidden");
+          }
+          if (setupTab) {
+            setupTab.style.display = "block";
+            setupTab.style.visibility = "visible";
+            setupTab.classList.add("active");
+            console.log("Setup tab display set to block, visibility visible");
+            // Ensure step 1 is active when switching to setup tab
+            const step1 = document.getElementById("step-1");
+            if (step1) {
+              step1.classList.add("active");
+            }
+          }
+        }
+      });
+    });
+  }
+
+  setupCourseSelection() {
+    // This method sets up course selection for the login tab
+    // Courses will be loaded when the login tab is activated
+  }
+
+  async loadExistingCourses() {
+    const loadingElement = document.getElementById("loading-courses");
+    const coursesListElement = document.getElementById("courses-list");
+    const noCoursesElement = document.getElementById("no-courses-message");
+
+    try {
+      // Show loading state
+      if (loadingElement) loadingElement.style.display = "flex";
+      if (coursesListElement) coursesListElement.style.display = "none";
+      if (noCoursesElement) noCoursesElement.style.display = "none";
+
+      // Fetch courses from API
+      const response = await fetch("/api/courses");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.courses && data.courses.length > 0) {
+        this.displayCourses(data.courses);
+      } else {
+        this.showNoCoursesMessage();
+      }
+    } catch (error) {
+      console.error("Error loading courses:", error);
+      this.showNoCoursesMessage();
+    } finally {
+      if (loadingElement) loadingElement.style.display = "none";
+    }
+  }
+
+  displayCourses(courses) {
+    const coursesListElement = document.getElementById("courses-list");
+    const noCoursesElement = document.getElementById("no-courses-message");
+
+    if (!coursesListElement) return;
+
+    // Clear existing content
+    coursesListElement.innerHTML = "";
+
+    // Create course items
+    courses.forEach((course) => {
+      const courseItem = document.createElement("div");
+      courseItem.className = "course-item";
+      courseItem.dataset.courseId = course.id;
+
+      courseItem.innerHTML = `
+        <div class="course-icon">
+          <i class="fas fa-graduation-cap"></i>
+        </div>
+        <div class="course-info">
+          <div class="course-name">${course.name}</div>
+          <div class="course-details">
+            <span><i class="fas fa-user"></i> ${course.instructor}</span>
+            <span><i class="fas fa-calendar"></i> ${course.semester}</span>
+            <span><i class="fas fa-users"></i> ${course.students} students</span>
+          </div>
+        </div>
+        <div class="course-actions">
+          <button class="access-btn" onclick="accessCourseDashboard('${course.id}')" title="Access Dashboard">
+            <i class="fas fa-arrow-right"></i>
+            <span>Access</span>
+          </button>
+        </div>
+      `;
+
+      coursesListElement.appendChild(courseItem);
+    });
+
+    // Show courses list
+    coursesListElement.style.display = "flex";
+    if (noCoursesElement) noCoursesElement.style.display = "none";
+  }
+
+  showNoCoursesMessage() {
+    const coursesListElement = document.getElementById("courses-list");
+    const noCoursesElement = document.getElementById("no-courses-message");
+
+    if (coursesListElement) coursesListElement.style.display = "none";
+    if (noCoursesElement) noCoursesElement.style.display = "block";
+  }
+
+  async accessCourseDashboard(courseId) {
+    try {
+      // Show loading state
+      const button = event.target.closest(".access-btn");
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accessing...';
+      button.disabled = true;
+
+      // Get course details
+      const response = await fetch(`/api/courses/${courseId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.success && data.course) {
+        // Store course profile in session storage
+        const profile = {
+          instructorName: data.course.instructor,
+          courseId: data.course.id,
+          courseName: data.course.name,
+          courseCode: data.course.code,
+          loginTime: new Date().toISOString(),
+        };
+        sessionStorage.setItem("courseProfile", JSON.stringify(profile));
+
+        // Mark user as onboarded to prevent redirect back to onboarding
+        sessionStorage.setItem("onboarded", "true");
+
+        // Redirect to dashboard
+        window.location.href = "/dashboard.html";
+      } else {
+        throw new Error("Course not found");
+      }
+    } catch (error) {
+      console.error("Error accessing course dashboard:", error);
+      this.showError("Failed to access dashboard. Please try again.");
+
+      // Reset button state
+      const button = event.target.closest(".access-btn");
+      button.innerHTML = originalText;
+      button.disabled = false;
     }
   }
 
@@ -316,6 +528,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Check if user has already been onboarded
 function checkOnboardingStatus() {
   const isOnboarded = sessionStorage.getItem("onboarded");
+  const courseProfile = sessionStorage.getItem("courseProfile");
   const currentPath = window.location.pathname;
 
   // If user is already onboarded and trying to access onboarding page, redirect to dashboard
@@ -324,14 +537,43 @@ function checkOnboardingStatus() {
     return;
   }
 
+  // If user has a course profile (logged in via existing course) and trying to access onboarding, redirect to dashboard
+  if (courseProfile && currentPath === "/onboarding") {
+    window.location.href = "/dashboard";
+    return;
+  }
+
   // If user hasn't been onboarded and not on onboarding page, redirect to onboarding
   // Exclude certain pages that don't require onboarding
   const publicPages = ["/onboarding", "/", "/index.html"];
-  if (isOnboarded !== "true" && !publicPages.includes(currentPath)) {
+  if (
+    isOnboarded !== "true" &&
+    !courseProfile &&
+    !publicPages.includes(currentPath)
+  ) {
     window.location.href = "/onboarding";
     return;
   }
 }
+
+// Global functions for HTML onclick handlers
+function accessCourseDashboard(courseId) {
+  if (window.onboardingManager) {
+    window.onboardingManager.accessCourseDashboard(courseId);
+  }
+}
+
+function switchToSetupTab() {
+  const setupButton = document.querySelector('[data-tab="setup"]');
+  if (setupButton) {
+    setupButton.click();
+  }
+}
+
+// Initialize onboarding when DOM is loaded
+document.addEventListener("DOMContentLoaded", () => {
+  window.onboardingManager = new OnboardingManager();
+});
 
 // Run onboarding check when page loads
 document.addEventListener("DOMContentLoaded", checkOnboardingStatus);

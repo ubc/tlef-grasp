@@ -9,8 +9,50 @@
 </head>
 <body>
     <div class="onboarding-container">
-        <!-- Progress Indicator -->
-        <div class="progress-indicator">
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" data-tab="setup">New Course Setup</button>
+            <button class="tab-button" data-tab="login">Login to Existing Dashboard</button>
+        </div>
+
+        <!-- Login Tab Content -->
+        <div class="onboarding-card login-tab" id="login-tab" style="display: none;">
+            <div class="step-content">
+                <div class="step-icon">
+                    <i class="fas fa-sign-in-alt"></i>
+                </div>
+                <h2>Welcome Back</h2>
+                <p class="step-subtitle">Select your course to access your dashboard</p>
+                
+                <div class="course-selection-container">
+                    <div class="loading-courses" id="loading-courses">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Loading your courses...</span>
+                    </div>
+                    
+                    <div class="courses-list" id="courses-list" style="display: none;">
+                        <!-- Courses will be populated by JavaScript -->
+                    </div>
+                    
+                    <div class="no-courses-message" id="no-courses-message" style="display: none;">
+                        <div class="no-courses-icon">
+                            <i class="fas fa-graduation-cap"></i>
+                        </div>
+                        <h3>No Courses Found</h3>
+                        <p>You don't have any courses set up yet. Please use the "New Course Setup" tab to create your first course.</p>
+                        <button class="btn btn--primary" onclick="switchToSetupTab()">
+                            <i class="fas fa-plus"></i>
+                            Create New Course
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup Tab Content -->
+        <div class="onboarding-card setup-tab" id="setup-tab">
+            <!-- Progress Indicator -->
+            <div class="progress-indicator">
             <div class="progress-step active" data-step="1">
                 <div class="step-circle">1</div>
                 <span>Course Selection</span>
@@ -169,6 +211,7 @@
                     </button>
                 </div>
             </div>
+        </div>
         </div>
     </div>
 

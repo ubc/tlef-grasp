@@ -1249,7 +1249,7 @@ function handleFileSelect(e) {
 async function addFiles(files) {
   // Show spinner when starting file upload
   showUploadSpinner();
-  
+
   try {
     for (const file of files) {
       const fileObj = {
@@ -1260,62 +1260,62 @@ async function addFiles(files) {
         file: file,
       };
 
-    // Extract content from file if possible
-    try {
-      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-        fileObj.content = await readTextFile(file);
-      } else if (
-        file.type === "application/pdf" ||
-        file.name.endsWith(".pdf")
-      ) {
-        // Use PDF parsing service
-        try {
-          if (pdfService) {
-            fileObj.content = await pdfService.parsePDFToText(file);
-            console.log(
-              `PDF content extracted: ${fileObj.content.length} characters`
-            );
-          } else {
-            throw new Error("PDF service not available");
+      // Extract content from file if possible
+      try {
+        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+          fileObj.content = await readTextFile(file);
+        } else if (
+          file.type === "application/pdf" ||
+          file.name.endsWith(".pdf")
+        ) {
+          // Use PDF parsing service
+          try {
+            if (pdfService) {
+              fileObj.content = await pdfService.parsePDFToText(file);
+              console.log(
+                `PDF content extracted: ${fileObj.content.length} characters`
+              );
+            } else {
+              throw new Error("PDF service not available");
+            }
+          } catch (error) {
+            console.error("PDF parsing failed:", error);
+            fileObj.content = `PDF Document: ${
+              file.name
+            }\nFile Size: ${formatFileSize(file.size)}\nType: ${
+              file.type
+            }\n\nError: ${
+              error.message
+            }\n\nNote: PDF content could not be extracted.`;
           }
-        } catch (error) {
-          console.error("PDF parsing failed:", error);
-          fileObj.content = `PDF Document: ${
-            file.name
-          }\nFile Size: ${formatFileSize(file.size)}\nType: ${
+        } else {
+          fileObj.content = `File: ${file.name}\nType: ${
             file.type
-          }\n\nError: ${
-            error.message
-          }\n\nNote: PDF content could not be extracted.`;
+          }\nSize: ${formatFileSize(
+            file.size
+          )}\n\nThis file type is not directly readable as text content.`;
         }
-      } else {
-        fileObj.content = `File: ${file.name}\nType: ${
-          file.type
-        }\nSize: ${formatFileSize(
-          file.size
-        )}\n\nThis file type is not directly readable as text content.`;
+      } catch (error) {
+        console.error("Error reading file content:", error);
+        fileObj.content = `File: ${file.name} (content could not be extracted)`;
       }
-    } catch (error) {
-      console.error("Error reading file content:", error);
-      fileObj.content = `File: ${file.name} (content could not be extracted)`;
-    }
 
-    // Process file with content generator - ensure course is selected
-    try {
-      if (!state.course) {
-        console.warn(
-          "No course selected, file will be processed without course association"
-        );
-        // Show warning to user
-        showNotification(
-          "Please select a course before uploading files for proper organization.",
-          "warning"
-        );
+      // Process file with content generator - ensure course is selected
+      try {
+        if (!state.course) {
+          console.warn(
+            "No course selected, file will be processed without course association"
+          );
+          // Show warning to user
+          showNotification(
+            "Please select a course before uploading files for proper organization.",
+            "warning"
+          );
+        }
+        await contentGenerator.processFileForRAG(file, state.course || "");
+      } catch (error) {
+        console.error("Error processing file:", error);
       }
-      await contentGenerator.processFileForRAG(file, state.course || "");
-    } catch (error) {
-      console.error("Error processing file:", error);
-    }
 
       state.files.push(fileObj);
     }
@@ -1345,7 +1345,7 @@ function showUploadSpinner() {
   const spinner = document.getElementById("upload-spinner");
   const dropArea = document.getElementById("drop-area");
   const chooseFileBtn = document.getElementById("choose-file-btn");
-  
+
   if (spinner) {
     spinner.style.display = "flex";
     // Disable the choose file button while uploading
@@ -1364,7 +1364,7 @@ function hideUploadSpinner() {
   const spinner = document.getElementById("upload-spinner");
   const dropArea = document.getElementById("drop-area");
   const chooseFileBtn = document.getElementById("choose-file-btn");
-  
+
   if (spinner) {
     spinner.style.display = "none";
     // Re-enable the choose file button
