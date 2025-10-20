@@ -81,15 +81,16 @@ async function processAndStoreDocument(content, metadata) {
 const RAG_CONFIG = {
   provider: "qdrant",
   qdrantConfig: {
-    url: "http://localhost:6333",
-    collectionName: "question-generation-collection",
-    vectorSize: 384,
-    distanceMetric: "Cosine",
+    url: process.env.QDRANT_URL || "http://localhost:6333",
+    collectionName:
+      process.env.QDRANT_COLLECTION_NAME || "question-generation-collection",
+    vectorSize: parseInt(process.env.VECTOR_SIZE) || 384,
+    distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
   },
   embeddingsConfig: {
     providerType: "fastembed",
     fastembedConfig: {
-      model: "fast-bge-small-en-v1.5",
+      model: process.env.EMBEDDINGS_MODEL || "fast-bge-small-en-v1.5",
     },
   },
   chunkingConfig: {
@@ -97,7 +98,7 @@ const RAG_CONFIG = {
     chunkSize: 1000, // Increased from default 300 to 1000 characters
     overlap: 100, // Increased from default 50 to 100 characters
   },
-  debug: true,
+  debug: process.env.DEBUG === "true",
 };
 
 // Configure multer for file uploads
