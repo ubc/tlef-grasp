@@ -4,3 +4,4 @@
 # Dependencies
 /node_moduleslocal_cache/fast-bge-small-en-v1.5/model_optimized.onnx
 *.onnx
+node_modules
