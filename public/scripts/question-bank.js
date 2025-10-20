@@ -76,223 +76,186 @@ class QuestionBankPage {
     }
   }
 
-  initializeData() {
-    // Sample quiz data
-    this.quizzes = [
-      {
-        id: 1,
-        title: "Quiz 3A",
-        week: "Week 3",
-        lecture: "Lecture 2",
-        releases: [{ label: "Quiz 3A", date: "2025-09-12" }],
-        questions: [
-          {
-            id: 1,
-            title: "ΔH and Spontaneity",
-            loCode: "LO 2.1",
-            bloom: "Understand",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-          {
-            id: 2,
-            title: "ΔE Limitations",
-            loCode: "LO 2.1",
-            bloom: "Analyze",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-          {
-            id: 3,
-            title: "Define Microstate",
-            loCode: "LO 2.2",
-            bloom: "Understand",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-        ],
-        isOpen: false,
-        selection: new Set(),
-      },
-      {
-        id: 2,
-        title: "Quiz 4B",
-        week: "Week 4",
-        lecture: "Lecture 3",
-        releases: [{ label: "Quiz 4B", date: "2025-09-19" }],
-        questions: [
-          {
-            id: 4,
-            title: "Entropy in Reactions",
-            loCode: "LO 2.3",
-            bloom: "Analyze",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-          {
-            id: 5,
-            title: "Compare Reversibility",
-            loCode: "LO 3.1",
-            bloom: "Understand",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-        ],
-        isOpen: false,
-        selection: new Set(),
-      },
-      {
-        id: 3,
-        title: "Quiz 5C",
-        week: "Week 5",
-        lecture: "Lecture 4",
-        releases: [{ label: "Quiz 5C", date: "2025-09-26" }],
-        questions: [
-          {
-            id: 6,
-            title: "Phase and ΔS",
-            loCode: "LO 3.2",
-            bloom: "Analyze",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-          {
-            id: 7,
-            title: "Find Entropy Change",
-            loCode: "LO 3.2",
-            bloom: "Understand",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-          {
-            id: 8,
-            title: "Heat and Entropy",
-            loCode: "LO 3.2",
-            bloom: "Analyze",
-            status: "Draft",
-            lastEdited: "2025-01-15 14:30",
-            approved: false,
-            flagged: false,
-          },
-        ],
-        isOpen: false,
-        selection: new Set(),
-      },
-    ];
+  async loadSavedQuestionSets() {
+    try {
+      const response = await fetch("/api/quiz-questions/quizzes");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-    // Sample question data for Overview tab (matching screenshot)
-    this.questions = [
-      {
-        id: 1,
-        title: "Photosynthesis energy conversion",
-        glo: "LO 2.1: Plant cell processes",
-        bloom: "Understand",
-        views: 128,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 1,
-      },
-      {
-        id: 2,
-        title: "ΔH and Spontaneity",
-        glo: "LO 4.3: Newton's Laws — Applications",
-        bloom: "Apply",
-        views: 96,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 1,
-      },
-      {
-        id: 3,
-        title: "Define Microstate",
-        glo: "LO 3.2: Cell division mechanisms",
-        bloom: "Analyze",
-        views: 73,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 1,
-      },
-      {
-        id: 4,
-        title: "Entropy in Reactions",
-        glo: "LO 2.3: Chemical equilibrium",
-        bloom: "Analyze",
-        views: 156,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 2,
-      },
-      {
-        id: 5,
-        title: "Compare Reversibility",
-        glo: "LO 3.1: Thermodynamic processes",
-        bloom: "Understand",
-        views: 89,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 2,
-      },
-      {
-        id: 6,
-        title: "Phase and ΔS",
-        glo: "LO 3.2: Phase transitions",
-        bloom: "Analyze",
-        views: 112,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 3,
-      },
-      {
-        id: 7,
-        title: "Find Entropy Change",
-        glo: "LO 3.1: Statistical mechanics",
-        bloom: "Understand",
-        views: 67,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 4,
-      },
-      {
-        id: 8,
-        title: "Heat and Entropy",
-        glo: "LO 3.2: Molecular dynamics",
-        bloom: "Analyze",
-        views: 94,
-        flagged: false,
-        published: false,
-        status: "Draft",
-        course: "CHEM 121",
-        week: 5,
-      },
-    ];
+      const data = await response.json();
+
+      if (data.success && data.quizzes && data.quizzes.length > 0) {
+        // Convert file storage quiz data to quiz format
+        this.quizzes = data.quizzes.map((quiz, index) => ({
+          id: quiz._id || `quiz_${index}`,
+          title: quiz.quizName,
+          course: quiz.courseName,
+          week: quiz.quizWeek,
+          lecture: `Lecture ${index + 1}`,
+          releases: [
+            {
+              label: quiz.quizName,
+              date: new Date().toISOString().split("T")[0],
+            },
+          ],
+          questions: quiz.questions.map((q, qIndex) => ({
+            id: q.id || q._id || `q_${qIndex}`,
+            title: q.questionText,
+            course: q.courseName,
+            loCode: q.learningObjective,
+            bloom: q.bloomsLevel,
+            status: q.status || "Draft",
+            lastEdited: new Date(q.updatedAt || q.createdAt).toLocaleString(),
+            approved: q.status === "Approved",
+            flagged: q.flagged || false,
+            views: q.views || 0,
+            published: q.published || false,
+          })),
+          isOpen: false,
+          selection: new Set(),
+        }));
+      } else {
+        // No saved question sets - show empty state
+        this.quizzes = [];
+      }
+    } catch (error) {
+      console.error("Error loading saved question sets:", error);
+      this.quizzes = [];
+    }
+  }
+
+  updateFilterOptions() {
+    this.updateLearningObjectivesFilter();
+    this.updateBloomLevelsFilter();
+    this.updateStatusFilter();
+  }
+
+  updateLearningObjectivesFilter() {
+    const objectiveFilter = document.getElementById("objective-filter");
+    if (!objectiveFilter) return;
+
+    // Clear existing options except "All Objectives"
+    objectiveFilter.innerHTML = '<option value="all">All Objectives</option>';
+
+    // Collect unique learning objectives from all quizzes
+    const objectives = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.loCode) {
+          objectives.add(question.loCode);
+        }
+      });
+    });
+
+    // Add objectives to filter
+    Array.from(objectives)
+      .sort()
+      .forEach((objective) => {
+        const option = document.createElement("option");
+        option.value = objective;
+        option.textContent = objective;
+        objectiveFilter.appendChild(option);
+      });
+  }
+
+  updateBloomLevelsFilter() {
+    const bloomFilter = document.getElementById("bloom-filter");
+    if (!bloomFilter) return;
+
+    // Clear existing options except "All Bloom Levels"
+    bloomFilter.innerHTML = '<option value="all">All Bloom Levels</option>';
+
+    // Collect unique bloom levels from all quizzes
+    const bloomLevels = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.bloom) {
+          bloomLevels.add(question.bloom);
+        }
+      });
+    });
+
+    // Add bloom levels to filter
+    Array.from(bloomLevels)
+      .sort()
+      .forEach((bloom) => {
+        const option = document.createElement("option");
+        option.value = bloom;
+        option.textContent = bloom;
+        bloomFilter.appendChild(option);
+      });
+  }
+
+  updateStatusFilter() {
+    const statusFilter = document.getElementById("status-filter");
+    if (!statusFilter) return;
+
+    // Clear existing options except "All Statuses"
+    statusFilter.innerHTML = '<option value="all">All Statuses</option>';
+
+    // Collect unique statuses from all quizzes
+    const statuses = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.status) {
+          statuses.add(question.status);
+        }
+      });
+    });
+
+    // Add statuses to filter
+    Array.from(statuses)
+      .sort()
+      .forEach((status) => {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status;
+        statusFilter.appendChild(option);
+      });
+  }
+
+  async loadQuestionsForOverview() {
+    try {
+      const response = await fetch("/api/quiz-questions");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.questions) {
+        // Convert file storage questions to Overview format
+        this.questions = data.questions.map((question) => ({
+          id: question.id || question._id,
+          title: question.questionText,
+          glo: question.learningObjective,
+          bloom: question.bloomsLevel,
+          views: question.views || Math.floor(Math.random() * 200) + 50,
+          flagged: question.flagged || false,
+          published: question.published || false,
+          status: question.status || "Draft",
+          course: question.courseName,
+          week: parseInt(question.quizWeek?.replace("Week ", "")) || 1,
+        }));
+      } else {
+        this.questions = [];
+      }
+    } catch (error) {
+      console.error("Error loading questions for overview:", error);
+      this.questions = [];
+    }
+  }
+
+  async initializeData() {
+    // Load saved question sets from backend
+    await this.loadSavedQuestionSets();
+
+    // Update filter options based on loaded data
+    this.updateFilterOptions();
+
+    // Load questions for Overview tab from saved quiz data
+    await this.loadQuestionsForOverview();
 
     // Sample history data
     this.history = [
@@ -324,20 +287,20 @@ class QuestionBankPage {
     // Course selector
     const courseSelector = document.getElementById("course-selector");
     if (courseSelector) {
-      courseSelector.addEventListener("change", (e) => {
+      courseSelector.addEventListener("change", async (e) => {
         this.state.course = e.target.value;
-        this.renderAll();
+        await this.renderAll();
       });
     }
 
     // Tab switching
     const tabButtons = document.querySelectorAll(".tab-button");
     tabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         tabButtons.forEach((btn) => btn.classList.remove("active"));
         button.classList.add("active");
         const tabName = button.getAttribute("data-tab");
-        this.switchTab(tabName);
+        await this.switchTab(tabName);
       });
     });
 
@@ -348,30 +311,30 @@ class QuestionBankPage {
     const searchInput = document.getElementById("search-input");
 
     if (objectiveFilter) {
-      objectiveFilter.addEventListener("change", (e) => {
+      objectiveFilter.addEventListener("change", async (e) => {
         this.state.filters.objective = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (bloomFilter) {
-      bloomFilter.addEventListener("change", (e) => {
+      bloomFilter.addEventListener("change", async (e) => {
         this.state.filters.bloom = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (statusFilter) {
-      statusFilter.addEventListener("change", (e) => {
+      statusFilter.addEventListener("change", async (e) => {
         this.state.filters.status = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
+      searchInput.addEventListener("input", async (e) => {
         this.state.filters.q = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
@@ -468,7 +431,7 @@ class QuestionBankPage {
     }
   }
 
-  switchTab(tabName) {
+  async switchTab(tabName) {
     this.state.currentTab = tabName;
     console.log(`Switching to ${tabName} tab`);
 
@@ -485,7 +448,7 @@ class QuestionBankPage {
     // Update page title
     if (tabName === "overview") {
       document.title = "Overview - Question Bank - GRASP";
-      this.renderOverview();
+      await this.renderOverview();
     } else if (tabName === "review") {
       document.title = "Review - Question Bank - GRASP";
       this.renderReview();
@@ -495,9 +458,9 @@ class QuestionBankPage {
     }
   }
 
-  renderAll() {
+  async renderAll() {
     if (this.state.currentTab === "overview") {
-      this.renderOverview();
+      await this.renderOverview();
     } else if (this.state.currentTab === "review") {
       this.renderReview();
     } else if (this.state.currentTab === "approved-history") {
@@ -505,7 +468,9 @@ class QuestionBankPage {
     }
   }
 
-  renderOverview() {
+  async renderOverview() {
+    // Reload questions from saved quiz data
+    await this.loadQuestionsForOverview();
     this.renderQuestionsTable();
     this.updateActionButtons();
   }
@@ -540,7 +505,8 @@ class QuestionBankPage {
       quizzesContainer.innerHTML = `
         <div class="empty-state">
           <h3>No quizzes to review</h3>
-          <p>There are no quizzes matching the current filters.</p>
+          <p>You haven't saved any quizzes from question generation yet.</p>
+          <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first quiz.</p>
         </div>
       `;
       return;
@@ -634,6 +600,9 @@ class QuestionBankPage {
 
     // Re-attach event listeners
     this.attachQuizEventListeners();
+
+    // Update filter options after rendering
+    this.updateFilterOptions();
   }
 
   renderQuizQuestions(quiz) {
@@ -721,8 +690,14 @@ class QuestionBankPage {
 
     // Apply course filter
     if (this.state.course !== "all") {
-      // For now, all quizzes are available for all courses
-      // In a real implementation, you'd filter by course
+      filtered = filtered.filter((quiz) => {
+        // Check if any question in the quiz belongs to the selected course
+        return quiz.questions.some(
+          (question) =>
+            question.course === this.state.course ||
+            quiz.title.toLowerCase().includes(this.state.course.toLowerCase())
+        );
+      });
     }
 
     return filtered;
@@ -1148,14 +1123,14 @@ class QuestionBankPage {
     this.updateCrossQuizActions();
   }
 
-  applyFilters() {
+  async applyFilters() {
     // Clear selections for rows no longer visible
     this.clearOutOfViewSelections();
 
     if (this.state.currentTab === "review") {
       this.renderQuizzes();
     } else if (this.state.currentTab === "overview") {
-      this.renderQuestionsTable();
+      await this.renderOverview();
     }
   }
 
@@ -1245,8 +1220,9 @@ class QuestionBankPage {
       tableBody.innerHTML = `
         <tr>
           <td colspan="5" class="empty-state">
-            <p>No questions match the current filters.</p>
-            <a href="#" class="clear-filters-link" onclick="window.questionBankPage.clearFilters()">Clear filters</a>
+            <p>No questions available.</p>
+            <p>You haven't saved any questions from question generation yet.</p>
+            <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first questions.</p>
           </td>
         </tr>
       `;
