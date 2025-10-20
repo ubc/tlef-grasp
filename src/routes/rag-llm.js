@@ -69,15 +69,17 @@ async function initializeUBCToolkit() {
         globalRAGInstance = await RAGModule.create({
           provider: "qdrant",
           qdrantConfig: {
-            url: "http://localhost:6333",
-            collectionName: "question-generation-collection",
-            vectorSize: 384,
-            distanceMetric: "Cosine",
+            url: process.env.QDRANT_URL || "http://localhost:6333",
+            collectionName:
+              process.env.QDRANT_COLLECTION_NAME ||
+              "question-generation-collection",
+            vectorSize: parseInt(process.env.VECTOR_SIZE) || 384,
+            distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
           },
           embeddingsConfig: {
             providerType: "fastembed",
             fastembedConfig: {
-              model: "fast-bge-small-en-v1.5",
+              model: process.env.EMBEDDINGS_MODEL || "fast-bge-small-en-v1.5",
             },
           },
           chunkingConfig: {
@@ -85,7 +87,7 @@ async function initializeUBCToolkit() {
             chunkSize: 1000, // Increased from default 300 to 1000 characters
             overlap: 100, // Increased from default 50 to 100 characters
           },
-          debug: true,
+          debug: process.env.DEBUG === "true",
         });
         console.log("✅ Global RAG instance initialized successfully");
       } catch (ragError) {
@@ -207,11 +209,11 @@ const RAG_CONFIG = {
 // LLM Configuration
 const LLM_CONFIG = {
   provider: "ollama",
-  endpoint: "http://localhost:11434",
-  defaultModel: "llama3.2:latest",
+  endpoint: process.env.OLLAMA_URL || "http://localhost:11434",
+  defaultModel: process.env.OLLAMA_MODEL || "llama3.2:latest",
   temperature: 0.7,
   maxTokens: 1000,
-  debug: true,
+  debug: process.env.DEBUG === "true",
 };
 
 // Fallback function for direct Ollama API
@@ -251,13 +253,13 @@ CONTENT: ${content}`;
 
     // Call Ollama directly
     console.log("Sending prompt to Ollama...");
-    const response = await fetch(`${LLM_CONFIG.baseURL}/api/generate`, {
+    const response = await fetch(`${LLM_CONFIG.endpoint}/api/generate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: LLM_CONFIG.model,
+        model: LLM_CONFIG.defaultModel,
         prompt: prompt,
         stream: false,
         options: {
@@ -392,12 +394,12 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
       console.log("Generating content summary...");
       try {
         const summaryResponse = await fetch(
-          "http://localhost:11434/api/generate",
+          `${LLM_CONFIG.endpoint}/api/generate`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "llama3.2",
+              model: LLM_CONFIG.defaultModel,
               prompt: `Please summarize the following content in exactly ${maxContentLength} characters or less, preserving the most important information, key concepts, and main points:\n\n${content}`,
               stream: false,
             }),
