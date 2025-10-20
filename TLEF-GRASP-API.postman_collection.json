@@ -1,0 +1,234 @@
+{
+	"info": {
+		"_postman_id": "tlef-grasp-mongodb-api",
+		"name": "TLEF GRASP MongoDB API",
+		"description": "Collection for testing MongoDB operations in the TLEF GRASP application",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "MongoDB Users",
+			"item": [
+				{
+					"name": "Create Test User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"role\": \"student\",\n  \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mongo/test-user",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"test-user"
+							]
+						},
+						"description": "Creates a test user with predefined data"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Custom User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Jane Smith\",\n  \"email\": \"jane@example.com\",\n  \"role\": \"teacher\",\n  \"department\": \"Computer Science\",\n  \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mongo/users",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"users"
+							]
+						},
+						"description": "Creates a custom user with your own data"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mongo/users",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"users"
+							]
+						},
+						"description": "Retrieves all users from the database"
+					},
+					"response": []
+				},
+				{
+					"name": "Get User by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mongo/users/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"users",
+								"{{user_id}}"
+							]
+						},
+						"description": "Retrieves a specific user by their ID. Replace {{user_id}} with an actual user ID from the database."
+					},
+					"response": []
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe Updated\",\n  \"role\": \"senior_student\",\n  \"updatedAt\": \"2024-01-02T00:00:00.000Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/mongo/users/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"users",
+								"{{user_id}}"
+							]
+						},
+						"description": "Updates a specific user. Replace {{user_id}} with an actual user ID from the database."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete User",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/mongo/users/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"mongo",
+								"users",
+								"{{user_id}}"
+							]
+						},
+						"description": "Deletes a specific user. Replace {{user_id}} with an actual user ID from the database."
+					},
+					"response": []
+				}
+			],
+			"description": "All MongoDB user management operations"
+		},
+		{
+			"name": "Example Routes",
+			"item": [
+				{
+					"name": "Hello Example",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/example/hello",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"example",
+								"hello"
+							]
+						},
+						"description": "Tests the basic example route"
+					},
+					"response": []
+				}
+			],
+			"description": "Other API routes in your application"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// This script runs before each request",
+					"console.log('Making request to: ' + pm.request.url);"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// This script runs after each response",
+					"pm.test('Response received', function () {",
+					"    pm.response.to.have.status(200);",
+					"    pm.response.to.be.json;",
+					"});",
+					"",
+					"// Log response for debugging",
+					"console.log('Response:', pm.response.json());"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+					"key": "base_url",
+		"value": "http://localhost:8070",
+			"type": "string",
+			"description": "Base URL for your local development server"
+		},
+		{
+			"key": "user_id",
+			"value": "replace_with_actual_user_id",
+			"type": "string",
+			"description": "Replace this with an actual user ID from your database when testing individual user operations"
+		}
+	]
+}

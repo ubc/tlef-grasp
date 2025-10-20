@@ -7,6 +7,8 @@ const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/questions");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
+const simpleOllamaRoutes = require("./routes/simple-ollama");
+const ragLlmRoutes = require("./routes/rag-llm");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -74,6 +76,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/rag-llm", ragLlmRoutes);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);

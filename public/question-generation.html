@@ -338,6 +338,12 @@
                                 </div>
                             </div>
 
+                            <!-- Questions Loading Spinner -->
+                            <div class="questions-loading" id="questions-loading" style="display: none;">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Generating questions...</p>
+                            </div>
+
                             <!-- Meta LO Groups -->
                             <div class="meta-lo-groups" id="meta-lo-groups">
                                 <!-- Meta LO groups will be rendered here -->
@@ -544,7 +550,13 @@
     <!-- Screen reader announcements -->
     <div class="sr-only" id="sr-announcements" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- PDF.js library for PDF parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="scripts/navigation.js"></script>
+    <script src="scripts/client-rag.js"></script>
+    <script src="scripts/generating-content.js"></script>
+    <script src="scripts/direct-ollama-service.js"></script>
+    <script src="scripts/generation-questions.js"></script>
     <script src="scripts/question-generation.js"></script>
 </body>
 </html>
