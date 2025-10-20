@@ -2,10 +2,16 @@
 const express = require("express");
 const router = express.Router();
 
+// Import Qdrant patch to fix Float32Array issue
+require("../utils/qdrant-patch");
+
 // Import UBC GenAI Toolkit (server-side)
 let LLMModule = null;
 let RAGModule = null;
 let ConsoleLogger = null;
+
+// Global RAG instance (initialized once)
+let globalRAGInstance = null;
 
 // Initialize UBC toolkit
 async function initializeUBCToolkit() {
@@ -48,10 +54,43 @@ async function initializeUBCToolkit() {
     if (LLMModule) {
       console.log("LLMModule.create:", typeof LLMModule.create);
       console.log("LLMModule methods:", Object.getOwnPropertyNames(LLMModule));
+      console.log(
+        "LLMModule prototype:",
+        Object.getOwnPropertyNames(LLMModule.prototype)
+      );
     }
     if (RAGModule) {
       console.log("RAGModule.create:", typeof RAGModule.create);
       console.log("RAGModule methods:", Object.getOwnPropertyNames(RAGModule));
+
+      // Initialize global RAG instance
+      try {
+        console.log("Initializing global RAG instance...");
+        globalRAGInstance = await RAGModule.create({
+          provider: "qdrant",
+          qdrantConfig: {
+            url: "http://localhost:6333",
+            collectionName: "question-generation-collection",
+            vectorSize: 384,
+            distanceMetric: "Cosine",
+          },
+          embeddingsConfig: {
+            providerType: "fastembed",
+            fastembedConfig: {
+              model: "fast-bge-small-en-v1.5",
+            },
+          },
+          chunkingConfig: {
+            strategy: "simple",
+            chunkSize: 1000, // Increased from default 300 to 1000 characters
+            overlap: 100, // Increased from default 50 to 100 characters
+          },
+          debug: true,
+        });
+        console.log("✅ Global RAG instance initialized successfully");
+      } catch (ragError) {
+        console.error("❌ Failed to initialize global RAG instance:", ragError);
+      }
     }
 
     console.log("✅ UBC GenAI Toolkit initialized successfully");
@@ -117,9 +156,9 @@ router.post("/search", express.json(), async (req, res) => {
   try {
     const { query, limit = 5 } = req.body;
 
-    if (!RAGModule) {
+    if (!globalRAGInstance) {
       return res.status(500).json({
-        error: "RAG Module not initialized",
+        error: "Global RAG instance not initialized",
         fallback: "Use client-side RAG",
       });
     }
@@ -128,11 +167,8 @@ router.post("/search", express.json(), async (req, res) => {
     console.log("Query:", query);
     console.log("Limit:", limit);
 
-    // Initialize RAG module
-    const ragModule = await RAGModule.create(RAG_CONFIG);
-
-    // Search for relevant content
-    const results = await ragModule.retrieveContext(query, { limit });
+    // Use global RAG instance
+    const results = await globalRAGInstance.retrieveContext(query, { limit });
 
     console.log(`✅ Found ${results.length} relevant chunks`);
 
@@ -150,8 +186,7 @@ router.post("/search", express.json(), async (req, res) => {
   }
 });
 
-// RAG Configuration - Disabled for development
-// The UBC toolkit embeddings are causing long delays and failures
+// RAG Configuration - Enabled with proper embeddings
 const RAG_CONFIG = {
   provider: "qdrant",
   qdrantConfig: {
@@ -161,8 +196,10 @@ const RAG_CONFIG = {
     distanceMetric: "Cosine",
   },
   embeddingsConfig: {
-    provider: "disabled", // This will cause RAG to fail gracefully
-    model: "disabled",
+    providerType: "fastembed",
+    fastembedConfig: {
+      model: "fast-bge-small-en-v1.5",
+    },
   },
   debug: true,
 };
@@ -170,10 +207,11 @@ const RAG_CONFIG = {
 // LLM Configuration
 const LLM_CONFIG = {
   provider: "ollama",
-  model: "llama3.2:latest",
-  baseURL: "http://localhost:11434",
+  endpoint: "http://localhost:11434",
+  defaultModel: "llama3.2:latest",
   temperature: 0.7,
   maxTokens: 1000,
+  debug: true,
 };
 
 // Fallback function for direct Ollama API
@@ -306,9 +344,42 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
     let ragContext = content; // Use full content as fallback
     let ragChunks = 0;
 
-    // Skip RAG entirely for now - UBC toolkit has initialization issues
-    console.log("Skipping RAG initialization (UBC toolkit has issues)");
-    console.log("💡 Using direct content for question generation");
+    // Try to use RAG for content retrieval
+    try {
+      console.log("=== USING GLOBAL RAG FOR CONTENT RETRIEVAL ===");
+
+      if (!globalRAGInstance) {
+        throw new Error("Global RAG instance not available");
+      }
+
+      // Search for relevant content based on the learning objective
+      console.log("Searching for relevant content using objective:", objective);
+      const ragResults = await globalRAGInstance.retrieveContext(objective, {
+        limit: 3,
+      });
+
+      console.log("RAG results:", ragResults);
+
+      if (ragResults && ragResults.length > 0) {
+        console.log(`✅ Found ${ragResults.length} relevant chunks from RAG`);
+        ragContext = ragResults.map((result) => result.content).join("\n\n");
+        ragChunks = ragResults.length;
+        console.log("RAG context length:", ragContext.length);
+      } else {
+        console.log(
+          "⚠️ No relevant chunks found in RAG, using provided content"
+        );
+        ragContext = content;
+        ragChunks = 0;
+      }
+    } catch (ragError) {
+      console.error("❌ RAG retrieval failed:", ragError);
+      console.error("Error message:", ragError.message);
+      console.error("Error stack:", ragError.stack);
+      console.log("💡 Falling back to provided content");
+      ragContext = content;
+      ragChunks = 0;
+    }
 
     // Limit content length to prevent very long processing times
     const maxContentLength = 5000; // 5k characters for summary
@@ -345,20 +416,20 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
           content.substring(0, maxContentLength) +
           "\n\n[Content summary - first 5000 characters]";
       }
-    } else {
+    } else if (ragChunks === 0) {
+      // Only use content if RAG didn't provide context
       ragContext = content;
     }
-    ragChunks = 0;
 
-    // For now, let's use direct Ollama for LLM generation
-    // The UBC toolkit LLM module seems to have initialization issues
-    console.log(
-      "Using direct Ollama for LLM generation (UBC toolkit LLM has issues)"
-    );
-    return await generateWithDirectOllama(req, res);
+    // Use UBC toolkit LLM for generation
+    console.log("=== USING UBC TOOLKIT LLM FOR GENERATION ===");
 
-    // Create prompt
-    const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
+    try {
+      // Initialize LLM module
+      const llmModule = new LLMModule(LLM_CONFIG);
+
+      // Create prompt with RAG context
+      const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
 
 OBJECTIVE: ${objective}
 BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
@@ -382,48 +453,57 @@ IMPORTANT: Base your question on the specific details, examples, formulas, or co
 
 CONTENT: ${ragContext}`;
 
-    // Generate question using LLM
-    console.log("Sending prompt to Ollama...");
-    const response = await llmModule.generate(prompt);
+      console.log("Sending prompt to UBC toolkit LLM...");
+      const response = await llmModule.sendMessage(prompt);
 
-    console.log("✅ LLM response received");
+      console.log("✅ UBC toolkit LLM response received");
+      console.log("Response format:", typeof response, Object.keys(response));
 
-    // Try to parse JSON response
-    try {
-      let questionData;
+      // Extract content from response
+      const responseContent = response.content || response;
+      console.log("Response content:", responseContent);
 
-      // First try to parse the response directly
+      // Try to parse JSON response
       try {
-        questionData = JSON.parse(response);
-      } catch (directParseError) {
-        // If direct parsing fails, try to extract JSON from the response
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          questionData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw directParseError;
-        }
-      }
+        let questionData;
 
-      res.json({
-        success: true,
-        question: questionData,
-        ragChunks: ragChunks,
-        method: "RAG + UBC Toolkit + Ollama",
-      });
-    } catch (parseError) {
-      // If JSON parsing fails, return the raw response
-      res.json({
-        success: true,
-        question: {
-          question: response,
-          options: ["Option A", "Option B", "Option C", "Option D"],
-          correctAnswer: 0,
-          explanation: "Generated using RAG + LLM",
-        },
-        ragChunks: ragChunks,
-        method: "RAG + UBC Toolkit + Ollama (Raw Response)",
-      });
+        // First try to parse the response content directly
+        try {
+          questionData = JSON.parse(responseContent);
+        } catch (directParseError) {
+          // If direct parsing fails, try to extract JSON from the response
+          const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            questionData = JSON.parse(jsonMatch[0]);
+          } else {
+            throw directParseError;
+          }
+        }
+
+        res.json({
+          success: true,
+          question: questionData,
+          ragChunks: ragChunks,
+          method: "RAG + UBC Toolkit + Ollama",
+        });
+      } catch (parseError) {
+        // If JSON parsing fails, return the raw response
+        res.json({
+          success: true,
+          question: {
+            question: response,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctAnswer: 0,
+            explanation: "Generated using RAG + UBC Toolkit + Ollama",
+          },
+          ragChunks: ragChunks,
+          method: "RAG + UBC Toolkit + Ollama (Raw Response)",
+        });
+      }
+    } catch (llmError) {
+      console.error("❌ UBC toolkit LLM failed:", llmError.message);
+      console.log("💡 Falling back to direct Ollama API");
+      return await generateWithDirectOllama(req, res);
     }
   } catch (error) {
     console.error("RAG + LLM generation failed:", error);

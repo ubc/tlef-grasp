@@ -4015,6 +4015,13 @@ async function generateQuestionsFromContent() {
   console.log("Summary length:", state.summary.length);
   console.log("Objective groups:", state.objectiveGroups.length);
 
+  // Show loading spinner
+  const questionsLoading = document.getElementById("questions-loading");
+  const metaLoGroups = document.getElementById("meta-lo-groups");
+
+  if (questionsLoading) questionsLoading.style.display = "block";
+  if (metaLoGroups) metaLoGroups.style.display = "none";
+
   try {
     // Generate questions using the question generator
     const questions = await questionGenerator.generateQuestions(
@@ -4039,6 +4046,10 @@ async function generateQuestionsFromContent() {
     state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
     console.log("Fell back to sample data");
     renderStep4();
+  } finally {
+    // Hide loading spinner
+    if (questionsLoading) questionsLoading.style.display = "none";
+    if (metaLoGroups) metaLoGroups.style.display = "block";
   }
 }
 
@@ -4458,29 +4469,42 @@ async function handleRegenerateAll() {
 
   // Show loading state
   const regenerateAllBtn = document.getElementById("regenerate-all-btn");
+  const questionsLoading = document.getElementById("questions-loading");
+  const metaLoGroups = document.getElementById("meta-lo-groups");
+
   if (regenerateAllBtn) {
     const originalText = regenerateAllBtn.textContent;
     regenerateAllBtn.textContent = "Regenerating...";
     regenerateAllBtn.disabled = true;
+  }
 
-    try {
-      // Clear existing questions
-      state.questions = [];
-      state.questionGroups = [];
+  // Show loading spinner
+  if (questionsLoading) questionsLoading.style.display = "block";
+  if (metaLoGroups) metaLoGroups.style.display = "none";
 
-      // Generate new questions from content
-      await generateQuestionsFromContent();
+  try {
+    // Clear existing questions
+    state.questions = [];
+    state.questionGroups = [];
 
-      console.log("Questions regenerated successfully");
-      showToast("Questions regenerated from uploaded content", "success");
-    } catch (error) {
-      console.error("Failed to regenerate questions:", error);
-      showToast("Failed to regenerate questions", "error");
-    } finally {
-      // Restore button state
+    // Generate new questions from content
+    await generateQuestionsFromContent();
+
+    console.log("Questions regenerated successfully");
+    showToast("Questions regenerated from uploaded content", "success");
+  } catch (error) {
+    console.error("Failed to regenerate questions:", error);
+    showToast("Failed to regenerate questions", "error");
+  } finally {
+    // Restore button state
+    if (regenerateAllBtn) {
       regenerateAllBtn.textContent = originalText;
       regenerateAllBtn.disabled = false;
     }
+
+    // Hide loading spinner
+    if (questionsLoading) questionsLoading.style.display = "none";
+    if (metaLoGroups) metaLoGroups.style.display = "block";
   }
 }
 
@@ -4525,16 +4549,22 @@ function handleAddToBank() {
 function handleAddSelectedToBank() {
   if (state.selectedQuestions.size === 0) {
     showToast("No questions selected", "warning");
+    return;
   }
 
   showToast(
     `Added ${state.selectedQuestions.size} question${
-      state.selectedQuestions.size === 0 ? "" : "s"
+      state.selectedQuestions.size === 1 ? "" : "s"
     } to Question Bank`,
     "success"
   );
   state.selectedQuestions.clear();
   updateSelectionUI();
+
+  // Navigate to question bank after a short delay to allow toast to show
+  setTimeout(() => {
+    window.location.href = "question-bank.html";
+  }, 1500);
 }
 
 function editQuestion(questionId) {

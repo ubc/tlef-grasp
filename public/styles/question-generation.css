@@ -1067,6 +1067,27 @@
     padding: 0;
 }
 
+/* Questions Loading Spinner */
+.questions-loading {
+    text-align: center;
+    padding: 80px 20px;
+    color: #7f8c8d;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.questions-loading i {
+    font-size: 48px;
+    margin-bottom: 20px;
+    color: #3498db;
+}
+
+.questions-loading p {
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0;
+    color: #2c3e50;
+}
+
 /* Step 4 specific header styling - compact without title */
 .step-panel[data-step="4"] .content-header {
     margin-bottom: 20px; /* Reduced margin since no title */
