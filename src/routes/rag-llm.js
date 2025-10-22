@@ -110,7 +110,21 @@ async function initializeUBCToolkit() {
 }
 
 // Initialize on startup
-initializeUBCToolkit();
+let initializationPromise = initializeUBCToolkit();
+
+// Wait for initialization to complete before handling requests
+async function ensureRAGInitialized() {
+  if (!globalRAGInstance) {
+    console.log("RAG not initialized, waiting for initialization...");
+    try {
+      await initializationPromise;
+      console.log("RAG initialization completed");
+    } catch (error) {
+      console.error("RAG initialization failed:", error);
+    }
+  }
+  return globalRAGInstance;
+}
 
 // Add document to RAG
 router.post("/add-document", express.json(), async (req, res) => {
@@ -158,19 +172,25 @@ router.post("/search", express.json(), async (req, res) => {
   try {
     const { query, limit = 5 } = req.body;
 
-    if (!globalRAGInstance) {
+    console.log("=== RAG SEARCH REQUEST ===");
+    console.log("Query:", query);
+    console.log("Limit:", limit);
+
+    // Ensure RAG is initialized
+    const ragInstance = await ensureRAGInitialized();
+
+    if (!ragInstance) {
+      console.error("❌ Failed to initialize RAG instance");
       return res.status(500).json({
-        error: "Global RAG instance not initialized",
+        error: "Failed to initialize RAG instance",
         fallback: "Use client-side RAG",
       });
     }
 
     console.log("=== SEARCHING SERVER-SIDE RAG ===");
-    console.log("Query:", query);
-    console.log("Limit:", limit);
 
-    // Use global RAG instance
-    const results = await globalRAGInstance.retrieveContext(query, { limit });
+    // Use RAG instance
+    const results = await ragInstance.retrieveContext(query, { limit });
 
     console.log(`✅ Found ${results.length} relevant chunks`);
 

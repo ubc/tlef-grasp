@@ -4,22 +4,23 @@
 class QuestionBankPage {
   constructor() {
     this.state = {
-      course: 'all',
-      filters: { objective: 'all', bloom: 'all', status: 'all', q: '' },
-      sort: { key: 'views', dir: 'desc' },
+      course: "all",
+      filters: { objective: "all", bloom: "all", status: "all", q: "" },
+      sort: { key: "views", dir: "desc" },
       selectedQuestionIds: new Set(),
       selectedHistoryId: null,
-      currentTab: 'review'
+      currentTab: "review",
     };
-    
+
     this.questions = [];
     this.history = [];
     this.quizzes = [];
     this.init();
   }
 
-  init() {
+  async init() {
     this.initializeNavigation();
+    await this.loadCourseData();
     this.initializeData();
     this.initializeEventListeners();
     this.renderAll();
@@ -31,229 +32,230 @@ class QuestionBankPage {
     }
   }
 
-  initializeData() {
-    // Sample quiz data
-    this.quizzes = [
-      {
-        id: 1,
-        title: 'Quiz 3A',
-        week: 'Week 3',
-        lecture: 'Lecture 2',
-        releases: [
-          { label: 'Quiz 3A', date: '2025-09-12' }
-        ],
-        questions: [
-          {
-            id: 1,
-            title: 'ΔH and Spontaneity',
-            loCode: 'LO 2.1',
-            bloom: 'Understand',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          },
-          {
-            id: 2,
-            title: 'ΔE Limitations',
-            loCode: 'LO 2.1',
-            bloom: 'Analyze',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          },
-          {
-            id: 3,
-            title: 'Define Microstate',
-            loCode: 'LO 2.2',
-            bloom: 'Understand',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          }
-        ],
-        isOpen: false,
-        selection: new Set()
-      },
-      {
-        id: 2,
-        title: 'Quiz 4B',
-        week: 'Week 4',
-        lecture: 'Lecture 3',
-        releases: [
-          { label: 'Quiz 4B', date: '2025-09-19' }
-        ],
-        questions: [
-          {
-            id: 4,
-            title: 'Entropy in Reactions',
-            loCode: 'LO 2.3',
-            bloom: 'Analyze',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          },
-          {
-            id: 5,
-            title: 'Compare Reversibility',
-            loCode: 'LO 3.1',
-            bloom: 'Understand',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          }
-        ],
-        isOpen: false,
-        selection: new Set()
-      },
-      {
-        id: 3,
-        title: 'Quiz 5C',
-        week: 'Week 5',
-        lecture: 'Lecture 4',
-        releases: [
-          { label: 'Quiz 5C', date: '2025-09-26' }
-        ],
-        questions: [
-          {
-            id: 6,
-            title: 'Phase and ΔS',
-            loCode: 'LO 3.2',
-            bloom: 'Analyze',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          },
-          {
-            id: 7,
-            title: 'Find Entropy Change',
-            loCode: 'LO 3.2',
-            bloom: 'Understand',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          },
-          {
-            id: 8,
-            title: 'Heat and Entropy',
-            loCode: 'LO 3.2',
-            bloom: 'Analyze',
-            status: 'Draft',
-            lastEdited: '2025-01-15 14:30',
-            approved: false,
-            flagged: false
-          }
-        ],
-        isOpen: false,
-        selection: new Set()
+  async loadCourseData() {
+    try {
+      const response = await fetch("/api/courses");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    ];
 
-    // Sample question data for Overview tab (matching screenshot)
-    this.questions = [
-      {
-        id: 1,
-        title: 'Photosynthesis energy conversion',
-        glo: 'LO 2.1: Plant cell processes',
-        bloom: 'Understand',
-        views: 128,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 1
-      },
-      {
-        id: 2,
-        title: 'ΔH and Spontaneity',
-        glo: 'LO 4.3: Newton\'s Laws — Applications',
-        bloom: 'Apply',
-        views: 96,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 1
-      },
-      {
-        id: 3,
-        title: 'Define Microstate',
-        glo: 'LO 3.2: Cell division mechanisms',
-        bloom: 'Analyze',
-        views: 73,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 1
-      },
-      {
-        id: 4,
-        title: 'Entropy in Reactions',
-        glo: 'LO 2.3: Chemical equilibrium',
-        bloom: 'Analyze',
-        views: 156,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 2
-      },
-      {
-        id: 5,
-        title: 'Compare Reversibility',
-        glo: 'LO 3.1: Thermodynamic processes',
-        bloom: 'Understand',
-        views: 89,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 2
-      },
-      {
-        id: 6,
-        title: 'Phase and ΔS',
-        glo: 'LO 3.2: Phase transitions',
-        bloom: 'Analyze',
-        views: 112,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 3
-      },
-      {
-        id: 7,
-        title: 'Find Entropy Change',
-        glo: 'LO 3.1: Statistical mechanics',
-        bloom: 'Understand',
-        views: 67,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 4
-      },
-      {
-        id: 8,
-        title: 'Heat and Entropy',
-        glo: 'LO 3.2: Molecular dynamics',
-        bloom: 'Analyze',
-        views: 94,
-        flagged: false,
-        published: false,
-        status: 'Draft',
-        course: 'CHEM 121',
-        week: 5
+      const data = await response.json();
+
+      if (data.success && data.courses.length > 0) {
+        this.updateCourseSelector(data.courses);
+      } else {
+        this.showNoCoursesMessage();
       }
-    ];
+    } catch (error) {
+      console.error("Error loading course data:", error);
+      this.showNoCoursesMessage();
+    }
+  }
+
+  updateCourseSelector(courses) {
+    const courseSelector = document.getElementById("course-selector");
+    if (courseSelector) {
+      // Keep the "All Courses" option and clear others
+      courseSelector.innerHTML = '<option value="all">All Courses</option>';
+
+      // Add course options
+      courses.forEach((course) => {
+        const option = document.createElement("option");
+        option.value = course.code;
+        option.textContent = `${course.code} - ${course.name}`;
+        courseSelector.appendChild(option);
+      });
+    }
+  }
+
+  showNoCoursesMessage() {
+    const courseSelector = document.getElementById("course-selector");
+    if (courseSelector) {
+      courseSelector.innerHTML =
+        '<option value="">No courses available. Please complete onboarding first.</option>';
+    }
+  }
+
+  async loadSavedQuestionSets() {
+    try {
+      const response = await fetch("/api/quiz-questions/quizzes");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.quizzes && data.quizzes.length > 0) {
+        // Convert file storage quiz data to quiz format
+        this.quizzes = data.quizzes.map((quiz, index) => ({
+          id: quiz._id || `quiz_${index}`,
+          title: quiz.quizName,
+          course: quiz.courseName,
+          week: quiz.quizWeek,
+          lecture: `Lecture ${index + 1}`,
+          releases: [
+            {
+              label: quiz.quizName,
+              date: new Date().toISOString().split("T")[0],
+            },
+          ],
+          questions: quiz.questions.map((q, qIndex) => ({
+            id: q.id || q._id || `q_${qIndex}`,
+            title: q.questionText,
+            course: q.courseName,
+            loCode: q.learningObjective,
+            bloom: q.bloomsLevel,
+            status: q.status || "Draft",
+            lastEdited: new Date(q.updatedAt || q.createdAt).toLocaleString(),
+            approved: q.status === "Approved",
+            flagged: q.flagged || false,
+            views: q.views || 0,
+            published: q.published || false,
+          })),
+          isOpen: false,
+          selection: new Set(),
+        }));
+      } else {
+        // No saved question sets - show empty state
+        this.quizzes = [];
+      }
+    } catch (error) {
+      console.error("Error loading saved question sets:", error);
+      this.quizzes = [];
+    }
+  }
+
+  updateFilterOptions() {
+    this.updateLearningObjectivesFilter();
+    this.updateBloomLevelsFilter();
+    this.updateStatusFilter();
+  }
+
+  updateLearningObjectivesFilter() {
+    const objectiveFilter = document.getElementById("objective-filter");
+    if (!objectiveFilter) return;
+
+    // Clear existing options except "All Objectives"
+    objectiveFilter.innerHTML = '<option value="all">All Objectives</option>';
+
+    // Collect unique learning objectives from all quizzes
+    const objectives = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.loCode) {
+          objectives.add(question.loCode);
+        }
+      });
+    });
+
+    // Add objectives to filter
+    Array.from(objectives)
+      .sort()
+      .forEach((objective) => {
+        const option = document.createElement("option");
+        option.value = objective;
+        option.textContent = objective;
+        objectiveFilter.appendChild(option);
+      });
+  }
+
+  updateBloomLevelsFilter() {
+    const bloomFilter = document.getElementById("bloom-filter");
+    if (!bloomFilter) return;
+
+    // Clear existing options except "All Bloom Levels"
+    bloomFilter.innerHTML = '<option value="all">All Bloom Levels</option>';
+
+    // Collect unique bloom levels from all quizzes
+    const bloomLevels = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.bloom) {
+          bloomLevels.add(question.bloom);
+        }
+      });
+    });
+
+    // Add bloom levels to filter
+    Array.from(bloomLevels)
+      .sort()
+      .forEach((bloom) => {
+        const option = document.createElement("option");
+        option.value = bloom;
+        option.textContent = bloom;
+        bloomFilter.appendChild(option);
+      });
+  }
+
+  updateStatusFilter() {
+    const statusFilter = document.getElementById("status-filter");
+    if (!statusFilter) return;
+
+    // Clear existing options except "All Statuses"
+    statusFilter.innerHTML = '<option value="all">All Statuses</option>';
+
+    // Collect unique statuses from all quizzes
+    const statuses = new Set();
+    this.quizzes.forEach((quiz) => {
+      quiz.questions.forEach((question) => {
+        if (question.status) {
+          statuses.add(question.status);
+        }
+      });
+    });
+
+    // Add statuses to filter
+    Array.from(statuses)
+      .sort()
+      .forEach((status) => {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status;
+        statusFilter.appendChild(option);
+      });
+  }
+
+  async loadQuestionsForOverview() {
+    try {
+      const response = await fetch("/api/quiz-questions");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.questions) {
+        // Convert file storage questions to Overview format
+        this.questions = data.questions.map((question) => ({
+          id: question.id || question._id,
+          title: question.questionText,
+          glo: question.learningObjective,
+          bloom: question.bloomsLevel,
+          views: question.views || Math.floor(Math.random() * 200) + 50,
+          flagged: question.flagged || false,
+          published: question.published || false,
+          status: question.status || "Draft",
+          course: question.courseName,
+          week: parseInt(question.quizWeek?.replace("Week ", "")) || 1,
+        }));
+      } else {
+        this.questions = [];
+      }
+    } catch (error) {
+      console.error("Error loading questions for overview:", error);
+      this.questions = [];
+    }
+  }
+
+  async initializeData() {
+    // Load saved question sets from backend
+    await this.loadSavedQuestionSets();
+
+    // Update filter options based on loaded data
+    this.updateFilterOptions();
+
+    // Load questions for Overview tab from saved quiz data
+    await this.loadQuestionsForOverview();
 
     // Sample history data
     this.history = [
@@ -262,77 +264,77 @@ class QuestionBankPage {
         questionIds: [1, 2, 3, 4, 5],
         count: 5,
         timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-        label: 'Today, 3:00 PM'
+        label: "Today, 3:00 PM",
       },
       {
         id: 2,
         questionIds: [6, 7],
         count: 2,
         timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-        label: 'Yesterday, 12:34 PM'
+        label: "Yesterday, 12:34 PM",
       },
       {
         id: 3,
         questionIds: [8],
         count: 1,
         timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
-        label: 'Today, 2:00 PM'
-      }
+        label: "Today, 2:00 PM",
+      },
     ];
   }
 
   initializeEventListeners() {
     // Course selector
-    const courseSelector = document.getElementById('course-selector');
+    const courseSelector = document.getElementById("course-selector");
     if (courseSelector) {
-      courseSelector.addEventListener('change', (e) => {
+      courseSelector.addEventListener("change", async (e) => {
         this.state.course = e.target.value;
-        this.renderAll();
+        await this.renderAll();
       });
     }
 
     // Tab switching
-    const tabButtons = document.querySelectorAll('.tab-button');
-    tabButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        tabButtons.forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active');
-        const tabName = button.getAttribute('data-tab');
-        this.switchTab(tabName);
+    const tabButtons = document.querySelectorAll(".tab-button");
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", async () => {
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        button.classList.add("active");
+        const tabName = button.getAttribute("data-tab");
+        await this.switchTab(tabName);
       });
     });
 
     // Filters (using the main filters section)
-    const objectiveFilter = document.getElementById('objective-filter');
-    const bloomFilter = document.getElementById('bloom-filter');
-    const statusFilter = document.getElementById('status-filter');
-    const searchInput = document.getElementById('search-input');
+    const objectiveFilter = document.getElementById("objective-filter");
+    const bloomFilter = document.getElementById("bloom-filter");
+    const statusFilter = document.getElementById("status-filter");
+    const searchInput = document.getElementById("search-input");
 
     if (objectiveFilter) {
-      objectiveFilter.addEventListener('change', (e) => {
+      objectiveFilter.addEventListener("change", async (e) => {
         this.state.filters.objective = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (bloomFilter) {
-      bloomFilter.addEventListener('change', (e) => {
+      bloomFilter.addEventListener("change", async (e) => {
         this.state.filters.bloom = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (statusFilter) {
-      statusFilter.addEventListener('change', (e) => {
+      statusFilter.addEventListener("change", async (e) => {
         this.state.filters.status = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
     if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
+      searchInput.addEventListener("input", async (e) => {
         this.state.filters.q = e.target.value;
-        this.applyFilters();
+        await this.applyFilters();
       });
     }
 
@@ -350,68 +352,78 @@ class QuestionBankPage {
   }
 
   initializeSortableHeaders() {
-    const sortableHeaders = document.querySelectorAll('.sortable-header');
-    sortableHeaders.forEach(header => {
-      header.addEventListener('click', () => {
-        const sortKey = header.getAttribute('data-sort');
+    const sortableHeaders = document.querySelectorAll(".sortable-header");
+    sortableHeaders.forEach((header) => {
+      header.addEventListener("click", () => {
+        const sortKey = header.getAttribute("data-sort");
         this.handleSort(sortKey);
       });
     });
   }
 
   initializeActionButtons() {
-    const editBtn = document.getElementById('edit-btn');
-    const flagBtn = document.getElementById('flag-btn');
-    const deleteBtn = document.getElementById('delete-btn');
-    const publishBtn = document.getElementById('publish-btn');
+    const editBtn = document.getElementById("edit-btn");
+    const flagBtn = document.getElementById("flag-btn");
+    const deleteBtn = document.getElementById("delete-btn");
+    const publishBtn = document.getElementById("publish-btn");
 
-    if (editBtn) editBtn.addEventListener('click', () => this.handleEdit());
-    if (flagBtn) flagBtn.addEventListener('click', () => this.handleFlag());
-    if (deleteBtn) deleteBtn.addEventListener('click', () => this.handleDelete());
-    if (publishBtn) publishBtn.addEventListener('click', () => this.handlePublish());
+    if (editBtn) editBtn.addEventListener("click", () => this.handleEdit());
+    if (flagBtn) flagBtn.addEventListener("click", () => this.handleFlag());
+    if (deleteBtn)
+      deleteBtn.addEventListener("click", () => this.handleDelete());
+    if (publishBtn)
+      publishBtn.addEventListener("click", () => this.handlePublish());
 
     // Select all checkbox
-    const selectAllCheckbox = document.getElementById('select-all');
+    const selectAllCheckbox = document.getElementById("select-all");
     if (selectAllCheckbox) {
-      selectAllCheckbox.addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
+      selectAllCheckbox.addEventListener("change", (e) =>
+        this.handleSelectAll(e.target.checked)
+      );
     }
   }
 
   initializeCrossQuizActions() {
-    const crossApproveBtn = document.getElementById('cross-approve-btn');
-    const crossFlagBtn = document.getElementById('cross-flag-btn');
-    const crossDeleteBtn = document.getElementById('cross-delete-btn');
+    const crossApproveBtn = document.getElementById("cross-approve-btn");
+    const crossFlagBtn = document.getElementById("cross-flag-btn");
+    const crossDeleteBtn = document.getElementById("cross-delete-btn");
 
     if (crossApproveBtn) {
-      crossApproveBtn.addEventListener('click', () => this.handleCrossQuizAction('approve'));
+      crossApproveBtn.addEventListener("click", () =>
+        this.handleCrossQuizAction("approve")
+      );
     }
     if (flagBtn) {
-      crossFlagBtn.addEventListener('click', () => this.handleCrossQuizAction('flag'));
+      crossFlagBtn.addEventListener("click", () =>
+        this.handleCrossQuizAction("flag")
+      );
     }
     if (crossDeleteBtn) {
-      crossDeleteBtn.addEventListener('click', () => this.handleCrossQuizAction('delete'));
+      crossDeleteBtn.addEventListener("click", () =>
+        this.handleCrossQuizAction("delete")
+      );
     }
   }
 
   initializeModalEvents() {
-    const modal = document.getElementById('confirm-modal');
-    const modalClose = document.getElementById('modal-close');
-    const modalCancel = document.getElementById('modal-cancel');
-    const modalConfirm = document.getElementById('modal-confirm');
+    const modal = document.getElementById("confirm-modal");
+    const modalClose = document.getElementById("modal-close");
+    const modalCancel = document.getElementById("modal-cancel");
+    const modalConfirm = document.getElementById("modal-confirm");
 
     if (modalClose) {
-      modalClose.addEventListener('click', () => this.hideModal());
+      modalClose.addEventListener("click", () => this.hideModal());
     }
     if (modalCancel) {
-      modalCancel.addEventListener('click', () => this.hideModal());
+      modalCancel.addEventListener("click", () => this.hideModal());
     }
     if (modalConfirm) {
-      modalConfirm.addEventListener('click', () => this.confirmModalAction());
+      modalConfirm.addEventListener("click", () => this.confirmModalAction());
     }
 
     // Close modal on outside click
     if (modal) {
-      modal.addEventListener('click', (e) => {
+      modal.addEventListener("click", (e) => {
         if (e.target === modal) {
           this.hideModal();
         }
@@ -419,44 +431,46 @@ class QuestionBankPage {
     }
   }
 
-  switchTab(tabName) {
+  async switchTab(tabName) {
     this.state.currentTab = tabName;
     console.log(`Switching to ${tabName} tab`);
-    
+
     // Hide all tab panels
-    const tabPanels = document.querySelectorAll('.tab-panel');
-    tabPanels.forEach(panel => panel.style.display = 'none');
-    
+    const tabPanels = document.querySelectorAll(".tab-panel");
+    tabPanels.forEach((panel) => (panel.style.display = "none"));
+
     // Show the selected tab panel
     const selectedPanel = document.getElementById(`${tabName}-panel`);
     if (selectedPanel) {
-      selectedPanel.style.display = 'block';
+      selectedPanel.style.display = "block";
     }
-    
+
     // Update page title
-    if (tabName === 'overview') {
-      document.title = 'Overview - Question Bank - GRASP';
-      this.renderOverview();
-    } else if (tabName === 'review') {
-      document.title = 'Review - Question Bank - GRASP';
+    if (tabName === "overview") {
+      document.title = "Overview - Question Bank - GRASP";
+      await this.renderOverview();
+    } else if (tabName === "review") {
+      document.title = "Review - Question Bank - GRASP";
       this.renderReview();
-    } else if (tabName === 'approved-history') {
-      document.title = 'Approved History - Question Bank - GRASP';
+    } else if (tabName === "approved-history") {
+      document.title = "Approved History - Question Bank - GRASP";
       this.renderApprovedHistory();
     }
   }
 
-  renderAll() {
-    if (this.state.currentTab === 'overview') {
-      this.renderOverview();
-    } else if (this.state.currentTab === 'review') {
+  async renderAll() {
+    if (this.state.currentTab === "overview") {
+      await this.renderOverview();
+    } else if (this.state.currentTab === "review") {
       this.renderReview();
-    } else if (this.state.currentTab === 'approved-history') {
+    } else if (this.state.currentTab === "approved-history") {
       this.renderApprovedHistory();
     }
   }
 
-  renderOverview() {
+  async renderOverview() {
+    // Reload questions from saved quiz data
+    await this.loadQuestionsForOverview();
     this.renderQuestionsTable();
     this.updateActionButtons();
   }
@@ -468,7 +482,9 @@ class QuestionBankPage {
 
   renderApprovedHistory() {
     // Placeholder for approved history content
-    const approvedHistoryPanel = document.getElementById('approved-history-panel');
+    const approvedHistoryPanel = document.getElementById(
+      "approved-history-panel"
+    );
     if (approvedHistoryPanel) {
       approvedHistoryPanel.innerHTML = `
         <div class="empty-state">
@@ -480,84 +496,118 @@ class QuestionBankPage {
   }
 
   renderQuizzes() {
-    const quizzesContainer = document.getElementById('quizzes-container');
+    const quizzesContainer = document.getElementById("quizzes-container");
     if (!quizzesContainer) return;
 
     const filteredQuizzes = this.getFilteredQuizzes();
-    
+
     if (filteredQuizzes.length === 0) {
       quizzesContainer.innerHTML = `
         <div class="empty-state">
           <h3>No quizzes to review</h3>
-          <p>There are no quizzes matching the current filters.</p>
+          <p>You haven't saved any quizzes from question generation yet.</p>
+          <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first quiz.</p>
         </div>
       `;
       return;
     }
 
-    quizzesContainer.innerHTML = filteredQuizzes.map(quiz => `
-      <div class="quiz-card" data-quiz-id="${quiz.id}" onclick="window.questionBankPage.navigateToQuestionReview(${quiz.id})">
+    quizzesContainer.innerHTML = filteredQuizzes
+      .map(
+        (quiz) => `
+      <div class="quiz-card" data-quiz-id="${
+        quiz.id
+      }" onclick="window.questionBankPage.navigateToQuestionReview(${quiz.id})">
         <div class="quiz-header">
           <div class="quiz-header-left">
             <div class="quiz-chips">
-              ${quiz.week ? `<span class="quiz-chip">${quiz.week}</span>` : ''}
-              ${quiz.lecture ? `<span class="quiz-chip">${quiz.lecture}</span>` : ''}
+              ${quiz.week ? `<span class="quiz-chip">${quiz.week}</span>` : ""}
+              ${
+                quiz.lecture
+                  ? `<span class="quiz-chip">${quiz.lecture}</span>`
+                  : ""
+              }
             </div>
             <h3 class="quiz-title">${quiz.title}</h3>
             <div class="quiz-releases">
-              ${quiz.releases.map(release => `
+              ${quiz.releases
+                .map(
+                  (release) => `
                 <div class="release-item">${release.label} - ${release.date}</div>
-              `).join('')}
+              `
+                )
+                .join("")}
             </div>
           </div>
           <div class="quiz-header-right">
             <div class="quiz-progress">
               <div class="progress-bar">
-                <div class="progress-fill" style="width: ${this.getQuizProgress(quiz)}%"></div>
+                <div class="progress-fill" style="width: ${this.getQuizProgress(
+                  quiz
+                )}%"></div>
               </div>
-              <div class="progress-text">${this.getQuizProgress(quiz)}% Reviewed</div>
+              <div class="progress-text">${this.getQuizProgress(
+                quiz
+              )}% Reviewed</div>
             </div>
-            <button class="open-details-btn ${quiz.isOpen ? 'expanded' : ''}" 
-                    onclick="event.stopPropagation(); window.questionBankPage.toggleQuizDetails(${quiz.id})">
+            <button class="open-details-btn ${quiz.isOpen ? "expanded" : ""}" 
+                    onclick="event.stopPropagation(); window.questionBankPage.toggleQuizDetails(${
+                      quiz.id
+                    })">
               Open details <i class="fas fa-chevron-down"></i>
             </button>
           </div>
         </div>
-        <div class="quiz-details ${quiz.isOpen ? 'expanded' : ''}">
+        <div class="quiz-details ${quiz.isOpen ? "expanded" : ""}">
           <div class="details-header">
             <h4 class="details-title">Questions</h4>
             <div class="details-select-all">
               <input type="checkbox" class="quiz-select-all" 
                      onclick="event.stopPropagation()"
-                     onchange="window.questionBankPage.handleQuizSelectAll(${quiz.id}, this.checked)">
+                     onchange="window.questionBankPage.handleQuizSelectAll(${
+                       quiz.id
+                     }, this.checked)">
               <label>Select all</label>
             </div>
           </div>
           <div class="quiz-questions">
             ${this.renderQuizQuestions(quiz)}
           </div>
-          <div class="quiz-bulk-actions ${quiz.selection.size > 0 ? 'visible' : ''}">
-            <button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'approve')">
+          <div class="quiz-bulk-actions ${
+            quiz.selection.size > 0 ? "visible" : ""
+          }">
+            <button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
+              quiz.id
+            }, 'approve')">
               Approve selected
             </button>
-            <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'flag')">
+            <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
+              quiz.id
+            }, 'flag')">
               Flag selected
             </button>
-            <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'delete')">
+            <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
+              quiz.id
+            }, 'delete')">
               Delete selected
             </button>
           </div>
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join("");
 
     // Re-attach event listeners
     this.attachQuizEventListeners();
+
+    // Update filter options after rendering
+    this.updateFilterOptions();
   }
 
   renderQuizQuestions(quiz) {
     const filteredQuestions = this.getFilteredQuizQuestions(quiz);
-    
+
     if (filteredQuestions.length === 0) {
       return `
         <div class="empty-state">
@@ -580,40 +630,56 @@ class QuestionBankPage {
           </tr>
         </thead>
         <tbody>
-          ${filteredQuestions.map(question => `
+          ${filteredQuestions
+            .map(
+              (question) => `
             <tr data-question-id="${question.id}">
               <td>
                 <input type="checkbox" class="question-checkbox" 
-                       ${quiz.selection.has(question.id) ? 'checked' : ''}
-                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${quiz.id}, ${question.id})">
+                       ${quiz.selection.has(question.id) ? "checked" : ""}
+                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${
+                         quiz.id
+                       }, ${question.id})">
               </td>
               <td class="question-title">${question.title}</td>
               <td><span class="question-lo">${question.loCode}</span></td>
               <td class="question-bloom">${question.bloom}</td>
               <td>
-                <span class="question-status status-${question.status.toLowerCase()}">${question.status}</span>
+                <span class="question-status status-${question.status.toLowerCase()}">${
+                question.status
+              }</span>
               </td>
               <td>${question.lastEdited}</td>
               <td class="question-actions">
                 <button class="question-action-btn approve" 
-                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'approve')">
-                  ${question.approved ? 'Unapprove' : 'Approve'}
+                        onclick="window.questionBankPage.handleQuestionAction(${
+                          quiz.id
+                        }, ${question.id}, 'approve')">
+                  ${question.approved ? "Unapprove" : "Approve"}
                 </button>
                 <button class="question-action-btn flag" 
-                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'flag')">
-                  ${question.flagged ? 'Unflag' : 'Flag'}
+                        onclick="window.questionBankPage.handleQuestionAction(${
+                          quiz.id
+                        }, ${question.id}, 'flag')">
+                  ${question.flagged ? "Unflag" : "Flag"}
                 </button>
                 <button class="question-action-btn edit" 
-                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'edit')">
+                        onclick="window.questionBankPage.handleQuestionAction(${
+                          quiz.id
+                        }, ${question.id}, 'edit')">
                   Edit
                 </button>
                 <button class="question-action-btn delete" 
-                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id}, ${question.id}, 'delete')">
+                        onclick="window.questionBankPage.handleQuestionAction(${
+                          quiz.id
+                        }, ${question.id}, 'delete')">
                   Delete
                 </button>
               </td>
             </tr>
-          `).join('')}
+          `
+            )
+            .join("")}
         </tbody>
       </table>
     `;
@@ -623,9 +689,15 @@ class QuestionBankPage {
     let filtered = [...this.quizzes];
 
     // Apply course filter
-    if (this.state.course !== 'all') {
-      // For now, all quizzes are available for all courses
-      // In a real implementation, you'd filter by course
+    if (this.state.course !== "all") {
+      filtered = filtered.filter((quiz) => {
+        // Check if any question in the quiz belongs to the selected course
+        return quiz.questions.some(
+          (question) =>
+            question.course === this.state.course ||
+            quiz.title.toLowerCase().includes(this.state.course.toLowerCase())
+        );
+      });
     }
 
     return filtered;
@@ -635,26 +707,29 @@ class QuestionBankPage {
     let filtered = [...quiz.questions];
 
     // Apply objective filter
-    if (this.state.filters.objective !== 'all') {
-      filtered = filtered.filter(q => q.loCode.includes(this.state.filters.objective));
+    if (this.state.filters.objective !== "all") {
+      filtered = filtered.filter((q) =>
+        q.loCode.includes(this.state.filters.objective)
+      );
     }
 
     // Apply bloom filter
-    if (this.state.filters.bloom !== 'all') {
-      filtered = filtered.filter(q => q.bloom === this.state.filters.bloom);
+    if (this.state.filters.bloom !== "all") {
+      filtered = filtered.filter((q) => q.bloom === this.state.filters.bloom);
     }
 
     // Apply status filter
-    if (this.state.filters.status !== 'all') {
-      filtered = filtered.filter(q => q.status === this.state.filters.status);
+    if (this.state.filters.status !== "all") {
+      filtered = filtered.filter((q) => q.status === this.state.filters.status);
     }
 
     // Apply search filter
     if (this.state.filters.q) {
       const searchTerm = this.state.filters.q.toLowerCase();
-      filtered = filtered.filter(q => 
-        q.title.toLowerCase().includes(searchTerm) ||
-        q.loCode.toLowerCase().includes(searchTerm)
+      filtered = filtered.filter(
+        (q) =>
+          q.title.toLowerCase().includes(searchTerm) ||
+          q.loCode.toLowerCase().includes(searchTerm)
       );
     }
 
@@ -662,13 +737,13 @@ class QuestionBankPage {
   }
 
   getQuizProgress(quiz) {
-    const approvedCount = quiz.questions.filter(q => q.approved).length;
+    const approvedCount = quiz.questions.filter((q) => q.approved).length;
     const totalCount = quiz.questions.length;
     return totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0;
   }
 
   toggleQuizDetails(quizId) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
+    const quiz = this.quizzes.find((q) => q.id === quizId);
     if (quiz) {
       quiz.isOpen = !quiz.isOpen;
       this.renderQuizzes();
@@ -676,7 +751,7 @@ class QuestionBankPage {
   }
 
   toggleQuizQuestionSelection(quizId, questionId) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
+    const quiz = this.quizzes.find((q) => q.id === quizId);
     if (quiz) {
       if (quiz.selection.has(questionId)) {
         quiz.selection.delete(questionId);
@@ -689,13 +764,13 @@ class QuestionBankPage {
   }
 
   handleQuizSelectAll(quizId, checked) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
+    const quiz = this.quizzes.find((q) => q.id === quizId);
     if (quiz) {
       const filteredQuestions = this.getFilteredQuizQuestions(quiz);
       if (checked) {
-        filteredQuestions.forEach(q => quiz.selection.add(q.id));
+        filteredQuestions.forEach((q) => quiz.selection.add(q.id));
       } else {
-        filteredQuestions.forEach(q => quiz.selection.delete(q.id));
+        filteredQuestions.forEach((q) => quiz.selection.delete(q.id));
       }
       this.updateCrossQuizActions();
       this.renderQuizzes();
@@ -703,35 +778,43 @@ class QuestionBankPage {
   }
 
   handleQuestionAction(quizId, questionId, action) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
-    const question = quiz.questions.find(q => q.id === questionId);
-    
+    const quiz = this.quizzes.find((q) => q.id === quizId);
+    const question = quiz.questions.find((q) => q.id === questionId);
+
     if (!quiz || !question) return;
 
     switch (action) {
-      case 'approve':
+      case "approve":
         question.approved = !question.approved;
-        question.status = question.approved ? 'Approved' : 'Draft';
-        this.showNotification(`Question ${question.approved ? 'approved' : 'unapproved'}`, 'success');
+        question.status = question.approved ? "Approved" : "Draft";
+        this.showNotification(
+          `Question ${question.approved ? "approved" : "unapproved"}`,
+          "success"
+        );
         break;
-      case 'flag':
+      case "flag":
         question.flagged = !question.flagged;
-        question.status = question.flagged ? 'Flagged' : 'Draft';
-        this.showNotification(`Question ${question.flagged ? 'flagged' : 'unflagged'}`, 'success');
+        question.status = question.flagged ? "Flagged" : "Draft";
+        this.showNotification(
+          `Question ${question.flagged ? "flagged" : "unflagged"}`,
+          "success"
+        );
         break;
-      case 'edit':
+      case "edit":
         this.handleQuestionEdit(quizId, questionId);
         return;
-      case 'delete':
+      case "delete":
         this.showModal(
-          'Delete Question',
+          "Delete Question",
           `Are you sure you want to delete "${question.title}"?`,
           () => {
-            const questionIndex = quiz.questions.findIndex(q => q.id === questionId);
+            const questionIndex = quiz.questions.findIndex(
+              (q) => q.id === questionId
+            );
             if (questionIndex > -1) {
               quiz.questions.splice(questionIndex, 1);
               quiz.selection.delete(questionId);
-              this.showNotification('Question deleted', 'success');
+              this.showNotification("Question deleted", "success");
               this.renderQuizzes();
               this.updateCrossQuizActions();
             }
@@ -751,39 +834,52 @@ class QuestionBankPage {
   }
 
   handleQuizBulkAction(quizId, action) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
+    const quiz = this.quizzes.find((q) => q.id === quizId);
     if (!quiz || quiz.selection.size === 0) return;
 
-    const selectedQuestions = quiz.questions.filter(q => quiz.selection.has(q.id));
-    
+    const selectedQuestions = quiz.questions.filter((q) =>
+      quiz.selection.has(q.id)
+    );
+
     switch (action) {
-      case 'approve':
-        selectedQuestions.forEach(q => {
+      case "approve":
+        selectedQuestions.forEach((q) => {
           q.approved = true;
-          q.status = 'Approved';
+          q.status = "Approved";
         });
-        this.showNotification(`Approved ${selectedQuestions.length} questions`, 'success');
+        this.showNotification(
+          `Approved ${selectedQuestions.length} questions`,
+          "success"
+        );
         break;
-      case 'flag':
-        selectedQuestions.forEach(q => {
+      case "flag":
+        selectedQuestions.forEach((q) => {
           q.flagged = true;
-          q.status = 'Flagged';
+          q.status = "Flagged";
         });
-        this.showNotification(`Flagged ${selectedQuestions.length} questions`, 'success');
+        this.showNotification(
+          `Flagged ${selectedQuestions.length} questions`,
+          "success"
+        );
         break;
-      case 'delete':
+      case "delete":
         this.showModal(
-          'Delete Questions',
+          "Delete Questions",
           `Are you sure you want to delete ${selectedQuestions.length} question(s)?`,
           () => {
-            selectedQuestions.forEach(q => {
-              const questionIndex = quiz.questions.findIndex(question => question.id === q.id);
+            selectedQuestions.forEach((q) => {
+              const questionIndex = quiz.questions.findIndex(
+                (question) => question.id === q.id
+              );
               if (questionIndex > -1) {
                 quiz.questions.splice(questionIndex, 1);
               }
             });
             quiz.selection.clear();
-            this.showNotification(`Deleted ${selectedQuestions.length} questions`, 'success');
+            this.showNotification(
+              `Deleted ${selectedQuestions.length} questions`,
+              "success"
+            );
             this.renderQuizzes();
             this.updateCrossQuizActions();
           }
@@ -797,35 +893,45 @@ class QuestionBankPage {
   }
 
   updateCrossQuizActions() {
-    const crossQuizActions = document.getElementById('cross-quiz-actions');
-    const crossQuizCount = document.getElementById('cross-quiz-count');
-    
+    const crossQuizActions = document.getElementById("cross-quiz-actions");
+    const crossQuizCount = document.getElementById("cross-quiz-count");
+
     if (!crossQuizActions || !crossQuizCount) return;
 
     // Count total selected questions across all quizzes
     let totalSelected = 0;
-    this.quizzes.forEach(quiz => {
+    this.quizzes.forEach((quiz) => {
       totalSelected += quiz.selection.size;
     });
 
     if (totalSelected > 0) {
-      crossQuizActions.style.display = 'flex';
-      crossQuizCount.textContent = `${totalSelected} question${totalSelected !== 1 ? 's' : ''} selected`;
-      
+      crossQuizActions.style.display = "flex";
+      crossQuizCount.textContent = `${totalSelected} question${
+        totalSelected !== 1 ? "s" : ""
+      } selected`;
+
       // Enable/disable cross-quiz action buttons
-      const crossButtons = ['cross-approve-btn', 'cross-flag-btn', 'cross-delete-btn'];
-      crossButtons.forEach(btnId => {
+      const crossButtons = [
+        "cross-approve-btn",
+        "cross-flag-btn",
+        "cross-delete-btn",
+      ];
+      crossButtons.forEach((btnId) => {
         const btn = document.getElementById(btnId);
         if (btn) {
           btn.disabled = false;
         }
       });
     } else {
-      crossQuizActions.style.display = 'none';
-      
+      crossQuizActions.style.display = "none";
+
       // Disable cross-quiz action buttons
-      const crossButtons = ['cross-approve-btn', 'cross-flag-btn', 'cross-delete-btn'];
-      crossButtons.forEach(btnId => {
+      const crossButtons = [
+        "cross-approve-btn",
+        "cross-flag-btn",
+        "cross-delete-btn",
+      ];
+      crossButtons.forEach((btnId) => {
         const btn = document.getElementById(btnId);
         if (btn) {
           btn.disabled = true;
@@ -837,21 +943,23 @@ class QuestionBankPage {
   // Selection handlers
   handleSelectAll(checked) {
     const visibleQuestions = this.getFilteredQuestions();
-    
+
     if (checked) {
-      visibleQuestions.forEach(q => this.state.selectedQuestionIds.add(q.id));
+      visibleQuestions.forEach((q) => this.state.selectedQuestionIds.add(q.id));
     } else {
-      visibleQuestions.forEach(q => this.state.selectedQuestionIds.delete(q.id));
+      visibleQuestions.forEach((q) =>
+        this.state.selectedQuestionIds.delete(q.id)
+      );
     }
-    
+
     this.renderQuestionsTable();
     this.updateActionButtons();
   }
 
   clearOutOfViewSelections() {
     const visibleQuestions = this.getFilteredQuestions();
-    const visibleIds = new Set(visibleQuestions.map(q => q.id));
-    
+    const visibleIds = new Set(visibleQuestions.map((q) => q.id));
+
     // Remove selections for questions no longer visible
     for (const selectedId of this.state.selectedQuestionIds) {
       if (!visibleIds.has(selectedId)) {
@@ -866,15 +974,17 @@ class QuestionBankPage {
     if (selectedQuestions.length === 0) return;
 
     // For now, just show a toast
-    this.showToast(`Edit mode enabled for ${selectedQuestions.length} question(s)`);
+    this.showToast(
+      `Edit mode enabled for ${selectedQuestions.length} question(s)`
+    );
   }
 
   handleFlag() {
     const selectedQuestions = Array.from(this.state.selectedQuestionIds);
     if (selectedQuestions.length === 0) return;
 
-    selectedQuestions.forEach(id => {
-      const question = this.questions.find(q => q.id === id);
+    selectedQuestions.forEach((id) => {
+      const question = this.questions.find((q) => q.id === id);
       if (question) {
         question.flagged = !question.flagged;
       }
@@ -888,9 +998,13 @@ class QuestionBankPage {
     const selectedQuestions = Array.from(this.state.selectedQuestionIds);
     if (selectedQuestions.length === 0) return;
 
-    if (confirm(`Are you sure you want to delete ${selectedQuestions.length} question(s)?`)) {
-      selectedQuestions.forEach(id => {
-        const index = this.questions.findIndex(q => q.id === id);
+    if (
+      confirm(
+        `Are you sure you want to delete ${selectedQuestions.length} question(s)?`
+      )
+    ) {
+      selectedQuestions.forEach((id) => {
+        const index = this.questions.findIndex((q) => q.id === id);
         if (index > -1) {
           this.questions.splice(index, 1);
         }
@@ -907,9 +1021,13 @@ class QuestionBankPage {
     const selectedQuestions = Array.from(this.state.selectedQuestionIds);
     if (selectedQuestions.length === 0) return;
 
-    if (confirm(`Are you sure you want to publish ${selectedQuestions.length} question(s)?`)) {
-      selectedQuestions.forEach(id => {
-        const question = this.questions.find(q => q.id === id);
+    if (
+      confirm(
+        `Are you sure you want to publish ${selectedQuestions.length} question(s)?`
+      )
+    ) {
+      selectedQuestions.forEach((id) => {
+        const question = this.questions.find((q) => q.id === id);
         if (question) {
           question.published = true;
         }
@@ -925,54 +1043,73 @@ class QuestionBankPage {
     let affectedQuizzes = [];
 
     // Collect all selected questions across quizzes
-    this.quizzes.forEach(quiz => {
+    this.quizzes.forEach((quiz) => {
       if (quiz.selection.size > 0) {
         totalSelected += quiz.selection.size;
         affectedQuizzes.push(quiz);
-        }
-      });
+      }
+    });
 
-      if (totalSelected === 0) return;
+    if (totalSelected === 0) return;
 
     switch (action) {
-      case 'approve':
-        affectedQuizzes.forEach(quiz => {
-          quiz.questions.forEach(q => {
+      case "approve":
+        affectedQuizzes.forEach((quiz) => {
+          quiz.questions.forEach((q) => {
             if (quiz.selection.has(q.id)) {
               q.approved = true;
-              q.status = 'Approved';
+              q.status = "Approved";
             }
           });
         });
-        this.showNotification(`Approved ${totalSelected} questions across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}`, 'success');
+        this.showNotification(
+          `Approved ${totalSelected} questions across ${
+            affectedQuizzes.length
+          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
+          "success"
+        );
         break;
-      case 'flag':
-        affectedQuizzes.forEach(quiz => {
-          quiz.questions.forEach(q => {
+      case "flag":
+        affectedQuizzes.forEach((quiz) => {
+          quiz.questions.forEach((q) => {
             if (quiz.selection.has(q.id)) {
               q.flagged = true;
-              q.status = 'Flagged';
+              q.status = "Flagged";
             }
           });
         });
-        this.showNotification(`Flagged ${totalSelected} questions across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}`, 'success');
+        this.showNotification(
+          `Flagged ${totalSelected} questions across ${
+            affectedQuizzes.length
+          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
+          "success"
+        );
         break;
-      case 'delete':
+      case "delete":
         this.showModal(
-          'Delete Questions',
-          `Are you sure you want to delete ${totalSelected} question(s) across ${affectedQuizzes.length} quiz${affectedQuizzes.length !== 1 ? 'es' : ''}?`,
+          "Delete Questions",
+          `Are you sure you want to delete ${totalSelected} question(s) across ${
+            affectedQuizzes.length
+          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}?`,
           () => {
-            affectedQuizzes.forEach(quiz => {
-              const questionsToRemove = quiz.questions.filter(q => quiz.selection.has(q.id));
-              questionsToRemove.forEach(q => {
-                const questionIndex = quiz.questions.findIndex(question => question.id === q.id);
+            affectedQuizzes.forEach((quiz) => {
+              const questionsToRemove = quiz.questions.filter((q) =>
+                quiz.selection.has(q.id)
+              );
+              questionsToRemove.forEach((q) => {
+                const questionIndex = quiz.questions.findIndex(
+                  (question) => question.id === q.id
+                );
                 if (questionIndex > -1) {
                   quiz.questions.splice(questionIndex, 1);
                 }
               });
               quiz.selection.clear();
             });
-            this.showNotification(`Deleted ${totalSelected} questions`, 'success');
+            this.showNotification(
+              `Deleted ${totalSelected} questions`,
+              "success"
+            );
             this.renderQuizzes();
             this.updateCrossQuizActions();
           }
@@ -981,19 +1118,19 @@ class QuestionBankPage {
     }
 
     // Clear all selections and re-render
-    this.quizzes.forEach(quiz => quiz.selection.clear());
+    this.quizzes.forEach((quiz) => quiz.selection.clear());
     this.renderQuizzes();
     this.updateCrossQuizActions();
   }
 
-  applyFilters() {
+  async applyFilters() {
     // Clear selections for rows no longer visible
     this.clearOutOfViewSelections();
-    
-    if (this.state.currentTab === 'review') {
+
+    if (this.state.currentTab === "review") {
       this.renderQuizzes();
-    } else if (this.state.currentTab === 'overview') {
-      this.renderQuestionsTable();
+    } else if (this.state.currentTab === "overview") {
+      await this.renderOverview();
     }
   }
 
@@ -1001,36 +1138,40 @@ class QuestionBankPage {
   handleSort(sortKey) {
     if (this.state.sort.key === sortKey) {
       // Toggle direction if same column
-      this.state.sort.dir = this.state.sort.dir === 'asc' ? 'desc' : 'asc';
+      this.state.sort.dir = this.state.sort.dir === "asc" ? "desc" : "asc";
     } else {
       // New column, set to ascending
       this.state.sort.key = sortKey;
-      this.state.sort.dir = 'asc';
+      this.state.sort.dir = "asc";
     }
-    
+
     this.updateSortIcons();
     this.renderQuestionsTable();
   }
 
   updateSortIcons() {
-    const headers = document.querySelectorAll('.sortable-header');
-    headers.forEach(header => {
-      const sortKey = header.getAttribute('data-sort');
-      const icon = header.querySelector('[data-sort-icon]');
-      
+    const headers = document.querySelectorAll(".sortable-header");
+    headers.forEach((header) => {
+      const sortKey = header.getAttribute("data-sort");
+      const icon = header.querySelector("[data-sort-icon]");
+
       if (this.state.sort.key === sortKey) {
-        icon.className = this.state.sort.dir === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
-        header.setAttribute('aria-sort', this.state.sort.dir === 'asc' ? 'ascending' : 'descending');
+        icon.className =
+          this.state.sort.dir === "asc" ? "fas fa-sort-up" : "fas fa-sort-down";
+        header.setAttribute(
+          "aria-sort",
+          this.state.sort.dir === "asc" ? "ascending" : "descending"
+        );
       } else {
-        icon.className = 'fas fa-sort';
-        header.setAttribute('aria-sort', 'none');
+        icon.className = "fas fa-sort";
+        header.setAttribute("aria-sort", "none");
       }
     });
   }
 
   // Overview tab methods (existing functionality)
   renderQuestions() {
-    const questionList = document.getElementById('question-list');
+    const questionList = document.getElementById("question-list");
     if (!questionList) return;
 
     const filteredQuestions = this.getFilteredQuestions();
@@ -1046,20 +1187,30 @@ class QuestionBankPage {
       return;
     }
 
-    questionList.innerHTML = sortedQuestions.map(question => `
+    questionList.innerHTML = sortedQuestions
+      .map(
+        (question) => `
       <div class="question-item" data-question-id="${question.id}">
         <input type="checkbox" id="q${question.id}" 
-               ${this.state.selectedQuestionIds.has(question.id) ? 'checked' : ''}
-               onchange="window.questionBankPage.toggleQuestionSelection(${question.id})">
+               ${
+                 this.state.selectedQuestionIds.has(question.id)
+                   ? "checked"
+                   : ""
+               }
+               onchange="window.questionBankPage.toggleQuestionSelection(${
+                 question.id
+               })">
         <label for="q${question.id}">${question.title}</label>
       </div>
-    `).join('');
+    `
+      )
+      .join("");
 
     this.attachQuestionEventListeners();
   }
 
   renderQuestionsTable() {
-    const tableBody = document.getElementById('questions-table-body');
+    const tableBody = document.getElementById("questions-table-body");
     if (!tableBody) return;
 
     const filteredQuestions = this.getFilteredQuestions();
@@ -1069,23 +1220,36 @@ class QuestionBankPage {
       tableBody.innerHTML = `
         <tr>
           <td colspan="5" class="empty-state">
-            <p>No questions match the current filters.</p>
-            <a href="#" class="clear-filters-link" onclick="window.questionBankPage.clearFilters()">Clear filters</a>
+            <p>No questions available.</p>
+            <p>You haven't saved any questions from question generation yet.</p>
+            <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first questions.</p>
           </td>
         </tr>
       `;
       return;
     }
 
-    tableBody.innerHTML = sortedQuestions.map(question => `
-      <tr data-question-id="${question.id}" class="${this.state.selectedQuestionIds.has(question.id) ? 'selected' : ''}">
+    tableBody.innerHTML = sortedQuestions
+      .map(
+        (question) => `
+      <tr data-question-id="${question.id}" class="${
+          this.state.selectedQuestionIds.has(question.id) ? "selected" : ""
+        }">
         <td class="select-cell">
           <input type="checkbox" 
-                 ${this.state.selectedQuestionIds.has(question.id) ? 'checked' : ''}
-                 onchange="window.questionBankPage.toggleQuestionSelection(${question.id})">
+                 ${
+                   this.state.selectedQuestionIds.has(question.id)
+                     ? "checked"
+                     : ""
+                 }
+                 onchange="window.questionBankPage.toggleQuestionSelection(${
+                   question.id
+                 })">
         </td>
         <td class="question-title-cell">
-          <div class="question-title-text ${question.flagged ? 'flagged' : ''}">${question.title}</div>
+          <div class="question-title-text ${
+            question.flagged ? "flagged" : ""
+          }">${question.title}</div>
         </td>
         <td class="glo-cell">
           <div class="glo-text">${question.glo}</div>
@@ -1095,14 +1259,16 @@ class QuestionBankPage {
         </td>
         <td class="views-cell">${question.views}</td>
       </tr>
-    `).join('');
+    `
+      )
+      .join("");
 
     this.updateSelectAllCheckbox();
     this.updateActionButtons();
   }
 
   renderObjectives() {
-    const tableBody = document.getElementById('objectives-table-body');
+    const tableBody = document.getElementById("objectives-table-body");
     if (!tableBody) return;
 
     const selectedQuestions = this.getSelectedQuestions();
@@ -1112,60 +1278,77 @@ class QuestionBankPage {
       objectivesData = this.getGlobalObjectivesSummary();
     } else if (selectedQuestions.length === 1) {
       const question = selectedQuestions[0];
-      objectivesData = [{
-        objective: question.objective,
-        bloomLevel: question.bloomLevel
-      }];
+      objectivesData = [
+        {
+          objective: question.objective,
+          bloomLevel: question.bloomLevel,
+        },
+      ];
     } else {
       objectivesData = this.getMergedObjectivesView(selectedQuestions);
     }
 
-    tableBody.innerHTML = objectivesData.map(item => `
+    tableBody.innerHTML = objectivesData
+      .map(
+        (item) => `
       <div class="table-row">
         <div class="cell">${item.objective}</div>
-        <div class="cell ${item.bloomLevel === 'Mixed' ? 'mixed' : ''}">${item.bloomLevel}</div>
+        <div class="cell ${item.bloomLevel === "Mixed" ? "mixed" : ""}">${
+          item.bloomLevel
+        }</div>
       </div>
-    `).join('');
+    `
+      )
+      .join("");
   }
 
   renderHistory() {
-    const historyList = document.getElementById('history-list');
+    const historyList = document.getElementById("history-list");
     if (!historyList) return;
 
-    historyList.innerHTML = this.history.map(item => `
-      <div class="history-item ${this.state.selectedHistoryId === item.id ? 'selected' : ''}" 
+    historyList.innerHTML = this.history
+      .map(
+        (item) => `
+      <div class="history-item ${
+        this.state.selectedHistoryId === item.id ? "selected" : ""
+      }" 
            data-history-id="${item.id}">
         <input type="radio" name="radio" id="h${item.id}" 
-               ${this.state.selectedHistoryId === item.id ? 'checked' : ''}
+               ${this.state.selectedHistoryId === item.id ? "checked" : ""}
                onchange="window.questionBankPage.selectHistoryItem(${item.id})">
         <label for="h${item.id}">
           <span class="history-text">${item.count} questions approved</span>
           <span class="radio-time">${item.label}</span>
         </label>
       </div>
-    `).join('');
+    `
+      )
+      .join("");
   }
 
   getFilteredQuestions() {
     let filtered = [...this.questions];
 
-    if (this.state.filters.objective !== 'all') {
-      filtered = filtered.filter(q => q.glo.includes(this.state.filters.objective));
+    if (this.state.filters.objective !== "all") {
+      filtered = filtered.filter((q) =>
+        q.glo.includes(this.state.filters.objective)
+      );
     }
 
-    if (this.state.filters.bloom !== 'all') {
-      filtered = filtered.filter(q => q.bloom === this.state.filters.bloom);
+    if (this.state.filters.bloom !== "all") {
+      filtered = filtered.filter((q) => q.bloom === this.state.filters.bloom);
     }
 
-    if (this.state.filters.status !== 'all') {
-      filtered = filtered.filter(q => q.status === this.state.filters.status);
+    if (this.state.filters.status !== "all") {
+      filtered = filtered.filter((q) => q.status === this.state.filters.status);
     }
 
     if (this.state.filters.q) {
       const searchTerm = this.state.filters.q.toLowerCase();
-      filtered = filtered.filter(q => 
-        q.title.toLowerCase().includes(searchTerm) ||
-        q.glo.toLowerCase().includes(searchTerm)
+      filtered = filtered.filter(
+        (q) =>
+          q.title.toLowerCase().includes(searchTerm) ||
+          q.glo.toLowerCase().includes(searchTerm)
       );
     }
 
@@ -1175,23 +1358,23 @@ class QuestionBankPage {
   sortQuestions(questions) {
     return [...questions].sort((a, b) => {
       const { key, dir } = this.state.sort;
-      
+
       let aValue, bValue;
-      
+
       switch (key) {
-        case 'title':
+        case "title":
           aValue = a.title.toLowerCase();
           bValue = b.title.toLowerCase();
           break;
-        case 'glo':
+        case "glo":
           aValue = a.glo.toLowerCase();
           bValue = b.glo.toLowerCase();
           break;
-        case 'bloom':
+        case "bloom":
           aValue = a.bloom.toLowerCase();
           bValue = b.bloom.toLowerCase();
           break;
-        case 'views':
+        case "views":
           aValue = a.views;
           bValue = b.views;
           break;
@@ -1199,8 +1382,8 @@ class QuestionBankPage {
           aValue = a.title.toLowerCase();
           bValue = b.title.toLowerCase();
       }
-      
-      if (dir === 'asc') {
+
+      if (dir === "asc") {
         return aValue > bValue ? 1 : -1;
       } else {
         return aValue < bValue ? 1 : -1;
@@ -1210,7 +1393,7 @@ class QuestionBankPage {
 
   getGlobalObjectivesSummary() {
     const summary = {};
-    this.questions.forEach(q => {
+    this.questions.forEach((q) => {
       if (!summary[q.objective]) {
         summary[q.objective] = new Set();
       }
@@ -1219,13 +1402,13 @@ class QuestionBankPage {
 
     return Object.entries(summary).map(([objective, bloomLevels]) => ({
       objective,
-      bloomLevel: bloomLevels.size > 1 ? 'Mixed' : Array.from(bloomLevels)[0]
+      bloomLevel: bloomLevels.size > 1 ? "Mixed" : Array.from(bloomLevels)[0],
     }));
   }
 
   getMergedObjectivesView(questions) {
     const summary = {};
-    questions.forEach(q => {
+    questions.forEach((q) => {
       if (!summary[q.objective]) {
         summary[q.objective] = new Set();
       }
@@ -1234,7 +1417,7 @@ class QuestionBankPage {
 
     return Object.entries(summary).map(([objective, bloomLevels]) => ({
       objective,
-      bloomLevel: bloomLevels.size > 1 ? 'Mixed' : Array.from(bloomLevels)[0]
+      bloomLevel: bloomLevels.size > 1 ? "Mixed" : Array.from(bloomLevels)[0],
     }));
   }
 
@@ -1261,32 +1444,34 @@ class QuestionBankPage {
   }
 
   updateSelectAllCheckbox() {
-    const selectAllCheckbox = document.getElementById('select-all');
+    const selectAllCheckbox = document.getElementById("select-all");
     if (!selectAllCheckbox) return;
 
     const visibleQuestions = this.getFilteredQuestions();
-    const selectedCount = visibleQuestions.filter(q => this.state.selectedQuestionIds.has(q.id)).length;
-    
+    const selectedCount = visibleQuestions.filter((q) =>
+      this.state.selectedQuestionIds.has(q.id)
+    ).length;
+
     if (selectedCount === 0) {
       selectAllCheckbox.checked = false;
       selectAllCheckbox.indeterminate = false;
-      selectAllCheckbox.setAttribute('aria-checked', 'false');
+      selectAllCheckbox.setAttribute("aria-checked", "false");
     } else if (selectedCount === visibleQuestions.length) {
       selectAllCheckbox.checked = true;
       selectAllCheckbox.indeterminate = false;
-      selectAllCheckbox.setAttribute('aria-checked', 'true');
+      selectAllCheckbox.setAttribute("aria-checked", "true");
     } else {
       selectAllCheckbox.checked = false;
       selectAllCheckbox.indeterminate = true;
-      selectAllCheckbox.setAttribute('aria-checked', 'mixed');
+      selectAllCheckbox.setAttribute("aria-checked", "mixed");
     }
   }
 
   updateActionButtons() {
     const hasSelection = this.state.selectedQuestionIds.size > 0;
-    const actionButtons = ['edit-btn', 'flag-btn', 'delete-btn', 'publish-btn'];
+    const actionButtons = ["edit-btn", "flag-btn", "delete-btn", "publish-btn"];
 
-    actionButtons.forEach(btnId => {
+    actionButtons.forEach((btnId) => {
       const btn = document.getElementById(btnId);
       if (btn) {
         btn.disabled = !hasSelection;
@@ -1294,32 +1479,41 @@ class QuestionBankPage {
     });
 
     // Update selection count
-    const selectionCount = document.getElementById('selection-count');
+    const selectionCount = document.getElementById("selection-count");
     if (selectionCount) {
       const count = this.state.selectedQuestionIds.size;
-      selectionCount.textContent = `${count} question${count !== 1 ? 's' : ''} selected`;
+      selectionCount.textContent = `${count} question${
+        count !== 1 ? "s" : ""
+      } selected`;
     }
   }
 
   clearFilters() {
-    this.state.filters = { objective: 'all', bloom: 'all', status: 'all', q: '' };
+    this.state.filters = {
+      objective: "all",
+      bloom: "all",
+      status: "all",
+      q: "",
+    };
     this.state.selectedHistoryId = null;
-    
-    const objectiveFilter = document.getElementById('objective-filter');
-    const bloomFilter = document.getElementById('bloom-filter');
-    const statusFilter = document.getElementById('status-filter');
-    const searchInput = document.getElementById('search-input');
 
-    if (objectiveFilter) objectiveFilter.value = 'all';
-    if (bloomFilter) bloomFilter.value = 'all';
-    if (statusFilter) statusFilter.value = 'all';
-    if (searchInput) searchInput.value = '';
+    const objectiveFilter = document.getElementById("objective-filter");
+    const bloomFilter = document.getElementById("bloom-filter");
+    const statusFilter = document.getElementById("status-filter");
+    const searchInput = document.getElementById("search-input");
+
+    if (objectiveFilter) objectiveFilter.value = "all";
+    if (bloomFilter) bloomFilter.value = "all";
+    if (statusFilter) statusFilter.value = "all";
+    if (searchInput) searchInput.value = "";
 
     this.renderAll();
   }
 
   getSelectedQuestions() {
-    return this.questions.filter(q => this.state.selectedQuestionIds.has(q.id));
+    return this.questions.filter((q) =>
+      this.state.selectedQuestionIds.has(q.id)
+    );
   }
 
   attachQuestionEventListeners() {
@@ -1332,23 +1526,23 @@ class QuestionBankPage {
 
   // Modal Management
   showModal(title, message, onConfirm) {
-    const modal = document.getElementById('confirm-modal');
-    const modalTitle = document.getElementById('modal-title');
-    const modalMessage = document.getElementById('modal-message');
+    const modal = document.getElementById("confirm-modal");
+    const modalTitle = document.getElementById("modal-title");
+    const modalMessage = document.getElementById("modal-message");
 
     if (modal && modalTitle && modalMessage) {
       modalTitle.textContent = title;
       modalMessage.textContent = message;
-      modal.style.display = 'flex';
-      
+      modal.style.display = "flex";
+
       this.pendingModalAction = onConfirm;
     }
   }
 
   hideModal() {
-    const modal = document.getElementById('confirm-modal');
+    const modal = document.getElementById("confirm-modal");
     if (modal) {
-      modal.style.display = 'none';
+      modal.style.display = "none";
       this.pendingModalAction = null;
     }
   }
@@ -1362,7 +1556,7 @@ class QuestionBankPage {
 
   // Navigation to Question Review
   navigateToQuestionReview(quizId) {
-    const quiz = this.quizzes.find(q => q.id === quizId);
+    const quiz = this.quizzes.find((q) => q.id === quizId);
     if (quiz && quiz.questions.length > 0) {
       const firstQuestionId = quiz.questions[0].id;
       window.location.href = `question-review.html?quizId=${quizId}&questionId=${firstQuestionId}`;
@@ -1370,11 +1564,11 @@ class QuestionBankPage {
   }
 
   // Notification System
-  showNotification(message, type = 'info') {
+  showNotification(message, type = "info") {
     console.log(`${type.toUpperCase()}: ${message}`);
-    
+
     // Create a simple notification
-    const notification = document.createElement('div');
+    const notification = document.createElement("div");
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
     notification.style.cssText = `
@@ -1387,11 +1581,11 @@ class QuestionBankPage {
       font-weight: 500;
       z-index: 1000;
       background-color: ${
-        type === 'success'
-          ? '#27ae60'
-          : type === 'warning'
-          ? '#f39c12'
-          : '#3498db'
+        type === "success"
+          ? "#27ae60"
+          : type === "warning"
+          ? "#f39c12"
+          : "#3498db"
       };
       animation: slideIn 0.3s ease-out;
     `;
@@ -1405,7 +1599,7 @@ class QuestionBankPage {
 }
 
 // Initialize the page when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   window.questionBankPage = new QuestionBankPage();
 });
 

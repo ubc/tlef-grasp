@@ -1,117 +1,15 @@
 const express = require("express");
 const router = express.Router();
 
-// Mock course data (replace with database integration)
-const mockCourses = [
-  {
-    id: "chem121",
-    code: "CHEM 121",
-    name: "General Chemistry I",
-    instructor: "Dr. Brown",
-    semester: "Fall 2024",
-    students: 45,
-    status: "active",
-    materials: [
-      {
-        id: "m1",
-        title: "Lecture 1: Introduction to Chemistry",
-        type: "lecture",
-        date: "2024-08-26",
-        status: "completed",
-      },
-      {
-        id: "m2",
-        title: "Lecture 2: Atomic Structure",
-        type: "lecture",
-        date: "2024-08-28",
-        status: "completed",
-      },
-      {
-        id: "m3",
-        title: "Lecture 3: Chemical Bonding",
-        type: "lecture",
-        date: "2024-08-30",
-        status: "in-progress",
-      },
-    ],
-    questionSets: [
-      {
-        id: "qs1",
-        title: "Atomic Structure Quiz",
-        questions: 15,
-        status: "reviewed",
-        createdAt: "2024-08-27",
-      },
-      {
-        id: "qs2",
-        title: "Chemical Bonding Practice",
-        questions: 12,
-        status: "generated",
-        createdAt: "2024-08-29",
-      },
-    ],
-  },
-  {
-    id: "chem123",
-    code: "CHEM 123",
-    name: "General Chemistry II",
-    instructor: "Dr. Brown",
-    semester: "Fall 2024",
-    students: 38,
-    status: "active",
-    materials: [
-      {
-        id: "m4",
-        title: "Lecture 1: Thermodynamics",
-        type: "lecture",
-        date: "2024-08-27",
-        status: "completed",
-      },
-      {
-        id: "m5",
-        title: "Lecture 2: Kinetics",
-        type: "lecture",
-        date: "2024-08-29",
-        status: "in-progress",
-      },
-    ],
-    questionSets: [
-      {
-        id: "qs3",
-        title: "Thermodynamics Quiz",
-        questions: 10,
-        status: "reviewed",
-        createdAt: "2024-08-28",
-      },
-    ],
-  },
-  {
-    id: "chem125",
-    code: "CHEM 125",
-    name: "Organic Chemistry I",
-    instructor: "Dr. Brown",
-    semester: "Fall 2024",
-    students: 32,
-    status: "active",
-    materials: [
-      {
-        id: "m6",
-        title: "Lecture 1: Introduction to Organic Chemistry",
-        type: "lecture",
-        date: "2024-08-28",
-        status: "completed",
-      },
-    ],
-    questionSets: [],
-  },
-];
+// Course data storage (in-memory for now, replace with database integration)
+let courses = [];
 
 // Get all courses
 router.get("/", (req, res) => {
   try {
     res.json({
       success: true,
-      courses: mockCourses,
+      courses: courses,
     });
   } catch (error) {
     console.error("Error getting courses:", error);
@@ -123,7 +21,7 @@ router.get("/", (req, res) => {
 router.get("/:courseId", (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = mockCourses.find((c) => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -143,7 +41,7 @@ router.get("/:courseId", (req, res) => {
 router.get("/:courseId/materials", (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = mockCourses.find((c) => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -163,7 +61,7 @@ router.get("/:courseId/materials", (req, res) => {
 router.get("/:courseId/questions", (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = mockCourses.find((c) => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -189,7 +87,7 @@ router.post("/:courseId/materials", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Title and type are required" });
     }
 
-    const course = mockCourses.find((c) => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
@@ -228,7 +126,7 @@ router.put(
         return res.status(400).json({ error: "Status is required" });
       }
 
-      const course = mockCourses.find((c) => c.id === courseId);
+      const course = courses.find((c) => c.id === courseId);
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
@@ -252,11 +150,87 @@ router.put(
   }
 );
 
+// Create new course
+router.post("/", express.json(), (req, res) => {
+  try {
+    const {
+      courseCode,
+      courseTitle,
+      courseName,
+      instructorName,
+      semester,
+      expectedStudents,
+      courseDescription,
+      courseWeeks,
+      lecturesPerWeek,
+      courseCredits,
+      status = "active",
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !courseCode ||
+      !courseTitle ||
+      !instructorName ||
+      !semester ||
+      !expectedStudents
+    ) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: courseCode, courseTitle, instructorName, semester, and expectedStudents are required",
+      });
+    }
+
+    // Generate unique course ID
+    const courseId = courseCode.toLowerCase().replace(/\s+/g, "");
+
+    // Check if course already exists
+    const existingCourse = courses.find((c) => c.id === courseId);
+    if (existingCourse) {
+      return res
+        .status(409)
+        .json({ error: "Course with this code already exists" });
+    }
+
+    // Create new course
+    const newCourse = {
+      id: courseId,
+      code: courseCode,
+      name: courseTitle,
+      fullName: courseName || `${courseCode} - ${courseTitle}`,
+      instructor: instructorName,
+      semester: semester,
+      students: expectedStudents,
+      description: courseDescription || "",
+      weeks: courseWeeks || null,
+      lecturesPerWeek: lecturesPerWeek || null,
+      credits: courseCredits || null,
+      status: status,
+      materials: [],
+      questionSets: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Add to courses array (in real app, this would be saved to database)
+    courses.push(newCourse);
+
+    res.status(201).json({
+      success: true,
+      message: "Course created successfully",
+      course: newCourse,
+    });
+  } catch (error) {
+    console.error("Error creating course:", error);
+    res.status(500).json({ error: "Failed to create course" });
+  }
+});
+
 // Get course statistics
 router.get("/:courseId/stats", (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = mockCourses.find((c) => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });

@@ -1,85 +1,7 @@
 // Course Materials Page JavaScript
 
-// Mock course materials data
-const mockMaterials = [
-  {
-    id: 1,
-    title: "Photosynthesis Overview (Slides)",
-    type: "pdf",
-    course: "BIOL101",
-    week: 1,
-    lecture: "L1",
-    description:
-      "High-level summary of light-dependent reactions and Calvin cycle.",
-    objectives: ["LO 2.1", "LO 2.2"],
-    relatedQuestions: 12,
-    url: "#",
-  },
-  {
-    id: 2,
-    title: "Forces & Motion Intro",
-    type: "video",
-    course: "PHYS101",
-    week: 2,
-    lecture: "L1",
-    description: "Intro lecture recording: net force, acceleration, vectors.",
-    objectives: ["LO 1.1"],
-    relatedQuestions: 8,
-    url: "#",
-  },
-  {
-    id: 3,
-    title: "Cell Division Reading",
-    type: "textbook",
-    course: "BIOL101",
-    week: 3,
-    lecture: "L2",
-    description: "Chapter on mitosis vs meiosis with diagrams.",
-    objectives: ["LO 3.2"],
-    relatedQuestions: 15,
-    url: "#",
-  },
-  {
-    id: 4,
-    title: "Velocity-Time Graphs",
-    type: "link",
-    course: "PHYS101",
-    week: 2,
-    lecture: "L2",
-    description:
-      "External resource explaining V-T graphs and area under curve.",
-    objectives: ["LO 1.2", "LO 1.3"],
-    relatedQuestions: 6,
-    url: "#",
-  },
-  {
-    id: 5,
-    title: "Binary Search Algorithm",
-    type: "pdf",
-    course: "CS101",
-    week: 1,
-    lecture: "L3",
-    description:
-      "Detailed explanation of binary search with examples and complexity analysis.",
-    objectives: ["LO 1.1", "LO 1.2"],
-    relatedQuestions: 10,
-    url: "#",
-  },
-  {
-    id: 6,
-    title: "Data Structures Overview",
-    type: "video",
-    course: "CS101",
-    week: 2,
-    lecture: "L1",
-    description: "Introduction to arrays, linked lists, stacks, and queues.",
-    objectives: ["LO 2.1", "LO 2.2"],
-    relatedQuestions: 14,
-    url: "#",
-  },
-];
-
-let filteredMaterials = [...mockMaterials];
+let materials = [];
+let filteredMaterials = [];
 
 // Initialize page when DOM is loaded
 document.addEventListener("DOMContentLoaded", function () {
@@ -92,18 +14,68 @@ document.addEventListener("DOMContentLoaded", function () {
 
 function initializeCourseMaterials() {
   console.log("Initializing Course Materials page...");
+  console.log("Course materials script is running!");
 
   // Set page title
   document.title = "Course Materials - GRASP";
 
-  // Load materials
-  loadMaterials();
+  // Load course data first
+  loadCourseData();
 
   // Initialize filters
   initializeFilters();
 
   // Initialize search
   initializeSearch();
+}
+
+async function loadCourseData() {
+  try {
+    console.log("Loading course data...");
+    const response = await fetch("/api/courses");
+    console.log("Response status:", response.status);
+    const data = await response.json();
+    console.log("Course data received:", data);
+
+    if (data.success && data.courses) {
+      console.log("Courses found:", data.courses.length);
+      // Update course filter dropdown
+      updateCourseFilter(data.courses);
+    } else {
+      console.log("No courses found or invalid response");
+    }
+
+    // Load materials (initially empty)
+    loadMaterials();
+  } catch (error) {
+    console.error("Error loading course data:", error);
+    showNotification("Error loading course data", "error");
+  }
+}
+
+function updateCourseFilter(courses) {
+  console.log("updateCourseFilter called with courses:", courses);
+  const courseFilter = document.getElementById("courseFilter");
+  console.log("Course filter element:", courseFilter);
+
+  if (!courseFilter) {
+    console.error("Course filter element not found!");
+    return;
+  }
+
+  // Clear existing options except "All Courses"
+  courseFilter.innerHTML = '<option value="all">All Courses</option>';
+
+  // Add course options
+  courses.forEach((course) => {
+    console.log("Adding course option:", course.code, course.name);
+    const option = document.createElement("option");
+    option.value = course.code;
+    option.textContent = `${course.code} - ${course.name}`;
+    courseFilter.appendChild(option);
+  });
+
+  console.log("Course filter updated with", courses.length, "courses");
 }
 
 function loadMaterials() {
@@ -165,7 +137,9 @@ function createMaterialCard(material) {
             <span class="related-questions">${
               material.relatedQuestions
             } related questions</span>
-            <button class="view-button" onclick="viewMaterial(${material.id})">
+            <button class="view-button" onclick="viewMaterial('${
+              material.id
+            }')">
                 View
             </button>
         </div>
@@ -235,7 +209,7 @@ function applyFilters() {
   const typeFilter = document.getElementById("typeFilter").value;
   const searchTerm = document.getElementById("searchInput").value.toLowerCase();
 
-  filteredMaterials = mockMaterials.filter((material) => {
+  filteredMaterials = materials.filter((material) => {
     // Course filter
     if (courseFilter !== "all" && material.course !== courseFilter) {
       return false;
@@ -281,7 +255,7 @@ function filterByObjective(objective) {
 }
 
 function viewMaterial(materialId) {
-  const material = mockMaterials.find((m) => m.id === materialId);
+  const material = materials.find((m) => m.id === materialId);
   if (material) {
     console.log(`Viewing material: ${material.title}`);
 
@@ -305,7 +279,63 @@ function clearFilters() {
   document.getElementById("typeFilter").value = "all";
   document.getElementById("searchInput").value = "";
 
-  filteredMaterials = [...mockMaterials];
+  filteredMaterials = [...materials];
+  loadMaterials();
+}
+
+function showNotification(message, type = "info") {
+  // Create notification element
+  const notification = document.createElement("div");
+  notification.className = `notification notification-${type}`;
+  notification.textContent = message;
+
+  // Style the notification
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+  `;
+
+  // Set background color based on type
+  if (type === "error") {
+    notification.style.backgroundColor = "#e74c3c";
+  } else if (type === "success") {
+    notification.style.backgroundColor = "#27ae60";
+  } else {
+    notification.style.backgroundColor = "#3498db";
+  }
+
+  // Add to page
+  document.body.appendChild(notification);
+
+  // Animate in
+  setTimeout(() => {
+    notification.style.opacity = "1";
+    notification.style.transform = "translateX(0)";
+  }, 100);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.opacity = "0";
+    notification.style.transform = "translateX(100%)";
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
+  }, 3000);
+}
+
+// Function to add materials (called when files are uploaded)
+function addMaterial(material) {
+  materials.push(material);
+  filteredMaterials = [...materials];
   loadMaterials();
 }
 
@@ -315,4 +345,5 @@ window.CourseMaterials = {
   filterByObjective,
   clearFilters,
   applyFilters,
+  addMaterial,
 };

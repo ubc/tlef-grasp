@@ -45,9 +45,7 @@
                         <div id="course-dropdown" class="course-dropdown">
                             <label for="course-select">Course</label>
                             <select id="course-select" class="course-select">
-                                <option value="CHEM 121">CHEM 121</option>
-                                <option value="CHEM 123">CHEM 123</option>
-                                <option value="PHYS 101">PHYS 101</option>
+                                <option value="">Select a course...</option>
                             </select>
                         </div>
                         <!-- Course display (Steps 2-5 only) -->
@@ -68,6 +66,14 @@
                                 <p class="upload-zone__text">Drag and drop or choose file</p>
                                 <button type="button" class="btn btn--primary" id="choose-file-btn">Choose file</button>
                                 <input type="file" id="file-input" multiple accept=".pdf,.txt,.doc,.docx" style="display: none;">
+                                
+                                <!-- Upload Spinner -->
+                                <div class="upload-spinner" id="upload-spinner" style="display: none;">
+                                    <div class="spinner">
+                                        <div class="spinner__circle"></div>
+                                    </div>
+                                    <p class="upload-spinner__text">Uploading and processing files...</p>
+                                </div>
                             </div>
                         </div>
 
@@ -557,6 +563,7 @@
     <script src="scripts/generating-content.js"></script>
     <script src="scripts/direct-ollama-service.js"></script>
     <script src="scripts/generation-questions.js"></script>
+    <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/question-generation.js"></script>
 </body>
 </html>
