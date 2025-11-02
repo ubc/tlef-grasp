@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
-const session = require("express-session");
 const exampleRoutes = require("./routes/example/hello");
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/questions");
@@ -10,25 +9,28 @@ const studentRoutes = require("./routes/student");
 const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
 
+// Import middleware
+const sessionMiddleware = require("./middleware/session");
+const { passport } = require("./middleware/passport");
+const requireAuth = require("./middleware/requireAuth");
+
+const authRoutes = require('./routes/auth');
+
 const app = express();
-const port = process.env.TLEF_GRASP_PORT || 8070;
+const port = process.env.PORT || 8070;
 
 // Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Session configuration
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "grasp-secret-key",
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-      secure: false, // Set to true in production with HTTPS
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    },
-  })
-);
+// SAML: keep urlencoded for IdP POST to /auth/saml/callback
+app.use(express.urlencoded({ extended: false }));
+
+// Session middleware - must be before passport
+app.use(sessionMiddleware);
+
+// Passport middleware
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, "../public")));
@@ -120,6 +122,12 @@ app.get("/achievements", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/achievements.html"));
 });
 
+// SAML
+// Neutral, protected dashboard - URL does not reveal role
+app.get("/auth/me/dashboard", requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/dashboard.html"));
+});
+
 // API endpoints
 app.use("/api/example", exampleRoutes);
 app.use("/api/upload", uploadRoutes);
@@ -127,6 +135,9 @@ app.use("/api/questions", questionRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/rag-llm", ragLlmRoutes);
+
+// SAML auth endpoints
+app.use("/auth", authRoutes);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);

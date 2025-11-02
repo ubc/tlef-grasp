@@ -196,5 +196,37 @@
 
     <script src="scripts/navigation.js"></script>
     <script src="scripts/dashboard.js"></script>
+    <script>
+        (async () => {
+          try {
+            const r = await fetch('/auth/me', { credentials: 'include' });
+            const { user } = await r.json();
+        
+            console.log('User from /auth/me:', user);
+        
+            // Example: display the user in your existing UI
+            const welcome = document.querySelector('.welcome-section h2');
+            if (user?.displayName && welcome) {
+              welcome.textContent = `Hello, ${user.displayName}`;
+            }
+        
+            // Example: role-based logic (but URL stays /auth/me/dashboard)
+            if (user?.affiliation?.toLowerCase().includes('faculty')) {
+              console.log('Instructor view');
+              // Optionally load instructor dashboard JS bundle
+              // import('/scripts/instructorDashboard.js');
+            } else if (user) {
+              console.log('Student view');
+              // import('/scripts/studentDashboard.js');
+            } else {
+              console.log('Not logged in, redirecting...');
+              window.location = '/auth/login';
+            }
+          } catch (err) {
+            console.error('Error fetching /auth/me', err);
+          }
+        })();
+        </script>
+        
 </body>
 </html>

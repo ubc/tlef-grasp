@@ -41,6 +41,7 @@ A modern, responsive instructor dashboard for a generative AI-powered formative 
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES6+)
 - **Backend**: Node.js with Express.js
+- **Authentication**: SAML 2.0 with Passport.js
 - **Styling**: CSS Grid, Flexbox, CSS Custom Properties
 - **Icons**: Font Awesome 6.0
 - **Development**: Browser-sync, Nodemon, Cross-env
@@ -88,15 +89,32 @@ tlef-grasp/
    npm install
    ```
 
-3. **Start the development server**
+3. **Configure SAML Authentication**
+
+   SAML authentication is required for the application to start. See [SAML_SETUP.md](SAML_SETUP.md) for detailed instructions.
+
+   Quick setup:
+   ```bash
+   # Copy the environment template
+   cp env-template.txt .env
+   
+   # Edit .env and add your IdP configuration
+   # At minimum, you need to configure:
+   # - SAML_ENTRY_POINT
+   # - SAML_LOGOUT_URL
+   # - SAML_IDP_CERT or SAML_CERT_PATH
+   ```
+
+4. **Start the development server**
 
    ```bash
    npm run dev
    ```
 
-4. **Access the dashboard**
+5. **Access the dashboard**
    - Open your browser and navigate to `http://localhost:8070`
    - You'll be automatically redirected to the dashboard at `http://localhost:8070/dashboard`
+   - For SAML login: `http://localhost:8070/auth/login`
 
 ### Available Scripts
 
@@ -158,12 +176,33 @@ The dashboard is designed to work seamlessly across all device sizes:
 - **Tablet**: Responsive grid adjustments
 - **Mobile**: Stacked layout with collapsible navigation
 
-## 🔒 Security Considerations
+## 🔒 Security & Authentication
 
-- **No Sensitive Data**: Dashboard displays only non-sensitive information
+### SAML 2.0 Authentication
+
+GRASP uses SAML 2.0 for secure single sign-on (SSO):
+
+- **Enterprise-grade Security**: SAML 2.0 compliant authentication
+- **UBC CWL Integration**: Seamless integration with UBC's authentication system
+- **Session Management**: Secure session handling with configurable timeouts
+- **Single Logout**: Support for IdP-initiated and SP-initiated logout
+
+**SAML Endpoints:**
+- `/auth/login` - Initiate SAML login flow
+- `/auth/saml/callback` - Assertion Consumer Service (ACS)
+- `/auth/logout` - Single Logout endpoint
+- `/auth/me` - Get current user information
+- `/auth/metadata` - Service Provider metadata
+
+For complete SAML setup instructions, see [SAML_SETUP.md](SAML_SETUP.md).
+
+### Security Best Practices
+
 - **Input Validation**: All user inputs are validated
 - **XSS Protection**: Content is properly escaped
-- **CSRF Protection**: Ready for backend CSRF implementation
+- **HTTPS Required**: Production deployments must use HTTPS
+- **Secure Cookies**: HttpOnly and Secure flags enabled in production
+- **Session Security**: Configurable session timeouts and secure session storage
 
 ## 🚀 Deployment
 
@@ -178,9 +217,24 @@ npm start
 Create a `.env` file in the root directory:
 
 ```env
-TLEF_GRASP_PORT=8070
+# Server Configuration
+PORT=8070
 NODE_ENV=production
+
+# Session Configuration
+SESSION_SECRET=your-secure-random-secret-here
+SESSION_TIMEOUT_MS=7200000
+
+# SAML Configuration
+SAML_ENTRY_POINT=your-idp-sso-url
+SAML_LOGOUT_URL=your-idp-logout-url
+SAML_CALLBACK_URL=https://your-domain.com/auth/saml/callback
+SAML_LOGOUT_CALLBACK_URL=https://your-domain.com/auth/logout/callback
+SAML_ISSUER=https://your-domain.com/metadata
+SAML_CERT_PATH=./certs/idp-signing.crt
 ```
+
+See [SAML_SETUP.md](SAML_SETUP.md) for complete SAML configuration instructions.
 
 ## 🤝 Contributing
 
