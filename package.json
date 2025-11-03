@@ -7,7 +7,7 @@
     "start": "cross-env NODE_ENV=production node src/server.js",
     "dev": "npm-run-all --parallel dev:*",
     "dev:server": "cross-env NODE_ENV=development nodemon src/server.js",
-    "dev:client": "browser-sync start --proxy 'http://localhost:8070' --files 'public'",
+    "dev:client": "browser-sync start --proxy http://localhost:8070 --files public",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
