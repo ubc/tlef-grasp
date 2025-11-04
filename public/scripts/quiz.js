@@ -136,7 +136,7 @@ function loadQuizData() {
             <i class="fas fa-exclamation-triangle"></i>
             <h3>Unable to Load Quiz</h3>
             <p>There was an error loading the quiz. Please try refreshing the page or contact support if the problem persists.</p>
-            <button onclick="window.location.href='student-dashboard.html'" class="retry-button">
+            <button onclick="window.location.href='/student-dashboard'" class="retry-button">
               Return to Dashboard
             </button>
           </div>
@@ -453,7 +453,7 @@ function submitQuiz() {
 
         // Redirect to quiz summary page after 2 seconds
         setTimeout(() => {
-          window.location.href = `quiz-summary.html?quiz=${window.quizState.quizId}&session=${window.quizState.sessionId}`;
+          window.location.href = `/quiz-summary?quiz=${window.quizState.quizId}&session=${window.quizState.sessionId}`;
         }, 2000);
       } else {
         throw new Error(data.message);

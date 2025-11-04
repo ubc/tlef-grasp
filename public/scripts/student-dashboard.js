@@ -182,7 +182,7 @@ function startQuiz(quizId) {
 
         // Navigate to the quiz page
         setTimeout(() => {
-          window.location.href = `quiz.html?quiz=${quizId}&session=${data.data.sessionId}`;
+          window.location.href = `/quiz?quiz=${quizId}&session=${data.data.sessionId}`;
         }, 1000);
       } else {
         throw new Error(data.message);
@@ -205,7 +205,7 @@ function continueQuiz(quizTitle) {
     showNotification(`Resuming quiz: ${quizTitle}`, "info");
 
     // You could redirect to the quiz page with resume state:
-    // window.location.href = `quiz.html?quiz=${encodeURIComponent(quizTitle)}&resume=true`;
+    // window.location.href = `/quiz?quiz=${encodeURIComponent(quizTitle)}&resume=true`;
   }, 1000);
 }
 
@@ -224,7 +224,7 @@ function reviewQuiz(quizId) {
         showNotification(`Opening quiz review: ${quizId}`, "info");
 
         // In a real application, you would navigate to the review page
-        // window.location.href = `quiz-review.html?quiz=${quizId}`;
+        // window.location.href = `/quiz-review?quiz=${quizId}`;
 
         // For now, you could open a modal with the results
         console.log("Quiz results:", data.data);

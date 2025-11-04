@@ -51,19 +51,22 @@ A modern, responsive instructor dashboard for a generative AI-powered formative 
 ```
 tlef-grasp/
 ├── public/                    # Frontend files
-│   ├── dashboard.html        # Main instructor dashboard
-│   ├── index.html            # Landing page with redirect
-│   ├── settings.html         # Settings page
-│   ├── styles/
-│   │   ├── dashboard.css     # Dashboard-specific styles
-│   │   └── style.css         # Global styles and utilities
-│   └── scripts/
-│       ├── dashboard.js      # Dashboard functionality
-│       └── front-end.js      # General frontend utilities
-├── src/                      # Backend files
+│   ├── instructors/          # Instructor-only pages
+│   │   ├── dashboard.html
+│   │   ├── question-generation.html
+│   │   ├── question-bank.html
+│   │   └── users.html
+│   ├── students/             # Student-only pages
+│   │   ├── student-dashboard.html
+│   │   ├── quiz.html
+│   │   └── achievements.html
+│   ├── styles/               # Shared CSS
+│   └── scripts/              # Shared JavaScript
+├── src/                      # Backend
 │   ├── server.js             # Express server
-│   └── routes/               # API routes
-├── package.json              # Dependencies and scripts
+│   ├── routes/               # API routes
+│   └── middleware/           # Authentication middleware
+├── docker-compose.yml        # Docker configuration
 └── README.md                 # This file
 ```
 
@@ -71,50 +74,49 @@ tlef-grasp/
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- npm (v6 or higher)
+- **Docker Desktop** (Recommended) OR
+- Node.js (v20 or higher) + npm
 
-### Installation
+### Quick Start with Docker (Recommended)
 
-1. **Clone the repository**
+```powershell
+# 1. Copy environment template
+cp env-docker.template .env
 
-   ```bash
-   git clone <repository-url>
-   cd tlef-grasp
-   ```
+# 2. Edit .env with your SAML configuration
 
-2. **Install dependencies**
+# 3. Start everything
+.\docker-start.ps1
+# OR
+docker-compose up -d
 
+# 4. Access GRASP
+# Open: http://localhost:8070
+```
+
+See **[DOCKER_GUIDE.md](DOCKER_GUIDE.md)** for complete Docker setup.
+
+### Manual Installation (Without Docker)
+
+1. **Install dependencies**
    ```bash
    npm install
    ```
 
-3. **Configure SAML Authentication**
-
-   SAML authentication is required for the application to start. See [SAML_SETUP.md](SAML_SETUP.md) for detailed instructions.
-
-   Quick setup:
+2. **Configure environment**
    ```bash
-   # Copy the environment template
-   cp env-template.txt .env
-   
-   # Edit .env and add your IdP configuration
-   # At minimum, you need to configure:
-   # - SAML_ENTRY_POINT
-   # - SAML_LOGOUT_URL
-   # - SAML_IDP_CERT or SAML_CERT_PATH
+   cp env-docker.template .env
+   # Edit .env with your configuration
    ```
 
-4. **Start the development server**
-
+3. **Start the development server**
    ```bash
    npm run dev
    ```
 
-5. **Access the dashboard**
-   - Open your browser and navigate to `http://localhost:8070`
-   - You'll be automatically redirected to the dashboard at `http://localhost:8070/dashboard`
-   - For SAML login: `http://localhost:8070/auth/login`
+4. **Access the application**
+   - Open: http://localhost:8070
+   - Login via SAML authentication
 
 ### Available Scripts
 
@@ -178,35 +180,43 @@ The dashboard is designed to work seamlessly across all device sizes:
 
 ## 🔒 Security & Authentication
 
-### SAML 2.0 Authentication
+### SAML 2.0 Authentication with Role-Based Access
 
-GRASP uses SAML 2.0 for secure single sign-on (SSO):
+GRASP uses SAML 2.0 for secure single sign-on with automatic role detection:
 
-- **Enterprise-grade Security**: SAML 2.0 compliant authentication
-- **UBC CWL Integration**: Seamless integration with UBC's authentication system
-- **Session Management**: Secure session handling with configurable timeouts
-- **Single Logout**: Support for IdP-initiated and SP-initiated logout
+- **Automatic Role Detection**: Instructors and students identified from SAML affiliation
+- **Role-Based Access**: Separate interfaces for instructors and students
+- **UBC CWL Compatible**: Works with UBC's authentication system
+- **Single Logout**: Full SAML SLO support
+
+**Key Features:**
+- Instructors see: Question generation, user management, course materials
+- Students see: Quizzes, achievements, student dashboard
+- Wrong role attempts auto-redirect to correct dashboard
 
 **SAML Endpoints:**
-- `/auth/login` - Initiate SAML login flow
-- `/auth/saml/callback` - Assertion Consumer Service (ACS)
-- `/auth/logout` - Single Logout endpoint
-- `/auth/me` - Get current user information
-- `/auth/metadata` - Service Provider metadata
+- `/auth/login` - Initiate login
+- `/auth/logout` - Logout (with sidebar button)
+- `/auth/me` - Get user info and role
+- `/auth/metadata` - SP metadata
 
-For complete SAML setup instructions, see [SAML_SETUP.md](SAML_SETUP.md).
+See **[SAML_AUTH_GUIDE.md](SAML_AUTH_GUIDE.md)** for complete authentication guide.
 
-### Security Best Practices
+## 📖 Documentation
 
-- **Input Validation**: All user inputs are validated
-- **XSS Protection**: Content is properly escaped
-- **HTTPS Required**: Production deployments must use HTTPS
-- **Secure Cookies**: HttpOnly and Secure flags enabled in production
-- **Session Security**: Configurable session timeouts and secure session storage
+- **[DOCKER_GUIDE.md](DOCKER_GUIDE.md)** - Complete Docker setup and commands
+- **[SAML_AUTH_GUIDE.md](SAML_AUTH_GUIDE.md)** - Authentication and role-based access
+- **[env-docker.template](env-docker.template)** - Environment variable template
 
 ## 🚀 Deployment
 
-### Production Build
+### With Docker (Recommended)
+
+```powershell
+docker-compose up -d
+```
+
+### Without Docker
 
 ```bash
 npm start
@@ -214,27 +224,24 @@ npm start
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+See **[env-docker.template](env-docker.template)** for complete configuration template.
 
+**Required variables:**
 ```env
-# Server Configuration
-PORT=8070
-NODE_ENV=production
+# MongoDB
+MONGO_INITDB_ROOT_PASSWORD=<strong-password>
 
-# Session Configuration
-SESSION_SECRET=your-secure-random-secret-here
-SESSION_TIMEOUT_MS=7200000
+# Session
+SESSION_SECRET=<random-string>
 
-# SAML Configuration
-SAML_ENTRY_POINT=your-idp-sso-url
-SAML_LOGOUT_URL=your-idp-logout-url
-SAML_CALLBACK_URL=https://your-domain.com/auth/saml/callback
-SAML_LOGOUT_CALLBACK_URL=https://your-domain.com/auth/logout/callback
-SAML_ISSUER=https://your-domain.com/metadata
-SAML_CERT_PATH=./certs/idp-signing.crt
+# SAML
+SAML_ENTRY_POINT=<idp-sso-url>
+SAML_LOGOUT_URL=<idp-logout-url>
+SAML_ISSUER=https://tlef-grasp
+SAML_CERT_PATH=./certs/cert.crt
 ```
 
-See [SAML_SETUP.md](SAML_SETUP.md) for complete SAML configuration instructions.
+See **[SAML_AUTH_GUIDE.md](SAML_AUTH_GUIDE.md)** for SAML configuration details.
 
 ## 🤝 Contributing
 

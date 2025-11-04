@@ -10,12 +10,11 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("quiz-summary")) return "quiz-summary";
-    if (path.includes("quiz")) return "quiz";
-    if (path.includes("student-dashboard")) return "my-quizzes";
+    if (path.includes("quiz")) return "my-quizzes";
+    if (path.includes("student-dashboard")) return "student-dashboard";
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("achievements")) return "achievements";
     if (path.includes("dashboard")) return "dashboard";
-    if (path.includes("course-materials")) return "course-materials";
     if (path.includes("question-bank") || path.includes("question-review"))
       return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
@@ -24,16 +23,72 @@ class GRASPNavigation {
     return "dashboard"; // default
   }
 
-  init() {
-    this.createNavigation();
+  getNavigationMenuForRole(role) {
+    if (role === "student") {
+      return `
+        <ul class="nav-menu">
+          <li class="nav-item" data-page="student-dashboard">
+            <i class="fas fa-home"></i>
+            <span><a href="/student-dashboard" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+          </li>
+          <li class="nav-item" data-page="my-quizzes">
+            <i class="fas fa-clipboard-list"></i>
+            <span><a href="/student-dashboard" style="text-decoration: none; color: inherit;">My Quizzes</a></span>
+          </li>
+          <li class="nav-item" data-page="achievements">
+            <i class="fas fa-trophy"></i>
+            <span><a href="/achievements" style="text-decoration: none; color: inherit;">Achievements</a></span>
+          </li>
+          <li class="nav-item" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span><a href="/settings" style="text-decoration: none; color: inherit;">Settings</a></span>
+          </li>
+        </ul>
+      `;
+    } else {
+      // Instructor menu
+      return `
+        <ul class="nav-menu">
+          <li class="nav-item" data-page="dashboard">
+            <i class="fas fa-home"></i>
+            <span><a href="/dashboard" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+          </li>
+          <li class="nav-item" data-page="question-bank">
+            <i class="fas fa-book"></i>
+            <span><a href="/question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+          </li>
+          <li class="nav-item" data-page="question-generation">
+            <i class="fas fa-puzzle-piece"></i>
+            <span><a href="/question-generation" style="text-decoration: none; color: inherit;">Question Generation</a></span>
+          </li>
+          <li class="nav-item" data-page="course-materials">
+            <i class="fas fa-folder"></i>
+            <span><a href="/course-materials" style="text-decoration: none; color: inherit;">Course Materials</a></span>
+          </li>
+          <li class="nav-item" data-page="users">
+            <i class="fas fa-users"></i>
+            <span><a href="/users" style="text-decoration: none; color: inherit;">Users</a></span>
+          </li>
+          <li class="nav-item" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span><a href="/settings" style="text-decoration: none; color: inherit;">Settings</a></span>
+          </li>
+        </ul>
+      `;
+    }
+  }
+
+  async init() {
+    await this.createNavigation();
     this.initializeNavigation();
     this.initializeSearch();
     this.initializeUserControls();
     this.initializeRoleSwitch();
+    this.initializeLogout();
     this.setActiveNavigationItem();
   }
 
-  createNavigation() {
+  async createNavigation() {
     console.log('Creating navigation...');
     // Check if navigation already exists
     if (document.querySelector(".sidebar")) {
@@ -52,13 +107,27 @@ class GRASPNavigation {
 
     console.log("Creating sidebar navigation...");
 
-    // Get current role
-    this.currentRole =
-      localStorage.getItem("grasp-current-role") || "instructor";
+    // Fetch user role from server
+    let userRole = "instructor"; // default
+    try {
+      const response = await fetch('/auth/me', { credentials: 'include' });
+      const data = await response.json();
+      if (data.authenticated && data.user && data.user.role) {
+        userRole = data.user.role;
+        console.log('User role from server:', userRole);
+      }
+    } catch (error) {
+      console.error('Error fetching user role:', error);
+    }
+    
+    this.currentRole = userRole;
 
     // Create sidebar with consistent styling
     const sidebar = document.createElement("aside");
     sidebar.className = "sidebar";
+
+    // Generate navigation menu based on role
+    const navMenu = this.getNavigationMenuForRole(userRole);
 
     sidebar.innerHTML = `
       <nav class="sidebar-nav">
@@ -76,9 +145,6 @@ class GRASPNavigation {
             <i class="fas fa-user"></i>
           </div>
           <div class="user-control">
-            <i class="fas fa-cog"></i>
-          </div>
-          <div class="user-control">
             <i class="fas fa-bell"></i>
             <span class="notification-badge">9</span>
           </div>
@@ -89,38 +155,21 @@ class GRASPNavigation {
           <div class="search-box">
             <i class="fas fa-search"></i>
             <input type="text" placeholder="${
-              this.currentRole === "student" ? "Q Search..." : "Search for..."
+              userRole === "student" ? "Search quizzes..." : "Search for..."
             }">
           </div>
         </div>
 
         <!-- Navigation Menu -->
-        <ul class="nav-menu">
-          <li class="nav-item" data-page="dashboard">
-            <i class="fas fa-home"></i>
-            <span><a href="/dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
-          </li>
-          <li class="nav-item" data-page="question-bank">
-            <i class="fas fa-book"></i>
-            <span><a href="/question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
-          </li>
-          <li class="nav-item" data-page="question-generation">
-            <i class="fas fa-puzzle-piece"></i>
-            <span><a href="/question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
-          </li>
-          <li class="nav-item" data-page="course-materials">
-            <i class="fas fa-folder"></i>
-            <span><a href="/course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
-          </li>
-          <li class="nav-item" data-page="users">
-            <i class="fas fa-users"></i>
-            <span><a href="/users.html" style="text-decoration: none; color: inherit;">Users</a></span>
-          </li>
-          <li class="nav-item" data-page="settings">
-            <i class="fas fa-cog"></i>
-            <span><a href="/settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
-          </li>
-        </ul>
+        ${navMenu}
+
+        <!-- Logout Button -->
+        <div class="logout-section">
+          <button class="logout-btn" id="grasp-logout-btn">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+          </button>
+        </div>
       </nav>
     `;
 
@@ -133,33 +182,8 @@ class GRASPNavigation {
     // Add consistent navigation styles
     this.addNavigationStyles();
 
-    // Ensure all links use absolute root-relative paths
-    const items = document.querySelectorAll('.sidebar .nav-item');
-    items.forEach((item) => {
-      const page = item.getAttribute('data-page');
-      const anchor = item.querySelector('a');
-      if (!anchor) return;
-      switch (page) {
-        case 'dashboard':
-          anchor.setAttribute('href', '/dashboard.html');
-          break;
-        case 'question-bank':
-          anchor.setAttribute('href', '/question-bank.html');
-          break;
-        case 'question-generation':
-          anchor.setAttribute('href', '/question-generation.html');
-          break;
-        case 'settings':
-          anchor.setAttribute('href', '/settings.html');
-          break;
-        case 'course-materials':
-          anchor.setAttribute('href', '/course-materials.html');
-          break;
-        case 'users':
-          anchor.setAttribute('href', '/users.html');
-          break;
-      }
-    });
+    // Links are already set correctly in the nav menu
+    // No additional link fixing needed
   }
 
   addNavigationStyles() {
@@ -411,6 +435,47 @@ class GRASPNavigation {
         font-weight: 600;
       }
 
+      /* Logout Section */
+      .logout-section {
+        padding: 20px 25px 30px 25px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin-top: auto;
+      }
+
+      .logout-btn {
+        width: 100%;
+        padding: 14px 20px;
+        background: rgba(231, 76, 60, 0.2);
+        border: 1px solid rgba(231, 76, 60, 0.4);
+        border-radius: 10px;
+        color: white;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        letter-spacing: -0.2px;
+      }
+
+      .logout-btn:hover {
+        background: rgba(231, 76, 60, 0.3);
+        border-color: rgba(231, 76, 60, 0.6);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+      }
+
+      .logout-btn:active {
+        transform: translateY(0);
+      }
+
+      .logout-btn i {
+        font-size: 18px;
+      }
+
       /* Main content adjustment for sidebar */
       .main-content {
         margin-left: 280px;
@@ -447,8 +512,14 @@ class GRASPNavigation {
       if (href && !href.startsWith("http")) {
         // strip any leading './' or '../'
         href = href.replace(/^(\.\/|\.\.\/)*/, "");
-        // make it root-relative
-        const newHref = `${origin}/${href}`;
+        
+        // Only add leading slash if not already present
+        if (!href.startsWith('/')) {
+          href = '/' + href;
+        }
+        
+        // make it absolute with origin
+        const newHref = `${origin}${href}`;
         link.setAttribute("href", newHref);
         console.log('Fixed link:', href, '->', newHref);
       }
@@ -581,10 +652,35 @@ class GRASPNavigation {
   navigateToRoleDashboard() {
     if (this.currentRole === "student") {
       // Navigate to student dashboard
-      window.location.href = "student-dashboard.html";
+      window.location.href = "/student-dashboard";
     } else {
       // Navigate to instructor dashboard
-      window.location.href = "dashboard.html";
+      window.location.href = "/dashboard";
+    }
+  }
+
+  initializeLogout() {
+    const logoutBtn = document.getElementById("grasp-logout-btn");
+    
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        
+        // Show confirmation
+        const confirmed = confirm("Are you sure you want to logout?");
+        
+        if (confirmed) {
+          // Show loading state
+          logoutBtn.disabled = true;
+          logoutBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Logging out...</span>';
+          
+          // Clear local storage
+          localStorage.removeItem("grasp-current-role");
+          
+          // Redirect to SAML logout endpoint
+          window.location.href = "/auth/logout";
+        }
+      });
     }
   }
 

@@ -46,6 +46,31 @@ const strategy = new SamlStrategy(samlConfig, (profile, done) => {
 
   const eppn = profile.eduPersonPrincipalName;
 
+  // Extract affiliation (can be array or string)
+  let affiliation = profile.eduPersonAffiliation || 
+                    profile.affiliation || 
+                    profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.1'] ||
+                    [];
+  
+  // Normalize to array
+  if (!Array.isArray(affiliation)) {
+    affiliation = [affiliation];
+  }
+
+  // Determine user role based on affiliation
+  let role = 'student'; // default to student
+  const affiliationStr = affiliation.join(',').toLowerCase();
+  
+  if (affiliationStr.includes('faculty') || affiliationStr.includes('staff') || affiliationStr.includes('employee')) {
+    role = 'instructor';
+  }
+
+  // Check environment variable for instructor emails (for testing/override)
+  const instructorEmails = process.env.INSTRUCTOR_EMAILS?.split(',').map(e => e.trim()) || [];
+  if (email && instructorEmails.includes(email)) {
+    role = 'instructor';
+  }
+
   const user = {
     id: profile.nameID,
     nameID: profile.nameID,
@@ -55,6 +80,8 @@ const strategy = new SamlStrategy(samlConfig, (profile, done) => {
     familyName,
     displayName,
     eppn,
+    affiliation,
+    role, // 'instructor' or 'student'
     sessionIndex: profile.sessionIndex,
     raw: profile,
   };

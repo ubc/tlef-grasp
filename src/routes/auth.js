@@ -18,8 +18,15 @@ router.post('/saml/callback',
     failureFlash: false,
   }),
   (req, res) => {
-    // Successful login
-    res.redirect('/');
+    // Successful login - redirect based on user role
+    if (req.user && req.user.role === 'instructor') {
+      res.redirect('/dashboard');
+    } else if (req.user && req.user.role === 'student') {
+      res.redirect('/student-dashboard');
+    } else {
+      // Fallback to root (which will redirect based on role)
+      res.redirect('/');
+    }
   }
 );
 
@@ -47,8 +54,11 @@ router.get('/logout/callback', (_req, res) => {
 // Simple status endpoint for the frontend
 router.get('/me', (req, res) => {
   if (req.isAuthenticated()) {
-    const { id, email, givenName, familyName, displayName, eppn } = req.user;
-    return res.json({ authenticated: true, user: { id, email, givenName, familyName, displayName, eppn } });
+    const { id, email, givenName, familyName, displayName, eppn, role, affiliation } = req.user;
+    return res.json({ 
+      authenticated: true, 
+      user: { id, email, givenName, familyName, displayName, eppn, role, affiliation } 
+    });
   }
   res.json({ authenticated: false });
 });

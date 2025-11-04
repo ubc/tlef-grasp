@@ -94,7 +94,7 @@ function loadQuizSummaryData() {
             <i class="fas fa-exclamation-triangle"></i>
             <h3>Unable to Load Quiz Summary</h3>
             <p>There was an error loading the quiz summary. Please try refreshing the page or contact support if the problem persists.</p>
-            <button onclick="window.location.href='student-dashboard.html'" class="retry-button">
+            <button onclick="window.location.href='/student-dashboard'" class="retry-button">
               Return to Dashboard
             </button>
           </div>
@@ -253,7 +253,7 @@ function handleKeyboardNavigation(e) {
     case "Escape":
       e.preventDefault();
       // Return to dashboard
-      window.location.href = "student-dashboard.html";
+      window.location.href = "/student-dashboard";
       break;
   }
 }

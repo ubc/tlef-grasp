@@ -1,5 +1,33 @@
 # Environment variables
-.env 
+.env
+.env.local
+.env.*.local
+.env.production
 
 # Dependencies
 /node_modules
+
+# SAML Certificates (do not commit!)
+certs/*.crt
+certs/*.key
+certs/*.pem
+certs/*.p12
+certs/*.pfx
+
+# Keep README in certs directory
+!certs/README.md
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# MongoDB data
+data/
+
+# Build
+dist/
+build/
