@@ -178,9 +178,14 @@
                                 </div>
                             </div>
                             
-                            <button type="button" class="btn btn--primary" id="add-objectives-btn">
-                                <i class="fas fa-plus"></i> Add learning objectives
-                            </button>
+                            <div class="objectives-actions">
+                                <button type="button" class="btn btn--primary" id="add-objectives-btn">
+                                    <i class="fas fa-plus"></i> Add learning objectives
+                                </button>
+                                <button type="button" class="btn btn--secondary" id="generate-objectives-btn" title="Generate learning objectives from uploaded content">
+                                    <i class="fas fa-magic"></i> Generate from Content
+                                </button>
+                            </div>
                             
                             <div class="objectives-groups" id="objectives-groups">
                                 <!-- Meta learning objective groups will be added here -->
@@ -346,8 +351,9 @@
 
                             <!-- Questions Loading Spinner -->
                             <div class="questions-loading" id="questions-loading" style="display: none;">
-                                <i class="fas fa-spinner fa-spin"></i>
-                                <p>Generating questions...</p>
+                                <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: #3498db; margin-bottom: 15px;"></i>
+                                <p style="font-size: 16px; font-weight: 500; color: #2c3e50; margin-bottom: 10px;">Generating questions...</p>
+                                <!-- Progress will be added dynamically -->
                             </div>
 
                             <!-- Meta LO Groups -->
@@ -518,7 +524,8 @@
                 <!-- Summary content will be populated here -->
             </div>
             <div class="export-summary-modal__footer">
-                <button type="button" class="btn btn--primary" id="export-summary-confirm">Close</button>
+                <button type="button" class="btn btn--secondary" id="export-summary-cancel">Cancel</button>
+                <button type="button" class="btn btn--primary" id="export-summary-confirm">Confirm Export</button>
             </div>
         </div>
     </div>
@@ -558,6 +565,9 @@
 
     <!-- PDF.js library for PDF parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="scripts/button-utils.js"></script>
+    <script src="scripts/app-state-manager.js"></script>
+    <script src="scripts/state-persistence.js"></script>
     <script src="scripts/navigation.js"></script>
     <script src="scripts/client-rag.js"></script>
     <script src="scripts/generating-content.js"></script>

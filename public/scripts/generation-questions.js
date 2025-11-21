@@ -68,7 +68,7 @@ class QuestionGenerator {
     }
   }
 
-  async generateQuestions(course, summary, objectiveGroups) {
+  async generateQuestions(course, summary, objectiveGroups, progressCallback) {
     try {
       console.log("=== QUESTION GENERATOR DEBUG ===");
       console.log(
@@ -84,11 +84,12 @@ class QuestionGenerator {
           : false,
       });
 
-      // Generate questions using RAG-enhanced content
+      // Generate questions using RAG-enhanced content with progress callback
       const questions = await this.generateRAGEnhancedQuestions(
         course,
         summary,
-        objectiveGroups
+        objectiveGroups,
+        progressCallback
       );
 
       console.log("=== QUESTION GENERATOR RESULT ===");
@@ -103,20 +104,62 @@ class QuestionGenerator {
   }
 
   // Generate questions using RAG-enhanced content analysis
-  async generateRAGEnhancedQuestions(course, summary, objectiveGroups) {
+  async generateRAGEnhancedQuestions(course, summary, objectiveGroups, progressCallback) {
     console.log("=== RAG-ENHANCED QUESTIONS DEBUG ===");
     console.log("Starting RAG-enhanced question generation");
     console.log("Objective groups:", objectiveGroups.length);
 
     const allQuestions = [];
+    let totalObjectives = 0;
+    let processedObjectives = 0;
+
+    // Count total objectives
+    objectiveGroups.forEach(group => {
+      totalObjectives += group.items.length;
+    });
+
+    // Set overall timeout (2 minutes total)
+    const overallTimeout = 120000; // 2 minutes
+    const startTime = Date.now();
 
     for (const group of objectiveGroups) {
       console.log(
         `Processing group: ${group.title} with ${group.items.length} items`
       );
 
+      // Check if we've exceeded overall timeout
+      if (Date.now() - startTime > overallTimeout) {
+        console.warn("Overall timeout reached, using template generation for remaining objectives");
+        // Generate template questions for remaining objectives
+        for (const objective of group.items) {
+          if (processedObjectives < totalObjectives) {
+            const templateQuestion = this.createTemplateQuestion(
+              objective.text,
+              this.getEnhancedContentForObjective(course, summary, objective),
+              objective.bloom?.[0] || "Understand",
+              objective.id,
+              group.title,
+              1
+            );
+            allQuestions.push(templateQuestion);
+            processedObjectives++;
+            if (progressCallback) {
+              progressCallback(processedObjectives, totalObjectives, objective.text);
+            }
+          }
+        }
+        continue;
+      }
+
       for (const objective of group.items) {
+        // Check timeout before each objective
+        if (Date.now() - startTime > overallTimeout) {
+          console.warn("Timeout reached, skipping remaining objectives");
+          break;
+        }
+
         console.log(`Processing objective: ${objective.text}`);
+        processedObjectives++;
 
         try {
           // Generate questions for this specific objective using RAG
@@ -124,7 +167,12 @@ class QuestionGenerator {
             course,
             summary,
             objective,
-            group.title
+            group.title,
+            (qNum, qTotal, objText) => {
+              if (progressCallback) {
+                progressCallback(processedObjectives, totalObjectives, objText, qNum, qTotal);
+              }
+            }
           );
 
           console.log(
@@ -136,10 +184,14 @@ class QuestionGenerator {
             `Failed to generate questions for objective: ${objective.text}`,
             error
           );
-          // Add fallback question
-          const fallbackQuestion = this.createFallbackQuestion(
-            objective,
-            group.title
+          // Add fallback question using template
+          const fallbackQuestion = this.createTemplateQuestion(
+            objective.text,
+            this.getEnhancedContentForObjective(course, summary, objective),
+            objective.bloom?.[0] || "Understand",
+            objective.id,
+            group.title,
+            1
           );
           console.log("Created fallback question:", fallbackQuestion);
           allQuestions.push(fallbackQuestion);
@@ -217,7 +269,7 @@ class QuestionGenerator {
   }
 
   // Generate questions for specific objectives using enhanced content analysis
-  async generateQuestionsForObjective(course, summary, objective, groupTitle) {
+  async generateQuestionsForObjective(course, summary, objective, groupTitle, progressCallback) {
     console.log(
       `=== GENERATING QUESTIONS FOR OBJECTIVE: ${objective.text} ===`
     );
@@ -226,16 +278,20 @@ class QuestionGenerator {
     // Get comprehensive content for this objective
     let relevantContent = "";
 
-    // Try RAG first if available
+    // Try RAG first if available (with timeout)
     console.log("RAG available:", this.contentGenerator.isRAGAvailable());
     if (this.contentGenerator.isRAGAvailable()) {
       try {
         const query = `Generate questions about: ${objective.text} for ${course}`;
         console.log("RAG query:", query);
-        const relevantChunks = await this.contentGenerator.searchKnowledgeBase(
-          query,
-          3
+        
+        // Add timeout for RAG search (5 seconds)
+        const ragPromise = this.contentGenerator.searchKnowledgeBase(query, 3);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("RAG search timeout")), 5000)
         );
+        
+        const relevantChunks = await Promise.race([ragPromise, timeoutPromise]);
 
         console.log(
           "RAG chunks found:",
@@ -249,7 +305,7 @@ class QuestionGenerator {
           console.log("RAG content length:", relevantContent.length);
         }
       } catch (error) {
-        console.warn("RAG search failed, using enhanced local content:", error);
+        console.warn("RAG search failed or timed out, using enhanced local content:", error);
       }
     } else {
       console.log("RAG not available, using local content only");
@@ -285,23 +341,106 @@ class QuestionGenerator {
         } with Bloom level: ${bloomLevel}`
       );
 
-      const question = await this.createContextualQuestion(
-        objective.text,
-        relevantContent,
-        bloomLevel,
-        objective.id,
-        groupTitle,
-        i + 1
-      );
+      // Update progress
+      if (progressCallback) {
+        progressCallback(i + 1, objective.count, objective.text);
+      }
 
-      console.log(`Created question ${i + 1}:`, question.text);
-      questions.push(question);
+      try {
+        // Add timeout for question generation (15 seconds per question)
+        const questionPromise = this.createContextualQuestion(
+          objective.text,
+          relevantContent,
+          bloomLevel,
+          objective.id,
+          groupTitle,
+          i + 1
+        );
+        
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Question generation timeout")), 15000)
+        );
+        
+        const question = await Promise.race([questionPromise, timeoutPromise]);
+        console.log(`Created question ${i + 1}:`, question.text);
+        questions.push(question);
+      } catch (error) {
+        console.warn(`Question ${i + 1} generation failed or timed out, using template:`, error);
+        // Fallback to template generation
+        const templateQuestion = this.createTemplateQuestion(
+          objective.text,
+          relevantContent,
+          bloomLevel,
+          objective.id,
+          groupTitle,
+          i + 1
+        );
+        questions.push(templateQuestion);
+      }
     }
 
     console.log(
       `Generated ${questions.length} questions for objective: ${objective.text}`
     );
     return questions;
+  }
+  
+  // Create template question (fast fallback)
+  createTemplateQuestion(objectiveText, content, bloomLevel, objectiveId, groupTitle, questionNumber) {
+    const keyConcepts = this.extractKeyConceptsForQuestion(content);
+    const examples = this.extractExamplesForQuestion(content);
+
+    let questionText, options, correctAnswer;
+
+    switch (bloomLevel.toLowerCase()) {
+      case "remember":
+        ({ questionText, options, correctAnswer } =
+          this.generateRememberQuestion(objectiveText, keyConcepts));
+        break;
+      case "understand":
+        ({ questionText, options, correctAnswer } =
+          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
+        break;
+      case "apply":
+        ({ questionText, options, correctAnswer } = this.generateApplyQuestion(
+          objectiveText,
+          examples,
+          content
+        ));
+        break;
+      case "analyze":
+        ({ questionText, options, correctAnswer } =
+          this.generateAnalyzeQuestion(objectiveText, keyConcepts, content));
+        break;
+      case "evaluate":
+        ({ questionText, options, correctAnswer } =
+          this.generateEvaluateQuestion(objectiveText, keyConcepts, content));
+        break;
+      case "create":
+        ({ questionText, options, correctAnswer } = this.generateCreateQuestion(
+          objectiveText,
+          keyConcepts,
+          content
+        ));
+        break;
+      default:
+        ({ questionText, options, correctAnswer } =
+          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
+    }
+
+    return {
+      id: `${objectiveId}-${questionNumber}`,
+      text: questionText,
+      type: "multiple-choice",
+      options: options,
+      correctAnswer: correctAnswer,
+      bloomLevel: bloomLevel,
+      difficulty: this.determineDifficulty(bloomLevel),
+      metaCode: groupTitle,
+      loCode: objectiveText,
+      lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+      by: "Template System (Fast Fallback)",
+    };
   }
 
   // Get enhanced content for objective from uploaded materials
@@ -369,16 +508,23 @@ class QuestionGenerator {
     groupTitle,
     questionNumber
   ) {
-    // Try to use LLM service first
+    // Try to use LLM service first (with timeout)
     if (this.llmService && this.llmService.isAvailable()) {
       try {
         console.log(`Generating LLM question for objective: ${objectiveText}`);
-        const llmResponse =
-          await this.llmService.generateMultipleChoiceQuestion(
-            objectiveText,
-            content,
-            bloomLevel
-          );
+        
+        // Add timeout for LLM call (10 seconds)
+        const llmPromise = this.llmService.generateMultipleChoiceQuestion(
+          objectiveText,
+          content,
+          bloomLevel
+        );
+        
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("LLM generation timeout")), 10000)
+        );
+        
+        const llmResponse = await Promise.race([llmPromise, timeoutPromise]);
 
         // Parse LLM response
         const questionData = JSON.parse(llmResponse);
@@ -398,68 +544,21 @@ class QuestionGenerator {
           explanation: questionData.explanation,
         };
       } catch (error) {
-        console.warn("LLM generation failed, falling back to template:", error);
+        console.warn("LLM generation failed or timed out, falling back to template:", error);
         // Fall through to template generation
       }
     }
 
-    // Fallback to template-based generation
+    // Fallback to template-based generation (fast)
     console.log(`Using template generation for objective: ${objectiveText}`);
-    const keyConcepts = this.extractKeyConceptsForQuestion(content);
-    const examples = this.extractExamplesForQuestion(content);
-
-    // Generate question based on Bloom's taxonomy level
-    let questionText, options, correctAnswer;
-
-    switch (bloomLevel.toLowerCase()) {
-      case "remember":
-        ({ questionText, options, correctAnswer } =
-          this.generateRememberQuestion(objectiveText, keyConcepts));
-        break;
-      case "understand":
-        ({ questionText, options, correctAnswer } =
-          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "apply":
-        ({ questionText, options, correctAnswer } = this.generateApplyQuestion(
-          objectiveText,
-          examples,
-          content
-        ));
-        break;
-      case "analyze":
-        ({ questionText, options, correctAnswer } =
-          this.generateAnalyzeQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "evaluate":
-        ({ questionText, options, correctAnswer } =
-          this.generateEvaluateQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "create":
-        ({ questionText, options, correctAnswer } = this.generateCreateQuestion(
-          objectiveText,
-          keyConcepts,
-          content
-        ));
-        break;
-      default:
-        ({ questionText, options, correctAnswer } =
-          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
-    }
-
-    return {
-      id: `${objectiveId}-${questionNumber}`,
-      text: questionText,
-      type: "multiple-choice",
-      options: options,
-      correctAnswer: correctAnswer,
-      bloomLevel: bloomLevel,
-      difficulty: this.determineDifficulty(bloomLevel),
-      metaCode: groupTitle,
-      loCode: objectiveText,
-      lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-      by: "Template System",
-    };
+    return this.createTemplateQuestion(
+      objectiveText,
+      content,
+      bloomLevel,
+      objectiveId,
+      groupTitle,
+      questionNumber
+    );
   }
 
   // Extract key concepts from content for question generation

@@ -1,5 +1,25 @@
 // GRASP Dashboard JavaScript - Dynamic Data Loading
+
+// Initialize state persistence
+let dashboardState = null;
+
 document.addEventListener("DOMContentLoaded", function () {
+  // Initialize state persistence
+  dashboardState = new StatePersistence("dashboard", {
+    selectedCourse: "",
+    filters: {},
+    viewMode: "default",
+  });
+  
+  // Restore state
+  if (dashboardState.getState("selectedCourse")) {
+    // Restore selected course if available
+    const courseSelector = document.getElementById("course-selector");
+    if (courseSelector) {
+      courseSelector.value = dashboardState.getState("selectedCourse");
+    }
+  }
+  
   // Initialize dashboard functionality
   initializeDashboard();
 });
@@ -33,18 +53,36 @@ async function initializeDashboard() {
 
 async function loadUserData() {
   try {
-    // Get user data from session storage (set during onboarding)
-    const courseProfile = sessionStorage.getItem("courseProfile");
+    // Get user data from localStorage first (persistent), then sessionStorage (for backward compatibility)
+    let courseProfile = localStorage.getItem("courseProfile");
+    
+    if (!courseProfile) {
+      courseProfile = sessionStorage.getItem("courseProfile");
+      // If found in sessionStorage, also save to localStorage for persistence
+      if (courseProfile) {
+        localStorage.setItem("courseProfile", courseProfile);
+      }
+    }
 
     if (courseProfile) {
       const profile = JSON.parse(courseProfile);
       updateWelcomeMessage(profile.instructorName);
     } else {
-      // If no profile found, redirect to onboarding
-      window.location.href = "/onboarding";
+      // Check if user is onboarded (might have courseProfile but not in storage yet)
+      const isOnboarded = localStorage.getItem("onboarded");
+      if (isOnboarded !== "true") {
+        // Only redirect if truly not onboarded
+        console.log("No course profile found and not onboarded, redirecting to onboarding");
+        window.location.href = "/onboarding";
+      } else {
+        // User is onboarded but profile not in storage - try to load from API
+        console.log("User is onboarded but profile not in storage, attempting to load from API");
+        // Don't redirect, just continue - the profile might be loaded from API
+      }
     }
   } catch (error) {
     console.error("Error loading user data:", error);
+    // Don't redirect on error, just log it
   }
 }
 
@@ -97,6 +135,18 @@ function updateCourseSelector(courses) {
       option.value = course.code;
       option.textContent = `${course.code} - ${course.name}`;
       courseSelector.appendChild(option);
+    });
+    
+    // Restore selected course from state
+    if (dashboardState && dashboardState.getState("selectedCourse")) {
+      courseSelector.value = dashboardState.getState("selectedCourse");
+    }
+    
+    // Save state when course selection changes
+    courseSelector.addEventListener("change", (e) => {
+      if (dashboardState) {
+        dashboardState.setState("selectedCourse", e.target.value);
+      }
     });
   }
 }
@@ -287,7 +337,7 @@ function handleQuickStartAction(action) {
       break;
     case "review":
       // Navigate to question review page
-      window.location.href = "/question-review";
+      window.location.href = "/question-review.html";
       break;
     case "quizzes":
       // Navigate to quiz page

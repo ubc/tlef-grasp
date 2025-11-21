@@ -46,6 +46,9 @@ class GRASPNavigation {
     }
 
     console.log("Creating sidebar navigation...");
+    
+    // Add loading class to prevent flash
+    document.body.classList.add("navigation-loading");
 
     // Get current role
     this.currentRole =
@@ -67,13 +70,13 @@ class GRASPNavigation {
 
         <!-- User Controls -->
         <div class="user-controls">
-          <div class="user-control">
+          <div class="user-control" id="user-profile-btn" title="User Profile">
             <i class="fas fa-user"></i>
           </div>
-          <div class="user-control">
+          <div class="user-control" id="settings-btn" title="Settings">
             <i class="fas fa-cog"></i>
           </div>
-          <div class="user-control">
+          <div class="user-control" id="notifications-btn" title="Notifications">
             <i class="fas fa-bell"></i>
             <span class="notification-badge">9</span>
           </div>
@@ -116,6 +119,19 @@ class GRASPNavigation {
 
     // Add consistent navigation styles
     this.addNavigationStyles();
+    
+    // Remove loading class after navigation is fully rendered
+    // Use requestAnimationFrame for smoother transitions
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.body.classList.remove("navigation-loading");
+        // Also ensure main content is visible
+        const mainContent = document.querySelector(".main-content");
+        if (mainContent) {
+          mainContent.style.opacity = "1";
+        }
+      });
+    });
   }
 
   getNavigationMenu() {
@@ -156,9 +172,9 @@ class GRASPNavigation {
           <i class="fas fa-folder"></i>
           <span>Course Materials</span>
         </li>
-        <li class="nav-item" data-page="users">
-          <i class="fas fa-users"></i>
-          <span>Users</span>
+        <li class="nav-item" data-page="user-profile">
+          <i class="fas fa-user"></i>
+          <span><a href="user-profile.html" style="text-decoration: none; color: inherit;">User Profile</a></span>
         </li>
         <li class="nav-item" data-page="settings">
           <i class="fas fa-cog"></i>
@@ -422,6 +438,39 @@ class GRASPNavigation {
         margin-left: 280px;
         min-height: 100vh;
         background-color: #f5f5f5;
+        transition: opacity 0.3s ease-in-out;
+        opacity: 1;
+      }
+      
+      /* Prevent flash during navigation */
+      body.navigation-loading .main-content {
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      body.navigation-loading .sidebar {
+        opacity: 0;
+      }
+      
+      .sidebar {
+        transition: opacity 0.3s ease-in-out;
+        opacity: 1;
+      }
+
+      /* Page transition styles - smoother transitions */
+      body.page-transitioning .main-content {
+        opacity: 0.7;
+        transition: opacity 0.2s ease-in-out;
+      }
+      
+      /* Ensure content wrapper is ready */
+      .content-wrapper {
+        opacity: 1;
+        transition: opacity 0.2s ease-in-out;
+      }
+      
+      body.navigation-loading .content-wrapper {
+        opacity: 0;
       }
 
       /* Responsive adjustments */
@@ -445,25 +494,109 @@ class GRASPNavigation {
     const navItems = document.querySelectorAll(".nav-item");
 
     navItems.forEach((item) => {
-      item.addEventListener("click", (e) => {
-        // Don't handle clicks on links (let them navigate naturally)
-        if (e.target.tagName === "A" || e.target.closest("a")) {
-          return;
+      // Skip if already initialized
+      if (item.dataset.navInitialized === 'true') {
+        return;
+      }
+      item.dataset.navInitialized = 'true';
+
+      // Find the link inside the nav item
+      const link = item.querySelector("a");
+      
+      if (link) {
+        // Handle clicks on the entire nav item or the link
+        const handleNavClick = (e) => {
+          // Prevent multiple rapid clicks
+          if (item.dataset.navProcessing === 'true') {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+
+          item.dataset.navProcessing = 'true';
+          
+          // Add smooth transition for link navigation
+          document.body.classList.add("page-transitioning");
+          
+          // Remove active class from all items
+          navItems.forEach((nav) => nav.classList.remove("active"));
+          
+          // Add active class to clicked item
+          item.classList.add("active");
+          
+          // Save state before navigation
+          if (window.AppStateManager) {
+            window.AppStateManager.saveAllStates();
+          }
+          
+          // Re-enable after navigation starts
+          setTimeout(() => {
+            item.dataset.navProcessing = 'false';
+          }, 500);
+        };
+        
+        // Use ButtonUtils if available, otherwise use standard handler
+        if (window.ButtonUtils) {
+          window.ButtonUtils.safeAddEventListener(item, "click", (e) => {
+            // If clicking directly on the link, let it handle navigation
+            if (e.target === link || e.target.closest("a") === link) {
+              handleNavClick(e);
+              return; // Let the link navigate naturally
+            }
+            
+            // If clicking elsewhere on the nav item, trigger the link
+            e.preventDefault();
+            e.stopPropagation();
+            handleNavClick(e);
+            link.click(); // Programmatically click the link
+          });
+        } else {
+          // Fallback to standard handler
+          item.addEventListener("click", (e) => {
+            if (e.target === link || e.target.closest("a") === link) {
+              handleNavClick(e);
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            handleNavClick(e);
+            link.click();
+          });
         }
-
-        // Remove active class from all items
-        navItems.forEach((nav) => nav.classList.remove("active"));
-
-        // Add active class to clicked item
-        item.classList.add("active");
-
-        // Handle navigation
-        const navText = item.querySelector("span").textContent;
-        console.log(`Navigating to: ${navText}`);
-
-        // Update page title based on navigation
-        this.updatePageTitle(navText);
-      });
+      } else {
+        // For nav items without links (like Course Materials), just update active state
+        if (window.ButtonUtils) {
+          window.ButtonUtils.safeAddEventListener(item, "click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Remove active class from all items
+            navItems.forEach((nav) => nav.classList.remove("active"));
+            
+            // Add active class to clicked item
+            item.classList.add("active");
+            
+            // Handle navigation
+            const navText = item.querySelector("span")?.textContent;
+            console.log(`Navigating to: ${navText}`);
+            
+            // Update page title based on navigation
+            this.updatePageTitle(navText);
+          });
+        } else {
+          item.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            navItems.forEach((nav) => nav.classList.remove("active"));
+            item.classList.add("active");
+            
+            const navText = item.querySelector("span")?.textContent;
+            console.log(`Navigating to: ${navText}`);
+            this.updatePageTitle(navText);
+          });
+        }
+      }
     });
   }
 
@@ -612,13 +745,11 @@ class GRASPNavigation {
   }
 
   openUserProfile() {
-    console.log("Opening user profile...");
-    // Navigate to user profile page or open modal
+    this.handlePageTransition("user-profile.html");
   }
 
   openSettings() {
-    console.log("Opening settings...");
-    // Navigate to settings page or open modal
+    this.handlePageTransition("settings.html");
   }
 
   openNotifications() {

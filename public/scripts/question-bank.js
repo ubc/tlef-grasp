@@ -3,19 +3,43 @@
 
 class QuestionBankPage {
   constructor() {
-    this.state = {
+    // Initialize state persistence
+    this.statePersistence = new StatePersistence("questionBank", {
       course: "all",
       filters: { objective: "all", bloom: "all", status: "all", q: "" },
       sort: { key: "views", dir: "desc" },
-      selectedQuestionIds: new Set(),
+      selectedQuestionIds: [],
       selectedHistoryId: null,
       currentTab: "review",
+    });
+    
+    // Load saved state
+    const savedState = this.statePersistence.state;
+    this.state = {
+      course: savedState.course || "all",
+      filters: savedState.filters || { objective: "all", bloom: "all", status: "all", q: "" },
+      sort: savedState.sort || { key: "views", dir: "desc" },
+      selectedQuestionIds: new Set(savedState.selectedQuestionIds || []),
+      selectedHistoryId: savedState.selectedHistoryId || null,
+      currentTab: savedState.currentTab || "review",
     };
 
     this.questions = [];
     this.history = [];
     this.quizzes = [];
     this.init();
+  }
+  
+  // Save state helper
+  saveState() {
+    this.statePersistence.updateState({
+      course: this.state.course,
+      filters: this.state.filters,
+      sort: this.state.sort,
+      selectedQuestionIds: Array.from(this.state.selectedQuestionIds),
+      selectedHistoryId: this.state.selectedHistoryId,
+      currentTab: this.state.currentTab,
+    });
   }
 
   async init() {
@@ -287,8 +311,14 @@ class QuestionBankPage {
     // Course selector
     const courseSelector = document.getElementById("course-selector");
     if (courseSelector) {
+      // Restore saved course selection
+      if (this.state.course) {
+        courseSelector.value = this.state.course;
+      }
+      
       courseSelector.addEventListener("change", async (e) => {
         this.state.course = e.target.value;
+        this.saveState();
         await this.renderAll();
       });
     }
@@ -300,6 +330,8 @@ class QuestionBankPage {
         tabButtons.forEach((btn) => btn.classList.remove("active"));
         button.classList.add("active");
         const tabName = button.getAttribute("data-tab");
+        this.state.currentTab = tabName;
+        this.saveState();
         await this.switchTab(tabName);
       });
     });
@@ -310,9 +342,24 @@ class QuestionBankPage {
     const statusFilter = document.getElementById("status-filter");
     const searchInput = document.getElementById("search-input");
 
+    // Restore saved filter values
+    if (objectiveFilter && this.state.filters.objective) {
+      objectiveFilter.value = this.state.filters.objective;
+    }
+    if (bloomFilter && this.state.filters.bloom) {
+      bloomFilter.value = this.state.filters.bloom;
+    }
+    if (statusFilter && this.state.filters.status) {
+      statusFilter.value = this.state.filters.status;
+    }
+    if (searchInput && this.state.filters.q) {
+      searchInput.value = this.state.filters.q;
+    }
+
     if (objectiveFilter) {
       objectiveFilter.addEventListener("change", async (e) => {
         this.state.filters.objective = e.target.value;
+        this.saveState();
         await this.applyFilters();
       });
     }
@@ -320,6 +367,7 @@ class QuestionBankPage {
     if (bloomFilter) {
       bloomFilter.addEventListener("change", async (e) => {
         this.state.filters.bloom = e.target.value;
+        this.saveState();
         await this.applyFilters();
       });
     }
@@ -327,6 +375,7 @@ class QuestionBankPage {
     if (statusFilter) {
       statusFilter.addEventListener("change", async (e) => {
         this.state.filters.status = e.target.value;
+        this.saveState();
         await this.applyFilters();
       });
     }
@@ -334,6 +383,7 @@ class QuestionBankPage {
     if (searchInput) {
       searchInput.addEventListener("input", async (e) => {
         this.state.filters.q = e.target.value;
+        this.saveState();
         await this.applyFilters();
       });
     }

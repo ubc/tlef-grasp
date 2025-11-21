@@ -123,14 +123,71 @@ router.post("/generate", express.json(), async (req, res) => {
   }
 });
 
-// Get generated questions
+// Get generated questions for review
 router.get("/generated", (req, res) => {
   try {
     const questions = req.session?.generatedQuestions || [];
-    res.json({ questions });
+    res.json({ 
+      success: true,
+      questions: questions,
+      count: questions.length 
+    });
   } catch (error) {
     console.error("Error getting generated questions:", error);
     res.status(500).json({ error: "Failed to retrieve questions" });
+  }
+});
+
+// Get questions for review (from localStorage or session)
+router.get("/for-review", (req, res) => {
+  try {
+    // Try to get from session first
+    const sessionQuestions = req.session?.generatedQuestions || [];
+    
+    // Also check for question groups from question generation
+    const questionGroups = req.session?.questionGroups || [];
+    
+    // Convert question groups to flat question list
+    const questionsFromGroups = [];
+    questionGroups.forEach((group) => {
+      if (group.los && Array.isArray(group.los)) {
+        group.los.forEach((lo) => {
+          if (lo.questions && Array.isArray(lo.questions)) {
+            lo.questions.forEach((q) => {
+              questionsFromGroups.push({
+                ...q,
+                metaCode: group.title,
+                loCode: lo.text || lo.title,
+                groupId: group.id,
+                loId: lo.id,
+              });
+            });
+          }
+        });
+      }
+    });
+    
+    // Combine both sources
+    const allQuestions = [...sessionQuestions, ...questionsFromGroups];
+    
+    // Filter to only show questions that need review (status: 'generated' or no status)
+    const questionsForReview = allQuestions.filter((q) => {
+      const status = q.status || 'generated';
+      return status === 'generated' || status === 'unpublished' || !q.reviewed;
+    });
+    
+    res.json({
+      success: true,
+      questions: questionsForReview,
+      count: questionsForReview.length,
+      total: allQuestions.length,
+    });
+  } catch (error) {
+    console.error("Error getting questions for review:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to retrieve questions for review" 
+    });
   }
 });
 
@@ -357,7 +414,7 @@ router.post("/generate-questions", express.json(), async (req, res) => {
 // Export questions in various formats
 router.post("/export", express.json(), async (req, res) => {
   try {
-    const { course, summary, objectives, questions } = req.body;
+    const { course, summary, objectives, questions, exportConfig } = req.body;
     const format = req.query.format || 'qti';
 
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
@@ -372,7 +429,9 @@ router.post("/export", express.json(), async (req, res) => {
       case 'csv':
         exportData = createCSVExport(course, questions);
         contentType = 'text/csv';
-        filename = `questions-${course}-${Date.now()}.csv`;
+        filename = exportConfig?.quizName 
+          ? `${exportConfig.quizName}-${Date.now()}.csv`
+          : `questions-${course}-${Date.now()}.csv`;
         break;
       case 'json':
         exportData = JSON.stringify({
@@ -380,16 +439,29 @@ router.post("/export", express.json(), async (req, res) => {
           summary,
           objectives,
           questions,
+          exportConfig,
           exportedAt: new Date().toISOString()
         }, null, 2);
         contentType = 'application/json';
-        filename = `questions-${course}-${Date.now()}.json`;
+        filename = exportConfig?.quizName 
+          ? `${exportConfig.quizName}-${Date.now()}.json`
+          : `questions-${course}-${Date.now()}.json`;
+        break;
+      case 'h5p':
+        exportData = createH5PExport(course, questions);
+        contentType = 'application/json'; // H5P exports as JSON
+        filename = exportConfig?.quizName 
+          ? `${exportConfig.quizName}-${Date.now()}.json`
+          : `questions-${course}-${Date.now()}.json`;
         break;
       case 'qti':
       default:
-        exportData = createQTIExport(course, questions);
+        // Use Canvas-compatible QTI format
+        exportData = createCanvasQTIExport(course, questions, exportConfig);
         contentType = 'application/xml';
-        filename = `questions-${course}-${Date.now()}.xml`;
+        filename = exportConfig?.quizName 
+          ? `${exportConfig.quizName}-${Date.now()}.xml`
+          : `questions-${course}-${Date.now()}.xml`;
         break;
     }
 
@@ -399,7 +471,7 @@ router.post("/export", express.json(), async (req, res) => {
 
   } catch (error) {
     console.error("Export error:", error);
-    res.status(500).json({ error: "Export failed" });
+    res.status(500).json({ error: "Export failed", details: error.message });
   }
 });
 
@@ -411,21 +483,44 @@ function createCSVExport(course, questions) {
   return csv;
 }
 
-function createQTIExport(course, questions) {
+// Canvas-compatible QTI export
+function createCanvasQTIExport(course, questions, exportConfig = {}) {
+  const quizTitle = exportConfig?.quizName || `${course} Questions`;
+  const quizIdent = `quiz_${Date.now()}`;
+  
+  // Escape XML special characters
+  const escapeXml = (str) => {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
   let qti = `<?xml version="1.0" encoding="UTF-8"?>
 <questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
-  <assessment ident="GRASP_QUESTIONS" title="${course} Questions">
+  <assessment ident="${quizIdent}" title="${escapeXml(quizTitle)}">
     <qtimetadata>
       <qtimetadatafield>
         <fieldlabel>qmd_timelimit</fieldlabel>
         <fieldentry>PT30M</fieldentry>
       </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_assessmenttype</fieldlabel>
+        <fieldentry>Quiz</fieldentry>
+      </qtimetadatafield>
     </qtimetadata>`;
 
   questions.forEach((q, index) => {
+    const itemId = q.id || `item_${index + 1}`;
+    const responseId = `response_${itemId}`;
+    const correctAnswer = String.fromCharCode(65 + (q.correctAnswer || 0));
+    
     qti += `
     <section ident="section_${index + 1}">
-      <item ident="item_${q.id}">
+      <item ident="${itemId}" title="${escapeXml(q.text.substring(0, 50))}">
         <itemmetadata>
           <qtimetadata>
             <qtimetadatafield>
@@ -436,34 +531,28 @@ function createQTIExport(course, questions) {
               <fieldlabel>qmd_status</fieldlabel>
               <fieldentry>Normal</fieldentry>
             </qtimetadatafield>
+            ${q.bloomLevel ? `
+            <qtimetadatafield>
+              <fieldlabel>qmd_bloom</fieldlabel>
+              <fieldentry>${escapeXml(q.bloomLevel)}</fieldentry>
+            </qtimetadatafield>` : ''}
           </qtimetadata>
         </itemmetadata>
         <presentation>
           <material>
-            <mattext texttype="text/html">${q.text}</mattext>
+            <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
           </material>
-          <response_lid ident="response_${q.id}">
+          <response_lid ident="${responseId}">
             <render_choice>
-              <response_label ident="A">
+              ${(q.options || []).map((option, optIndex) => {
+                const labelId = String.fromCharCode(65 + optIndex);
+                return `
+              <response_label ident="${labelId}">
                 <material>
-                  <mattext texttype="text/html">${q.options[0]}</mattext>
+                  <mattext texttype="text/html">${escapeXml(option)}</mattext>
                 </material>
-              </response_label>
-              <response_label ident="B">
-                <material>
-                  <mattext texttype="text/html">${q.options[1]}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="C">
-                <material>
-                  <mattext texttype="text/html">${q.options[2]}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="D">
-                <material>
-                  <mattext texttype="text/html">${q.options[3]}</mattext>
-                </material>
-              </response_label>
+              </response_label>`;
+              }).join('')}
             </render_choice>
           </response_lid>
         </presentation>
@@ -473,11 +562,19 @@ function createQTIExport(course, questions) {
           </outcomes>
           <respcondition continue="No">
             <conditionvar>
-              <varequal respident="response_${q.id}">${String.fromCharCode(65 + q.correctAnswer)}</varequal>
+              <varequal respident="${responseId}">${correctAnswer}</varequal>
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
         </resprocessing>
+        ${q.explanation ? `
+        <itemfeedback ident="general_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/html">${escapeXml(q.explanation)}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>` : ''}
       </item>
     </section>`;
   });
@@ -487,6 +584,36 @@ function createQTIExport(course, questions) {
 </questestinterop>`;
 
   return qti;
+}
+
+// Legacy QTI export (for backward compatibility)
+function createQTIExport(course, questions) {
+  return createCanvasQTIExport(course, questions);
+}
+
+// H5P export (JSON format for H5P Multiple Choice)
+function createH5PExport(course, questions) {
+  // H5P exports as a JSON file that can be imported into H5P
+  const h5pContent = {
+    questions: questions.map((q, index) => ({
+      question: q.text,
+      answers: (q.options || []).map((option, optIndex) => ({
+        text: option,
+        correct: optIndex === (q.correctAnswer || 0),
+        tipsAndFeedback: {
+          tip: optIndex === (q.correctAnswer || 0) ? (q.explanation || '') : '',
+        },
+      })),
+      overallFeedback: q.explanation || '',
+    })),
+    metadata: {
+      course: course,
+      exportedAt: new Date().toISOString(),
+      questionCount: questions.length,
+    },
+  };
+
+  return JSON.stringify(h5pContent, null, 2);
 }
 
 module.exports = router;

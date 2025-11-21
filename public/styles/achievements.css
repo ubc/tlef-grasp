@@ -241,12 +241,43 @@ body {
     flex: 1;
 }
 
+.achievement-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
 .achievement-title {
     font-size: 18px;
     font-weight: 600;
     color: #2c3e50;
-    margin-bottom: 8px;
     line-height: 1.4;
+    margin: 0;
+}
+
+.rarity-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 12px;
+    letter-spacing: 0.5px;
+}
+
+.rarity-badge.rarity-common {
+    background: #e8f4f8;
+    color: #3498db;
+}
+
+.rarity-badge.rarity-uncommon {
+    background: #e8f5e9;
+    color: #2ecc71;
+}
+
+.rarity-badge.rarity-rare {
+    background: #fce4ec;
+    color: #e91e63;
 }
 
 .achievement-status {
@@ -267,8 +298,41 @@ body {
     font-size: 14px;
     color: #555;
     line-height: 1.5;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     flex-grow: 1;
+}
+
+.achievement-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.progress-bar-mini {
+    flex: 1;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill-mini {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2980b9);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2c3e50;
+    min-width: 40px;
+    text-align: right;
 }
 
 .view-details-button {
@@ -297,6 +361,231 @@ body {
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+
+/* Achievement Modal */
+.achievement-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: relative;
+    background: white;
+    border-radius: 16px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+.modal-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #7f8c8d;
+    cursor: pointer;
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    z-index: 1;
+}
+
+.modal-close:hover {
+    background: #f0f0f0;
+    color: #2c3e50;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header .achievement-icon {
+    width: 60px;
+    height: 60px;
+    font-size: 28px;
+}
+
+.modal-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0 0 8px 0;
+}
+
+.modal-status {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.modal-status.earned {
+    color: #27ae60;
+}
+
+.modal-status.locked {
+    color: #7f8c8d;
+}
+
+.modal-body {
+    padding: 30px;
+}
+
+.modal-description {
+    font-size: 16px;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.modal-criteria {
+    font-size: 14px;
+    color: #2c3e50;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.modal-criteria strong {
+    color: #2c3e50;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.modal-progress {
+    margin-top: 15px;
+}
+
+.modal-progress strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+.modal-footer {
+    padding: 20px 30px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.modal-button {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.modal-button:hover {
+    background: linear-gradient(135deg, #2980b9, #1f5f8b);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Achievement Notification */
+.achievement-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    z-index: 10001;
+    min-width: 300px;
+    max-width: 400px;
+    transform: translateX(400px);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.achievement-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.notification-content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.notification-content .achievement-icon {
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.notification-text h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0 0 5px 0;
+}
+
+.notification-text p {
+    font-size: 14px;
+    color: #555;
+    margin: 0;
 }
 
 /* No Results State */

@@ -755,6 +755,9 @@ const SAMPLE_QUESTION_DATA = [
 document.addEventListener("DOMContentLoaded", async function () {
   console.log("DOM Content Loaded - Starting initialization...");
 
+  // Restore saved state from localStorage
+  restoreState();
+
   // Initialize GRASP navigation first to create sidebar
   if (window.GRASPNavigation) {
     console.log("GRASPNavigation available, creating instance...");
@@ -779,9 +782,130 @@ document.addEventListener("DOMContentLoaded", async function () {
   updateUI();
 
   console.log("Initialization complete!");
+  
+  // Set up auto-save for state changes
+  setupStatePersistence();
 });
 
 // ===== MODULE INITIALIZATION =====
+
+// ===== STATE PERSISTENCE FUNCTIONS =====
+
+function saveState() {
+  try {
+    // Create a serializable copy of state (Sets need to be converted to arrays)
+    const stateToSave = {
+      step: state.step,
+      course: state.course,
+      selectedCourse: state.selectedCourse,
+      files: state.files.map(file => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        content: file.content, // Save content for restoration
+      })),
+      urls: state.urls,
+      summary: state.summary,
+      objectives: state.objectives,
+      questions: state.questions,
+      exportFormat: state.exportFormat,
+      objectiveGroups: state.objectiveGroups,
+      questionGroups: state.questionGroups,
+      selectedGroupIds: Array.from(state.selectedGroupIds),
+      selectedQuestions: Array.from(state.selectedQuestions),
+      filters: state.filters,
+      formats: state.formats,
+      namingConvention: state.namingConvention,
+      saveAsDefault: state.saveAsDefault,
+      timestamp: Date.now(),
+    };
+    
+    localStorage.setItem("questionGenerationState", JSON.stringify(stateToSave));
+    console.log("State saved to localStorage");
+  } catch (error) {
+    console.error("Error saving state:", error);
+  }
+}
+
+function restoreState() {
+  try {
+    const savedState = localStorage.getItem("questionGenerationState");
+    if (!savedState) {
+      console.log("No saved state found");
+      return;
+    }
+
+    const parsedState = JSON.parse(savedState);
+    
+    // Check if state is recent (within 7 days)
+    const stateAge = Date.now() - (parsedState.timestamp || 0);
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+    
+    if (stateAge > maxAge) {
+      console.log("Saved state is too old, clearing it");
+      localStorage.removeItem("questionGenerationState");
+      return;
+    }
+
+    // Only restore if we're on the question-generation page
+    const currentPath = window.location.pathname;
+    if (!currentPath.includes("question-generation")) {
+      console.log("Not on question-generation page, skipping state restoration");
+      return;
+    }
+
+    // Restore state properties
+    state.step = parsedState.step || state.step;
+    state.course = parsedState.course || state.course;
+    state.selectedCourse = parsedState.selectedCourse || state.selectedCourse;
+    state.files = parsedState.files || state.files;
+    state.urls = parsedState.urls || state.urls;
+    state.summary = parsedState.summary || state.summary;
+    state.objectives = parsedState.objectives || state.objectives;
+    state.questions = parsedState.questions || state.questions;
+    state.exportFormat = parsedState.exportFormat || state.exportFormat;
+    state.objectiveGroups = parsedState.objectiveGroups || state.objectiveGroups;
+    state.questionGroups = parsedState.questionGroups || state.questionGroups;
+    state.selectedGroupIds = new Set(parsedState.selectedGroupIds || []);
+    state.selectedQuestions = new Set(parsedState.selectedQuestions || []);
+    state.filters = parsedState.filters || state.filters;
+    state.formats = parsedState.formats || state.formats;
+    state.namingConvention = parsedState.namingConvention || state.namingConvention;
+    state.saveAsDefault = parsedState.saveAsDefault || state.saveAsDefault;
+
+    console.log("State restored from localStorage:", {
+      step: state.step,
+      course: state.course,
+      filesCount: state.files.length,
+      questionsCount: state.questions.length,
+      objectiveGroupsCount: state.objectiveGroups.length,
+    });
+  } catch (error) {
+    console.error("Error restoring state:", error);
+    // Clear corrupted state
+    localStorage.removeItem("questionGenerationState");
+  }
+}
+
+function setupStatePersistence() {
+  // Save state on window unload
+  window.addEventListener("beforeunload", () => {
+    saveState();
+  });
+
+  // Save state periodically (every 30 seconds) as backup
+  setInterval(() => {
+    saveState();
+  }, 30000);
+  
+  console.log("State persistence enabled");
+}
+
+function clearSavedState() {
+  localStorage.removeItem("questionGenerationState");
+  console.log("Saved state cleared");
+}
 
 async function loadCourseData() {
   try {
@@ -930,15 +1054,28 @@ function initializeEventListeners() {
   }
 
   if (continueBtn) {
-    continueBtn.addEventListener("click", goToNextStep);
+    // Use ButtonUtils if available to prevent duplicate listeners
+    if (window.ButtonUtils) {
+      window.ButtonUtils.safeAddEventListener(continueBtn, "click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        goToNextStep();
+      });
+    } else {
+      continueBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        goToNextStep();
+      });
+    }
   }
 
   // Step 1: File upload and material tiles
   initializeFileUpload();
   initializeMaterialTiles();
 
-  // Step 3: Objectives
-  initializeObjectives();
+  // Step 3: Objectives - will be initialized when Step 3 is reached
+  // Don't call here as it's async and should be called when step 3 is shown
 
   // Step 5: Export format selection
   initializeExportFormat();
@@ -964,6 +1101,7 @@ function goToNextStep() {
       console.log("Step validation passed, updating step to:", nextStep);
       state.step = nextStep;
       updateUI();
+      saveState(); // Save state after step change
 
       // Handle step-specific actions
       handleStepTransition(currentStep, nextStep);
@@ -977,6 +1115,7 @@ function goToPreviousStep() {
   if (state.step > 1) {
     state.step = state.step - 1;
     updateUI();
+    saveState(); // Save state after step change
   }
 }
 
@@ -1069,6 +1208,13 @@ function handleStepTransition(fromStep, toStep) {
     case 2:
       console.log("Initializing Step 2");
       generateSummary();
+      break;
+    case 3:
+      console.log("Initializing Step 3");
+      // Initialize objectives when Step 3 is reached
+      initializeObjectives().catch(error => {
+        console.error("Error initializing objectives:", error);
+      });
       break;
     case 4:
       console.log("Initializing Step 4");
@@ -1564,6 +1710,7 @@ async function saveTextContent() {
     renderFileList();
     closeTextModal();
     announceToScreenReader("Text content added");
+    setTimeout(() => saveState(), 500); // Save state after text is added
   }
 }
 
@@ -1595,6 +1742,7 @@ async function saveUrlContent() {
     renderFileList();
     closeUrlModal();
     announceToScreenReader("URL added");
+    setTimeout(() => saveState(), 500); // Save state after URL is added
   }
 }
 
@@ -1653,8 +1801,11 @@ async function generateSummary() {
     summaryEditor.value = state.summary;
     summaryEditor.addEventListener("input", (e) => {
       state.summary = e.target.value;
+      setTimeout(() => saveState(), 1000); // Save state when summary is edited
     });
   }
+  
+  setTimeout(() => saveState(), 500); // Save state after summary is generated
 }
 
 function prepareContentForSummary() {
@@ -1678,62 +1829,331 @@ function prepareContentForSummary() {
 // ===== STEP 3: OBJECTIVES FUNCTIONS =====
 
 // Generate learning objectives from uploaded content
-function generateLearningObjectivesFromContent() {
+async function generateLearningObjectivesFromContent() {
   console.log("Generating learning objectives from uploaded content...");
 
-  // Extract key topics and concepts from the summary and uploaded files
-  const contentAnalysis = analyzeContentForObjectives();
+  try {
+    // Check if we have any content
+    const hasFiles = state.files.length > 0 && state.files.some(f => {
+      const content = f.content || "";
+      return content.length > 0 && 
+             !content.includes("PDF content could not be extracted") &&
+             !content.includes("Error:") &&
+             !content.startsWith("PDF Document:");
+    });
+    const hasUrls = state.urls.length > 0;
+    const hasSummary = state.summary && state.summary.length > 0;
 
-  // Create learning objective groups based on content analysis
-  state.objectiveGroups = contentAnalysis.map((topic, index) => ({
-    id: index + 1,
-    metaId: `content-generated-${index + 1}`,
-    title: `Learning Objective ${index + 1}: ${topic.title}`,
-    isOpen: index === 0, // Open first group by default
-    selected: false,
-    items: topic.granularObjectives.map((objective, objIndex) => ({
-      id: parseFloat(`${index + 1}.${objIndex + 1}`),
-      text: objective.text,
-      bloom: objective.bloom,
-      minQuestions: objective.minQuestions,
-      count: objective.count,
-      mode: "manual",
-      level: 1,
-      selected: false,
-    })),
-  }));
+    if (!hasFiles && !hasUrls && !hasSummary) {
+      console.warn("No content available for objective generation");
+      showNotification("No content available. Please upload files or add content in Step 1.", "warning");
+      return;
+    }
 
-  console.log(
-    `Generated ${state.objectiveGroups.length} learning objective groups from content`
+    // Show loading state
+    const generateBtn = document.getElementById("generate-objectives-btn");
+    if (generateBtn) {
+      const originalText = generateBtn.innerHTML;
+      generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Extracting...';
+      generateBtn.disabled = true;
+    }
+
+    // Extract key topics and concepts from the summary and uploaded files using LLM
+    let contentAnalysis = await analyzeContentForObjectives();
+
+    if (!contentAnalysis || contentAnalysis.length === 0) {
+      console.warn("No topics extracted from content");
+      showNotification("Could not extract topics from content. Using default objectives.", "warning");
+      // Use default objectives
+      contentAnalysis = getDefaultObjectives();
+      if (!contentAnalysis || contentAnalysis.length === 0) {
+        return;
+      }
+    }
+
+    // Create learning objective groups based on content analysis
+    console.log("Content analysis result:", contentAnalysis);
+    console.log("Number of topics:", contentAnalysis.length);
+    
+    state.objectiveGroups = contentAnalysis.map((topic, index) => {
+      // Ensure granularObjectives exists
+      const granularObjectives = topic.granularObjectives || [];
+      console.log(`Topic ${index + 1} (${topic.title}): ${granularObjectives.length} granular objectives`);
+      
+      if (granularObjectives.length === 0) {
+        console.warn(`Topic ${index + 1} has no granular objectives, creating default`);
+        granularObjectives.push({
+          text: `Understand key concepts in ${topic.title}`,
+          bloom: ["Understand"],
+          minQuestions: 2,
+          count: 2,
+        });
+      }
+      
+      return {
+        id: index + 1,
+        metaId: `content-generated-${index + 1}`,
+        title: topic.title || `Learning Objective ${index + 1}`,
+        isOpen: index === 0, // Open first group by default
+        selected: false,
+        items: granularObjectives.map((objective, objIndex) => ({
+          id: parseFloat(`${index + 1}.${objIndex + 1}`),
+          text: objective.text || `Objective ${objIndex + 1}`,
+          bloom: Array.isArray(objective.bloom) ? objective.bloom : [objective.bloom || "Understand"],
+          minQuestions: objective.minQuestions || 2,
+          count: objective.count || 2,
+          mode: "manual",
+          level: 1,
+          selected: false,
+        })),
+      };
+    });
+
+    console.log(
+      `Generated ${state.objectiveGroups.length} learning objective groups from content`
+    );
+
+    // Show success message
+    if (state.objectiveGroups.length > 0) {
+      showNotification(
+        `Successfully generated ${state.objectiveGroups.length} learning objective group(s) from content`,
+        "success"
+      );
+      
+      // Render objectives immediately so they're visible
+      renderObjectiveGroups();
+    }
+    
+    setTimeout(() => saveState(), 500); // Save state after objectives are generated
+
+    // Restore button state
+    if (generateBtn) {
+      generateBtn.innerHTML = originalText;
+      generateBtn.disabled = false;
+    }
+  } catch (error) {
+    console.error("Error generating learning objectives:", error);
+    console.error("Error stack:", error.stack);
+    
+    // Show more specific error message
+    let errorMessage = "Error generating learning objectives. ";
+    if (error.message) {
+      errorMessage += error.message;
+    } else {
+      errorMessage += "Please try again or add manually.";
+    }
+    
+    showNotification(errorMessage, "error");
+    
+    // Try to use fallback - generate default objectives
+    try {
+      console.log("Attempting to use default objectives as fallback...");
+      const defaultObjectives = getDefaultObjectives();
+      if (defaultObjectives && defaultObjectives.length > 0) {
+        state.objectiveGroups = defaultObjectives.map((topic, index) => ({
+          id: index + 1,
+          metaId: `default-${index + 1}`,
+          title: `Learning Objective ${index + 1}: ${topic.title}`,
+          isOpen: index === 0,
+          selected: false,
+          items: topic.granularObjectives.map((objective, objIndex) => ({
+            id: parseFloat(`${index + 1}.${objIndex + 1}`),
+            text: objective.text,
+            bloom: Array.isArray(objective.bloom) ? objective.bloom : [objective.bloom || "Understand"],
+            minQuestions: objective.minQuestions || 2,
+            count: objective.count || 2,
+            mode: "manual",
+            level: 1,
+            selected: false,
+          })),
+        }));
+        
+        renderObjectiveGroups();
+        showNotification("Using default learning objectives. You can edit or add more.", "info");
+      }
+    } catch (fallbackError) {
+      console.error("Fallback also failed:", fallbackError);
+    }
+    
+    // Restore button state
+    const generateBtn = document.getElementById("generate-objectives-btn");
+    if (generateBtn) {
+      generateBtn.innerHTML = '<i class="fas fa-magic"></i> Generate from Content';
+      generateBtn.disabled = false;
+    }
+  }
+}
+
+// Handle generate objectives button click
+async function handleGenerateObjectivesFromContent() {
+  // Check if there's existing content
+  const hasContent = state.files.length > 0 || state.urls.length > 0 || (state.summary && state.summary.length > 0);
+  
+  if (!hasContent) {
+    showNotification("Please upload files or add content in Step 1 first.", "warning");
+    return;
+  }
+
+  // Ask for confirmation if objectives already exist
+  if (state.objectiveGroups.length > 0) {
+    const confirmMessage = "This will replace all existing learning objectives with new ones generated from your content. Continue?";
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+  }
+
+  // Clear existing objectives
+  state.objectiveGroups = [];
+
+  // Generate new objectives (now async)
+  await generateLearningObjectivesFromContent();
+
+  // Update UI
+  renderObjectiveGroups();
+
+  // Announce to screen reader
+  announceToScreenReader(
+    `Generated ${state.objectiveGroups.length} learning objective groups from uploaded content.`
   );
 }
 
 // Analyze uploaded content to extract learning objectives
-function analyzeContentForObjectives() {
+async function analyzeContentForObjectives() {
   const topics = [];
 
   // Extract content from uploaded files
   const allContent = [];
   state.files.forEach((file) => {
-    if (file.content) {
+    if (file.content && file.content.trim().length > 0) {
+      // Check if this is actual PDF content or just an error message
+      if (!file.content.includes("PDF content could not be extracted") && 
+          !file.content.includes("Error:") &&
+          !file.content.startsWith("PDF Document:")) {
       allContent.push(file.content);
+      }
     }
   });
 
   // Add URLs as content
   state.urls.forEach((url) => {
+    if (url.url && url.url.trim().length > 0) {
     allContent.push(`URL: ${url.url}`);
+    }
   });
 
   // Add summary content
-  if (state.summary) {
+  if (state.summary && state.summary.trim().length > 0) {
     allContent.push(state.summary);
+  }
+
+  // Check if we have any content
+  if (allContent.length === 0) {
+    console.warn("No content available for objective extraction");
+    // Return default objectives
+    return getDefaultObjectives();
   }
 
   // Combine all content
   const combinedContent = allContent.join("\n\n");
 
-  // Analyze content to identify key topics and concepts
+  // Validate content length
+  if (combinedContent.trim().length < 50) {
+    console.warn("Content too short for meaningful extraction");
+    return getDefaultObjectives();
+  }
+
+  console.log("=== EXTRACTING LEARNING OBJECTIVES ===");
+  console.log("Content length:", combinedContent.length);
+  console.log("Number of files:", state.files.length);
+
+  // Try to extract using LLM API first
+  try {
+    console.log("Attempting LLM-based objective extraction...");
+    console.log("Content length:", combinedContent.length);
+    console.log("Sending request to /api/rag-llm/extract-objectives");
+    
+    const response = await fetch("/api/rag-llm/extract-objectives", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content: combinedContent,
+        course: state.course || "",
+      }),
+    });
+
+    console.log("Response status:", response.status, response.statusText);
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log("Response data:", data);
+      
+      if (data.success && data.objectives && data.objectives.length > 0) {
+        console.log(`✅ Extracted ${data.objectives.length} objectives using ${data.method}`);
+        console.log("Objectives structure:", JSON.stringify(data.objectives, null, 2));
+        
+        // Validate and ensure proper structure
+        const validatedObjectives = data.objectives.map((obj, index) => {
+          // Ensure granularObjectives exists and is an array
+          if (!obj.granularObjectives || !Array.isArray(obj.granularObjectives)) {
+            console.warn(`Objective ${index} missing granularObjectives, creating default`);
+            return {
+              title: obj.title || `Learning Objective ${index + 1}`,
+              description: obj.description || `Master concepts related to ${obj.title || 'this topic'}`,
+              granularObjectives: obj.text ? [{
+                text: obj.text,
+                bloom: obj.bloom || ["Understand"],
+                minQuestions: obj.minQuestions || 2,
+                count: obj.count || 2,
+              }] : [{
+                text: `Understand key concepts in ${obj.title || 'this topic'}`,
+                bloom: ["Understand"],
+                minQuestions: 2,
+                count: 2,
+              }],
+            };
+          }
+          
+          // Ensure each granular objective has required fields
+          const validatedGranular = obj.granularObjectives.map((granular, gIndex) => ({
+            text: granular.text || `Objective ${gIndex + 1}`,
+            bloom: Array.isArray(granular.bloom) ? granular.bloom : [granular.bloom || "Understand"],
+            minQuestions: granular.minQuestions || 2,
+            count: granular.count || 2,
+          }));
+          
+          return {
+            title: obj.title || `Learning Objective ${index + 1}`,
+            description: obj.description || `Master concepts related to ${obj.title || 'this topic'}`,
+            granularObjectives: validatedGranular,
+          };
+        });
+        
+        console.log("Validated objectives:", validatedObjectives);
+        return validatedObjectives;
+      } else {
+        console.warn("API returned success but no objectives:", data);
+        // Fall through to pattern matching
+      }
+    } else {
+      // Try to get error details from response
+      const errorData = await response.json().catch(() => ({ 
+        error: `HTTP ${response.status}`,
+        details: response.statusText 
+      }));
+      console.warn("LLM extraction failed:", errorData);
+      // Don't throw - fall through to pattern matching instead
+      console.log("Falling back to pattern matching due to API error");
+    }
+  } catch (error) {
+    console.error("LLM extraction error:", error);
+    console.error("Error details:", error.message, error.stack);
+    // Don't throw here - fall through to pattern matching
+  }
+
+  // Fallback to pattern-based extraction
+  console.log("Using pattern-based extraction as fallback...");
   const contentTopics = extractTopicsFromContent(combinedContent);
 
   // Generate learning objectives for each topic
@@ -1748,9 +2168,19 @@ function analyzeContentForObjectives() {
 
   // If no topics were extracted, create default objectives based on course
   if (topics.length === 0) {
-    topics.push({
-      title: `Understand key concepts in ${state.course}`,
-      description: `Master fundamental concepts covered in ${state.course} materials`,
+    return getDefaultObjectives();
+  }
+
+  return topics;
+}
+
+// Get default learning objectives when content extraction fails
+function getDefaultObjectives() {
+  const courseName = state.course || "this course";
+  return [
+    {
+      title: `Understand key concepts in ${courseName}`,
+      description: `Master fundamental concepts covered in ${courseName} materials`,
       granularObjectives: [
         {
           text: "Identify and define key terms and concepts",
@@ -1771,10 +2201,8 @@ function analyzeContentForObjectives() {
           count: 2,
         },
       ],
-    });
-  }
-
-  return topics;
+    },
+  ];
 }
 
 // Extract topics from content using text analysis
@@ -2200,16 +2628,42 @@ function isCommonWord(word) {
 }
 
 // Initialize Step 3 state
-function initializeObjectives() {
+async function initializeObjectives() {
+  console.log("=== INITIALIZING STEP 3: OBJECTIVES ===");
+  console.log("Current objective groups:", state.objectiveGroups.length);
+  console.log("Files:", state.files.length);
+  console.log("URLs:", state.urls.length);
+  console.log("Summary length:", state.summary ? state.summary.length : 0);
+  
+  // If objectives were already generated in Step 2, they should be in state.objectiveGroups
+  // Render them first so they're visible
+  if (state.objectiveGroups.length > 0) {
+    console.log("Found existing objectives, rendering them...");
+    renderObjectiveGroups();
+  }
+  
   // Generate learning objectives from uploaded content if no groups exist
   if (state.objectiveGroups.length === 0) {
-    generateLearningObjectivesFromContent();
+    // Check if we have content to generate from
+    const hasContent = state.files.length > 0 || state.urls.length > 0 || (state.summary && state.summary.length > 0);
+    if (hasContent) {
+      console.log("Auto-generating learning objectives from uploaded content...");
+      await generateLearningObjectivesFromContent();
+    } else {
+      console.log("No content available for auto-generation. User can generate manually.");
+    }
   }
 
   // Initialize add objectives button
   const addObjectivesBtn = document.getElementById("add-objectives-btn");
   if (addObjectivesBtn) {
     addObjectivesBtn.addEventListener("click", toggleAddObjectivesDropdown);
+  }
+
+  // Initialize generate objectives from content button
+  const generateObjectivesBtn = document.getElementById("generate-objectives-btn");
+  if (generateObjectivesBtn) {
+    generateObjectivesBtn.addEventListener("click", handleGenerateObjectivesFromContent);
   }
 
   // Initialize dropdown functionality
@@ -2221,7 +2675,7 @@ function initializeObjectives() {
   // Initialize multi-select toolbar
   updateMultiSelectToolbar();
 
-  // Render initial state
+  // Render initial state (in case objectives were added)
   renderObjectiveGroups();
 }
 
@@ -3554,6 +4008,7 @@ async function generateQuestions() {
     });
 
     state.questions = questions;
+    setTimeout(() => saveState(), 500); // Save state after questions are generated
   } catch (error) {
     console.error("Question generation failed:", error);
 
@@ -3735,18 +4190,26 @@ function setupStep5EventListeners() {
   if (saveAsDefaultCheckbox)
     saveAsDefaultCheckbox.addEventListener("change", handleSaveAsDefaultChange);
 
-  // Export summary modal
-  const exportSummaryModalClose = document.getElementById(
-    "export-summary-modal-close"
-  );
-  const exportSummaryConfirm = document.getElementById(
-    "export-summary-confirm"
-  );
-
-  if (exportSummaryModalClose)
-    exportSummaryModalClose.addEventListener("click", hideExportSummaryModal);
-  if (exportSummaryConfirm)
-    exportSummaryConfirm.addEventListener("click", hideExportSummaryModal);
+  // Export summary modal buttons - these will be re-initialized when modal is shown
+  // since the modal content is dynamically generated
+  // We set up the modal container click handler here
+  const exportSummaryModal = document.getElementById("export-summary-modal");
+  if (exportSummaryModal) {
+    // Close modal when clicking outside
+    if (window.ButtonUtils) {
+      window.ButtonUtils.safeAddEventListener(exportSummaryModal, "click", (e) => {
+        if (e.target === exportSummaryModal) {
+          hideExportSummaryModal();
+        }
+      });
+    } else {
+      exportSummaryModal.addEventListener("click", (e) => {
+        if (e.target === exportSummaryModal) {
+          hideExportSummaryModal();
+        }
+      });
+    }
+  }
 
   // Make entire cards clickable
   const exportOptionCards = document.querySelectorAll(".export-option-card");
@@ -4083,6 +4546,29 @@ function updateExportButtonState() {
 
     if (state.step === 5) {
       continueBtn.textContent = "Export Now";
+      
+      // Remove existing click handlers to prevent duplicates
+      const newContinueBtn = continueBtn.cloneNode(true);
+      continueBtn.parentNode.replaceChild(newContinueBtn, continueBtn);
+      
+      // Add click handler to show export summary modal
+      if (window.ButtonUtils) {
+        window.ButtonUtils.safeAddEventListener(newContinueBtn, "click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!newContinueBtn.disabled) {
+            showExportSummaryModal();
+          }
+        });
+      } else {
+        newContinueBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!newContinueBtn.disabled) {
+            showExportSummaryModal();
+          }
+        });
+      }
     }
   }
 }
@@ -4094,17 +4580,383 @@ function showExportSummaryModal() {
   if (modal && modalBody) {
     modalBody.innerHTML = generateExportSummaryHTML();
     modal.style.display = "flex";
+    document.body.style.overflow = "hidden"; // Prevent background scrolling
 
-    // Focus trap
-    const closeBtn = document.getElementById("export-summary-modal-close");
-    if (closeBtn) closeBtn.focus();
+    // Re-initialize event listeners for modal buttons (they're in the dynamically generated HTML)
+    setTimeout(() => {
+      const closeBtn = document.getElementById("export-summary-modal-close");
+      const cancelBtn = document.getElementById("export-summary-cancel");
+      const confirmBtn = document.getElementById("export-summary-confirm");
+      
+      if (closeBtn) {
+        if (window.ButtonUtils) {
+          window.ButtonUtils.safeAddEventListener(closeBtn, "click", hideExportSummaryModal);
+        } else {
+          closeBtn.addEventListener("click", hideExportSummaryModal);
+        }
+      }
+      
+      if (cancelBtn) {
+        if (window.ButtonUtils) {
+          window.ButtonUtils.safeAddEventListener(cancelBtn, "click", hideExportSummaryModal);
+        } else {
+          cancelBtn.addEventListener("click", hideExportSummaryModal);
+        }
+      }
+      
+      if (confirmBtn) {
+        if (window.ButtonUtils) {
+          window.ButtonUtils.preventDoubleClick(confirmBtn, handleExportConfirm);
+        } else {
+          confirmBtn.addEventListener("click", handleExportConfirm);
+        }
+      }
+      
+      // Close modal when clicking outside
+      if (window.ButtonUtils) {
+        window.ButtonUtils.safeAddEventListener(modal, "click", (e) => {
+          if (e.target === modal) {
+            hideExportSummaryModal();
+          }
+        });
+      } else {
+        modal.addEventListener("click", (e) => {
+          if (e.target === modal) {
+            hideExportSummaryModal();
+          }
+        });
+      }
+      
+      // Focus trap
+      if (closeBtn) closeBtn.focus();
+    }, 100);
   }
+}
+
+async function handleExportConfirm() {
+  console.log("Export confirmed, starting export process...");
+  
+  // Get all selected formats
+  const formatsToExport = [];
+  if (state.formats.canvasSingle.selected) {
+    formatsToExport.push({
+      format: 'canvasSingle',
+      type: 'qti',
+      name: generateQuizName('canvasSingle', 1),
+    });
+  }
+  if (state.formats.canvasSpaced.selected) {
+    // Split questions into multiple quizzes for spaced repetition
+    const totalQuestions = getTotalQuestionsCount();
+    const quizCount = Math.max(1, Math.ceil(totalQuestions / 10)); // ~10 questions per quiz
+    for (let i = 1; i <= quizCount; i++) {
+      formatsToExport.push({
+        format: 'canvasSpaced',
+        type: 'qti',
+        name: generateQuizName('canvasSpaced', i),
+        quizNumber: i,
+        totalQuizzes: quizCount,
+      });
+    }
+  }
+  if (state.formats.h5p.selected) {
+    formatsToExport.push({
+      format: 'h5p',
+      type: 'h5p',
+      name: 'h5p-questions',
+    });
+  }
+
+  if (formatsToExport.length === 0) {
+    showNotification("Please select at least one export format.", "warning");
+    return;
+  }
+
+  // Show loading state
+  const exportConfirmBtn = document.getElementById("export-summary-confirm");
+  if (exportConfirmBtn) {
+    exportConfirmBtn.disabled = true;
+    exportConfirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+  }
+
+  try {
+    // Collect all unique questions to save to question bank (avoid duplicates)
+    const allQuestionsToSave = new Map(); // Use Map to track unique questions by ID
+    
+    // Export each format
+    for (const exportConfig of formatsToExport) {
+      await exportQuizFormat(exportConfig);
+      
+      // Small delay between exports to avoid overwhelming the browser
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    // After all exports, collect unique questions from the first format
+    // (we don't want to save duplicates for each format)
+    if (formatsToExport.length > 0) {
+      const firstFormatQuestions = getQuestionsForExport(formatsToExport[0]);
+      firstFormatQuestions.forEach((q) => {
+        const questionId = q.id || `${q.text || q.question || ''}_${Date.now()}`;
+        if (!allQuestionsToSave.has(questionId)) {
+          allQuestionsToSave.set(questionId, q);
+        }
+      });
+    }
+
+    // Save all exported questions to question bank (only once, not per format)
+    if (allQuestionsToSave.size > 0) {
+      await saveQuestionsToQuestionBank(Array.from(allQuestionsToSave.values()));
+    }
+
+    showNotification(
+      `Successfully exported ${formatsToExport.length} file(s) and saved ${allQuestionsToSave.size} question(s) to Question Bank!`,
+      "success"
+    );
+    
+    // Close modal after successful export
+    hideExportSummaryModal();
+    
+    // Optionally navigate to question bank after a delay
+    setTimeout(() => {
+      if (confirm("Would you like to view your questions in the Question Bank?")) {
+        window.location.href = "/question-bank.html";
+      }
+    }, 2000);
+  } catch (error) {
+    console.error("Export failed:", error);
+    showNotification("Export failed. Please try again.", "error");
+  } finally {
+    // Restore button state
+    if (exportConfirmBtn) {
+      exportConfirmBtn.disabled = false;
+      exportConfirmBtn.innerHTML = "Confirm Export";
+    }
+  }
+}
+
+// Get total questions count from question groups
+function getTotalQuestionsCount() {
+  let count = 0;
+  if (state.questionGroups && Array.isArray(state.questionGroups)) {
+    state.questionGroups.forEach((group) => {
+      if (group.los && Array.isArray(group.los)) {
+        group.los.forEach((lo) => {
+          if (lo.questions && Array.isArray(lo.questions)) {
+            count += lo.questions.length;
+          }
+        });
+      }
+    });
+  }
+  return count || (state.questions ? state.questions.length : 0);
+}
+
+// Get questions for a specific export config
+function getQuestionsForExport(exportConfig) {
+  const { format, quizNumber, totalQuizzes } = exportConfig;
+  
+  // Get all questions from question groups
+  const allQuestions = [];
+  if (state.questionGroups && Array.isArray(state.questionGroups)) {
+    state.questionGroups.forEach((group) => {
+      if (group.los && Array.isArray(group.los)) {
+        group.los.forEach((lo) => {
+          if (lo.questions && Array.isArray(lo.questions)) {
+            lo.questions.forEach((q) => {
+              allQuestions.push({
+                ...q,
+                metaCode: group.title,
+                loCode: lo.text || lo.title,
+              });
+            });
+          }
+        });
+      }
+    });
+  }
+  
+  // For spaced review, split questions
+  if (format === 'canvasSpaced' && quizNumber && totalQuizzes) {
+    const questionsPerQuiz = Math.ceil(allQuestions.length / totalQuizzes);
+    const startIndex = (quizNumber - 1) * questionsPerQuiz;
+    const endIndex = Math.min(startIndex + questionsPerQuiz, allQuestions.length);
+    return allQuestions.slice(startIndex, endIndex);
+  }
+  
+  return allQuestions;
+}
+
+// Save questions to question bank
+async function saveQuestionsToQuestionBank(questions) {
+  try {
+    console.log(`Saving ${questions.length} questions to question bank...`);
+    
+    // Get course name from state
+    const courseName = state.course || "General Course";
+    const quizName = generateQuizName(state.formats.canvasSingle.selected ? 'canvasSingle' : 'canvasSpaced', 1);
+    const quizWeek = `Week ${getCurrentWeek() || 1}`;
+    
+    // Transform questions to match question bank format
+    const questionsToSave = questions.map((question, index) => ({
+      courseName: courseName,
+      quizName: quizName,
+      quizWeek: quizWeek,
+      learningObjective: question.loCode || question.metaCode || `LO ${index + 1}`,
+      bloomsLevel: Array.isArray(question.bloom) ? question.bloom[0] : (question.bloom || question.bloomLevel || "Understand"),
+      questionText: question.text || question.question || question.title || `Question ${index + 1}`,
+      questionType: question.type || "multiple-choice",
+      difficulty: question.difficulty || "medium",
+      options: question.options || [],
+      correctAnswer: question.correctAnswer || 0,
+      explanation: question.explanation || "",
+      status: "Draft",
+      views: 0,
+      flagged: false,
+      published: false,
+    }));
+    
+    // Save to backend
+    const response = await fetch("/api/quiz-questions/save", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        courseName: courseName,
+        quizName: quizName,
+        quizWeek: quizWeek,
+        questions: questionsToSave,
+      }),
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Saved ${result.insertedCount || questionsToSave.length} questions to question bank`);
+      return result;
+    } else {
+      const errorData = await response.json().catch(() => ({ error: "Save failed" }));
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+  } catch (error) {
+    console.error("Error saving questions to question bank:", error);
+    // Don't throw - export should still succeed even if saving to bank fails
+    showNotification("Questions exported but failed to save to Question Bank. You can add them manually.", "warning");
+  }
+}
+
+async function exportQuizFormat(exportConfig) {
+  const { format, type, name, quizNumber, totalQuizzes } = exportConfig;
+  
+  console.log(`Exporting ${format} format:`, exportConfig);
+
+  // Get questions using the same logic as getQuestionsForExport
+  let questionsToExport = getQuestionsForExport(exportConfig);
+
+  if (questionsToExport.length === 0) {
+    console.warn(`No questions to export for ${format}`);
+    throw new Error(`No questions available to export for ${format}`);
+  }
+  
+  console.log(`Exporting ${questionsToExport.length} questions for ${format}`);
+
+  try {
+    const response = await fetch(`/api/questions/export?format=${type}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        course: state.course,
+        summary: state.summary,
+        objectives: state.objectiveGroups,
+        questions: questionsToExport,
+        exportConfig: {
+          format: format,
+          quizName: name,
+          quizNumber: quizNumber,
+          totalQuizzes: totalQuizzes,
+          namingConvention: state.namingConvention,
+          releaseDate: format === 'canvasSingle' ? state.formats.canvasSingle.date : 
+                       format === 'canvasSpaced' ? state.formats.canvasSpaced.date : null,
+          releaseTime: format === 'canvasSingle' ? state.formats.canvasSingle.time : 
+                       format === 'canvasSpaced' ? state.formats.canvasSpaced.time : null,
+          releaseNow: format === 'canvasSingle' ? state.formats.canvasSingle.releaseNow : 
+                      format === 'canvasSpaced' ? state.formats.canvasSpaced.releaseNow : false,
+        },
+      }),
+    });
+
+    if (response.ok) {
+      const blob = await response.blob();
+      const filename = getExportFilename(name, type, quizNumber);
+      downloadFile(blob, filename);
+      console.log(`✅ Exported ${filename}`);
+    } else {
+      const errorData = await response.json().catch(() => ({ error: "Export failed" }));
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+  } catch (error) {
+    console.error(`Error exporting ${format}:`, error);
+    throw error;
+  }
+}
+
+function generateQuizName(format, quizNumber = null) {
+  const course = state.course || "Course";
+  const convention = state.namingConvention || "module_week_quiz";
+  
+  switch (convention) {
+    case "course_quiz":
+      return quizNumber ? `${course} – Quiz ${quizNumber}` : `${course} – Quiz`;
+    case "module_week_quiz":
+      // Extract week number if available, otherwise use quiz number or current week
+      const week = quizNumber || getCurrentWeek() || 1;
+      return `Week ${String(week).padStart(2, '0')} – Quiz`;
+    case "topic_date":
+      const date = new Date().toISOString().split('T')[0];
+      return `${course} – ${date}`;
+    default:
+      return quizNumber ? `${course} – Quiz ${quizNumber}` : `${course} – Quiz`;
+  }
+}
+
+function getExportFilename(name, type, quizNumber = null) {
+  const timestamp = Date.now();
+  const extension = getFileExtension(type);
+  
+  let filename = name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  
+  if (quizNumber) {
+    filename += `-${quizNumber}`;
+  }
+  
+  filename += `-${timestamp}.${extension}`;
+  
+  return filename;
+}
+
+function getCurrentWeek() {
+  // Calculate current week of the year
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  const diff = now - start;
+  const oneDay = 1000 * 60 * 60 * 24;
+  const week = Math.floor(diff / oneDay / 7) + 1;
+  return week;
 }
 
 function hideExportSummaryModal() {
   const modal = document.getElementById("export-summary-modal");
   if (modal) {
     modal.style.display = "none";
+    document.body.style.overflow = ""; // Restore scrolling
+    
+    // Restore button states
+    const exportConfirmBtn = document.getElementById("export-summary-confirm");
+    if (exportConfirmBtn) {
+      exportConfirmBtn.disabled = false;
+      exportConfirmBtn.innerHTML = "Confirm Export";
+    }
   }
 }
 
@@ -4181,24 +5033,56 @@ function getNamingConventionDisplayText() {
 // ===== STEP 4: QUESTION GENERATION FUNCTIONS =====
 
 // Generate questions from uploaded content
+let questionGenerationCancelled = false;
+
 async function generateQuestionsFromContent() {
   console.log("=== GENERATING QUESTIONS FROM CONTENT ===");
   console.log("Summary length:", state.summary.length);
   console.log("Objective groups:", state.objectiveGroups.length);
 
-  // Show loading spinner
+  // Reset cancellation flag
+  questionGenerationCancelled = false;
+
+  // Show loading spinner with progress
   const questionsLoading = document.getElementById("questions-loading");
   const metaLoGroups = document.getElementById("meta-lo-groups");
 
-  if (questionsLoading) questionsLoading.style.display = "block";
+  if (questionsLoading) {
+    questionsLoading.style.display = "block";
+    updateQuestionProgress(0, 0, "Starting question generation...");
+  }
   if (metaLoGroups) metaLoGroups.style.display = "none";
 
   try {
-    // Generate questions using the question generator
+    // Count total objectives for progress tracking
+    let totalObjectives = 0;
+    state.objectiveGroups.forEach(group => {
+      totalObjectives += group.items.length;
+    });
+
+    // Progress callback
+    const progressCallback = (processed, total, currentObjective, qNum, qTotal) => {
+      if (questionGenerationCancelled) {
+        throw new Error("Question generation cancelled by user");
+      }
+      
+      const progress = total > 0 ? Math.round((processed / total) * 100) : 0;
+      let message = `Processing objective ${processed} of ${total}`;
+      if (currentObjective) {
+        message += `: ${currentObjective.substring(0, 50)}${currentObjective.length > 50 ? '...' : ''}`;
+      }
+      if (qNum && qTotal) {
+        message += ` (Question ${qNum}/${qTotal})`;
+      }
+      updateQuestionProgress(progress, processed, message);
+    };
+
+    // Generate questions using the question generator with progress tracking
     const questions = await questionGenerator.generateQuestions(
       state.course,
       state.summary,
-      state.objectiveGroups
+      state.objectiveGroups,
+      progressCallback
     );
 
     console.log("Generated questions:", questions.length);
@@ -4208,20 +5092,170 @@ async function generateQuestionsFromContent() {
 
     console.log("Question groups created:", state.questionGroups.length);
 
+    // Save questions to localStorage for review access
+    try {
+      const questionsForReview = {
+        questionGroups: state.questionGroups,
+        timestamp: Date.now(),
+        course: state.course,
+      };
+      localStorage.setItem('questionsForReview', JSON.stringify(questionsForReview));
+      console.log("Questions saved for review");
+    } catch (error) {
+      console.error("Error saving questions for review:", error);
+    }
+
     // Update the UI
     renderStep4();
+    
+    // Show success message
+    showNotification(
+      `Successfully generated ${questions.length} question(s) from ${totalObjectives} objective(s)`,
+      "success"
+    );
   } catch (error) {
     console.error("Failed to generate questions from content:", error);
+    
+    if (error.message.includes("cancelled")) {
+      showNotification("Question generation cancelled", "info");
+      return;
+    }
 
-    // Fallback to sample data
-    state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
-    console.log("Fell back to sample data");
-    renderStep4();
+    // Fallback to template-based generation
+    console.log("Falling back to fast template generation...");
+    try {
+      const templateQuestions = generateTemplateQuestions(state.objectiveGroups);
+      state.questionGroups = convertQuestionsToGroups(templateQuestions);
+      renderStep4();
+      showNotification(
+        `Generated ${templateQuestions.length} template questions (LLM unavailable or timed out)`,
+        "warning"
+      );
+    } catch (fallbackError) {
+      console.error("Template generation also failed:", fallbackError);
+      // Last resort: sample data
+      state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
+      console.log("Fell back to sample data");
+      renderStep4();
+      showNotification("Using sample questions. Please try again later.", "error");
+    }
   } finally {
     // Hide loading spinner
-    if (questionsLoading) questionsLoading.style.display = "none";
+    if (questionsLoading) {
+      questionsLoading.style.display = "none";
+      updateQuestionProgress(0, 0, "");
+    }
     if (metaLoGroups) metaLoGroups.style.display = "block";
   }
+}
+
+// Update question generation progress
+function updateQuestionProgress(percentage, processed, message) {
+  const questionsLoading = document.getElementById("questions-loading");
+  if (!questionsLoading) return;
+
+  // Update progress text
+  const progressText = questionsLoading.querySelector("p");
+  if (progressText) {
+    if (message) {
+      progressText.innerHTML = `
+        <div style="margin-bottom: 10px;">${message}</div>
+        <div style="font-size: 14px; color: #7f8c8d;">Progress: ${percentage}% (${processed} objectives processed)</div>
+      `;
+    } else {
+      progressText.textContent = "Generating questions...";
+    }
+  }
+
+  // Add progress bar if it doesn't exist
+  let progressBar = questionsLoading.querySelector(".progress-bar");
+  if (!progressBar) {
+    progressBar = document.createElement("div");
+    progressBar.className = "progress-bar";
+    progressBar.style.cssText = `
+      width: 100%;
+      height: 6px;
+      background: #e0e0e0;
+      border-radius: 3px;
+      margin-top: 15px;
+      overflow: hidden;
+    `;
+    const progressFill = document.createElement("div");
+    progressFill.className = "progress-fill";
+    progressFill.style.cssText = `
+      height: 100%;
+      background: linear-gradient(90deg, #3498db, #2980b9);
+      width: ${percentage}%;
+      transition: width 0.3s ease;
+    `;
+    progressBar.appendChild(progressFill);
+    questionsLoading.appendChild(progressBar);
+  } else {
+    const progressFill = progressBar.querySelector(".progress-fill");
+    if (progressFill) {
+      progressFill.style.width = `${percentage}%`;
+    }
+  }
+
+  // Add cancel button if it doesn't exist
+  let cancelBtn = questionsLoading.querySelector(".cancel-generation-btn");
+  if (!cancelBtn) {
+    cancelBtn = document.createElement("button");
+    cancelBtn.className = "cancel-generation-btn";
+    cancelBtn.innerHTML = '<i class="fas fa-times"></i> Cancel';
+    cancelBtn.style.cssText = `
+      margin-top: 15px;
+      padding: 8px 16px;
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    `;
+    cancelBtn.addEventListener("click", () => {
+      questionGenerationCancelled = true;
+      cancelBtn.disabled = true;
+      cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cancelling...';
+    });
+    questionsLoading.appendChild(cancelBtn);
+  }
+}
+
+// Generate template questions as fast fallback
+function generateTemplateQuestions(objectiveGroups) {
+  const questions = [];
+  
+  objectiveGroups.forEach((group, groupIndex) => {
+    group.items.forEach((objective, objIndex) => {
+      const bloomLevel = Array.isArray(objective.bloom) ? objective.bloom[0] : (objective.bloom || "Understand");
+      const count = objective.count || 2;
+      
+      for (let i = 0; i < count; i++) {
+        questions.push({
+          id: `${objective.id}-${i + 1}`,
+          text: `Question about: ${objective.text}`,
+          type: "multiple-choice",
+          options: [
+            "Option A (correct)",
+            "Option B",
+            "Option C",
+            "Option D"
+          ],
+          correctAnswer: 0,
+          bloomLevel: bloomLevel,
+          difficulty: "Medium",
+          metaCode: group.title,
+          loCode: objective.text,
+          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+          by: "Template System",
+        });
+      }
+    });
+  });
+  
+  return questions;
 }
 
 // Convert generated questions to question groups format
@@ -5106,6 +6140,7 @@ window.deleteSelectedGranular = deleteSelectedGranular;
 window.showGranularizationModal = showGranularizationModal;
 window.refreshMetaObjectives = refreshMetaObjectives;
 window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
+window.handleGenerateObjectivesFromContent = handleGenerateObjectivesFromContent;
 
 // Module functions for global access
 window.generateSummary = generateSummary;

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile - GRASP</title>
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/user-profile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Profile Header Section -->
+                <section class="profile-header-section">
+                    <div class="profile-avatar">
+                        <div class="avatar-circle">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <button class="edit-avatar-btn" id="edit-avatar-btn">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                    <div class="profile-info">
+                        <h1 id="profile-name">Instructor Name</h1>
+                        <p class="profile-role" id="profile-role">Instructor</p>
+                        <p class="profile-email" id="profile-email">instructor@ubc.ca</p>
+                    </div>
+                </section>
+
+                <!-- Profile Details Section -->
+                <section class="profile-details-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-user-circle"></i> Personal Information</h2>
+                    </div>
+                    <div class="section-content">
+                        <form id="profile-form" class="profile-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="first-name">First Name</label>
+                                    <input type="text" id="first-name" name="firstName" placeholder="Enter first name">
+                                </div>
+                                <div class="form-group">
+                                    <label for="last-name">Last Name</label>
+                                    <input type="text" id="last-name" name="lastName" placeholder="Enter last name">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="email">Email Address</label>
+                                <input type="email" id="email" name="email" placeholder="your.email@ubc.ca">
+                            </div>
+                            <div class="form-group">
+                                <label for="department">Department</label>
+                                <input type="text" id="department" name="department" placeholder="e.g., Chemistry">
+                            </div>
+                            <div class="form-group">
+                                <label for="phone">Phone Number</label>
+                                <input type="tel" id="phone" name="phone" placeholder="(604) 555-1234">
+                            </div>
+                            <div class="form-group">
+                                <label for="office">Office Location</label>
+                                <input type="text" id="office" name="office" placeholder="e.g., Chemistry Building, Room 123">
+                            </div>
+                            <button type="submit" class="save-btn">
+                                <i class="fas fa-save"></i> Save Changes
+                            </button>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- Account Statistics Section -->
+                <section class="account-stats-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-chart-bar"></i> Account Statistics</h2>
+                    </div>
+                    <div class="section-content">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon">
+                                    <i class="fas fa-graduation-cap"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="courses-count">0</div>
+                                    <div class="stat-label">Courses</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">
+                                    <i class="fas fa-question-circle"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="questions-count">0</div>
+                                    <div class="stat-label">Questions Generated</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">
+                                    <i class="fas fa-file-alt"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="materials-count">0</div>
+                                    <div class="stat-label">Materials Uploaded</div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">
+                                    <i class="fas fa-calendar-check"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <div class="stat-value" id="quizzes-count">0</div>
+                                    <div class="stat-label">Quizzes Created</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Recent Activity Section -->
+                <section class="recent-activity-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-clock"></i> Recent Activity</h2>
+                    </div>
+                    <div class="section-content">
+                        <div class="activity-list" id="activity-list">
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    <i class="fas fa-upload"></i>
+                                </div>
+                                <div class="activity-details">
+                                    <div class="activity-title">Uploaded course materials</div>
+                                    <div class="activity-meta">2 hours ago</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    <i class="fas fa-question-circle"></i>
+                                </div>
+                                <div class="activity-details">
+                                    <div class="activity-title">Generated questions for CHEM 121</div>
+                                    <div class="activity-meta">1 day ago</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="activity-details">
+                                    <div class="activity-title">Completed quiz review</div>
+                                    <div class="activity-meta">3 days ago</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/button-utils.js"></script>
+    <script src="scripts/app-state-manager.js"></script>
+    <script src="scripts/state-persistence.js"></script>
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/onboarding-check.js"></script>
+    <script src="scripts/user-profile.js"></script>
+</body>
+</html>
+

@@ -666,6 +666,13 @@
     transform: scale(1.1);
 }
 
+.objectives-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
 #add-objectives-btn {
     margin-bottom: 24px;
 }

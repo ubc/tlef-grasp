@@ -32,8 +32,166 @@ class QuestionReviewPage {
     }
   }
 
-  initializeData() {
-    // Sample quiz data matching the screenshot
+  async initializeData() {
+    // Load actual generated questions from localStorage or API
+    await this.loadGeneratedQuestions();
+    
+    // If no questions loaded, use sample data as fallback
+    if (this.state.review.quizzes.length === 0) {
+      this.loadSampleData();
+    }
+  }
+  
+  async loadGeneratedQuestions() {
+    try {
+      // First, try to load from localStorage (from question-generation page)
+      const questionsForReview = localStorage.getItem('questionsForReview');
+      if (questionsForReview) {
+        const data = JSON.parse(questionsForReview);
+        if (data.questionGroups && data.questionGroups.length > 0) {
+          this.convertQuestionGroupsToQuizzes(data.questionGroups);
+          console.log(`Loaded ${this.state.review.quizzes.length} quiz(es) from localStorage`);
+          return;
+        }
+      }
+      
+      // Also check questionGenerationState
+      const savedState = localStorage.getItem('questionGenerationState');
+      if (savedState) {
+        const state = JSON.parse(savedState);
+        if (state.questionGroups && state.questionGroups.length > 0) {
+          this.convertQuestionGroupsToQuizzes(state.questionGroups);
+          console.log(`Loaded ${this.state.review.quizzes.length} quiz(es) from questionGenerationState`);
+          return;
+        }
+      }
+      
+      // If not in localStorage, try API endpoint
+      const response = await fetch('/api/questions/for-review');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.questions && data.questions.length > 0) {
+          this.convertQuestionsToQuizzes(data.questions);
+          console.log(`Loaded ${this.state.review.quizzes.length} quiz(es) from API`);
+          return;
+        }
+      }
+      
+      console.log("No generated questions found, using sample data");
+    } catch (error) {
+      console.error("Error loading generated questions:", error);
+      // Fall back to sample data on error
+      this.loadSampleData();
+    }
+  }
+  
+  convertQuestionGroupsToQuizzes(questionGroups) {
+    // Group questions by metaCode (objective group)
+    const quizMap = new Map();
+    
+    questionGroups.forEach((group) => {
+      const quizKey = group.title || `Quiz ${group.id}`;
+      
+      if (!quizMap.has(quizKey)) {
+        quizMap.set(quizKey, {
+          id: group.id,
+          title: quizKey,
+          week: group.week || 'Week 1',
+          lecture: group.lecture || 'Lecture 1',
+          questions: [],
+        });
+      }
+      
+      const quiz = quizMap.get(quizKey);
+      
+      // Add questions from each LO in the group
+      if (group.los && Array.isArray(group.los)) {
+        group.los.forEach((lo) => {
+          if (lo.questions && Array.isArray(lo.questions)) {
+            lo.questions.forEach((q) => {
+              quiz.questions.push(this.convertQuestionToReviewFormat(q, group.title, lo.text || lo.title));
+            });
+          }
+        });
+      }
+    });
+    
+    this.state.review.quizzes = Array.from(quizMap.values());
+  }
+  
+  convertQuestionsToQuizzes(questions) {
+    // Group questions by metaCode or course
+    const quizMap = new Map();
+    
+    questions.forEach((q) => {
+      const quizKey = q.metaCode || q.course || 'Generated Questions';
+      
+      if (!quizMap.has(quizKey)) {
+        quizMap.set(quizKey, {
+          id: Date.now() + Math.random(),
+          title: quizKey,
+          week: q.week || 'Week 1',
+          lecture: q.lecture || 'Lecture 1',
+          questions: [],
+        });
+      }
+      
+      const quiz = quizMap.get(quizKey);
+      quiz.questions.push(this.convertQuestionToReviewFormat(q, q.metaCode, q.loCode));
+    });
+    
+    this.state.review.quizzes = Array.from(quizMap.values());
+  }
+  
+  convertQuestionToReviewFormat(question, metaCode, loCode) {
+    // Convert question from generation format to review format
+    const options = [];
+    
+    if (question.options && Array.isArray(question.options)) {
+      question.options.forEach((opt, index) => {
+        const label = String.fromCharCode(65 + index); // A, B, C, D
+        options.push({
+          id: label,
+          label: label,
+          text: typeof opt === 'string' ? opt : (opt.text || opt),
+          isCorrect: question.correctAnswer === index || question.correctAnswer === label,
+          feedback: question.explanation || ''
+        });
+      });
+    } else {
+      // Default options if none provided
+      options.push(
+        { id: 'A', label: 'A', text: 'Option A', isCorrect: false, feedback: '' },
+        { id: 'B', label: 'B', text: 'Option B', isCorrect: true, feedback: '' },
+        { id: 'C', label: 'C', text: 'Option C', isCorrect: false, feedback: '' },
+        { id: 'D', label: 'D', text: 'Option D', isCorrect: false, feedback: '' }
+      );
+    }
+    
+    return {
+      id: question.id || `q_${Date.now()}_${Math.random()}`,
+      title: question.text || question.title || 'Untitled Question',
+      prompt: question.text || question.question || question.title || 'Question prompt',
+      options: options,
+      status: question.status || 'unpublished',
+      flagged: question.flagged || false,
+      metaCode: metaCode || question.metaCode,
+      loCode: loCode || question.loCode,
+      bloomLevel: question.bloomLevel || question.bloom,
+      difficulty: question.difficulty || 'Medium',
+      history: question.history || [
+        {
+          by: question.by || 'System',
+          change: 'Generated question',
+          ts: question.lastEdited || new Date().toISOString().slice(0, 16).replace('T', ' ')
+        }
+      ],
+      comments: question.comments || []
+    };
+  }
+  
+  loadSampleData() {
+    // Sample quiz data matching the screenshot (fallback)
     this.state.review.quizzes = [
       {
         id: 1,

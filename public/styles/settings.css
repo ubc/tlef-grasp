@@ -1,0 +1,265 @@
+/* Settings Page Styles */
+
+.content-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px;
+}
+
+.settings-header {
+    margin-bottom: 40px;
+}
+
+.settings-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-header h1 i {
+    color: #3498db;
+}
+
+.settings-subtitle {
+    color: #7f8c8d;
+    font-size: 16px;
+    margin: 0;
+}
+
+.settings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.settings-section {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    transition: box-shadow 0.3s ease;
+}
+
+.settings-section:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.settings-section.danger-zone {
+    border: 2px solid #e74c3c;
+}
+
+.settings-section-header {
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    padding: 20px 30px;
+    color: white;
+}
+
+.settings-section.danger-zone .settings-section-header {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+}
+
+.settings-section-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-section-header h2 i {
+    font-size: 18px;
+}
+
+.settings-content {
+    padding: 30px;
+}
+
+.settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-weight: 500;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group select {
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.3s ease;
+    background: white;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="email"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.form-group small {
+    color: #7f8c8d;
+    font-size: 12px;
+    margin-top: -4px;
+}
+
+.form-group label:has(input[type="checkbox"]) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    flex-direction: row;
+}
+
+.form-group input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #3498db;
+}
+
+.save-btn {
+    align-self: flex-start;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.save-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.save-btn:active {
+    transform: translateY(0);
+}
+
+.danger-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.danger-action {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: #fff5f5;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+}
+
+.danger-action-info h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #c0392b;
+    margin: 0 0 8px 0;
+}
+
+.danger-action-info p {
+    font-size: 14px;
+    color: #7f8c8d;
+    margin: 0;
+}
+
+.danger-btn {
+    padding: 10px 20px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.danger-btn:hover {
+    background: #c0392b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.danger-btn:active {
+    transform: translateY(0);
+}
+
+/* Success/Error Messages */
+.message {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.message.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.message.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .content-wrapper {
+        padding: 20px;
+    }
+
+    .settings-content {
+        padding: 20px;
+    }
+
+    .danger-action {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .danger-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+

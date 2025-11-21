@@ -97,6 +97,8 @@ class OnboardingManager {
               "Login tab computed style:",
               window.getComputedStyle(loginTab).display
             );
+            // Always reload courses when switching to login tab to get latest data
+            // This ensures newly created courses appear immediately
             this.loadExistingCourses();
           }
           if (setupTab) {
@@ -131,7 +133,20 @@ class OnboardingManager {
 
   setupCourseSelection() {
     // This method sets up course selection for the login tab
-    // Courses will be loaded when the login tab is activated
+    // Load courses when login tab is activated
+    const loginTabButton = document.querySelector('[data-tab="login"]');
+    if (loginTabButton) {
+      loginTabButton.addEventListener('click', () => {
+        // Load courses when login tab is clicked
+        this.loadExistingCourses();
+      });
+    }
+    
+    // Also load courses if login tab is already active on page load
+    const loginTab = document.getElementById("login-tab");
+    if (loginTab && loginTab.style.display !== "none") {
+      this.loadExistingCourses();
+    }
   }
 
   async loadExistingCourses() {
@@ -145,16 +160,45 @@ class OnboardingManager {
       if (coursesListElement) coursesListElement.style.display = "none";
       if (noCoursesElement) noCoursesElement.style.display = "none";
 
-      // Fetch courses from API
-      const response = await fetch("/api/courses");
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // First, try to fetch courses from API
+      let courses = [];
+      try {
+        const response = await fetch("/api/courses");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.courses && data.courses.length > 0) {
+            courses = data.courses;
+            
+            // Update localStorage backup with server data
+            try {
+              localStorage.setItem('savedCourses', JSON.stringify(courses));
+            } catch (e) {
+              console.warn('Could not update localStorage backup:', e);
+            }
+          }
+        }
+      } catch (apiError) {
+        console.warn("API fetch failed, trying localStorage backup:", apiError);
+      }
+      
+      // If API returned no courses, try localStorage backup
+      if (courses.length === 0) {
+        try {
+          const savedCourses = JSON.parse(localStorage.getItem('savedCourses') || '[]');
+          if (savedCourses.length > 0) {
+            courses = savedCourses;
+            console.log(`Loaded ${courses.length} course(s) from localStorage backup`);
+            
+            // Try to restore courses to server
+            this.restoreCoursesToServer(courses);
+          }
+        } catch (localError) {
+          console.error("Error loading from localStorage:", localError);
+        }
       }
 
-      const data = await response.json();
-
-      if (data.success && data.courses && data.courses.length > 0) {
-        this.displayCourses(data.courses);
+      if (courses.length > 0) {
+        this.displayCourses(courses);
       } else {
         this.showNoCoursesMessage();
       }
@@ -163,6 +207,47 @@ class OnboardingManager {
       this.showNoCoursesMessage();
     } finally {
       if (loadingElement) loadingElement.style.display = "none";
+    }
+  }
+  
+  async restoreCoursesToServer(courses) {
+    // Try to restore courses to server if they're missing
+    // This helps when server restarts and loses in-memory data
+    try {
+      for (const course of courses) {
+        // Check if course exists on server
+        const checkResponse = await fetch(`/api/courses/${course.id}`);
+        if (!checkResponse.ok) {
+          // Course doesn't exist on server, try to restore it
+          console.log(`Restoring course ${course.id} to server...`);
+          const restoreResponse = await fetch("/api/courses", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              courseCode: course.code,
+              courseTitle: course.name,
+              courseName: course.fullName,
+              instructorName: course.instructor,
+              semester: course.semester,
+              expectedStudents: course.students,
+              courseDescription: course.description || "",
+              courseWeeks: course.weeks || null,
+              lecturesPerWeek: course.lecturesPerWeek || null,
+              courseCredits: course.credits || null,
+              status: course.status || "active",
+            }),
+          });
+          
+          if (restoreResponse.ok) {
+            console.log(`Course ${course.id} restored to server`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error restoring courses to server:", error);
+      // Don't throw - this is a background operation
     }
   }
 
@@ -181,16 +266,22 @@ class OnboardingManager {
       courseItem.className = "course-item";
       courseItem.dataset.courseId = course.id;
 
+      // Use fullName if available, otherwise construct from code and name
+      const courseDisplayName = course.fullName || course.name || `${course.code} - ${course.name || ''}`;
+      const instructorName = course.instructor || "N/A";
+      const semester = course.semester || "N/A";
+      const studentCount = course.students || 0;
+
       courseItem.innerHTML = `
         <div class="course-icon">
           <i class="fas fa-graduation-cap"></i>
         </div>
         <div class="course-info">
-          <div class="course-name">${course.name}</div>
+          <div class="course-name">${courseDisplayName}</div>
           <div class="course-details">
-            <span><i class="fas fa-user"></i> ${course.instructor}</span>
-            <span><i class="fas fa-calendar"></i> ${course.semester}</span>
-            <span><i class="fas fa-users"></i> ${course.students} students</span>
+            <span><i class="fas fa-user"></i> ${instructorName}</span>
+            <span><i class="fas fa-calendar"></i> ${semester}</span>
+            <span><i class="fas fa-users"></i> ${studentCount} students</span>
           </div>
         </div>
         <div class="course-actions">
@@ -233,17 +324,24 @@ class OnboardingManager {
 
       const data = await response.json();
       if (data.success && data.course) {
-        // Store course profile in session storage
+        // Store course profile in both localStorage and sessionStorage for persistence
         const profile = {
           instructorName: data.course.instructor,
           courseId: data.course.id,
-          courseName: data.course.name,
+          courseName: data.course.fullName || data.course.name || `${data.course.code} - ${data.course.name}`,
           courseCode: data.course.code,
+          courseTitle: data.course.name,
+          semester: data.course.semester,
+          expectedStudents: data.course.students,
           loginTime: new Date().toISOString(),
         };
+        
+        // Store in localStorage for persistence across reloads
+        localStorage.setItem("courseProfile", JSON.stringify(profile));
+        localStorage.setItem("onboarded", "true");
+        
+        // Also store in sessionStorage for backward compatibility
         sessionStorage.setItem("courseProfile", JSON.stringify(profile));
-
-        // Mark user as onboarded to prevent redirect back to onboarding
         sessionStorage.setItem("onboarded", "true");
 
         // Redirect to dashboard
@@ -280,15 +378,47 @@ class OnboardingManager {
         this.showError("Please provide both course code and title");
         return;
       }
-      this.courseData.courseCode = customCourseCode;
-      this.courseData.courseTitle = customCourseTitle;
-      this.courseData.courseName = `${customCourseCode} - ${customCourseTitle}`;
+      this.courseData.courseCode = customCourseCode.trim();
+      this.courseData.courseTitle = customCourseTitle.trim();
+      this.courseData.courseName = `${customCourseCode.trim()} - ${customCourseTitle.trim()}`;
     } else {
+      // Handle preset courses - split by " - " to get code and title
       this.courseData.courseName = courseName;
-      const [code, title] = courseName.split(" - ");
-      this.courseData.courseCode = code;
-      this.courseData.courseTitle = title;
+      const parts = courseName.split(" - ");
+      
+      if (parts.length >= 2) {
+        this.courseData.courseCode = parts[0].trim();
+        this.courseData.courseTitle = parts.slice(1).join(" - ").trim(); // Join in case title contains " - "
+      } else {
+        // Fallback: if no " - " found, try to extract code from beginning
+        const codeMatch = courseName.match(/^([A-Z]+\s*\d+)/);
+        if (codeMatch) {
+          this.courseData.courseCode = codeMatch[1].trim();
+          this.courseData.courseTitle = courseName.replace(codeMatch[1], "").trim();
+        } else {
+          // Last resort: use course name as both code and title
+          this.courseData.courseCode = courseName;
+          this.courseData.courseTitle = courseName;
+        }
+      }
     }
+
+    // Validate that we have both code and title
+    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+      console.error("Failed to parse course:", {
+        courseName,
+        courseCode: this.courseData.courseCode,
+        courseTitle: this.courseData.courseTitle,
+      });
+      this.showError("Failed to parse course information. Please try again or create a custom course.");
+      return;
+    }
+
+    console.log("Course selected:", {
+      courseName: this.courseData.courseName,
+      courseCode: this.courseData.courseCode,
+      courseTitle: this.courseData.courseTitle,
+    });
 
     this.updateSelectedCourseDisplay();
     this.goToStep(2);
@@ -307,9 +437,22 @@ class OnboardingManager {
       return;
     }
 
+    // Preserve course code and title when moving to next step
+    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+      console.error("Course code or title missing in step 2:", this.courseData);
+      this.showError("Course information is missing. Please go back and select a course again.");
+      return;
+    }
+
     this.courseData.courseWeeks = courseWeeks;
     this.courseData.lecturesPerWeek = lecturesPerWeek;
     this.courseData.courseCredits = courseCredits;
+
+    console.log("Moving to step 3 with course data:", {
+      courseCode: this.courseData.courseCode,
+      courseTitle: this.courseData.courseTitle,
+      courseName: this.courseData.courseName,
+    });
 
     this.goToStep(3);
   }
@@ -328,12 +471,32 @@ class OnboardingManager {
       return;
     }
 
+    // Verify course code and title are still present before saving
+    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+      console.error("Course code or title missing in step 3:", this.courseData);
+      this.showError("Course information is missing. Please go back to step 1 and select a course again.");
+      return;
+    }
+
     this.courseData.instructorName = instructorName;
     this.courseData.semester = semester;
     this.courseData.expectedStudents = expectedStudents;
     this.courseData.courseDescription = courseDescription || "";
     this.courseData.status = "active";
     this.courseData.createdAt = new Date().toISOString();
+
+    // Ensure courseName is set if it's missing
+    if (!this.courseData.courseName) {
+      this.courseData.courseName = `${this.courseData.courseCode} - ${this.courseData.courseTitle}`;
+    }
+
+    console.log("Saving course with data:", {
+      courseCode: this.courseData.courseCode,
+      courseTitle: this.courseData.courseTitle,
+      courseName: this.courseData.courseName,
+      instructorName: this.courseData.instructorName,
+      semester: this.courseData.semester,
+    });
 
     // Show loading state
     this.showLoading(true);
@@ -346,7 +509,8 @@ class OnboardingManager {
       this.showCompletion();
     } catch (error) {
       console.error("Error saving course profile:", error);
-      this.showError("Failed to save course profile. Please try again.");
+      const errorMessage = error.message || "Failed to save course profile. Please try again.";
+      this.showError(errorMessage);
     } finally {
       this.showLoading(false);
     }
@@ -370,20 +534,79 @@ class OnboardingManager {
 
   async saveCourseProfile() {
     try {
+      // Ensure all required fields are present
+      if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+        throw new Error("Missing course code or title. Please go back and select a course.");
+      }
+
+      // Prepare the request body with all required fields
+      const requestBody = {
+        courseCode: this.courseData.courseCode,
+        courseTitle: this.courseData.courseTitle,
+        courseName: this.courseData.courseName || `${this.courseData.courseCode} - ${this.courseData.courseTitle}`,
+        instructorName: this.courseData.instructorName,
+        semester: this.courseData.semester,
+        expectedStudents: this.courseData.expectedStudents,
+        courseDescription: this.courseData.courseDescription || "",
+        courseWeeks: this.courseData.courseWeeks || null,
+        lecturesPerWeek: this.courseData.lecturesPerWeek || null,
+        courseCredits: this.courseData.courseCredits || null,
+        status: this.courseData.status || "active",
+      };
+
+      console.log("Saving course profile with data:", requestBody);
+
       const response = await fetch("/api/courses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(this.courseData),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+        console.error("Error response:", errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
       console.log("Course profile saved successfully:", result);
+      
+      // Store the course ID and full course data from the response
+      if (result.course && result.course.id) {
+        this.courseData.courseId = result.course.id;
+        // Store the full course object for later use
+        this.courseData.savedCourse = result.course;
+      }
+      
+      // Store course in localStorage as backup (persists across server restarts)
+      try {
+        const savedCourses = JSON.parse(localStorage.getItem('savedCourses') || '[]');
+        // Check if course already exists in localStorage
+        const existingIndex = savedCourses.findIndex(c => c.id === result.course.id);
+        if (existingIndex >= 0) {
+          savedCourses[existingIndex] = result.course;
+        } else {
+          savedCourses.push(result.course);
+        }
+        localStorage.setItem('savedCourses', JSON.stringify(savedCourses));
+        console.log('Course saved to localStorage backup');
+      } catch (error) {
+        console.error('Error saving course to localStorage:', error);
+      }
+      
+      // After successful save, always refresh courses list in login tab
+      // This ensures the newly created course appears immediately
+      // We refresh even if login tab is not visible, so it's ready when user switches to it
+      setTimeout(() => {
+        this.loadExistingCourses();
+        console.log("Courses list refreshed after saving new course");
+      }, 300);
+      
+      // Also mark that we should refresh when login tab is opened
+      this.refreshCoursesList = true;
+      
       return result;
     } catch (error) {
       console.error("Error saving course profile:", error);
@@ -444,9 +667,16 @@ class OnboardingManager {
       completionElement.classList.add("success-animation");
     }
 
-    // Mark session as onboarded
+    // Mark as onboarded - use localStorage for persistence across reloads
+    localStorage.setItem("onboarded", "true");
+    localStorage.setItem("courseProfile", JSON.stringify(this.courseData));
+    // Also save to sessionStorage for backward compatibility
     sessionStorage.setItem("onboarded", "true");
     sessionStorage.setItem("courseProfile", JSON.stringify(this.courseData));
+
+    // Refresh the courses list in the login tab so the newly created course appears
+    // This will be called when the user switches to the login tab
+    this.refreshCoursesList = true;
   }
 
   showLoading(show) {
@@ -517,7 +747,8 @@ function goToStep(stepNumber) {
 }
 
 function redirectToDashboard() {
-  window.location.href = "/dashboard";
+  // Redirect to dashboard after course creation
+  window.location.href = "/dashboard.html";
 }
 
 // Initialize onboarding when DOM is loaded
@@ -527,33 +758,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Check if user has already been onboarded
 function checkOnboardingStatus() {
-  const isOnboarded = sessionStorage.getItem("onboarded");
-  const courseProfile = sessionStorage.getItem("courseProfile");
+  // Check both localStorage (persistent) and sessionStorage (for backward compatibility)
+  const isOnboarded = localStorage.getItem("onboarded") || sessionStorage.getItem("onboarded");
+  const courseProfile = localStorage.getItem("courseProfile") || sessionStorage.getItem("courseProfile");
   const currentPath = window.location.pathname;
 
-  // If user is already onboarded and trying to access onboarding page, redirect to dashboard
-  if (isOnboarded === "true" && currentPath === "/onboarding") {
-    window.location.href = "/dashboard";
+  // Only redirect if truly onboarded AND has course profile (to avoid loops)
+  // The onboarding-check.js will handle most redirects, so we're more conservative here
+  if (isOnboarded === "true" && courseProfile && (currentPath === "/onboarding" || currentPath === "/onboarding.html")) {
+    console.log("Onboarding: User already onboarded with profile, redirecting to dashboard");
+    // Use a small delay to avoid conflicts with onboarding-check.js
+    setTimeout(() => {
+      window.location.href = "/dashboard.html";
+    }, 300);
     return;
   }
 
-  // If user has a course profile (logged in via existing course) and trying to access onboarding, redirect to dashboard
-  if (courseProfile && currentPath === "/onboarding") {
-    window.location.href = "/dashboard";
-    return;
-  }
-
-  // If user hasn't been onboarded and not on onboarding page, redirect to onboarding
-  // Exclude certain pages that don't require onboarding
-  const publicPages = ["/onboarding", "/", "/index.html"];
-  if (
-    isOnboarded !== "true" &&
-    !courseProfile &&
-    !publicPages.includes(currentPath)
-  ) {
-    window.location.href = "/onboarding";
-    return;
-  }
+  // Don't redirect from other pages here - let onboarding-check.js handle it
+  // This prevents conflicts and redirect loops
 }
 
 // Global functions for HTML onclick handlers
@@ -576,4 +798,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Run onboarding check when page loads
-document.addEventListener("DOMContentLoaded", checkOnboardingStatus);
+// Note: checkOnboardingStatus is now handled by onboarding-check.js
+// We don't call it here to avoid redirect loops
+// The onboarding-check.js script will handle redirects appropriately

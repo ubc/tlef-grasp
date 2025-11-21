@@ -15,8 +15,14 @@
         <main class="main-content">
             <div class="content-wrapper">
                 <!-- Header Section -->
-                <div class="header-section">
-                    <h1>Course Materials</h1>
+                <section class="header-section">
+                    <div class="header-top">
+                        <h1>Course Materials</h1>
+                        <button class="upload-button" id="uploadButton">
+                            <i class="fas fa-plus"></i>
+                            <span>Upload Material</span>
+                        </button>
+                    </div>
                     
                     <!-- Filters and Search -->
                     <div class="filters-section">
@@ -31,16 +37,18 @@
                                 <option value="2">Week 2</option>
                                 <option value="3">Week 3</option>
                                 <option value="4">Week 4</option>
+                                <option value="5">Week 5</option>
+                                <option value="6">Week 6</option>
+                                <option value="7">Week 7</option>
+                                <option value="8">Week 8</option>
+                                <option value="9">Week 9</option>
+                                <option value="10">Week 10</option>
+                                <option value="11">Week 11</option>
+                                <option value="12">Week 12</option>
                             </select>
                             
                             <select class="filter-select" id="objectiveFilter">
                                 <option value="all">All Objectives</option>
-                                <option value="LO1.1">LO 1.1</option>
-                                <option value="LO1.2">LO 1.2</option>
-                                <option value="LO1.3">LO 1.3</option>
-                                <option value="LO2.1">LO 2.1</option>
-                                <option value="LO2.2">LO 2.2</option>
-                                <option value="LO3.2">LO 3.2</option>
                             </select>
                             
                             <select class="filter-select" id="typeFilter">
@@ -49,6 +57,8 @@
                                 <option value="video">Video</option>
                                 <option value="textbook">Textbook</option>
                                 <option value="link">Link</option>
+                                <option value="document">Document</option>
+                                <option value="presentation">Presentation</option>
                             </select>
                         </div>
                         
@@ -56,28 +66,199 @@
                             <div class="search-box">
                                 <i class="fas fa-search"></i>
                                 <input type="text" id="searchInput" placeholder="Search materials...">
+                                <button class="clear-search" id="clearSearch" style="display: none;">
+                                    <i class="fas fa-times"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Materials Grid -->
-                <div class="materials-grid" id="materialsGrid">
-                    <!-- Material cards will be populated by JavaScript -->
-                </div>
-
-                <!-- No Results State -->
-                <div class="no-results" id="noResults" style="display: none;">
-                    <div class="no-results-content">
-                        <i class="fas fa-search"></i>
-                        <h3>No materials found</h3>
-                        <p>Try adjusting your filters or search terms to find what you're looking for.</p>
+                    <!-- Stats Bar -->
+                    <div class="stats-bar">
+                        <div class="stat-item">
+                            <span class="stat-label">Total Materials</span>
+                            <span class="stat-value" id="totalMaterials">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">This Week</span>
+                            <span class="stat-value" id="thisWeekMaterials">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Storage Used</span>
+                            <span class="stat-value" id="storageUsed">0 MB</span>
+                        </div>
                     </div>
-                </div>
+                </section>
+
+                <!-- Materials Grid Section -->
+                <section class="materials-grid-section">
+                    <div class="materials-header">
+                        <h2>All Materials</h2>
+                        <div class="view-controls">
+                            <button class="view-toggle active" data-view="grid" title="Grid View">
+                                <i class="fas fa-th"></i>
+                            </button>
+                            <button class="view-toggle" data-view="list" title="List View">
+                                <i class="fas fa-list"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="materials-grid" id="materialsGrid" data-view="grid">
+                        <!-- Material cards will be populated by JavaScript -->
+                    </div>
+
+                    <!-- No Results State -->
+                    <div class="no-results" id="noResults" style="display: none;">
+                        <div class="no-results-content">
+                            <i class="fas fa-folder-open"></i>
+                            <h3>No materials found</h3>
+                            <p>Try adjusting your filters or upload your first material to get started.</p>
+                            <button class="upload-button-secondary" id="uploadButtonEmpty">
+                                <i class="fas fa-plus"></i>
+                                <span>Upload Material</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
 
+    <!-- Upload Modal -->
+    <div class="modal-overlay" id="uploadModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Upload Course Material</h2>
+                <button class="modal-close" id="closeUploadModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadForm">
+                    <div class="form-group">
+                        <label for="materialTitle">Material Title *</label>
+                        <input type="text" id="materialTitle" name="title" required placeholder="e.g., Lecture 3: Introduction to Algorithms">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="materialCourse">Course *</label>
+                            <select id="materialCourse" name="course" required>
+                                <option value="">Select a course</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="materialWeek">Week</label>
+                            <select id="materialWeek" name="week">
+                                <option value="">Select week</option>
+                                <option value="1">Week 1</option>
+                                <option value="2">Week 2</option>
+                                <option value="3">Week 3</option>
+                                <option value="4">Week 4</option>
+                                <option value="5">Week 5</option>
+                                <option value="6">Week 6</option>
+                                <option value="7">Week 7</option>
+                                <option value="8">Week 8</option>
+                                <option value="9">Week 9</option>
+                                <option value="10">Week 10</option>
+                                <option value="11">Week 11</option>
+                                <option value="12">Week 12</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="materialType">Material Type *</label>
+                        <select id="materialType" name="type" required>
+                            <option value="">Select type</option>
+                            <option value="pdf">PDF Document</option>
+                            <option value="video">Video</option>
+                            <option value="textbook">Textbook</option>
+                            <option value="link">External Link</option>
+                            <option value="document">Document (DOC/DOCX)</option>
+                            <option value="presentation">Presentation (PPT/PPTX)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="fileUploadGroup">
+                        <label for="materialFile">Upload File *</label>
+                        <div class="file-upload-area" id="fileUploadArea">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drag and drop files here or <span class="file-browse">browse</span></p>
+                            <p class="file-hint">Supported: PDF, DOC, DOCX, PPT, PPTX, MP4, WebM (Max 50MB)</p>
+                            <input type="file" id="materialFile" name="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.mp4,.webm" style="display: none;">
+                        </div>
+                        <div class="file-preview" id="filePreview" style="display: none;">
+                            <div class="file-preview-item">
+                                <i class="fas fa-file"></i>
+                                <span class="file-name"></span>
+                                <button type="button" class="file-remove" onclick="removeFile()">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="urlInputGroup" style="display: none;">
+                        <label for="materialUrl">Material URL *</label>
+                        <input type="url" id="materialUrl" name="url" placeholder="https://example.com/material">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="materialDescription">Description</label>
+                        <textarea id="materialDescription" name="description" rows="3" placeholder="Brief description of the material..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="materialObjectives">Learning Objectives</label>
+                        <div class="objectives-input">
+                            <input type="text" id="materialObjectives" placeholder="Type objective and press Enter (e.g., LO 1.1)">
+                            <div class="objectives-tags" id="objectivesTags"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="cancel-button" id="cancelUpload">Cancel</button>
+                        <button type="submit" class="submit-button">
+                            <i class="fas fa-upload"></i>
+                            <span>Upload Material</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Material View Modal -->
+    <div class="modal-overlay" id="viewModal" style="display: none;">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h2 id="viewMaterialTitle">Material Details</h2>
+                <div class="modal-actions">
+                    <button class="action-button" id="editMaterialBtn">
+                        <i class="fas fa-edit"></i>
+                        <span>Edit</span>
+                    </button>
+                    <button class="action-button danger" id="deleteMaterialBtn">
+                        <i class="fas fa-trash"></i>
+                        <span>Delete</span>
+                    </button>
+                    <button class="modal-close" id="closeViewModal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" id="viewModalBody">
+                <!-- Material details will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts/button-utils.js"></script>
+    <script src="scripts/app-state-manager.js"></script>
+    <script src="scripts/state-persistence.js"></script>
     <script src="scripts/navigation.js"></script>
     <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/course-materials.js"></script>

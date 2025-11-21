@@ -68,6 +68,10 @@ app.get("/course-materials", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/course-materials.html"));
 });
 
+app.get("/question-review", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-review.html"));
+});
+
 app.get("/achievements", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/achievements.html"));
 });
