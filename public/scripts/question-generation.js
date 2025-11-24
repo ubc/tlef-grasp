@@ -4213,15 +4213,74 @@ async function generateQuestionsFromContent() {
   } catch (error) {
     console.error("Failed to generate questions from content:", error);
 
-    // Fallback to sample data
-    state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
-    console.log("Fell back to sample data");
-    renderStep4();
+    // Show error message in UI
+    showQuestionGenerationError(error.message);
+
+    // Clear any existing questions
+    state.questionGroups = [];
+
+    // Hide loading spinner
+    if (questionsLoading) questionsLoading.style.display = "none";
+    if (metaLoGroups) metaLoGroups.style.display = "block";
   } finally {
     // Hide loading spinner
     if (questionsLoading) questionsLoading.style.display = "none";
     if (metaLoGroups) metaLoGroups.style.display = "block";
   }
+}
+
+// Show question generation error message
+function showQuestionGenerationError(errorMessage) {
+  const questionsContainer = document.getElementById("questions-container");
+  if (!questionsContainer) return;
+
+  // Clear existing content
+  questionsContainer.innerHTML = "";
+
+  // Create error message HTML
+  const errorHTML = `
+    <div class="error-message-container" style="
+      text-align: center;
+      padding: 40px 20px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      margin: 20px 0;
+    ">
+      <div style="color: #dc2626; font-size: 24px; margin-bottom: 16px;">
+        ⚠️ Question Generation Unavailable
+      </div>
+      <div style="color: #374151; font-size: 16px; margin-bottom: 20px;">
+        ${
+          errorMessage ||
+          "There is currently a problem with the question generation service."
+        }
+      </div>
+      <div style="color: #6b7280; font-size: 14px; margin-bottom: 24px;">
+        Please check that all required services are running and try again later.
+      </div>
+      <button onclick="retryQuestionGeneration()" style="
+        background: #dc2626;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      ">
+        Try Again
+      </button>
+    </div>
+  `;
+
+  questionsContainer.innerHTML = errorHTML;
+}
+
+// Retry question generation
+function retryQuestionGeneration() {
+  console.log("Retrying question generation...");
+  generateQuestionsFromContent();
 }
 
 // Convert generated questions to question groups format
@@ -4665,7 +4724,7 @@ async function handleRegenerateAll() {
     showToast("Questions regenerated from uploaded content", "success");
   } catch (error) {
     console.error("Failed to regenerate questions:", error);
-    showToast("Failed to regenerate questions", "error");
+    showQuestionGenerationError(error.message);
   } finally {
     // Restore button state
     if (regenerateAllBtn) {

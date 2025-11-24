@@ -9,6 +9,7 @@ require("../utils/qdrant-patch");
 let LLMModule = null;
 let RAGModule = null;
 let ConsoleLogger = null;
+let EmbeddingsModule = null;
 
 // Global RAG instance (initialized once)
 let globalRAGInstance = null;
@@ -22,6 +23,7 @@ async function initializeUBCToolkit() {
     const llmModule = await import("ubc-genai-toolkit-llm");
     const ragModule = await import("ubc-genai-toolkit-rag");
     const coreModule = await import("ubc-genai-toolkit-core");
+    const embeddingsModule = await import("ubc-genai-toolkit-embeddings");
 
     console.log("LLM Module keys:", Object.keys(llmModule));
     console.log("RAG Module keys:", Object.keys(ragModule));
@@ -35,6 +37,10 @@ async function initializeUBCToolkit() {
       coreModule.ConsoleLogger ||
       coreModule.default?.ConsoleLogger ||
       coreModule.default;
+    EmbeddingsModule =
+      embeddingsModule.EmbeddingsModule ||
+      embeddingsModule.default?.EmbeddingsModule ||
+      embeddingsModule.default;
 
     // If still not found, try direct access
     if (!LLMModule && llmModule.default) {
@@ -45,6 +51,9 @@ async function initializeUBCToolkit() {
     }
     if (!ConsoleLogger && coreModule.default) {
       ConsoleLogger = coreModule.default;
+    }
+    if (!EmbeddingsModule && embeddingsModule.default) {
+      EmbeddingsModule = embeddingsModule.default;
     }
 
     console.log("LLMModule:", typeof LLMModule);
@@ -66,32 +75,179 @@ async function initializeUBCToolkit() {
       // Initialize global RAG instance
       try {
         console.log("Initializing global RAG instance...");
-        globalRAGInstance = await RAGModule.create({
-          provider: "qdrant",
-          qdrantConfig: {
-            url: process.env.QDRANT_URL || "http://localhost:6333",
-            collectionName:
-              process.env.QDRANT_COLLECTION_NAME ||
-              "question-generation-collection",
-            vectorSize: parseInt(process.env.VECTOR_SIZE) || 384,
-            distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
-          },
-          embeddingsConfig: {
-            providerType: "fastembed",
-            fastembedConfig: {
-              model: process.env.EMBEDDINGS_MODEL || "fast-bge-small-en-v1.5",
+
+        // Create logger instance
+        const logger = ConsoleLogger ? new ConsoleLogger() : null;
+
+        // Build LLM configuration from environment variables
+        const llmConfig = {
+          provider: process.env.LLM_PROVIDER || "openai",
+          apiKey: process.env.OPENAI_API_KEY,
+          defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+          temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
+          debug: process.env.DEBUG === "true",
+        };
+
+        // Add embedding-specific configuration
+        const embeddingConfig = {
+          providerType: "ubc-genai-toolkit-llm",
+          logger: logger,
+          llmConfig: {
+            ...llmConfig,
+            embeddingModel: process.env.LLM_EMBEDDING_MODEL,
+            // Drop unsupported parameters when talking to OpenAI
+            litellm: {
+              drop_params: true,
             },
           },
+        };
+
+        console.log("Embedding config:", {
+          providerType: embeddingConfig.providerType,
+          embeddingModel: embeddingConfig.llmConfig.embeddingModel,
+          llmProvider: embeddingConfig.llmConfig.provider,
+        });
+
+        // Initialize embeddings service
+        let embeddingsInstance = null;
+        try {
+          if (EmbeddingsModule) {
+            embeddingsInstance = await EmbeddingsModule.create(embeddingConfig);
+            console.log("✅ Successfully initialized embeddings service");
+          }
+        } catch (embeddingError) {
+          console.error(
+            "❌ Failed to initialize embeddings service:",
+            embeddingError
+          );
+          throw new Error(
+            `Embeddings initialization error: ${embeddingError.message}`
+          );
+        }
+
+        // Create RAG instance with embeddings configuration
+        // Try local Qdrant first, then fallback to remote
+        const localQdrantUrl = "http://localhost:6333";
+        const remoteQdrantUrl = process.env.QDRANT_URL;
+        const qdrantApiKey = process.env.QDRANT_API_KEY;
+        const collectionName =
+          process.env.QDRANT_COLLECTION_NAME ||
+          "question-generation-collection";
+        const vectorSize =
+          parseInt(process.env.QDRANT_VECTOR_SIZE || process.env.VECTOR_SIZE) ||
+          768;
+
+        // Try local Qdrant first
+        let qdrantUrl = localQdrantUrl;
+        let connectionType = "local";
+        let lastError = null;
+
+        // Try local first
+        try {
+          console.log(
+            `Attempting to connect to local Qdrant at ${localQdrantUrl}...`
+          );
+          const testResponse = await fetch(`${localQdrantUrl}/collections`, {
+            method: "GET",
+            signal: AbortSignal.timeout(3000), // 3 second timeout
+          });
+          if (testResponse.ok) {
+            console.log("✅ Local Qdrant is reachable");
+            qdrantUrl = localQdrantUrl;
+            connectionType = "local";
+          } else {
+            throw new Error(
+              `Local Qdrant returned status ${testResponse.status}`
+            );
+          }
+        } catch (localError) {
+          console.log(`⚠️  Local Qdrant not available: ${localError.message}`);
+          lastError = localError;
+
+          // Fallback to remote Qdrant
+          if (remoteQdrantUrl) {
+            try {
+              console.log(
+                `Attempting to connect to remote Qdrant at ${remoteQdrantUrl}...`
+              );
+              const remoteTestResponse = await fetch(
+                `${remoteQdrantUrl}/collections`,
+                {
+                  method: "GET",
+                  headers: qdrantApiKey ? { "api-key": qdrantApiKey } : {},
+                  signal: AbortSignal.timeout(5000), // 5 second timeout
+                }
+              );
+              if (remoteTestResponse.ok) {
+                console.log("✅ Remote Qdrant is reachable");
+                qdrantUrl = remoteQdrantUrl;
+                connectionType = "remote";
+              } else {
+                throw new Error(
+                  `Remote Qdrant returned status ${remoteTestResponse.status}`
+                );
+              }
+            } catch (remoteError) {
+              console.error(
+                `❌ Remote Qdrant also failed: ${remoteError.message}`
+              );
+              lastError = remoteError;
+              throw new Error(
+                `Both local and remote Qdrant connections failed. Last error: ${remoteError.message}`
+              );
+            }
+          } else {
+            throw new Error(
+              `Local Qdrant failed and no remote QDRANT_URL configured. Error: ${localError.message}`
+            );
+          }
+        }
+
+        // Build Qdrant config
+        const qdrantConfig = {
+          url: qdrantUrl,
+          collectionName: collectionName,
+          vectorSize: vectorSize,
+          distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
+        };
+
+        // Add API key only for remote connections
+        if (connectionType === "remote" && qdrantApiKey) {
+          qdrantConfig.apiKey = qdrantApiKey;
+        }
+
+        console.log(
+          `Initializing RAG with ${connectionType} Qdrant at ${qdrantUrl}...`
+        );
+
+        globalRAGInstance = await RAGModule.create({
+          provider: "qdrant",
+          qdrantConfig: qdrantConfig,
+          embeddingsConfig: embeddingConfig,
           chunkingConfig: {
             strategy: "simple",
-            chunkSize: 1000, // Increased from default 300 to 1000 characters
-            overlap: 100, // Increased from default 50 to 100 characters
+            chunkSize: parseInt(process.env.CHUNK_SIZE) || 1000,
+            overlap: parseInt(process.env.CHUNK_OVERLAP) || 100,
           },
           debug: process.env.DEBUG === "true",
         });
-        console.log("✅ Global RAG instance initialized successfully");
+        console.log(
+          `✅ Global RAG instance initialized successfully with ${connectionType} Qdrant`
+        );
       } catch (ragError) {
-        console.error("❌ Failed to initialize global RAG instance:", ragError);
+        console.error(
+          "❌ Failed to initialize global RAG instance:",
+          ragError.message
+        );
+        console.error("Error details:", {
+          message: ragError.message,
+          cause: ragError.cause?.message || ragError.cause?.code,
+        });
+        console.log(
+          "⚠️  Server will continue without RAG functionality. Question generation will work but without vector search capabilities."
+        );
+        globalRAGInstance = null;
       }
     }
 
@@ -209,140 +365,45 @@ router.post("/search", express.json(), async (req, res) => {
 });
 
 // RAG Configuration - Enabled with proper embeddings
+// Note: This is a fallback config. The global RAG instance uses the updated config above.
 const RAG_CONFIG = {
   provider: "qdrant",
   qdrantConfig: {
-    url: "http://localhost:6333",
-    collectionName: "question-generation-collection",
-    vectorSize: 384,
-    distanceMetric: "Cosine",
+    url: process.env.QDRANT_URL || "http://localhost:6333",
+    collectionName:
+      process.env.QDRANT_COLLECTION_NAME || "question-generation-collection",
+    vectorSize:
+      parseInt(process.env.QDRANT_VECTOR_SIZE || process.env.VECTOR_SIZE) ||
+      768,
+    distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
   },
   embeddingsConfig: {
     providerType: "fastembed",
     fastembedConfig: {
-      model: "fast-bge-small-en-v1.5",
+      model: process.env.EMBEDDINGS_MODEL || "fast-bge-small-en-v1.5",
     },
   },
-  debug: true,
+  debug: process.env.DEBUG === "true",
 };
 
 // LLM Configuration
 const LLM_CONFIG = {
-  provider: "ollama",
-  endpoint: process.env.OLLAMA_URL || "http://localhost:11434",
-  defaultModel: process.env.OLLAMA_MODEL || "llama3.2:latest",
-  temperature: 0.7,
-  maxTokens: 1000,
+  provider: process.env.LLM_PROVIDER || "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+  maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
   debug: process.env.DEBUG === "true",
 };
 
-// Fallback function for direct Ollama API
-async function generateWithDirectOllama(req, res) {
-  try {
-    const { objective, content, bloomLevel, course } = req.body;
-
-    console.log("=== DIRECT OLLAMA FALLBACK GENERATION ===");
-    console.log("Objective:", objective);
-    console.log("Content length:", content.length);
-    console.log("Bloom level:", bloomLevel);
-
-    // Create prompt
-    const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
-
-OBJECTIVE: ${objective}
-BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
-
-INSTRUCTIONS:
-1. Create a specific, detailed question that tests understanding of the objective
-2. Use actual content from the materials - don't be generic
-3. Include 4 answer options (A, B, C, D)
-4. Make the correct answer clearly correct based on the content
-5. Make incorrect answers plausible but clearly wrong
-6. Focus on the specific concepts, examples, or details mentioned in the content
-7. Format your response as JSON with this structure:
-{
-  "question": "Your specific question here",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctAnswer": 0,
-  "explanation": "Why this answer is correct based on the content"
-}
-
-IMPORTANT: Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.
-
-CONTENT: ${content}`;
-
-    // Call Ollama directly
-    console.log("Sending prompt to Ollama...");
-    const response = await fetch(`${LLM_CONFIG.endpoint}/api/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: LLM_CONFIG.defaultModel,
-        prompt: prompt,
-        stream: false,
-        options: {
-          temperature: LLM_CONFIG.temperature,
-          num_predict: LLM_CONFIG.maxTokens,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Ollama API error: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const data = await response.json();
-    console.log("✅ Ollama response received");
-
-    // Try to parse JSON response
-    try {
-      let questionData;
-
-      // First try to parse the response directly
-      try {
-        questionData = JSON.parse(data.response);
-      } catch (directParseError) {
-        // If direct parsing fails, try to extract JSON from the response
-        const jsonMatch = data.response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          questionData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw directParseError;
-        }
-      }
-
-      res.json({
-        success: true,
-        question: questionData,
-        ragChunks: 0,
-        method: "Direct Ollama API (Fallback)",
-      });
-    } catch (parseError) {
-      // If JSON parsing fails, return the raw response
-      res.json({
-        success: true,
-        question: {
-          question: data.response,
-          options: ["Option A", "Option B", "Option C", "Option D"],
-          correctAnswer: 0,
-          explanation: "Generated using Direct Ollama API (Fallback)",
-        },
-        ragChunks: 0,
-        method: "Direct Ollama API (Raw Response)",
-      });
-    }
-  } catch (error) {
-    console.error("Direct Ollama fallback failed:", error);
-    res.status(500).json({
-      error: "Question generation failed",
-      details: error.message,
-      fallback: "Use template system",
-    });
-  }
+// Simple error response function
+function returnErrorResponse(res, error, details = null) {
+  console.error("Question generation failed:", error);
+  res.status(500).json({
+    success: false,
+    error: "Question generation service is currently unavailable",
+    details: details || error.message,
+  });
 }
 
 // Generate questions using RAG + LLM
@@ -350,12 +411,30 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
   try {
     const { objective, content, bloomLevel, course } = req.body;
 
-    // If UBC toolkit is not available, fallback to direct Ollama
+    console.log("=== RAG + LLM GENERATION REQUEST ===");
+    console.log("Objective:", objective);
+    console.log("Content length:", content?.length || 0);
+    console.log("Bloom level:", bloomLevel);
+    console.log("Course:", course);
+    console.log("LLMModule available:", !!LLMModule);
+    console.log("RAGModule available:", !!RAGModule);
+
+    // Validate required parameters
+    if (!objective || !content || !bloomLevel) {
+      return res.status(400).json({
+        error: "Missing required parameters",
+        details: "objective, content, and bloomLevel are required",
+      });
+    }
+
+    // If UBC toolkit is not available, return error
     if (!LLMModule) {
-      console.log(
-        "UBC toolkit not available, falling back to direct Ollama..."
+      console.log("UBC toolkit not available");
+      return returnErrorResponse(
+        res,
+        new Error("UBC toolkit not initialized"),
+        "RAG toolkit is not properly configured"
       );
-      return await generateWithDirectOllama(req, res);
     }
 
     console.log("=== SERVER-SIDE RAG + LLM GENERATION ===");
@@ -414,21 +493,37 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
       console.log("Generating content summary...");
       try {
         const summaryResponse = await fetch(
-          `${LLM_CONFIG.endpoint}/api/generate`,
+          "https://api.openai.com/v1/chat/completions",
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${LLM_CONFIG.apiKey}`,
+            },
             body: JSON.stringify({
               model: LLM_CONFIG.defaultModel,
-              prompt: `Please summarize the following content in exactly ${maxContentLength} characters or less, preserving the most important information, key concepts, and main points:\n\n${content}`,
-              stream: false,
+              messages: [
+                {
+                  role: "user",
+                  content: `Please summarize the following content in exactly ${maxContentLength} characters or less, preserving the most important information, key concepts, and main points:\n\n${content}`,
+                },
+              ],
+              max_tokens: maxContentLength,
+              temperature: LLM_CONFIG.temperature,
             }),
           }
         );
 
+        if (!summaryResponse.ok) {
+          throw new Error(
+            `OpenAI API error: ${summaryResponse.status} ${summaryResponse.statusText}`
+          );
+        }
+
         const summaryData = await summaryResponse.json();
         ragContext =
-          summaryData.response || content.substring(0, maxContentLength);
+          summaryData.choices?.[0]?.message?.content ||
+          content.substring(0, maxContentLength);
         console.log(`✅ Content summarized to ${ragContext.length} characters`);
       } catch (error) {
         console.log(
@@ -447,8 +542,21 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
     console.log("=== USING UBC TOOLKIT LLM FOR GENERATION ===");
 
     try {
-      // Initialize LLM module
-      const llmModule = new LLMModule(LLM_CONFIG);
+      // Check if LLMModule has the expected constructor
+      if (
+        typeof LLMModule !== "function" &&
+        typeof LLMModule.create !== "function"
+      ) {
+        throw new Error("LLMModule is not properly initialized");
+      }
+
+      // Initialize LLM module - try both constructor patterns
+      let llmModule;
+      if (typeof LLMModule.create === "function") {
+        llmModule = await LLMModule.create(LLM_CONFIG);
+      } else {
+        llmModule = new LLMModule(LLM_CONFIG);
+      }
 
       // Create prompt with RAG context
       const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
@@ -479,11 +587,26 @@ CONTENT: ${ragContext}`;
       const response = await llmModule.sendMessage(prompt);
 
       console.log("✅ UBC toolkit LLM response received");
-      console.log("Response format:", typeof response, Object.keys(response));
+      console.log(
+        "Response format:",
+        typeof response,
+        response ? Object.keys(response) : "null"
+      );
 
       // Extract content from response
-      const responseContent = response.content || response;
+      let responseContent;
+      if (response && typeof response === "object") {
+        responseContent =
+          response.content || response.text || response.message || response;
+      } else {
+        responseContent = response;
+      }
+
       console.log("Response content:", responseContent);
+
+      if (!responseContent) {
+        throw new Error("Empty response from LLM");
+      }
 
       // Try to parse JSON response
       try {
@@ -506,7 +629,7 @@ CONTENT: ${ragContext}`;
           success: true,
           question: questionData,
           ragChunks: ragChunks,
-          method: "RAG + UBC Toolkit + Ollama",
+          method: "RAG + UBC Toolkit + OpenAI",
         });
       } catch (parseError) {
         // If JSON parsing fails, return the raw response
@@ -516,23 +639,94 @@ CONTENT: ${ragContext}`;
             question: response,
             options: ["Option A", "Option B", "Option C", "Option D"],
             correctAnswer: 0,
-            explanation: "Generated using RAG + UBC Toolkit + Ollama",
+            explanation: "Generated using RAG + UBC Toolkit + OpenAI",
           },
           ragChunks: ragChunks,
-          method: "RAG + UBC Toolkit + Ollama (Raw Response)",
+          method: "RAG + UBC Toolkit + OpenAI (Raw Response)",
         });
       }
     } catch (llmError) {
       console.error("❌ UBC toolkit LLM failed:", llmError.message);
-      console.log("💡 Falling back to direct Ollama API");
-      return await generateWithDirectOllama(req, res);
+      return returnErrorResponse(res, llmError, "LLM service failed");
     }
   } catch (error) {
     console.error("RAG + LLM generation failed:", error);
+    return returnErrorResponse(
+      res,
+      error,
+      "Question generation service failed"
+    );
+  }
+});
+
+// Health check endpoint for debugging
+router.get("/health", async (req, res) => {
+  try {
+    const health = {
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+      services: {
+        openai: {
+          provider: LLM_CONFIG.provider,
+          model: LLM_CONFIG.defaultModel,
+          status: "unknown",
+        },
+        qdrant: {
+          url: process.env.QDRANT_URL || "http://localhost:6333",
+          collection:
+            process.env.QDRANT_COLLECTION_NAME ||
+            "question-generation-collection",
+          status: "unknown",
+        },
+        ubcToolkit: {
+          llmModule: !!LLMModule,
+          ragModule: !!RAGModule,
+          globalRAGInstance: !!globalRAGInstance,
+        },
+      },
+    };
+
+    // Test OpenAI connectivity
+    try {
+      const openaiResponse = await fetch("https://api.openai.com/v1/models", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${LLM_CONFIG.apiKey}`,
+        },
+      });
+      health.services.openai.status = openaiResponse.ok
+        ? "healthy"
+        : "unhealthy";
+    } catch (error) {
+      health.services.openai.status = "unreachable";
+      health.services.openai.error = error.message;
+    }
+
+    // Test Qdrant connectivity
+    try {
+      const qdrantResponse = await fetch(
+        `${health.services.qdrant.url}/collections`,
+        {
+          method: "GET",
+          timeout: 3000,
+        }
+      );
+      health.services.qdrant.status = qdrantResponse.ok
+        ? "healthy"
+        : "unhealthy";
+    } catch (error) {
+      health.services.qdrant.status = "unreachable";
+      health.services.qdrant.error = error.message;
+    }
+
+    res.json({
+      success: true,
+      health: health,
+    });
+  } catch (error) {
     res.status(500).json({
-      error: "Question generation failed",
-      details: error.message,
-      fallback: "Use direct Ollama API",
+      success: false,
+      error: error.message,
     });
   }
 });

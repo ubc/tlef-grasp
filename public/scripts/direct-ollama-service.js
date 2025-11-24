@@ -1,53 +1,59 @@
-// Direct Ollama API Service (Fallback)
-// Uses fetch to call Ollama directly without UBC toolkit
+// Direct OpenAI API Service (Fallback)
+// Uses fetch to call OpenAI directly without UBC toolkit
 
-class DirectOllamaService {
+class DirectOpenAIService {
   constructor() {
-    this.baseURL = "http://localhost:11434";
-    this.model = "llama3.2:latest";
-    this.isInitialized = true;
-    console.log("✅ Direct Ollama Service initialized");
+    this.apiKey = window.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    this.model = window.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    this.temperature = parseFloat(window.LLM_TEMPERATURE || process.env.LLM_TEMPERATURE) || 0.7;
+    this.maxTokens = parseInt(window.LLM_MAX_TOKENS || process.env.LLM_MAX_TOKENS) || 1000;
+    this.isInitialized = !!this.apiKey;
+    console.log("✅ Direct OpenAI Service initialized");
   }
 
   async generateQuestionWithRAG(prompt, ragContext = "") {
     try {
-      console.log("=== DIRECT OLLAMA API CALL ===");
+      console.log("=== DIRECT OPENAI API CALL ===");
       console.log("RAG Context length:", ragContext.length);
-      console.log("Sending to Ollama API...");
+      console.log("Sending to OpenAI API...");
 
       const fullPrompt = `${ragContext}\n\n${prompt}`;
 
-      const response = await fetch(`${this.baseURL}/api/generate`, {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
-          prompt: fullPrompt,
-          stream: false,
-          options: {
-            temperature: 0.7,
-            num_predict: 1000,
-          },
+          messages: [
+            {
+              role: "user",
+              content: fullPrompt,
+            },
+          ],
+          temperature: this.temperature,
+          max_tokens: this.maxTokens,
         }),
       });
 
       if (!response.ok) {
         throw new Error(
-          `Ollama API error: ${response.status} ${response.statusText}`
+          `OpenAI API error: ${response.status} ${response.statusText}`
         );
       }
 
       const data = await response.json();
+      const responseContent = data.choices?.[0]?.message?.content || "";
       console.log(
-        "✅ Ollama response received:",
-        data.response.substring(0, 200) + "..."
+        "✅ OpenAI response received:",
+        responseContent.substring(0, 200) + "..."
       );
 
-      return data.response;
+      return responseContent;
     } catch (error) {
-      console.error("❌ Direct Ollama API failed:", error);
+      console.error("❌ Direct OpenAI API failed:", error);
       throw error;
     }
   }
@@ -87,5 +93,7 @@ IMPORTANT: Base your question on the specific details, examples, formulas, or co
 }
 
 // Export for use in other files
-window.DirectOllamaService = DirectOllamaService;
+window.DirectOpenAIService = DirectOpenAIService;
+// Keep old name for backwards compatibility
+window.DirectOllamaService = DirectOpenAIService;
 

@@ -280,14 +280,34 @@ class OnboardingManager {
         this.showError("Please provide both course code and title");
         return;
       }
-      this.courseData.courseCode = customCourseCode;
-      this.courseData.courseTitle = customCourseTitle;
-      this.courseData.courseName = `${customCourseCode} - ${customCourseTitle}`;
+      this.courseData.courseCode = customCourseCode.trim();
+      this.courseData.courseTitle = customCourseTitle.trim();
+      this.courseData.courseName = `${customCourseCode.trim()} - ${customCourseTitle.trim()}`;
     } else {
       this.courseData.courseName = courseName;
-      const [code, title] = courseName.split(" - ");
-      this.courseData.courseCode = code;
-      this.courseData.courseTitle = title;
+      // Parse course name: format should be "CODE - TITLE"
+      const parts = courseName.split(" - ");
+      if (parts.length >= 2) {
+        this.courseData.courseCode = parts[0].trim();
+        // Join remaining parts in case title contains " - "
+        this.courseData.courseTitle = parts.slice(1).join(" - ").trim();
+      } else {
+        // If format doesn't match, use entire name as title and try to extract code
+        this.courseData.courseTitle = courseName.trim();
+        // Try to extract code from beginning (assume first word or first few characters)
+        const firstSpace = courseName.indexOf(" ");
+        if (firstSpace > 0) {
+          this.courseData.courseCode = courseName.substring(0, firstSpace).trim();
+        } else {
+          this.courseData.courseCode = courseName.trim();
+        }
+      }
+    }
+
+    // Validate that we have both code and title
+    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+      this.showError("Could not parse course code and title. Please use the format 'CODE - TITLE' or create a custom course.");
+      return;
     }
 
     this.updateSelectedCourseDisplay();
@@ -323,17 +343,41 @@ class OnboardingManager {
     const expectedStudents = parseInt(formData.get("expectedStudents"));
     const courseDescription = formData.get("courseDescription");
 
-    if (!instructorName || !semester || !expectedStudents) {
-      this.showError("Please fill in all required fields");
+    if (!instructorName || !semester || isNaN(expectedStudents) || expectedStudents <= 0) {
+      this.showError("Please fill in all required fields with valid values");
       return;
     }
 
-    this.courseData.instructorName = instructorName;
-    this.courseData.semester = semester;
+    // Validate that all required fields from previous steps are present
+    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
+      this.showError("Course code and title are missing. Please go back to step 1 and select a course.");
+      return;
+    }
+
+    this.courseData.instructorName = instructorName.trim();
+    this.courseData.semester = semester.trim();
     this.courseData.expectedStudents = expectedStudents;
     this.courseData.courseDescription = courseDescription || "";
     this.courseData.status = "active";
     this.courseData.createdAt = new Date().toISOString();
+
+    // Validate all required fields one more time before sending
+    const requiredFields = {
+      courseCode: this.courseData.courseCode,
+      courseTitle: this.courseData.courseTitle,
+      instructorName: this.courseData.instructorName,
+      semester: this.courseData.semester,
+      expectedStudents: this.courseData.expectedStudents,
+    };
+
+    const missingFields = Object.entries(requiredFields)
+      .filter(([key, value]) => !value || (key === 'expectedStudents' && (isNaN(value) || value <= 0)))
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      this.showError(`Missing or invalid required fields: ${missingFields.join(", ")}`);
+      return;
+    }
 
     // Show loading state
     this.showLoading(true);
@@ -346,7 +390,8 @@ class OnboardingManager {
       this.showCompletion();
     } catch (error) {
       console.error("Error saving course profile:", error);
-      this.showError("Failed to save course profile. Please try again.");
+      const errorMessage = error.message || "Failed to save course profile. Please try again.";
+      this.showError(errorMessage);
     } finally {
       this.showLoading(false);
     }
@@ -370,6 +415,9 @@ class OnboardingManager {
 
   async saveCourseProfile() {
     try {
+      // Log the data being sent for debugging
+      console.log("Saving course profile with data:", this.courseData);
+
       const response = await fetch("/api/courses", {
         method: "POST",
         headers: {
@@ -379,7 +427,17 @@ class OnboardingManager {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Try to get error message from response
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+          console.error("Backend error response:", errorData);
+        } catch (e) {
+          // If response is not JSON, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();

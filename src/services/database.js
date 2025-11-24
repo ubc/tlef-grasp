@@ -5,27 +5,90 @@ class DatabaseService {
     this.client = null;
     this.db = null;
     this.isConnected = false;
+    this.connectionUri = null;
+    this.connectionType = null; // 'local' or 'remote'
   }
 
   async connect() {
-    try {
-      const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017";
-      const dbName = process.env.MONGODB_DB_NAME || "grasp_db";
+    const dbName = process.env.MONGODB_DB_NAME || "grasp_db";
 
-      this.client = new MongoClient(mongoUri);
-      await this.client.connect();
-      this.db = this.client.db(dbName);
-      this.isConnected = true;
+    // Define local and remote MongoDB URIs
+    const localUri = "mongodb://localhost:27017";
+    const remoteUri = process.env.MONGODB_URI;
 
-      console.log("✅ Connected to MongoDB");
+    // Connection options with shorter timeout for faster fallback
+    const connectionOptions = {
+      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 5000,
+    };
 
-      // Create collections if they don't exist
-      await this.initializeCollections();
+    // Try local MongoDB first (faster if available)
+    if (localUri) {
+      try {
+        console.log("Attempting to connect to local MongoDB...");
+        this.client = new MongoClient(localUri, connectionOptions);
+        await this.client.connect();
+        this.db = this.client.db(dbName);
+        this.isConnected = true;
+        this.connectionUri = localUri;
+        this.connectionType = "local";
 
-      return this.db;
-    } catch (error) {
-      console.error("❌ MongoDB connection error:", error);
-      throw error;
+        console.log("✅ Connected to local MongoDB");
+        await this.initializeCollections();
+        return this.db;
+      } catch (localError) {
+        console.log(
+          `⚠️  Local MongoDB connection failed: ${localError.message}`
+        );
+        // Close the failed connection attempt
+        if (this.client) {
+          try {
+            await this.client.close();
+          } catch (closeError) {
+            // Ignore close errors
+          }
+          this.client = null;
+        }
+      }
+    }
+
+    // Fallback to remote MongoDB if local failed
+    if (remoteUri) {
+      try {
+        console.log("Attempting to connect to remote MongoDB...");
+        this.client = new MongoClient(remoteUri, connectionOptions);
+        await this.client.connect();
+        this.db = this.client.db(dbName);
+        this.isConnected = true;
+        this.connectionUri = remoteUri;
+        this.connectionType = "remote";
+
+        console.log("✅ Connected to remote MongoDB");
+        await this.initializeCollections();
+        return this.db;
+      } catch (remoteError) {
+        console.error(
+          "❌ Remote MongoDB connection error:",
+          remoteError.message
+        );
+        // Close the failed connection attempt
+        if (this.client) {
+          try {
+            await this.client.close();
+          } catch (closeError) {
+            // Ignore close errors
+          }
+          this.client = null;
+        }
+        throw new Error(
+          `Failed to connect to both local and remote MongoDB. Last error: ${remoteError.message}`
+        );
+      }
+    } else {
+      // No remote URI configured and local failed
+      throw new Error(
+        "No MongoDB URI configured and local connection failed. Please set MONGODB_URI in your .env file."
+      );
     }
   }
 
@@ -55,6 +118,16 @@ class DatabaseService {
       throw new Error("Database not connected");
     }
     return this.db.collection(name);
+  }
+
+  getConnectionInfo() {
+    return {
+      connected: this.isConnected,
+      connectionType: this.connectionType,
+      uri: this.connectionUri
+        ? this.connectionUri.replace(/\/\/[^:]+:[^@]+@/, "//***:***@") // Mask credentials
+        : null,
+    };
   }
 
   async saveQuizQuestion(questionData) {

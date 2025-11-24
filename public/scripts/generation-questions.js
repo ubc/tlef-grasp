@@ -38,7 +38,13 @@ class QuestionGenerator {
             });
 
             if (!response.ok) {
-              throw new Error(`Server error: ${response.status}`);
+              const errorText = await response
+                .text()
+                .catch(() => "Unknown error");
+              console.error(`Server error ${response.status}:`, errorText);
+              throw new Error(
+                `Server error: ${response.status} - ${errorText}`
+              );
             }
 
             const data = await response.json();
@@ -47,7 +53,10 @@ class QuestionGenerator {
             if (data.success) {
               return JSON.stringify(data.question);
             } else {
-              throw new Error(data.error || "Server-side generation failed");
+              throw new Error(
+                data.error ||
+                  "Question generation service is currently unavailable"
+              );
             }
           } catch (error) {
             console.error("❌ Server-side RAG + LLM failed:", error);
@@ -59,12 +68,7 @@ class QuestionGenerator {
       console.log("✅ Server-side RAG + LLM service initialized");
     } catch (error) {
       console.error("❌ Failed to initialize LLM service:", error);
-
-      // Fallback to direct Ollama API
-      if (window.DirectOllamaService) {
-        console.log("Using DirectOllamaService as fallback...");
-        this.llmService = new window.DirectOllamaService();
-      }
+      this.llmService = null;
     }
   }
 
@@ -136,13 +140,7 @@ class QuestionGenerator {
             `Failed to generate questions for objective: ${objective.text}`,
             error
           );
-          // Add fallback question
-          const fallbackQuestion = this.createFallbackQuestion(
-            objective,
-            group.title
-          );
-          console.log("Created fallback question:", fallbackQuestion);
-          allQuestions.push(fallbackQuestion);
+          throw error; // Re-throw to stop generation and show error in UI
         }
       }
     }
@@ -151,17 +149,11 @@ class QuestionGenerator {
       `Total questions generated from objectives: ${allQuestions.length}`
     );
 
-    // If no objectives, generate general questions from content
-    if (allQuestions.length === 0 && summary) {
-      console.log(
-        "No objectives found, generating general questions from summary"
+    // If no objectives, throw error
+    if (allQuestions.length === 0) {
+      throw new Error(
+        "No learning objectives found. Please add objectives to generate questions."
       );
-      const generalQuestions = await this.generateGeneralQuestions(
-        course,
-        summary
-      );
-      console.log(`Generated ${generalQuestions.length} general questions`);
-      allQuestions.push(...generalQuestions);
     }
 
     console.log(`Final question count: ${allQuestions.length}`);
@@ -369,97 +361,35 @@ class QuestionGenerator {
     groupTitle,
     questionNumber
   ) {
-    // Try to use LLM service first
+    // Use LLM service
     if (this.llmService && this.llmService.isAvailable()) {
-      try {
-        console.log(`Generating LLM question for objective: ${objectiveText}`);
-        const llmResponse =
-          await this.llmService.generateMultipleChoiceQuestion(
-            objectiveText,
-            content,
-            bloomLevel
-          );
+      console.log(`Generating LLM question for objective: ${objectiveText}`);
+      const llmResponse = await this.llmService.generateMultipleChoiceQuestion(
+        objectiveText,
+        content,
+        bloomLevel
+      );
 
-        // Parse LLM response
-        const questionData = JSON.parse(llmResponse);
+      // Parse LLM response
+      const questionData = JSON.parse(llmResponse);
 
-        return {
-          id: `${objectiveId}-${questionNumber}`,
-          text: questionData.question,
-          type: "multiple-choice",
-          options: questionData.options,
-          correctAnswer: questionData.correctAnswer,
-          bloomLevel: bloomLevel,
-          difficulty: this.determineDifficulty(bloomLevel),
-          metaCode: groupTitle,
-          loCode: objectiveText,
-          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-          by: "LLM + RAG System",
-          explanation: questionData.explanation,
-        };
-      } catch (error) {
-        console.warn("LLM generation failed, falling back to template:", error);
-        // Fall through to template generation
-      }
+      return {
+        id: `${objectiveId}-${questionNumber}`,
+        text: questionData.question,
+        type: "multiple-choice",
+        options: questionData.options,
+        correctAnswer: questionData.correctAnswer,
+        bloomLevel: bloomLevel,
+        difficulty: this.determineDifficulty(bloomLevel),
+        metaCode: groupTitle,
+        loCode: objectiveText,
+        lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+        by: "LLM + RAG System",
+        explanation: questionData.explanation,
+      };
+    } else {
+      throw new Error("Question generation service is currently unavailable");
     }
-
-    // Fallback to template-based generation
-    console.log(`Using template generation for objective: ${objectiveText}`);
-    const keyConcepts = this.extractKeyConceptsForQuestion(content);
-    const examples = this.extractExamplesForQuestion(content);
-
-    // Generate question based on Bloom's taxonomy level
-    let questionText, options, correctAnswer;
-
-    switch (bloomLevel.toLowerCase()) {
-      case "remember":
-        ({ questionText, options, correctAnswer } =
-          this.generateRememberQuestion(objectiveText, keyConcepts));
-        break;
-      case "understand":
-        ({ questionText, options, correctAnswer } =
-          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "apply":
-        ({ questionText, options, correctAnswer } = this.generateApplyQuestion(
-          objectiveText,
-          examples,
-          content
-        ));
-        break;
-      case "analyze":
-        ({ questionText, options, correctAnswer } =
-          this.generateAnalyzeQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "evaluate":
-        ({ questionText, options, correctAnswer } =
-          this.generateEvaluateQuestion(objectiveText, keyConcepts, content));
-        break;
-      case "create":
-        ({ questionText, options, correctAnswer } = this.generateCreateQuestion(
-          objectiveText,
-          keyConcepts,
-          content
-        ));
-        break;
-      default:
-        ({ questionText, options, correctAnswer } =
-          this.generateUnderstandQuestion(objectiveText, keyConcepts, content));
-    }
-
-    return {
-      id: `${objectiveId}-${questionNumber}`,
-      text: questionText,
-      type: "multiple-choice",
-      options: options,
-      correctAnswer: correctAnswer,
-      bloomLevel: bloomLevel,
-      difficulty: this.determineDifficulty(bloomLevel),
-      metaCode: groupTitle,
-      loCode: objectiveText,
-      lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-      by: "Template System",
-    };
   }
 
   // Extract key concepts from content for question generation
@@ -506,97 +436,6 @@ class QuestionGenerator {
     });
 
     return [...new Set(examples)].slice(0, 3);
-  }
-
-  // Generate Remember level questions
-  generateRememberQuestion(objectiveText, keyConcepts) {
-    const concept = keyConcepts[0] || "key concept";
-    const questionText = `What is the definition of ${concept} as described in the course materials?`;
-
-    const options = [
-      `The correct definition of ${concept} based on the uploaded materials`,
-      `An incorrect definition of ${concept}`,
-      `A definition of a related but different concept`,
-      `A general description that doesn't match ${concept}`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
-  }
-
-  // Generate Understand level questions
-  generateUnderstandQuestion(objectiveText, keyConcepts, content) {
-    const concept = keyConcepts[0] || "the main concept";
-    const questionText = `Which of the following best explains ${concept} based on the course content?`;
-
-    const options = [
-      `The most accurate explanation of ${concept} as presented in the uploaded materials`,
-      `A partially correct but incomplete explanation of ${concept}`,
-      `An explanation of a different concept`,
-      `A misleading explanation of ${concept}`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
-  }
-
-  // Generate Apply level questions
-  generateApplyQuestion(objectiveText, examples, content) {
-    const example = examples[0] || "a practical scenario";
-    const questionText = `How would you apply the concepts from "${objectiveText}" to ${example}?`;
-
-    const options = [
-      `The most appropriate application method`,
-      `A partially correct application approach`,
-      `An application method for a different concept`,
-      `An inappropriate application method`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
-  }
-
-  // Generate Analyze level questions
-  generateAnalyzeQuestion(objectiveText, keyConcepts, content) {
-    const concept1 = keyConcepts[0] || "concept A";
-    const concept2 = keyConcepts[1] || "concept B";
-    const questionText = `What is the relationship between ${concept1} and ${concept2} as described in the materials?`;
-
-    const options = [
-      `The correct relationship between ${concept1} and ${concept2}`,
-      `A partially accurate relationship description`,
-      `A relationship that doesn't exist between these concepts`,
-      `A relationship between different concepts`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
-  }
-
-  // Generate Evaluate level questions
-  generateEvaluateQuestion(objectiveText, keyConcepts, content) {
-    const concept = keyConcepts[0] || "the concept";
-    const questionText = `Which of the following best evaluates the effectiveness of ${concept}?`;
-
-    const options = [
-      `The most comprehensive evaluation criteria`,
-      `A limited evaluation approach`,
-      `Evaluation criteria for a different concept`,
-      `Inappropriate evaluation criteria`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
-  }
-
-  // Generate Create level questions
-  generateCreateQuestion(objectiveText, keyConcepts, content) {
-    const concept = keyConcepts[0] || "the concepts";
-    const questionText = `How would you create a solution using ${concept}?`;
-
-    const options = [
-      `The most innovative and appropriate solution`,
-      `A basic but functional solution`,
-      `A solution that doesn't use ${concept}`,
-      `An impractical solution approach`,
-    ];
-
-    return { questionText, options, correctAnswer: 0 };
   }
 
   // Determine difficulty based on Bloom's taxonomy
@@ -666,60 +505,6 @@ class QuestionGenerator {
       "Use",
     ];
     return commonWords.includes(word);
-  }
-
-  // Create fallback question when RAG fails
-  createFallbackQuestion(objective, groupTitle) {
-    return {
-      id: `${objective.id}-fallback`,
-      text: `Based on the course materials, which of the following best relates to: ${objective.text}?`,
-      type: "multiple-choice",
-      options: [
-        "The most accurate answer based on course content",
-        "A partially correct answer",
-        "An answer that doesn't relate to the objective",
-        "An incorrect answer",
-      ],
-      correctAnswer: 0,
-      bloomLevel: objective.bloom[0] || "Understand",
-      difficulty: "Medium",
-      metaCode: groupTitle,
-      loCode: objective.text,
-      lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-      by: "Fallback System",
-    };
-  }
-
-  // Generate general questions when no specific objectives exist
-  async generateGeneralQuestions(course, summary) {
-    const questions = [];
-    const keyConcepts = this.extractKeyConceptsForQuestion(summary);
-
-    for (let i = 0; i < 5; i++) {
-      const concept = keyConcepts[i % keyConcepts.length] || "course content";
-      const question = {
-        id: `general-${i + 1}`,
-        text: `Which of the following best describes ${concept} as presented in the ${course} materials?`,
-        type: "multiple-choice",
-        options: [
-          `The most accurate description of ${concept}`,
-          `A partially accurate description`,
-          `A description of a different concept`,
-          `An inaccurate description`,
-        ],
-        correctAnswer: 0,
-        bloomLevel: "Understand",
-        difficulty: "Medium",
-        metaCode: "General Content",
-        loCode: "General Understanding",
-        lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-        by: "RAG-Enhanced System",
-      };
-
-      questions.push(question);
-    }
-
-    return questions;
   }
 
   getMockQuestionsForObjective(objective) {

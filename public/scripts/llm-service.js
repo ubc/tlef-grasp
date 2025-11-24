@@ -1,5 +1,5 @@
 // LLM Service for Question Generation
-// Interfaces with Ollama through UBC GenAI Toolkit
+// Interfaces with OpenAI through UBC GenAI Toolkit
 
 // Import UBC GenAI Toolkit at the top level
 import { LLMModule } from "ubc-genai-toolkit-llm";
@@ -16,19 +16,23 @@ class LLMService {
       console.log("=== LLM SERVICE INITIALIZATION ===");
       console.log("UBC GenAI Toolkit imported successfully");
 
-      // Configure for Ollama
+      // Configure for OpenAI
       const llmConfig = {
-        provider: "ollama",
-        model: "llama3.2:latest", // Using your available model
-        baseURL: "http://localhost:11434", // Default Ollama URL
-        temperature: 0.7,
-        maxTokens: 1000,
+        provider: "openai",
+        apiKey: window.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+        model: window.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
+        temperature: parseFloat(window.LLM_TEMPERATURE || process.env.LLM_TEMPERATURE) || 0.7,
+        maxTokens: parseInt(window.LLM_MAX_TOKENS || process.env.LLM_MAX_TOKENS) || 1000,
       };
 
-      console.log("Creating LLM module with config:", llmConfig);
+      console.log("Creating LLM module with config:", {
+        provider: llmConfig.provider,
+        model: llmConfig.model,
+        hasApiKey: !!llmConfig.apiKey,
+      });
       this.llmModule = await LLMModule.create(llmConfig);
       this.isInitialized = true;
-      console.log("✅ LLM Service initialized with Ollama successfully");
+      console.log("✅ LLM Service initialized with OpenAI successfully");
     } catch (error) {
       console.error("❌ LLM initialization failed:", error);
       console.error("Error details:", error.message);
@@ -49,7 +53,7 @@ class LLMService {
       console.log("=== LLM PROMPT DEBUG ===");
       console.log("RAG Context length:", ragContext.length);
       console.log("Full prompt length:", fullPrompt.length);
-      console.log("Sending to Ollama...");
+      console.log("Sending to OpenAI...");
 
       const response = await this.llmModule.generate(fullPrompt);
 

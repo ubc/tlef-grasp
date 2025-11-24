@@ -1,23 +1,23 @@
-// Simple Server-side Ollama Integration
-// Direct API calls to Ollama without UBC toolkit
+// Simple Server-side OpenAI Integration
+// Direct API calls to OpenAI without UBC toolkit
 
 const express = require("express");
 const router = express.Router();
 
-// Simple Ollama configuration
-const OLLAMA_CONFIG = {
-  baseURL: "http://localhost:11434",
-  model: "llama3.2:latest",
-  temperature: 0.7,
-  maxTokens: 1000,
+// Simple OpenAI configuration
+const OPENAI_CONFIG = {
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+  maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
 };
 
-// Generate questions using direct Ollama API
+// Generate questions using direct OpenAI API
 router.post("/generate-with-rag", express.json(), async (req, res) => {
   try {
     const { objective, content, bloomLevel, course } = req.body;
 
-    console.log("=== DIRECT OLLAMA GENERATION ===");
+    console.log("=== DIRECT OPENAI GENERATION ===");
     console.log("Objective:", objective);
     console.log("Content length:", content.length);
     console.log("Bloom level:", bloomLevel);
@@ -47,58 +47,65 @@ IMPORTANT: Base your question on the specific details, examples, formulas, or co
 
 CONTENT: ${content}`;
 
-    // Call Ollama directly
-    console.log("Sending prompt to Ollama...");
-    const response = await fetch(`${OLLAMA_CONFIG.baseURL}/api/generate`, {
+    // Call OpenAI directly
+    console.log("Sending prompt to OpenAI...");
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_CONFIG.apiKey}`,
       },
       body: JSON.stringify({
-        model: OLLAMA_CONFIG.model,
-        prompt: prompt,
-        stream: false,
-        options: {
-          temperature: OLLAMA_CONFIG.temperature,
-          num_predict: OLLAMA_CONFIG.maxTokens,
-        },
+        model: OPENAI_CONFIG.model,
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: OPENAI_CONFIG.temperature,
+        max_tokens: OPENAI_CONFIG.maxTokens,
       }),
     });
 
     if (!response.ok) {
       throw new Error(
-        `Ollama API error: ${response.status} ${response.statusText}`
+        `OpenAI API error: ${response.status} ${response.statusText}`
       );
     }
 
     const data = await response.json();
-    console.log("✅ Ollama response received");
+    console.log("✅ OpenAI response received");
+
+    // Extract response content
+    const responseContent =
+      data.choices?.[0]?.message?.content || data.response || "";
 
     // Try to parse JSON response
     try {
-      const questionData = JSON.parse(data.response);
+      const questionData = JSON.parse(responseContent);
       res.json({
         success: true,
         question: questionData,
         ragChunks: 0, // No RAG for now
-        method: "Direct Ollama API",
+        method: "Direct OpenAI API",
       });
     } catch (parseError) {
       // If JSON parsing fails, return the raw response
       res.json({
         success: true,
         question: {
-          question: data.response,
+          question: responseContent,
           options: ["Option A", "Option B", "Option C", "Option D"],
           correctAnswer: 0,
-          explanation: "Generated using Direct Ollama API",
+          explanation: "Generated using Direct OpenAI API",
         },
         ragChunks: 0,
-        method: "Direct Ollama API (Raw Response)",
+        method: "Direct OpenAI API (Raw Response)",
       });
     }
   } catch (error) {
-    console.error("Direct Ollama generation failed:", error);
+    console.error("Direct OpenAI generation failed:", error);
     res.status(500).json({
       error: "Question generation failed",
       details: error.message,
