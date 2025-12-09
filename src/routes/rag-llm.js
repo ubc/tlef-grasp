@@ -127,9 +127,7 @@ async function initializeUBCToolkit() {
         }
 
         // Create RAG instance with embeddings configuration
-        // Try local Qdrant first, then fallback to remote
-        const localQdrantUrl = "http://localhost:6333";
-        const remoteQdrantUrl = process.env.QDRANT_URL;
+        const qdrantUrl = process.env.QDRANT_URL;
         const qdrantApiKey = process.env.QDRANT_API_KEY;
         const collectionName =
           process.env.QDRANT_COLLECTION_NAME ||
@@ -138,70 +136,41 @@ async function initializeUBCToolkit() {
           parseInt(process.env.QDRANT_VECTOR_SIZE || process.env.VECTOR_SIZE) ||
           768;
 
-        // Try local Qdrant first
-        let qdrantUrl = localQdrantUrl;
-        let connectionType = "local";
         let lastError = null;
 
-        // Try local first
-        try {
-          console.log(
-            `Attempting to connect to local Qdrant at ${localQdrantUrl}...`
-          );
-          const testResponse = await fetch(`${localQdrantUrl}/collections`, {
-            method: "GET",
-            signal: AbortSignal.timeout(3000), // 3 second timeout
-          });
-          if (testResponse.ok) {
-            console.log("✅ Local Qdrant is reachable");
-            qdrantUrl = localQdrantUrl;
-            connectionType = "local";
-          } else {
-            throw new Error(
-              `Local Qdrant returned status ${testResponse.status}`
+        if (qdrantUrl) {
+          try {
+            console.log(
+              `Attempting to connect to remote Qdrant at ${qdrantUrl}...`
             );
-          }
-        } catch (localError) {
-          console.log(`⚠️  Local Qdrant not available: ${localError.message}`);
-          lastError = localError;
-
-          // Fallback to remote Qdrant
-          if (remoteQdrantUrl) {
-            try {
-              console.log(
-                `Attempting to connect to remote Qdrant at ${remoteQdrantUrl}...`
-              );
-              const remoteTestResponse = await fetch(
-                `${remoteQdrantUrl}/collections`,
-                {
-                  method: "GET",
-                  headers: qdrantApiKey ? { "api-key": qdrantApiKey } : {},
-                  signal: AbortSignal.timeout(5000), // 5 second timeout
-                }
-              );
-              if (remoteTestResponse.ok) {
-                console.log("✅ Remote Qdrant is reachable");
-                qdrantUrl = remoteQdrantUrl;
-                connectionType = "remote";
-              } else {
-                throw new Error(
-                  `Remote Qdrant returned status ${remoteTestResponse.status}`
-                );
+            const qdrantTestResponse = await fetch(
+              `${qdrantUrl}/collections`,
+              {
+                method: "GET",
+                headers: qdrantApiKey ? { "api-key": qdrantApiKey } : {},
+                signal: AbortSignal.timeout(5000), // 5 second timeout
               }
-            } catch (remoteError) {
-              console.error(
-                `❌ Remote Qdrant also failed: ${remoteError.message}`
-              );
-              lastError = remoteError;
+            );
+            if (qdrantTestResponse.ok) {
+              console.log("✅ Qdrant is reachable");
+            } else {
               throw new Error(
-                `Both local and remote Qdrant connections failed. Last error: ${remoteError.message}`
+                `Remote Qdrant returned status ${qdrantTestResponse.status}`
               );
             }
-          } else {
+          } catch (remoteError) {
+            console.error(
+              `❌ Remote Qdrant also failed: ${remoteError.message}`
+            );
+            lastError = remoteError;
             throw new Error(
-              `Local Qdrant failed and no remote QDRANT_URL configured. Error: ${localError.message}`
+              `Both local and remote Qdrant connections failed. Last error: ${remoteError.message}`
             );
           }
+        } else {
+          throw new Error(
+            `Qdrant connection failed. Error: ${localError.message}`
+          );
         }
 
         // Build Qdrant config
@@ -210,15 +179,11 @@ async function initializeUBCToolkit() {
           collectionName: collectionName,
           vectorSize: vectorSize,
           distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
+          apiKey: qdrantApiKey,
         };
 
-        // Add API key only for remote connections
-        if (connectionType === "remote" && qdrantApiKey) {
-          qdrantConfig.apiKey = qdrantApiKey;
-        }
-
         console.log(
-          `Initializing RAG with ${connectionType} Qdrant at ${qdrantUrl}...`
+          `Initializing RAG with Qdrant at ${qdrantUrl}...`
         );
 
         globalRAGInstance = await RAGModule.create({
@@ -233,7 +198,7 @@ async function initializeUBCToolkit() {
           debug: process.env.DEBUG === "true",
         });
         console.log(
-          `✅ Global RAG instance initialized successfully with ${connectionType} Qdrant`
+          `✅ Global RAG instance initialized successfully with Qdrant`
         );
       } catch (ragError) {
         console.error(
@@ -284,6 +249,8 @@ async function ensureRAGInitialized() {
 
 // Add document to RAG
 router.post("/add-document", express.json(), async (req, res) => {
+  await ensureRAGInitialized();
+
   try {
     const { content, metadata } = req.body;
 
@@ -298,11 +265,8 @@ router.post("/add-document", express.json(), async (req, res) => {
     console.log("Content length:", content.length);
     console.log("Metadata:", metadata);
 
-    // Initialize RAG module
-    const ragModule = await RAGModule.create(RAG_CONFIG);
-
     // Add content to RAG
-    const chunkIds = await ragModule.addDocument(content, {
+    const chunkIds = await globalRAGInstance.addDocument(content, {
       ...metadata,
       timestamp: new Date().toISOString(),
     });
@@ -325,6 +289,8 @@ router.post("/add-document", express.json(), async (req, res) => {
 
 // Search RAG knowledge base
 router.post("/search", express.json(), async (req, res) => {
+  await ensureRAGInitialized();
+
   try {
     const { query, limit = 5 } = req.body;
 
@@ -364,38 +330,6 @@ router.post("/search", express.json(), async (req, res) => {
   }
 });
 
-// RAG Configuration - Enabled with proper embeddings
-// Note: This is a fallback config. The global RAG instance uses the updated config above.
-const RAG_CONFIG = {
-  provider: "qdrant",
-  qdrantConfig: {
-    url: process.env.QDRANT_URL || "http://localhost:6333",
-    collectionName:
-      process.env.QDRANT_COLLECTION_NAME || "question-generation-collection",
-    vectorSize:
-      parseInt(process.env.QDRANT_VECTOR_SIZE || process.env.VECTOR_SIZE) ||
-      768,
-    distanceMetric: process.env.DISTANCE_METRIC || "Cosine",
-  },
-  embeddingsConfig: {
-    providerType: "fastembed",
-    fastembedConfig: {
-      model: process.env.EMBEDDINGS_MODEL || "fast-bge-small-en-v1.5",
-    },
-  },
-  debug: process.env.DEBUG === "true",
-};
-
-// LLM Configuration
-const LLM_CONFIG = {
-  provider: process.env.LLM_PROVIDER || "openai",
-  apiKey: process.env.OPENAI_API_KEY,
-  defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-  temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-  maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
-  debug: process.env.DEBUG === "true",
-};
-
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
   console.error("Question generation failed:", error);
@@ -408,6 +342,8 @@ function returnErrorResponse(res, error, details = null) {
 
 // Generate questions using RAG + LLM
 router.post("/generate-with-rag", express.json(), async (req, res) => {
+  await ensureRAGInitialized();
+  
   try {
     const { objective, content, bloomLevel, course } = req.body;
 
