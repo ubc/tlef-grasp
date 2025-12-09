@@ -10,11 +10,19 @@ class DatabaseService {
   }
 
   async connect() {
+    if ( ! process.env.MONGO_INITDB_ROOT_USERNAME || ! process.env.MONGO_INITDB_ROOT_PASSWORD || ! process.env.MONGODB_HOST || ! process.env.MONGODB_PORT || ! process.env.MONGODB_DB_NAME ) {
+      throw new Error("Missing MongoDB connection variables. Please set MONGO_INITDB_ROOT_USERNAME, MONGO_INITDB_ROOT_PASSWORD, MONGODB_HOST, MONGODB_PORT, and MONGODB_DB_NAME in your .env file.");
+    }
+    
+    // Validate required environment variables
     const dbName = process.env.MONGODB_DB_NAME || "grasp_db";
+    const username = process.env.MONGO_INITDB_ROOT_USERNAME;
+    const password = process.env.MONGO_INITDB_ROOT_PASSWORD;
+    const host = process.env.MONGODB_HOST || "localhost";
+    const port = process.env.MONGODB_PORT || "27017";
 
-    // Define local and remote MongoDB URIs
-    const localUri = "mongodb://localhost:27017";
-    const remoteUri = process.env.MONGODB_URI;
+    // Construct MongoDB URI
+    const mongodbUri = `mongodb://${username}:${password}@${host}:${port}/`;
 
     // Connection options with shorter timeout for faster fallback
     const connectionOptions = {
@@ -22,73 +30,28 @@ class DatabaseService {
       serverSelectionTimeoutMS: 5000,
     };
 
-    // Try local MongoDB first (faster if available)
-    if (localUri) {
-      try {
-        console.log("Attempting to connect to local MongoDB...");
-        this.client = new MongoClient(localUri, connectionOptions);
-        await this.client.connect();
-        this.db = this.client.db(dbName);
-        this.isConnected = true;
-        this.connectionUri = localUri;
-        this.connectionType = "local";
-
-        console.log("✅ Connected to local MongoDB");
-        await this.initializeCollections();
-        return this.db;
-      } catch (localError) {
-        console.log(
-          `⚠️  Local MongoDB connection failed: ${localError.message}`
-        );
-        // Close the failed connection attempt
-        if (this.client) {
-          try {
-            await this.client.close();
-          } catch (closeError) {
-            // Ignore close errors
-          }
-          this.client = null;
+    try {
+      console.log("Attempting to connect to MongoDB...");
+      this.client = new MongoClient(mongodbUri, connectionOptions);
+      await this.client.connect();
+      this.db = this.client.db(dbName);
+      this.isConnected = true;
+      this.connectionUri = mongodbUri;
+      this.connectionType = username ? "authenticated" : "local";
+      console.log("✅ Successfully connected to MongoDB");
+    } catch (error) {
+      console.error("❌ Error connecting to MongoDB:", error.message);
+      // Close the failed connection attempt
+      if (this.client) {
+        try {
+          await this.client.close();
+        } catch (closeError) {
+          // Ignore close errors
         }
+        this.client = null;
       }
-    }
-
-    // Fallback to remote MongoDB if local failed
-    if (remoteUri) {
-      try {
-        console.log("Attempting to connect to remote MongoDB...");
-        this.client = new MongoClient(remoteUri, connectionOptions);
-        await this.client.connect();
-        this.db = this.client.db(dbName);
-        this.isConnected = true;
-        this.connectionUri = remoteUri;
-        this.connectionType = "remote";
-
-        console.log("✅ Connected to remote MongoDB");
-        await this.initializeCollections();
-        return this.db;
-      } catch (remoteError) {
-        console.error(
-          "❌ Remote MongoDB connection error:",
-          remoteError.message
-        );
-        // Close the failed connection attempt
-        if (this.client) {
-          try {
-            await this.client.close();
-          } catch (closeError) {
-            // Ignore close errors
-          }
-          this.client = null;
-        }
-        throw new Error(
-          `Failed to connect to both local and remote MongoDB. Last error: ${remoteError.message}`
-        );
-      }
-    } else {
-      // No remote URI configured and local failed
-      throw new Error(
-        "No MongoDB URI configured and local connection failed. Please set MONGODB_URI in your .env file."
-      );
+      this.isConnected = false;
+      throw error;
     }
   }
 
