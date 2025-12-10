@@ -96,7 +96,7 @@ function updateCourseSelector(courses) {
       option.value = course.courseCode;
       option.textContent = `${course.courseName}`;
 
-      if ( course._id === sessionStorage.getItem("grasp-selected-course-id") ) {
+      if ( course.courseCode === sessionStorage.getItem("grasp-selected-course-code") ) {
         option.selected = true;
       }
       courseSelector.appendChild(option);

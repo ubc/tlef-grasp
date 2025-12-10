@@ -12,7 +12,7 @@ let pdfService = null;
 // Main state object
 const state = {
   step: 1,
-  course: "",
+  course: sessionStorage.getItem("grasp-selected-course-code") || "",
   selectedCourse: "", // Global course selection for Steps 2-5
   files: [],
   urls: [],
@@ -820,7 +820,7 @@ function updateCourseDropdown(courses) {
       option.value = course.courseCode;
       option.textContent = `${course.courseName}`;
 
-      if ( course._id === sessionStorage.getItem("grasp-selected-course-id") ) {
+      if ( course.courseCode === sessionStorage.getItem("grasp-selected-course-code") ) {
         option.selected = true;
       }
       courseSelect.appendChild(option);
@@ -1322,6 +1322,8 @@ async function addFiles(files) {
       }
 
       state.files.push(fileObj);
+
+      // TODO: Also save to database.
     }
 
     renderFileList();

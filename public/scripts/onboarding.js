@@ -194,7 +194,7 @@ class OnboardingManager {
           </div>
         </div>
         <div class="course-actions">
-          <button class="access-btn" onclick="accessCourseDashboard('${course._id}')" title="Access Dashboard">
+          <button class="access-btn" onclick="accessCourseDashboard('${course.courseCode}')" title="Access Dashboard">
             <i class="fas fa-arrow-right"></i>
             <span>Access</span>
           </button>
@@ -217,7 +217,7 @@ class OnboardingManager {
     if (noCoursesElement) noCoursesElement.style.display = "block";
   }
 
-  async accessCourseDashboard(courseId) {
+  async accessCourseDashboard(courseCode) {
     try {
       // Show loading state
       const button = event.target.closest(".access-btn");
@@ -225,7 +225,7 @@ class OnboardingManager {
       button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accessing...';
       button.disabled = true;
 
-      sessionStorage.setItem("grasp-selected-course-id", courseId);
+      sessionStorage.setItem("grasp-selected-course-code", courseCode);
       window.location.href = "/dashboard.html";
     } catch (error) {
       console.error("Error accessing course dashboard:", error);
@@ -419,7 +419,7 @@ class OnboardingManager {
       const result = await response.json();
       console.log("Course profile saved successfully:", result);
 
-      sessionStorage.setItem("grasp-selected-course-id", result.course._id);
+      sessionStorage.setItem("grasp-selected-course-id", result.course.courseCode);
       return result;
     } catch (error) {
       console.error("Error saving course profile:", error);
