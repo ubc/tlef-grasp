@@ -122,47 +122,67 @@ class GRASPNavigation {
     if (this.currentRole === "student") {
       return `
         <li class="nav-item" data-page="my-quizzes">
-          <i class="fas fa-list-check"></i>
-          <span><a href="student-dashboard.html" style="text-decoration: none; color: inherit;">My Quizzes</a></span>
+          <a href="student-dashboard.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-list-check"></i>
+            <span>My Quizzes</span>
+          </a>
         </li>
         <li class="nav-item" data-page="course-materials">
-          <i class="fas fa-book"></i>
-          <span><a href="course-materials.html" style="text-decoration: none; color: inherit;">Course Materials</a></span>
+          <a href="course-materials.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-book"></i>
+            <span>Course Materials</span>
+          </a>
         </li>
         <li class="nav-item" data-page="achievements">
-          <i class="fas fa-trophy"></i>
-          <span><a href="achievements.html" style="text-decoration: none; color: inherit;">Achievements</a></span>
+          <a href="achievements.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-trophy"></i>
+            <span>Achievements</span>
+          </a>
         </li>
         <li class="nav-item" data-page="settings">
-          <i class="fas fa-cog"></i>
-          <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+          <a href="settings.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+          </a>
         </li>
       `;
     } else {
       return `
         <li class="nav-item" data-page="dashboard">
-          <i class="fas fa-home"></i>
-          <span><a href="dashboard.html" style="text-decoration: none; color: inherit;">Dashboard</a></span>
+          <a href="dashboard.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-home"></i>
+            <span>Dashboard</span>
+          </a>
         </li>
         <li class="nav-item" data-page="question-bank">
-          <i class="fas fa-book"></i>
-          <span><a href="question-bank.html" style="text-decoration: none; color: inherit;">Question Bank</a></span>
+          <a href="question-bank.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-book"></i>
+            <span>Question Bank</span>
+          </a>
         </li>
         <li class="nav-item" data-page="question-generation">
-          <i class="fas fa-puzzle-piece"></i>
-          <span><a href="question-generation.html" style="text-decoration: none; color: inherit;">Question Generation</a></span>
+          <a href="question-generation.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-puzzle-piece"></i>
+            <span>Question Generation</span>
+          </a>
         </li>
         <li class="nav-item" data-page="course-materials">
-          <i class="fas fa-folder"></i>
-          <span>Course Materials</span>
+          <a href="course-materials.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-folder"></i>
+            <span>Course Materials</span>
+          </a>
         </li>
         <li class="nav-item" data-page="users">
-          <i class="fas fa-users"></i>
-          <span>Users</span>
+          <a href="users.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-users"></i>
+            <span>Users</span>
+          </a>
         </li>
         <li class="nav-item" data-page="settings">
-          <i class="fas fa-cog"></i>
-          <span><a href="settings.html" style="text-decoration: none; color: inherit;">Settings</a></span>
+          <a href="settings.html" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+          </a>
         </li>
       `;
     }
@@ -325,7 +345,6 @@ class GRASPNavigation {
         display: flex;
         align-items: center;
         gap: 15px;
-        padding: 15px 20px;
         margin-bottom: 8px;
         border-radius: 10px;
         cursor: pointer;
@@ -334,6 +353,12 @@ class GRASPNavigation {
         font-size: 15px;
         font-weight: 500;
         letter-spacing: -0.2px;
+
+        a {
+          padding: 15px 20px;
+          display: block;
+          width: 100%;
+        }
       }
 
       .nav-item:hover {
