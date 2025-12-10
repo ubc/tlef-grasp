@@ -817,8 +817,12 @@ function updateCourseDropdown(courses) {
     // Add course options
     courses.forEach((course) => {
       const option = document.createElement("option");
-      option.value = course.code;
-      option.textContent = `${course.code} - ${course.name}`;
+      option.value = course.courseCode;
+      option.textContent = `${course.courseName}`;
+
+      if ( course._id === sessionStorage.getItem("grasp-selected-course-id") ) {
+        option.selected = true;
+      }
       courseSelect.appendChild(option);
     });
   }
