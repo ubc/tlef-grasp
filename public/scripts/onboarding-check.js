@@ -2,21 +2,20 @@
 // This script should be included on all pages that require onboarding
 
 function checkOnboardingStatus() {
-  const isOnboarded = sessionStorage.getItem("onboarded");
+  const isOnboarded = null !== sessionStorage.getItem("grasp-selected-course-id");
   const currentPath = window.location.pathname;
 
-  // If user is already onboarded and trying to access onboarding page, redirect to dashboard
-  if (isOnboarded === "true" && currentPath === "/onboarding") {
+  if ( isOnboarded && currentPath === "/onboarding" ) {
     window.location.href = "/dashboard";
-    return;
   }
 
-  // If user hasn't been onboarded and not on onboarding page, redirect to onboarding
-  // Exclude certain pages that don't require onboarding
-  const publicPages = ["/onboarding", "/", "/index.html"];
-  if (isOnboarded !== "true" && !publicPages.includes(currentPath)) {
-    window.location.href = "/onboarding";
+  if ( isOnboarded ) {
     return;
+  }
+  
+  // If user is already onboarded and trying to access onboarding page, redirect to dashboard
+  if ( currentPath !== "/onboarding") {
+    window.location.href = "/onboarding";
   }
 }
 

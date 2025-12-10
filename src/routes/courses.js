@@ -1,12 +1,16 @@
 const express = require("express");
 const router = express.Router();
-
-// Course data storage (in-memory for now, replace with database integration)
-let courses = [];
+const { createCourse, getCourseByCourseCode, getCourseById } = require('../services/database/course');
+const { createUserCourse } = require('../services/database/user-course');
+const { getUserCourses } = require('../services/database/user-course');
 
 // Get all courses
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const userId = req.user._id;
+    const userCourses = await getUserCourses(userId);
+    const courses = userCourses.map((course) => course.course);
+
     res.json({
       success: true,
       courses: courses,
@@ -18,10 +22,10 @@ router.get("/", (req, res) => {
 });
 
 // Get course by ID
-router.get("/:courseId", (req, res) => {
+router.get("/:courseId", async (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = courses.find((c) => c.id === courseId);
+    const course = await getCourseById(courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -151,7 +155,7 @@ router.put(
 );
 
 // Create new course
-router.post("/", express.json(), (req, res) => {
+router.post("/new", express.json(), async (req, res) => {
   try {
     const {
       courseCode,
@@ -181,20 +185,50 @@ router.post("/", express.json(), (req, res) => {
       });
     }
 
-    // Generate unique course ID
-    const courseId = courseCode.toLowerCase().replace(/\s+/g, "");
-
     // Check if course already exists
-    const existingCourse = courses.find((c) => c.id === courseId);
+    const existingCourse = await getCourseByCourseCode(courseCode);
     if (existingCourse) {
       return res
         .status(409)
         .json({ error: "Course with this code already exists" });
     }
 
-    // Create new course
+    // Prepare course data for database
+    const courseData = {
+      courseCode: courseCode.trim(),
+      courseTitle: courseTitle.trim(),
+      courseName: courseName || `${courseCode} - ${courseTitle}`,
+      instructorName,
+      semester: semester.trim(),
+      expectedStudents,
+      courseDescription: courseDescription || "",
+      courseWeeks: courseWeeks || null,
+      lecturesPerWeek: lecturesPerWeek || null,
+      courseCredits: courseCredits || null,
+      status: status,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Create course in database
+    const result = await createCourse(courseData);
+    const courseId = result.insertedId;
+
+    // Get the current user from session (set by passport authentication)
+    const userId = req.user?._id;
+    if (userId) {
+      // Create user-course relationship
+      try {
+        await createUserCourse(userId, courseId);
+      } catch (userCourseError) {
+        console.error("Error creating user-course relationship:", userCourseError);
+        // Don't fail the request if user-course creation fails, but log it
+      }
+    }
+
+    // Return the created course with all fields
     const newCourse = {
-      id: courseId,
+      _id: courseId.toString(),
       code: courseCode,
       name: courseTitle,
       fullName: courseName || `${courseCode} - ${courseTitle}`,
@@ -212,9 +246,6 @@ router.post("/", express.json(), (req, res) => {
       updatedAt: new Date().toISOString(),
     };
 
-    // Add to courses array (in real app, this would be saved to database)
-    courses.push(newCourse);
-
     res.status(201).json({
       success: true,
       message: "Course created successfully",
@@ -222,7 +253,10 @@ router.post("/", express.json(), (req, res) => {
     });
   } catch (error) {
     console.error("Error creating course:", error);
-    res.status(500).json({ error: "Failed to create course" });
+    res.status(500).json({ 
+      error: "Failed to create course",
+      details: error.message 
+    });
   }
 });
 

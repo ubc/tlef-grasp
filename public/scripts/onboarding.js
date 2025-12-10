@@ -179,22 +179,22 @@ class OnboardingManager {
     courses.forEach((course) => {
       const courseItem = document.createElement("div");
       courseItem.className = "course-item";
-      courseItem.dataset.courseId = course.id;
+      courseItem.dataset.courseId = course._id;
 
       courseItem.innerHTML = `
         <div class="course-icon">
           <i class="fas fa-graduation-cap"></i>
         </div>
         <div class="course-info">
-          <div class="course-name">${course.name}</div>
+          <div class="course-name">${course.courseName}</div>
           <div class="course-details">
-            <span><i class="fas fa-user"></i> ${course.instructor}</span>
+            <span><i class="fas fa-user"></i> ${course.instructorName}</span>
             <span><i class="fas fa-calendar"></i> ${course.semester}</span>
-            <span><i class="fas fa-users"></i> ${course.students} students</span>
+            <span><i class="fas fa-users"></i> ${course.expectedStudents} students</span>
           </div>
         </div>
         <div class="course-actions">
-          <button class="access-btn" onclick="accessCourseDashboard('${course.id}')" title="Access Dashboard">
+          <button class="access-btn" onclick="accessCourseDashboard('${course._id}')" title="Access Dashboard">
             <i class="fas fa-arrow-right"></i>
             <span>Access</span>
           </button>
@@ -225,32 +225,8 @@ class OnboardingManager {
       button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accessing...';
       button.disabled = true;
 
-      // Get course details
-      const response = await fetch(`/api/courses/${courseId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.success && data.course) {
-        // Store course profile in session storage
-        const profile = {
-          instructorName: data.course.instructor,
-          courseId: data.course.id,
-          courseName: data.course.name,
-          courseCode: data.course.code,
-          loginTime: new Date().toISOString(),
-        };
-        sessionStorage.setItem("courseProfile", JSON.stringify(profile));
-
-        // Mark user as onboarded to prevent redirect back to onboarding
-        sessionStorage.setItem("onboarded", "true");
-
-        // Redirect to dashboard
-        window.location.href = "/dashboard.html";
-      } else {
-        throw new Error("Course not found");
-      }
+      sessionStorage.setItem("grasp-selected-course-id", courseId);
+      window.location.href = "/dashboard.html";
     } catch (error) {
       console.error("Error accessing course dashboard:", error);
       this.showError("Failed to access dashboard. Please try again.");
@@ -418,7 +394,7 @@ class OnboardingManager {
       // Log the data being sent for debugging
       console.log("Saving course profile with data:", this.courseData);
 
-      const response = await fetch("/api/courses", {
+      const response = await fetch("/api/courses/new", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -442,6 +418,8 @@ class OnboardingManager {
 
       const result = await response.json();
       console.log("Course profile saved successfully:", result);
+
+      sessionStorage.setItem("grasp-selected-course-id", result.course._id);
       return result;
     } catch (error) {
       console.error("Error saving course profile:", error);
@@ -501,10 +479,6 @@ class OnboardingManager {
       completionElement.classList.add("active");
       completionElement.classList.add("success-animation");
     }
-
-    // Mark session as onboarded
-    sessionStorage.setItem("onboarded", "true");
-    sessionStorage.setItem("courseProfile", JSON.stringify(this.courseData));
   }
 
   showLoading(show) {
@@ -583,37 +557,6 @@ document.addEventListener("DOMContentLoaded", () => {
   window.onboardingManager = new OnboardingManager();
 });
 
-// Check if user has already been onboarded
-function checkOnboardingStatus() {
-  const isOnboarded = sessionStorage.getItem("onboarded");
-  const courseProfile = sessionStorage.getItem("courseProfile");
-  const currentPath = window.location.pathname;
-
-  // If user is already onboarded and trying to access onboarding page, redirect to dashboard
-  if (isOnboarded === "true" && currentPath === "/onboarding") {
-    window.location.href = "/dashboard";
-    return;
-  }
-
-  // If user has a course profile (logged in via existing course) and trying to access onboarding, redirect to dashboard
-  if (courseProfile && currentPath === "/onboarding") {
-    window.location.href = "/dashboard";
-    return;
-  }
-
-  // If user hasn't been onboarded and not on onboarding page, redirect to onboarding
-  // Exclude certain pages that don't require onboarding
-  const publicPages = ["/onboarding", "/", "/index.html"];
-  if (
-    isOnboarded !== "true" &&
-    !courseProfile &&
-    !publicPages.includes(currentPath)
-  ) {
-    window.location.href = "/onboarding";
-    return;
-  }
-}
-
 // Global functions for HTML onclick handlers
 function accessCourseDashboard(courseId) {
   if (window.onboardingManager) {
@@ -632,6 +575,3 @@ function switchToSetupTab() {
 document.addEventListener("DOMContentLoaded", () => {
   window.onboardingManager = new OnboardingManager();
 });
-
-// Run onboarding check when page loads
-document.addEventListener("DOMContentLoaded", checkOnboardingStatus);
