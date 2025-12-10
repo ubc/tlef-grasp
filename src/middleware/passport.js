@@ -34,7 +34,7 @@ passport.use(
 		async (profile, done) => {
 			// profile.nameID - SAML nameID
 			// profile.attributes - Mapped attributes based on attributeConfig
-
+			
             // Making sure PUID is present
             if (!profile.attributes.ubcEduCwlPuid) {
                 return done(new Error("PUID is required"));
@@ -50,9 +50,13 @@ passport.use(
 
 			// Get database connection and save user
 			try {
-				await createOrUpdateUser(profile);
-				
 				const user = await getUserByPuid(profile.attributes.ubcEduCwlPuid);
+
+				if ( null === user ) {
+					await createOrUpdateUser(profile);
+					user = await getUserByPuid(profile.attributes.ubcEduCwlPuid);
+				}
+				
 				return done(null, user);
 			} catch (error) {
 				// Log error but don't fail authentication
