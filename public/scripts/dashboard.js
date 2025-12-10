@@ -33,15 +33,14 @@ async function initializeDashboard() {
 
 async function loadUserData() {
   try {
-    // Get user data from session storage (set during onboarding)
-    const courseProfile = sessionStorage.getItem("courseProfile");
-
-    if (courseProfile) {
-      const profile = JSON.parse(courseProfile);
-      updateWelcomeMessage(profile.instructorName);
+    const response = await fetch("/api/current-user");
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.user) {
+        updateWelcomeMessage(data.user.firstName + " " + data.user.lastName);
+      }
     } else {
-      // If no profile found, redirect to onboarding
-      window.location.href = "/onboarding";
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
   } catch (error) {
     console.error("Error loading user data:", error);
@@ -94,8 +93,12 @@ function updateCourseSelector(courses) {
     // Add course options
     courses.forEach((course) => {
       const option = document.createElement("option");
-      option.value = course.code;
-      option.textContent = `${course.code} - ${course.name}`;
+      option.value = course.courseCode;
+      option.textContent = `${course.courseName}`;
+
+      if ( course._id === sessionStorage.getItem("grasp-selected-course-id") ) {
+        option.selected = true;
+      }
       courseSelector.appendChild(option);
     });
   }
