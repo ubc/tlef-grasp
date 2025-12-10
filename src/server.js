@@ -19,17 +19,20 @@ const port = process.env.TLEF_GRASP_PORT || 8070;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const sessionMiddleware = require('./middleware/session');
+const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
-
-const authRoutes = require('./routes/auth');
-const { ensureAuthenticated } = require('passport-ubcshib');
+const { dbMiddleware } = require('./middleware/database');
 
 // Session middleware - must be before passport
 app.use(sessionMiddleware);
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+// Database middleware
+app.use(dbMiddleware);
+
+const authRoutes = require('./routes/auth');
+const { ensureAuthenticated } = require('passport-ubcshib');
 
 // Authentication routes (no /api prefix as they serve HTML too)
 app.use('/auth', authRoutes);

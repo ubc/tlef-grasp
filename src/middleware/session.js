@@ -17,7 +17,11 @@ const sessionConfig = {
         httpOnly: true, // Prevent client-side JS from accessing the cookie
         maxAge: parseInt(process.env.SESSION_TIMEOUT_MS) || 7200000 // 2 hours default
     },
-    name: 'biocbot.sid' // Custom session ID name
+    name: 'grasp.sid' // Custom session ID name
 };
 
-module.exports = session(sessionConfig);
+const sessionMiddleware = session(sessionConfig);
+
+module.exports = {
+    sessionMiddleware,
+};
