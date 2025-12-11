@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initializeCourseMaterials();
 });
 
-function initializeCourseMaterials() {
+async function initializeCourseMaterials() {
   console.log("Initializing Course Materials page...");
   console.log("Course materials script is running!");
 
@@ -20,7 +20,10 @@ function initializeCourseMaterials() {
   document.title = "Course Materials - GRASP";
 
   // Load course data first
-  loadCourseData();
+  await loadCourseMaterials();
+
+  // Load materials
+  loadMaterials();
 
   // Initialize filters
   initializeFilters();
@@ -29,168 +32,86 @@ function initializeCourseMaterials() {
   initializeSearch();
 }
 
-async function loadCourseData() {
+async function loadCourseMaterials() {
   try {
-    console.log("Loading course data...");
-    const response = await fetch("/api/courses");
-    console.log("Response status:", response.status);
+    const courseId = JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+    const response = await fetch(`/api/material/course/${courseId}`);
     const data = await response.json();
-    console.log("Course data received:", data);
 
-    if (data.success && data.courses) {
-      console.log("Courses found:", data.courses.length);
-      // Update course filter dropdown
-      updateCourseFilter(data.courses);
+    if (data.success && data.materials) {
+      materials = data.materials;
+
+      filteredMaterials = [...materials];
     } else {
       console.log("No courses found or invalid response");
     }
 
-    // Load materials (initially empty)
-    loadMaterials();
   } catch (error) {
     console.error("Error loading course data:", error);
     showNotification("Error loading course data", "error");
   }
 }
 
-function updateCourseFilter(courses) {
-  console.log("updateCourseFilter called with courses:", courses);
-  const courseFilter = document.getElementById("courseFilter");
-  console.log("Course filter element:", courseFilter);
-
-  if (!courseFilter) {
-    console.error("Course filter element not found!");
-    return;
-  }
-
-  // Clear existing options except "All Courses"
-  courseFilter.innerHTML = '<option value="all">All Courses</option>';
-
-  // Add course options
-  courses.forEach((course) => {
-    console.log("Adding course option:", course.code, course.name);
-    const option = document.createElement("option");
-    option.value = course.code;
-    option.textContent = `${course.code} - ${course.name}`;
-    courseFilter.appendChild(option);
-  });
-
-  console.log("Course filter updated with", courses.length, "courses");
-}
-
-function loadMaterials() {
-  const materialsGrid = document.getElementById("materialsGrid");
-  const noResults = document.getElementById("noResults");
-
-  if (filteredMaterials.length === 0) {
-    materialsGrid.style.display = "none";
-    noResults.style.display = "flex";
-    return;
-  }
-
-  materialsGrid.style.display = "grid";
-  noResults.style.display = "none";
-
-  materialsGrid.innerHTML = "";
-
-  filteredMaterials.forEach((material) => {
-    const materialCard = createMaterialCard(material);
-    materialsGrid.appendChild(materialCard);
-  });
-}
-
 function createMaterialCard(material) {
   const card = document.createElement("div");
   card.className = "material-card";
 
-  const typeIcon = getTypeIcon(material.type);
-  const typeLabel = getTypeLabel(material.type);
+  const typeIcon = getTypeIcon(material.fileType);
+  const typeLabel = getTypeLabel(material.fileType);
 
   card.innerHTML = `
         <div class="material-header">
-            <div class="material-icon ${material.type}">
+            <div class="material-icon ${typeLabel.toLowerCase()}">
                 <i class="${typeIcon}"></i>
             </div>
             <div class="material-info">
-                <h3 class="material-title">${material.title}</h3>
+                <h3 class="material-title">${material.fileName}</h3>
                 <p class="material-type">${typeLabel}</p>
-                <p class="material-meta">Week ${material.week} • ${
-    material.lecture
-  }</p>
+                <p class="material-size">Size: ${formatFileSize(material.fileSize)}</p>
+                <p class="material-createdAt">Uploaded on ${new Date(material.createdAt).toLocaleDateString()}</p>
             </div>
-        </div>
-        
-        <div class="material-description">
-            ${material.description}
-        </div>
-        
-        <div class="material-objectives">
-            ${material.objectives
-              .map(
-                (obj) =>
-                  `<span class="objective-tag" data-objective="${obj}">${obj}</span>`
-              )
-              .join("")}
-        </div>
-        
+        </div>`;
+
+  if ( material.sourceId ) {
+    card.innerHTML += `
         <div class="material-footer">
-            <span class="related-questions">${
-              material.relatedQuestions
-            } related questions</span>
-            <button class="view-button" onclick="viewMaterial('${
-              material.id
-            }')">
-                View
+            <button class="view-button delete-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+                Delete
             </button>
         </div>
     `;
+  }
 
-  // Add click handler for objective tags
-  const objectiveTags = card.querySelectorAll(".objective-tag");
-  objectiveTags.forEach((tag) => {
-    tag.addEventListener("click", function (e) {
-      e.stopPropagation();
-      filterByObjective(tag.dataset.objective);
+  // Add click handler for delete button
+  const deleteButton = card.querySelector(".delete-button");
+  if (deleteButton) {
+    deleteButton.addEventListener("click", function (e) {
+      e.stopPropagation(); // Prevent card click
+      showDeleteConfirmation(material.sourceId, material.fileName);
     });
-  });
-
-  // Add click handler for card
-  card.addEventListener("click", function () {
-    viewMaterial(material.id);
-  });
+  }
 
   return card;
 }
 
 function getTypeIcon(type) {
-  const icons = {
-    pdf: "fas fa-file-pdf",
-    video: "fas fa-play",
-    textbook: "fas fa-book",
-    link: "fas fa-external-link-alt",
-  };
-  return icons[type] || "fas fa-file";
+  if (type.includes("pdf")) return "fas fa-file-pdf";
+  if (type.includes("text")) return "fas fa-file-alt";
+  if (type.includes("word")) return "fas fa-file-word";
+  if (type.includes("link")) return "fas fa-link";
+  return "fas fa-file";
 }
 
 function getTypeLabel(type) {
-  const labels = {
-    pdf: "PDF",
-    video: "Video",
-    textbook: "Textbook",
-    link: "Link",
-  };
-  return labels[type] || "File";
+  if (type.includes("pdf")) return "PDF";
+  if (type.includes("text")) return "TextBook";
+  if (type.includes("word")) return "WordDocument";
+  if (type.includes("link")) return "Link";
+  return "File";
 }
 
 function initializeFilters() {
-  const courseFilter = document.getElementById("courseFilter");
-  const weekFilter = document.getElementById("weekFilter");
-  const objectiveFilter = document.getElementById("objectiveFilter");
   const typeFilter = document.getElementById("typeFilter");
-
-  courseFilter.addEventListener("change", applyFilters);
-  weekFilter.addEventListener("change", applyFilters);
-  objectiveFilter.addEventListener("change", applyFilters);
   typeFilter.addEventListener("change", applyFilters);
 }
 
@@ -203,40 +124,19 @@ function initializeSearch() {
 }
 
 function applyFilters() {
-  const courseFilter = document.getElementById("courseFilter").value;
-  const weekFilter = document.getElementById("weekFilter").value;
-  const objectiveFilter = document.getElementById("objectiveFilter").value;
   const typeFilter = document.getElementById("typeFilter").value;
   const searchTerm = document.getElementById("searchInput").value.toLowerCase();
 
   filteredMaterials = materials.filter((material) => {
-    // Course filter
-    if (courseFilter !== "all" && material.course !== courseFilter) {
-      return false;
-    }
-
-    // Week filter
-    if (weekFilter !== "all" && material.week.toString() !== weekFilter) {
-      return false;
-    }
-
-    // Objective filter
-    if (
-      objectiveFilter !== "all" &&
-      !material.objectives.includes(objectiveFilter)
-    ) {
-      return false;
-    }
-
     // Type filter
-    if (typeFilter !== "all" && material.type !== typeFilter) {
+    if (typeFilter !== "all" && material.fileType !== typeFilter) {
       return false;
     }
 
     // Search filter
     if (
       searchTerm &&
-      !material.title.toLowerCase().includes(searchTerm) &&
+      !material.fileName.toLowerCase().includes(searchTerm) &&
       !material.description.toLowerCase().includes(searchTerm)
     ) {
       return false;
@@ -248,34 +148,100 @@ function applyFilters() {
   loadMaterials();
 }
 
-function filterByObjective(objective) {
-  const objectiveFilter = document.getElementById("objectiveFilter");
-  objectiveFilter.value = objective;
-  applyFilters();
+// Show delete confirmation modal
+function showDeleteConfirmation(sourceId, materialName) {
+  const modal = document.getElementById("delete-confirmation-modal");
+  const materialNameEl = document.getElementById("delete-material-name");
+  const confirmBtn = document.getElementById("delete-modal-confirm");
+  const cancelBtn = document.getElementById("delete-modal-cancel");
+  const closeBtn = document.getElementById("delete-modal-close");
+
+  // Set material name
+  materialNameEl.textContent = materialName;
+
+  // Show modal
+  modal.classList.add("modal--active");
+
+  // Remove existing event listeners by cloning and replacing
+  const newConfirmBtn = confirmBtn.cloneNode(true);
+  confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+  const newCancelBtn = cancelBtn.cloneNode(true);
+  cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+  const newCloseBtn = closeBtn.cloneNode(true);
+  closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+
+  // Add event listeners
+  newConfirmBtn.addEventListener("click", () => {
+    closeDeleteModal();
+    confirmDelete(sourceId);
+  });
+
+  newCancelBtn.addEventListener("click", closeDeleteModal);
+  newCloseBtn.addEventListener("click", closeDeleteModal);
+
+  // Close on backdrop click
+  modal.addEventListener("click", function(e) {
+    if (e.target === modal) {
+      closeDeleteModal();
+    }
+  });
 }
 
-function viewMaterial(materialId) {
-  const material = materials.find((m) => m.id === materialId);
+function closeDeleteModal() {
+  const modal = document.getElementById("delete-confirmation-modal");
+  modal.classList.remove("modal--active");
+}
+
+async function confirmDelete(sourceId) {
+  // Delete material from RAG.
+  let response = await fetch(`/api/rag-llm/delete-document/${sourceId}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  let data = await response.json();
+
+  if (!data.success) {
+    showNotification("Failed to delete material from RAG", "error");
+    return;
+  }
+  
+  // Delete material from database.
+  response = await fetch(`/api/material/delete/${sourceId}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  data = await response.json();
+
+  if (!data.success) {
+    showNotification("Failed to delete material from database", "error");
+    return;
+  }
+
+  // Remove material from arrays
+  materials = materials.filter((material) => material.sourceId !== sourceId);
+  filteredMaterials = filteredMaterials.filter((material) => material.sourceId !== sourceId);
+
+  // Reload materials.
+  loadMaterials();
+
+  showNotification("Material deleted successfully", "success");
+}
+
+// Keep deleteMaterial for backward compatibility (now shows confirmation)
+async function deleteMaterial(sourceId) {
+  const material = materials.find((m) => m.sourceId === sourceId);
   if (material) {
-    console.log(`Viewing material: ${material.title}`);
-
-    // In a real application, this would open the material
-    // For now, we'll show an alert
-    alert(
-      `Opening: ${
-        material.title
-      }\n\nThis would normally open the ${material.type.toUpperCase()} material.`
-    );
-
-    // You could also redirect to a material viewer page:
-    // window.location.href = `material-viewer.html?id=${materialId}`;
+    showDeleteConfirmation(sourceId, material.fileName);
   }
 }
 
 function clearFilters() {
-  document.getElementById("courseFilter").value = "all";
-  document.getElementById("weekFilter").value = "all";
-  document.getElementById("objectiveFilter").value = "all";
   document.getElementById("typeFilter").value = "all";
   document.getElementById("searchInput").value = "";
 
@@ -339,11 +305,32 @@ function addMaterial(material) {
   loadMaterials();
 }
 
+function loadMaterials() {
+  const materialsGrid = document.getElementById("materialsGrid");
+  const noResults = document.getElementById("noResults");
+
+  if (filteredMaterials.length === 0) {
+    materialsGrid.style.display = "none";
+    noResults.style.display = "flex";
+    return;
+  }
+
+  materialsGrid.style.display = "grid";
+  noResults.style.display = "none";
+
+  materialsGrid.innerHTML = "";
+console.log("Loading materials:", filteredMaterials);
+  filteredMaterials.forEach((material) => {
+    const materialCard = createMaterialCard(material);
+    materialsGrid.appendChild(materialCard);
+  });
+}
+
 // Export functions for potential use by other scripts
 window.CourseMaterials = {
-  viewMaterial,
-  filterByObjective,
+  deleteMaterial,
   clearFilters,
   applyFilters,
   addMaterial,
+  showNotification,
 };

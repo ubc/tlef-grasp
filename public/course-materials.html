@@ -16,33 +16,100 @@
             <div class="content-wrapper">
                 <!-- Header Section -->
                 <div class="header-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
                     <h1>Course Materials</h1>
+                        <button type="button" class="btn btn--primary" id="upload-materials-btn" style="display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-plus"></i>
+                            <span>Upload Materials</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Upload Section (initially hidden) -->
+                    <div class="upload-section" id="upload-section" style="display: none; margin-bottom: 30px;">
+                        <div class="upload-zone">
+                            <div class="upload-zone__drop-area" id="drop-area">
+                                <i class="fas fa-cloud-upload-alt upload-zone__icon"></i>
+                                <p class="upload-zone__text">Drag and drop or choose file</p>
+                                <button type="button" class="btn btn--primary" id="choose-file-btn">Choose file</button>
+                                <input type="file" id="file-input" multiple accept=".pdf,.txt,.doc,.docx" style="display: none;">
+                                
+                                <!-- Upload Spinner -->
+                                <div class="upload-spinner" id="upload-spinner" style="display: none;">
+                                    <div class="spinner">
+                                        <div class="spinner__circle"></div>
+                                    </div>
+                                    <p class="upload-spinner__text">Uploading and processing files...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="material-tiles">
+                            <div class="material-tile" data-type="text">
+                                <i class="fas fa-file-alt material-tile__icon"></i>
+                                <span class="material-tile__label">Text</span>
+                            </div>
+                            <div class="material-tile" data-type="pdf">
+                                <i class="fas fa-file-pdf material-tile__icon"></i>
+                                <span class="material-tile__label">PDF</span>
+                            </div>
+                            <div class="material-tile" data-type="url">
+                                <i class="fas fa-link material-tile__icon"></i>
+                                <span class="material-tile__label">URL</span>
+                            </div>
+                            <div class="material-tile" data-type="panopto">
+                                <i class="fas fa-video material-tile__icon"></i>
+                                <span class="material-tile__label">Panopto</span>
+                            </div>
+                        </div>
+
+                        <div class="file-list" id="file-list">
+                            <!-- Files will be listed here -->
+                        </div>
+
+                        <!-- Text Input Modal -->
+                        <div class="modal" id="text-modal">
+                            <div class="modal__content">
+                                <div class="modal__header">
+                                    <h3>Add Text Content</h3>
+                                    <button type="button" class="modal__close" id="text-modal-close">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="modal__body">
+                                    <label for="text-content">Paste your text content:</label>
+                                    <textarea id="text-content" class="text-input" rows="10" placeholder="Paste your text content here..."></textarea>
+                                </div>
+                                <div class="modal__footer">
+                                    <button type="button" class="btn btn--secondary" id="text-modal-cancel">Cancel</button>
+                                    <button type="button" class="btn btn--primary" id="text-modal-save">Save</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- URL Input Modal -->
+                        <div class="modal" id="url-modal">
+                            <div class="modal__content">
+                                <div class="modal__header">
+                                    <h3>Add URL</h3>
+                                    <button type="button" class="modal__close" id="url-modal-close">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="modal__body">
+                                    <label for="url-input">Enter URL:</label>
+                                    <input type="url" id="url-input" class="url-input" placeholder="https://example.com">
+                                </div>
+                                <div class="modal__footer">
+                                    <button type="button" class="btn btn--secondary" id="url-modal-cancel">Cancel</button>
+                                    <button type="button" class="btn btn--primary" id="url-modal-save">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
                     <!-- Filters and Search -->
                     <div class="filters-section">
                         <div class="filter-group">
-                            <select class="filter-select" id="courseFilter">
-                                <option value="all">All Courses</option>
-                            </select>
-                            
-                            <select class="filter-select" id="weekFilter">
-                                <option value="all">All Weeks</option>
-                                <option value="1">Week 1</option>
-                                <option value="2">Week 2</option>
-                                <option value="3">Week 3</option>
-                                <option value="4">Week 4</option>
-                            </select>
-                            
-                            <select class="filter-select" id="objectiveFilter">
-                                <option value="all">All Objectives</option>
-                                <option value="LO1.1">LO 1.1</option>
-                                <option value="LO1.2">LO 1.2</option>
-                                <option value="LO1.3">LO 1.3</option>
-                                <option value="LO2.1">LO 2.1</option>
-                                <option value="LO2.2">LO 2.2</option>
-                                <option value="LO3.2">LO 3.2</option>
-                            </select>
-                            
                             <select class="filter-select" id="typeFilter">
                                 <option value="all">All Types</option>
                                 <option value="pdf">PDF</option>
@@ -78,8 +145,33 @@
         </main>
     </div>
 
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="delete-confirmation-modal">
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3>Delete Material</h3>
+                <button type="button" class="modal__close" id="delete-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal__body">
+                <p>Are you sure you want to delete this material? This action cannot be undone.</p>
+                <p id="delete-material-name" style="font-weight: 600; color: #2c3e50; margin-top: 10px;"></p>
+            </div>
+            <div class="modal__footer">
+                <button type="button" class="btn btn--secondary" id="delete-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn--danger" id="delete-modal-confirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF.js library for PDF parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="scripts/navigation.js"></script>
     <script src="scripts/onboarding-check.js"></script>
+    <script src="scripts/client-rag.js"></script>
+    <script src="scripts/generating-content.js"></script>
     <script src="scripts/course-materials.js"></script>
+    <script src="scripts/course-materials-upload.js"></script>
 </body>
 </html>

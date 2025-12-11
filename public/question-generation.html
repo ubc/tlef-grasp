@@ -17,7 +17,7 @@
                 <div class="stepper">
                     <div class="stepper__step stepper__step--active" data-step="1">
                         <div class="stepper__step-number">1</div>
-                        <div class="stepper__step-label">Upload materials</div>
+                        <div class="stepper__step-label">Select Course</div>
                     </div>
                     <div class="stepper__step" data-step="2">
                         <div class="stepper__step-number">2</div>
@@ -58,85 +58,29 @@
 
                 <!-- Step Content -->
                 <div class="step-content">
-                    <!-- Step 1: Upload Materials -->
+                    <!-- Step 1: Select Course and Materials -->
                     <div class="step-panel step-panel--active" data-step="1">
-                        <div class="upload-zone">
-                            <div class="upload-zone__drop-area" id="drop-area">
-                                <i class="fas fa-cloud-upload-alt upload-zone__icon"></i>
-                                <p class="upload-zone__text">Drag and drop or choose file</p>
-                                <button type="button" class="btn btn--primary" id="choose-file-btn">Choose file</button>
-                                <input type="file" id="file-input" multiple accept=".pdf,.txt,.doc,.docx" style="display: none;">
-                                
-                                <!-- Upload Spinner -->
-                                <div class="upload-spinner" id="upload-spinner" style="display: none;">
-                                    <div class="spinner">
-                                        <div class="spinner__circle"></div>
-                                    </div>
-                                    <p class="upload-spinner__text">Uploading and processing files...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="material-tiles">
-                            <div class="material-tile" data-type="text">
-                                <i class="fas fa-file-alt material-tile__icon"></i>
-                                <span class="material-tile__label">Text</span>
-                            </div>
-                            <div class="material-tile" data-type="pdf">
-                                <i class="fas fa-file-pdf material-tile__icon"></i>
-                                <span class="material-tile__label">PDF</span>
-                            </div>
-                            <div class="material-tile" data-type="url">
-                                <i class="fas fa-link material-tile__icon"></i>
-                                <span class="material-tile__label">URL</span>
-                            </div>
-                            <div class="material-tile" data-type="panopto">
-                                <i class="fas fa-video material-tile__icon"></i>
-                                <span class="material-tile__label">Panopto</span>
-                            </div>
-                        </div>
-
-                        <div class="file-list" id="file-list">
-                            <!-- Files will be listed here -->
-                        </div>
-
-                        <!-- Text Input Modal -->
-                        <div class="modal" id="text-modal">
-                            <div class="modal__content">
-                                <div class="modal__header">
-                                    <h3>Add Text Content</h3>
-                                    <button type="button" class="modal__close" id="text-modal-close">
-                                        <i class="fas fa-times"></i>
+                        <div style="text-align: center; padding: 60px 20px; max-width: 600px; margin: 0 auto;">
+                            <i class="fas fa-book-open" style="font-size: 64px; color: #3498db; margin-bottom: 24px;"></i>
+                            <h2 style="font-size: 28px; font-weight: 600; color: #2c3e50; margin-bottom: 16px;">Course Materials</h2>
+                            <p style="font-size: 16px; color: #7f8c8d; line-height: 1.6; margin-bottom: 32px;">
+                                To generate questions, you'll need to upload course materials first. 
+                                Please go to the <strong>Course Materials</strong> page to upload your files, text content, or URLs.
+                            </p>
+                            <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+                                <a href="course-materials.html" class="btn btn--primary" style="text-decoration: none;">
+                                    <i class="fas fa-upload"></i> Go to Course Materials
+                                </a>
+                                <button type="button" class="btn btn--secondary" onclick="window.location.reload()">
+                                    <i class="fas fa-sync"></i> Refresh
                                     </button>
-                                </div>
-                                <div class="modal__body">
-                                    <label for="text-content">Paste your text content:</label>
-                                    <textarea id="text-content" class="text-input" rows="10" placeholder="Paste your text content here..."></textarea>
-                                </div>
-                                <div class="modal__footer">
-                                    <button type="button" class="btn btn--secondary" id="text-modal-cancel">Cancel</button>
-                                    <button type="button" class="btn btn--primary" id="text-modal-save">Save</button>
-                                </div>
                             </div>
-                        </div>
-
-                        <!-- URL Input Modal -->
-                        <div class="modal" id="url-modal">
-                            <div class="modal__content">
-                                <div class="modal__header">
-                                    <h3>Add URL</h3>
-                                    <button type="button" class="modal__close" id="url-modal-close">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                                <div class="modal__body">
-                                    <label for="url-input">Enter URL:</label>
-                                    <input type="url" id="url-input" class="url-input" placeholder="https://example.com">
-                                </div>
-                                <div class="modal__footer">
-                                    <button type="button" class="btn btn--secondary" id="url-modal-cancel">Cancel</button>
-                                    <button type="button" class="btn btn--primary" id="url-modal-save">Save</button>
-                                </div>
+                            <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: left;">
+                                <p style="font-size: 14px; color: #6b7280; margin: 0;">
+                                    <strong>Note:</strong> Once you've uploaded materials on the Course Materials page, 
+                                    you can return here to generate questions. The system will use the materials you've uploaded 
+                                    for the selected course.
+                                </p>
                             </div>
                         </div>
                     </div>

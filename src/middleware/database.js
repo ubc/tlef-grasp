@@ -1,4 +1,4 @@
-const databaseService = require("../services/database/database");
+const databaseService = require("../services/database");
 
 async function dbMiddleware(req, res, next) {
     try {

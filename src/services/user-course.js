@@ -251,6 +251,18 @@ const getCourseUserIds = async (courseId) => {
     }
 };
 
+const isUserInCourse = async (userId, courseId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+        const result = await collection.findOne({ userId: userId, courseId: courseId });
+        return result ? true : false;
+    } catch (error) {
+        console.error("Error checking if user is in course:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createUserCourse,
     getUserCourses,
@@ -259,4 +271,5 @@ module.exports = {
     getCourseUserIds,
     deleteUserCourseByUserID,
     deleteUserCourseByCourseID,
+    isUserInCourse,
 };

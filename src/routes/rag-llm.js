@@ -14,6 +14,10 @@ let EmbeddingsModule = null;
 // Global RAG instance (initialized once)
 let globalRAGInstance = null;
 
+// Import services
+const { getMaterialCourseId } = require('../services/material');
+const { isUserInCourse } = require('../services/user-course');
+
 // Initialize UBC toolkit
 async function initializeUBCToolkit() {
   try {
@@ -486,12 +490,21 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
         throw new Error("LLMModule is not properly initialized");
       }
 
+      const llmConfig = {
+        provider: process.env.LLM_PROVIDER || "openai",
+        apiKey: process.env.OPENAI_API_KEY,
+        defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+        temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+        maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
+        debug: process.env.DEBUG === "true",
+      };
+
       // Initialize LLM module - try both constructor patterns
       let llmModule;
       if (typeof LLMModule.create === "function") {
-        llmModule = await LLMModule.create(LLM_CONFIG);
+        llmModule = await LLMModule.create(llmConfig);
       } else {
-        llmModule = new LLMModule(LLM_CONFIG);
+        llmModule = new LLMModule(llmConfig);
       }
 
       // Create prompt with RAG context
@@ -663,6 +676,215 @@ router.get("/health", async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
+    });
+  }
+});
+
+// Fetch and extract text from URL (server-side proxy to bypass CORS)
+router.post("/fetch-url-content", express.json(), async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url || !url.trim()) {
+      return res.status(400).json({
+        error: "URL is required",
+      });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({
+        error: "Invalid URL format",
+      });
+    }
+
+    console.log("=== FETCHING URL CONTENT (SERVER-SIDE) ===");
+    console.log("URL:", url);
+
+    // Fetch the webpage - use built-in fetch (Node.js 18+) or node-fetch
+    let fetchFn;
+    try {
+      // Try built-in fetch first (Node.js 18+)
+      fetchFn = globalThis.fetch || fetch;
+      if (!fetchFn) {
+        // Fallback to node-fetch if available
+        const nodeFetch = await import("node-fetch");
+        fetchFn = nodeFetch.default;
+      }
+    } catch (e) {
+      throw new Error("Fetch is not available. Please use Node.js 18+ or install node-fetch");
+    }
+
+    const response = await fetchFn(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Extract and clean text from HTML using Cheerio
+    let cheerio;
+    try {
+      cheerio = require("cheerio");
+    } catch (e) {
+      throw new Error("cheerio is required for HTML parsing. Please install it: npm install cheerio");
+    }
+
+    const $ = cheerio.load(html);
+
+    // Remove unwanted elements (scripts, styles, navigation, ads, etc.)
+    const unwantedSelectors = [
+      "script",
+      "style",
+      "nav",
+      "header",
+      "footer",
+      "aside",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".sidebar",
+      ".menu",
+      ".navigation",
+      ".nav",
+      ".header",
+      ".footer",
+      "[role='navigation']",
+      "[role='banner']",
+      "[role='complementary']",
+      ".social-share",
+      ".share-buttons",
+      ".comments",
+      ".comment-section",
+      "noscript",
+      "iframe",
+      "embed",
+      "object",
+    ];
+
+    unwantedSelectors.forEach((selector) => {
+      try {
+        $(selector).remove();
+      } catch (e) {
+        // Ignore invalid selectors
+      }
+    });
+
+    // Try to find main content area (prioritize semantic HTML)
+    let mainContent;
+    if ($("main").length > 0) {
+      mainContent = $("main").first();
+    } else if ($("article").length > 0) {
+      mainContent = $("article").first();
+    } else if ($('[role="main"]').length > 0) {
+      mainContent = $('[role="main"]').first();
+    } else if ($(".content").length > 0) {
+      mainContent = $(".content").first();
+    } else if ($("#content").length > 0) {
+      mainContent = $("#content").first();
+    } else if ($(".main-content").length > 0) {
+      mainContent = $(".main-content").first();
+    } else if ($("#main-content").length > 0) {
+      mainContent = $("#main-content").first();
+    } else {
+      mainContent = $("body");
+    }
+
+    // Extract text from main content
+    let text = mainContent.text() || "";
+
+    // Clean up the text
+    text = text
+      .replace(/\s+/g, " ") // Replace multiple whitespace with single space
+      .replace(/\n\s*\n/g, "\n") // Remove empty lines
+      .replace(/^\s+|\s+$/gm, "") // Trim each line
+      .trim();
+
+    // Limit text length to prevent issues
+    const maxLength = 100000; // 100k characters
+    if (text.length > maxLength) {
+      text = text.substring(0, maxLength) + "... [Content truncated due to length]";
+    }
+
+    // Get title if available
+    const title = $("title").text() || url;
+
+    console.log(`✅ Extracted ${text.length} characters from URL`);
+
+    res.json({
+      success: true,
+      content: text,
+      title: title,
+      url: url,
+      length: text.length,
+    });
+  } catch (error) {
+    console.error("Error fetching URL content:", error);
+    res.status(500).json({
+      error: "Failed to fetch URL content",
+      details: error.message,
+    });
+  }
+});
+
+router.delete("/delete-document/:sourceId", async (req, res) => {
+  await ensureRAGInitialized();
+  
+  try {
+    const { sourceId } = req.params;
+    const userId = req.user.id;
+
+    const courseId = await getMaterialCourseId(sourceId);
+    if (!courseId) {
+      return res.status(404).json({ error: "Course current material attached to not found" });
+    }
+
+    if (!isUserInCourse(userId, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
+    if (!RAGModule) {
+      return res.status(500).json({
+        error: "RAG Module not initialized",
+        fallback: "Use client-side RAG",
+      });
+    }
+
+    if (!sourceId) {
+      return res.status(400).json({
+        error: "sourceId is required",
+      });
+    }
+
+    console.log("=== DELETING DOCUMENT FROM SERVER-SIDE RAG ===");
+    console.log("Source ID:", sourceId);
+
+    // Delete documents matching the sourceId in metadata
+    await globalRAGInstance.deleteDocumentsByMetadata({
+      sourceId: sourceId,
+    });
+
+    console.log(`✅ Document with sourceId ${sourceId} deleted successfully`);
+
+    res.json({
+      success: true,
+      message: "Document deleted successfully",
+      sourceId: sourceId,
+    });
+  } catch (error) {
+    console.error("Error deleting document:", error);
+    res.status(500).json({
+      error: "Failed to delete document",
+      details: error.message,
     });
   }
 });

@@ -2,15 +2,16 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const session = require("express-session");
-const databaseService = require("./services/database/database");
+const databaseService = require("./services/database");
 const exampleRoutes = require("./routes/example/hello");
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/questions");
-const quizQuestionRoutes = require("./routes/quiz-questions");
+//const quizQuestionRoutes = require("./routes/quiz-questions");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
 const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
+const materialRoutes = require("./routes/material");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -34,6 +35,19 @@ app.use(dbMiddleware);
 const authRoutes = require('./routes/auth');
 const { ensureAuthenticated } = require('passport-ubcshib');
 
+// Custom middleware for API routes - returns JSON instead of redirecting
+function ensureAuthenticatedAPI(req, res, next) {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  // For API requests, return JSON error instead of redirecting
+  res.status(401).json({ 
+    success: false,
+    error: 'Authentication required',
+    authenticated: false 
+  });
+}
+
 // Authentication routes (no /api prefix as they serve HTML too)
 app.use('/auth', authRoutes);
 
@@ -45,7 +59,7 @@ app.get("/", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
-app.get("/dashboard", ensureAuthenticated(), (req, res) => {
+app.get("/dashboard", ensureAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
@@ -81,23 +95,36 @@ app.get("/onboarding", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
-// API endpoints
-app.use("/api/example", ensureAuthenticated(), exampleRoutes);
-app.use("/api/upload", ensureAuthenticated(), uploadRoutes);
-app.use("/api/questions", ensureAuthenticated(), questionRoutes);
-app.use("/api/quiz-questions", ensureAuthenticated(), quizQuestionRoutes);
-app.use("/api/courses", ensureAuthenticated(), courseRoutes);
-app.use("/api/student", ensureAuthenticated(), studentRoutes);
-app.use("/api/rag-llm", ensureAuthenticated(), ragLlmRoutes);
+// API endpoints - pass middleware function by reference (no parentheses)
+app.use("/api/example", ensureAuthenticatedAPI, exampleRoutes);
+app.use("/api/upload", ensureAuthenticatedAPI, uploadRoutes);
+app.use("/api/questions", ensureAuthenticatedAPI, questionRoutes);
+//app.use("/api/quiz-questions", ensureAuthenticatedAPI, quizQuestionRoutes);
+app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
+app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
+app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
+app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
+
+app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
+  res.json({
+    success: true,
+    user: {
+      username: req.user.username,
+      firstName: req.user.firstName,
+      lastName: req.user.lastName,
+      email: req.user.email,
+    },
+  });
+});
 
 // Final 404 handler for any requests that do not match a route
 app.use((req, res) => {
-	// If it's an API path, send a JSON 404
-	if (req.path.startsWith('/api/')) {
-		return res.status(404).json({ error: 'API endpoint not found' });
-	}
-	// For all other paths, send a simple text 404
-	res.status(404).send('404: Page Not Found');
+  // If it's an API path, send a JSON 404
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  // For all other paths, send a simple text 404
+  res.status(404).send('404: Page Not Found');
 });
 
 app.listen(port, async () => {

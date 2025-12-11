@@ -1,6 +1,6 @@
-const databaseService = require('./database');
+const databaseService = require('../database');
 
-const createQuestion = async (questionData) => {
+const createQuestion = async (courseId, questionData) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");

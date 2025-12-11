@@ -34,7 +34,7 @@ class QuestionBankPage {
 
   async loadCourseData() {
     try {
-      const response = await fetch("/api/courses");
+      const response = await fetch("/api/courses/my-courses");
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

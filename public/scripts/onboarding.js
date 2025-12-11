@@ -146,7 +146,7 @@ class OnboardingManager {
       if (noCoursesElement) noCoursesElement.style.display = "none";
 
       // Fetch courses from API
-      const response = await fetch("/api/courses");
+      const response = await fetch("/api/courses/my-courses");
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -194,7 +194,7 @@ class OnboardingManager {
           </div>
         </div>
         <div class="course-actions">
-          <button class="access-btn" onclick="accessCourseDashboard('${course.courseCode}')" title="Access Dashboard">
+          <button class="access-btn" data-course-id="${course._id}" data-course-name="${course.courseName}" onclick="accessCourseDashboard(this)" title="Access Dashboard">
             <i class="fas fa-arrow-right"></i>
             <span>Access</span>
           </button>
@@ -217,24 +217,31 @@ class OnboardingManager {
     if (noCoursesElement) noCoursesElement.style.display = "block";
   }
 
-  async accessCourseDashboard(courseCode) {
+  async accessCourseDashboard(buttonElement) {
     try {
       // Show loading state
-      const button = event.target.closest(".access-btn");
+      const button = buttonElement || event.target.closest(".access-btn");
       const originalText = button.innerHTML;
       button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accessing...';
       button.disabled = true;
 
-      sessionStorage.setItem("grasp-selected-course-code", courseCode);
+      // Get course data from data attributes
+      const courseId = button.dataset.courseId;
+      const courseName = button.dataset.courseName;
+      
+      console.log("Accessing course:", { id: courseId, name: courseName });
+      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: courseId, name: courseName}));
+
       window.location.href = "/dashboard.html";
     } catch (error) {
       console.error("Error accessing course dashboard:", error);
       this.showError("Failed to access dashboard. Please try again.");
 
       // Reset button state
-      const button = event.target.closest(".access-btn");
-      button.innerHTML = originalText;
-      button.disabled = false;
+      if (button) {
+        button.innerHTML = originalText;
+        button.disabled = false;
+      }
     }
   }
 
@@ -419,7 +426,7 @@ class OnboardingManager {
       const result = await response.json();
       console.log("Course profile saved successfully:", result);
 
-      sessionStorage.setItem("grasp-selected-course-id", result.course.courseCode);
+      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: result.course._id, name: result.course.courseName}));
       return result;
     } catch (error) {
       console.error("Error saving course profile:", error);
@@ -558,9 +565,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Global functions for HTML onclick handlers
-function accessCourseDashboard(courseId) {
+function accessCourseDashboard(buttonElement) {
   if (window.onboardingManager) {
-    window.onboardingManager.accessCourseDashboard(courseId);
+    window.onboardingManager.accessCourseDashboard(buttonElement);
   }
 }
 

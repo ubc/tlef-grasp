@@ -12,7 +12,7 @@ let pdfService = null;
 // Main state object
 const state = {
   step: 1,
-  course: sessionStorage.getItem("grasp-selected-course-code") || "",
+  course: JSON.parse(sessionStorage.getItem("grasp-selected-course")) || "",
   selectedCourse: "", // Global course selection for Steps 2-5
   files: [],
   urls: [],
@@ -786,7 +786,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 async function loadCourseData() {
   try {
     console.log("Loading course data for question generation...");
-    const response = await fetch("/api/courses");
+    const response = await fetch("/api/courses/my-courses");
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -820,7 +820,7 @@ function updateCourseDropdown(courses) {
       option.value = course.courseCode;
       option.textContent = `${course.courseName}`;
 
-      if ( course.courseCode === sessionStorage.getItem("grasp-selected-course-code") ) {
+      if ( course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id ) {
         option.selected = true;
       }
       courseSelect.appendChild(option);
@@ -937,10 +937,6 @@ function initializeEventListeners() {
     continueBtn.addEventListener("click", goToNextStep);
   }
 
-  // Step 1: File upload and material tiles
-  initializeFileUpload();
-  initializeMaterialTiles();
-
   // Step 3: Objectives
   initializeObjectives();
 
@@ -989,17 +985,12 @@ function validateCurrentStep() {
 
   switch (state.step) {
     case 1:
-      const hasMaterials = state.files.length > 0 || state.urls.length > 0;
       const hasCourse = state.course && state.course.trim().length > 0;
-      const step1Valid = hasMaterials && hasCourse;
+      const step1Valid = hasCourse;
 
       console.log(
         "Step 1 validation:",
         step1Valid,
-        "files:",
-        state.files.length,
-        "urls:",
-        state.urls.length,
         "course:",
         state.course
       );
@@ -1007,11 +998,6 @@ function validateCurrentStep() {
       if (!hasCourse) {
         showNotification(
           "Please select a course before proceeding.",
-          "warning"
-        );
-      } else if (!hasMaterials) {
-        showNotification(
-          "Please upload files or add URLs before proceeding.",
           "warning"
         );
       }
@@ -1181,438 +1167,6 @@ function updateNavigationButtons() {
   }
 }
 
-// ===== STEP 1: FILE UPLOAD FUNCTIONS =====
-
-function initializeFileUpload() {
-  const dropArea = document.getElementById("drop-area");
-  const fileInput = document.getElementById("file-input");
-  const chooseFileBtn = document.getElementById("choose-file-btn");
-
-  console.log("Initializing file upload:", {
-    dropArea: !!dropArea,
-    fileInput: !!fileInput,
-    chooseFileBtn: !!chooseFileBtn,
-  });
-
-  if (dropArea) {
-    // Drag and drop events
-    dropArea.addEventListener("dragover", handleDragOver);
-    dropArea.addEventListener("dragleave", handleDragLeave);
-    dropArea.addEventListener("drop", handleDrop);
-
-    // Click to choose file
-    if (chooseFileBtn) {
-      chooseFileBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log("Choose file button clicked");
-        if (fileInput) {
-          fileInput.click();
-        }
-      });
-    }
-
-    if (fileInput) {
-      fileInput.addEventListener("change", handleFileSelect);
-    }
-  } else {
-    console.error("Drop area not found!");
-  }
-}
-
-function handleDragOver(e) {
-  e.preventDefault();
-  const dropArea = document.getElementById("drop-area");
-  dropArea.classList.add("drag-over");
-}
-
-function handleDragLeave(e) {
-  e.preventDefault();
-  const dropArea = document.getElementById("drop-area");
-  dropArea.classList.remove("drag-over");
-}
-
-function handleDrop(e) {
-  e.preventDefault();
-  const dropArea = document.getElementById("drop-area");
-  dropArea.classList.remove("drag-over");
-
-  const files = Array.from(e.dataTransfer.files);
-  addFiles(files);
-}
-
-function handleFileSelect(e) {
-  console.log("File select triggered:", e.target.files);
-  const files = Array.from(e.target.files);
-  console.log("Files selected:", files.length);
-  if (files.length > 0) {
-    addFiles(files);
-  }
-}
-
-async function addFiles(files) {
-  // Show spinner when starting file upload
-  showUploadSpinner();
-
-  try {
-    for (const file of files) {
-      const fileObj = {
-        id: Date.now() + Math.random(),
-        name: file.name,
-        size: formatFileSize(file.size),
-        type: file.type,
-        file: file,
-      };
-
-      // Extract content from file if possible
-      try {
-        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-          fileObj.content = await readTextFile(file);
-        } else if (
-          file.type === "application/pdf" ||
-          file.name.endsWith(".pdf")
-        ) {
-          // Use PDF parsing service
-          try {
-            if (pdfService) {
-              fileObj.content = await pdfService.parsePDFToText(file);
-              console.log(
-                `PDF content extracted: ${fileObj.content.length} characters`
-              );
-            } else {
-              throw new Error("PDF service not available");
-            }
-          } catch (error) {
-            console.error("PDF parsing failed:", error);
-            fileObj.content = `PDF Document: ${
-              file.name
-            }\nFile Size: ${formatFileSize(file.size)}\nType: ${
-              file.type
-            }\n\nError: ${
-              error.message
-            }\n\nNote: PDF content could not be extracted.`;
-          }
-        } else {
-          fileObj.content = `File: ${file.name}\nType: ${
-            file.type
-          }\nSize: ${formatFileSize(
-            file.size
-          )}\n\nThis file type is not directly readable as text content.`;
-        }
-      } catch (error) {
-        console.error("Error reading file content:", error);
-        fileObj.content = `File: ${file.name} (content could not be extracted)`;
-      }
-
-      // Process file with content generator - ensure course is selected
-      try {
-        if (!state.course) {
-          console.warn(
-            "No course selected, file will be processed without course association"
-          );
-          // Show warning to user
-          showNotification(
-            "Please select a course before uploading files for proper organization.",
-            "warning"
-          );
-        }
-        await contentGenerator.processFileForRAG(file, state.course || "");
-      } catch (error) {
-        console.error("Error processing file:", error);
-      }
-
-      state.files.push(fileObj);
-
-      // TODO: Also save to database.
-    }
-
-    renderFileList();
-    announceToScreenReader(`${files.length} file(s) added`);
-  } catch (error) {
-    console.error("Error processing files:", error);
-    showNotification("Error processing files. Please try again.", "error");
-  } finally {
-    // Hide spinner when upload is complete
-    hideUploadSpinner();
-  }
-}
-
-function readTextFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = (e) => reject(e);
-    reader.readAsText(file);
-  });
-}
-
-// Upload spinner control functions
-function showUploadSpinner() {
-  const spinner = document.getElementById("upload-spinner");
-  const dropArea = document.getElementById("drop-area");
-  const chooseFileBtn = document.getElementById("choose-file-btn");
-
-  if (spinner) {
-    spinner.style.display = "flex";
-    // Disable the choose file button while uploading
-    if (chooseFileBtn) {
-      chooseFileBtn.disabled = true;
-      chooseFileBtn.style.opacity = "0.5";
-    }
-    // Disable drag and drop
-    if (dropArea) {
-      dropArea.style.pointerEvents = "none";
-    }
-  }
-}
-
-function hideUploadSpinner() {
-  const spinner = document.getElementById("upload-spinner");
-  const dropArea = document.getElementById("drop-area");
-  const chooseFileBtn = document.getElementById("choose-file-btn");
-
-  if (spinner) {
-    spinner.style.display = "none";
-    // Re-enable the choose file button
-    if (chooseFileBtn) {
-      chooseFileBtn.disabled = false;
-      chooseFileBtn.style.opacity = "1";
-    }
-    // Re-enable drag and drop
-    if (dropArea) {
-      dropArea.style.pointerEvents = "auto";
-    }
-  }
-}
-
-function removeFile(fileId) {
-  const index = state.files.findIndex((f) => f.id === fileId);
-  if (index > -1) {
-    const removedFile = state.files[index];
-    state.files.splice(index, 1);
-    renderFileList();
-    announceToScreenReader(`Removed ${removedFile.name}`);
-  }
-}
-
-function renderFileList() {
-  const fileList = document.getElementById("file-list");
-  if (!fileList) return;
-
-  fileList.innerHTML = "";
-
-  // Render files
-  state.files.forEach((file) => {
-    const fileItem = createFileItem(file);
-    fileList.appendChild(fileItem);
-  });
-
-  // Render URLs
-  state.urls.forEach((url) => {
-    const urlItem = createUrlItem(url);
-    fileList.appendChild(urlItem);
-  });
-}
-
-function createFileItem(file) {
-  const item = document.createElement("div");
-  item.className = "file-item";
-
-  const icon = getFileIcon(file.type);
-
-  item.innerHTML = `
-        <div class="file-item__info">
-            <i class="${icon} file-item__icon"></i>
-            <div class="file-item__details">
-                <div class="file-item__name">${file.name}</div>
-                <div class="file-item__size">${file.size}</div>
-            </div>
-        </div>
-        <button type="button" class="file-item__remove" onclick="removeFile(${file.id})">
-            <i class="fas fa-times"></i>
-        </button>
-    `;
-
-  return item;
-}
-
-function createUrlItem(url) {
-  const item = document.createElement("div");
-  item.className = "file-item";
-
-  item.innerHTML = `
-        <div class="file-item__info">
-            <i class="fas fa-link file-item__icon"></i>
-            <div class="file-item__details">
-                <div class="file-item__name">${url.url}</div>
-                <div class="file-item__size">URL</div>
-            </div>
-        </div>
-        <button type="button" class="file-item__remove" onclick="removeUrl(${url.id})">
-            <i class="fas fa-times"></i>
-        </button>
-    `;
-
-  return item;
-}
-
-function getFileIcon(type) {
-  if (type.includes("pdf")) return "fas fa-file-pdf";
-  if (type.includes("text")) return "fas fa-file-alt";
-  if (type.includes("word")) return "fas fa-file-word";
-  return "fas fa-file";
-}
-
-function formatFileSize(bytes) {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-// ===== MATERIAL TILES FUNCTIONS =====
-
-function initializeMaterialTiles() {
-  const tiles = document.querySelectorAll(".material-tile");
-
-  tiles.forEach((tile) => {
-    tile.addEventListener("click", () => {
-      const type = tile.dataset.type;
-      handleMaterialTileClick(type);
-    });
-  });
-
-  // Modal event listeners
-  initializeModals();
-}
-
-function handleMaterialTileClick(type) {
-  switch (type) {
-    case "text":
-      openTextModal();
-      break;
-    case "pdf":
-      // PDF is handled by file upload
-      document.getElementById("file-input").click();
-      break;
-    case "url":
-      openUrlModal();
-      break;
-    case "panopto":
-      alert("Panopto integration coming soon!");
-      break;
-  }
-}
-
-function initializeModals() {
-  // Text modal
-  const textModal = document.getElementById("text-modal");
-  const textModalClose = document.getElementById("text-modal-close");
-  const textModalCancel = document.getElementById("text-modal-cancel");
-  const textModalSave = document.getElementById("text-modal-save");
-
-  if (textModalClose) {
-    textModalClose.addEventListener("click", closeTextModal);
-  }
-  if (textModalCancel) {
-    textModalCancel.addEventListener("click", closeTextModal);
-  }
-  if (textModalSave) {
-    textModalSave.addEventListener("click", saveTextContent);
-  }
-
-  // URL modal
-  const urlModal = document.getElementById("url-modal");
-  const urlModalClose = document.getElementById("url-modal-close");
-  const urlModalCancel = document.getElementById("url-modal-cancel");
-  const urlModalSave = document.getElementById("url-modal-save");
-
-  if (urlModalClose) {
-    urlModalClose.addEventListener("click", closeUrlModal);
-  }
-  if (urlModalCancel) {
-    urlModalCancel.addEventListener("click", closeUrlModal);
-  }
-  if (urlModalSave) {
-    urlModalSave.addEventListener("click", saveUrlContent);
-  }
-}
-
-function openTextModal() {
-  const modal = document.getElementById("text-modal");
-  modal.classList.add("modal--active");
-  document.getElementById("text-content").focus();
-}
-
-function closeTextModal() {
-  const modal = document.getElementById("text-modal");
-  modal.classList.remove("modal--active");
-  document.getElementById("text-content").value = "";
-}
-
-async function saveTextContent() {
-  const textContent = document.getElementById("text-content").value.trim();
-  if (textContent) {
-    const textFile = {
-      id: Date.now() + Math.random(),
-      name: "Text Content",
-      size: formatFileSize(new Blob([textContent]).size),
-      type: "text/plain",
-      content: textContent,
-    };
-
-    state.files.push(textFile);
-
-    // Add text content to content generator
-    await contentGenerator.processTextForRAG(textContent, state.course);
-
-    renderFileList();
-    closeTextModal();
-    announceToScreenReader("Text content added");
-  }
-}
-
-function openUrlModal() {
-  const modal = document.getElementById("url-modal");
-  modal.classList.add("modal--active");
-  document.getElementById("url-input").focus();
-}
-
-function closeUrlModal() {
-  const modal = document.getElementById("url-modal");
-  modal.classList.remove("modal--active");
-  document.getElementById("url-input").value = "";
-}
-
-async function saveUrlContent() {
-  const urlContent = document.getElementById("url-input").value.trim();
-  if (urlContent) {
-    const urlObj = {
-      id: Date.now() + Math.random(),
-      url: urlContent,
-    };
-
-    state.urls.push(urlObj);
-
-    // Add URL to content generator
-    await contentGenerator.processUrlForRAG(urlContent, state.course);
-
-    renderFileList();
-    closeUrlModal();
-    announceToScreenReader("URL added");
-  }
-}
-
-function removeUrl(urlId) {
-  const index = state.urls.findIndex((u) => u.id === urlId);
-  if (index > -1) {
-    const removedUrl = state.urls[index];
-    state.urls.splice(index, 1);
-    renderFileList();
-    announceToScreenReader(`Removed ${removedUrl.url}`);
-  }
-}
 
 // ===== STEP 2: SUMMARY FUNCTIONS =====
 
@@ -4782,11 +4336,25 @@ function handleAddToBank() {
   handleAddSelectedToBank();
 }
 
-function handleAddSelectedToBank() {
+async function handleAddSelectedToBank() {
   if (state.selectedQuestions.size === 0) {
     showToast("No questions selected", "warning");
     return;
   }
+  
+  // Adding questions to question bank.
+  await fetch(`/api/questions/save`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      questions: state.questions,
+      course: state.course,
+      title: "Untitled Question Set",
+      description: "",
+    }),
+  });
 
   showToast(
     `Added ${state.selectedQuestions.size} question${
@@ -5152,8 +4720,6 @@ function announceToScreenReader(message) {
 }
 
 // Export functions for global access
-window.removeFile = removeFile;
-window.removeUrl = removeUrl;
 window.toggleObjectiveGroup = toggleObjectiveGroup;
 window.toggleBloomChip = toggleBloomChip;
 window.setBloomMode = setBloomMode;

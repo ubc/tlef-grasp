@@ -2,7 +2,7 @@
 // This script should be included on all pages that require onboarding
 
 function checkOnboardingStatus() {
-  const isOnboarded = null !== sessionStorage.getItem("grasp-selected-course-code");
+  const isOnboarded = null !== sessionStorage.getItem("grasp-selected-course");
   const currentPath = window.location.pathname;
 
   if ( isOnboarded && currentPath === "/onboarding" ) {

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const databaseService = require("../services/database/database");
+const databaseService = require("../services/database");
 
 // Save quiz questions to MongoDB
 router.post("/save", express.json(), async (req, res) => {

@@ -86,7 +86,7 @@ class ContentGenerator {
 
       const data = await response.json();
       console.log("✅ Document added to server-side RAG:", data);
-      return data.chunkIds || [];
+      return data;
     } catch (error) {
       console.error("❌ Failed to add document to server-side RAG:", error);
 
@@ -292,17 +292,18 @@ class ContentGenerator {
     });
   }
 
-  async processFileForRAG(file, course) {
+  async processFileForRAG(file, course, sourceId = null) {
+    console.log("Processing file for RAG:", file, course, sourceId);
     try {
       const content = await this.extractTextFromFile(file);
 
       if (content) {
-        await this.addDocumentToKnowledgeBase(content, {
+        return await this.addDocumentToKnowledgeBase(content, {
           source: file.name,
           type: "file",
           course: course,
+          sourceId: sourceId,
         });
-        return content;
       }
     } catch (error) {
       console.error("Error processing file for RAG:", error);
@@ -310,24 +311,64 @@ class ContentGenerator {
     }
   }
 
-  async processUrlForRAG(url, course) {
+  async processUrlForRAG(url, course, sourceId = null) {
     try {
-      await this.addDocumentToKnowledgeBase(`URL: ${url}`, {
+      console.log("=== PROCESSING URL FOR RAG ===");
+      console.log("URL:", url);
+
+      // Fetch and extract content from URL via server-side proxy (to bypass CORS)
+      let content = `URL: ${url}`;
+
+      try {
+        // Use server-side endpoint to fetch URL content (bypasses CORS)
+        const response = await fetch("/api/rag-llm/fetch-url-content", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: url }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.content && data.content.length > 0) {
+            content = data.content;
+            console.log(`✅ Fetched and cleaned ${data.content.length} characters from URL`);
+          } else {
+            console.warn("No content extracted from URL, using URL string");
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.warn(`Failed to fetch URL content: ${response.status}`, errorData.error || "");
+        }
+      } catch (fetchError) {
+        // Network or other errors - use URL as fallback
+        console.warn("Could not fetch URL content:", fetchError.message);
+        console.log("Using URL string as content");
+      }
+
+      // Add cleaned content to knowledge base
+      await this.addDocumentToKnowledgeBase(content, {
         source: url,
         type: "url",
         course: course,
+        sourceId: sourceId,
       });
+
+      return content;
     } catch (error) {
       console.error("Error processing URL for RAG:", error);
+      throw error;
     }
   }
 
-  async processTextForRAG(text, course) {
+  async processTextForRAG(text, course, sourceId = null) {
     try {
-      await this.addDocumentToKnowledgeBase(text, {
-        source: "Text Content",
+      return await this.addDocumentToKnowledgeBase(text, {
+        source: "",
         type: "text",
         course: course,
+        sourceId: sourceId,
       });
     } catch (error) {
       console.error("Error processing text for RAG:", error);

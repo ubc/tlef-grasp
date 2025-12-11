@@ -49,7 +49,7 @@ async function loadUserData() {
 
 async function loadCourseData() {
   try {
-    const response = await fetch("/api/courses");
+    const response = await fetch("/api/courses/my-courses");
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -96,7 +96,7 @@ function updateCourseSelector(courses) {
       option.value = course.courseCode;
       option.textContent = `${course.courseName}`;
 
-      if ( course.courseCode === sessionStorage.getItem("grasp-selected-course-code") ) {
+      if ( course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id ) {
         option.selected = true;
       }
       courseSelector.appendChild(option);

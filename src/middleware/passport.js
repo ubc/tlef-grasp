@@ -8,7 +8,7 @@ const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
 const path = require('path');
-const { createOrUpdateUser, getUserByPuid } = require('../services/database/user');
+const { createOrUpdateUser, getUserByPuid } = require('../services/user');
 
 passport.use(
 	new Strategy(
@@ -34,7 +34,7 @@ passport.use(
 		async (profile, done) => {
 			// profile.nameID - SAML nameID
 			// profile.attributes - Mapped attributes based on attributeConfig
-			
+
             // Making sure PUID is present
             if (!profile.attributes.ubcEduCwlPuid) {
                 return done(new Error("PUID is required"));

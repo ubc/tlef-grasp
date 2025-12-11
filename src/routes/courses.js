@@ -1,13 +1,27 @@
 const express = require("express");
 const router = express.Router();
-const { createCourse, getCourseByCourseCode, getCourseById } = require('../services/database/course');
-const { createUserCourse } = require('../services/database/user-course');
-const { getUserCourses } = require('../services/database/user-course');
+const { createCourse, getCourseByCourseCode, getCourseById, getAllCourses } = require('../services/course');
+const { createUserCourse, getUserCourses } = require('../services/user-course');
 
 // Get all courses
 router.get("/", async (req, res) => {
   try {
+    const courses = await getAllCourses();
+
+    res.json({
+      success: true,
+      courses: courses,
+    });
+  } catch (error) {
+    console.error("Error getting courses:", error);
+    res.status(500).json({ error: "Failed to retrieve courses" });
+  }
+});
+
+router.get("/:my-courses", async (req, res) => {
+  try {
     const userId = req.user._id;
+    console.log(userId);
     const userCourses = await getUserCourses(userId);
     const courses = userCourses.map((course) => course.course);
 
@@ -154,6 +168,45 @@ router.put(
   }
 );
 
+// Get course statistics
+router.get("/:courseId/stats", (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const course = courses.find((c) => c.id === courseId);
+
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+
+    const stats = {
+      totalMaterials: course.materials.length,
+      completedMaterials: course.materials.filter(
+        (m) => m.status === "completed"
+      ).length,
+      inProgressMaterials: course.materials.filter(
+        (m) => m.status === "in-progress"
+      ).length,
+      totalQuestionSets: course.questionSets.length,
+      reviewedQuestionSets: course.questionSets.filter(
+        (qs) => qs.status === "reviewed"
+      ).length,
+      totalQuestions: course.questionSets.reduce(
+        (sum, qs) => sum + qs.questions,
+        0
+      ),
+      studentCount: course.students,
+    };
+
+    res.json({
+      success: true,
+      stats: stats,
+    });
+  } catch (error) {
+    console.error("Error getting course statistics:", error);
+    res.status(500).json({ error: "Failed to retrieve course statistics" });
+  }
+});
+
 // Create new course
 router.post("/new", express.json(), async (req, res) => {
   try {
@@ -257,45 +310,6 @@ router.post("/new", express.json(), async (req, res) => {
       error: "Failed to create course",
       details: error.message 
     });
-  }
-});
-
-// Get course statistics
-router.get("/:courseId/stats", (req, res) => {
-  try {
-    const { courseId } = req.params;
-    const course = courses.find((c) => c.id === courseId);
-
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
-
-    const stats = {
-      totalMaterials: course.materials.length,
-      completedMaterials: course.materials.filter(
-        (m) => m.status === "completed"
-      ).length,
-      inProgressMaterials: course.materials.filter(
-        (m) => m.status === "in-progress"
-      ).length,
-      totalQuestionSets: course.questionSets.length,
-      reviewedQuestionSets: course.questionSets.filter(
-        (qs) => qs.status === "reviewed"
-      ).length,
-      totalQuestions: course.questionSets.reduce(
-        (sum, qs) => sum + qs.questions,
-        0
-      ),
-      studentCount: course.students,
-    };
-
-    res.json({
-      success: true,
-      stats: stats,
-    });
-  } catch (error) {
-    console.error("Error getting course statistics:", error);
-    res.status(500).json({ error: "Failed to retrieve course statistics" });
   }
 });
 
