@@ -142,4 +142,84 @@ router.post("/update", express.json(), async (req, res) => {
     }
 });
 
+router.post("/refetch", express.json(), async (req, res) => {
+    try {
+        const { sourceId, courseId, url, content } = req.body;
+        const userId = req.user.id;
+
+        if (!sourceId || !url || !content) {
+            return res.status(400).json({ error: "sourceId, url, and content are required" });
+        }
+
+        // Get existing material to verify it exists and get course info
+        const existingMaterial = await getMaterialBySourceId(sourceId);
+        if (!existingMaterial) {
+            return res.status(404).json({ error: "Material not found" });
+        }
+
+        const materialCourseId = existingMaterial.courseId || courseId;
+        if (!materialCourseId) {
+            return res.status(400).json({ error: "Course ID is required" });
+        }
+
+        if (!isUserInCourse(userId, materialCourseId)) {
+            return res.status(403).json({ error: "User is not in course" });
+        }
+
+        // Step 1: Delete from vector database (RAG)
+        try {
+            await ragService.deleteDocumentFromRAG(sourceId);
+            console.log("✅ Deleted from vector database");
+        } catch (ragError) {
+            console.error("Error deleting from vector database:", ragError);
+            // Continue anyway - we'll try to add it back
+        }
+
+        // Step 2: Delete from MongoDB
+        await deleteMaterial(sourceId);
+        console.log("✅ Deleted from MongoDB");
+
+        // Step 3: Re-save to vector database (RAG)
+        try {
+            // Get course name for metadata
+            let courseName = "Unknown Course";
+            try {
+                const course = await getCourseById(materialCourseId);
+                if (course) {
+                    courseName = course.courseName || course.courseTitle || "Unknown Course";
+                }
+            } catch (courseError) {
+                console.error("Error getting course name:", courseError);
+                // Continue with default name
+            }
+
+            await ragService.addDocumentToRAG(content, {
+                source: url,
+                type: "url",
+                course: courseName,
+                sourceId: sourceId,
+            });
+            console.log("✅ Re-saved to vector database");
+        } catch (ragAddError) {
+            console.error("Error saving to vector database:", ragAddError);
+            throw ragAddError;
+        }
+
+        // Step 4: Re-save to MongoDB
+        // Calculate file size (using Buffer in Node.js instead of Blob)
+        const fileSize = Buffer.byteLength(content, 'utf8');
+        await saveMaterial(sourceId, materialCourseId, {
+            fileName: url,
+            fileType: 'link',
+            fileSize: fileSize,
+        });
+        console.log("✅ Re-saved to MongoDB");
+
+        res.json({ success: true, message: "Link content refetched successfully" });
+    } catch (error) {
+        console.error("Error refetching material:", error);
+        res.status(500).json({ error: "Failed to refetch material", details: error.message });
+    }
+});
+
 module.exports = router;

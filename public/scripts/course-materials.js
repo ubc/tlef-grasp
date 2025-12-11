@@ -111,6 +111,13 @@ function createMaterialCard(material) {
             </button>`);
     }
     
+    // Add refetch button for links
+    if (material.fileType && material.fileType === 'link') {
+      buttons.push(`<button class="view-button refetch-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+                Refetch
+            </button>`);
+    }
+    
     // Add delete button
     buttons.push(`<button class="view-button delete-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
                 Delete
@@ -129,6 +136,15 @@ function createMaterialCard(material) {
     editButton.addEventListener("click", function (e) {
       e.stopPropagation(); // Prevent card click
       openEditModal(material);
+    });
+  }
+
+  // Add click handler for refetch button
+  const refetchButton = card.querySelector(".refetch-button");
+  if (refetchButton) {
+    refetchButton.addEventListener("click", function (e) {
+      e.stopPropagation(); // Prevent card click
+      refetchLinkContent(material);
     });
   }
 
@@ -350,6 +366,92 @@ async function saveEditedTextContent() {
   } catch (error) {
     console.error("Error updating textbook:", error);
     showNotification("Error updating textbook. Please try again.", "error");
+  }
+}
+
+async function refetchLinkContent(material) {
+  if (!material.sourceId || !material.fileName) {
+    showNotification("Error: Material information not found", "error");
+    return;
+  }
+
+  const url = material.fileName; // URL is stored in fileName for links
+  const sourceId = material.sourceId;
+  let courseId = material.courseId;
+
+  // Fallback: get courseId from selected course if not in material
+  if (!courseId) {
+    try {
+      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+      if (selectedCourse && selectedCourse.id) {
+        courseId = selectedCourse.id;
+      }
+    } catch (e) {
+      console.error("Error getting selected course:", e);
+    }
+  }
+
+  if (!courseId) {
+    showNotification("Error: Course ID not found", "error");
+    return;
+  }
+
+  try {
+    // Show loading notification
+    showNotification("Refetching URL content...", "info");
+
+    // Step 1: Fetch new content from URL
+    const fetchResponse = await fetch("/api/rag-llm/fetch-url-content", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: url }),
+    });
+
+    if (!fetchResponse.ok) {
+      const errorData = await fetchResponse.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to fetch URL content");
+    }
+
+    const fetchData = await fetchResponse.json();
+    if (!fetchData.success || !fetchData.content) {
+      throw new Error("No content retrieved from URL");
+    }
+
+    const newContent = fetchData.content;
+
+    // Step 2: Call API to refetch material (delete old, save new)
+    const response = await fetch("/api/material/refetch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceId: sourceId,
+        courseId: courseId,
+        url: url,
+        content: newContent,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showNotification(data.error || "Failed to refetch material", "error");
+      return;
+    }
+
+    // Reload materials from server to ensure consistency
+    await loadCourseMaterials();
+    
+    // Reapply filters to refresh the display
+    applyFilters();
+
+    showNotification("Link content refetched successfully", "success");
+  } catch (error) {
+    console.error("Error refetching link content:", error);
+    showNotification("Error refetching link content. Please try again.", "error");
   }
 }
 
