@@ -19,6 +19,7 @@ class GRASPNavigation {
       return "question-bank";
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
+    if (path.includes("users")) return "users";
     return "dashboard"; // default
   }
 
@@ -29,6 +30,7 @@ class GRASPNavigation {
     this.initializeUserControls();
     this.initializeRoleSwitch();
     this.setActiveNavigationItem();
+    this.loadCourseSelector();
   }
 
   createNavigation() {
@@ -79,14 +81,11 @@ class GRASPNavigation {
           </div>
         </div>
 
-        <!-- Search Bar -->
-        <div class="search-section">
-          <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input type="text" placeholder="${
-              this.currentRole === "student" ? "Q Search..." : "Search for..."
-            }">
-          </div>
+        <!-- Course Selection Dropdown -->
+        <div class="course-selection-section">
+          <label style="margin-bottom: 10px; display: block;" for="course-selector">Current Course:</label>
+          <select class="course-selector" id="course-selector">
+          </select>
         </div>
 
         <!-- Navigation Menu -->
@@ -290,29 +289,16 @@ class GRASPNavigation {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       }
 
-      /* Search Section */
-      .search-section {
+      /* Course Selection Section */
+      .course-selection-section {
         padding: 0 25px 25px 25px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         margin-bottom: 25px;
       }
 
-      .search-box {
-        position: relative;
-        display: flex;
-        align-items: center;
-      }
-
-      .search-box i {
-        position: absolute;
-        left: 15px;
-        color: rgba(255, 255, 255, 0.6);
-        font-size: 16px;
-      }
-
-      .search-box input {
+      .course-selection-section select {
         width: 100%;
-        padding: 12px 15px 12px 45px;
+        padding: 5px 10px;
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 8px;
@@ -322,12 +308,7 @@ class GRASPNavigation {
         transition: all 0.3s ease;
       }
 
-      .search-box input::placeholder {
-        color: rgba(255, 255, 255, 0.6);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      }
-
-      .search-box input:focus {
+      .course-selection-section select:focus {
         outline: none;
         border-color: #3498db;
         background: rgba(255, 255, 255, 0.15);
@@ -466,6 +447,33 @@ class GRASPNavigation {
     document.head.appendChild(navStyles);
   }
 
+  async loadCourseSelector() {
+    const courseSelector = document.getElementById("course-selector");
+    
+    const courses = await fetch("/api/courses/my-courses");
+    const data = await courses.json();
+
+    if (data.success && data.courses.length > 0) {
+      data.courses.forEach((course) => {
+        const option = document.createElement("option");
+        option.value = course._id;
+        option.textContent = `${course.courseName}`;
+        if (course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id) {
+          option.selected = true;
+        }
+        courseSelector.appendChild(option);
+      }); 
+    }
+    
+    // Attach click event to course selector, update selected course in session storage and refresh page upon change.
+    courseSelector.addEventListener("change", (e) => {
+      const courseId = e.target.value;
+      const courseName = data.courses.find((course) => course._id === courseId).courseName;
+      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: courseId, name: courseName}));
+      window.location.href = window.location.pathname;
+    });
+  }
+
   initializeNavigation() {
     const navItems = document.querySelectorAll(".nav-item");
 
@@ -475,13 +483,6 @@ class GRASPNavigation {
         if (e.target.tagName === "A" || e.target.closest("a")) {
           return;
         }
-
-        // Remove active class from all items
-        navItems.forEach((nav) => nav.classList.remove("active"));
-
-        // Add active class to clicked item
-        item.classList.add("active");
-
         // Handle navigation
         const navText = item.querySelector("span").textContent;
         console.log(`Navigating to: ${navText}`);

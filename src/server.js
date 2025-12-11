@@ -95,6 +95,10 @@ app.get("/onboarding", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
+app.get("/users", ensureAuthenticated(), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/users.html"));
+});
+
 // API endpoints - pass middleware function by reference (no parentheses)
 app.use("/api/example", ensureAuthenticatedAPI, exampleRoutes);
 app.use("/api/upload", ensureAuthenticatedAPI, uploadRoutes);

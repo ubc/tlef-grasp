@@ -20,7 +20,6 @@ class QuestionBankPage {
 
   async init() {
     this.initializeNavigation();
-    await this.loadCourseData();
     this.initializeData();
     this.initializeEventListeners();
     this.renderAll();
@@ -29,50 +28,6 @@ class QuestionBankPage {
   initializeNavigation() {
     if (window.GRASPNavigation) {
       new window.GRASPNavigation();
-    }
-  }
-
-  async loadCourseData() {
-    try {
-      const response = await fetch("/api/courses/my-courses");
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.courses.length > 0) {
-        this.updateCourseSelector(data.courses);
-      } else {
-        this.showNoCoursesMessage();
-      }
-    } catch (error) {
-      console.error("Error loading course data:", error);
-      this.showNoCoursesMessage();
-    }
-  }
-
-  updateCourseSelector(courses) {
-    const courseSelector = document.getElementById("course-selector");
-    if (courseSelector) {
-      // Keep the "All Courses" option and clear others
-      courseSelector.innerHTML = '<option value="all">All Courses</option>';
-
-      // Add course options
-      courses.forEach((course) => {
-        const option = document.createElement("option");
-        option.value = course.code;
-        option.textContent = `${course.code} - ${course.name}`;
-        courseSelector.appendChild(option);
-      });
-    }
-  }
-
-  showNoCoursesMessage() {
-    const courseSelector = document.getElementById("course-selector");
-    if (courseSelector) {
-      courseSelector.innerHTML =
-        '<option value="">No courses available. Please complete onboarding first.</option>';
     }
   }
 
@@ -284,15 +239,6 @@ class QuestionBankPage {
   }
 
   initializeEventListeners() {
-    // Course selector
-    const courseSelector = document.getElementById("course-selector");
-    if (courseSelector) {
-      courseSelector.addEventListener("change", async (e) => {
-        this.state.course = e.target.value;
-        await this.renderAll();
-      });
-    }
-
     // Tab switching
     const tabButtons = document.querySelectorAll(".tab-button");
     tabButtons.forEach((button) => {

@@ -12,9 +12,6 @@ async function initializeDashboard() {
     // Load user data from onboarding
     await loadUserData();
 
-    // Load course data
-    await loadCourseData();
-
     // Initialize dashboard-specific functionality
     initializeDashboardContent();
 
@@ -47,60 +44,10 @@ async function loadUserData() {
   }
 }
 
-async function loadCourseData() {
-  try {
-    const response = await fetch("/api/courses/my-courses");
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.success && data.courses.length > 0) {
-      // Update course selector
-      updateCourseSelector(data.courses);
-
-      // Update generation status
-      updateGenerationStatus(data.courses);
-
-      // Update review status with first course
-      if (data.courses.length > 0) {
-        updateReviewStatus(data.courses[0].code);
-      }
-    } else {
-      // No courses available - show empty states
-      showEmptyStates();
-    }
-  } catch (error) {
-    console.error("Error loading course data:", error);
-    showEmptyStates();
-  }
-}
-
 function updateWelcomeMessage(instructorName) {
   const welcomeElement = document.getElementById("welcome-message");
   if (welcomeElement && instructorName) {
     welcomeElement.textContent = `Hello, ${instructorName}`;
-  }
-}
-
-function updateCourseSelector(courses) {
-  const courseSelector = document.getElementById("course-selector");
-  if (courseSelector) {
-    // Clear existing options except the first one
-    courseSelector.innerHTML = '<option value="">Select a course...</option>';
-
-    // Add course options
-    courses.forEach((course) => {
-      const option = document.createElement("option");
-      option.value = course.courseCode;
-      option.textContent = `${course.courseName}`;
-
-      if ( course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id ) {
-        option.selected = true;
-      }
-      courseSelector.appendChild(option);
-    });
   }
 }
 
@@ -269,15 +216,6 @@ function initializeInteractiveElements() {
       handleQuickStartAction(action);
     });
   });
-
-  // Course selector
-  const courseSelector = document.getElementById("course-selector");
-  if (courseSelector) {
-    courseSelector.addEventListener("change", function () {
-      const selectedCourse = this.value;
-      updateReviewStatus(selectedCourse);
-    });
-  }
 }
 
 function handleQuickStartAction(action) {
@@ -343,6 +281,5 @@ function initializeProgressAnimations() {
 window.GRASPDashboard = {
   updateReviewStatus,
   handleQuickStartAction,
-  loadCourseData,
   updateGenerationStatus,
 };
