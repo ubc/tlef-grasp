@@ -58,9 +58,23 @@ const getCourseMaterials = async (courseId) => {
     }
 };
 
+const getMaterialBySourceId = async (sourceId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+        const material = await collection.findOne({ sourceId: sourceId });
+        return material;
+    }
+    catch (error) {
+        console.error("Error getting material by sourceId:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     saveMaterial,
     deleteMaterial,
     getCourseMaterials,
     getMaterialCourseId,
+    getMaterialBySourceId,
 };

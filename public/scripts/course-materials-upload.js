@@ -601,13 +601,16 @@ function getSelectedCourse() {
 // Helper function to add material to course materials list
 function addMaterialToCourseMaterials(fileObj, sourceId) {
   if (window.CourseMaterials && window.CourseMaterials.addMaterial) {
+    const selectedCourse = getSelectedCourse();
 
     const material = {
       fileName: fileObj.fileName,
       fileSize: fileObj.fileSize,
       fileType: fileObj.fileType,
+      fileContent: fileObj.fileContent || null,
       sourceId: sourceId,
-      createdAt: new Date(),
+      courseId: selectedCourse ? selectedCourse.id : null,
+      createdAt: fileObj.createdAt || new Date(),
     };
 
     window.CourseMaterials.addMaterial(material);

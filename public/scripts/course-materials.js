@@ -10,7 +10,36 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize course materials
   initializeCourseMaterials();
+
+  // Initialize edit modal event listeners
+  initializeEditModal();
 });
+
+function initializeEditModal() {
+  const editModal = document.getElementById("edit-text-modal");
+  const editModalClose = document.getElementById("edit-text-modal-close");
+  const editModalCancel = document.getElementById("edit-text-modal-cancel");
+  const editModalSave = document.getElementById("edit-text-modal-save");
+
+  if (editModalClose) {
+    editModalClose.addEventListener("click", closeEditModal);
+  }
+  if (editModalCancel) {
+    editModalCancel.addEventListener("click", closeEditModal);
+  }
+  if (editModalSave) {
+    editModalSave.addEventListener("click", saveEditedTextContent);
+  }
+
+  // Close on backdrop click
+  if (editModal) {
+    editModal.addEventListener("click", function(e) {
+      if (e.target === editModal) {
+        closeEditModal();
+      }
+    });
+  }
+}
 
 async function initializeCourseMaterials() {
   console.log("Initializing Course Materials page...");
@@ -73,13 +102,34 @@ function createMaterialCard(material) {
         </div>`;
 
   if ( material.sourceId ) {
+    const buttons = [];
+    
+    // Add edit button for textbooks (text/plain type)
+    if (material.fileType && material.fileType.includes("text")) {
+      buttons.push(`<button class="view-button edit-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+                Edit
+            </button>`);
+    }
+    
+    // Add delete button
+    buttons.push(`<button class="view-button delete-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+                Delete
+            </button>`);
+    
     card.innerHTML += `
         <div class="material-footer">
-            <button class="view-button delete-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
-                Delete
-            </button>
+            ${buttons.join('')}
         </div>
     `;
+  }
+
+  // Add click handler for edit button
+  const editButton = card.querySelector(".edit-button");
+  if (editButton) {
+    editButton.addEventListener("click", function (e) {
+      e.stopPropagation(); // Prevent card click
+      openEditModal(material);
+    });
   }
 
   // Add click handler for delete button
@@ -190,6 +240,117 @@ function showDeleteConfirmation(sourceId, materialName) {
 function closeDeleteModal() {
   const modal = document.getElementById("delete-confirmation-modal");
   modal.classList.remove("modal--active");
+}
+
+// Show edit modal for textbook
+function openEditModal(material) {
+  const modal = document.getElementById("edit-text-modal");
+  const textContent = document.getElementById("edit-text-content");
+  const materialNameEl = document.getElementById("edit-material-name");
+  
+  if (!modal || !textContent) {
+    console.error("Edit modal elements not found");
+    return;
+  }
+
+  // Set material name
+  if (materialNameEl) {
+    materialNameEl.textContent = material.fileName || "Textbook";
+  }
+
+  // Load existing content
+  textContent.value = material.fileContent || "";
+
+  // Store material data for save
+  textContent.dataset.sourceId = material.sourceId;
+  textContent.dataset.courseId = material.courseId;
+
+  // Show modal
+  modal.classList.add("modal--active");
+  textContent.focus();
+}
+
+function closeEditModal() {
+  const modal = document.getElementById("edit-text-modal");
+  if (modal) {
+    modal.classList.remove("modal--active");
+    const textContent = document.getElementById("edit-text-content");
+    if (textContent) {
+      textContent.value = "";
+      delete textContent.dataset.sourceId;
+      delete textContent.dataset.courseId;
+    }
+  }
+}
+
+async function saveEditedTextContent() {
+  const textContentEl = document.getElementById("edit-text-content");
+  if (!textContentEl) return;
+
+  const textContent = textContentEl.value.trim();
+  if (!textContent) {
+    showNotification("Please enter some content", "error");
+    return;
+  }
+
+  const sourceId = textContentEl.dataset.sourceId;
+  let courseId = textContentEl.dataset.courseId;
+
+  if (!sourceId) {
+    showNotification("Error: Material source ID not found", "error");
+    return;
+  }
+
+  // Fallback: get courseId from selected course if not in material
+  if (!courseId) {
+    try {
+      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+      if (selectedCourse && selectedCourse.id) {
+        courseId = selectedCourse.id;
+      }
+    } catch (e) {
+      console.error("Error getting selected course:", e);
+    }
+  }
+
+  if (!courseId) {
+    showNotification("Error: Course ID not found", "error");
+    return;
+  }
+
+  try {
+    // Call API to update material (delete old, save new)
+    const response = await fetch("/api/material/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceId: sourceId,
+        courseId: courseId,
+        textContent: textContent,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showNotification(data.error || "Failed to update material", "error");
+      return;
+    }
+
+    // Reload materials from server to ensure consistency
+    await loadCourseMaterials();
+    
+    // Reapply filters to refresh the display
+    applyFilters();
+
+    closeEditModal();
+    showNotification("Textbook updated successfully", "success");
+  } catch (error) {
+    console.error("Error updating textbook:", error);
+    showNotification("Error updating textbook. Please try again.", "error");
+  }
 }
 
 async function confirmDelete(sourceId) {
