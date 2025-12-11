@@ -56,9 +56,6 @@ async function initializeCourseMaterials() {
 
   // Initialize filters
   initializeFilters();
-
-  // Initialize search
-  initializeSearch();
 }
 
 async function loadCourseMaterials() {
@@ -181,30 +178,12 @@ function initializeFilters() {
   typeFilter.addEventListener("change", applyFilters);
 }
 
-function initializeSearch() {
-  const searchInput = document.getElementById("searchInput");
-
-  searchInput.addEventListener("input", function () {
-    applyFilters();
-  });
-}
-
 function applyFilters() {
   const typeFilter = document.getElementById("typeFilter").value;
-  const searchTerm = document.getElementById("searchInput").value.toLowerCase();
 
   filteredMaterials = materials.filter((material) => {
     // Type filter
-    if (typeFilter !== "all" && material.fileType !== typeFilter) {
-      return false;
-    }
-
-    // Search filter
-    if (
-      searchTerm &&
-      !material.fileName.toLowerCase().includes(searchTerm) &&
-      !material.description.toLowerCase().includes(searchTerm)
-    ) {
+    if (typeFilter !== "all" && ! material.fileType.includes(typeFilter)) {
       return false;
     }
 
@@ -506,7 +485,6 @@ async function deleteMaterial(sourceId) {
 
 function clearFilters() {
   document.getElementById("typeFilter").value = "all";
-  document.getElementById("searchInput").value = "";
 
   filteredMaterials = [...materials];
   loadMaterials();
