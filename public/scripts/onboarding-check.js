@@ -5,6 +5,10 @@ function checkOnboardingStatus() {
   const isOnboarded = null !== sessionStorage.getItem("grasp-selected-course");
   const currentPath = window.location.pathname;
 
+  if (currentPath === "/") {
+    return;
+  }
+
   if ( isOnboarded && currentPath === "/onboarding" ) {
     window.location.href = "/dashboard";
   }

@@ -55,7 +55,11 @@ app.use('/auth', authRoutes);
 app.use(express.static(path.join(__dirname, "../public")));
 
 // Page routes
-app.get("/", ensureAuthenticated(), (req, res) => {
+app.get("/", (req, res) => {
+
+});
+
+app.get("/onboarding", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
@@ -89,10 +93,6 @@ app.get("/course-materials", ensureAuthenticated(), (req, res) => {
 
 app.get("/achievements", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/achievements.html"));
-});
-
-app.get("/onboarding", ensureAuthenticated(), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
 app.get("/users", ensureAuthenticated(), (req, res) => {
