@@ -121,6 +121,9 @@
     border: 2px solid transparent;
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
 .material-card::before {
@@ -192,6 +195,7 @@
     margin-bottom: 8px;
     line-height: 1.4;
     word-break: break-all;
+    margin-top: 0;
 }
 
 .material-type {
@@ -222,6 +226,17 @@
     border-top: 1px solid #ecf0f1;
 }
 
+.material-footer-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.material-footer-right {
+    display: flex;
+    align-items: center;
+}
+
 .view-button {
     background: linear-gradient(135deg, #3498db, #2980b9);
     color: white;
@@ -249,6 +264,19 @@
 .delete-button:hover {
     background: linear-gradient(135deg, #c0392b, #a93226) !important;
     box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4) !important;
+}
+
+.icon-button {
+    padding: 10px !important;
+    min-width: 40px;
+    width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.icon-button i {
+    font-size: 14px;
 }
 
 /* No Results State */
@@ -650,6 +678,7 @@
     border-radius: 6px;
     font-size: 14px;
     resize: vertical;
+    box-sizing: border-box;
 }
 
 .text-input:focus,

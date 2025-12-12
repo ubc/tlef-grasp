@@ -76,7 +76,9 @@
                                     </button>
                                 </div>
                                 <div class="modal__body">
-                                    <label for="text-content">Paste your text content:</label>
+                                    <label for="text-document-title">Document Title:</label>
+                                    <input type="text" id="text-document-title" class="text-input" placeholder="Enter document title...">
+                                    <label for="text-content" style="margin-top: 15px;">Paste your text content:</label>
                                     <textarea id="text-content" class="text-input" rows="10" placeholder="Paste your text content here..."></textarea>
                                 </div>
                                 <div class="modal__footer">
@@ -96,7 +98,9 @@
                                     </button>
                                 </div>
                                 <div class="modal__body">
-                                    <label for="url-input">Enter URL:</label>
+                                    <label for="url-document-title">Document Title:</label>
+                                    <input type="text" id="url-document-title" class="text-input" placeholder="Enter document title...">
+                                    <label for="url-input" style="margin-top: 15px;">Enter URL:</label>
                                     <input type="url" id="url-input" class="url-input" placeholder="https://example.com">
                                 </div>
                                 <div class="modal__footer">
@@ -169,13 +173,56 @@
                 </button>
             </div>
             <div class="modal__body">
-                <p id="edit-material-name" style="font-weight: 600; color: #2c3e50; margin-bottom: 10px;"></p>
-                <label for="edit-text-content">Edit your text content:</label>
+                <label for="edit-document-title">Document Title:</label>
+                <input type="text" id="edit-document-title" class="text-input" placeholder="Enter document title...">
+                <label for="edit-text-content" style="margin-top: 15px;">Edit your text content:</label>
                 <textarea id="edit-text-content" class="text-input" rows="15" placeholder="Enter your text content here..."></textarea>
             </div>
             <div class="modal__footer">
                 <button type="button" class="btn btn--secondary" id="edit-text-modal-cancel">Cancel</button>
                 <button type="button" class="btn btn--primary" id="edit-text-modal-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit PDF Modal -->
+    <div class="modal" id="edit-pdf-modal">
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3>Edit PDF</h3>
+                <button type="button" class="modal__close" id="edit-pdf-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal__body">
+                <label for="edit-pdf-document-title">Document Title:</label>
+                <input type="text" id="edit-pdf-document-title" class="text-input" placeholder="Enter document title...">
+            </div>
+            <div class="modal__footer">
+                <button type="button" class="btn btn--secondary" id="edit-pdf-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn--primary" id="edit-pdf-modal-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Link Modal -->
+    <div class="modal" id="edit-link-modal">
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3>Edit Link</h3>
+                <button type="button" class="modal__close" id="edit-link-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal__body">
+                <label for="edit-link-document-title">Document Title:</label>
+                <input type="text" id="edit-link-document-title" class="text-input" placeholder="Enter document title...">
+                <label for="edit-link-url" style="margin-top: 15px;">URL:</label>
+                <input type="url" id="edit-link-url" class="url-input" placeholder="https://example.com">
+            </div>
+            <div class="modal__footer">
+                <button type="button" class="btn btn--secondary" id="edit-link-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn--primary" id="edit-link-modal-save">Save</button>
             </div>
         </div>
     </div>

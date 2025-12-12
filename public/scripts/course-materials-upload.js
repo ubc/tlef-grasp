@@ -223,16 +223,16 @@ async function addFiles(files) {
                 sourceId,
                 selectedCourse.id,
                 {
-                  fileName: fileObj.file.name,
                   fileType: fileObj.file.type,
                   fileSize: fileObj.file.size,
+                  documentTitle: fileObj.file.name, // For PDFs, use filename as documentTitle
                 }
               );
 
               const stateFileObj = {
-                fileName: fileObj.file.name,
                 fileSize: fileObj.file.size,
                 fileType: fileObj.file.type,
+                documentTitle: fileObj.file.name, // For PDFs, use filename as documentTitle
                 sourceId: sourceId,
                 createdAt: new Date(),
               };
@@ -454,6 +454,10 @@ function closeTextModal() {
     if (textContent) {
       textContent.value = "";
     }
+    const textDocumentTitle = document.getElementById("text-document-title");
+    if (textDocumentTitle) {
+      textDocumentTitle.value = "";
+    }
   }
 }
 
@@ -461,13 +465,15 @@ async function saveTextContent() {
   const textContentEl = document.getElementById("text-content");
   if (!textContentEl) return;
 
-
   const textContent = textContentEl.value.trim();
+  const documentTitleEl = document.getElementById("text-document-title");
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+
   if (textContent) {
     const selectedCourse = getSelectedCourse();
     const textFile = {
       id: Date.now() + Math.random(),
-      name: "",
+      name: documentTitle || "",
       size: new Blob([textContent]).size,
       type: "text/plain",
       content: textContent,
@@ -481,24 +487,25 @@ async function saveTextContent() {
         await contentGenerator.processTextForRAG(
           textContent,
           selectedCourse.name,
-          sourceId
+          sourceId,
+          documentTitle
         );
 
         await saveMaterialToDatabase(
           sourceId,
           selectedCourse.id,
           {
-            fileName: textFile.name,
             fileType: textFile.type,
             fileSize: textFile.size,
             fileContent: textContent,
+            documentTitle: documentTitle,
           });
   
         const stateFileObj = {
-          fileName: textFile.name,
           fileSize: textFile.size,
           fileType: textFile.type,
           fileContent: textContent,
+          documentTitle: documentTitle,
           sourceId: sourceId,
           createdAt: new Date(),
         };
@@ -537,6 +544,10 @@ function closeUrlModal() {
     if (urlInput) {
       urlInput.value = "";
     }
+    const urlDocumentTitle = document.getElementById("url-document-title");
+    if (urlDocumentTitle) {
+      urlDocumentTitle.value = "";
+    }
   }
 }
 
@@ -554,27 +565,32 @@ async function saveUrlContent() {
     return;
   }
 
+  const documentTitleEl = document.getElementById("url-document-title");
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+
   const selectedCourse = getSelectedCourse();
   const sourceId = selectedCourse.id + "-" + Date.now() + "-" + Math.random();
 
   // Add URL to content generator
   if (contentGenerator) {
     try {
-      const content = await contentGenerator.processUrlForRAG(url, selectedCourse.name, sourceId);
+      const content = await contentGenerator.processUrlForRAG(url, selectedCourse.name, sourceId, documentTitle);
 
       await saveMaterialToDatabase(
         sourceId,
         selectedCourse.id,
         {
-          fileName: url,
           fileType: 'link',
           fileSize: new Blob([content]).size,
+          fileContent: url, // For links, save URL to fileContent
+          documentTitle: documentTitle,
         });
   
       const stateUrlObj = {
-        fileName: url,
         fileSize: new Blob([content]).size,
         fileType: 'link',
+        fileContent: url, // For links, save URL to fileContent
+        documentTitle: documentTitle,
         sourceId: sourceId,
         createdAt: new Date(),
       };
@@ -604,10 +620,10 @@ function addMaterialToCourseMaterials(fileObj, sourceId) {
     const selectedCourse = getSelectedCourse();
 
     const material = {
-      fileName: fileObj.fileName,
       fileSize: fileObj.fileSize,
       fileType: fileObj.fileType,
       fileContent: fileObj.fileContent || null,
+      documentTitle: fileObj.documentTitle || null,
       sourceId: sourceId,
       courseId: selectedCourse ? selectedCourse.id : null,
       createdAt: fileObj.createdAt || new Date(),

@@ -7,10 +7,10 @@ const saveMaterial = async (sourceId, courseId, materialData) => {
         await collection.insertOne({
             sourceId: sourceId,
             courseId: courseId,
-            fileName: materialData.fileName,
             fileType: materialData.fileType,
             fileSize: materialData.fileSize,
             fileContent: materialData.fileContent || null,
+            documentTitle: materialData.documentTitle || null,
             createdAt: new Date(),
         });
     }

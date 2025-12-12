@@ -13,6 +13,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize edit modal event listeners
   initializeEditModal();
+  
+  // Initialize edit link modal event listeners
+  initializeEditLinkModal();
+  
+  // Initialize edit PDF modal event listeners
+  initializeEditPdfModal();
 });
 
 function initializeEditModal() {
@@ -36,6 +42,58 @@ function initializeEditModal() {
     editModal.addEventListener("click", function(e) {
       if (e.target === editModal) {
         closeEditModal();
+      }
+    });
+  }
+}
+
+function initializeEditPdfModal() {
+  const editPdfModal = document.getElementById("edit-pdf-modal");
+  const editPdfModalClose = document.getElementById("edit-pdf-modal-close");
+  const editPdfModalCancel = document.getElementById("edit-pdf-modal-cancel");
+  const editPdfModalSave = document.getElementById("edit-pdf-modal-save");
+
+  if (editPdfModalClose) {
+    editPdfModalClose.addEventListener("click", closeEditPdfModal);
+  }
+  if (editPdfModalCancel) {
+    editPdfModalCancel.addEventListener("click", closeEditPdfModal);
+  }
+  if (editPdfModalSave) {
+    editPdfModalSave.addEventListener("click", saveEditedPdfContent);
+  }
+
+  // Close on backdrop click
+  if (editPdfModal) {
+    editPdfModal.addEventListener("click", function(e) {
+      if (e.target === editPdfModal) {
+        closeEditPdfModal();
+      }
+    });
+  }
+}
+
+function initializeEditLinkModal() {
+  const editLinkModal = document.getElementById("edit-link-modal");
+  const editLinkModalClose = document.getElementById("edit-link-modal-close");
+  const editLinkModalCancel = document.getElementById("edit-link-modal-cancel");
+  const editLinkModalSave = document.getElementById("edit-link-modal-save");
+
+  if (editLinkModalClose) {
+    editLinkModalClose.addEventListener("click", closeEditLinkModal);
+  }
+  if (editLinkModalCancel) {
+    editLinkModalCancel.addEventListener("click", closeEditLinkModal);
+  }
+  if (editLinkModalSave) {
+    editLinkModalSave.addEventListener("click", saveEditedLinkContent);
+  }
+
+  // Close on backdrop click
+  if (editLinkModal) {
+    editLinkModal.addEventListener("click", function(e) {
+      if (e.target === editLinkModal) {
+        closeEditLinkModal();
       }
     });
   }
@@ -85,13 +143,16 @@ function createMaterialCard(material) {
   const typeIcon = getTypeIcon(material.fileType);
   const typeLabel = getTypeLabel(material.fileType);
 
+  // Use documentTitle if available
+  const displayTitle = material.documentTitle || "Untitled";
+  
   card.innerHTML = `
         <div class="material-header">
             <div class="material-icon ${typeLabel.toLowerCase()}">
                 <i class="${typeIcon}"></i>
             </div>
             <div class="material-info">
-                <h3 class="material-title">${material.fileName}</h3>
+                <h3 class="material-title">${displayTitle}</h3>
                 <p class="material-type">${typeLabel}</p>
                 <p class="material-size">Size: ${formatFileSize(material.fileSize)}</p>
                 <p class="material-createdAt">Uploaded on ${new Date(material.createdAt).toLocaleDateString()}</p>
@@ -99,30 +160,46 @@ function createMaterialCard(material) {
         </div>`;
 
   if ( material.sourceId ) {
-    const buttons = [];
+    let leftButtons = [];
+    let deleteButton = '';
     
     // Add edit button for textbooks (text/plain type)
     if (material.fileType && material.fileType.includes("text")) {
-      buttons.push(`<button class="view-button edit-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+      leftButtons.push(`<button class="view-button edit-button" data-source-id="${material.sourceId}">
                 Edit
             </button>`);
     }
     
-    // Add refetch button for links
+    // Add edit button for PDFs
+    if (material.fileType && material.fileType.includes("pdf")) {
+      leftButtons.push(`<button class="view-button edit-pdf-button" data-source-id="${material.sourceId}">
+                Edit
+            </button>`);
+    }
+    
+    // Add edit and refetch buttons for links
     if (material.fileType && material.fileType === 'link') {
-      buttons.push(`<button class="view-button refetch-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
-                Refetch
+      leftButtons.push(`<button class="view-button edit-link-button" data-source-id="${material.sourceId}">
+                Edit
+            </button>`);
+      leftButtons.push(`<button class="view-button refetch-button icon-button" data-source-id="${material.sourceId}" title="Refetch content">
+                <i class="fas fa-sync-alt"></i>
             </button>`);
     }
     
     // Add delete button
-    buttons.push(`<button class="view-button delete-button" data-source-id="${material.sourceId}" data-material-name="${material.fileName}">
+    deleteButton = `<button class="view-button delete-button" data-source-id="${material.sourceId}">
                 Delete
-            </button>`);
+            </button>`;
     
     card.innerHTML += `
         <div class="material-footer">
-            ${buttons.join('')}
+            <div class="material-footer-left">
+                ${leftButtons.join('')}
+            </div>
+            <div class="material-footer-right">
+                ${deleteButton}
+            </div>
         </div>
     `;
   }
@@ -133,6 +210,24 @@ function createMaterialCard(material) {
     editButton.addEventListener("click", function (e) {
       e.stopPropagation(); // Prevent card click
       openEditModal(material);
+    });
+  }
+
+  // Add click handler for edit PDF button
+  const editPdfButton = card.querySelector(".edit-pdf-button");
+  if (editPdfButton) {
+    editPdfButton.addEventListener("click", function (e) {
+      e.stopPropagation(); // Prevent card click
+      openEditPdfModal(material);
+    });
+  }
+
+  // Add click handler for edit link button
+  const editLinkButton = card.querySelector(".edit-link-button");
+  if (editLinkButton) {
+    editLinkButton.addEventListener("click", function (e) {
+      e.stopPropagation(); // Prevent card click
+      openEditLinkModal(material);
     });
   }
 
@@ -150,7 +245,7 @@ function createMaterialCard(material) {
   if (deleteButton) {
     deleteButton.addEventListener("click", function (e) {
       e.stopPropagation(); // Prevent card click
-      showDeleteConfirmation(material.sourceId, material.fileName);
+      showDeleteConfirmation(material.sourceId, material.documentTitle || "Untitled");
     });
   }
 
@@ -196,13 +291,9 @@ function applyFilters() {
 // Show delete confirmation modal
 function showDeleteConfirmation(sourceId, materialName) {
   const modal = document.getElementById("delete-confirmation-modal");
-  const materialNameEl = document.getElementById("delete-material-name");
   const confirmBtn = document.getElementById("delete-modal-confirm");
   const cancelBtn = document.getElementById("delete-modal-cancel");
   const closeBtn = document.getElementById("delete-modal-close");
-
-  // Set material name
-  materialNameEl.textContent = materialName;
 
   // Show modal
   modal.classList.add("modal--active");
@@ -241,16 +332,16 @@ function closeDeleteModal() {
 function openEditModal(material) {
   const modal = document.getElementById("edit-text-modal");
   const textContent = document.getElementById("edit-text-content");
-  const materialNameEl = document.getElementById("edit-material-name");
+  const documentTitleEl = document.getElementById("edit-document-title");
   
   if (!modal || !textContent) {
     console.error("Edit modal elements not found");
     return;
   }
 
-  // Set material name
-  if (materialNameEl) {
-    materialNameEl.textContent = material.fileName || "Textbook";
+  // Load existing document title
+  if (documentTitleEl) {
+    documentTitleEl.value = material.documentTitle || "";
   }
 
   // Load existing content
@@ -262,7 +353,11 @@ function openEditModal(material) {
 
   // Show modal
   modal.classList.add("modal--active");
-  textContent.focus();
+  if (documentTitleEl) {
+    documentTitleEl.focus();
+  } else {
+    textContent.focus();
+  }
 }
 
 function closeEditModal() {
@@ -274,6 +369,10 @@ function closeEditModal() {
       textContent.value = "";
       delete textContent.dataset.sourceId;
       delete textContent.dataset.courseId;
+    }
+    const documentTitleEl = document.getElementById("edit-document-title");
+    if (documentTitleEl) {
+      documentTitleEl.value = "";
     }
   }
 }
@@ -287,6 +386,9 @@ async function saveEditedTextContent() {
     showNotification("Please enter some content", "error");
     return;
   }
+
+  const documentTitleEl = document.getElementById("edit-document-title");
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
 
   const sourceId = textContentEl.dataset.sourceId;
   let courseId = textContentEl.dataset.courseId;
@@ -323,7 +425,11 @@ async function saveEditedTextContent() {
       body: JSON.stringify({
         sourceId: sourceId,
         courseId: courseId,
-        textContent: textContent,
+        documentType: "text",
+        documentData: {
+          textContent: textContent,
+        },
+        documentTitle: documentTitle,
       }),
     });
 
@@ -348,13 +454,245 @@ async function saveEditedTextContent() {
   }
 }
 
+// Show edit modal for PDF
+function openEditPdfModal(material) {
+  const modal = document.getElementById("edit-pdf-modal");
+  const documentTitleEl = document.getElementById("edit-pdf-document-title");
+  
+  if (!modal || !documentTitleEl) {
+    console.error("Edit PDF modal elements not found");
+    return;
+  }
+
+  // Load existing document title
+  documentTitleEl.value = material.documentTitle || "";
+
+  // Store material data for save
+  documentTitleEl.dataset.sourceId = material.sourceId;
+  documentTitleEl.dataset.courseId = material.courseId;
+
+  // Show modal
+  modal.classList.add("modal--active");
+  documentTitleEl.focus();
+}
+
+function closeEditPdfModal() {
+  const modal = document.getElementById("edit-pdf-modal");
+  if (modal) {
+    modal.classList.remove("modal--active");
+    const documentTitleEl = document.getElementById("edit-pdf-document-title");
+    if (documentTitleEl) {
+      documentTitleEl.value = "";
+      delete documentTitleEl.dataset.sourceId;
+      delete documentTitleEl.dataset.courseId;
+    }
+  }
+}
+
+async function saveEditedPdfContent() {
+  const documentTitleEl = document.getElementById("edit-pdf-document-title");
+  if (!documentTitleEl) return;
+
+  const documentTitle = documentTitleEl.value.trim();
+
+  const sourceId = documentTitleEl.dataset.sourceId;
+  let courseId = documentTitleEl.dataset.courseId;
+
+  if (!sourceId) {
+    showNotification("Error: Material source ID not found", "error");
+    return;
+  }
+
+  // Fallback: get courseId from selected course if not in material
+  if (!courseId) {
+    try {
+      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+      if (selectedCourse && selectedCourse.id) {
+        courseId = selectedCourse.id;
+      }
+    } catch (e) {
+      console.error("Error getting selected course:", e);
+    }
+  }
+
+  if (!courseId) {
+    showNotification("Error: Course ID not found", "error");
+    return;
+  }
+
+  try {
+    // Call API to update PDF document title
+    const response = await fetch("/api/material/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceId: sourceId,
+        courseId: courseId,
+        documentType: "pdf",
+        documentData: {}, // PDFs don't need documentData, only documentTitle
+        documentTitle: documentTitle,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showNotification(data.error || "Failed to update PDF", "error");
+      return;
+    }
+
+    // Reload materials from server to ensure consistency
+    await loadCourseMaterials();
+    
+    // Reapply filters to refresh the display
+    applyFilters();
+
+    closeEditPdfModal();
+    showNotification("PDF updated successfully", "success");
+  } catch (error) {
+    console.error("Error updating PDF:", error);
+    showNotification("Error updating PDF. Please try again.", "error");
+  }
+}
+
+// Show edit modal for link
+function openEditLinkModal(material) {
+  const modal = document.getElementById("edit-link-modal");
+  const urlInput = document.getElementById("edit-link-url");
+  const documentTitleEl = document.getElementById("edit-link-document-title");
+  
+  if (!modal || !urlInput) {
+    console.error("Edit link modal elements not found");
+    return;
+  }
+
+  // Load existing document title
+  if (documentTitleEl) {
+    documentTitleEl.value = material.documentTitle || "";
+  }
+
+  // Load existing URL (stored in fileContent for links)
+  urlInput.value = material.fileContent || "";
+
+  // Store material data for save
+  urlInput.dataset.sourceId = material.sourceId;
+  urlInput.dataset.courseId = material.courseId;
+
+  // Show modal
+  modal.classList.add("modal--active");
+  if (documentTitleEl) {
+    documentTitleEl.focus();
+  } else {
+    urlInput.focus();
+  }
+}
+
+function closeEditLinkModal() {
+  const modal = document.getElementById("edit-link-modal");
+  if (modal) {
+    modal.classList.remove("modal--active");
+    const urlInput = document.getElementById("edit-link-url");
+    if (urlInput) {
+      urlInput.value = "";
+      delete urlInput.dataset.sourceId;
+      delete urlInput.dataset.courseId;
+    }
+    const documentTitleEl = document.getElementById("edit-link-document-title");
+    if (documentTitleEl) {
+      documentTitleEl.value = "";
+    }
+  }
+}
+
+async function saveEditedLinkContent() {
+  const urlInput = document.getElementById("edit-link-url");
+  if (!urlInput) return;
+
+  const url = urlInput.value.trim();
+  if (!url) {
+    showNotification("Please enter a URL", "error");
+    return;
+  }
+
+  const documentTitleEl = document.getElementById("edit-link-document-title");
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+
+  const sourceId = urlInput.dataset.sourceId;
+  let courseId = urlInput.dataset.courseId;
+
+  if (!sourceId) {
+    showNotification("Error: Material source ID not found", "error");
+    return;
+  }
+
+  // Fallback: get courseId from selected course if not in material
+  if (!courseId) {
+    try {
+      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+      if (selectedCourse && selectedCourse.id) {
+        courseId = selectedCourse.id;
+      }
+    } catch (e) {
+      console.error("Error getting selected course:", e);
+    }
+  }
+
+  if (!courseId) {
+    showNotification("Error: Course ID not found", "error");
+    return;
+  }
+
+  try {
+    // Show loading notification
+    showNotification("Updating link...", "info");
+
+    // Call API to update link material (backend will automatically fetch content from URL)
+    const response = await fetch("/api/material/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceId: sourceId,
+        courseId: courseId,
+        documentType: "link",
+        documentData: {
+          url: url,
+        },
+        documentTitle: documentTitle,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showNotification(data.error || "Failed to update link", "error");
+      return;
+    }
+
+    // Reload materials from server to ensure consistency
+    await loadCourseMaterials();
+    
+    // Reapply filters to refresh the display
+    applyFilters();
+
+    closeEditLinkModal();
+    showNotification("Link updated successfully", "success");
+  } catch (error) {
+    console.error("Error updating link:", error);
+    showNotification("Error updating link. Please try again.", "error");
+  }
+}
+
 async function refetchLinkContent(material) {
-  if (!material.sourceId || !material.fileName) {
+  if (!material.sourceId || !material.fileContent) {
     showNotification("Error: Material information not found", "error");
     return;
   }
 
-  const url = material.fileName; // URL is stored in fileName for links
+  const url = material.fileContent; // URL is stored in fileContent for links
   const sourceId = material.sourceId;
   let courseId = material.courseId;
 

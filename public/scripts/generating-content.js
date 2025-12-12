@@ -311,7 +311,7 @@ class ContentGenerator {
     }
   }
 
-  async processUrlForRAG(url, course, sourceId = null) {
+  async processUrlForRAG(url, course, sourceId = null, documentTitle = null) {
     try {
       console.log("=== PROCESSING URL FOR RAG ===");
       console.log("URL:", url);
@@ -353,6 +353,7 @@ class ContentGenerator {
         type: "url",
         course: course,
         sourceId: sourceId,
+        documentTitle: documentTitle || "",
       });
 
       return content;
@@ -362,13 +363,14 @@ class ContentGenerator {
     }
   }
 
-  async processTextForRAG(text, course, sourceId = null) {
+  async processTextForRAG(text, course, sourceId = null, documentTitle = null) {
     try {
       return await this.addDocumentToKnowledgeBase(text, {
         source: "",
         type: "text",
         course: course,
         sourceId: sourceId,
+        documentTitle: documentTitle || "",
       });
     } catch (error) {
       console.error("Error processing text for RAG:", error);
