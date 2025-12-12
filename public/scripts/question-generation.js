@@ -11,19 +11,19 @@ let pdfService = null;
 
 // Main state object
 const state = {
-  step: 1,
+  step: 1, // Step 1 is now Create Objectives (was step 3)
   course: JSON.parse(sessionStorage.getItem("grasp-selected-course")) || "",
-  selectedCourse: "", // Global course selection for Steps 2-5
+  selectedCourse: "", // Course name for display
   files: [],
   urls: [],
   summary: "",
   objectives: [],
   questions: [],
   exportFormat: "qti",
-  objectiveGroups: [], // New for Step 3
-  objectiveToDelete: null, // New for Step 3
-  selectedGroupIds: new Set(), // New for Step 3 multi-select
-  // Step 4: Question Generation
+  objectiveGroups: [], // Step 1: Create Objectives
+  objectiveToDelete: null,
+  selectedGroupIds: new Set(),
+  // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
   selectedQuestions: new Set(), // Set of selected question IDs
   filters: {
@@ -32,7 +32,7 @@ const state = {
     status: "all",
     q: "", // search query
   },
-  // Step 5: Select Output Format
+  // Step 3: Select Output Format
   formats: {
     canvasSingle: { selected: false, releaseNow: true, date: "", time: "" },
     canvasSpaced: { selected: false, releaseNow: true, date: "", time: "" },
@@ -44,11 +44,9 @@ const state = {
 
 // Step titles for dynamic updates
 const stepTitles = {
-  1: "Upload Materials",
-  2: "Review Summary",
-  3: "Create Objectives",
-  4: "Generate Questions",
-  5: "Select Output Format",
+  1: "Create Objectives",
+  2: "Generate Questions",
+  3: "Select Output Format",
 };
 
 // Bloom's taxonomy levels
@@ -775,6 +773,9 @@ document.addEventListener("DOMContentLoaded", async function () {
   console.log("Loading course data...");
   await loadCourseData();
 
+  console.log("Checking for course materials...");
+  await checkCourseMaterials();
+
   console.log("Calling updateUI...");
   updateUI();
 
@@ -785,26 +786,112 @@ document.addEventListener("DOMContentLoaded", async function () {
 
 async function loadCourseData() {
   try {
-    console.log("Loading course data for question generation...");
-    const response = await fetch("/api/courses/my-courses");
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("Course data received:", data);
-
-    if (data.success && data.courses && data.courses.length > 0) {
-      console.log("Courses found:", data.courses.length);
-      updateCourseDropdown(data.courses);
+    // Get selected course from sessionStorage
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    if (selectedCourse) {
+      state.course = selectedCourse.courseName || selectedCourse.courseCode || "";
+      state.selectedCourse = state.course;
+      console.log("Selected course:", state.course);
+      
+      // Update course display
+      const courseValue = document.getElementById("course-value");
+      if (courseValue) {
+        courseValue.textContent = state.course;
+      }
     } else {
-      console.log("No courses available - showing empty state");
-      // No courses available - show empty state
-      showNoCoursesMessage();
+      console.log("No course selected");
+      showNoCourseSelectedMessage();
     }
   } catch (error) {
     console.error("Error loading course data:", error);
-    showNoCoursesMessage();
+    showNoCourseSelectedMessage();
+  }
+}
+
+async function checkCourseMaterials() {
+  try {
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    if (!selectedCourse || !selectedCourse.id) {
+      showNoCourseSelectedMessage();
+      return;
+    }
+
+    // Check if course has materials
+    const response = await fetch(`/api/material/course/${selectedCourse.id}`);
+    const data = await response.json();
+
+    if (data.success && data.materials && data.materials.length > 0) {
+      console.log("Course has materials:", data.materials.length);
+      // Show step content, hide no materials message
+      const stepContent = document.getElementById("step-content");
+      const noMaterialsMessage = document.getElementById("no-materials-message");
+      if (stepContent) stepContent.style.display = "block";
+      if (noMaterialsMessage) noMaterialsMessage.style.display = "none";
+      
+      // Generate summary automatically in the background (needed for question generation)
+      // This replaces the old Step 2 functionality
+      await generateSummaryFromMaterials();
+    } else {
+      console.log("No materials found for course");
+      // Show no materials message, hide step content
+      const stepContent = document.getElementById("step-content");
+      const noMaterialsMessage = document.getElementById("no-materials-message");
+      if (stepContent) stepContent.style.display = "none";
+      if (noMaterialsMessage) noMaterialsMessage.style.display = "block";
+    }
+  } catch (error) {
+    console.error("Error checking course materials:", error);
+    // On error, show no materials message
+    const stepContent = document.getElementById("step-content");
+    const noMaterialsMessage = document.getElementById("no-materials-message");
+    if (stepContent) stepContent.style.display = "none";
+    if (noMaterialsMessage) noMaterialsMessage.style.display = "block";
+  }
+}
+
+// Generate summary from course materials (replaces old Step 2)
+async function generateSummaryFromMaterials() {
+  try {
+    console.log("Generating summary from course materials...");
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    
+    if (!contentGenerator) {
+      console.warn("Content generator not available");
+      return;
+    }
+
+    // Generate summary using content generator
+    // The summary will be used for question generation in step 2
+    const summary = await contentGenerator.generateSummary(
+      state.course,
+      state.files,
+      state.urls
+    );
+    
+    state.summary = summary;
+    console.log("Summary generated successfully, length:", summary.length);
+  } catch (error) {
+    console.error("Error generating summary from materials:", error);
+    // Set a default summary if generation fails
+    state.summary = `Content summary for ${state.course}. Materials have been processed and are ready for question generation.`;
+  }
+}
+
+function showNoCourseSelectedMessage() {
+  const stepContent = document.getElementById("step-content");
+  const noMaterialsMessage = document.getElementById("no-materials-message");
+  if (stepContent) stepContent.style.display = "none";
+  if (noMaterialsMessage) {
+    noMaterialsMessage.style.display = "block";
+    // Update message for no course selected
+    const messageDiv = noMaterialsMessage.querySelector("h2");
+    if (messageDiv) {
+      messageDiv.textContent = "No Course Selected";
+    }
+    const messageP = noMaterialsMessage.querySelector("p");
+    if (messageP) {
+      messageP.textContent = "Please select a course first to generate questions.";
+    }
   }
 }
 
@@ -905,26 +992,6 @@ function initializeNavigation() {
 }
 
 function initializeEventListeners() {
-  // Course selection
-  const courseSelect = document.getElementById("course-select");
-  if (courseSelect) {
-    courseSelect.addEventListener("change", (e) => {
-      state.course = e.target.value;
-      state.selectedCourse = e.target.value;
-      console.log("Course selected:", state.course);
-
-      // Update course display if not on Step 1
-      if (state.step > 1) {
-        updateCourseDisplay();
-      }
-
-      // Show success message when course is selected
-      if (state.course) {
-        showNotification(`Course selected: ${state.course}`, "info");
-      }
-    });
-  }
-
   // Navigation buttons
   const backBtn = document.getElementById("back-btn");
   const continueBtn = document.getElementById("continue-btn");
@@ -937,23 +1004,23 @@ function initializeEventListeners() {
     continueBtn.addEventListener("click", goToNextStep);
   }
 
-  // Step 3: Objectives
+  // Step 1: Objectives
   initializeObjectives();
 
-  // Step 5: Export format selection
+  // Step 3: Export format selection
   initializeExportFormat();
 }
 
 function goToNextStep() {
   console.log("goToNextStep called, current step:", state.step);
 
-  if (state.step === 5) {
+  if (state.step === 3) {
     // Final step - show export summary modal
     showExportSummaryModal();
     return;
   }
 
-  if (state.step < 5) {
+  if (state.step < 3) {
     const currentStep = state.step;
     const nextStep = currentStep + 1;
 
@@ -985,34 +1052,6 @@ function validateCurrentStep() {
 
   switch (state.step) {
     case 1:
-      const hasCourse = state.course && state.course.trim().length > 0;
-      const step1Valid = hasCourse;
-
-      console.log(
-        "Step 1 validation:",
-        step1Valid,
-        "course:",
-        state.course
-      );
-
-      if (!hasCourse) {
-        showNotification(
-          "Please select a course before proceeding.",
-          "warning"
-        );
-      }
-
-      return step1Valid;
-    case 2:
-      const step2Valid = state.summary.trim().length > 0;
-      console.log(
-        "Step 2 validation:",
-        step2Valid,
-        "summary length:",
-        state.summary.trim().length
-      );
-      return step2Valid;
-    case 3:
       const step3Valid =
         state.objectiveGroups.length > 0 &&
         state.objectiveGroups.every(
@@ -1026,21 +1065,21 @@ function validateCurrentStep() {
         "objectiveGroups:",
         state.objectiveGroups.length
       );
-      return step3Valid;
-    case 4:
-      // Step 4 validation - check if we have question groups with questions
-      const step4Valid =
+      return step1Valid;
+    case 2:
+      // Step 2 validation - check if we have question groups with questions
+      const step2Valid =
         state.questionGroups.length > 0 &&
         state.questionGroups.some((group) =>
           group.los.some((lo) => lo.questions.length > 0)
         );
       console.log(
-        "Step 4 validation:",
-        step4Valid,
+        "Step 2 validation:",
+        step2Valid,
         "questionGroups:",
         state.questionGroups.length
       );
-      return step4Valid;
+      return step2Valid;
     default:
       console.log("Default case, returning true");
       return true;
@@ -1057,16 +1096,12 @@ function handleStepTransition(fromStep, toStep) {
 
   switch (toStep) {
     case 2:
-      console.log("Initializing Step 2");
-      generateSummary();
+      console.log("Initializing Step 2 (Generate Questions)");
+      initializeStep4(); // Use the old step 4 function
       break;
-    case 4:
-      console.log("Initializing Step 4");
-      initializeStep4();
-      break;
-    case 5:
-      console.log("Initializing Step 5");
-      initializeStep5();
+    case 3:
+      console.log("Initializing Step 3 (Select Output Format)");
+      initializeStep5(); // Use the old step 5 function
       break;
   }
 }
@@ -1104,29 +1139,20 @@ function updatePageTitle() {
     title.textContent = stepTitles[state.step];
   }
 
-  // Also update the export title in Step 5 if it exists
+  // Also update the export title in Step 3 if it exists
   const exportTitle = document.querySelector(".export-title");
-  if (exportTitle && state.step === 5) {
+  if (exportTitle && state.step === 3) {
     exportTitle.textContent = stepTitles[state.step];
   }
 }
 
 function updateCourseDisplay() {
-  const courseDropdown = document.getElementById("course-dropdown");
   const courseDisplay = document.getElementById("course-display");
   const courseValue = document.getElementById("course-value");
 
-  if (courseDropdown && courseDisplay && courseValue) {
-    if (state.step === 1) {
-      // Step 1: Show dropdown, hide display
-      courseDropdown.style.display = "flex";
-      courseDisplay.style.display = "none";
-    } else {
-      // Steps 2-5: Hide dropdown, show display
-      courseDropdown.style.display = "none";
-      courseDisplay.style.display = "flex";
-      courseValue.textContent = state.selectedCourse;
-    }
+  if (courseDisplay && courseValue) {
+    courseDisplay.style.display = "flex";
+    courseValue.textContent = state.selectedCourse || state.course;
   }
 }
 
@@ -1147,17 +1173,12 @@ function updateNavigationButtons() {
 
   if (backBtn) {
     backBtn.disabled = state.step === 1;
-    if (state.step === 5) {
-      backBtn.textContent = "Back";
-      backBtn.className = "btn btn--secondary";
-    } else {
-      backBtn.textContent = "Back";
-      backBtn.className = "btn btn--secondary";
-    }
+    backBtn.textContent = "Back";
+    backBtn.className = "btn btn--secondary";
   }
 
   if (continueBtn) {
-    if (state.step === 5) {
+    if (state.step === 3) {
       continueBtn.textContent = "Export Now";
       continueBtn.className = "btn btn--primary";
     } else {
@@ -3018,7 +3039,7 @@ function initializeModals() {
   });
 }
 
-// ===== STEP 5: EXPORT FORMAT FUNCTIONS =====
+// ===== STEP 3: EXPORT FORMAT FUNCTIONS =====
 
 function initializeExportFormat() {
   const exportOptions = document.querySelectorAll(
@@ -3032,7 +3053,7 @@ function initializeExportFormat() {
   });
 }
 
-// ===== STEP 4: QUESTIONS FUNCTIONS =====
+// ===== STEP 2: QUESTIONS FUNCTIONS =====
 
 async function generateQuestions() {
   const questionsLoading = document.getElementById("questions-loading");
@@ -3232,7 +3253,7 @@ function initializeStep5() {
   updateExportButtonState();
   updateNamingConventionPanel();
 
-  console.log("Step 5 initialized with state:", {
+  console.log("Step 3 initialized with state:", {
     formats: state.formats,
     namingConvention: state.namingConvention,
     saveAsDefault: state.saveAsDefault,
@@ -3641,7 +3662,7 @@ function updateExportButtonState() {
       h5p: state.formats.h5p.selected,
     });
 
-    if (state.step === 5) {
+    if (state.step === 3) {
       continueBtn.textContent = "Export Now";
     }
   }
@@ -3954,7 +3975,7 @@ function initializeStep4() {
     );
   }
 
-  // Set up event listeners for Step 4
+  // Set up event listeners for Step 2
   setupStep4EventListeners();
 
   // Render the initial view
@@ -4795,7 +4816,7 @@ window.testPDFParsing = async function (file) {
   }
 };
 
-// Step 4 function exports
+// Step 2 function exports
 window.toggleMetaLoGroup = toggleMetaLoGroup;
 window.toggleQuestionSelection = toggleQuestionSelection;
 window.editQuestion = editQuestion;
@@ -4806,7 +4827,7 @@ window.toggleQuestionFlag = toggleQuestionFlag;
 window.toggleQuestionApproval = toggleQuestionApproval;
 window.deleteQuestion = deleteQuestion;
 
-// Step 5 function exports
+// Step 3 function exports
 window.handleFormatSelection = handleFormatSelection;
 window.handleReleaseNowToggle = handleReleaseNowToggle;
 window.handleDateChange = handleDateChange;

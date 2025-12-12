@@ -17,92 +17,61 @@
                 <div class="stepper">
                     <div class="stepper__step stepper__step--active" data-step="1">
                         <div class="stepper__step-number">1</div>
-                        <div class="stepper__step-label">Select Course</div>
+                        <div class="stepper__step-label">Create Objectives</div>
                     </div>
                     <div class="stepper__step" data-step="2">
                         <div class="stepper__step-number">2</div>
-                        <div class="stepper__step-label">Review Summary</div>
+                        <div class="stepper__step-label">Generate Questions</div>
                     </div>
                     <div class="stepper__step" data-step="3">
                         <div class="stepper__step-number">3</div>
-                        <div class="stepper__step-label">Create Objectives</div>
-                    </div>
-                    <div class="stepper__step" data-step="4">
-                        <div class="stepper__step-number">4</div>
-                        <div class="stepper__step-label">Generate Questions</div>
-                    </div>
-                    <div class="stepper__step" data-step="5">
-                        <div class="stepper__step-number">5</div>
                         <div class="stepper__step-label">Select Output Format</div>
                     </div>
                 </div>
 
                 <!-- Content Header -->
                 <div class="content-header">
-                    <h1 class="content-header__title" id="page-title">Upload Materials</h1>
+                    <h1 class="content-header__title" id="page-title">Create Objectives</h1>
                     <div class="content-header__course">
-                        <!-- Course dropdown (Step 1 only) -->
-                        <div id="course-dropdown" class="course-dropdown">
-                            <label for="course-select">Course</label>
-                            <select id="course-select" class="course-select">
-                                <option value="">Select a course...</option>
-                            </select>
-                        </div>
-                        <!-- Course display (Steps 2-5 only) -->
-                        <div id="course-display" class="course-display" style="display: none;">
+                        <!-- Course display -->
+                        <div id="course-display" class="course-display">
                             <span class="course-label">Course</span>
                             <span class="course-value" id="course-value">CHEM 121</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Step Content -->
-                <div class="step-content">
-                    <!-- Step 1: Select Course and Materials -->
-                    <div class="step-panel step-panel--active" data-step="1">
-                        <div style="text-align: center; padding: 60px 20px; max-width: 600px; margin: 0 auto;">
-                            <i class="fas fa-book-open" style="font-size: 64px; color: #3498db; margin-bottom: 24px;"></i>
-                            <h2 style="font-size: 28px; font-weight: 600; color: #2c3e50; margin-bottom: 16px;">Course Materials</h2>
-                            <p style="font-size: 16px; color: #7f8c8d; line-height: 1.6; margin-bottom: 32px;">
-                                To generate questions, you'll need to upload course materials first. 
-                                Please go to the <strong>Course Materials</strong> page to upload your files, text content, or URLs.
+                <!-- No Materials Message (shown if course has no materials) -->
+                <div id="no-materials-message" style="display: none;">
+                    <div style="text-align: center; padding: 60px 20px; max-width: 600px; margin: 0 auto;">
+                        <i class="fas fa-book-open" style="font-size: 64px; color: #3498db; margin-bottom: 24px;"></i>
+                        <h2 style="font-size: 28px; font-weight: 600; color: #2c3e50; margin-bottom: 16px;">No Course Materials Found</h2>
+                        <p style="font-size: 16px; color: #7f8c8d; line-height: 1.6; margin-bottom: 32px;">
+                            To generate questions, you'll need to upload course materials first. 
+                            Please go to the <strong>Course Materials</strong> page to upload your files, text content, or URLs.
+                        </p>
+                        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+                            <a href="course-materials.html" class="btn btn--primary" style="text-decoration: none;">
+                                <i class="fas fa-upload"></i> Go to Course Materials
+                            </a>
+                            <button type="button" class="btn btn--secondary" onclick="window.location.reload()">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                        </div>
+                        <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: left;">
+                            <p style="font-size: 14px; color: #6b7280; margin: 0;">
+                                <strong>Note:</strong> Once you've uploaded materials on the Course Materials page, 
+                                you can return here to generate questions. The system will use the materials you've uploaded 
+                                for the selected course.
                             </p>
-                            <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-                                <a href="course-materials.html" class="btn btn--primary" style="text-decoration: none;">
-                                    <i class="fas fa-upload"></i> Go to Course Materials
-                                </a>
-                                <button type="button" class="btn btn--secondary" onclick="window.location.reload()">
-                                    <i class="fas fa-sync"></i> Refresh
-                                    </button>
-                            </div>
-                            <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: left;">
-                                <p style="font-size: 14px; color: #6b7280; margin: 0;">
-                                    <strong>Note:</strong> Once you've uploaded materials on the Course Materials page, 
-                                    you can return here to generate questions. The system will use the materials you've uploaded 
-                                    for the selected course.
-                                </p>
-                            </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Step 2: Review Summary -->
-                    <div class="step-panel" data-step="2">
-                        <div class="summary-section">
-                            <h3>Content Summary</h3>
-                            <div class="summary-content">
-                                <div class="summary-loading" id="summary-loading">
-                                    <i class="fas fa-spinner fa-spin"></i>
-                                    <p>Generating summary...</p>
-                                </div>
-                                <div class="summary-text" id="summary-text" style="display: none;">
-                                    <textarea id="summary-editor" class="summary-editor" rows="15" placeholder="Summary will appear here..."></textarea>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Step 3: Create Objectives -->
-                    <div class="step-panel" data-step="3">
+                <!-- Step Content -->
+                <div class="step-content" id="step-content">
+                    <!-- Step 1: Create Objectives -->
+                    <div class="step-panel step-panel--active" data-step="1">
                         <div class="objectives-section">
                             <h1 class="objectives-section__title">Review learning objectives for every page</h1>
                             <p class="objectives-section__subtitle">Organize meta learning objectives and refine granular learning objectives.</p>
@@ -243,8 +212,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Generate Questions -->
-                    <div class="step-panel" data-step="4">
+                    <!-- Step 2: Generate Questions -->
+                    <div class="step-panel" data-step="2">
                         <div class="questions-section">
                             <!-- Page Header -->
                             <div class="content-header">
@@ -308,8 +277,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 5: Select Output Format -->
-                    <div class="step-panel" data-step="5">
+                    <!-- Step 3: Select Output Format -->
+                    <div class="step-panel" data-step="3">
                         <div class="export-section">
                             <div class="export-header">
                                 <h1 class="export-title">Select Output Format</h1>
@@ -430,7 +399,7 @@
                     </div>
                 </div>
 
-                <!-- Sticky Bottom Actions (Step 4 only) -->
+                <!-- Sticky Bottom Actions (Step 2 only) -->
                 <div class="sticky-bottom-actions" id="sticky-bottom-actions" style="display: none;">
                     <div class="sticky-actions-left">
                         <span class="selection-count">0 questions selected</span>
