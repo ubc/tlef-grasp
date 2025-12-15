@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="styles/question-generation.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Main Content Area -->
@@ -32,23 +34,18 @@
                 <!-- Content Header -->
                 <div class="content-header">
                     <h1 class="content-header__title" id="page-title">Create Objectives</h1>
-                    <div class="content-header__course">
-                        <!-- Course display -->
-                        <div id="course-display" class="course-display">
-                            <span class="course-label">Course</span>
-                            <span class="course-value" id="course-value">CHEM 121</span>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- No Materials Message (shown if course has no materials) -->
                 <div id="no-materials-message" style="display: none;">
                     <div style="text-align: center; padding: 60px 20px; max-width: 600px; margin: 0 auto;">
                         <i class="fas fa-book-open" style="font-size: 64px; color: #3498db; margin-bottom: 24px;"></i>
-                        <h2 style="font-size: 28px; font-weight: 600; color: #2c3e50; margin-bottom: 16px;">No Course Materials Found</h2>
+                        <h2 style="font-size: 28px; font-weight: 600; color: #2c3e50; margin-bottom: 16px;">No Course
+                            Materials Found</h2>
                         <p style="font-size: 16px; color: #7f8c8d; line-height: 1.6; margin-bottom: 32px;">
-                            To generate questions, you'll need to upload course materials first. 
-                            Please go to the <strong>Course Materials</strong> page to upload your files, text content, or URLs.
+                            To generate questions, you'll need to upload course materials first.
+                            Please go to the <strong>Course Materials</strong> page to upload your files, text content,
+                            or URLs.
                         </p>
                         <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
                             <a href="course-materials.html" class="btn btn--primary" style="text-decoration: none;">
@@ -58,10 +55,12 @@
                                 <i class="fas fa-sync"></i> Refresh
                             </button>
                         </div>
-                        <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: left;">
+                        <div
+                            style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: left;">
                             <p style="font-size: 14px; color: #6b7280; margin: 0;">
-                                <strong>Note:</strong> Once you've uploaded materials on the Course Materials page, 
-                                you can return here to generate questions. The system will use the materials you've uploaded 
+                                <strong>Note:</strong> Once you've uploaded materials on the Course Materials page,
+                                you can return here to generate questions. The system will use the materials you've
+                                uploaded
                                 for the selected course.
                             </p>
                         </div>
@@ -74,77 +73,103 @@
                     <div class="step-panel step-panel--active" data-step="1">
                         <div class="objectives-section">
                             <h1 class="objectives-section__title">Review learning objectives for every page</h1>
-                            <p class="objectives-section__subtitle">Organize meta learning objectives and refine granular learning objectives.</p>
-                            
-                            <!-- Multi-Select Toolbar -->
-                            <div class="multi-select-toolbar" id="multi-select-toolbar" style="display: none;">
-                                <div class="toolbar-left">
-                                    <label class="select-all-label">
-                                        <input type="checkbox" id="select-all-groups" class="select-all-checkbox" onchange="selectAllGroups()">
-                                        <span>Select all</span>
-                                    </label>
-                                </div>
-                                <div class="toolbar-right">
-                                    <button type="button" class="btn btn--danger" id="delete-selected-btn" onclick="deleteSelectedGroups()" disabled>
-                                        Delete selected
-                                    </button>
+                            <p class="objectives-section__subtitle">Organize meta learning objectives and refine
+                                granular learning objectives.</p>
+
+
+                            <div id="add-objectives-container">
+                                <button type="button" class="btn btn--primary" id="add-objectives-btn">
+                                    <i class="fas fa-plus"></i> Add learning objectives
+
+                                </button> <!-- Add Objectives Dropdown -->
+                                <div class="add-objectives-dropdown" id="add-objectives-dropdown"
+                                    style="display: none;">
+                                    <div class="dropdown-search">
+                                        <input type="text" id="objective-search" placeholder="Search objectives..."
+                                            class="dropdown-search__input">
+                                    </div>
+                                    <div class="dropdown-options" id="dropdown-options">
+                                        <!-- Pre-defined objectives will be listed here -->
+                                    </div>
+                                    <div class="dropdown-separator"></div>
+                                    <div class="dropdown-custom">
+                                        <button type="button" class="dropdown-custom__btn" id="create-custom-btn"
+                                            onclick="window.showCustomObjectiveModalFromButton(event)">
+                                            <i class="fas fa-plus"></i> Create custom objective...
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <button type="button" class="btn btn--primary" id="add-objectives-btn">
-                                <i class="fas fa-plus"></i> Add learning objectives
-                            </button>
-                            
+
                             <div class="objectives-groups" id="objectives-groups">
                                 <!-- Meta learning objective groups will be added here -->
                             </div>
-                            
+
                             <!-- Empty State -->
                             <div class="objectives-empty-state" id="objectives-empty-state" style="display: none;">
                                 <i class="fas fa-lightbulb"></i>
                                 <h3>No learning objectives yet</h3>
                                 <p>Start by adding your first learning objective to organize your course content.</p>
-                                <button type="button" class="btn btn--primary" onclick="document.getElementById('add-objectives-btn').click()">
-                                    <i class="fas fa-plus"></i> Add learning objectives
-                                </button>
                             </div>
-                            
-                            <!-- Add Objectives Dropdown -->
-                            <div class="add-objectives-dropdown" id="add-objectives-dropdown" style="display: none;">
-                                <div class="dropdown-search">
-                                    <input type="text" id="objective-search" placeholder="Search objectives..." class="dropdown-search__input">
-                                </div>
-                                <div class="dropdown-options" id="dropdown-options">
-                                    <!-- Pre-defined objectives will be listed here -->
-                                </div>
-                                <div class="dropdown-separator"></div>
-                                <div class="dropdown-custom">
-                                    <button type="button" class="dropdown-custom__btn" id="create-custom-btn">
-                                        <i class="fas fa-plus"></i> Create custom objective...
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- Custom Objective Modal -->
-                            <div class="modal" id="custom-objective-modal">
-                                <div class="modal__content">
+
+                            <!-- Create New Learning Objective Modal -->
+                            <div class="modal" id="custom-objective-modal" style="display: none;">
+                                <div class="modal__content" style="max-width: 700px;">
                                     <div class="modal__header">
-                                        <h3>Create Custom Objective</h3>
+                                        <h3 id="custom-modal-title">Create New Learning Objective</h3>
                                         <button type="button" class="modal__close" id="custom-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
                                     <div class="modal__body">
-                                        <label for="custom-objective-text">Objective statement:</label>
-                                        <textarea id="custom-objective-text" class="text-input" rows="4" placeholder="Enter your custom learning objective..."></textarea>
+                                        <div style="margin-bottom: 20px;">
+                                            <label for="custom-objective-name">Learning Objective Name:</label>
+                                            <input type="text" id="custom-objective-name" class="text-input"
+                                                placeholder="Enter learning objective name..."
+                                                style="width: 100%; padding: 10px; margin-top: 8px;">
+                                        </div>
+
+                                        <div style="margin-bottom: 20px;">
+                                            <div
+                                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                                <label style="margin: 0;">Granular Objectives:</label>
+                                                <button type="button" class="btn btn--secondary btn--small"
+                                                    id="add-granular-btn" style="padding: 6px 12px; font-size: 14px;">
+                                                    <i class="fas fa-plus"></i> Add Granular Objective
+                                                </button>
+                                            </div>
+                                            <div id="granular-objectives-container"
+                                                style="display: flex; flex-direction: column; gap: 12px;">
+                                                <!-- Granular objectives will be added here -->
+                                            </div>
+                                        </div>
+
+                                        <div style="margin-bottom: 20px;">
+                                            <label style="margin-bottom: 12px; display: block; font-weight: 600;">Attach Materials (Optional):</label>
+                                            <div id="materials-selection-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                                                <div id="materials-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading materials...
+                                                </div>
+                                                <div id="materials-list" style="display: none;">
+                                                    <!-- Materials will be added here -->
+                                                </div>
+                                                <div id="materials-empty" style="display: none; text-align: center; padding: 20px; color: #7f8c8d;">
+                                                    No materials available for this course.
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="modal__footer">
-                                        <button type="button" class="btn btn--secondary" id="custom-modal-cancel">Cancel</button>
-                                        <button type="button" class="btn btn--primary" id="custom-modal-save">Create</button>
+                                        <button type="button" class="btn btn--secondary"
+                                            id="custom-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--primary"
+                                            id="custom-modal-save">Create</button>
+                                        <input type="hidden" id="custom-modal-mode" value="create">
+                                        <input type="hidden" id="custom-modal-objective-id" value="">
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Delete Confirmation Modal -->
                             <div class="modal" id="delete-confirmation-modal">
                                 <div class="modal__content">
@@ -158,12 +183,14 @@
                                         <p>This will remove the objective from this group.</p>
                                     </div>
                                     <div class="modal__footer">
-                                        <button type="button" class="btn btn--secondary" id="delete-modal-cancel">Cancel</button>
-                                        <button type="button" class="btn btn--danger" id="delete-modal-confirm">Delete</button>
+                                        <button type="button" class="btn btn--secondary"
+                                            id="delete-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--danger"
+                                            id="delete-modal-confirm">Delete</button>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Granularization Modal -->
                             <div class="modal" id="granularization-modal">
                                 <div class="modal__content">
@@ -193,7 +220,8 @@
                                                 <div class="checkbox-group">
                                                     <label class="checkbox-option">
                                                         <input type="checkbox" id="use-defaults" checked>
-                                                        <span>Use defaults (Identify=Remember/Understand, Explain=Understand/Analyze, Apply=Apply)</span>
+                                                        <span>Use defaults (Identify=Remember/Understand,
+                                                            Explain=Understand/Analyze, Apply=Apply)</span>
                                                     </label>
                                                     <label class="checkbox-option">
                                                         <input type="checkbox" id="choose-later">
@@ -204,8 +232,10 @@
                                         </div>
                                     </div>
                                     <div class="modal__footer">
-                                        <button type="button" class="btn btn--secondary" id="granularization-modal-cancel">Cancel</button>
-                                        <button type="button" class="btn btn--primary" id="granularization-modal-confirm">Confirm</button>
+                                        <button type="button" class="btn btn--secondary"
+                                            id="granularization-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--primary"
+                                            id="granularization-modal-confirm">Confirm</button>
                                     </div>
                                 </div>
                             </div>
@@ -218,9 +248,11 @@
                             <!-- Page Header -->
                             <div class="content-header">
                                 <div class="content-header__actions">
-                                    <button type="button" class="btn btn--link" id="regenerate-all-btn">Regenerate All</button>
+                                    <button type="button" class="btn btn--link" id="regenerate-all-btn">Regenerate
+                                        All</button>
                                     <button type="button" class="btn btn--secondary" id="export-btn">Export</button>
-                                    <button type="button" class="btn btn--primary" id="add-to-bank-btn">Add to Question Bank</button>
+                                    <button type="button" class="btn btn--primary" id="add-to-bank-btn">Add to Question
+                                        Bank</button>
                                 </div>
                             </div>
 
@@ -282,7 +314,8 @@
                         <div class="export-section">
                             <div class="export-header">
                                 <h1 class="export-title">Select Output Format</h1>
-                                <p class="export-subtitle">Choose how you want to export your approved questions. You can select one or multiple formats.</p>
+                                <p class="export-subtitle">Choose how you want to export your approved questions. You
+                                    can select one or multiple formats.</p>
                                 <div class="selected-formats-pill">
                                     Selected formats: <span id="selected-formats-count">0</span>
                                 </div>
@@ -293,30 +326,37 @@
                                 <div class="export-option-card" data-format="canvasSingle">
                                     <div class="export-option-card__header">
                                         <i class="fas fa-calendar-alt export-option-card__icon"></i>
-                                        <input type="checkbox" id="canvas-single-checkbox" class="export-option-card__checkbox">
+                                        <input type="checkbox" id="canvas-single-checkbox"
+                                            class="export-option-card__checkbox">
                                     </div>
                                     <div class="export-option-card__content">
                                         <h3 class="export-option-card__title">Canvas (single quiz)</h3>
-                                        <p class="export-option-card__description">Exports all selected questions as one quiz file for Canvas LMS.</p>
+                                        <p class="export-option-card__description">Exports all selected questions as one
+                                            quiz file for Canvas LMS.</p>
                                         <div class="export-option-card__estimate">Estimated: 1 quiz</div>
                                         <hr class="export-option-card__divider">
                                         <div class="export-option-card__schedule">
                                             <div class="schedule-toggle">
-                                                <input type="checkbox" id="canvas-single-release-now" class="schedule-toggle__input">
-                                                <label for="canvas-single-release-now" class="schedule-toggle__label">Release immediately</label>
+                                                <input type="checkbox" id="canvas-single-release-now"
+                                                    class="schedule-toggle__input">
+                                                <label for="canvas-single-release-now"
+                                                    class="schedule-toggle__label">Release immediately</label>
                                             </div>
                                             <div class="schedule-controls" id="canvas-single-schedule-controls">
                                                 <div class="schedule-control">
                                                     <label for="canvas-single-release-date">Release date</label>
                                                     <div class="date-input-wrapper">
-                                                        <input type="date" id="canvas-single-release-date" class="date-input">
+                                                        <input type="date" id="canvas-single-release-date"
+                                                            class="date-input">
                                                         <i class="fas fa-calendar date-icon"></i>
                                                     </div>
                                                 </div>
                                                 <div class="schedule-control">
-                                                    <label for="canvas-single-release-time">Release time (optional)</label>
+                                                    <label for="canvas-single-release-time">Release time
+                                                        (optional)</label>
                                                     <div class="time-input-wrapper">
-                                                        <input type="time" id="canvas-single-release-time" class="time-input">
+                                                        <input type="time" id="canvas-single-release-time"
+                                                            class="time-input">
                                                         <i class="fas fa-clock time-icon"></i>
                                                     </div>
                                                 </div>
@@ -329,30 +369,37 @@
                                 <div class="export-option-card" data-format="canvasSpaced">
                                     <div class="export-option-card__header">
                                         <i class="fas fa-cog export-option-card__icon"></i>
-                                        <input type="checkbox" id="canvas-spaced-checkbox" class="export-option-card__checkbox">
+                                        <input type="checkbox" id="canvas-spaced-checkbox"
+                                            class="export-option-card__checkbox">
                                     </div>
                                     <div class="export-option-card__content">
                                         <h3 class="export-option-card__title">Canvas (spaced review quiz)</h3>
-                                        <p class="export-option-card__description">Splits questions into smaller sets for spaced repetition in Canvas.</p>
+                                        <p class="export-option-card__description">Splits questions into smaller sets
+                                            for spaced repetition in Canvas.</p>
                                         <div class="export-option-card__estimate">Estimated: ~3–5 quizzes</div>
                                         <hr class="export-option-card__divider">
                                         <div class="export-option-card__schedule">
                                             <div class="schedule-toggle">
-                                                <input type="checkbox" id="canvas-spaced-release-now" class="schedule-toggle__input">
-                                                <label for="canvas-spaced-release-now" class="schedule-toggle__label">Release immediately</label>
+                                                <input type="checkbox" id="canvas-spaced-release-now"
+                                                    class="schedule-toggle__input">
+                                                <label for="canvas-spaced-release-now"
+                                                    class="schedule-toggle__label">Release immediately</label>
                                             </div>
                                             <div class="schedule-controls" id="canvas-spaced-schedule-controls">
                                                 <div class="schedule-control">
                                                     <label for="canvas-spaced-release-date">Release date</label>
                                                     <div class="date-input-wrapper">
-                                                        <input type="date" id="canvas-spaced-release-date" class="date-input">
+                                                        <input type="date" id="canvas-spaced-release-date"
+                                                            class="date-input">
                                                         <i class="fas fa-calendar date-icon"></i>
                                                     </div>
                                                 </div>
                                                 <div class="schedule-control">
-                                                    <label for="canvas-spaced-release-time">Release time (optional)</label>
+                                                    <label for="canvas-spaced-release-time">Release time
+                                                        (optional)</label>
                                                     <div class="time-input-wrapper">
-                                                        <input type="time" id="canvas-spaced-release-time" class="time-input">
+                                                        <input type="time" id="canvas-spaced-release-time"
+                                                            class="time-input">
                                                         <i class="fas fa-clock time-icon"></i>
                                                     </div>
                                                 </div>
@@ -369,7 +416,8 @@
                                     </div>
                                     <div class="export-option-card__content">
                                         <h3 class="export-option-card__title">H5P (individual elements)</h3>
-                                        <p class="export-option-card__description">Exports each question as a standalone H5P interactive element.</p>
+                                        <p class="export-option-card__description">Exports each question as a standalone
+                                            H5P interactive element.</p>
                                         <div class="export-option-card__estimate">Estimated: multiple files</div>
                                     </div>
                                 </div>
@@ -405,7 +453,8 @@
                         <span class="selection-count">0 questions selected</span>
                     </div>
                     <div class="sticky-actions-right">
-                        <button type="button" class="btn btn--primary" id="add-selected-to-bank-btn">Add Selected to Question Bank</button>
+                        <button type="button" class="btn btn--primary" id="add-selected-to-bank-btn">Add Selected to
+                            Question Bank</button>
                     </div>
                 </div>
 
@@ -479,4 +528,5 @@
     <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/question-generation.js"></script>
 </body>
+
 </html>

@@ -12,6 +12,7 @@ const studentRoutes = require("./routes/student");
 const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
 const materialRoutes = require("./routes/material");
+const objectiveRoutes = require("./routes/objectives");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -108,6 +109,7 @@ app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
 app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
 app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
+app.use("/api/objectives", ensureAuthenticatedAPI, objectiveRoutes);
 
 app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
   res.json({

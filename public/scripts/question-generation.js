@@ -21,8 +21,6 @@ const state = {
   questions: [],
   exportFormat: "qti",
   objectiveGroups: [], // Step 1: Create Objectives
-  objectiveToDelete: null,
-  selectedGroupIds: new Set(),
   // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
   selectedQuestions: new Set(), // Set of selected question IDs
@@ -791,15 +789,13 @@ async function loadCourseData() {
     if (selectedCourse) {
       state.course = selectedCourse.courseName || selectedCourse.courseCode || "";
       state.selectedCourse = state.course;
-      console.log("Selected course:", state.course);
-      
+
       // Update course display
       const courseValue = document.getElementById("course-value");
       if (courseValue) {
         courseValue.textContent = state.course;
       }
     } else {
-      console.log("No course selected");
       showNoCourseSelectedMessage();
     }
   } catch (error) {
@@ -827,10 +823,7 @@ async function checkCourseMaterials() {
       const noMaterialsMessage = document.getElementById("no-materials-message");
       if (stepContent) stepContent.style.display = "block";
       if (noMaterialsMessage) noMaterialsMessage.style.display = "none";
-      
-      // Generate summary automatically in the background (needed for question generation)
-      // This replaces the old Step 2 functionality
-      await generateSummaryFromMaterials();
+
     } else {
       console.log("No materials found for course");
       // Show no materials message, hide step content
@@ -846,34 +839,6 @@ async function checkCourseMaterials() {
     const noMaterialsMessage = document.getElementById("no-materials-message");
     if (stepContent) stepContent.style.display = "none";
     if (noMaterialsMessage) noMaterialsMessage.style.display = "block";
-  }
-}
-
-// Generate summary from course materials (replaces old Step 2)
-async function generateSummaryFromMaterials() {
-  try {
-    console.log("Generating summary from course materials...");
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    
-    if (!contentGenerator) {
-      console.warn("Content generator not available");
-      return;
-    }
-
-    // Generate summary using content generator
-    // The summary will be used for question generation in step 2
-    const summary = await contentGenerator.generateSummary(
-      state.course,
-      state.files,
-      state.urls
-    );
-    
-    state.summary = summary;
-    console.log("Summary generated successfully, length:", summary.length);
-  } catch (error) {
-    console.error("Error generating summary from materials:", error);
-    // Set a default summary if generation fails
-    state.summary = `Content summary for ${state.course}. Materials have been processed and are ready for question generation.`;
   }
 }
 
@@ -907,7 +872,7 @@ function updateCourseDropdown(courses) {
       option.value = course.courseCode;
       option.textContent = `${course.courseName}`;
 
-      if ( course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id ) {
+      if (course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id) {
         option.selected = true;
       }
       courseSelect.appendChild(option);
@@ -939,8 +904,7 @@ function showNotification(message, type = "info") {
     color: white;
     font-weight: 500;
     z-index: 10000;
-    background-color: ${
-      type === "warning" ? "#f39c12" : type === "error" ? "#e74c3c" : "#3498db"
+    background-color: ${type === "warning" ? "#f39c12" : type === "error" ? "#e74c3c" : "#3498db"
     };
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     animation: slideIn 0.3s ease-out;
@@ -1147,11 +1111,9 @@ function updatePageTitle() {
 }
 
 function updateCourseDisplay() {
-  const courseDisplay = document.getElementById("course-display");
   const courseValue = document.getElementById("course-value");
 
-  if (courseDisplay && courseValue) {
-    courseDisplay.style.display = "flex";
+  if (courseValue) {
     courseValue.textContent = state.selectedCourse || state.course;
   }
 }
@@ -1238,24 +1200,6 @@ async function generateSummary() {
   }
 }
 
-function prepareContentForSummary() {
-  let content = "";
-
-  // Add file contents
-  state.files.forEach((file) => {
-    if (file.content) {
-      content += file.content + "\n\n";
-    }
-  });
-
-  // Add URLs
-  state.urls.forEach((url) => {
-    content += `URL: ${url.url}\n\n`;
-  });
-
-  return content;
-}
-
 // ===== STEP 3: OBJECTIVES FUNCTIONS =====
 
 // Generate learning objectives from uploaded content
@@ -1327,34 +1271,8 @@ function analyzeContentForObjectives() {
     });
   });
 
-  // If no topics were extracted, create default objectives based on course
-  if (topics.length === 0) {
-    topics.push({
-      title: `Understand key concepts in ${state.course}`,
-      description: `Master fundamental concepts covered in ${state.course} materials`,
-      granularObjectives: [
-        {
-          text: "Identify and define key terms and concepts",
-          bloom: ["Remember", "Understand"],
-          minQuestions: 2,
-          count: 2,
-        },
-        {
-          text: "Explain relationships between different concepts",
-          bloom: ["Understand", "Analyze"],
-          minQuestions: 2,
-          count: 2,
-        },
-        {
-          text: "Apply knowledge to solve problems",
-          bloom: ["Apply", "Evaluate"],
-          minQuestions: 2,
-          count: 2,
-        },
-      ],
-    });
-  }
-
+  // No default objectives - user should add learning objectives from database
+  // If no topics are extracted, return empty array
   return topics;
 }
 
@@ -1402,9 +1320,8 @@ function extractTopicsFromContent(content) {
       const topicAnalysis = analyzeTopicContent(topic, content);
       topics.push({
         title: topic,
-        description: `Master ${
-          topicAnalysis.description || `concepts related to ${topic}`
-        }`,
+        description: `Master ${topicAnalysis.description || `concepts related to ${topic}`
+          }`,
         keywords: topicAnalysis.keywords,
         specificContent: topicAnalysis.specificContent,
       });
@@ -1546,44 +1463,6 @@ function extractKeywordsForTopic(topic, content) {
   });
 
   return [...new Set(keywords)].slice(0, 5);
-}
-
-// Extract key concepts from content
-function extractKeyConcepts(content) {
-  const concepts = [];
-
-  // Look for capitalized words that might be concepts
-  const words = content.split(/\s+/);
-  const capitalizedWords = words.filter(
-    (word) =>
-      word.length > 3 &&
-      word.match(/^[A-Z][a-z]+$/) &&
-      ![
-        "This",
-        "That",
-        "With",
-        "From",
-        "They",
-        "Have",
-        "Been",
-        "Will",
-        "Were",
-        "Said",
-      ].includes(word)
-  );
-
-  // Count frequency and get most common
-  const wordCount = {};
-  capitalizedWords.forEach((word) => {
-    wordCount[word] = (wordCount[word] || 0) + 1;
-  });
-
-  const sortedWords = Object.entries(wordCount)
-    .sort(([, a], [, b]) => b - a)
-    .map(([word]) => word)
-    .slice(0, 5);
-
-  return sortedWords;
 }
 
 // Generate granular objectives for a topic
@@ -1782,10 +1661,8 @@ function isCommonWord(word) {
 
 // Initialize Step 3 state
 function initializeObjectives() {
-  // Generate learning objectives from uploaded content if no groups exist
-  if (state.objectiveGroups.length === 0) {
-    generateLearningObjectivesFromContent();
-  }
+  // Don't auto-generate objectives - user should add them from database
+  // Learning objectives are now managed through the database
 
   // Initialize add objectives button
   const addObjectivesBtn = document.getElementById("add-objectives-btn");
@@ -1799,67 +1676,133 @@ function initializeObjectives() {
   // Initialize modals
   initializeModals();
 
-  // Initialize multi-select toolbar
-  updateMultiSelectToolbar();
-
   // Render initial state
   renderObjectiveGroups();
 }
 
-function initializeAddObjectivesDropdown() {
-  const dropdown = document.getElementById("add-objectives-dropdown");
-  const searchInput = document.getElementById("objective-search");
-  const dropdownOptions = document.getElementById("dropdown-options");
-  const createCustomBtn = document.getElementById("create-custom-btn");
+async function initializeAddObjectivesDropdown() {
+  try {
+    const dropdown = document.getElementById("add-objectives-dropdown");
+    const searchInput = document.getElementById("objective-search");
+    const dropdownOptions = document.getElementById("dropdown-options");
 
-  // Populate predefined options with new schema
-  dropdownOptions.innerHTML = PREDEFINED_OBJECTIVES.map(
-    (objective) =>
-      `<div class="dropdown-option" data-meta-id="${objective.metaId}" data-meta-title="${objective.metaTitle}">${objective.metaTitle}</div>`
-  ).join("");
-
-  // Search functionality
-  if (searchInput) {
-    searchInput.addEventListener("input", (e) => {
-      const searchTerm = e.target.value.toLowerCase();
-      const options = dropdownOptions.querySelectorAll(".dropdown-option");
-
-      options.forEach((option) => {
-        const text = option.textContent.toLowerCase();
-        if (text.includes(searchTerm)) {
-          option.classList.remove("dropdown-option--hidden");
-        } else {
-          option.classList.add("dropdown-option--hidden");
-        }
-      });
-    });
-  }
-
-  // Option selection
-  dropdownOptions.addEventListener("click", (e) => {
-    if (e.target.classList.contains("dropdown-option")) {
-      const metaId = e.target.dataset.metaId;
-      const metaTitle = e.target.dataset.metaTitle;
-      handleMetaObjectiveSelection(metaId, metaTitle);
-      hideAddObjectivesDropdown();
+    if (!dropdown || !dropdownOptions) {
+      return;
     }
-  });
 
-  // Create custom objective
-  if (createCustomBtn) {
-    createCustomBtn.addEventListener("click", () => {
-      hideAddObjectivesDropdown();
-      showCustomObjectiveModal();
+    // Fetch learning objectives from API
+    try {
+      const response = await fetch("/api/objectives");
+      const data = await response.json();
+
+      if (data.success && data.objectives) {
+        // Populate dropdown with objectives from database
+        if (data.objectives.length > 0) {
+          // Get list of already added objective IDs
+          const addedObjectiveIds = new Set(
+            state.objectiveGroups
+              .filter(group => group.objectiveId)
+              .map(group => group.objectiveId.toString())
+          );
+
+          dropdownOptions.innerHTML = data.objectives.map(
+            (objective) => {
+              const isDisabled = addedObjectiveIds.has(objective._id.toString());
+              const disabledClass = isDisabled ? "dropdown-option--disabled" : "";
+              return `<div class="dropdown-option ${disabledClass}" data-objective-id="${objective._id}" data-objective-name="${objective.name}">${objective.name}</div>`;
+            }
+          ).join("");
+        } else {
+          dropdownOptions.innerHTML = '<div class="dropdown-option dropdown-option--empty">No learning objectives found. Create one to get started.</div>';
+        }
+      } else {
+        // Fallback to empty state
+        dropdownOptions.innerHTML = '<div class="dropdown-option dropdown-option--empty">No learning objectives found. Create one to get started.</div>';
+      }
+    } catch (error) {
+      console.error("Error fetching learning objectives:", error);
+      dropdownOptions.innerHTML = '<div class="dropdown-option dropdown-option--empty">Error loading objectives. Please try again.</div>';
+    }
+
+    // Search functionality
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const options = dropdownOptions.querySelectorAll(".dropdown-option");
+
+        options.forEach((option) => {
+          if (option.classList.contains("dropdown-option--empty")) {
+            return; // Don't hide empty state messages
+          }
+          const text = option.textContent.toLowerCase();
+          if (text.includes(searchTerm)) {
+            option.classList.remove("dropdown-option--hidden");
+          } else {
+            option.classList.add("dropdown-option--hidden");
+          }
+        });
+      });
+    }
+
+    // Option selection
+    dropdownOptions.addEventListener("click", async (e) => {
+      if (e.target.classList.contains("dropdown-option") &&
+        !e.target.classList.contains("dropdown-option--empty") &&
+        !e.target.classList.contains("dropdown-option--disabled")) {
+        const objectiveId = e.target.dataset.objectiveId;
+        const objectiveName = e.target.dataset.objectiveName;
+        await handleObjectiveSelection(objectiveId, objectiveName);
+        hideAddObjectivesDropdown();
+        // Update dropdown to reflect the newly added objective
+        updateDropdownDisabledState();
+      }
     });
-  }
 
-  // Close dropdown when clicking outside
-  document.addEventListener("click", (e) => {
-    if (
-      !dropdown?.contains(e.target) &&
-      !e.target.closest("#add-objectives-btn")
-    ) {
-      hideAddObjectivesDropdown();
+    // Close dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+      // Don't close if clicking on the create custom button (handled by inline onclick)
+      if (e.target.closest("#create-custom-btn")) {
+        return;
+      }
+
+      if (
+        !dropdown?.contains(e.target) &&
+        !e.target.closest("#add-objectives-btn")
+      ) {
+        hideAddObjectivesDropdown();
+      }
+    });
+  } catch (error) {
+    console.error("Error in initializeAddObjectivesDropdown:", error);
+  }
+}
+
+function updateDropdownDisabledState() {
+  const dropdownOptions = document.getElementById("dropdown-options");
+  if (!dropdownOptions) return;
+
+  // Get list of already added objective IDs
+  const addedObjectiveIds = new Set(
+    state.objectiveGroups
+      .filter(group => group.objectiveId)
+      .map(group => group.objectiveId.toString())
+  );
+
+  // Update each option's disabled state
+  const options = dropdownOptions.querySelectorAll(".dropdown-option");
+  options.forEach((option) => {
+    if (option.classList.contains("dropdown-option--empty")) {
+      return; // Skip empty state messages
+    }
+
+    const objectiveId = option.dataset.objectiveId;
+    if (objectiveId) {
+      const isDisabled = addedObjectiveIds.has(objectiveId.toString());
+      if (isDisabled) {
+        option.classList.add("dropdown-option--disabled");
+      } else {
+        option.classList.remove("dropdown-option--disabled");
+      }
     }
   });
 }
@@ -1879,9 +1822,16 @@ function showAddObjectivesDropdown() {
   const dropdown = document.getElementById("add-objectives-dropdown");
   const addBtn = document.getElementById("add-objectives-btn");
 
+  // Update disabled state before showing
+  updateDropdownDisabledState();
+
   if (dropdown && addBtn) {
+    // Ensure button has relative positioning (should be in CSS, but set as fallback)
+    if (getComputedStyle(addBtn).position === 'static') {
+      addBtn.style.position = "relative";
+    }
+
     dropdown.style.display = "block";
-    addBtn.style.position = "relative";
 
     // Focus search input
     const searchInput = document.getElementById("objective-search");
@@ -1898,94 +1848,524 @@ function hideAddObjectivesDropdown() {
   }
 }
 
-function showCustomObjectiveModal() {
+// Global function for inline onclick handler
+window.showCustomObjectiveModalFromButton = function (event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  hideAddObjectivesDropdown();
+  setTimeout(() => {
+    showCustomObjectiveModal();
+  }, 100);
+  return false;
+};
+
+async function showCustomObjectiveModal(mode = "create", editData = null) {
   const modal = document.getElementById("custom-objective-modal");
-  if (modal) {
-    modal.style.display = "flex";
-    const textInput = document.getElementById("custom-objective-text");
-    if (textInput) {
-      setTimeout(() => textInput.focus(), 100);
+  const modalTitle = document.getElementById("custom-modal-title");
+  const modalSaveButton = document.getElementById("custom-modal-save");
+  const modeInput = document.getElementById("custom-modal-mode");
+  const objectiveIdInput = document.getElementById("custom-modal-objective-id");
+
+  if (!modal) return;
+
+  // Set mode
+  if (modeInput) {
+    modeInput.value = mode;
+  }
+  if (objectiveIdInput) {
+    objectiveIdInput.value = editData?.objectiveId || "";
+  }
+
+  // Update modal title and button text
+  if (modalTitle) {
+    modalTitle.textContent = mode === "edit" ? "Edit Learning Objective" : "Create New Learning Objective";
+  }
+  if (modalSaveButton) {
+    modalSaveButton.textContent = mode === "edit" ? "Save Changes" : "Create";
+  }
+
+  const nameInput = document.getElementById("custom-objective-name");
+  const container = document.getElementById("granular-objectives-container");
+
+  // Clear or populate form based on mode
+  if (mode === "edit" && editData) {
+    // Edit mode - populate with existing data
+    if (nameInput) {
+      nameInput.value = editData.name || "";
     }
+
+    if (container) {
+      container.innerHTML = "";
+      // Add granular objectives from edit data
+      if (editData.granularObjectives && editData.granularObjectives.length > 0) {
+        editData.granularObjectives.forEach((item) => {
+          addGranularObjectiveInput(item.text || "", item.granularId || null);
+        });
+      } else {
+        // Add one empty input if no granular objectives
+        addGranularObjectiveInput();
+      }
+    }
+
+    // Load materials with pre-selection for edit mode
+    await loadMaterialsForModal(editData.objectiveId);
+  } else {
+    // Create mode - clear form
+    if (nameInput) {
+      nameInput.value = "";
+    }
+
+    if (container) {
+      container.innerHTML = "";
+      // Add one initial granular objective input
+      addGranularObjectiveInput();
+    }
+
+    // Load materials (no pre-selection)
+    loadMaterialsForModal();
+  }
+
+  modal.style.display = "flex";
+
+  // Focus name input
+  if (nameInput) {
+    setTimeout(() => {
+      nameInput.focus();
+      nameInput.select();
+    }, 100);
   }
 }
 
-function handleCustomObjectiveSubmission() {
+async function loadMaterialsForModal(objectiveId = null) {
+  const loadingDiv = document.getElementById("materials-loading");
+  const materialsList = document.getElementById("materials-list");
+  const materialsEmpty = document.getElementById("materials-empty");
+
+  // Show loading
+  if (loadingDiv) loadingDiv.style.display = "block";
+  if (materialsList) materialsList.style.display = "none";
+  if (materialsEmpty) materialsEmpty.style.display = "none";
+
+  try {
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    if (!selectedCourse || !selectedCourse.id) {
+      if (loadingDiv) loadingDiv.style.display = "none";
+      if (materialsEmpty) materialsEmpty.style.display = "block";
+      return;
+    }
+
+    // Load materials and optionally get attached materials for edit mode
+    const [materialsResponse, objectiveMaterialsResponse] = await Promise.all([
+      fetch(`/api/material/course/${selectedCourse.id}`),
+      objectiveId ? fetch(`/api/objectives/${objectiveId}/materials`) : Promise.resolve(null)
+    ]);
+
+    const materialsData = await materialsResponse.json();
+
+    // Get attached material IDs if in edit mode
+    const attachedMaterialIds = new Set();
+    if (objectiveId && objectiveMaterialsResponse) {
+      const objectiveMaterialsData = await objectiveMaterialsResponse.json();
+      if (objectiveMaterialsData.success && objectiveMaterialsData.materials) {
+        objectiveMaterialsData.materials.forEach(m => {
+          if (m.sourceId) attachedMaterialIds.add(m.sourceId);
+        });
+      }
+    }
+
+    if (loadingDiv) loadingDiv.style.display = "none";
+
+    if (materialsData.success && materialsData.materials && materialsData.materials.length > 0) {
+      displayMaterialsInModal(materialsData.materials, attachedMaterialIds);
+      if (materialsList) materialsList.style.display = "block";
+    } else {
+      if (materialsEmpty) materialsEmpty.style.display = "block";
+    }
+  } catch (error) {
+    console.error("Error loading materials:", error);
+    if (loadingDiv) loadingDiv.style.display = "none";
+    if (materialsEmpty) materialsEmpty.style.display = "block";
+  }
+}
+
+function displayMaterialsInModal(materials, attachedMaterialIds = new Set()) {
+  const materialsList = document.getElementById("materials-list");
+  if (!materialsList) return;
+
+  materialsList.innerHTML = "";
+
+  materials.forEach((material) => {
+    const isAttached = attachedMaterialIds.has(material.sourceId);
+
+    const materialItem = document.createElement("div");
+    materialItem.className = "material-selection-item";
+    materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white;";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = material.sourceId;
+    checkbox.id = `material-${material.sourceId}`;
+    checkbox.className = "material-checkbox";
+    checkbox.checked = isAttached;
+
+    const label = document.createElement("label");
+    label.htmlFor = `material-${material.sourceId}`;
+    label.style.cssText = "flex: 1; cursor: pointer; display: flex; flex-direction: column; gap: 4px;";
+
+    // File name
+    const fileName = document.createElement("div");
+    fileName.style.cssText = "font-weight: 600; color: #2c3e50; font-size: 14px;";
+    fileName.textContent = material.documentTitle || "Untitled";
+
+    // File details
+    const details = document.createElement("div");
+    details.style.cssText = "display: flex; gap: 16px; font-size: 12px; color: #7f8c8d;";
+
+    // File type
+    const fileType = document.createElement("span");
+    fileType.textContent = `Type: ${getMaterialTypeLabel(material.fileType)}`;
+
+    // File size
+    const fileSize = document.createElement("span");
+    fileSize.textContent = `Size: ${formatFileSize(material.fileSize || 0)}`;
+
+    // Uploaded date
+    const uploadedDate = document.createElement("span");
+    uploadedDate.textContent = `Uploaded: ${new Date(material.createdAt).toLocaleDateString()}`;
+
+    details.appendChild(fileType);
+    details.appendChild(fileSize);
+    details.appendChild(uploadedDate);
+
+    label.appendChild(fileName);
+    label.appendChild(details);
+
+    materialItem.appendChild(checkbox);
+    materialItem.appendChild(label);
+
+    materialsList.appendChild(materialItem);
+  });
+}
+
+function getMaterialTypeLabel(fileType) {
+  if (!fileType) return "Unknown";
+  if (fileType.includes("pdf")) return "PDF";
+  if (fileType.includes("text")) return "Text";
+  if (fileType.includes("word")) return "Word";
+  if (fileType === "link") return "Link";
+  return fileType;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+}
+
+function addGranularObjectiveInput(text = "", granularId = null) {
+  const container = document.getElementById("granular-objectives-container");
+  if (!container) return;
+
+  const granularDiv = document.createElement("div");
+  granularDiv.className = "granular-objective-item";
+  granularDiv.setAttribute("data-granular-id", granularId || `new-${Date.now()}-${Math.random()}`);
+  granularDiv.style.cssText = "margin: 0; padding: 0;";
+  // Trim the text value to remove any leading/trailing whitespace
+  const trimmedText = text.trim();
+  granularDiv.innerHTML = `<div style="display: flex; gap: 8px; align-items: flex-start;"><input type="text" class="text-input granular-objective-input" placeholder="Enter granular objective..." value="${trimmedText.replace(/"/g, '&quot;')}" style="flex: 1; padding: 10px;" /><button type="button" class="btn btn--danger btn--small remove-granular-btn" style="padding: 10px 12px;" title="Remove"><i class="fas fa-times"></i></button></div>`;
+
+  container.appendChild(granularDiv);
+
+  // Add remove button handler
+  const removeBtn = granularDiv.querySelector(".remove-granular-btn");
+  if (removeBtn) {
+    removeBtn.addEventListener("click", () => {
+      granularDiv.remove();
+    });
+  }
+}
+
+async function handleCustomObjectiveSubmission() {
   const modal = document.getElementById("custom-objective-modal");
-  const textInput = document.getElementById("custom-objective-text");
+  const nameInput = document.getElementById("custom-objective-name");
+  const container = document.getElementById("granular-objectives-container");
+  const saveButton = document.getElementById("custom-modal-save");
+  const modeInput = document.getElementById("custom-modal-mode");
+  const objectiveIdInput = document.getElementById("custom-modal-objective-id");
 
-  if (textInput && textInput.value.trim()) {
-    const customTitle = textInput.value.trim();
+  const mode = modeInput ? modeInput.value : "create";
+  const objectiveId = objectiveIdInput ? objectiveIdInput.value : null;
 
-    // Create new custom meta learning objective group
-    const newGroupId = Date.now() + Math.random();
-    const newGroupNumber = state.objectiveGroups.length + 1;
+  if (!nameInput || !nameInput.value.trim()) {
+    showToast("Please enter a learning objective name", "warning");
+    return;
+  }
 
-    const newGroup = {
-      id: newGroupId,
-      metaId: `custom-${newGroupId}`,
-      title: `Learning Objective ${newGroupNumber}: ${customTitle}`,
-      isOpen: true,
-      selected: false, // Add selected property for multi-select
-      items: [
-        {
-          id: parseFloat(`${newGroupNumber}.1`),
-          text: "Draft granular objective (edit me).",
+  // Collect granular objectives with IDs for edit mode
+  const granularInputs = container.querySelectorAll(".granular-objective-input");
+  const granularObjectives = [];
+  granularInputs.forEach((input) => {
+    const text = input.value.trim();
+    if (text) {
+      const granularItem = input.closest(".granular-objective-item");
+      const granularId = granularItem ? granularItem.getAttribute("data-granular-id") : null;
+      // Only include id if it's a valid MongoDB ObjectId (not a new item)
+      if (granularId && granularId.startsWith("new-")) {
+        granularObjectives.push({ text });
+      } else if (granularId) {
+        granularObjectives.push({ id: granularId, text });
+      } else {
+        granularObjectives.push({ text });
+      }
+    }
+  });
+
+  if (granularObjectives.length === 0) {
+    showToast("Please add at least one granular objective", "warning");
+    return;
+  }
+
+  // Collect selected materials
+  const materialCheckboxes = document.querySelectorAll(".material-checkbox:checked");
+  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+
+  // Disable button to prevent double submission
+  const originalButtonText = saveButton ? saveButton.innerHTML : (mode === "edit" ? "Save Changes" : "Create");
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.innerHTML = mode === "edit" ? "Saving..." : "Creating...";
+  }
+
+  // Safety timeout to re-enable button if something hangs (30 seconds)
+  const timeoutId = setTimeout(() => {
+    console.error("Timeout: Button re-enabled after 30 seconds");
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.innerHTML = originalButtonText;
+    }
+  }, 30000);
+
+  try {
+    const requestBody = {
+      name: nameInput.value.trim(),
+      granularObjectives: granularObjectives,
+      materialIds: selectedMaterials,
+    };
+
+    console.log(`${mode === "edit" ? "Updating" : "Creating"} learning objective:`, {
+      name: nameInput.value.trim(),
+      granularCount: granularObjectives.length,
+      mode: mode,
+      objectiveId: objectiveId
+    });
+
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Request timeout after 25 seconds")), 25000);
+    });
+
+    // Save to database with timeout - use PUT for edit, POST for create
+    const url = mode === "edit" && objectiveId
+      ? `/api/objectives/${objectiveId}`
+      : "/api/objectives";
+    const method = mode === "edit" ? "PUT" : "POST";
+
+    console.log(`Sending ${method} request to ${url}...`);
+
+    const fetchPromise = fetch(url, {
+      method: method,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    }).catch((fetchError) => {
+      console.error("Fetch error:", fetchError);
+      throw new Error(`Network error: ${fetchError.message}`);
+    });
+
+    console.log("Fetch request sent, waiting for response...");
+    let response;
+    try {
+      response = await Promise.race([fetchPromise, timeoutPromise]);
+      console.log("Response received:", response.status, response.statusText);
+    } catch (raceError) {
+      console.error("Request failed or timed out:", raceError);
+      throw raceError;
+    }
+
+    // Parse response once - handle both success and error cases
+    let data;
+    try {
+      const responseText = await response.text();
+      console.log("Response text:", responseText);
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      console.error("Error parsing response:", parseError);
+      throw new Error("Invalid response from server");
+    }
+
+    if (!response.ok || !data.success) {
+      const errorMessage = data.error || `Failed to ${mode === "edit" ? "update" : "create"} learning objective: ${response.status}`;
+      console.error("Error response:", errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    console.log("Response data:", data);
+
+    const objectiveName = nameInput.value.trim();
+
+    if (mode === "edit" && currentEditGroupId) {
+      // Update existing group in UI
+      const group = state.objectiveGroups.find((g) => g.id === currentEditGroupId);
+      if (group) {
+        // Update the group title
+        const groupNumber = state.objectiveGroups.findIndex((g) => g.id === currentEditGroupId) + 1;
+        group.title = `Learning Objective ${groupNumber}: ${objectiveName}`;
+
+        // Update granular objectives in the group
+        if (data.granularObjectives && Array.isArray(data.granularObjectives)) {
+          group.items = data.granularObjectives.map((granular, index) => ({
+            id: parseFloat(`${groupNumber}.${index + 1}`),
+            granularId: granular._id ? granular._id.toString() : null,
+            text: granular.name || granular.text || "",
+            bloom: [],
+            minQuestions: 2,
+            count: 2,
+            mode: "manual",
+            level: 1,
+            selected: false,
+          }));
+        }
+      }
+
+      renderObjectiveGroups();
+      hideModal(modal);
+      showToast("Learning objective updated successfully", "success");
+      announceToScreenReader(`Updated learning objective: ${objectiveName}`);
+      currentEditGroupId = null;
+    } else {
+      // Create new group
+      // Validate response data
+      if (!data.objective) {
+        throw new Error("Invalid response: objective data missing");
+      }
+
+      if (!data.objective._id) {
+        throw new Error("Invalid response: objective ID missing");
+      }
+
+      if (!data.granularObjectives || !Array.isArray(data.granularObjectives)) {
+        console.warn("No granular objectives in response, using empty array");
+        data.granularObjectives = [];
+      }
+
+      // Add to UI
+      const newGroupId = Date.now() + Math.random();
+      const newGroupNumber = state.objectiveGroups.length + 1;
+
+      const newGroup = {
+        id: newGroupId,
+        objectiveId: data.objective._id.toString(),
+        metaId: `db-${data.objective._id}`,
+        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        isOpen: true,
+        selected: false,
+        items: data.granularObjectives.map((granular, index) => ({
+          id: parseFloat(`${newGroupNumber}.${index + 1}`),
+          granularId: granular._id ? granular._id.toString() : null,
+          text: granular.name || granular.text || "",
           bloom: [],
           minQuestions: 2,
           count: 2,
           mode: "manual",
           level: 1,
           selected: false,
-        },
-      ],
-    };
+        })),
+      };
 
-    // Append to the end of the groups array
-    state.objectiveGroups.push(newGroup);
+      // Append to the end of the groups array
+      state.objectiveGroups.push(newGroup);
 
-    // Renumber all groups
-    renumberObjectiveGroups();
+      // Renumber all groups
+      renumberObjectiveGroups();
 
-    // Clear the input and hide modal
-    textInput.value = "";
-    hideModal(modal);
+      renderObjectiveGroups();
 
-    renderObjectiveGroups();
-
-    // Scroll into view and focus the first granular row
-    setTimeout(() => {
-      const groupElement = document.querySelector(
-        `[data-group-id="${newGroupId}"]`
-      );
-      if (groupElement) {
-        groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
-
-        // Focus the first granular objective row
-        const firstItemElement = groupElement.querySelector(
-          ".objective-item__text"
+      // Scroll into view and focus the first granular row
+      setTimeout(() => {
+        const groupElement = document.querySelector(
+          `[data-group-id="${newGroupId}"]`
         );
-        if (firstItemElement) {
-          firstItemElement.focus();
-        }
-      }
-    }, 100);
+        if (groupElement) {
+          groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
 
-    announceToScreenReader(
-      `Added custom objective: ${customTitle} with 1 granular objective.`
-    );
+          // Focus the first granular objective row
+          const firstItemElement = groupElement.querySelector(
+            ".objective-item__text"
+          );
+          if (firstItemElement) {
+            firstItemElement.focus();
+          }
+        }
+      }, 100);
+
+      showToast("Learning objective created successfully", "success");
+      announceToScreenReader(
+        `Added learning objective: ${objectiveName} with ${granularObjectives.length} granular objective${granularObjectives.length !== 1 ? 's' : ''}.`
+      );
+
+      // Refresh dropdown to include new objective
+      try {
+        await initializeAddObjectivesDropdown();
+      } catch (dropdownError) {
+        console.error("Error refreshing dropdown:", dropdownError);
+        // Don't throw - this is not critical
+      }
+    }
+
+    // Clear the form and hide modal
+    nameInput.value = "";
+    container.innerHTML = "";
+
+    // Clear material selections
+    const materialCheckboxes = document.querySelectorAll(".material-checkbox");
+    materialCheckboxes.forEach(cb => cb.checked = false);
+
+    hideModal(modal);
+  } catch (error) {
+    console.error(`Error ${mode === "edit" ? "updating" : "creating"} learning objective:`, error);
+    showToast(error.message || `Failed to ${mode === "edit" ? "update" : "create"} learning objective`, "error");
+  } finally {
+    // Clear timeout
+    clearTimeout(timeoutId);
+    // Re-enable button
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.innerHTML = originalButtonText;
+    }
   }
 }
 
 function hideModal(modal) {
   if (modal) {
     modal.style.display = "none";
+
+    // Clear material selections if it's the custom objective modal
+    if (modal.id === "custom-objective-modal") {
+      const materialCheckboxes = document.querySelectorAll(".material-checkbox");
+      materialCheckboxes.forEach(cb => cb.checked = false);
+    }
   }
 }
 
-function handleMetaObjectiveSelection(metaId, metaTitle) {
-  // Check if this meta objective already exists
+async function handleObjectiveSelection(objectiveId, objectiveName) {
+  // Check if this objective already exists
   const existingGroup = state.objectiveGroups.find(
-    (group) => group.metaId === metaId
+    (group) => group.objectiveId === objectiveId
   );
 
   if (existingGroup) {
@@ -2009,64 +2389,94 @@ function handleMetaObjectiveSelection(metaId, metaTitle) {
       }
     }, 100);
 
-    announceToScreenReader(`Meta objective revealed: ${metaTitle}`);
+    announceToScreenReader(`Objective revealed: ${objectiveName}`);
   } else {
-    // Create new meta learning objective group with auto-seeded granular objectives
-    const newGroupId = Date.now() + Math.random();
-    const newGroupNumber = state.objectiveGroups.length + 1;
+    // Fetch granular objectives from API
+    try {
+      const response = await fetch(`/api/objectives/${objectiveId}/granular`);
+      const data = await response.json();
 
-    // Get seeds from the catalog
-    const seeds = SEED_BY_META[metaId]?.seeds || [];
-
-    const newGroup = {
-      id: newGroupId,
-      metaId: metaId,
-      title: `Learning Objective ${newGroupNumber}: ${metaTitle}`,
-      isOpen: true,
-      selected: false, // Add selected property for multi-select
-      items: seeds.map((seed, index) => ({
-        id: parseFloat(`${newGroupNumber}.${index + 1}`),
-        text: seed.title,
-        bloom: seed.bloomChips,
-        minQuestions: seed.min,
-        count: seed.count,
-        mode: seed.mode,
-        level: 1,
-        selected: false,
-      })),
-    };
-
-    // Append to the end of the groups array
-    state.objectiveGroups.push(newGroup);
-
-    // Renumber all groups
-    renumberObjectiveGroups();
-
-    renderObjectiveGroups();
-
-    // Scroll into view and focus the first granular row
-    setTimeout(() => {
-      const groupElement = document.querySelector(
-        `[data-group-id="${newGroupId}"]`
-      );
-      if (groupElement) {
-        groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
-
-        // Focus the first granular objective row
-        const firstItemElement = groupElement.querySelector(
-          ".objective-item__text"
-        );
-        if (firstItemElement) {
-          firstItemElement.focus();
-        }
+      let granularObjectives = [];
+      if (data.success && data.objectives) {
+        granularObjectives = data.objectives;
       }
-    }, 100);
 
-    // Announce with count of granular objectives
-    const granularCount = seeds.length;
-    announceToScreenReader(
-      `Added ${metaTitle} with ${granularCount} granular objectives.`
-    );
+      // Create new learning objective group
+      const newGroupId = Date.now() + Math.random();
+      const newGroupNumber = state.objectiveGroups.length + 1;
+
+      const newGroup = {
+        id: newGroupId,
+        objectiveId: objectiveId,
+        metaId: `db-${objectiveId}`,
+        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        isOpen: true,
+        selected: false,
+        items: granularObjectives.map((granular, index) => ({
+          id: parseFloat(`${newGroupNumber}.${index + 1}`),
+          granularId: granular._id ? granular._id.toString() : null,
+          text: granular.name,
+          bloom: [],
+          minQuestions: 2,
+          count: 2,
+          mode: "manual",
+          level: 1,
+          selected: false,
+        })),
+      };
+
+      // If no granular objectives, add a default one
+      if (newGroup.items.length === 0) {
+        newGroup.items.push({
+          id: parseFloat(`${newGroupNumber}.1`),
+          text: "Draft granular objective (edit me).",
+          bloom: [],
+          minQuestions: 2,
+          count: 2,
+          mode: "manual",
+          level: 1,
+          selected: false,
+        });
+      }
+
+      // Append to the end of the groups array
+      state.objectiveGroups.push(newGroup);
+
+      // Renumber all groups
+      renumberObjectiveGroups();
+
+      renderObjectiveGroups();
+
+      // Update dropdown to disable the newly added objective
+      updateDropdownDisabledState();
+
+      // Scroll into view and focus the first granular row
+      setTimeout(() => {
+        const groupElement = document.querySelector(
+          `[data-group-id="${newGroupId}"]`
+        );
+        if (groupElement) {
+          groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
+
+          // Focus the first granular objective row
+          const firstItemElement = groupElement.querySelector(
+            ".objective-item__text"
+          );
+          if (firstItemElement) {
+            firstItemElement.focus();
+          }
+        }
+      }, 100);
+
+      // Announce with count of granular objectives
+      const granularCount = newGroup.items.length;
+      announceToScreenReader(
+        `Added ${objectiveName} with ${granularCount} granular objective${granularCount !== 1 ? 's' : ''}.`
+      );
+    } catch (error) {
+      console.error("Error fetching granular objectives:", error);
+      showToast("Failed to load granular objectives", "error");
+    }
   }
 }
 
@@ -2080,93 +2490,45 @@ function renumberObjectiveGroups() {
   });
 }
 
-// ===== MULTI-SELECT FUNCTIONS =====
+// ===== DELETE OBJECTIVE GROUP FUNCTION =====
 
-function toggleGroupSelection(groupId) {
+function deleteObjectiveGroup(groupId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (group) {
-    group.selected = !group.selected;
+  if (!group) return;
 
-    if (group.selected) {
-      state.selectedGroupIds.add(groupId);
-    } else {
-      state.selectedGroupIds.delete(groupId);
-    }
+  // Remove the group
+  state.objectiveGroups = state.objectiveGroups.filter(
+    (g) => g.id !== groupId
+  );
 
-    updateMultiSelectToolbar();
-    renderObjectiveGroups();
-  }
-}
+  // Renumber remaining groups
+  renumberObjectiveGroups();
 
-function selectAllGroups() {
-  const selectAllCheckbox = document.getElementById("select-all-groups");
-  const isChecked = selectAllCheckbox.checked;
-
-  state.objectiveGroups.forEach((group) => {
-    group.selected = isChecked;
-    if (isChecked) {
-      state.selectedGroupIds.add(group.id);
-    } else {
-      state.selectedGroupIds.delete(group.id);
-    }
-  });
-
-  updateMultiSelectToolbar();
+  // Update UI
   renderObjectiveGroups();
+
+  // Update dropdown to re-enable deleted objective
+  updateDropdownDisabledState();
+
+  // Announce deletion
+  announceToScreenReader(`Deleted ${group.title} from page.`);
 }
 
-function deleteSelectedGroups() {
-  const selectedCount = state.selectedGroupIds.size;
+function deleteGranularObjective(groupId, itemId) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group) return;
 
-  if (selectedCount === 0) return;
+  const item = group.items.find((i) => i.id === itemId);
+  if (!item) return;
 
-  // Show confirmation dialog
-  const confirmMessage = `Delete ${selectedCount} meta learning objective${
-    selectedCount > 1 ? "s" : ""
-  } and all granular objectives?`;
+  // Remove the item from the group
+  group.items = group.items.filter((i) => i.id !== itemId);
 
-  if (confirm(confirmMessage)) {
-    // Remove selected groups
-    state.objectiveGroups = state.objectiveGroups.filter(
-      (group) => !group.selected
-    );
+  // Update UI
+  renderObjectiveGroups();
 
-    // Clear selection
-    state.selectedGroupIds.clear();
-
-    // Renumber remaining groups
-    renumberObjectiveGroups();
-
-    // Update UI
-    updateMultiSelectToolbar();
-    renderObjectiveGroups();
-
-    // Announce deletion
-    announceToScreenReader(`Deleted ${selectedCount} meta objectives.`);
-  }
-}
-
-function updateMultiSelectToolbar() {
-  const toolbar = document.getElementById("multi-select-toolbar");
-  const deleteSelectedBtn = document.getElementById("delete-selected-btn");
-  const selectAllCheckbox = document.getElementById("select-all-groups");
-
-  if (toolbar && deleteSelectedBtn && selectAllCheckbox) {
-    const hasSelectedGroups = state.selectedGroupIds.size > 0;
-    const allGroupsSelected =
-      state.objectiveGroups.length > 0 &&
-      state.objectiveGroups.every((group) => group.selected);
-
-    // Show/hide toolbar based on whether there are groups
-    toolbar.style.display = state.objectiveGroups.length > 0 ? "block" : "none";
-
-    // Update delete button state
-    deleteSelectedBtn.disabled = !hasSelectedGroups;
-
-    // Update select all checkbox
-    selectAllCheckbox.checked = allGroupsSelected;
-    selectAllCheckbox.indeterminate = hasSelectedGroups && !allGroupsSelected;
-  }
+  // Announce deletion
+  announceToScreenReader(`Deleted granular objective: ${item.text}`);
 }
 
 // ===== GRANULAR SELECTION FUNCTIONS =====
@@ -2485,65 +2847,6 @@ function regenerateAllObjectivesFromContent() {
   }
 }
 
-function refreshMetaObjectives(groupId) {
-  const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group) return;
-
-  const metaTitle = group.title.replace(/^Learning Objective \d+: /, "");
-  const confirmMessage = `Replace granular objectives in '${metaTitle}' with a fresh template set? This removes current granular items.`;
-
-  if (confirm(confirmMessage)) {
-    // Check if this is a content-generated objective
-    if (group.metaId && group.metaId.startsWith("content-generated-")) {
-      // Regenerate from content
-      regenerateObjectiveFromContent(group);
-    } else {
-      // Use predefined templates
-      let newSeeds;
-      if (group.metaId && group.metaId.startsWith("custom-")) {
-        // Custom meta - use generic templates
-        newSeeds = GENERIC_GRANULAR_TEMPLATES;
-      } else if (ALT_SEEDS_BY_META[group.metaId]) {
-        // Known meta - use alternate seeds
-        newSeeds = ALT_SEEDS_BY_META[group.metaId];
-      } else {
-        // Fallback to generic templates
-        newSeeds = GENERIC_GRANULAR_TEMPLATES;
-      }
-
-      // Replace items with new seeds
-      group.items = newSeeds.map((seed, index) => ({
-        id: parseFloat(`${group.id}.${index + 1}`),
-        text: seed.title,
-        bloom: seed.bloomChips,
-        minQuestions: seed.min,
-        count: seed.count,
-        mode: seed.mode,
-        level: 1, // Granular level
-        selected: false,
-      }));
-    }
-
-    // Expand the group
-    group.isOpen = true;
-
-    // Update UI
-    renderObjectiveGroups();
-
-    // Scroll into view
-    setTimeout(() => {
-      const groupElement = document.querySelector(
-        `[data-group-id="${groupId}"]`
-      );
-      if (groupElement) {
-        groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 100);
-
-    // Announce refresh
-    announceToScreenReader(`Refreshed granular objectives for ${metaTitle}.`);
-  }
-}
 
 // Regenerate objective from uploaded content
 function regenerateObjectiveFromContent(group) {
@@ -2620,15 +2923,12 @@ function renderObjectiveGroups() {
     });
   }
 
-  // Update multi-select toolbar after rendering
-  updateMultiSelectToolbar();
 }
 
 function createObjectiveGroup(group) {
   const groupElement = document.createElement("div");
-  groupElement.className = `objective-group ${
-    group.isOpen ? "objective-group--expanded" : "objective-group--collapsed"
-  }`;
+  groupElement.className = `objective-group ${group.isOpen ? "objective-group--expanded" : "objective-group--collapsed"
+    }`;
   groupElement.setAttribute("data-group-id", group.id);
 
   const itemCount = group.items.length;
@@ -2654,29 +2954,33 @@ function createObjectiveGroup(group) {
   groupElement.innerHTML = `
         <div class="objective-group__header">
             <div class="objective-group__header-left">
-                <input type="checkbox" 
-                    class="objective-group__checkbox" 
-                    ${group.selected ? "checked" : ""} 
-                    onchange="toggleGroupSelection(${group.id})"
-                    aria-label="Select ${group.title}"
+                <button type="button" 
+                    class="objective-group__delete-btn" 
+                    onclick="deleteObjectiveGroup(${group.id})"
+                    title="Delete learning objective from page"
+                    aria-label="Delete ${group.title}"
                 >
+                    <i class="fas fa-trash-alt"></i>
+                </button>
                 <h3 class="objective-group__title" 
                     tabindex="0" 
                     onclick="toggleObjectiveGroup(${group.id})"
                 >${group.title}</h3>
             </div>
             <div class="objective-group__header-right">
+                ${group.objectiveId ? `
                 <button type="button" 
-                    class="objective-group__refresh-btn" 
-                    onclick="refreshMetaObjectives(${group.id})"
-                    title="Refresh granular objectives"
-                    aria-label="Refresh granular objectives for ${group.title}"
+                    class="objective-group__edit-btn" 
+                    onclick="editMetaObjective(${group.id})"
+                    title="Edit learning objective"
+                    aria-label="Edit ${group.title}"
                 >
-                    <i class="fas fa-sync-alt"></i>
+                    <i style="margin-right: 5px;" class="fas fa-pencil-alt"></i>
+                    Edit
                 </button>
-                <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${
-                  group.id
-                })">
+                ` : ''}
+                <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id
+    })">
                     <span>${itemCount} objectives</span>
                     <i class="fas fa-chevron-down"></i>
                 </div>
@@ -2684,9 +2988,8 @@ function createObjectiveGroup(group) {
         </div>
         <div class="objective-group__content">
             ${emptyState}
-            ${
-              group.items.length > 0
-                ? `
+            ${group.items.length > 0
+      ? `
                 <div class="granular-toolbar" id="granular-toolbar-${group.id}" style="display: none;">
                     <div class="granular-toolbar__left">
                         <label class="select-all-granular-label">
@@ -2706,24 +3009,21 @@ function createObjectiveGroup(group) {
                 </div>
                 <!-- DEBUG: Toolbar created for group ${group.id} with ${group.items.length} items -->
             `
-                : ""
-            }
+      : ""
+    }
             ${group.items
-              .map((item) => createObjectiveItem(item, group.id))
-              .join("")}
-            ${
-              itemCount > 0
-                ? `
-                <div class="objective-group__footer ${
-                  isWarning ? "objective-group__footer--warning" : ""
-                }">
-                    Total: ${totalCount} Required minimum: 5 (${
-                    totalCount >= 5 ? "≥5" : "<5"
-                  })
+      .map((item) => createObjectiveItem(item, group.id))
+      .join("")}
+            ${itemCount > 0
+      ? `
+                <div class="objective-group__footer ${isWarning ? "objective-group__footer--warning" : ""
+      }">
+                    Total: ${totalCount} Required minimum: 5 (${totalCount >= 5 ? "≥5" : "<5"
+      })
                 </div>
             `
-                : ""
-            }
+      : ""
+    }
         </div>
     `;
 
@@ -2737,9 +3037,8 @@ function createObjectiveItem(item, groupId) {
       const isDisabled = item.mode === "auto";
       return `
             <button type="button" 
-                class="bloom-chip ${isSelected ? "bloom-chip--selected" : ""} ${
-        isDisabled ? "bloom-chip--disabled" : ""
-      }"
+                class="bloom-chip ${isSelected ? "bloom-chip--selected" : ""} ${isDisabled ? "bloom-chip--disabled" : ""
+        }"
                 onclick="toggleBloomChip(${groupId}, ${item.id}, '${level}')"
                 ${isDisabled ? "disabled" : ""}
                 aria-checked="${isSelected}"
@@ -2771,27 +3070,21 @@ function createObjectiveItem(item, groupId) {
   const subLOBadge = isSubLO ? '<span class="sub-lo-badge">Sub-LO</span>' : "";
 
   return `
-        <div class="objective-item ${indentClass}" data-item-id="${
-    item.id
-  }" data-parent-id="${item.parentId || ""}">
+        <div class="objective-item ${indentClass}" data-item-id="${item.id
+    }" data-parent-id="${item.parentId || ""}">
             <div class="objective-item__checkbox-wrapper">
-                <input type="checkbox" 
-                    class="objective-item__checkbox" 
-                    ${item.selected ? "checked" : ""} 
-                    onchange="toggleGranularSelection(${groupId}, ${item.id})"
-                    aria-label="Select ${item.text}"
+                <button type="button" 
+                    class="objective-item__delete-btn" 
+                    onclick="deleteGranularObjective(${groupId}, ${item.id})"
+                    title="Delete granular objective from page"
+                    aria-label="Delete ${item.text}"
                 >
+                    <i class="fas fa-trash-alt"></i>
+                </button>
             </div>
-            <button type="button" class="objective-item__delete" onclick="confirmDeleteObjective(${groupId}, ${
-    item.id
-  })" aria-label="Remove objective">
-                ×
-            </button>
             <div class="objective-item__content">
                 <div class="objective-item__header">
-                    <div class="objective-item__text" contenteditable="true" onblur="updateObjectiveText(${groupId}, ${
-    item.id
-  }, this.textContent)">
+                    <div class="objective-item__text">
                         ${item.text}
                     </div>
                     ${subLOBadge}
@@ -2800,34 +3093,23 @@ function createObjectiveItem(item, groupId) {
                     <div class="objective-item__bloom-chips">
                         ${bloomChips}
                     </div>
-                    <div class="objective-item__min">Min: ${
-                      item.minQuestions
-                    }</div>
+                    <div class="objective-item__min">Min: ${item.minQuestions
+    }</div>
                     ${bloomModeToggle}
                 </div>
             </div>
             <div class="objective-item__tools">
                 <div class="objective-item__stepper">
-                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${
-    item.id
-  })" ${item.count <= item.minQuestions ? "disabled" : ""}>
+                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id
+    })" ${item.count <= item.minQuestions ? "disabled" : ""}>
                         –
                     </button>
                     <span class="stepper-value">${item.count}</span>
-                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${
-    item.id
-  })" ${item.count >= 9 ? "disabled" : ""}>
+                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id
+    })" ${item.count >= 9 ? "disabled" : ""}>
                         +
                     </button>
                 </div>
-                <button type="button" class="objective-item__action-btn" onclick="editObjective(${groupId}, ${
-    item.id
-  })" title="Edit objective">
-                    <i class="fas fa-pencil-alt"></i>
-                </button>
-                <button type="button" class="objective-item__action-btn objective-item__action-btn--disabled" title="Connect AI later" disabled>
-                    <i class="fas fa-sync-alt"></i>
-                </button>
             </div>
         </div>
     `;
@@ -2869,15 +3151,6 @@ function setBloomMode(groupId, itemId, mode) {
   }
 }
 
-function updateObjectiveText(groupId, itemId, text) {
-  const group = state.objectiveGroups.find((g) => g.id === groupId);
-  const item = group?.items.find((i) => i.id === itemId);
-
-  if (item) {
-    item.text = text;
-  }
-}
-
 function incrementCount(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   const item = group?.items.find((i) => i.id === itemId);
@@ -2900,55 +3173,29 @@ function decrementCount(groupId, itemId) {
   }
 }
 
-function editObjective(groupId, itemId) {
-  const itemElement = document.querySelector(
-    `[data-item-id="${itemId}"] .objective-item__text`
-  );
-  if (itemElement) {
-    itemElement.focus();
-    itemElement.classList.add("objective-item__text--editing");
+// Store current editing state
+let currentEditGroupId = null;
 
-    // Select all text
-    const range = document.createRange();
-    range.selectNodeContents(itemElement);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-}
-
-function confirmDeleteObjective(groupId, itemId) {
-  state.objectiveToDelete = { groupId, itemId };
-  const modal = document.getElementById("delete-confirmation-modal");
-  if (modal) {
-    modal.style.display = "flex";
-  }
-}
-
-function deleteObjective(groupId, itemId) {
+async function editMetaObjective(groupId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (group) {
-    const index = group.items.findIndex((i) => i.id === itemId);
-    if (index > -1) {
-      const removedItem = group.items[index];
-      group.items.splice(index, 1);
-
-      // If group becomes empty, remove it and renumber
-      if (group.items.length === 0) {
-        const groupIndex = state.objectiveGroups.findIndex(
-          (g) => g.id === groupId
-        );
-        if (groupIndex > -1) {
-          state.objectiveGroups.splice(groupIndex, 1);
-          renumberObjectiveGroups();
-        }
-      }
-
-      renderObjectiveGroups();
-      announceToScreenReader(`Removed objective: ${removedItem.text}`);
-    }
+  if (!group || !group.objectiveId) {
+    showToast("Cannot edit this learning objective", "warning");
+    return;
   }
+
+  // Extract the objective name from the title (remove "Learning Objective X: " prefix)
+  const titleMatch = group.title.match(/^Learning Objective \d+: (.+)$/);
+  const currentName = titleMatch ? titleMatch[1] : group.title;
+
+  // Use the shared modal in edit mode
+  currentEditGroupId = groupId;
+  showCustomObjectiveModal("edit", {
+    objectiveId: group.objectiveId,
+    name: currentName,
+    granularObjectives: group.items || [],
+  });
 }
+
 
 function initializeModals() {
   // Custom objective modal
@@ -2956,6 +3203,7 @@ function initializeModals() {
   const customModalClose = document.getElementById("custom-modal-close");
   const customModalCancel = document.getElementById("custom-modal-cancel");
   const customModalSave = document.getElementById("custom-modal-save");
+  const addGranularBtn = document.getElementById("add-granular-btn");
 
   if (customModalClose) {
     customModalClose.addEventListener("click", () => hideModal(customModal));
@@ -2964,7 +3212,19 @@ function initializeModals() {
     customModalCancel.addEventListener("click", () => hideModal(customModal));
   }
   if (customModalSave) {
-    customModalSave.addEventListener("click", handleCustomObjectiveSubmission);
+    customModalSave.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("Create button clicked");
+      handleCustomObjectiveSubmission();
+    });
+  }
+  if (addGranularBtn) {
+    addGranularBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      addGranularObjectiveInput();
+    });
   }
 
   // Delete confirmation modal
@@ -2978,18 +3238,6 @@ function initializeModals() {
   }
   if (deleteModalCancel) {
     deleteModalCancel.addEventListener("click", () => hideModal(deleteModal));
-  }
-  if (deleteModalConfirm) {
-    deleteModalConfirm.addEventListener("click", () => {
-      if (state.objectiveToDelete) {
-        deleteObjective(
-          state.objectiveToDelete.groupId,
-          state.objectiveToDelete.itemId
-        );
-        state.objectiveToDelete = null;
-        hideModal(deleteModal);
-      }
-    });
   }
 
   // Granularization modal
@@ -3188,9 +3436,8 @@ function prepareContentForQuestions() {
   content += `Objectives:\n`;
   state.objectiveGroups.forEach((group) => {
     group.items.forEach((item) => {
-      content += `- ${item.text} (${item.bloom.join(", ")}) Min: ${
-        item.minQuestions
-      }, Count: ${item.count}\n`;
+      content += `- ${item.text} (${item.bloom.join(", ")}) Min: ${item.minQuestions
+        }, Count: ${item.count}\n`;
     });
   });
   content += `\nGenerate multiple choice questions based on this content.`;
@@ -3214,9 +3461,8 @@ function createQuestionItem(question) {
   const options = question.options
     .map((option, index) => {
       const isCorrect = index === question.correctAnswer;
-      return `<li class="question-item__option ${
-        isCorrect ? "question-item__option--correct" : ""
-      }">${option}</li>`;
+      return `<li class="question-item__option ${isCorrect ? "question-item__option--correct" : ""
+        }">${option}</li>`;
     })
     .join("");
 
@@ -3699,11 +3945,10 @@ function generateExportSummaryHTML() {
     if (state.formats.canvasSingle.releaseNow) {
       html += " - Release immediately";
     } else {
-      html += ` - Scheduled for ${state.formats.canvasSingle.date}${
-        state.formats.canvasSingle.time
+      html += ` - Scheduled for ${state.formats.canvasSingle.date}${state.formats.canvasSingle.time
           ? ` at ${state.formats.canvasSingle.time}`
           : ""
-      }`;
+        }`;
     }
     html += "</li>";
   }
@@ -3713,11 +3958,10 @@ function generateExportSummaryHTML() {
     if (state.formats.canvasSpaced.releaseNow) {
       html += " - Release immediately";
     } else {
-      html += ` - Scheduled for ${state.formats.canvasSpaced.date}${
-        state.formats.canvasSpaced.time
+      html += ` - Scheduled for ${state.formats.canvasSpaced.date}${state.formats.canvasSpaced.time
           ? ` at ${state.formats.canvasSpaced.time}`
           : ""
-      }`;
+        }`;
     }
     html += "</li>";
   }
@@ -3832,10 +4076,9 @@ function showQuestionGenerationError(errorMessage) {
         ⚠️ Question Generation Unavailable
       </div>
       <div style="color: #374151; font-size: 16px; margin-bottom: 20px;">
-        ${
-          errorMessage ||
-          "There is currently a problem with the question generation service."
-        }
+        ${errorMessage ||
+    "There is currently a problem with the question generation service."
+    }
       </div>
       <div style="color: #6b7280; font-size: 14px; margin-bottom: 24px;">
         Please check that all required services are running and try again later.
@@ -4037,12 +4280,10 @@ function renderStep4() {
   metaLoGroups.innerHTML = filteredGroups
     .map(
       (group) => `
-        <div class="meta-lo-group ${
-          group.isOpen ? "meta-lo-group--expanded" : "meta-lo-group--collapsed"
+        <div class="meta-lo-group ${group.isOpen ? "meta-lo-group--expanded" : "meta-lo-group--collapsed"
         }" data-group-id="${group.id}">
-            <div class="meta-lo-group__header" onclick="toggleMetaLoGroup('${
-              group.id
-            }')">
+            <div class="meta-lo-group__header" onclick="toggleMetaLoGroup('${group.id
+        }')">
                 <h3 class="meta-lo-group__title">${group.title}</h3>
                 <div class="meta-lo-group__stats">
                     <div class="meta-lo-group__stat">
@@ -4062,8 +4303,8 @@ function renderStep4() {
             </div>
             <div class="meta-lo-group__content">
                 ${group.los
-                  .map((lo) => renderGranularLoSection(lo, group))
-                  .join("")}
+          .map((lo) => renderGranularLoSection(lo, group))
+          .join("")}
             </div>
         </div>
     `
@@ -4087,14 +4328,14 @@ function renderGranularLoSection(lo, group) {
                         <span>Min: ${lo.min}</span>
                     </div>
                     ${lo.badges
-                      .map((badge) => `<span class="badge">${badge}</span>`)
-                      .join("")}
+      .map((badge) => `<span class="badge">${badge}</span>`)
+      .join("")}
                 </div>
             </div>
             <div class="question-cards">
                 ${lo.questions
-                  .map((question) => renderQuestionCard(question, group))
-                  .join("")}
+      .map((question) => renderQuestionCard(question, group))
+      .join("")}
             </div>
         </div>
     `;
@@ -4111,28 +4352,23 @@ function renderQuestionCard(question, group) {
                        ${isSelected ? "checked" : ""} 
                        onchange="toggleQuestionSelection('${question.id}')">
                 <div class="question-card__content">
-                    ${
-                      isEditing
-                        ? `<input type="text" class="question-card__title--editing" value="${question.title}" onblur="saveQuestionEdit('${question.id}')">`
-                        : `<h5 class="question-card__title">${question.title}</h5>`
-                    }
+                    ${isEditing
+      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onblur="saveQuestionEdit('${question.id}')">`
+      : `<h5 class="question-card__title">${question.title}</h5>`
+    }
                     <div class="question-card__chips">
-                        <span class="question-card__chip question-card__chip--meta">${
-                          question.metaCode
-                        }</span>
-                        <span class="question-card__chip question-card__chip--lo">${
-                          question.loCode
-                        }</span>
-                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${
-                          question.bloom
-                        }</span>
+                        <span class="question-card__chip question-card__chip--meta">${question.metaCode
+    }</span>
+                        <span class="question-card__chip question-card__chip--lo">${question.loCode
+    }</span>
+                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom
+    }</span>
                     </div>
                 </div>
                 <div class="question-card__metadata">
                     <div class="question-card__status">
-                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${
-    question.status
-  }</span>
+                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status
+    }</span>
                     </div>
                     <div>Last Edited: ${question.lastEdited}</div>
                     <div>By: ${question.by}</div>
@@ -4142,28 +4378,23 @@ function renderQuestionCard(question, group) {
                 <p class="question-card__stem">${question.stem}</p>
                 <div class="question-card__options">
                     ${Object.values(question.options)
-                      .map(
-                        (option) => `
-                        <div class="question-card__option ${
-                          isEditing ? "question-card__option--editing" : ""
-                        }">
-                            <input type="radio" name="q-${
-                              question.id
-                            }" value="${option.id}" ${
-                          option.isCorrect ? "checked" : ""
-                        } disabled>
-                            ${
-                              isEditing
-                                ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
-                                : `<label>${option.id}. ${option.text}</label>`
-                            }
+      .map(
+        (option) => `
+                        <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
+          }">
+                            <input type="radio" name="q-${question.id
+          }" value="${option.id}" ${option.isCorrect ? "checked" : ""
+          } disabled>
+                            ${isEditing
+            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            : `<label>${option.id}. ${option.text}</label>`
+          }
                         </div>
-                        <div class="question-card__feedback">${option.id} ${
-                          option.isCorrect ? "Correct" : "Incorrect"
-                        } — ${option.feedback}</div>
+                        <div class="question-card__feedback">${option.id} ${option.isCorrect ? "Correct" : "Incorrect"
+          } — ${option.feedback}</div>
                     `
-                      )
-                      .join("")}
+      )
+      .join("")}
                 </div>
             </div>
             <div class="question-card__footer">
@@ -4173,44 +4404,39 @@ function renderQuestionCard(question, group) {
                         ${isEditing ? "Cancel" : "Edit"}
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--regenerate" 
-                            onclick="regenerateQuestion('${
-                              question.id
-                            }')" disabled 
+                            onclick="regenerateQuestion('${question.id
+    }')" disabled 
                             title="Connect AI later">
                         Regenerate
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
                             onclick="toggleQuestionFlag('${question.id}')"
-                            ${
-                              question.status === "Flagged"
-                                ? 'style="background: #ffebee; color: #d32f2f;"'
-                                : ""
-                            }>
+                            ${question.status === "Flagged"
+      ? 'style="background: #ffebee; color: #d32f2f;"'
+      : ""
+    }>
                         ${question.status === "Flagged" ? "Unflag" : "Flag"}
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--approve" 
                             onclick="toggleQuestionApproval('${question.id}')"
-                            ${
-                              question.status === "Approved"
-                                ? 'style="background: #e8f5e8; color: #388e3c;"'
-                                : ""
-                            }>
-                        ${
-                          question.status === "Approved"
-                            ? "Unapprove"
-                            : "Approve"
-                        }
+                            ${question.status === "Approved"
+      ? 'style="background: #e8f5e8; color: #388e3c;"'
+      : ""
+    }>
+                        ${question.status === "Approved"
+      ? "Unapprove"
+      : "Approve"
+    }
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--delete" 
                             onclick="deleteQuestion('${question.id}')">
                         Delete
                     </button>
                 </div>
-                ${
-                  isEditing
-                    ? `<button type="button" class="question-card__save-btn" onclick="saveQuestionEdit('${question.id}')">Save</button>`
-                    : ""
-                }
+                ${isEditing
+      ? `<button type="button" class="question-card__save-btn" onclick="saveQuestionEdit('${question.id}')">Save</button>`
+      : ""
+    }
             </div>
         </div>
     `;
@@ -4247,9 +4473,8 @@ function updateSelectionUI() {
   if (state.selectedQuestions.size > 0) {
     stickyBottomActions.style.display = "flex";
     if (selectionCount) {
-      selectionCount.textContent = `${state.selectedQuestions.size} question${
-        state.selectedQuestions.size === 1 ? "" : "s"
-      } selected`;
+      selectionCount.textContent = `${state.selectedQuestions.size} question${state.selectedQuestions.size === 1 ? "" : "s"
+        } selected`;
     }
   } else {
     stickyBottomActions.style.display = "none";
@@ -4362,7 +4587,7 @@ async function handleAddSelectedToBank() {
     showToast("No questions selected", "warning");
     return;
   }
-  
+
   // Adding questions to question bank.
   await fetch(`/api/questions/save`, {
     method: "POST",
@@ -4378,8 +4603,7 @@ async function handleAddSelectedToBank() {
   });
 
   showToast(
-    `Added ${state.selectedQuestions.size} question${
-      state.selectedQuestions.size === 1 ? "" : "s"
+    `Added ${state.selectedQuestions.size} question${state.selectedQuestions.size === 1 ? "" : "s"
     } to Question Bank`,
     "success"
   );
@@ -4654,11 +4878,9 @@ function createMockCSV() {
   let csv =
     "Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n";
   state.questions.forEach((q) => {
-    csv += `"${q.text}","${q.options[0]}","${q.options[1]}","${
-      q.options[2]
-    }","${q.options[3]}","${q.options[q.correctAnswer]}","${q.bloomLevel}","${
-      q.difficulty
-    }"\n`;
+    csv += `"${q.text}","${q.options[0]}","${q.options[1]}","${q.options[2]
+      }","${q.options[3]}","${q.options[q.correctAnswer]}","${q.bloomLevel}","${q.difficulty
+      }"\n`;
   });
   return csv;
 }
@@ -4744,19 +4966,15 @@ function announceToScreenReader(message) {
 window.toggleObjectiveGroup = toggleObjectiveGroup;
 window.toggleBloomChip = toggleBloomChip;
 window.setBloomMode = setBloomMode;
-window.updateObjectiveText = updateObjectiveText;
 window.incrementCount = incrementCount;
 window.decrementCount = decrementCount;
-window.editObjective = editObjective;
-window.confirmDeleteObjective = confirmDeleteObjective;
-window.toggleGroupSelection = toggleGroupSelection;
-window.selectAllGroups = selectAllGroups;
-window.deleteSelectedGroups = deleteSelectedGroups;
+window.editMetaObjective = editMetaObjective;
+window.deleteObjectiveGroup = deleteObjectiveGroup;
+window.deleteGranularObjective = deleteGranularObjective;
 window.toggleGranularSelection = toggleGranularSelection;
 window.selectAllGranularInGroup = selectAllGranularInGroup;
 window.deleteSelectedGranular = deleteSelectedGranular;
 window.showGranularizationModal = showGranularizationModal;
-window.refreshMetaObjectives = refreshMetaObjectives;
 window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
 
 // Module functions for global access
