@@ -7,6 +7,9 @@ const router = express.Router();
 // Import RAG service (singleton)
 const ragService = require('../services/rag');
 
+// Import LLM service (singleton)
+const llmService = require('../services/llm');
+
 // Import services
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
@@ -51,13 +54,13 @@ router.post("/search", express.json(), async (req, res) => {
     console.log("Query:", query);
     console.log("Limit:", limit);
 
-    // Ensure RAG is initialized
-    const ragInstance = await ragService.ensureRAGInitialized();
+    // Get RAG instance
+    const ragInstance = ragService.getRAGInstance();
 
     if (!ragInstance) {
-      console.error("❌ Failed to initialize RAG instance");
+      console.error("❌ Failed to get RAG instance");
       return res.status(500).json({
-        error: "Failed to initialize RAG instance",
+        error: "Failed to get RAG instance",
         fallback: "Use client-side RAG",
       });
     }
@@ -102,16 +105,13 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
       });
     }
 
-    // Get LLM module from service
-    const LLMModule = ragService.getLLMModule();
-
-    // If UBC toolkit is not available, return error
-    if (!LLMModule) {
-      console.log("UBC toolkit not available");
+    // Check if LLM service is available
+    if (!llmService.isReady()) {
+      console.log("LLM service not available");
       return returnErrorResponse(
         res,
-        new Error("UBC toolkit not initialized"),
-        "RAG toolkit is not properly configured"
+        new Error("LLM service not initialized"),
+        "LLM service is not properly configured"
       );
     }
 
@@ -127,7 +127,7 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
     try {
       console.log("=== USING GLOBAL RAG FOR CONTENT RETRIEVAL ===");
 
-      const ragInstance = await ragService.ensureRAGInitialized();
+      const ragInstance = ragService.getRAGInstance();
 
       if (!ragInstance) {
         throw new Error("Global RAG instance not available");
@@ -224,34 +224,12 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
       ragContext = content;
     }
 
-    // Use UBC toolkit LLM for generation
-    console.log("=== USING UBC TOOLKIT LLM FOR GENERATION ===");
+    // Use LLM service for generation
+    console.log("=== USING LLM SERVICE FOR GENERATION ===");
 
     try {
-      // Check if LLMModule has the expected constructor
-      if (
-        typeof LLMModule !== "function" &&
-        typeof LLMModule.create !== "function"
-      ) {
-        throw new Error("LLMModule is not properly initialized");
-      }
-
-      const llmConfig = {
-        provider: process.env.LLM_PROVIDER || "openai",
-        apiKey: process.env.OPENAI_API_KEY,
-        defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-        temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-        maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 1000,
-        debug: process.env.DEBUG === "true",
-      };
-
-      // Initialize LLM module - try both constructor patterns
-      let llmModule;
-      if (typeof LLMModule.create === "function") {
-        llmModule = await LLMModule.create(llmConfig);
-      } else {
-        llmModule = new LLMModule(llmConfig);
-      }
+      // Get LLM instance from service
+      const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context
       const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
@@ -278,10 +256,10 @@ IMPORTANT: Base your question on the specific details, examples, formulas, or co
 
 CONTENT: ${ragContext}`;
 
-      console.log("Sending prompt to UBC toolkit LLM...");
+      console.log("Sending prompt to LLM service...");
       const response = await llmModule.sendMessage(prompt);
 
-      console.log("✅ UBC toolkit LLM response received");
+      console.log("✅ LLM service response received");
       console.log(
         "Response format:",
         typeof response,
@@ -289,10 +267,11 @@ CONTENT: ${ragContext}`;
       );
 
       // Extract content from response
+      // sendMessage returns { content, model, usage, metadata }
       let responseContent;
       if (response && typeof response === "object") {
         responseContent =
-          response.content || response.text || response.message || response;
+          response.content || response.text || response.message || JSON.stringify(response);
       } else {
         responseContent = response;
       }
@@ -324,7 +303,7 @@ CONTENT: ${ragContext}`;
           success: true,
           question: questionData,
           ragChunks: ragChunks,
-          method: "RAG + UBC Toolkit + OpenAI",
+          method: "RAG + LLM Service",
         });
       } catch (parseError) {
         // If JSON parsing fails, return the raw response
@@ -334,14 +313,14 @@ CONTENT: ${ragContext}`;
             question: response,
             options: ["Option A", "Option B", "Option C", "Option D"],
             correctAnswer: 0,
-            explanation: "Generated using RAG + UBC Toolkit + OpenAI",
+            explanation: "Generated using RAG + LLM Service",
           },
           ragChunks: ragChunks,
-          method: "RAG + UBC Toolkit + OpenAI (Raw Response)",
+          method: "RAG + LLM Service (Raw Response)",
         });
       }
     } catch (llmError) {
-      console.error("❌ UBC toolkit LLM failed:", llmError.message);
+      console.error("❌ LLM service failed:", llmError.message);
       return returnErrorResponse(res, llmError, "LLM service failed");
     }
   } catch (error) {
@@ -358,7 +337,7 @@ CONTENT: ${ragContext}`;
 router.get("/health", async (req, res) => {
   try {
     const ragInstance = ragService.getRAGInstance();
-    const LLMModule = ragService.getLLMModule();
+    const llmReady = llmService.isReady();
 
     const health = {
       timestamp: new Date().toISOString(),
@@ -377,7 +356,7 @@ router.get("/health", async (req, res) => {
           status: "unknown",
         },
         ubcToolkit: {
-          llmModule: !!LLMModule,
+          llmService: llmReady,
           ragInstance: !!ragInstance,
         },
       },

@@ -37,6 +37,7 @@ const createObjectiveMaterialRelations = async (objectiveId, materialIds) => {
  * @param {string} objectiveId - The learning objective ID (can be ObjectId or string)
  */
 const getMaterialsForObjective = async (objectiveId) => {
+
   try {
     const db = await databaseService.connect();
     const relationshipCollection = db.collection('grasp_objective_material');

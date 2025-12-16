@@ -397,8 +397,13 @@ class ContentGenerator {
   }
 
   // Check if RAG is available
+  // Since we use server-side RAG via API, we assume it's available
+  // The actual availability will be determined when making API calls
   isRAGAvailable() {
+    // Server-side RAG is always considered available (will fail gracefully if not)
+    // Also check client-side RAG as fallback
     return (
+      true || // Server-side RAG via API is available
       (this.isInitialized && ragModule !== null) ||
       (clientRAG && clientRAG.isRAGAvailable())
     );

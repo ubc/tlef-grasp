@@ -4,18 +4,16 @@
 // Development flag for mock API responses
 const DEV_MODE = true;
 
-// Content and Question Generation Modules
-let contentGenerator = null;
-let questionGenerator = null;
+// PDF Service
 let pdfService = null;
+let questionGenerator = null;
+let contentGenerator = null;
 
 // Main state object
 const state = {
   step: 1, // Step 1 is now Create Objectives (was step 3)
   course: JSON.parse(sessionStorage.getItem("grasp-selected-course")) || "",
-  selectedCourse: "", // Course name for display
-  files: [],
-  urls: [],
+  selectedCourse: JSON.parse(sessionStorage.getItem("grasp-selected-course")).courseName || "", // Course name for display
   summary: "",
   objectives: [],
   questions: [],
@@ -41,496 +39,22 @@ const state = {
 };
 
 // Step titles for dynamic updates
-const stepTitles = {
-  1: "Create Objectives",
-  2: "Generate Questions",
-  3: "Select Output Format",
+const STEPTITLES = {
+  1: "Upload Materials",
+  2: "Review Summary",
+  3: "Create Objectives",
+  4: "Generate Questions",
+  5: "Select Output Format",
 };
 
 // Bloom's taxonomy levels
-const bloomLevels = [
+const BLOOMLEVELS = [
   "Remember",
   "Understand",
   "Apply",
   "Analyze",
   "Evaluate",
   "Create",
-];
-
-// Predefined objectives for the dropdown
-const PREDEFINED_OBJECTIVES = [
-  {
-    metaId: "enthalpy-spontaneity",
-    metaTitle: "Understand spontaneity limits of enthalpy and internal energy",
-    kind: "meta",
-  },
-  {
-    metaId: "entropy-state-function",
-    metaTitle: "Understand entropy as a state function",
-    kind: "meta",
-  },
-  {
-    metaId: "reversible-processes",
-    metaTitle: "Compare reversible and irreversible processes",
-    kind: "meta",
-  },
-  {
-    metaId: "gibbs-energy",
-    metaTitle: "Understand Gibbs free energy relationships",
-    kind: "meta",
-  },
-  {
-    metaId: "second-law",
-    metaTitle: "Apply the second law of thermodynamics",
-    kind: "meta",
-  },
-  {
-    metaId: "expansion-work",
-    metaTitle: "Analyze expansion work processes",
-    kind: "meta",
-  },
-  {
-    metaId: "isothermal-processes",
-    metaTitle: "Quantify isothermal processes",
-    kind: "meta",
-  },
-  {
-    metaId: "misconceptions",
-    metaTitle: "Identify and address misconceptions",
-    kind: "meta",
-  },
-];
-
-// Seed catalog for auto-populating granular objectives
-const SEED_BY_META = {
-  "enthalpy-spontaneity": {
-    metaTitle: "Understand spontaneity limits of enthalpy and internal energy",
-    seeds: [
-      {
-        title: "Distinguish between endergonic and exergonic reactions",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Understand", "Analyze"],
-      },
-      {
-        title: "Calculate Gibbs free energy changes",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Predict reaction spontaneity from thermodynamic data",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  "entropy-state-function": {
-    metaTitle: "Understand entropy as a state function",
-    seeds: [
-      {
-        title: "Define entropy and its relationship to disorder",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate entropy changes for phase transitions",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Apply the second law of thermodynamics",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Understand", "Apply"],
-      },
-    ],
-  },
-  "reversible-processes": {
-    metaTitle: "Compare reversible and irreversible processes",
-    seeds: [
-      {
-        title: "Define reversible and irreversible processes",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate work for reversible vs irreversible expansion",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Analyze efficiency differences between process types",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  "gibbs-energy": {
-    metaTitle: "Understand Gibbs free energy relationships",
-    seeds: [
-      {
-        title: "Define Gibbs free energy and its components",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate ΔG from ΔH and ΔS values",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Predict reaction direction from Gibbs free energy",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  "second-law": {
-    metaTitle: "Apply the second law of thermodynamics",
-    seeds: [
-      {
-        title: "State the second law of thermodynamics",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate entropy changes for various processes",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Apply"],
-      },
-      {
-        title: "Analyze entropy changes in chemical reactions",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  "expansion-work": {
-    metaTitle: "Analyze expansion work processes",
-    seeds: [
-      {
-        title: "Define expansion work and its types",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate work for isothermal expansion",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Compare work done in different expansion processes",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  "isothermal-processes": {
-    metaTitle: "Quantify isothermal processes",
-    seeds: [
-      {
-        title: "Define isothermal processes and their characteristics",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Calculate work and heat for isothermal expansion",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Analyze"],
-      },
-      {
-        title: "Analyze energy changes in isothermal processes",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Analyze", "Evaluate"],
-      },
-    ],
-  },
-  misconceptions: {
-    metaTitle: "Identify and address misconceptions",
-    seeds: [
-      {
-        title: "Identify common misconceptions about thermodynamics",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Remember", "Understand"],
-      },
-      {
-        title: "Explain why misconceptions are incorrect",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Understand", "Apply"],
-      },
-      {
-        title: "Design activities to address misconceptions",
-        min: 2,
-        count: 2,
-        mode: "manual",
-        bloomChips: ["Apply", "Create"],
-      },
-    ],
-  },
-};
-
-// Alternate seed catalog for refreshing granular objectives
-const ALT_SEEDS_BY_META = {
-  "enthalpy-spontaneity": [
-    {
-      title: "Analyze enthalpy changes in chemical reactions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Compare endothermic and exothermic processes",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Understand", "Apply"],
-    },
-    {
-      title: "Calculate heat of reaction from bond energies",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Predict spontaneity using Hess's Law",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-  ],
-  "entropy-state-function": [
-    {
-      title: "Calculate entropy changes for phase transitions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Analyze entropy changes in chemical reactions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Compare entropy of different states of matter",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Understand", "Apply"],
-    },
-  ],
-  "reversible-processes": [
-    {
-      title: "Calculate work for reversible expansion",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Compare efficiency of different process types",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Analyze energy changes in reversible cycles",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-  ],
-  "gibbs-energy": [
-    {
-      title: "Calculate ΔG from ΔH and ΔS values",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Predict reaction direction from Gibbs free energy",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Analyze temperature dependence of spontaneity",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-  ],
-  "second-law": [
-    {
-      title: "Calculate entropy changes for various processes",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Analyze entropy changes in chemical reactions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Apply the second law to evaluate spontaneity",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-  ],
-  "expansion-work": [
-    {
-      title: "Calculate work for isothermal expansion",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Compare work done in different expansion processes",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Analyze energy changes in expansion work",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-  ],
-  "isothermal-processes": [
-    {
-      title: "Calculate work and heat for isothermal expansion",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Analyze"],
-    },
-    {
-      title: "Analyze energy changes in isothermal processes",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-    {
-      title: "Compare isothermal vs adiabatic processes",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Analyze", "Evaluate"],
-    },
-  ],
-  misconceptions: [
-    {
-      title: "Explain why misconceptions are incorrect",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Understand", "Apply"],
-    },
-    {
-      title: "Design activities to address misconceptions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Apply", "Create"],
-    },
-    {
-      title: "Evaluate common student misconceptions",
-      min: 2,
-      count: 2,
-      mode: "manual",
-      bloomChips: ["Evaluate", "Create"],
-    },
-  ],
-};
-
-// Generic templates for custom meta objectives
-const GENERIC_GRANULAR_TEMPLATES = [
-  {
-    title: "Identify key concepts and principles",
-    min: 2,
-    count: 2,
-    mode: "manual",
-    bloomChips: ["Remember", "Understand"],
-  },
-  {
-    title: "Explain the underlying mechanisms and relationships",
-    min: 2,
-    count: 2,
-    mode: "manual",
-    bloomChips: ["Understand", "Analyze"],
-  },
-  {
-    title: "Apply knowledge to solve problems and make predictions",
-    min: 2,
-    count: 2,
-    mode: "manual",
-    bloomChips: ["Apply", "Evaluate"],
-  },
 ];
 
 // Sample question data for Step 4
@@ -784,16 +308,11 @@ document.addEventListener("DOMContentLoaded", async function () {
 
 async function loadCourseData() {
   try {
-    // Get selected course from sessionStorage
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    if (selectedCourse) {
-      state.course = selectedCourse.courseName || selectedCourse.courseCode || "";
-      state.selectedCourse = state.course;
-
+    if (state.selectedCourse) {
       // Update course display
       const courseValue = document.getElementById("course-value");
       if (courseValue) {
-        courseValue.textContent = state.course;
+        courseValue.textContent = state.selectedCourse;
       }
     } else {
       showNoCourseSelectedMessage();
@@ -923,8 +442,6 @@ function showNotification(message, type = "info") {
 
 function initializeModules() {
   console.log("Initializing modules...");
-  console.log("ContentGenerator available:", window.ContentGenerator);
-  console.log("QuestionGenerator available:", window.QuestionGenerator);
   console.log("PDFParsingService available:", window.PDFParsingService);
 
   // Initialize PDF service
@@ -941,6 +458,9 @@ function initializeModules() {
 
   console.log("Modules initialized successfully");
 }
+
+// ===== Generate Questions FUNCTIONS =====
+
 
 // ===== NAVIGATION FUNCTIONS =====
 
@@ -1016,7 +536,7 @@ function validateCurrentStep() {
 
   switch (state.step) {
     case 1:
-      const step3Valid =
+      const step1Valid =
         state.objectiveGroups.length > 0 &&
         state.objectiveGroups.every(
           (group) =>
@@ -1024,8 +544,8 @@ function validateCurrentStep() {
             group.items.every((item) => item.count >= item.minQuestions)
         );
       console.log(
-        "Step 3 validation:",
-        step3Valid,
+        "Step 1 validation:",
+        step1Valid,
         "objectiveGroups:",
         state.objectiveGroups.length
       );
@@ -1061,11 +581,11 @@ function handleStepTransition(fromStep, toStep) {
   switch (toStep) {
     case 2:
       console.log("Initializing Step 2 (Generate Questions)");
-      initializeStep4(); // Use the old step 4 function
+      step2();
       break;
     case 3:
       console.log("Initializing Step 3 (Select Output Format)");
-      initializeStep5(); // Use the old step 5 function
+      initializeStep3(); // Use the old step 3 function
       break;
   }
 }
@@ -1100,13 +620,13 @@ function updatePageTitle() {
   // Update the main page title based on the current step
   const title = document.querySelector(".content-header__title");
   if (title) {
-    title.textContent = stepTitles[state.step];
+    title.textContent = STEPTITLES[state.step];
   }
 
   // Also update the export title in Step 3 if it exists
   const exportTitle = document.querySelector(".export-title");
   if (exportTitle && state.step === 3) {
-    exportTitle.textContent = stepTitles[state.step];
+    exportTitle.textContent = STEPTITLES[state.step];
   }
 }
 
@@ -1148,460 +668,6 @@ function updateNavigationButtons() {
       continueBtn.className = "btn btn--primary";
     }
   }
-}
-
-
-// ===== STEP 2: SUMMARY FUNCTIONS =====
-
-async function generateSummary() {
-  const summaryLoading = document.getElementById("summary-loading");
-  const summaryText = document.getElementById("summary-text");
-
-  if (summaryLoading) summaryLoading.style.display = "block";
-  if (summaryText) summaryText.style.display = "none";
-
-  try {
-    console.log("Generating summary for course:", state.course);
-    console.log("Files:", state.files);
-    console.log("URLs:", state.urls);
-    console.log("Content generator:", contentGenerator);
-
-    if (!contentGenerator) {
-      throw new Error("Content generator not initialized");
-    }
-
-    // Generate summary using content generator with actual uploaded content
-    const summary = await contentGenerator.generateSummary(
-      state.course,
-      state.files,
-      state.urls
-    );
-    console.log("Generated summary:", summary);
-    state.summary = summary;
-  } catch (error) {
-    console.error("Summary generation failed:", error);
-    if (DEV_MODE) {
-      // Enhanced mock response that acknowledges RAG integration
-      state.summary = `Summary generated using RAG-enhanced content analysis for ${state.course}. The uploaded materials have been processed and analyzed to identify key concepts and learning objectives suitable for question generation. This summary provides a foundation for creating targeted educational questions based on the course content.`;
-    } else {
-      state.summary = "Failed to generate summary. Please try again.";
-    }
-  }
-
-  if (summaryLoading) summaryLoading.style.display = "none";
-  if (summaryText) summaryText.style.display = "block";
-
-  const summaryEditor = document.getElementById("summary-editor");
-  if (summaryEditor) {
-    summaryEditor.value = state.summary;
-    summaryEditor.addEventListener("input", (e) => {
-      state.summary = e.target.value;
-    });
-  }
-}
-
-// ===== STEP 3: OBJECTIVES FUNCTIONS =====
-
-// Generate learning objectives from uploaded content
-function generateLearningObjectivesFromContent() {
-  console.log("Generating learning objectives from uploaded content...");
-
-  // Extract key topics and concepts from the summary and uploaded files
-  const contentAnalysis = analyzeContentForObjectives();
-
-  // Create learning objective groups based on content analysis
-  state.objectiveGroups = contentAnalysis.map((topic, index) => ({
-    id: index + 1,
-    metaId: `content-generated-${index + 1}`,
-    title: `Learning Objective ${index + 1}: ${topic.title}`,
-    isOpen: index === 0, // Open first group by default
-    selected: false,
-    items: topic.granularObjectives.map((objective, objIndex) => ({
-      id: parseFloat(`${index + 1}.${objIndex + 1}`),
-      text: objective.text,
-      bloom: objective.bloom,
-      minQuestions: objective.minQuestions,
-      count: objective.count,
-      mode: "manual",
-      level: 1,
-      selected: false,
-    })),
-  }));
-
-  console.log(
-    `Generated ${state.objectiveGroups.length} learning objective groups from content`
-  );
-}
-
-// Analyze uploaded content to extract learning objectives
-function analyzeContentForObjectives() {
-  const topics = [];
-
-  // Extract content from uploaded files
-  const allContent = [];
-  state.files.forEach((file) => {
-    if (file.content) {
-      allContent.push(file.content);
-    }
-  });
-
-  // Add URLs as content
-  state.urls.forEach((url) => {
-    allContent.push(`URL: ${url.url}`);
-  });
-
-  // Add summary content
-  if (state.summary) {
-    allContent.push(state.summary);
-  }
-
-  // Combine all content
-  const combinedContent = allContent.join("\n\n");
-
-  // Analyze content to identify key topics and concepts
-  const contentTopics = extractTopicsFromContent(combinedContent);
-
-  // Generate learning objectives for each topic
-  contentTopics.forEach((topic) => {
-    const granularObjectives = generateGranularObjectivesForTopic(topic);
-    topics.push({
-      title: topic.title,
-      description: topic.description,
-      granularObjectives: granularObjectives,
-    });
-  });
-
-  // No default objectives - user should add learning objectives from database
-  // If no topics are extracted, return empty array
-  return topics;
-}
-
-// Extract topics from content using text analysis
-function extractTopicsFromContent(content) {
-  const topics = [];
-
-  // Enhanced topic extraction with more specific patterns
-  const lines = content.split("\n").filter((line) => line.trim().length > 0);
-
-  // Look for various types of headers and topics
-  const sectionHeaders = lines.filter(
-    (line) =>
-      line.match(/^(Chapter|Section|Topic|Unit|Module)\s+\d+/i) ||
-      line.match(/^[A-Z][A-Z\s]+$/i) ||
-      line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+/) ||
-      (line.includes(":") && line.length < 100) ||
-      line.match(/^\d+\.\s+[A-Z]/) || // Numbered sections
-      line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+/) // Multi-word concepts
-  );
-
-  // Extract unique topics with better cleaning
-  const uniqueTopics = new Set();
-  sectionHeaders.forEach((header) => {
-    let cleanHeader = header
-      .replace(/^(Chapter|Section|Topic|Unit|Module)\s+\d+[:\-\s]*/i, "")
-      .replace(/^\d+\.\s*/, "") // Remove numbered prefixes
-      .replace(/^[A-Z]+\s*/, "") // Remove all-caps prefixes
-      .trim();
-
-    // Extract meaningful parts from headers
-    if (cleanHeader.includes(":")) {
-      cleanHeader = cleanHeader.split(":")[0].trim();
-    }
-
-    if (cleanHeader.length > 5 && cleanHeader.length < 100) {
-      uniqueTopics.add(cleanHeader);
-    }
-  });
-
-  // Convert to topic objects with enhanced analysis
-  Array.from(uniqueTopics)
-    .slice(0, 5)
-    .forEach((topic) => {
-      const topicAnalysis = analyzeTopicContent(topic, content);
-      topics.push({
-        title: topic,
-        description: `Master ${topicAnalysis.description || `concepts related to ${topic}`
-          }`,
-        keywords: topicAnalysis.keywords,
-        specificContent: topicAnalysis.specificContent,
-      });
-    });
-
-  // If no clear topics found, analyze content for key concepts with better extraction
-  if (topics.length === 0) {
-    const keyConcepts = extractKeyConceptsEnhanced(content);
-    keyConcepts.slice(0, 3).forEach((concept) => {
-      const topicAnalysis = analyzeTopicContent(concept, content);
-      topics.push({
-        title: concept,
-        description: `Understand and apply ${concept}`,
-        keywords: topicAnalysis.keywords,
-        specificContent: topicAnalysis.specificContent,
-      });
-    });
-  }
-
-  return topics;
-}
-
-// Enhanced topic content analysis
-function analyzeTopicContent(topic, content) {
-  const topicLower = topic.toLowerCase();
-  const result = {
-    description: "",
-    keywords: [],
-    specificContent: [],
-  };
-
-  // Find sentences that mention the topic
-  const relevantSentences = content
-    .split(/[.!?]+/)
-    .filter(
-      (sentence) =>
-        sentence.toLowerCase().includes(topicLower) && sentence.length > 20
-    );
-
-  // Extract keywords from relevant sentences
-  relevantSentences.forEach((sentence) => {
-    const words = sentence
-      .split(/\s+/)
-      .filter(
-        (word) =>
-          word.length > 3 && !isCommonWord(word) && word.match(/^[A-Za-z]+$/) // Only alphabetic words
-      )
-      .slice(0, 3);
-    result.keywords.push(...words);
-  });
-
-  // Remove duplicates and limit
-  result.keywords = [...new Set(result.keywords)].slice(0, 5);
-
-  // Extract specific content snippets
-  relevantSentences.slice(0, 3).forEach((sentence) => {
-    if (sentence.length > 30 && sentence.length < 150) {
-      result.specificContent.push(sentence.trim());
-    }
-  });
-
-  // Generate description based on content
-  if (result.specificContent.length > 0) {
-    const firstContent = result.specificContent[0];
-    if (firstContent.includes("is") || firstContent.includes("are")) {
-      result.description = firstContent.substring(0, 80) + "...";
-    }
-  }
-
-  return result;
-}
-
-// Enhanced key concept extraction
-function extractKeyConceptsEnhanced(content) {
-  const concepts = [];
-
-  // Look for capitalized words that might be concepts
-  const words = content.split(/\s+/);
-  const capitalizedWords = words.filter(
-    (word) =>
-      word.length > 3 && word.match(/^[A-Z][a-z]+$/) && !isCommonWord(word)
-  );
-
-  // Count frequency and get most common
-  const wordCount = {};
-  capitalizedWords.forEach((word) => {
-    wordCount[word] = (wordCount[word] || 0) + 1;
-  });
-
-  // Also look for compound concepts (two or more capitalized words together)
-  const compoundConcepts =
-    content.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g) || [];
-  compoundConcepts.forEach((concept) => {
-    if (concept.length > 5 && concept.length < 50) {
-      wordCount[concept] = (wordCount[concept] || 0) + 1;
-    }
-  });
-
-  const sortedWords = Object.entries(wordCount)
-    .sort(([, a], [, b]) => b - a)
-    .map(([word]) => word)
-    .slice(0, 5);
-
-  return sortedWords;
-}
-
-// Extract keywords for a specific topic
-function extractKeywordsForTopic(topic, content) {
-  const keywords = [];
-  const topicLower = topic.toLowerCase();
-
-  // Find sentences that mention the topic
-  const sentences = content
-    .split(/[.!?]+/)
-    .filter((sentence) => sentence.toLowerCase().includes(topicLower));
-
-  // Extract potential keywords from these sentences
-  sentences.forEach((sentence) => {
-    const words = sentence
-      .split(/\s+/)
-      .filter(
-        (word) =>
-          word.length > 3 &&
-          ![
-            "this",
-            "that",
-            "with",
-            "from",
-            "they",
-            "have",
-            "been",
-            "will",
-            "were",
-            "said",
-          ].includes(word.toLowerCase())
-      )
-      .slice(0, 3);
-    keywords.push(...words);
-  });
-
-  return [...new Set(keywords)].slice(0, 5);
-}
-
-// Generate granular objectives for a topic
-function generateGranularObjectivesForTopic(topic) {
-  const objectives = [];
-  const content = getCombinedContent();
-
-  // Extract specific content related to this topic
-  const topicContent = extractContentForTopic(topic.title, content);
-
-  // Generate context-specific objectives based on actual content
-  if (topicContent.specificConcepts.length > 0) {
-    // Create objectives based on specific concepts found in content
-    topicContent.specificConcepts.forEach((concept, index) => {
-      if (index < 3) {
-        // Limit to 3 specific objectives
-        objectives.push({
-          text: `Explain ${concept} as described in the course materials`,
-          bloom: ["Understand", "Analyze"],
-          minQuestions: 2,
-          count: 2,
-        });
-      }
-    });
-  }
-
-  // Generate objectives based on specific examples or applications mentioned
-  if (topicContent.examples.length > 0) {
-    topicContent.examples.forEach((example, index) => {
-      if (index < 2) {
-        // Limit to 2 example-based objectives
-        objectives.push({
-          text: `Apply concepts to ${example} scenarios`,
-          bloom: ["Apply", "Evaluate"],
-          minQuestions: 2,
-          count: 2,
-        });
-      }
-    });
-  }
-
-  // Generate objectives based on specific processes or procedures mentioned
-  if (topicContent.processes.length > 0) {
-    topicContent.processes.forEach((process, index) => {
-      if (index < 2) {
-        // Limit to 2 process-based objectives
-        objectives.push({
-          text: `Analyze the ${process} process and its applications`,
-          bloom: ["Analyze", "Evaluate"],
-          minQuestions: 2,
-          count: 2,
-        });
-      }
-    });
-  }
-
-  // If no specific content found, create more targeted generic objectives
-  if (objectives.length === 0) {
-    objectives.push(
-      {
-        text: `Identify and define key terms and concepts from ${state.course} materials`,
-        bloom: ["Remember", "Understand"],
-        minQuestions: 2,
-        count: 2,
-      },
-      {
-        text: `Explain relationships between different concepts as presented in the course content`,
-        bloom: ["Understand", "Analyze"],
-        minQuestions: 2,
-        count: 2,
-      },
-      {
-        text: `Apply knowledge from ${state.course} materials to solve problems`,
-        bloom: ["Apply", "Evaluate"],
-        minQuestions: 2,
-        count: 2,
-      }
-    );
-  }
-
-  return objectives;
-}
-
-// Extract specific content related to a topic
-function extractContentForTopic(topicTitle, content) {
-  const topicLower = topicTitle.toLowerCase();
-  const result = {
-    specificConcepts: [],
-    examples: [],
-    processes: [],
-  };
-
-  // Find sentences that mention the topic
-  const sentences = content
-    .split(/[.!?]+/)
-    .filter(
-      (sentence) =>
-        sentence.toLowerCase().includes(topicLower) && sentence.length > 20
-    );
-
-  // Extract specific concepts (capitalized terms, technical terms)
-  sentences.forEach((sentence) => {
-    // Look for technical terms, proper nouns, and specific concepts
-    const words = sentence.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g);
-    if (words) {
-      words.forEach((word) => {
-        if (word.length > 3 && !isCommonWord(word)) {
-          result.specificConcepts.push(word);
-        }
-      });
-    }
-
-    // Look for examples (sentences with "for example", "such as", "including")
-    if (sentence.match(/for example|such as|including|e\.g\./i)) {
-      const exampleMatch = sentence.match(
-        /(?:for example|such as|including|e\.g\.)\s*([^,.]{10,50})/i
-      );
-      if (exampleMatch) {
-        result.examples.push(exampleMatch[1].trim());
-      }
-    }
-
-    // Look for processes (sentences with "process", "method", "technique", "approach")
-    if (sentence.match(/process|method|technique|approach|procedure/i)) {
-      const processMatch = sentence.match(
-        /(\w+\s+(?:process|method|technique|approach|procedure))/i
-      );
-      if (processMatch) {
-        result.processes.push(processMatch[1].trim());
-      }
-    }
-  });
-
-  // Remove duplicates and limit results
-  result.specificConcepts = [...new Set(result.specificConcepts)].slice(0, 5);
-  result.examples = [...new Set(result.examples)].slice(0, 3);
-  result.processes = [...new Set(result.processes)].slice(0, 3);
-
-  return result;
 }
 
 // Check if a word is a common word that shouldn't be treated as a concept
@@ -2847,58 +1913,6 @@ function regenerateAllObjectivesFromContent() {
   }
 }
 
-
-// Regenerate objective from uploaded content
-function regenerateObjectiveFromContent(group) {
-  const topicTitle = group.title.replace(/^Learning Objective \d+: /, "");
-
-  // Create a topic object for regeneration
-  const topic = {
-    title: topicTitle,
-    description: `Master concepts related to ${topicTitle}`,
-    keywords: extractKeywordsForTopic(topicTitle, getCombinedContent()),
-  };
-
-  // Generate new granular objectives
-  const newObjectives = generateGranularObjectivesForTopic(topic);
-
-  // Replace items with new objectives
-  group.items = newObjectives.map((objective, index) => ({
-    id: parseFloat(`${group.id}.${index + 1}`),
-    text: objective.text,
-    bloom: objective.bloom,
-    minQuestions: objective.minQuestions,
-    count: objective.count,
-    mode: "manual",
-    level: 1,
-    selected: false,
-  }));
-}
-
-// Get combined content from all sources
-function getCombinedContent() {
-  const allContent = [];
-
-  // Extract content from uploaded files
-  state.files.forEach((file) => {
-    if (file.content) {
-      allContent.push(file.content);
-    }
-  });
-
-  // Add URLs as content
-  state.urls.forEach((url) => {
-    allContent.push(`URL: ${url.url}`);
-  });
-
-  // Add summary content
-  if (state.summary) {
-    allContent.push(state.summary);
-  }
-
-  return allContent.join("\n\n");
-}
-
 function renderObjectiveGroups() {
   const groupsContainer = document.getElementById("objectives-groups");
   const emptyState = document.getElementById("objectives-empty-state");
@@ -3031,7 +2045,7 @@ function createObjectiveGroup(group) {
 }
 
 function createObjectiveItem(item, groupId) {
-  const bloomChips = bloomLevels
+  const bloomChips = BLOOMLEVELS
     .map((level) => {
       const isSelected = item.bloom.includes(level);
       const isDisabled = item.mode === "auto";
@@ -3311,138 +2325,36 @@ async function generateQuestions() {
   if (questionsList) questionsList.style.display = "none";
 
   try {
-    console.log("=== QUESTION GENERATION DEBUG ===");
-    console.log("Starting question generation with:", {
-      course: state.course,
-      summaryLength: state.summary.length,
-      objectiveGroupsCount: state.objectiveGroups.length,
-      questionGenerator: !!questionGenerator,
-    });
+    // Call LLM API to generate questions
+    /*const response = await fetch("/api/llm/questions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        course: state.course,
+        summary: state.summary,
+        objectiveGroups: state.objectiveGroups,
+      }),
+    });*/
 
-    // Log the content summary
-    console.log("=== CONTENT SUMMARY ===");
-    console.log("Summary:", state.summary);
-    console.log("Summary length:", state.summary.length);
+    // TODO
 
-    // Log objective groups
-    console.log("=== OBJECTIVE GROUPS ===");
-    console.log("Number of groups:", state.objectiveGroups.length);
-    state.objectiveGroups.forEach((group, index) => {
-      console.log(`Group ${index + 1}:`, {
-        title: group.title,
-        itemsCount: group.items.length,
-        items: group.items.map((item) => ({
-          id: item.id,
-          text: item.text,
-          bloom: item.bloom,
-          count: item.count,
-        })),
-      });
-    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to generate questions");
+    }
 
-    // Log uploaded files
-    console.log("=== UPLOADED FILES ===");
-    console.log("Files count:", state.files.length);
-    state.files.forEach((file, index) => {
-      console.log(`File ${index + 1}:`, {
-        name: file.name,
-        type: file.type,
-        contentLength: file.content ? file.content.length : 0,
-        hasContent: !!file.content,
-      });
-    });
-
-    // Log URLs
-    console.log("=== URLS ===");
-    console.log("URLs count:", state.urls.length);
-    state.urls.forEach((url, index) => {
-      console.log(`URL ${index + 1}:`, url.url);
-    });
-
-    // Generate questions using question generator
-    console.log("=== CALLING QUESTION GENERATOR ===");
-    const questions = await questionGenerator.generateQuestions(
-      state.course,
-      state.summary,
-      state.objectiveGroups
-    );
-
-    console.log("=== GENERATED QUESTIONS ===");
-    console.log("Questions count:", questions.length);
-    questions.forEach((question, index) => {
-      console.log(`Question ${index + 1}:`, {
-        id: question.id,
-        text: question.text,
-        type: question.type,
-        bloomLevel: question.bloomLevel,
-        difficulty: question.difficulty,
-        metaCode: question.metaCode,
-        loCode: question.loCode,
-        by: question.by,
-      });
-    });
-
-    state.questions = questions;
+    const data = await response.json();
+    state.questions = data.questions;
   } catch (error) {
     console.error("Question generation failed:", error);
-
-    // Try to generate at least some questions using fallback
-    try {
-      console.log("Attempting fallback question generation...");
-      const fallbackQuestions =
-        await questionGenerator.generateGeneralQuestions(
-          state.course,
-          state.summary
-        );
-      state.questions = fallbackQuestions;
-      console.log("Fallback questions generated:", fallbackQuestions.length);
-    } catch (fallbackError) {
-      console.error("Fallback generation also failed:", fallbackError);
-
-      // Last resort: create basic questions from objectives
-      state.questions = state.objectiveGroups.flatMap((group) =>
-        group.items.map((item) => ({
-          id: `${item.id}-fallback`,
-          text: `Based on the uploaded materials, which of the following best relates to: ${item.text}?`,
-          type: "multiple-choice",
-          options: [
-            "The most accurate answer based on course content",
-            "A partially correct answer",
-            "An answer that doesn't relate to the objective",
-            "An incorrect answer",
-          ],
-          correctAnswer: 0,
-          bloomLevel: item.bloom[0] || "Understand",
-          difficulty: "Medium",
-          metaCode: group.title,
-          loCode: item.text,
-          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-          by: "Fallback System",
-        }))
-      );
-
-      console.log("Created basic fallback questions:", state.questions.length);
-    }
   }
 
   if (questionsLoading) questionsLoading.style.display = "none";
   if (questionsList) questionsList.style.display = "block";
 
   renderQuestions();
-}
-
-function prepareContentForQuestions() {
-  let content = `Summary: ${state.summary}\n\n`;
-  content += `Objectives:\n`;
-  state.objectiveGroups.forEach((group) => {
-    group.items.forEach((item) => {
-      content += `- ${item.text} (${item.bloom.join(", ")}) Min: ${item.minQuestions
-        }, Count: ${item.count}\n`;
-    });
-  });
-  content += `\nGenerate multiple choice questions based on this content.`;
-
-  return content;
 }
 
 function renderQuestions() {
@@ -3483,16 +2395,16 @@ function createQuestionItem(question) {
   return item;
 }
 
-// ===== STEP 5: SELECT OUTPUT FORMAT FUNCTIONS =====
+// ===== STEP 3: SELECT OUTPUT FORMAT FUNCTIONS =====
 
-function initializeStep5() {
-  console.log("initializeStep5 called");
+function initializeStep3() {
+  console.log("initializeStep3 called");
 
-  // Set up event listeners for Step 5
-  setupStep5EventListeners();
+  // Set up event listeners for Step 3
+  setupStep3EventListeners();
 
   // Initialize the view
-  updateStep5UI();
+  updateStep3UI();
 
   // Ensure initial state is reflected in UI
   updateSelectedFormatsCount();
@@ -3506,7 +2418,7 @@ function initializeStep5() {
   });
 }
 
-function setupStep5EventListeners() {
+function setupStep3EventListeners() {
   // Format selection checkboxes
   const canvasSingleCheckbox = document.getElementById(
     "canvas-single-checkbox"
@@ -3622,7 +2534,7 @@ function handleFormatSelection() {
   });
 
   // Update UI
-  updateStep5UI();
+  updateStep3UI();
   updateExportButtonState();
 }
 
@@ -3700,8 +2612,8 @@ function handleSaveAsDefaultChange() {
   }
 }
 
-function updateStep5UI() {
-  console.log("updateStep5UI called");
+function updateStep3UI() {
+  console.log("updateStep3UI called");
   updateSelectedFormatsCount();
   updateCardSelectionStates();
   updateNamingConventionPanel();
@@ -4022,7 +2934,6 @@ async function generateQuestionsFromContent() {
     // Generate questions using the question generator
     const questions = await questionGenerator.generateQuestions(
       state.course,
-      state.summary,
       state.objectiveGroups
     );
 
@@ -4034,7 +2945,7 @@ async function generateQuestionsFromContent() {
     console.log("Question groups created:", state.questionGroups.length);
 
     // Update the UI
-    renderStep4();
+    renderStep2();
   } catch (error) {
     console.error("Failed to generate questions from content:", error);
 
@@ -4131,7 +3042,7 @@ function convertQuestionsToGroups(questions) {
         (sum, q) => sum + (q.count || 1),
         0
       );
-      const bloomLevels = [...new Set(groupQuestions.map((q) => q.bloomLevel))];
+      const BLOOMLEVELS = [...new Set(groupQuestions.map((q) => q.bloomLevel))];
 
       const group = {
         id: index + 1,
@@ -4140,7 +3051,7 @@ function convertQuestionsToGroups(questions) {
         stats: {
           configured: totalQuestions,
           min: Math.max(1, Math.floor(totalQuestions * 0.6)), // At least 60% of questions
-          bloomSummary: bloomLevels.slice(0, 3).join("/"), // First 3 bloom levels
+          bloomSummary: BLOOMLEVELS.slice(0, 3).join("/"), // First 3 bloom levels
         },
         los: groupQuestions.map((question, itemIndex) => ({
           id: `lo-${index + 1}-${itemIndex + 1}`,
@@ -4197,15 +3108,15 @@ function convertQuestionsToGroups(questions) {
   return groups;
 }
 
-function initializeStep4() {
-  console.log("initializeStep4 called");
+function step2() {
+  console.log("step2 called");
 
   // Clear any existing questions
   state.questions = [];
   state.questionGroups = [];
 
   // Generate questions from uploaded content instead of loading sample data
-  if (state.summary && state.objectiveGroups.length > 0) {
+  if (state.objectiveGroups.length > 0) {
     console.log("Generating questions from uploaded content...");
     generateQuestionsFromContent();
   } else {
@@ -4219,13 +3130,13 @@ function initializeStep4() {
   }
 
   // Set up event listeners for Step 2
-  setupStep4EventListeners();
+  setupStep2EventListeners();
 
   // Render the initial view
-  renderStep4();
+  renderStep2();
 }
 
-function setupStep4EventListeners() {
+function setupStep2EventListeners() {
   // Filter controls
   const gloFilter = document.getElementById("glo-filter");
   const bloomFilter = document.getElementById("bloom-filter");
@@ -4264,7 +3175,7 @@ function setupStep4EventListeners() {
   });
 }
 
-function renderStep4() {
+function renderStep2() {
   const metaLoGroups = document.getElementById("meta-lo-groups");
   if (!metaLoGroups) return;
 
@@ -4452,7 +3363,7 @@ function toggleMetaLoGroup(groupId) {
   const group = state.questionGroups.find((g) => g.id === groupId);
   if (group) {
     group.isOpen = !group.isOpen;
-    renderStep4();
+    renderStep2();
   }
 }
 
@@ -4490,14 +3401,14 @@ function handleFilterChange() {
   state.filters.bloom = bloomFilter ? bloomFilter.value : "all";
   state.filters.status = statusFilter ? statusFilter.value : "all";
 
-  renderStep4();
+  renderStep2();
 }
 
 function handleSearchChange() {
   const searchInput = document.getElementById("search-input");
   state.filters.q = searchInput ? searchInput.value : "";
 
-  renderStep4();
+  renderStep2();
 }
 
 async function handleRegenerateAll() {
@@ -4620,7 +3531,7 @@ function editQuestion(questionId) {
   const question = findQuestionById(questionId);
   if (question) {
     question.isEditing = !question.isEditing;
-    renderStep4();
+    renderStep2();
   }
 }
 
@@ -4629,7 +3540,7 @@ function saveQuestionEdit(questionId) {
   if (question) {
     // In a real app, you'd save the edited values here
     question.isEditing = false;
-    renderStep4();
+    renderStep2();
     showToast("Question updated successfully", "success");
   }
 }
@@ -4655,7 +3566,7 @@ function toggleQuestionFlag(questionId) {
     } else {
       question.status = "Flagged";
     }
-    renderStep4();
+    renderStep2();
     showToast(`Question ${question.status.toLowerCase()}`, "success");
   }
 }
@@ -4668,7 +3579,7 @@ function toggleQuestionApproval(questionId) {
     } else {
       question.status = "Approved";
     }
-    renderStep4();
+    renderStep2();
     showToast(`Question ${question.status.toLowerCase()}`, "success");
   }
 }
@@ -4689,7 +3600,7 @@ function deleteQuestion(questionId) {
     // Remove from selection
     state.selectedQuestions.delete(questionId);
 
-    renderStep4();
+    renderStep2();
     showToast("Question deleted successfully", "success");
   }
 }
@@ -4816,7 +3727,7 @@ function getToastIcon(type) {
   }
 }
 
-// ===== STEP 5: EXPORT FUNCTIONS =====
+// ===== STEP 3: EXPORT FUNCTIONS =====
 
 async function exportQuestions() {
   const format = state.exportFormat;
@@ -4978,36 +3889,8 @@ window.showGranularizationModal = showGranularizationModal;
 window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
 
 // Module functions for global access
-window.generateSummary = generateSummary;
 window.generateQuestions = generateQuestions;
-window.contentGenerator = contentGenerator;
-window.questionGenerator = questionGenerator;
 window.pdfService = pdfService;
-
-// Test function for debugging
-window.testSummaryGeneration = async function () {
-  console.log("Testing summary generation...");
-  console.log("State:", state);
-  console.log("Content generator:", contentGenerator);
-
-  if (!contentGenerator) {
-    console.error("Content generator not available!");
-    return;
-  }
-
-  try {
-    const summary = await contentGenerator.generateSummary(
-      state.course,
-      state.files,
-      state.urls
-    );
-    console.log("Test summary:", summary);
-    return summary;
-  } catch (error) {
-    console.error("Test failed:", error);
-    return null;
-  }
-};
 
 // Test function for PDF parsing
 window.testPDFParsing = async function (file) {
