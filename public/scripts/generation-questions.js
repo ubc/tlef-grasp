@@ -78,8 +78,6 @@ class QuestionGenerator {
   }
 
   async generateQuestions(course, objectiveGroups) {
-    console.log(course);
-    console.log(objectiveGroups);
     try {
       console.log("=== QUESTION GENERATOR DEBUG ===");
       console.log(
@@ -326,7 +324,8 @@ class QuestionGenerator {
       const questionData = JSON.parse(llmResponse);
 
       return {
-        guranularObjectiveId: `${objectiveId}`,
+        id: `${objectiveId}-${questionNumber}`,
+        granularObjectiveId: `${objectiveId}`,
         text: questionData.question,
         type: "multiple-choice",
         options: questionData.options,

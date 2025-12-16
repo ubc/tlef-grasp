@@ -903,18 +903,6 @@
     color: #2980b9;
 }
 
-/* Toolbar */
-.questions-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    margin-bottom: 24px;
-}
-
 .toolbar-left {
     display: flex;
     align-items: center;

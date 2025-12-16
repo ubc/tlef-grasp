@@ -7,11 +7,21 @@ const objectiveMaterialService = require('../services/objective-material');
 
 /**
  * GET /api/objectives
- * Get all parent learning objectives (parent = 0)
+ * Get all parent learning objectives (parent = 0) for a specific course
+ * Query params: courseId (required)
  */
 router.get('/', async (req, res) => {
   try {
-    const objectives = await objectiveService.getParentObjectives();
+    const { courseId } = req.query;
+    
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Course ID is required',
+      });
+    }
+    
+    const objectives = await objectiveService.getParentObjectives(courseId);
     res.json({
       success: true,
       objectives: objectives,
@@ -28,14 +38,17 @@ router.get('/', async (req, res) => {
 /**
  * GET /api/objectives/:id/granular
  * Get granular objectives for a parent objective
+ * Query params: courseId (optional, will inherit from parent if not provided)
  */
 router.get('/:id/granular', async (req, res) => {
   try {
     const parentId = req.params.id;
+    const { courseId } = req.query;
     // Convert string ID to ObjectId if needed
     const { ObjectId } = require('mongodb');
     const granularObjectives = await objectiveService.getGranularObjectives(
-      ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId
+      ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId,
+      courseId
     );
     res.json({
       success: true,
@@ -57,7 +70,7 @@ router.get('/:id/granular', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, granularObjectives, materialIds } = req.body;
+    const { name, granularObjectives, materialIds, courseId } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -66,10 +79,18 @@ router.post('/', async (req, res) => {
       });
     }
 
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Course ID is required',
+      });
+    }
+
     const result = await objectiveService.createObjective({
       name: name.trim(),
       granularObjectives: granularObjectives || [],
       materialIds: materialIds || [],
+      courseId: courseId,
     });
 
     res.json({
@@ -144,7 +165,7 @@ router.put('/:id/materials', express.json(), async (req, res) => {
 router.put('/:id', express.json(), async (req, res) => {
   try {
     const objectiveId = req.params.id;
-    const { name, granularObjectives, materialIds } = req.body;
+    const { name, granularObjectives, materialIds, courseId } = req.body;
 
     // Name is required if provided
     if (name !== undefined && (!name || !name.trim())) {
@@ -163,6 +184,9 @@ router.put('/:id', express.json(), async (req, res) => {
     }
     if (materialIds !== undefined) {
       updateData.materialIds = materialIds;
+    }
+    if (courseId !== undefined) {
+      updateData.courseId = courseId;
     }
 
     const result = await objectiveService.updateObjective(objectiveId, updateData);

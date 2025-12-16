@@ -1,42 +1,26 @@
 const express = require("express");
 const router = express.Router();
+const { saveQuestion, updateQuestion, deleteQuestion } = require('../services/question');
 
 // Save questions to question bank
 router.post("/save", express.json(), async (req, res) => {
   try {
-    const { questions, course, title, description } = req.body;
+    const { question, course } = req.body;
 
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({ error: "No questions provided to save" });
+    if (!question) {
+      return res.status(400).json({ error: "No question provided to save" });
     }
 
-    // Here you would typically save to a database
-    // For now, we'll just store in session
-    const questionSet = {
-      id: `qs_${Date.now()}`,
-      title: title || "Untitled Question Set",
-      description: description || "",
-      course: course || "General",
-      questions: questions,
-      createdAt: new Date().toISOString(),
-      status: "saved",
-    };
-
-    if (req.session) {
-      if (!req.session.questionBank) {
-        req.session.questionBank = [];
-      }
-      req.session.questionBank.push(questionSet);
-    }
+    await saveQuestion(course, question);
 
     res.json({
       success: true,
-      message: "Questions saved successfully",
-      questionSet: questionSet,
+      message: "Question saved successfully",
+      question: question,
     });
   } catch (error) {
-    console.error("Error saving questions:", error);
-    res.status(500).json({ error: "Failed to save questions" });
+    console.error("Error saving question:", error);
+    res.status(500).json({ error: "Failed to save question" });
   }
 });
 
@@ -48,6 +32,33 @@ router.get("/bank", (req, res) => {
   } catch (error) {
     console.error("Error getting question bank:", error);
     res.status(500).json({ error: "Failed to retrieve question bank" });
+  }
+});
+
+// Update question
+router.put("/:questionId", express.json(), async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const updateData = req.body;
+
+    if (!updateData) {
+      return res.status(400).json({ error: "No update data provided" });
+    }
+
+    const result = await updateQuestion(questionId, updateData);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Question updated successfully",
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Error updating question:", error);
+    res.status(500).json({ error: "Failed to update question" });
   }
 });
 
@@ -100,8 +111,30 @@ router.put("/:questionId/status", express.json(), async (req, res) => {
   }
 });
 
+// Delete question
+router.delete("/:questionId", async (req, res) => {
+  try {
+    const { questionId } = req.params;
+
+    const result = await deleteQuestion(questionId);
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Question deleted successfully",
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Error deleting question:", error);
+    res.status(500).json({ error: "Failed to delete question" });
+  }
+});
+
 // Delete question set
-router.delete("/:setId", async (req, res) => {
+router.delete("/set/:setId", async (req, res) => {
   try {
     const { setId } = req.params;
 

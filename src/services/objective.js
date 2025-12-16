@@ -44,6 +44,7 @@ const createObjective = async (objectiveData) => {
     const parentObjective = {
       name: objectiveData.name,
       parent: 0,
+      courseId: objectiveData.courseId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -57,6 +58,7 @@ const createObjective = async (objectiveData) => {
       const granularObjectives = objectiveData.granularObjectives.map((granular) => ({
         name: granular.text || granular.name,
         parent: parentId,
+        courseId: objectiveData.courseId,
         createdAt: new Date(),
         updatedAt: new Date(),
       }));
@@ -93,8 +95,10 @@ const createObjective = async (objectiveData) => {
 
 /**
  * Get a single objective by ID
+ * @param {string|ObjectId} objectiveId - The objective ID
+ * @param {string} courseId - Optional course ID to verify the objective belongs to the course
  */
-const getObjectiveById = async (objectiveId) => {
+const getObjectiveById = async (objectiveId, courseId = null) => {
   try {
     const db = await databaseService.connect();
     const collection = db.collection('grasp_objective');
@@ -102,7 +106,14 @@ const getObjectiveById = async (objectiveId) => {
     
     // Convert string ID to ObjectId if needed
     const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
-    const objective = await collection.findOne({ _id: id });
+    
+    // Build query
+    const query = { _id: id };
+    if (courseId) {
+      query.courseId = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    }
+    
+    const objective = await collection.findOne(query);
     return objective;
   } catch (error) {
     console.error('Error getting objective by ID:', error);
@@ -112,10 +123,12 @@ const getObjectiveById = async (objectiveId) => {
 
 /**
  * Get a learning objective with its associated materials
+ * @param {string|ObjectId} objectiveId - The objective ID
+ * @param {string} courseId - Optional course ID to verify the objective belongs to the course
  */
-const getObjectiveWithMaterials = async (objectiveId) => {
+const getObjectiveWithMaterials = async (objectiveId, courseId = null) => {
   try {
-    const objective = await getObjectiveById(objectiveId);
+    const objective = await getObjectiveById(objectiveId, courseId);
     if (!objective) {
       return null;
     }
@@ -161,6 +174,9 @@ const updateObjective = async (objectiveId, updateData) => {
     if (updateData.name !== undefined) {
       update.name = updateData.name.trim();
     }
+    if (updateData.courseId !== undefined) {
+      update.courseId = updateData.courseId;
+    }
     
     // Update parent objective name if provided
     if (updateData.name !== undefined) {
@@ -175,6 +191,13 @@ const updateObjective = async (objectiveId, updateData) => {
       // Get existing granular objectives
       const existingGranular = await collection.find({ parent: id }).toArray();
       const existingGranularIds = existingGranular.map(g => g._id.toString());
+      
+      // Get courseId from parent objective if not provided in updateData
+      let courseIdForGranular = updateData.courseId;
+      if (!courseIdForGranular) {
+        const existingParent = await collection.findOne({ _id: id });
+        courseIdForGranular = existingParent?.courseId;
+      }
       
       // Process granular objectives
       const granularToKeep = [];
@@ -195,6 +218,7 @@ const updateObjective = async (objectiveId, updateData) => {
           granularToCreate.push({
             name: granular.text || granular.name,
             parent: id,
+            courseId: courseIdForGranular,
             createdAt: new Date(),
             updatedAt: new Date(),
           });
@@ -202,17 +226,20 @@ const updateObjective = async (objectiveId, updateData) => {
       });
       
       // Update existing granular objectives
-      const updatePromises = granularToUpdate.map(granular => 
-        collection.updateOne(
+      const updatePromises = granularToUpdate.map(granular => {
+        const update = {
+          name: granular.name,
+          updatedAt: new Date()
+        };
+        // Update courseId if provided
+        if (courseIdForGranular) {
+          update.courseId = courseIdForGranular;
+        }
+        return collection.updateOne(
           { _id: granular.id, parent: id },
-          { 
-            $set: { 
-              name: granular.name,
-              updatedAt: new Date()
-            }
-          }
-        )
-      );
+          { $set: update }
+        );
+      });
       await Promise.all(updatePromises);
       
       // Create new granular objectives

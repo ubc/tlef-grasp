@@ -40,8 +40,6 @@ const state = {
 
 // Step titles for dynamic updates
 const STEPTITLES = {
-  1: "Upload Materials",
-  2: "Review Summary",
   3: "Create Objectives",
   4: "Generate Questions",
   5: "Select Output Format",
@@ -758,7 +756,9 @@ async function initializeAddObjectivesDropdown() {
 
     // Fetch learning objectives from API
     try {
-      const response = await fetch("/api/objectives");
+      // Get courseId from state.course
+      const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+      const response = await fetch(`/api/objectives?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       if (data.success && data.objectives) {
@@ -1216,10 +1216,14 @@ async function handleCustomObjectiveSubmission() {
   }, 30000);
 
   try {
+    // Get courseId from state.course (which is stored as {id: courseId, name: courseName})
+    const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+    
     const requestBody = {
       name: nameInput.value.trim(),
       granularObjectives: granularObjectives,
       materialIds: selectedMaterials,
+      courseId: courseId,
     };
 
     console.log(`${mode === "edit" ? "Updating" : "Creating"} learning objective:`, {
@@ -1459,7 +1463,9 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
   } else {
     // Fetch granular objectives from API
     try {
-      const response = await fetch(`/api/objectives/${objectiveId}/granular`);
+      // Get courseId from state.course
+      const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+      const response = await fetch(`/api/objectives/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       let granularObjectives = [];
@@ -2858,8 +2864,8 @@ function generateExportSummaryHTML() {
       html += " - Release immediately";
     } else {
       html += ` - Scheduled for ${state.formats.canvasSingle.date}${state.formats.canvasSingle.time
-          ? ` at ${state.formats.canvasSingle.time}`
-          : ""
+        ? ` at ${state.formats.canvasSingle.time}`
+        : ""
         }`;
     }
     html += "</li>";
@@ -2871,8 +2877,8 @@ function generateExportSummaryHTML() {
       html += " - Release immediately";
     } else {
       html += ` - Scheduled for ${state.formats.canvasSpaced.date}${state.formats.canvasSpaced.time
-          ? ` at ${state.formats.canvasSpaced.time}`
-          : ""
+        ? ` at ${state.formats.canvasSpaced.time}`
+        : ""
         }`;
     }
     html += "</li>";
@@ -3096,6 +3102,7 @@ function convertQuestionsToGroups(questions) {
               by: question.by || "System",
               metaCode: question.metaCode || metaCode,
               loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
             },
           ],
         })),
@@ -3151,16 +3158,11 @@ function setupStep2EventListeners() {
   const regenerateAllBtn = document.getElementById("regenerate-all-btn");
   const exportBtn = document.getElementById("export-btn");
   const addToBankBtn = document.getElementById("add-to-bank-btn");
-  const addSelectedToBankBtn = document.getElementById(
-    "add-selected-to-bank-btn"
-  );
 
   if (regenerateAllBtn)
     regenerateAllBtn.addEventListener("click", handleRegenerateAll);
   if (exportBtn) exportBtn.addEventListener("click", handleExport);
   if (addToBankBtn) addToBankBtn.addEventListener("click", handleAddToBank);
-  if (addSelectedToBankBtn)
-    addSelectedToBankBtn.addEventListener("click", handleAddSelectedToBank);
 
   // Export dropdown
   const exportDropdownClose = document.getElementById("export-dropdown-close");
@@ -3176,6 +3178,10 @@ function setupStep2EventListeners() {
 }
 
 function renderStep2() {
+  renderQuestionGroups();
+}
+
+function renderQuestionGroups() {
   const metaLoGroups = document.getElementById("meta-lo-groups");
   if (!metaLoGroups) return;
 
@@ -3253,18 +3259,14 @@ function renderGranularLoSection(lo, group) {
 }
 
 function renderQuestionCard(question, group) {
-  const isSelected = state.selectedQuestions.has(question.id);
   const isEditing = question.isEditing || false;
 
   return `
         <div class="question-card" data-question-id="${question.id}">
             <div class="question-card__header">
-                <input type="checkbox" class="question-card__checkbox" 
-                       ${isSelected ? "checked" : ""} 
-                       onchange="toggleQuestionSelection('${question.id}')">
                 <div class="question-card__content">
                     ${isEditing
-      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onblur="saveQuestionEdit('${question.id}')">`
+      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onchange="updateQuestionTitle('${question.id}', this.value)">`
       : `<h5 class="question-card__title">${question.title}</h5>`
     }
                     <div class="question-card__chips">
@@ -3314,30 +3316,15 @@ function renderQuestionCard(question, group) {
                             onclick="editQuestion('${question.id}')">
                         ${isEditing ? "Cancel" : "Edit"}
                     </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--regenerate" 
-                            onclick="regenerateQuestion('${question.id
-    }')" disabled 
-                            title="Connect AI later">
-                        Regenerate
-                    </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
                             onclick="toggleQuestionFlag('${question.id}')"
-                            ${question.status === "Flagged"
-      ? 'style="background: #ffebee; color: #d32f2f;"'
-      : ""
-    }>
-                        ${question.status === "Flagged" ? "Unflag" : "Flag"}
-                    </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--approve" 
-                            onclick="toggleQuestionApproval('${question.id}')"
-                            ${question.status === "Approved"
-      ? 'style="background: #e8f5e8; color: #388e3c;"'
-      : ""
-    }>
-                        ${question.status === "Approved"
-      ? "Unapprove"
-      : "Approve"
-    }
+                            ${
+                              question.flagStatus === false
+                                ? 'style="background: #ffebee; color: #d32f2f;"'
+                                : ""
+                            }
+                            >
+                        ${question.flagStatus === true ? "Unflag" : "Flag"}
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--delete" 
                             onclick="deleteQuestion('${question.id}')">
@@ -3358,59 +3345,6 @@ function setupQuestionCardListeners() {
 }
 
 // ===== STEP 4 EVENT HANDLERS =====
-
-function toggleMetaLoGroup(groupId) {
-  const group = state.questionGroups.find((g) => g.id === groupId);
-  if (group) {
-    group.isOpen = !group.isOpen;
-    renderStep2();
-  }
-}
-
-function toggleQuestionSelection(questionId) {
-  if (state.selectedQuestions.has(questionId)) {
-    state.selectedQuestions.delete(questionId);
-  } else {
-    state.selectedQuestions.add(questionId);
-  }
-
-  updateSelectionUI();
-}
-
-function updateSelectionUI() {
-  const stickyBottomActions = document.getElementById("sticky-bottom-actions");
-  const selectionCount = document.querySelector(".selection-count");
-
-  if (state.selectedQuestions.size > 0) {
-    stickyBottomActions.style.display = "flex";
-    if (selectionCount) {
-      selectionCount.textContent = `${state.selectedQuestions.size} question${state.selectedQuestions.size === 1 ? "" : "s"
-        } selected`;
-    }
-  } else {
-    stickyBottomActions.style.display = "none";
-  }
-}
-
-function handleFilterChange() {
-  const gloFilter = document.getElementById("glo-filter");
-  const bloomFilter = document.getElementById("bloom-filter");
-  const statusFilter = document.getElementById("status-filter");
-
-  state.filters.glo = gloFilter ? gloFilter.value : "all";
-  state.filters.bloom = bloomFilter ? bloomFilter.value : "all";
-  state.filters.status = statusFilter ? statusFilter.value : "all";
-
-  renderStep2();
-}
-
-function handleSearchChange() {
-  const searchInput = document.getElementById("search-input");
-  state.filters.q = searchInput ? searchInput.value : "";
-
-  renderStep2();
-}
-
 async function handleRegenerateAll() {
   console.log("=== REGENERATING ALL QUESTIONS FROM CONTENT ===");
 
@@ -3420,7 +3354,6 @@ async function handleRegenerateAll() {
   const metaLoGroups = document.getElementById("meta-lo-groups");
 
   if (regenerateAllBtn) {
-    const originalText = regenerateAllBtn.textContent;
     regenerateAllBtn.textContent = "Regenerating...";
     regenerateAllBtn.disabled = true;
   }
@@ -3445,7 +3378,7 @@ async function handleRegenerateAll() {
   } finally {
     // Restore button state
     if (regenerateAllBtn) {
-      regenerateAllBtn.textContent = originalText;
+      regenerateAllBtn.textContent = 'Questions added to the Bank';
       regenerateAllBtn.disabled = false;
     }
 
@@ -3478,131 +3411,138 @@ function handleExportFormat(format) {
   showToast(`Export prepared as ${format.toUpperCase()}`, "success");
 }
 
-function handleAddToBank() {
-  // Add all questions to question bank
-  const allQuestionIds = new Set();
-  state.questionGroups.forEach((group) => {
-    group.los.forEach((lo) => {
-      lo.questions.forEach((question) => {
-        allQuestionIds.add(question.id);
-      });
-    });
-  });
-
-  state.selectedQuestions = allQuestionIds;
-  handleAddSelectedToBank();
-}
-
-async function handleAddSelectedToBank() {
-  if (state.selectedQuestions.size === 0) {
-    showToast("No questions selected", "warning");
-    return;
+async function handleAddToBank() {
+  for (const group of state.questionGroups) {
+    for (const lo of group.los) {
+      for (const question of lo.questions) {
+        await handleAddQuestionToBank(question);
+      }
+    }
   }
 
+  showToast("Questions added to Question Bank", "success");
+}
+
+async function handleAddQuestionToBank(question) {
+  console.log("Adding question to question bank:", question);
   // Adding questions to question bank.
-  await fetch(`/api/questions/save`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      questions: state.questions,
-      course: state.course,
-      title: "Untitled Question Set",
-      description: "",
-    }),
-  });
+  try {
+    const response = await fetch(`/api/questions/save`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question: question,
+        course: state.course,
+      }),
+    });
 
-  showToast(
-    `Added ${state.selectedQuestions.size} question${state.selectedQuestions.size === 1 ? "" : "s"
-    } to Question Bank`,
-    "success"
-  );
-  state.selectedQuestions.clear();
-  updateSelectionUI();
+    if (response.ok) {
+      showToast(
+        `Added 1 question to Question Bank`,
+        "success"
+      );
 
-  // Navigate to question bank after a short delay to allow toast to show
-  setTimeout(() => {
-    window.location.href = "question-bank.html";
-  }, 1500);
+      // Disable AddToBank button
+      const addToBankBtn = document.getElementById("add-to-bank-btn");
+      if (addToBankBtn) addToBankBtn.disabled = true;
+    }
+  } catch (error) {
+    console.error("Failed to add question to Question Bank:", error);
+    showToast("Failed to add question to Question Bank", "error");
+  }
 }
 
 function editQuestion(questionId) {
   const question = findQuestionById(questionId);
   if (question) {
     question.isEditing = !question.isEditing;
-    renderStep2();
+    renderQuestionGroups();
+  }
+}
+
+function updateQuestionTitle(questionId, newTitle) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.title = newTitle.trim();
+  }
+}
+
+function updateQuestionOption(questionId, optionId, newText) {
+  const question = findQuestionById(questionId);
+  if (question && question.options[optionId]) {
+    question.options[optionId].text = newText.trim();
   }
 }
 
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
-  if (question) {
-    // In a real app, you'd save the edited values here
-    question.isEditing = false;
-    renderStep2();
-    showToast("Question updated successfully", "success");
+  if (!question) {
+    showToast("Question not found", "error");
+    return;
   }
+
+  // Simply update state - mark as not editing and update timestamp
+  question.isEditing = false;
+  question.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
+  
+  // Render the question groups
+  renderQuestionGroups();
+  showToast("Question updated successfully", "success");
 }
 
 function saveOptionEdit(questionId, optionId, newText) {
-  const question = findQuestionById(questionId);
-  if (question && question.options[optionId]) {
-    question.options[optionId].text = newText;
-    showToast("Option updated successfully", "success");
-  }
-}
-
-function regenerateQuestion(questionId) {
-  // This would connect to AI in a real implementation
-  showToast("AI connection required for regeneration", "info");
+  updateQuestionOption(questionId, optionId, newText);
 }
 
 function toggleQuestionFlag(questionId) {
   const question = findQuestionById(questionId);
   if (question) {
-    if (question.status === "Flagged") {
-      question.status = "Draft";
-    } else {
-      question.status = "Flagged";
-    }
-    renderStep2();
-    showToast(`Question ${question.status.toLowerCase()}`, "success");
-  }
-}
-
-function toggleQuestionApproval(questionId) {
-  const question = findQuestionById(questionId);
-  if (question) {
-    if (question.status === "Approved") {
-      question.status = "Draft";
-    } else {
-      question.status = "Approved";
-    }
-    renderStep2();
-    showToast(`Question ${question.status.toLowerCase()}`, "success");
+    question.flagStatus = !question.flagStatus;
+    renderQuestionGroups();
+    showToast(`Question ${question.flagStatus ? "Flagged" : "Unflagged"}`, "success");
   }
 }
 
 function deleteQuestion(questionId) {
   if (
-    confirm(
+    !confirm(
       "Are you sure you want to delete this question? This action cannot be undone."
     )
   ) {
-    // Remove from all groups
-    state.questionGroups.forEach((group) => {
-      group.los.forEach((lo) => {
-        lo.questions = lo.questions.filter((q) => q.id !== questionId);
-      });
-    });
-
-    // Remove from selection
-    state.selectedQuestions.delete(questionId);
-
-    renderStep2();
-    showToast("Question deleted successfully", "success");
+    return;
   }
+
+  // Remove from all groups - update local state only
+  state.questionGroups.forEach((group) => {
+    group.los.forEach((lo) => {
+      const questionIndex = lo.questions.findIndex((q) => q.id === questionId || q._id === questionId);
+      if (questionIndex > -1) {
+        lo.questions.splice(questionIndex, 1);
+        
+        // If this LO has no questions left, remove it from the group
+        if (lo.questions.length === 0) {
+          const loIndex = group.los.findIndex(l => l.id === lo.id);
+          if (loIndex > -1) {
+            group.los.splice(loIndex, 1);
+          }
+        }
+      }
+    });
+    
+    // Remove empty LOs from the group
+    group.los = group.los.filter(lo => lo.questions.length > 0);
+  });
+
+  // Remove empty groups
+  state.questionGroups = state.questionGroups.filter(group => group.los.length > 0);
+
+  // Remove from selection
+  state.selectedQuestions.delete(questionId);
+
+  renderQuestionGroups();
+  showToast("Question deleted successfully", "success");
 }
 
 function findQuestionById(questionId) {
@@ -3918,14 +3858,12 @@ window.testPDFParsing = async function (file) {
 };
 
 // Step 2 function exports
-window.toggleMetaLoGroup = toggleMetaLoGroup;
-window.toggleQuestionSelection = toggleQuestionSelection;
 window.editQuestion = editQuestion;
 window.saveQuestionEdit = saveQuestionEdit;
 window.saveOptionEdit = saveOptionEdit;
-window.regenerateQuestion = regenerateQuestion;
+window.updateQuestionTitle = updateQuestionTitle;
+window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
-window.toggleQuestionApproval = toggleQuestionApproval;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
