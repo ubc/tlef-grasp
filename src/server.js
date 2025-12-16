@@ -5,7 +5,7 @@ const session = require("express-session");
 const databaseService = require("./services/database");
 const exampleRoutes = require("./routes/example/hello");
 const uploadRoutes = require("./routes/upload");
-const questionRoutes = require("./routes/questions");
+const questionRoutes = require("./routes/question");
 //const quizQuestionRoutes = require("./routes/quiz-questions");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
@@ -13,7 +13,7 @@ const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
 const llmRoutes = require("./routes/llm");
 const materialRoutes = require("./routes/material");
-const objectiveRoutes = require("./routes/objectives");
+const objectiveRoutes = require("./routes/objective");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -104,14 +104,14 @@ app.get("/users", ensureAuthenticated(), (req, res) => {
 // API endpoints - pass middleware function by reference (no parentheses)
 app.use("/api/example", ensureAuthenticatedAPI, exampleRoutes);
 app.use("/api/upload", ensureAuthenticatedAPI, uploadRoutes);
-app.use("/api/questions", ensureAuthenticatedAPI, questionRoutes);
+app.use("/api/question", ensureAuthenticatedAPI, questionRoutes);
 //app.use("/api/quiz-questions", ensureAuthenticatedAPI, quizQuestionRoutes);
 app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
 app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
 app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
 app.use("/api/llm", ensureAuthenticatedAPI, llmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
-app.use("/api/objectives", ensureAuthenticatedAPI, objectiveRoutes);
+app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
 
 app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
   res.json({

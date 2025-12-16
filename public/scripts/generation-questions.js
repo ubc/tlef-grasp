@@ -233,7 +233,7 @@ class QuestionGenerator {
         );
 
         // Get course materials attached to learning objective.
-        const courseMaterials = await fetch(`/api/objectives/${learningObjective.objectiveId}/materials`);
+        const courseMaterials = await fetch(`/api/objective/${learningObjective.objectiveId}/materials`);
         const courseMaterialsData = await courseMaterials.json();
 
         console.log("Relevant chunks:", relevantChunks);
@@ -493,7 +493,7 @@ class QuestionGenerator {
         content = `Course: ${course}\nBloom Level: ${bloomLevel}\n\nGenerate ${count} multiple choice questions at the ${bloomLevel} level.`;
       }
 
-      const response = await fetch("/api/questions/generate-questions", {
+      const response = await fetch("/api/question/generate-questions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

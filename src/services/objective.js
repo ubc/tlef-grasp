@@ -277,6 +277,18 @@ const updateObjective = async (objectiveId, updateData) => {
   }
 };
 
+const getObjectiveCourseId = async (objectiveId) => {
+  try {
+    const db = await databaseService.connect();
+    const collection = db.collection('grasp_objective');
+    const objective = await collection.findOne({ _id: objectiveId });
+    return objective?.courseId;
+  } catch (error) {
+    console.error('Error getting objective course ID:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getParentObjectives,
   getGranularObjectives,
@@ -284,4 +296,5 @@ module.exports = {
   getObjectiveById,
   getObjectiveWithMaterials,
   updateObjective,
+  getObjectiveCourseId,
 };

@@ -97,6 +97,18 @@ const getQuestions = async (courseId) => {
     }
 };
 
+const getQuestion = async (questionId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_question");
+        const question = await collection.findOne({ _id: questionId });
+        return question;
+    } catch (error) {
+        console.error("Error getting question:", error);
+        throw error;
+    }
+};
+
 const updateQuestion = async (questionId, updateData) => {
     try {
         const db = await databaseService.connect();
@@ -150,9 +162,23 @@ const deleteQuestion = async (questionId) => {
     }
 };
 
+const getQuestionCourseId = async (questionId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_question");
+        const question = await collection.findOne({ _id: questionId });
+        return question?.courseId;
+    } catch (error) {
+        console.error("Error getting question course ID:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     saveQuestion,
     getQuestions,
     updateQuestion,
     deleteQuestion,
+    getQuestion,
+    getQuestionCourseId,
 };

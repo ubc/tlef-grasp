@@ -758,7 +758,7 @@ async function initializeAddObjectivesDropdown() {
     try {
       // Get courseId from state.course
       const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-      const response = await fetch(`/api/objectives?courseId=${encodeURIComponent(courseId)}`);
+      const response = await fetch(`/api/objective?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       if (data.success && data.objectives) {
@@ -1025,7 +1025,7 @@ async function loadMaterialsForModal(objectiveId = null) {
     // Load materials and optionally get attached materials for edit mode
     const [materialsResponse, objectiveMaterialsResponse] = await Promise.all([
       fetch(`/api/material/course/${selectedCourse.id}`),
-      objectiveId ? fetch(`/api/objectives/${objectiveId}/materials`) : Promise.resolve(null)
+      objectiveId ? fetch(`/api/objective/${objectiveId}/materials`) : Promise.resolve(null)
     ]);
 
     const materialsData = await materialsResponse.json();
@@ -1240,8 +1240,8 @@ async function handleCustomObjectiveSubmission() {
 
     // Save to database with timeout - use PUT for edit, POST for create
     const url = mode === "edit" && objectiveId
-      ? `/api/objectives/${objectiveId}`
-      : "/api/objectives";
+      ? `/api/objective/${objectiveId}`
+      : "/api/objective";
     const method = mode === "edit" ? "PUT" : "POST";
 
     console.log(`Sending ${method} request to ${url}...`);
@@ -1465,7 +1465,7 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
     try {
       // Get courseId from state.course
       const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-      const response = await fetch(`/api/objectives/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
+      const response = await fetch(`/api/objective/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       let granularObjectives = [];
@@ -3427,14 +3427,14 @@ async function handleAddQuestionToBank(question) {
   console.log("Adding question to question bank:", question);
   // Adding questions to question bank.
   try {
-    const response = await fetch(`/api/questions/save`, {
+    const response = await fetch(`/api/question/save`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         question: question,
-        course: state.course,
+        courseId: state.course.id ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id,
       }),
     });
 
@@ -3673,7 +3673,7 @@ async function exportQuestions() {
   const format = state.exportFormat;
 
   try {
-    const response = await fetch(`/api/questions/export?format=${format}`, {
+    const response = await fetch(`/api/question/export?format=${format}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

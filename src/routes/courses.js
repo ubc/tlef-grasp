@@ -21,7 +21,6 @@ router.get("/", async (req, res) => {
 router.get("/:my-courses", async (req, res) => {
   try {
     const userId = req.user._id;
-    console.log(userId);
     const userCourses = await getUserCourses(userId);
     const courses = userCourses.map((course) => course.course);
 

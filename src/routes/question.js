@@ -1,17 +1,23 @@
 const express = require("express");
 const router = express.Router();
 const { saveQuestion, updateQuestion, deleteQuestion } = require('../services/question');
+const { isUserInCourse } = require('../services/user-course');
+const { getQuestionCourseId, getQuestion } = require('../services/question');
 
 // Save questions to question bank
 router.post("/save", express.json(), async (req, res) => {
   try {
-    const { question, course } = req.body;
+    const { question, courseId } = req.body;
+
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
 
     if (!question) {
       return res.status(400).json({ error: "No question provided to save" });
     }
 
-    await saveQuestion(course, question);
+    await saveQuestion(courseId, question);
 
     res.json({
       success: true,
@@ -24,32 +30,29 @@ router.post("/save", express.json(), async (req, res) => {
   }
 });
 
-// Get question bank
-router.get("/bank", (req, res) => {
-  try {
-    const questionBank = req.session?.questionBank || [];
-    res.json({ questionBank });
-  } catch (error) {
-    console.error("Error getting question bank:", error);
-    res.status(500).json({ error: "Failed to retrieve question bank" });
-  }
-});
-
 // Update question
 router.put("/:questionId", express.json(), async (req, res) => {
   try {
     const { questionId } = req.params;
     const updateData = req.body;
 
+    const courseId = await getQuestionCourseId(questionId);
+
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
     if (!updateData) {
       return res.status(400).json({ error: "No update data provided" });
     }
 
-    const result = await updateQuestion(questionId, updateData);
+    const question = await getQuestion(questionId);
 
-    if (result.matchedCount === 0) {
+    if (!question) {
       return res.status(404).json({ error: "Question not found" });
     }
+
+    const result = await updateQuestion(questionId, updateData);
 
     res.json({
       success: true,
@@ -68,36 +71,28 @@ router.put("/:questionId/status", express.json(), async (req, res) => {
     const { questionId } = req.params;
     const { status } = req.body;
 
+    const courseId = await getQuestionCourseId(questionId);
+
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
     if (!status) {
       return res.status(400).json({ error: "Status is required" });
     }
 
-    // Find and update the question
-    let questionUpdated = false;
-    if (req.session?.generatedQuestions) {
-      const question = req.session.generatedQuestions.find(
-        (q) => q.id === questionId
-      );
-      if (question) {
-        question.status = status;
-        questionUpdated = true;
-      }
-    }
+    const question = await getQuestion(questionId);
 
-    if (req.session?.questionBank) {
-      for (const set of req.session.questionBank) {
-        const question = set.questions.find((q) => q.id === questionId);
-        if (question) {
-          question.status = status;
-          questionUpdated = true;
-          break;
-        }
-      }
-    }
-
-    if (!questionUpdated) {
+    if (!question) {
       return res.status(404).json({ error: "Question not found" });
     }
+
+    await updateQuestion(
+      {
+        ...question,
+        status: status,
+      }
+    );
 
     res.json({
       success: true,
@@ -116,11 +111,13 @@ router.delete("/:questionId", async (req, res) => {
   try {
     const { questionId } = req.params;
 
-    const result = await deleteQuestion(questionId);
+    const courseId = await getQuestionCourseId(questionId);
 
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: "Question not found" });
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
     }
+
+    await deleteQuestion(questionId);
 
     res.json({
       success: true,
@@ -130,127 +127,6 @@ router.delete("/:questionId", async (req, res) => {
   } catch (error) {
     console.error("Error deleting question:", error);
     res.status(500).json({ error: "Failed to delete question" });
-  }
-});
-
-// Delete question set
-router.delete("/set/:setId", async (req, res) => {
-  try {
-    const { setId } = req.params;
-
-    if (req.session?.questionBank) {
-      const initialLength = req.session.questionBank.length;
-      req.session.questionBank = req.session.questionBank.filter(
-        (set) => set.id !== setId
-      );
-
-      if (req.session.questionBank.length < initialLength) {
-        return res.json({
-          success: true,
-          message: "Question set deleted successfully",
-        });
-      }
-    }
-
-    res.status(404).json({ error: "Question set not found" });
-  } catch (error) {
-    console.error("Error deleting question set:", error);
-    res.status(500).json({ error: "Failed to delete question set" });
-  }
-});
-
-// Summarize content
-router.post("/summarize", express.json(), async (req, res) => {
-  try {
-    const { prompt } = req.body;
-
-    if (!prompt) {
-      return res.status(400).json({ error: "No content provided for summarization" });
-    }
-
-    // Simulate AI processing time
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Mock summary generation
-    const summary = `This is a comprehensive summary of the provided content. The material covers fundamental concepts that would be suitable for creating educational questions. Key topics include theoretical foundations, practical applications, and critical analysis points.`;
-
-    res.json({
-      success: true,
-      summary: summary,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Summarization error:", error);
-    res.status(500).json({ error: "Summarization failed" });
-  }
-});
-
-// Generate questions from summary and objectives
-router.post("/generate-questions", express.json(), async (req, res) => {
-  try {
-    const { prompt } = req.body;
-
-    if (!prompt) {
-      return res.status(400).json({ error: "No content provided for question generation" });
-    }
-
-    // Simulate AI processing time
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // Mock question generation
-    const questions = [
-      {
-        id: 1,
-        text: "What is the primary function of a catalyst in a chemical reaction?",
-        type: "multiple-choice",
-        options: [
-          "To increase the activation energy",
-          "To decrease the activation energy",
-          "To change the equilibrium constant",
-          "To increase the temperature"
-        ],
-        correctAnswer: 1,
-        bloomLevel: "Understand",
-        difficulty: "Medium"
-      },
-      {
-        id: 2,
-        text: "Which of the following best describes an exothermic reaction?",
-        type: "multiple-choice",
-        options: [
-          "A reaction that absorbs heat from the surroundings",
-          "A reaction that releases heat to the surroundings",
-          "A reaction that requires continuous heating",
-          "A reaction that occurs only at high temperatures"
-        ],
-        correctAnswer: 1,
-        bloomLevel: "Remember",
-        difficulty: "Easy"
-      },
-      {
-        id: 3,
-        text: "How does temperature affect the rate of a chemical reaction?",
-        type: "multiple-choice",
-        options: [
-          "Higher temperature always decreases reaction rate",
-          "Higher temperature increases reaction rate by providing more energy",
-          "Temperature has no effect on reaction rate",
-          "Lower temperature always increases reaction rate"
-        ],
-        correctAnswer: 1,
-        bloomLevel: "Apply",
-        difficulty: "Medium"
-      }
-    ];
-
-    res.json({
-      success: true,
-      questions: questions,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Question generation error:", error);
-    res.status(500).json({ error: "Question generation failed" });
   }
 });
 

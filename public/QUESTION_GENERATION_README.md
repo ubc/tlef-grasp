@@ -47,9 +47,9 @@ The Question Generation feature is a 5-step workflow that allows instructors to 
 - Updated `src/routes/questions.js` - Added API endpoints
 
 ### API Endpoints
-- `POST /api/questions/summarize` - Generate content summary
-- `POST /api/questions/generate-questions` - Create questions
-- `POST /api/questions/export?format=qti|csv|json` - Export questions
+- `POST /api/question/summarize` - Generate content summary
+- `POST /api/question/generate-questions` - Create questions
+- `POST /api/question/export?format=qti|csv|json` - Export questions
 
 ### State Management
 ```javascript
