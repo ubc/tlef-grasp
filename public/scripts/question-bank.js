@@ -339,7 +339,7 @@ class QuestionBankPage {
         this.handleCrossQuizAction("approve")
       );
     }
-    if (flagBtn) {
+    if (crossFlagBtn) {
       crossFlagBtn.addEventListener("click", () =>
         this.handleCrossQuizAction("flag")
       );
