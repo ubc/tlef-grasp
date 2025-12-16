@@ -2321,48 +2321,6 @@ function initializeExportFormat() {
   });
 }
 
-// ===== STEP 2: QUESTIONS FUNCTIONS =====
-
-async function generateQuestions() {
-  const questionsLoading = document.getElementById("questions-loading");
-  const questionsList = document.getElementById("questions-list");
-
-  if (questionsLoading) questionsLoading.style.display = "block";
-  if (questionsList) questionsList.style.display = "none";
-
-  try {
-    // Call LLM API to generate questions
-    /*const response = await fetch("/api/llm/questions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        course: state.course,
-        summary: state.summary,
-        objectiveGroups: state.objectiveGroups,
-      }),
-    });*/
-
-    // TODO
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Failed to generate questions");
-    }
-
-    const data = await response.json();
-    state.questions = data.questions;
-  } catch (error) {
-    console.error("Question generation failed:", error);
-  }
-
-  if (questionsLoading) questionsLoading.style.display = "none";
-  if (questionsList) questionsList.style.display = "block";
-
-  renderQuestions();
-}
-
 function renderQuestions() {
   const questionsList = document.getElementById("questions-list");
   if (!questionsList) return;
@@ -3827,10 +3785,6 @@ window.selectAllGranularInGroup = selectAllGranularInGroup;
 window.deleteSelectedGranular = deleteSelectedGranular;
 window.showGranularizationModal = showGranularizationModal;
 window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
-
-// Module functions for global access
-window.generateQuestions = generateQuestions;
-window.pdfService = pdfService;
 
 // Test function for PDF parsing
 window.testPDFParsing = async function (file) {

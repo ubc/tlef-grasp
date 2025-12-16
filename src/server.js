@@ -11,7 +11,6 @@ const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
 const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
-const llmRoutes = require("./routes/llm");
 const materialRoutes = require("./routes/material");
 const objectiveRoutes = require("./routes/objective");
 
@@ -109,7 +108,6 @@ app.use("/api/question", ensureAuthenticatedAPI, questionRoutes);
 app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
 app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
 app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
-app.use("/api/llm", ensureAuthenticatedAPI, llmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
 app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
 
