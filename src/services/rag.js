@@ -58,7 +58,7 @@ class RAGService {
         },
         embeddingsConfig: {
           providerType: process.env.EMBEDDING_PROVIDER,
-          model: process.env.EMBEDDING_MODEL,
+          model: process.env.LLM_EMBEDDING_MODEL,
           llmConfig: {
             provider: process.env.LLM_PROVIDER,
             defaultModel: process.env.OPENAI_MODEL,

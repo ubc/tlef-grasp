@@ -13,19 +13,11 @@ class DatabaseService {
       return this.db;
     }
     
-    if ( ! process.env.MONGO_INITDB_ROOT_USERNAME || ! process.env.MONGO_INITDB_ROOT_PASSWORD || ! process.env.MONGODB_HOST || ! process.env.MONGODB_PORT || ! process.env.MONGODB_DB_NAME ) {
-      throw new Error("Missing MongoDB connection variables. Please set MONGO_INITDB_ROOT_USERNAME, MONGO_INITDB_ROOT_PASSWORD, MONGODB_HOST, MONGODB_PORT, and MONGODB_DB_NAME in your .env file.");
-    }
-    
     // Validate required environment variables
     const dbName = process.env.MONGODB_DB_NAME || "grasp_db";
-    const username = process.env.MONGO_INITDB_ROOT_USERNAME;
-    const password = process.env.MONGO_INITDB_ROOT_PASSWORD;
-    const host = process.env.MONGODB_HOST || "localhost";
-    const port = process.env.MONGODB_PORT || "27017";
 
     // Construct MongoDB URI
-    const mongodbUri = `mongodb://${username}:${password}@${host}:${port}/`;
+    const mongodbUri = process.env.MONGODB_URI;
 
     // Connection options with shorter timeout for faster fallback
     const connectionOptions = {
