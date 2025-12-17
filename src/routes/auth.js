@@ -14,7 +14,7 @@ router.get('/ubcshib', passport.authenticate('ubcshib'));
 
 // Callback route - called by UBC IdP after authentication
 router.post(
-	'/ubcshib/callback',
+	'/saml/callback',
 	passport.authenticate('ubcshib', { failureRedirect: '/login' }),
 	(req, res) => {
 		// Successful authentication

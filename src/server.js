@@ -52,6 +52,17 @@ function ensureAuthenticatedAPI(req, res, next) {
 // Authentication routes (no /api prefix as they serve HTML too)
 app.use('/auth', authRoutes);
 
+// Shibboleth SP endpoint - traditional Shibboleth callback path
+// This handles POST requests from UBC IdP if configured to use /Shibboleth.sso/SAML2/POST
+app.post(
+	'/Shibboleth.sso/SAML2/POST',
+	passport.authenticate('ubcshib', { failureRedirect: '/login' }),
+	(req, res) => {
+		// Successful authentication
+		res.redirect('/onboarding');
+	}
+);
+
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, "../public")));
 
@@ -116,8 +127,7 @@ app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
     success: true,
     user: {
       username: req.user.username,
-      firstName: req.user.firstName,
-      lastName: req.user.lastName,
+      displayName: req.user.displayName,
       email: req.user.email,
     },
   });

@@ -34,7 +34,7 @@ async function loadUserData() {
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.user) {
-        updateWelcomeMessage(data.user.firstName + " " + data.user.lastName);
+        updateWelcomeMessage(data.user.displayName);
       }
     } else {
       throw new Error(`HTTP error! status: ${response.status}`);

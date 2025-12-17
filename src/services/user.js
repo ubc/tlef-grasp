@@ -2,7 +2,7 @@ const databaseService = require('./database');
 
 async function createOrUpdateUser(userData) {
     try {
-        if (!userData.attributes.ubcEduCwlPuid) {
+        if (!userData.puid) {
             throw new Error("Puid is required");
         }
 
@@ -10,18 +10,17 @@ async function createOrUpdateUser(userData) {
 
         const collection = db.collection("grasp_user");
         const user = {
-            username: userData.cwlLoginName,
-            puid: userData.attributes.ubcEduCwlPuid,
-            firstName: userData.givenName,
-            lastName: userData.sn,
-            email: userData.attributes.mail,
-            affiliation: userData.attributes.eduPersonAffiliation,
+            username: userData.username,
+            puid: userData.puid,
+            displayName: userData.displayName,
+            email: userData.email,
+            affiliation: userData.affiliation,
             updatedAt: new Date(),
         };
 
         // Use upsert to update existing user or create new one
         const result = await collection.updateOne(
-            { puid: userData.attributes.ubcEduCwlPuid },
+            { puid: userData.puid },
             {
                 $set: user,
                 $setOnInsert: { registeredAt: new Date() }
