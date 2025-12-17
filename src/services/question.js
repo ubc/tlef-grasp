@@ -101,7 +101,11 @@ const getQuestion = async (questionId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
-        const question = await collection.findOne({ _id: questionId });
+        
+        // Convert questionId to ObjectId if it's a string
+        const id = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
+        
+        const question = await collection.findOne({ _id: id });
         return question;
     } catch (error) {
         console.error("Error getting question:", error);
@@ -166,7 +170,11 @@ const getQuestionCourseId = async (questionId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
-        const question = await collection.findOne({ _id: questionId });
+        
+        // Convert questionId to ObjectId if it's a string
+        const id = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
+        
+        const question = await collection.findOne({ _id: id });
         return question?.courseId;
     } catch (error) {
         console.error("Error getting question course ID:", error);

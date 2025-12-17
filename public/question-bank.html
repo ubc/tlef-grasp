@@ -16,49 +16,59 @@
             <div class="content-wrapper">
                 <!-- Header Section -->
                 <div class="header-section">
-                    <div class="header-left">
-                        <select class="course-selector" id="course-selector">
-                            <option value="all">All Courses</option>
-                            <option value="">Select a course...</option>
-                        </select>
-                    </div>
-                    
                     <div class="header-tabs">
                         <button class="tab-button" data-tab="overview">Overview</button>
-                        <button class="tab-button active" data-tab="review">Review</button>
+                        <button class="tab-button" data-tab="review">Review</button>
                         <button class="tab-button" data-tab="approved-history">Approved History</button>
                     </div>
-                    
-
                 </div>
 
                 <!-- Filters Section -->
                 <div class="filters-section">
-                    <div class="filter-group">
-                        <label for="objective-filter">Learning Objectives</label>
-                        <select class="filter-select" id="objective-filter">
-                            <option value="all">All Objectives</option>
-                        </select>
+                    <div class="filters-row">
+                        <div class="filter-group">
+                            <label for="quiz-filter">Quiz</label>
+                            <select class="filter-select" id="quiz-filter">
+                                <option value="all">All Quizzes</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="objective-filter">Learning Objectives</label>
+                            <select class="filter-select" id="objective-filter">
+                                <option value="all">All Objectives</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="bloom-filter">Bloom Levels</label>
+                            <select class="filter-select" id="bloom-filter">
+                                <option value="all">All Bloom Levels</option>
+                            </select>
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
-                        <label for="bloom-filter">Bloom Levels</label>
-                        <select class="filter-select" id="bloom-filter">
-                            <option value="all">All Bloom Levels</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="status-filter">Status</label>
-                        <select class="filter-select" id="status-filter">
-                            <option value="all">All Statuses</option>
-                        </select>
-                    </div>
-                    
-                    <div class="search-group">
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="search-input" placeholder="Search questions">
+                    <div class="filters-row">
+                        <div class="filter-group">
+                            <label for="status-filter">Status</label>
+                            <select class="filter-select" id="status-filter">
+                                <option value="all">All Statuses</option>
+                            </select>
+                        </div>
+                        
+                        <div class="search-group">
+                            <label for="search-input">Search</label>
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="search-input" placeholder="Search questions">
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="flagged-filter">Flagged</label>
+                            <label for="flagged-filter" class="checkbox-label">
+                                <input type="checkbox" id="flagged-filter" class="filter-checkbox">
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -87,7 +97,7 @@
                 <!-- Tab Content -->
                 <div class="tab-content">
                     <!-- Overview Tab -->
-                    <div class="tab-panel" id="overview-panel" style="display: none;">
+                    <div class="tab-panel" id="overview-panel">
 
                         <!-- Action Bar -->
                         <div class="action-bar" id="action-bar">
@@ -95,10 +105,6 @@
                                 <span id="selection-count">0 questions selected</span>
                             </div>
                             <div class="action-buttons">
-                                <button class="action-btn" id="edit-btn" disabled>
-                                    <i class="fas fa-pencil"></i>
-                                    Edit
-                                </button>
                                 <button class="action-btn" id="flag-btn" disabled>
                                     <i class="fas fa-flag"></i>
                                     Flag
@@ -106,10 +112,6 @@
                                 <button class="action-btn danger" id="delete-btn" disabled>
                                     <i class="fas fa-trash"></i>
                                     Delete
-                                </button>
-                                <button class="action-btn primary" id="publish-btn" disabled>
-                                    <i class="fas fa-upload"></i>
-                                    Publish
                                 </button>
                             </div>
                         </div>
@@ -134,9 +136,9 @@
                                             Bloom's Level
                                             <i class="fas fa-sort" data-sort-icon></i>
                                         </th>
-                                        <th class="sortable-header" data-sort="views">
-                                            Views
-                                            <i class="fas fa-sort-down" data-sort-icon></i>
+                                        <th class="sortable-header" data-sort="status">
+                                            Status
+                                            <i class="fas fa-sort" data-sort-icon></i>
                                         </th>
                                     </tr>
                                 </thead>
@@ -148,7 +150,7 @@
                     </div>
 
                     <!-- Review Tab -->
-                    <div class="tab-panel active" id="review-panel">
+                    <div class="tab-panel" id="review-panel" style="display: none;">
                         <div class="quizzes-container" id="quizzes-container">
                             <!-- Quiz cards will be populated by JavaScript -->
                         </div>
@@ -181,6 +183,25 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Question Detail Modal -->
+    <div class="modal" id="question-detail-modal" style="display: none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="question-modal-title">Question Details</h3>
+                <button class="modal-close" id="question-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="question-modal-body">
+                <!-- Question content will be populated here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="question-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="question-modal-save" style="display: none;">Save Changes</button>
             </div>
         </div>
     </div>

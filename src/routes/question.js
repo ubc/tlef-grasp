@@ -1,8 +1,79 @@
 const express = require("express");
 const router = express.Router();
-const { saveQuestion, updateQuestion, deleteQuestion } = require('../services/question');
+const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('../services/question');
 const { isUserInCourse } = require('../services/user-course');
 const { getQuestionCourseId, getQuestion } = require('../services/question');
+
+// Get questions for a course
+router.get("/", async (req, res) => {
+  try {
+    const { courseId } = req.query;
+
+    if (!courseId) {
+      return res.status(400).json({ 
+        success: false,
+        error: "courseId query parameter is required" 
+      });
+    }
+
+    // Check if user is in course
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ 
+        success: false,
+        error: "User is not in course" 
+      });
+    }
+
+    const questions = await getQuestions(courseId);
+
+    res.json({
+      success: true,
+      questions: questions,
+    });
+  } catch (error) {
+    console.error("Error fetching questions:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch questions" 
+    });
+  }
+});
+
+// Get a single question by ID
+router.get("/:questionId", async (req, res) => {
+  try {
+    const { questionId } = req.params;
+
+    const courseId = await getQuestionCourseId(questionId);
+
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ 
+        success: false,
+        error: "User is not in course" 
+      });
+    }
+
+    const question = await getQuestion(questionId);
+
+    if (!question) {
+      return res.status(404).json({ 
+        success: false,
+        error: "Question not found" 
+      });
+    }
+
+    res.json({
+      success: true,
+      question: question,
+    });
+  } catch (error) {
+    console.error("Error fetching question:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch question" 
+    });
+  }
+});
 
 // Save questions to question bank
 router.post("/save", express.json(), async (req, res) => {
@@ -117,7 +188,7 @@ router.delete("/:questionId", async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
 
-    await deleteQuestion(questionId);
+    const result = await deleteQuestion(questionId);
 
     res.json({
       success: true,
