@@ -51,155 +51,9 @@ function updateWelcomeMessage(instructorName) {
   }
 }
 
-function updateGenerationStatus(courses) {
-  const generationCardsContainer = document.getElementById("generation-cards");
-  const noDataMessage = document.getElementById("no-generation-data");
-
-  if (!generationCardsContainer) return;
-
-  // Clear existing content
-  generationCardsContainer.innerHTML = "";
-
-  // Check if any courses have materials
-  const coursesWithMaterials = courses.filter(
-    (course) => course.materials && course.materials.length > 0
-  );
-
-  if (coursesWithMaterials.length === 0) {
-    noDataMessage.style.display = "block";
-    generationCardsContainer.appendChild(noDataMessage);
-  } else {
-    noDataMessage.style.display = "none";
-
-    // Display generation status for each course with materials
-    coursesWithMaterials.forEach((course) => {
-      course.materials.forEach((material) => {
-        const generationCard = createGenerationCard(course, material);
-        generationCardsContainer.appendChild(generationCard);
-      });
-    });
-  }
-}
-
-function createGenerationCard(course, material) {
-  const card = document.createElement("div");
-  card.className = "generation-card";
-
-  // Calculate progress based on question sets
-  const totalQuestions = course.questionSets
-    ? course.questionSets.reduce((sum, qs) => sum + qs.questions, 0)
-    : 0;
-  const progress = Math.min(totalQuestions * 10, 100); // Simple progress calculation
-
-  card.innerHTML = `
-    <h4>${course.code} - ${material.title}</h4>
-    <p>${totalQuestions} Questions Generated</p>
-    <div class="progress-bar">
-      <div class="progress-fill" style="width: ${progress}%"></div>
-    </div>
-  `;
-
-  // Add click event
-  card.addEventListener("click", () => {
-    openGenerationDetails(course.code, material.title);
-  });
-
-  return card;
-}
-
-function updateReviewStatus(courseCode) {
-  const reviewProgressContainer = document.getElementById("review-progress");
-  const noReviewData = document.getElementById("no-review-data");
-
-  if (!reviewProgressContainer) return;
-
-  // Clear existing content
-  reviewProgressContainer.innerHTML = "";
-
-  if (!courseCode) {
-    noReviewData.style.display = "block";
-    reviewProgressContainer.appendChild(noReviewData);
-    return;
-  }
-
-  // Fetch course details to get review data
-  fetch(`/api/courses/${courseCode.toLowerCase().replace(/\s+/g, "")}`)
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success && data.course) {
-        const course = data.course;
-        const reviewData = calculateReviewProgress(course);
-
-        noReviewData.style.display = "none";
-
-        const progressHTML = `
-          <div class="circular-progress">
-            <div class="progress-circle" style="background: conic-gradient(#3498db 0deg ${
-              reviewData.progress * 3.6
-            }deg, #e9ecef ${reviewData.progress * 3.6}deg 360deg)">
-              <span class="progress-text">${reviewData.progress}%</span>
-            </div>
-          </div>
-          <div class="progress-legend">
-            <div class="legend-item">
-              <span class="legend-color in-progress"></span>
-              <span>In progress (${reviewData.inProgress})</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color reviewed"></span>
-              <span>Reviewed (${reviewData.reviewed})</span>
-            </div>
-          </div>
-        `;
-
-        reviewProgressContainer.innerHTML = progressHTML;
-      } else {
-        noReviewData.style.display = "block";
-        reviewProgressContainer.appendChild(noReviewData);
-      }
-    })
-    .catch((error) => {
-      console.error("Error fetching course details:", error);
-      noReviewData.style.display = "block";
-      reviewProgressContainer.appendChild(noReviewData);
-    });
-}
-
-function calculateReviewProgress(course) {
-  if (!course.questionSets || course.questionSets.length === 0) {
-    return { progress: 0, reviewed: 0, inProgress: 0 };
-  }
-
-  const totalSets = course.questionSets.length;
-  const reviewedSets = course.questionSets.filter(
-    (qs) => qs.status === "reviewed"
-  ).length;
-  const inProgressSets = course.questionSets.filter(
-    (qs) => qs.status === "generated"
-  ).length;
-
-  const progress =
-    totalSets > 0 ? Math.round((reviewedSets / totalSets) * 100) : 0;
-
-  return {
-    progress,
-    reviewed: reviewedSets,
-    inProgress: inProgressSets,
-  };
-}
-
 function showEmptyStates() {
   // Show empty states for all sections
-  const noGenerationData = document.getElementById("no-generation-data");
-  const noReviewData = document.getElementById("no-review-data");
-
-  if (noGenerationData) {
-    noGenerationData.style.display = "block";
-  }
-
-  if (noReviewData) {
-    noReviewData.style.display = "block";
-  }
+  // (Generation and Review sections removed)
 }
 
 function initializeDashboardContent() {
@@ -228,7 +82,7 @@ function handleQuickStartAction(action) {
       break;
     case "review":
       // Navigate to question review page
-      window.location.href = "/question-review";
+      window.location.href = "/question-bank.html?tab=review";
       break;
     case "quizzes":
       // Navigate to quiz page
@@ -236,19 +90,11 @@ function handleQuickStartAction(action) {
       break;
     case "questions":
       // Navigate to question generation page
-      window.location.href = "/question-generation";
+      window.location.href = "/question-bank.html";
       break;
     default:
       console.log(`Unknown action: ${action}`);
   }
-}
-
-function openGenerationDetails(courseCode, materialTitle) {
-  console.log(
-    `Opening generation details for: ${courseCode} - ${materialTitle}`
-  );
-  // You could open a modal or navigate to a detailed view
-  window.location.href = "/question-generation";
 }
 
 function updateCurrentDate() {
@@ -279,7 +125,5 @@ function initializeProgressAnimations() {
 
 // Export functions for potential external use
 window.GRASPDashboard = {
-  updateReviewStatus,
   handleQuickStartAction,
-  updateGenerationStatus,
 };

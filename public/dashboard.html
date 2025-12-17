@@ -33,6 +33,10 @@
                                 <span>Upload</span>
                             </div>
                             <div class="quick-start-card">
+                                <i class="fas fa-lightbulb"></i>
+                                <span>Questions</span>
+                            </div>
+                            <div class="quick-start-card">
                                 <i class="fas fa-eye"></i>
                                 <span>Review</span>
                             </div>
@@ -40,34 +44,135 @@
                                 <i class="fas fa-question-circle"></i>
                                 <span>Quizzes</span>
                             </div>
-                            <div class="quick-start-card">
-                                <i class="fas fa-lightbulb"></i>
-                                <span>Questions</span>
-                            </div>
                         </div>
                     </section>
                     
-                    <!-- Generation Status Section -->
-                    <section class="generation-status-section">
-                        <h3>Generation Status</h3>
-                        <div class="generation-cards" id="generation-cards">
-                            <div class="no-data-message" id="no-generation-data" style="display: none;">
-                                <p>No course materials uploaded yet. Start by uploading your first lecture materials!</p>
+                    <!-- How to Use Section -->
+                    <section class="how-to-use-section">
+                        <h3>Getting Started with GRASP</h3>
+                        <p class="section-intro">Follow this step-by-step guide to create AI-powered questions from your course materials and manage them effectively.</p>
+                        
+                        <div class="instructions-container">
+                            <div class="instruction-step">
+                                <div class="step-number">1</div>
+                                <div class="step-content">
+                                    <h4>Upload Your Course Materials</h4>
+                                    <p>Start by uploading your course documents (PDFs, lecture notes, presentations, text files) through the <strong>Upload</strong> quick start card or Course Materials page. These documents will be processed and stored for question generation.</p>
+                                    <div class="step-tip">
+                                        <i class="fas fa-lightbulb"></i>
+                                        <span>Supported formats: PDF, DOC, DOCX, TXT. You can also paste text directly or add URLs.</span>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </section>
-                    
-                    <!-- Review Status Section -->
-                    <section class="review-status-section">
-                        <div class="review-header">
-                            <h3>Review Status</h3>
-                            <select class="course-selector" id="course-selector">
-                                <option value="">Select a course...</option>
-                            </select>
-                        </div>
-                        <div class="review-progress" id="review-progress">
-                            <div class="no-data-message" id="no-review-data" style="display: none;">
-                                <p>Select a course to view review progress</p>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">2</div>
+                                <div class="step-content">
+                                    <h4>Navigate to Question Generation</h4>
+                                    <p>Navigate to the Question Generation page. This is where you'll create learning objectives and generate questions from your uploaded materials.</p>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">3</div>
+                                <div class="step-content">
+                                    <h4>Create Learning Objectives</h4>
+                                    <p>Create learning objectives (LOs) for your course. Each objective can have multiple <strong>granular objectives</strong> that break down the main objective into smaller, specific learning goals.</p>
+                                    <ul class="step-details">
+                                        <li>Create custom objectives manually, or use AI to generate them from your content(Coming soon)</li>
+                                        <li>Add granular objectives to each main learning objective</li>
+                                        <li>Select Bloom's Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create) for each granular objective</li>
+                                        <li>Each learning objective must have at least 5 questions total (across all its granular objectives)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">4</div>
+                                <div class="step-content">
+                                    <h4>Attach Documents to Learning Objectives</h4>
+                                    <p>For each learning objective, attach the relevant uploaded documents. This ensures the AI uses the correct information when generating questions specific to that objective.</p>
+                                    <div class="step-tip">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span>The AI will only use content from attached documents, ensuring questions are relevant and accurate.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">5</div>
+                                <div class="step-content">
+                                    <h4>Generate Questions with AI</h4>
+                                    <p>Click <strong>Generate Questions</strong> to create multiple-choice questions automatically. The AI analyzes the attached documents and generates questions aligned with your learning objectives and selected Bloom's levels.</p>
+                                    <ul class="step-details">
+                                        <li>Review and edit generated questions before saving</li>
+                                        <li>Regenerate individual questions or all questions at once</li>
+                                        <li>Edit question text, options, and correct answers</li>
+                                        <li>Flag questions that need attention</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">6</div>
+                                <div class="step-content">
+                                    <h4>Save Questions to Question Bank</h4>
+                                    <p>Click <strong>Add to Question Bank</strong> to save your questions. You'll be prompted to either:</p>
+                                    <ul class="step-details">
+                                        <li><strong>Create a new quiz:</strong> Enter a quiz name and description, then save</li>
+                                        <li><strong>Add to existing quiz:</strong> Select from your existing quizzes</li>
+                                    </ul>
+                                    <p>Questions are automatically linked to the selected quiz and saved to your Question Bank.</p>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step instruction-step--highlight">
+                                <div class="step-number"><i class="fas fa-database"></i></div>
+                                <div class="step-content">
+                                    <h4>Question Bank: Your Central Hub</h4>
+                                    <p>The Question Bank is where you manage all your questions and quizzes. It has three main tabs:</p>
+                                    
+                                    <div class="tab-explanation">
+                                        <h5><i class="fas fa-list"></i> Overview Tab</h5>
+                                        <p>View and manage all questions across all quizzes:</p>
+                                        <ul class="feature-list">
+                                            <li><i class="fas fa-eye"></i> <strong>View/Edit:</strong> Click the button that appears on hover to open a detailed modal where you can edit question title, stem, options, and correct answer</li>
+                                            <li><i class="fas fa-check-circle"></i> <strong>Approve/Unapprove:</strong> Change question status to control which questions are ready for use</li>
+                                            <li><i class="fas fa-filter"></i> <strong>Filter:</strong> Narrow down questions by Quiz, Learning Objective, Bloom Level, Status (Approved/Draft), or Flagged status</li>
+                                            <li><i class="fas fa-search"></i> <strong>Search:</strong> Find questions by keywords in titles or content</li>
+                                            <li><i class="fas fa-sort"></i> <strong>Sort:</strong> Organize questions by title, learning objective, Bloom level, or status</li>
+                                            <li><i class="fas fa-check-square"></i> <strong>Bulk Actions:</strong> Select multiple questions to flag or delete them at once</li>
+                                            <li><i class="fas fa-flag"></i> <strong>Flag Questions:</strong> Mark questions that need review or attention</li>
+                                        </ul>
+                                        
+                                        <h5><i class="fas fa-clipboard-check"></i> Review Tab</h5>
+                                        <p>Review questions organized by quiz:</p>
+                                        <ul class="feature-list">
+                                            <li><i class="fas fa-chart-pie"></i> See review progress percentage for each quiz</li>
+                                            <li><i class="fas fa-list-ul"></i> View all questions within each quiz</li>
+                                            <li><i class="fas fa-check-double"></i> Approve or flag questions directly from quiz view</li>
+                                            <li><i class="fas fa-arrow-right"></i> Click <strong>Review</strong> button to jump to Overview tab with that quiz filtered and status set to Draft</li>
+                                        </ul>
+                                        
+                                        <h5><i class="fas fa-history"></i> Approved History Tab</h5>
+                                        <p>Track your approved questions over time (coming soon)</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step instruction-step--info">
+                                <div class="step-number"><i class="fas fa-star"></i></div>
+                                <div class="step-content">
+                                    <h4>Pro Tips</h4>
+                                    <ul class="feature-list">
+                                        <li><i class="fas fa-lightbulb"></i> Use granular objectives to create more specific, targeted questions</li>
+                                        <li><i class="fas fa-sync"></i> Regenerate questions if the initial results don't meet your needs</li>
+                                        <li><i class="fas fa-tags"></i> Use Bloom's Taxonomy levels strategically to create questions at different cognitive levels</li>
+                                        <li><i class="fas fa-bookmark"></i> Flag questions during generation to review them later in the Question Bank</li>
+                                        <li><i class="fas fa-layer-group"></i> Organize questions into multiple quizzes for different topics or assessments</li>
+                                        <li><i class="fas fa-check-double"></i> Approve questions only after thorough review to maintain quality</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </section>
