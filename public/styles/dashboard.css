@@ -398,6 +398,60 @@ section h3 {
 }
 
 /* Flagged Questions Section */
+.flagged-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.flagged-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 10px;
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.view-flagged-btn {
+    width: 100%;
+    margin-top: 15px;
+    padding: 12px 20px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.view-flagged-btn:hover {
+    background-color: #2980b9;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+}
+
+.view-flagged-btn:active {
+    transform: translateY(0);
+}
+
+.view-flagged-btn i {
+    font-size: 14px;
+}
+
 .flagged-list {
     display: flex;
     flex-direction: column;

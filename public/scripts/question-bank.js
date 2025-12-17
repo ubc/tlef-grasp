@@ -14,6 +14,11 @@ class QuestionBankPage {
     const defaultTab = tabParam && ["overview", "review", "approved-history"].includes(tabParam) 
       ? tabParam 
       : "overview";
+    
+    // Check if flagged filter should be enabled from URL
+    const flaggedParam = urlParams.get("flagged");
+    const flaggedFilterEnabled = flaggedParam === "true";
+    this.flaggedFilterEnabled = flaggedFilterEnabled; // Store for use in initializeEventListeners
 
     this.state = {
       filters: { 
@@ -21,7 +26,7 @@ class QuestionBankPage {
         objective: "all", 
         bloom: "all", 
         status: "all", 
-        flagged: false,
+        flagged: flaggedFilterEnabled,
         q: "" 
       },
       sort: { key: "title", dir: "asc" },
@@ -466,6 +471,10 @@ class QuestionBankPage {
     }
 
     if (flaggedFilter) {
+      // Set initial state from URL parameter
+      if (this.flaggedFilterEnabled) {
+        flaggedFilter.checked = true;
+      }
       flaggedFilter.addEventListener("change", async (e) => {
         this.state.filters.flagged = e.target.checked;
         await this.applyFilters();

@@ -238,12 +238,19 @@
                     
                     <!-- Flagged Questions Section -->
                     <section class="flagged-questions-section">
-                        <h3>Flagged Questions</h3>
+                        <div class="flagged-header">
+                            <h3>Flagged Questions</h3>
+                            <span class="flagged-count" id="flagged-count">0</span>
+                        </div>
                         <div class="flagged-list" id="flagged-list">
                             <div class="no-data-message" id="no-flagged-data">
                                 <p>No flagged questions at this time</p>
                             </div>
                         </div>
+                        <button class="view-flagged-btn" id="view-flagged-btn" style="display: none;">
+                            <i class="fas fa-eye"></i>
+                            View Flagged Questions
+                        </button>
                     </section>
                 </div>
             </div>
