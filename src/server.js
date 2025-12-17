@@ -54,6 +54,8 @@ app.use('/auth', express.json(), express.urlencoded({extended: true }), authRout
 // This handles POST requests from UBC IdP if configured to use /Shibboleth.sso/SAML2/POST
 app.post(
   '/Shibboleth.sso/SAML2/POST',
+  express.json(),  // allow up to 50 MB
+  express.urlencoded({ extended: true }),
   passport.authenticate('ubcshib', { failureRedirect: '/login' }),
   (req, res) => {
     // Successful authentication
