@@ -18,9 +18,6 @@ const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
@@ -42,25 +39,25 @@ function ensureAuthenticatedAPI(req, res, next) {
     return next();
   }
   // For API requests, return JSON error instead of redirecting
-  res.status(401).json({ 
+  res.status(401).json({
     success: false,
     error: 'Authentication required',
-    authenticated: false 
+    authenticated: false
   });
 }
 
 // Authentication routes (no /api prefix as they serve HTML too)
-app.use('/auth', authRoutes);
+app.use('/auth', express.json(), express.urlencoded({extended: true }), authRoutes);
 
 // Shibboleth SP endpoint - traditional Shibboleth callback path
 // This handles POST requests from UBC IdP if configured to use /Shibboleth.sso/SAML2/POST
 app.post(
-	'/Shibboleth.sso/SAML2/POST',
-	passport.authenticate('ubcshib', { failureRedirect: '/login' }),
-	(req, res) => {
-		// Successful authentication
-		res.redirect('/onboarding');
-	}
+  '/Shibboleth.sso/SAML2/POST',
+  passport.authenticate('ubcshib', { failureRedirect: '/login' }),
+  (req, res) => {
+    // Successful authentication
+    res.redirect('/onboarding');
+  }
 );
 
 // Serve static files from the 'public' directory

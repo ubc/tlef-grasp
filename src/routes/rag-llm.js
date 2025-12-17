@@ -25,7 +25,11 @@ function returnErrorResponse(res, error, details = null) {
 }
 
 // Add document to RAG
-router.post("/add-document", express.json(), async (req, res) => {
+router.post(
+  "/add-document",
+  express.json({ limit: "50mb" }),  // allow up to 50 MB
+  express.urlencoded({ limit: "50mb", extended: true }),
+  async (req, res) => {
   try {
     const { content, metadata } = req.body;
 
