@@ -248,8 +248,10 @@
                             <!-- Page Header -->
                             <div class="content-header">
                                 <div class="content-header__actions">
-                                    <button type="button" class="btn btn--link" id="regenerate-all-btn">Regenerate
-                                        All</button>
+                                    <button type="button" class="btn btn--secondary" id="regenerate-all-btn">
+                                        <i class="fas fa-sync-alt"></i>
+                                        Regenerate All
+                                    </button>
                                     <button type="button" class="btn btn--secondary" id="export-btn">Export</button>
                                     <button type="button" class="btn btn--primary" id="add-to-bank-btn">Add to Questions
                                         Bank</button>
@@ -476,6 +478,73 @@
                 <span>JSON Format</span>
                 <small>API integration</small>
             </button>
+        </div>
+    </div>
+
+    <!-- Quiz Selection Modal -->
+    <div class="modal" id="quiz-selection-modal" style="display: none;">
+        <div class="modal__content" style="max-width: 600px;">
+            <div class="modal__header">
+                <h3>Add Questions to Quiz</h3>
+                <button type="button" class="modal__close" id="quiz-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal__body">
+                <div class="quiz-selection-tabs">
+                    <button type="button" class="quiz-tab-btn quiz-tab-btn--active" data-tab="select">
+                        Select Existing Quiz
+                    </button>
+                    <button type="button" class="quiz-tab-btn" data-tab="create">
+                        Create New Quiz
+                    </button>
+                </div>
+
+                <!-- Select Existing Quiz Tab -->
+                <div class="quiz-tab-content quiz-tab-content--active" id="quiz-select-tab">
+                    <div class="quiz-select-section">
+                        <label for="quiz-select-dropdown" style="display: block; margin-bottom: 12px; font-weight: 500; color: #374151;">
+                            Choose a quiz:
+                        </label>
+                        <select id="quiz-select-dropdown" class="text-input" style="width: 100%; padding: 12px; margin-bottom: 20px;">
+                            <option value="">Loading quizzes...</option>
+                        </select>
+                        <p id="quiz-select-empty" style="display: none; color: #6c757d; font-size: 14px; margin: 20px 0;">
+                            No quizzes found. Create a new quiz instead.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Create New Quiz Tab -->
+                <div class="quiz-tab-content" id="quiz-create-tab">
+                    <div class="quiz-create-section">
+                        <label for="quiz-name-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                            Quiz Name <span style="color: #e74c3c;">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="quiz-name-input" 
+                            class="text-input" 
+                            placeholder="Enter quiz name..."
+                            style="width: 100%; padding: 12px; margin-bottom: 16px;"
+                        >
+                        <label for="quiz-description-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                            Description (optional)
+                        </label>
+                        <textarea 
+                            id="quiz-description-input" 
+                            class="text-input" 
+                            placeholder="Enter quiz description..."
+                            rows="3"
+                            style="width: 100%; padding: 12px; margin-bottom: 20px; resize: vertical;"
+                        ></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button type="button" class="btn btn--secondary" id="quiz-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn--primary" id="quiz-modal-confirm" disabled>Add to Quiz</button>
+            </div>
         </div>
     </div>
 

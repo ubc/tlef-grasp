@@ -201,6 +201,52 @@
     border-top: 1px solid #e9ecef;
 }
 
+/* Quiz Selection Modal Styles */
+.quiz-selection-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.quiz-tab-btn {
+    padding: 12px 24px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    margin-bottom: -2px;
+}
+
+.quiz-tab-btn:hover {
+    color: #3498db;
+    background: #f8f9fa;
+}
+
+.quiz-tab-btn--active {
+    color: #3498db;
+    border-bottom-color: #3498db;
+    font-weight: 600;
+}
+
+.quiz-tab-content {
+    display: none;
+}
+
+.quiz-tab-content--active {
+    display: block;
+}
+
+.quiz-select-section,
+.quiz-create-section {
+    margin-top: 8px;
+}
+
 .text-input,
 .url-input {
     width: 100%;
