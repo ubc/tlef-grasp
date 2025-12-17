@@ -218,15 +218,24 @@ class QuestionBankPage {
     // Clear existing options except "All Statuses"
     statusFilter.innerHTML = '<option value="all">All Statuses</option>';
 
-    // Collect unique statuses from questions
+    // Always include Approved and Draft
+    const requiredStatuses = ["Approved", "Draft"];
+    requiredStatuses.forEach((status) => {
+      const option = document.createElement("option");
+      option.value = status;
+      option.textContent = status;
+      statusFilter.appendChild(option);
+    });
+
+    // Collect unique statuses from questions (excluding already added ones)
     const statuses = new Set();
     this.questions.forEach((question) => {
-      if (question.status) {
+      if (question.status && !requiredStatuses.includes(question.status)) {
         statuses.add(question.status);
       }
     });
 
-    // Add statuses to filter
+    // Add other statuses to filter
     Array.from(statuses)
       .sort()
       .forEach((status) => {
@@ -572,6 +581,17 @@ class QuestionBankPage {
       }
     });
 
+    // Show/hide filters section based on tab
+    const filtersSection = document.querySelector(".filters-section");
+    if (filtersSection) {
+      if (tabName === "overview") {
+        filtersSection.style.display = "block";
+      } else {
+        // Hide filters for Review and Approved History tabs
+        filtersSection.style.display = "none";
+      }
+    }
+
     // Hide all tab panels
     const tabPanels = document.querySelectorAll(".tab-panel");
     tabPanels.forEach((panel) => (panel.style.display = "none"));
@@ -588,7 +608,7 @@ class QuestionBankPage {
       await this.renderOverview();
     } else if (tabName === "review") {
       document.title = "Review - Question Bank - GRASP";
-      this.renderReview();
+      await this.renderReview();
     } else if (tabName === "approved-history") {
       document.title = "Approved History - Question Bank - GRASP";
       this.renderApprovedHistory();
@@ -612,7 +632,9 @@ class QuestionBankPage {
     this.updateActionButtons();
   }
 
-  renderReview() {
+  async renderReview() {
+    // Reload quiz data to get updated question statuses
+    await this.loadSavedQuestionSets();
     this.renderQuizzes();
     this.updateCrossQuizActions();
   }
@@ -687,11 +709,9 @@ class QuestionBankPage {
                 quiz
               )}% Reviewed</div>
             </div>
-            <button class="open-details-btn ${quiz.isOpen ? "expanded" : ""}" 
-                    onclick="event.stopPropagation(); window.questionBankPage.toggleQuizDetails(${
-                      quiz.id
-                    })">
-              Open details <i class="fas fa-chevron-down"></i>
+            <button class="review-btn" 
+                    onclick="event.stopPropagation(); window.questionBankPage.navigateToReview('${String(quiz.id).replace(/'/g, "\\'")}')">
+              Review
             </button>
           </div>
         </div>
@@ -1804,6 +1824,52 @@ class QuestionBankPage {
       const firstQuestionId = quiz.questions[0].id;
       window.location.href = `question-review.html?quizId=${quizId}&questionId=${firstQuestionId}`;
     }
+  }
+
+  // Navigate to Overview tab with quiz and status filters set
+  async navigateToReview(quizId) {
+    // Find the quiz to get its name/ID for the filter
+    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
+    if (!quiz) return;
+
+    // The quiz ID is already stored as a string in quiz.id
+    // But we need to match it with the filter which uses _id or id from allQuizzes
+    // Find the matching quiz in allQuizzes to get the correct ID format
+    const quizForFilter = this.allQuizzes.find((q) => {
+      const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || "");
+      return qId === String(quizId);
+    });
+
+    // Use the ID from allQuizzes if found, otherwise use the quizId
+    const quizIdForFilter = quizForFilter 
+      ? (quizForFilter._id ? (quizForFilter._id.toString ? quizForFilter._id.toString() : String(quizForFilter._id)) : String(quizForFilter.id || quizId))
+      : String(quizId);
+
+    // Set filters
+    this.state.filters.quiz = quizIdForFilter;
+    this.state.filters.status = "Draft";
+
+    // Update filter UI
+    const quizFilter = document.getElementById("quiz-filter");
+    const statusFilter = document.getElementById("status-filter");
+    
+    if (quizFilter) {
+      quizFilter.value = quizIdForFilter;
+    }
+    if (statusFilter) {
+      statusFilter.value = "Draft";
+    }
+
+    // Switch to Overview tab
+    await this.switchTab("overview");
+
+    // Update URL
+    const url = new URL(window.location);
+    url.searchParams.set("tab", "overview");
+    window.history.pushState({ tab: "overview" }, "", url);
+
+    // Apply filters to show the filtered questions
+    await this.applyFilters();
   }
 
   // Notification System
