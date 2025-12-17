@@ -556,13 +556,8 @@ function goToStep(stepNumber) {
 }
 
 function redirectToDashboard() {
-  window.location.href = "/dashboard";
+  window.location.href = "/dashboard.html";
 }
-
-// Initialize onboarding when DOM is loaded
-document.addEventListener("DOMContentLoaded", () => {
-  window.onboardingManager = new OnboardingManager();
-});
 
 // Global functions for HTML onclick handlers
 function accessCourseDashboard(buttonElement) {
@@ -578,7 +573,9 @@ function switchToSetupTab() {
   }
 }
 
-// Initialize onboarding when DOM is loaded
+// Initialize onboarding when DOM is loaded (only once)
 document.addEventListener("DOMContentLoaded", () => {
-  window.onboardingManager = new OnboardingManager();
+  if (!window.onboardingManager) {
+    window.onboardingManager = new OnboardingManager();
+  }
 });
