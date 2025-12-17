@@ -3,6 +3,7 @@ const router = express.Router();
 const { isUserInCourse } = require('../services/user-course');
 const { getObjectiveCourseId, getParentObjectives, getGranularObjectives, createObjective, updateObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations } = require('../services/objective-material');
+const { getMaterialsForObjective } = require('../services/objective-material');
 // Note: Authentication is handled at app level with ensureAuthenticatedAPI
 // No need for route-level auth since app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes)
 
@@ -78,7 +79,7 @@ router.get('/:id/granular', async (req, res) => {
  * Create a new learning objective with granular objectives
  * Body: { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> }
  */
-router.post('/', async (req, res) => {
+router.post('/', express.json(), async (req, res) => {
   try {
     const { name, granularObjectives, materialIds, courseId } = req.body;
 

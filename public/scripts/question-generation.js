@@ -534,13 +534,69 @@ function validateCurrentStep() {
 
   switch (state.step) {
     case 1:
-      const step1Valid =
-        state.objectiveGroups.length > 0 &&
-        state.objectiveGroups.every(
-          (group) =>
-            group.items.length > 0 &&
-            group.items.every((item) => item.count >= item.minQuestions)
+      // Validation: Each learning objective must have at least 5 questions total
+      // and each granular objective with manual mode must have a Bloom level selected
+      if (state.objectiveGroups.length === 0) {
+        showToast("Please add at least one learning objective", "error");
+        return false;
+      }
+
+      const validationErrors = [];
+
+      state.objectiveGroups.forEach((group, groupIndex) => {
+        // Check if group has granular objectives
+        if (group.items.length === 0) {
+          validationErrors.push(
+            `Learning objective "${group.title}" has no granular objectives`
+          );
+          return;
+        }
+
+        // Check total questions >= 5 for each group
+        const totalQuestions = group.items.reduce(
+          (sum, item) => sum + item.count,
+          0
         );
+        if (totalQuestions < 5) {
+          validationErrors.push(
+            `Learning objective "${group.title}" must have at least 5 questions (currently has ${totalQuestions})`
+          );
+        }
+
+        // Check Bloom levels for manual mode granular objectives
+        // Note: Bloom validation messages are shown inline, not as toast
+        group.items.forEach((item, itemIndex) => {
+          if (item.mode === "manual" && item.bloom.length === 0) {
+            // Bloom validation is shown inline, but we still track it for overall validation
+            validationErrors.push(
+              `Granular objective in "${group.title}" must have a Bloom level selected`
+            );
+          }
+        });
+      });
+
+      if (validationErrors.length > 0) {
+        // Filter out Bloom validation errors (shown inline)
+        const nonBloomErrors = validationErrors.filter(
+          (error) => !error.includes("Bloom level selected")
+        );
+        
+        // Show first non-Bloom error as toast, log all errors
+        if (nonBloomErrors.length > 0) {
+          showToast(nonBloomErrors[0], "error");
+        }
+        
+        // Re-render to show/hide inline Bloom validation messages
+        renderObjectiveGroups();
+        
+        console.log("Step 1 validation errors:", validationErrors);
+        return false;
+      }
+      
+      // Re-render to hide any validation messages if validation passes
+      renderObjectiveGroups();
+
+      const step1Valid = true;
       console.log(
         "Step 1 validation:",
         step1Valid,
@@ -648,6 +704,11 @@ function updateStepContent() {
 }
 
 function updateNavigationButtons() {
+  // Don't update buttons if questions are currently being generated
+  if (isGeneratingQuestions()) {
+    return;
+  }
+
   const backBtn = document.getElementById("back-btn");
   const continueBtn = document.getElementById("continue-btn");
 
@@ -661,7 +722,14 @@ function updateNavigationButtons() {
     if (state.step === 3) {
       continueBtn.textContent = "Export Now";
       continueBtn.className = "btn btn--primary";
+      // Export button state is managed by updateExportButtonState()
+    } else if (state.step === 1) {
+      // Step 1: Disable if no learning objectives
+      continueBtn.disabled = state.objectiveGroups.length === 0;
+      continueBtn.textContent = "Continue";
+      continueBtn.className = continueBtn.disabled ? "btn btn--primary btn--disabled" : "btn btn--primary";
     } else {
+      continueBtn.disabled = false;
       continueBtn.textContent = "Continue";
       continueBtn.className = "btn btn--primary";
     }
@@ -790,54 +858,86 @@ async function initializeAddObjectivesDropdown() {
       dropdownOptions.innerHTML = '<div class="dropdown-option dropdown-option--empty">Error loading objectives. Please try again.</div>';
     }
 
-    // Search functionality
+    // Search functionality - remove old listener first
     if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const options = dropdownOptions.querySelectorAll(".dropdown-option");
+      // Clone to remove old listeners
+      const newSearchInput = searchInput.cloneNode(true);
+      searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+      
+      const updatedSearchInput = document.getElementById("objective-search");
+      if (updatedSearchInput) {
+        updatedSearchInput.addEventListener("input", (e) => {
+          const searchTerm = e.target.value.toLowerCase();
+          const updatedDropdownOptions = document.getElementById("dropdown-options");
+          if (!updatedDropdownOptions) return;
+          
+          const options = updatedDropdownOptions.querySelectorAll(".dropdown-option");
 
-        options.forEach((option) => {
-          if (option.classList.contains("dropdown-option--empty")) {
-            return; // Don't hide empty state messages
-          }
-          const text = option.textContent.toLowerCase();
-          if (text.includes(searchTerm)) {
-            option.classList.remove("dropdown-option--hidden");
-          } else {
-            option.classList.add("dropdown-option--hidden");
-          }
+          options.forEach((option) => {
+            if (option.classList.contains("dropdown-option--empty")) {
+              return; // Don't hide empty state messages
+            }
+            const text = option.textContent.toLowerCase();
+            if (text.includes(searchTerm)) {
+              option.classList.remove("dropdown-option--hidden");
+            } else {
+              option.classList.add("dropdown-option--hidden");
+            }
+          });
         });
+      }
+    }
+
+    // Option selection - use event delegation with a flag to prevent duplicate handlers
+    // Remove any existing handler by cloning the element
+    const currentDropdownOptions = document.getElementById("dropdown-options");
+    if (currentDropdownOptions) {
+      const newDropdownOptions = currentDropdownOptions.cloneNode(true);
+      currentDropdownOptions.parentNode.replaceChild(newDropdownOptions, currentDropdownOptions);
+      
+      // Update reference for search functionality
+      const updatedDropdownOptions = document.getElementById("dropdown-options");
+      
+      // Add fresh event listener with a guard to prevent double-firing
+      let isHandling = false;
+      updatedDropdownOptions.addEventListener("click", async (e) => {
+        if (isHandling) return; // Prevent duplicate calls
+        if (e.target.classList.contains("dropdown-option") &&
+          !e.target.classList.contains("dropdown-option--empty") &&
+          !e.target.classList.contains("dropdown-option--disabled")) {
+          isHandling = true;
+          const objectiveId = e.target.dataset.objectiveId;
+          const objectiveName = e.target.dataset.objectiveName;
+          await handleObjectiveSelection(objectiveId, objectiveName);
+          hideAddObjectivesDropdown();
+          // Update dropdown to reflect the newly added objective
+          updateDropdownDisabledState();
+          isHandling = false;
+        }
       });
     }
 
-    // Option selection
-    dropdownOptions.addEventListener("click", async (e) => {
-      if (e.target.classList.contains("dropdown-option") &&
-        !e.target.classList.contains("dropdown-option--empty") &&
-        !e.target.classList.contains("dropdown-option--disabled")) {
-        const objectiveId = e.target.dataset.objectiveId;
-        const objectiveName = e.target.dataset.objectiveName;
-        await handleObjectiveSelection(objectiveId, objectiveName);
-        hideAddObjectivesDropdown();
-        // Update dropdown to reflect the newly added objective
-        updateDropdownDisabledState();
-      }
-    });
-
     // Close dropdown when clicking outside
-    document.addEventListener("click", (e) => {
-      // Don't close if clicking on the create custom button (handled by inline onclick)
-      if (e.target.closest("#create-custom-btn")) {
-        return;
-      }
+    // Use a named function so we can remove it if needed
+    // Store reference to avoid adding multiple listeners
+    if (!window._dropdownClickHandler) {
+      window._dropdownClickHandler = (e) => {
+        // Don't close if clicking on the create custom button (handled by inline onclick)
+        if (e.target.closest("#create-custom-btn")) {
+          return;
+        }
 
-      if (
-        !dropdown?.contains(e.target) &&
-        !e.target.closest("#add-objectives-btn")
-      ) {
-        hideAddObjectivesDropdown();
-      }
-    });
+        const dropdown = document.getElementById("add-objectives-dropdown");
+        if (
+          dropdown &&
+          !dropdown.contains(e.target) &&
+          !e.target.closest("#add-objectives-btn")
+        ) {
+          hideAddObjectivesDropdown();
+        }
+      };
+      document.addEventListener("click", window._dropdownClickHandler);
+    }
   } catch (error) {
     console.error("Error in initializeAddObjectivesDropdown:", error);
   }
@@ -1433,9 +1533,12 @@ function hideModal(modal) {
 }
 
 async function handleObjectiveSelection(objectiveId, objectiveName) {
-  // Check if this objective already exists
+  // Normalize objectiveId to string for comparison
+  const normalizedObjectiveId = objectiveId ? objectiveId.toString() : null;
+  
+  // Check if this objective already exists (compare as strings)
   const existingGroup = state.objectiveGroups.find(
-    (group) => group.objectiveId === objectiveId
+    (group) => group.objectiveId && group.objectiveId.toString() === normalizedObjectiveId
   );
 
   if (existingGroup) {
@@ -1931,6 +2034,8 @@ function renderObjectiveGroups() {
     if (emptyState) {
       emptyState.style.display = "block";
     }
+    // Disable continue button when no objectives
+    updateNavigationButtons();
   } else {
     // Hide empty state and render groups
     if (emptyState) {
@@ -1941,6 +2046,8 @@ function renderObjectiveGroups() {
       const groupElement = createObjectiveGroup(group);
       groupsContainer.appendChild(groupElement);
     });
+    // Enable continue button when objectives are added
+    updateNavigationButtons();
   }
 
 }
@@ -2074,13 +2181,13 @@ function createObjectiveItem(item, groupId) {
       ? `
         <div class="bloom-mode-toggle">
             <button type="button" class="bloom-mode-btn bloom-mode-btn--active">Choose Bloom</button>
-            <button type="button" class="bloom-mode-btn bloom-mode-btn--inactive" onclick="setBloomMode(${groupId}, ${item.id}, 'auto')">AI decide later</button>
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--inactive" disabled title="Not yet implemented">AI decide later</button>
         </div>
     `
       : `
         <div class="bloom-mode-toggle">
             <button type="button" class="bloom-mode-btn bloom-mode-btn--inactive" onclick="setBloomMode(${groupId}, ${item.id}, 'manual')">Choose Bloom</button>
-            <button type="button" class="bloom-mode-btn bloom-mode-btn--active">AI decide later</button>
+            <button type="button" class="bloom-mode-btn bloom-mode-btn--active" disabled title="Not yet implemented">AI decide later</button>
             <span class="auto-pill">Auto (pending)</span>
         </div>
     `;
@@ -2088,6 +2195,15 @@ function createObjectiveItem(item, groupId) {
   const isSubLO = item.level === 2;
   const indentClass = isSubLO ? "objective-item--sub" : "";
   const subLOBadge = isSubLO ? '<span class="sub-lo-badge">Sub-LO</span>' : "";
+  
+  // Show validation message if mode is manual and no Bloom level is selected
+  const showBloomValidation = item.mode === "manual" && item.bloom.length === 0;
+  const bloomValidationMessage = showBloomValidation
+    ? `<div class="objective-item__validation-message">
+        <i class="fas fa-exclamation-circle"></i>
+        <span>Please select a Bloom level</span>
+      </div>`
+    : "";
 
   return `
         <div class="objective-item ${indentClass}" data-item-id="${item.id
@@ -2117,6 +2233,7 @@ function createObjectiveItem(item, groupId) {
     }</div>
                     ${bloomModeToggle}
                 </div>
+                ${bloomValidationMessage}
             </div>
             <div class="objective-item__tools">
                 <div class="objective-item__stepper">
@@ -2881,18 +2998,57 @@ function getNamingConventionDisplayText() {
 
 // ===== STEP 4: QUESTION GENERATION FUNCTIONS =====
 
+// Helper function to get step 2 UI elements (cached for efficiency)
+function getStep2UIElements() {
+  return {
+    questionsLoading: document.getElementById("questions-loading"),
+    metaLoGroups: document.getElementById("meta-lo-groups"),
+    contentHeader: document.querySelector(".step-panel[data-step='2'] .content-header"),
+    emptyState: document.getElementById("empty-state"),
+    regenerateAllBtn: document.getElementById("regenerate-all-btn"),
+    backBtn: document.getElementById("back-btn"),
+    continueBtn: document.getElementById("continue-btn"),
+  };
+}
+
+// Helper function to check if questions are currently being generated
+function isGeneratingQuestions() {
+  const questionsLoading = document.getElementById("questions-loading");
+  return questionsLoading && questionsLoading.style.display !== "none";
+}
+
+// Helper function to show/hide generation UI
+function setGenerationUI(showLoading) {
+  const ui = getStep2UIElements();
+  
+  if (showLoading) {
+    // Show loading state
+    if (ui.questionsLoading) ui.questionsLoading.style.display = "block";
+    if (ui.metaLoGroups) ui.metaLoGroups.style.display = "none";
+    if (ui.contentHeader) ui.contentHeader.style.display = "none";
+    if (ui.emptyState) ui.emptyState.style.display = "none";
+    // Disable navigation buttons during generation
+    if (ui.backBtn) ui.backBtn.disabled = true;
+    if (ui.continueBtn) ui.continueBtn.disabled = true;
+  } else {
+    // Hide loading state
+    if (ui.questionsLoading) ui.questionsLoading.style.display = "none";
+    if (ui.metaLoGroups) ui.metaLoGroups.style.display = "block";
+    if (ui.contentHeader) ui.contentHeader.style.display = "block";
+    // empty-state is managed by renderQuestionGroups()
+    // Re-enable navigation buttons (updateNavigationButtons will set correct state)
+    updateNavigationButtons();
+  }
+}
+
 // Generate questions from uploaded content
 async function generateQuestionsFromContent() {
   console.log("=== GENERATING QUESTIONS FROM CONTENT ===");
   console.log("Summary length:", state.summary.length);
   console.log("Objective groups:", state.objectiveGroups.length);
 
-  // Show loading spinner
-  const questionsLoading = document.getElementById("questions-loading");
-  const metaLoGroups = document.getElementById("meta-lo-groups");
-
-  if (questionsLoading) questionsLoading.style.display = "block";
-  if (metaLoGroups) metaLoGroups.style.display = "none";
+  // Show loading UI
+  setGenerationUI(true);
 
   try {
     // Generate questions using the question generator
@@ -2918,14 +3074,9 @@ async function generateQuestionsFromContent() {
 
     // Clear any existing questions
     state.questionGroups = [];
-
-    // Hide loading spinner
-    if (questionsLoading) questionsLoading.style.display = "none";
-    if (metaLoGroups) metaLoGroups.style.display = "block";
   } finally {
-    // Hide loading spinner
-    if (questionsLoading) questionsLoading.style.display = "none";
-    if (metaLoGroups) metaLoGroups.style.display = "block";
+    // Hide loading UI (renderStep2 will handle empty-state)
+    setGenerationUI(false);
   }
 }
 
@@ -3146,7 +3297,10 @@ function renderQuestionGroups() {
   const filteredGroups = getFilteredGroups();
 
   if (filteredGroups.length === 0) {
-    showEmptyState();
+    // Only show empty state if not currently generating
+    if (!isGeneratingQuestions()) {
+      showEmptyState();
+    }
     return;
   }
 
@@ -3160,20 +3314,9 @@ function renderQuestionGroups() {
             <div class="meta-lo-group__header" onclick="toggleMetaLoGroup('${group.id
         }')">
                 <h3 class="meta-lo-group__title">${group.title}</h3>
-                <div class="meta-lo-group__stats">
-                    <div class="meta-lo-group__stat">
-                        <span>Configured: ${group.stats.configured}</span>
-                    </div>
-                    <div class="meta-lo-group__stat">
-                        <span>Minimum: ${group.stats.min}</span>
-                    </div>
-                    <div class="meta-lo-group__stat">
-                        <span>Bloom: ${group.stats.bloomSummary}</span>
-                    </div>
-                    <div class="meta-lo-group__toggle">
-                        <span>${group.isOpen ? "Collapse" : "Expand"}</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
+                <div class="meta-lo-group__toggle">
+                    <span>${group.isOpen ? "Collapse" : "Expand"}</span>
+                    <i class="fas fa-chevron-down"></i>
                 </div>
             </div>
             <div class="meta-lo-group__content">
@@ -3189,6 +3332,20 @@ function renderQuestionGroups() {
   // Set up question card event listeners
   setupQuestionCardListeners();
 }
+
+// Toggle meta learning objective group expand/collapse
+function toggleMetaLoGroup(groupId) {
+  // Convert string ID to number if needed (groups use numeric IDs)
+  const id = typeof groupId === 'string' ? parseInt(groupId, 10) : groupId;
+  const group = state.questionGroups.find((g) => g.id === id);
+  if (group) {
+    group.isOpen = !group.isOpen;
+    renderQuestionGroups();
+  }
+}
+
+// Make function available globally for onclick handlers
+window.toggleMetaLoGroup = toggleMetaLoGroup;
 
 function renderGranularLoSection(lo, group) {
   return `
@@ -3306,19 +3463,16 @@ function setupQuestionCardListeners() {
 async function handleRegenerateAll() {
   console.log("=== REGENERATING ALL QUESTIONS FROM CONTENT ===");
 
-  // Show loading state
-  const regenerateAllBtn = document.getElementById("regenerate-all-btn");
-  const questionsLoading = document.getElementById("questions-loading");
-  const metaLoGroups = document.getElementById("meta-lo-groups");
+  const ui = getStep2UIElements();
 
-  if (regenerateAllBtn) {
-    regenerateAllBtn.textContent = "Regenerating...";
-    regenerateAllBtn.disabled = true;
+  // Update button state
+  if (ui.regenerateAllBtn) {
+    ui.regenerateAllBtn.textContent = "Regenerating...";
+    ui.regenerateAllBtn.disabled = true;
   }
 
-  // Show loading spinner
-  if (questionsLoading) questionsLoading.style.display = "block";
-  if (metaLoGroups) metaLoGroups.style.display = "none";
+  // Show loading UI
+  setGenerationUI(true);
 
   try {
     // Clear existing questions
@@ -3335,14 +3489,13 @@ async function handleRegenerateAll() {
     showQuestionGenerationError(error.message);
   } finally {
     // Restore button state
-    if (regenerateAllBtn) {
-      regenerateAllBtn.textContent = 'Questions added to the Bank';
-      regenerateAllBtn.disabled = false;
+    if (ui.regenerateAllBtn) {
+      ui.regenerateAllBtn.textContent = 'Questions added to the Bank';
+      ui.regenerateAllBtn.disabled = false;
     }
 
-    // Hide loading spinner
-    if (questionsLoading) questionsLoading.style.display = "none";
-    if (metaLoGroups) metaLoGroups.style.display = "block";
+    // Hide loading UI (renderStep2 will handle empty-state)
+    setGenerationUI(false);
   }
 }
 
@@ -3562,19 +3715,20 @@ function getFilteredGroups() {
 }
 
 function showEmptyState() {
-  const emptyState = document.getElementById("empty-state");
-  const metaLoGroups = document.getElementById("meta-lo-groups");
+  // Don't show empty state if questions are currently being generated
+  if (isGeneratingQuestions()) {
+    return;
+  }
 
-  if (emptyState) emptyState.style.display = "block";
-  if (metaLoGroups) metaLoGroups.style.display = "none";
+  const ui = getStep2UIElements();
+  if (ui.emptyState) ui.emptyState.style.display = "block";
+  if (ui.metaLoGroups) ui.metaLoGroups.style.display = "none";
 }
 
 function hideEmptyState() {
-  const emptyState = document.getElementById("empty-state");
-  const metaLoGroups = document.getElementById("meta-lo-groups");
-
-  if (emptyState) emptyState.style.display = "none";
-  if (metaLoGroups) metaLoGroups.style.display = "block";
+  const ui = getStep2UIElements();
+  if (ui.emptyState) ui.emptyState.style.display = "none";
+  if (ui.metaLoGroups) ui.metaLoGroups.style.display = "block";
 }
 
 // ===== TOAST NOTIFICATIONS =====
@@ -3584,7 +3738,7 @@ function showToast(message, type = "info") {
   if (!toastContainer) return;
 
   const toast = document.createElement("div");
-  toast.className = "toast";
+  toast.className = `toast toast--${type}`;
 
   const icon = document.createElement("i");
   icon.className = `fas fa-${getToastIcon(type)} toast__icon`;
