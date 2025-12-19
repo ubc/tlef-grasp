@@ -146,6 +146,7 @@ section h3 {
 
 .instruction-step {
     display: flex;
+    align-items: flex-start;
     gap: 15px;
     padding: 20px;
     background-color: #f8f9fa;
@@ -193,6 +194,7 @@ section h3 {
 
 .step-content {
     flex: 1;
+    padding-top: 2px; /* Align with step-number circle */
 }
 
 .step-content h4 {
@@ -200,6 +202,18 @@ section h3 {
     font-weight: 600;
     color: #2c3e50;
     margin-bottom: 8px;
+    margin-top: 0;
+}
+
+.step-content h4 a {
+    color: #2c3e50;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.step-content h4 a:hover {
+    color: #3498db;
+    text-decoration: underline;
 }
 
 .step-content p {
@@ -209,18 +223,111 @@ section h3 {
     margin: 0;
 }
 
+.step-content p a {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.step-content p a:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
+.tab-explanation h5 a {
+    color: #2c3e50;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.tab-explanation h5 a:hover {
+    color: #3498db;
+    text-decoration: underline;
+}
+
+/* Sub-steps styling */
+.sub-steps-container {
+    margin-top: 20px;
+    padding-left: 20px;
+    border-left: 3px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.sub-step {
+    display: flex;
+    gap: 15px;
+    padding: 15px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.sub-step:hover {
+    background-color: #f8f9fa;
+    border-color: #3498db;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.1);
+}
+
+.sub-step-number {
+    flex-shrink: 0;
+    width: 35px;
+    height: 35px;
+    background-color: #95a5a6;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.sub-step-content {
+    flex: 1;
+}
+
+.sub-step-content h5 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    margin-top: 0;
+}
+
+.sub-step-content h5 a {
+    color: #2c3e50;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.sub-step-content h5 a:hover {
+    color: #3498db;
+    text-decoration: underline;
+}
+
+.sub-step-content p {
+    font-size: 14px;
+    color: #495057;
+    line-height: 1.6;
+    margin: 0 0 10px 0;
+}
+
 .feature-list {
     list-style: none;
     padding: 0;
     margin: 12px 0 0 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 10px;
 }
 
 .feature-list li {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     font-size: 13px;
     color: #495057;
