@@ -4,6 +4,7 @@ class OnboardingManager {
     this.currentStep = 1;
     this.totalSteps = 3;
     this.courseData = {};
+    this.courses = null;
     this.init();
   }
 
@@ -11,6 +12,7 @@ class OnboardingManager {
     this.setupEventListeners();
     this.setupTabSwitching();
     this.updateProgressIndicator();
+    this.checkAndSetDefaultTab();
   }
 
   setupEventListeners() {
@@ -97,7 +99,8 @@ class OnboardingManager {
               "Login tab computed style:",
               window.getComputedStyle(loginTab).display
             );
-            this.loadExistingCourses();
+            // Use courses from state if available, otherwise fetch from API
+            this.loadExistingCourses(this.courses);
           }
           if (setupTab) {
             setupTab.style.display = "none";
@@ -129,23 +132,9 @@ class OnboardingManager {
     });
   }
 
-  setupCourseSelection() {
-    // This method sets up course selection for the login tab
-    // Courses will be loaded when the login tab is activated
-  }
-
-  async loadExistingCourses() {
-    const loadingElement = document.getElementById("loading-courses");
-    const coursesListElement = document.getElementById("courses-list");
-    const noCoursesElement = document.getElementById("no-courses-message");
-
+  async checkAndSetDefaultTab() {
     try {
-      // Show loading state
-      if (loadingElement) loadingElement.style.display = "flex";
-      if (coursesListElement) coursesListElement.style.display = "none";
-      if (noCoursesElement) noCoursesElement.style.display = "none";
-
-      // Fetch courses from API
+      // Check if user has existing courses
       const response = await fetch("/api/courses/my-courses");
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -153,8 +142,77 @@ class OnboardingManager {
 
       const data = await response.json();
 
+      // If user has courses, switch to login tab and use the fetched data
       if (data.success && data.courses && data.courses.length > 0) {
-        this.displayCourses(data.courses);
+        // Store courses in state to avoid duplicate API call
+        this.courses = data.courses;
+        
+        // Switch to login tab manually (without triggering click event)
+        const tabButtons = document.querySelectorAll(".tab-button");
+        const loginButton = document.querySelector('[data-tab="login"]');
+        const loginTab = document.getElementById("login-tab");
+        const setupTab = document.getElementById("setup-tab");
+        
+        // Update active tab button
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        if (loginButton) loginButton.classList.add("active");
+        
+        // Show/hide appropriate content
+        if (loginTab) {
+          loginTab.style.display = "block";
+          loginTab.style.visibility = "visible";
+          loginTab.classList.add("active");
+        }
+        if (setupTab) {
+          setupTab.style.display = "none";
+          setupTab.style.visibility = "hidden";
+          setupTab.classList.remove("active");
+        }
+        
+        // Load courses using cached data (no API call)
+        this.loadExistingCourses(data.courses);
+      }
+    } catch (error) {
+      console.error("Error checking for existing courses:", error);
+      // On error, default to setup tab (existing behavior)
+    }
+  }
+
+  setupCourseSelection() {
+    // This method sets up course selection for the login tab
+    // Courses will be loaded when the login tab is activated
+  }
+
+  async loadExistingCourses(coursesFromState = null) {
+    const loadingElement = document.getElementById("loading-courses");
+    const coursesListElement = document.getElementById("courses-list");
+    const noCoursesElement = document.getElementById("no-courses-message");
+
+    try {
+      // Show loading state only if we need to fetch from API
+      if (!coursesFromState) {
+        if (loadingElement) loadingElement.style.display = "flex";
+        if (coursesListElement) coursesListElement.style.display = "none";
+        if (noCoursesElement) noCoursesElement.style.display = "none";
+      }
+
+      let courses = coursesFromState;
+
+      // Only fetch from API if courses not in state
+      if (!courses) {
+        const response = await fetch("/api/courses/my-courses");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        courses = data.success && data.courses ? data.courses : [];
+        // Store in state for future use
+        this.courses = courses;
+      }
+
+      if (courses && courses.length > 0) {
+        this.displayCourses(courses);
       } else {
         this.showNoCoursesMessage();
       }
