@@ -393,7 +393,7 @@ function handleMaterialTileClick(type) {
       }
       break;
     case "url":
-      openUrlModal();
+      showNotification("URL upload coming soon!", "info");
       break;
     case "panopto":
       showNotification("Panopto integration coming soon!", "info");
