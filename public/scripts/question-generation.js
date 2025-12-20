@@ -708,8 +708,8 @@ async function initializeAddObjectivesDropdown() {
     // Store reference to avoid adding multiple listeners
     if (!window._dropdownClickHandler) {
       window._dropdownClickHandler = (e) => {
-        // Don't close if clicking on the create custom button (handled by inline onclick)
-        if (e.target.closest("#create-custom-btn")) {
+        // Don't close if clicking on the create custom button or AI generate button (handled by inline onclick)
+        if (e.target.closest("#create-custom-btn") || e.target.closest("#generate-ai-btn")) {
           return;
         }
 
@@ -809,6 +809,19 @@ window.showCustomObjectiveModalFromButton = function (event) {
   hideAddObjectivesDropdown();
   setTimeout(() => {
     showCustomObjectiveModal();
+  }, 100);
+  return false;
+};
+
+// Global function for AI generation modal
+window.showAIGenerateObjectiveModal = function (event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  hideAddObjectivesDropdown();
+  setTimeout(() => {
+    showAIGenerateObjectiveModalInternal();
   }, 100);
   return false;
 };
@@ -1306,6 +1319,499 @@ async function handleCustomObjectiveSubmission() {
   }
 }
 
+// AI Generation Modal Functions
+let generatedObjectives = [];
+
+function showAIGenerateObjectiveModalInternal() {
+  const modal = document.getElementById("ai-generate-objective-modal");
+  if (!modal) {
+    console.error("AI generate modal element not found");
+    return;
+  }
+
+  // Close any other open modals first
+  const customModal = document.getElementById("custom-objective-modal");
+  if (customModal && customModal.style.display !== "none" && customModal.style.display !== "") {
+    hideModal(customModal);
+  }
+
+  // Reset state
+  generatedObjectives = [];
+  const generateBtn = document.getElementById("ai-generate-btn");
+  const regenerateBtn = document.getElementById("ai-regenerate-btn");
+  const saveBtn = document.getElementById("ai-save-btn");
+  const statusDiv = document.getElementById("ai-generation-status");
+  const generatedContainer = document.getElementById("ai-generated-objectives-container");
+  const generatedList = document.getElementById("ai-generated-objectives-list");
+  const objectivesCountInput = document.getElementById("ai-objectives-count");
+
+  // Reset objectives count input
+  if (objectivesCountInput) {
+    objectivesCountInput.value = "5";
+  }
+
+  if (generateBtn) {
+    generateBtn.disabled = true;
+    generateBtn.style.display = "inline-block";
+  }
+  if (regenerateBtn) {
+    regenerateBtn.style.display = "none";
+  }
+  if (saveBtn) {
+    saveBtn.style.display = "none";
+  }
+  if (statusDiv) {
+    statusDiv.style.display = "none";
+  }
+  if (generatedContainer) {
+    generatedContainer.style.display = "none";
+  }
+  if (generatedList) {
+    generatedList.innerHTML = "";
+  }
+
+  // Show modal first (like custom modal does)
+  modal.style.display = "flex";
+
+  // Load materials after showing modal (non-blocking, like custom modal)
+  loadAIMaterialsForModal();
+}
+
+async function loadAIMaterialsForModal() {
+  const loadingDiv = document.getElementById("ai-materials-loading");
+  const materialsList = document.getElementById("ai-materials-list");
+  const materialsEmpty = document.getElementById("ai-materials-empty");
+  const generateBtn = document.getElementById("ai-generate-btn");
+
+  // Show loading
+  if (loadingDiv) loadingDiv.style.display = "block";
+  if (materialsList) materialsList.style.display = "none";
+  if (materialsEmpty) materialsEmpty.style.display = "none";
+
+  try {
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    if (!selectedCourse || !selectedCourse.id) {
+      if (loadingDiv) loadingDiv.style.display = "none";
+      if (materialsEmpty) materialsEmpty.style.display = "block";
+      return;
+    }
+
+    const response = await fetch(`/api/material/course/${selectedCourse.id}`);
+    const data = await response.json();
+
+    if (loadingDiv) loadingDiv.style.display = "none";
+
+    if (data.success && data.materials && data.materials.length > 0) {
+      displayAIMaterialsInModal(data.materials);
+      if (materialsList) materialsList.style.display = "block";
+      if (generateBtn) generateBtn.disabled = false;
+    } else {
+      if (materialsEmpty) materialsEmpty.style.display = "block";
+    }
+  } catch (error) {
+    console.error("Error loading materials:", error);
+    if (loadingDiv) loadingDiv.style.display = "none";
+    if (materialsEmpty) materialsEmpty.style.display = "block";
+  }
+}
+
+function displayAIMaterialsInModal(materials) {
+  const materialsList = document.getElementById("ai-materials-list");
+  if (!materialsList) return;
+
+  materialsList.innerHTML = "";
+
+  materials.forEach((material) => {
+    const materialItem = document.createElement("div");
+    materialItem.className = "material-selection-item";
+    materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
+    materialItem.addEventListener("click", () => {
+      checkbox.checked = !checkbox.checked;
+      updateAIGenerateButtonState();
+    });
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = material.sourceId;
+    checkbox.id = `ai-material-${material.sourceId}`;
+    checkbox.className = "ai-material-checkbox";
+    checkbox.addEventListener("change", updateAIGenerateButtonState);
+
+    const label = document.createElement("label");
+    label.htmlFor = `ai-material-${material.sourceId}`;
+    label.style.cssText = "flex: 1; cursor: pointer; display: flex; flex-direction: column; gap: 4px;";
+
+    // File name
+    const fileName = document.createElement("div");
+    fileName.style.cssText = "font-weight: 600; color: #2c3e50; font-size: 14px;";
+    fileName.textContent = material.documentTitle || "Untitled";
+
+    // File details
+    const details = document.createElement("div");
+    details.style.cssText = "display: flex; gap: 16px; font-size: 12px; color: #7f8c8d;";
+
+    // File type
+    const fileType = document.createElement("span");
+    fileType.textContent = `Type: ${getMaterialTypeLabel(material.fileType)}`;
+
+    // File size
+    const fileSize = document.createElement("span");
+    fileSize.textContent = `Size: ${formatFileSize(material.fileSize || 0)}`;
+
+    // Uploaded date
+    const uploadedDate = document.createElement("span");
+    uploadedDate.textContent = `Uploaded: ${new Date(material.createdAt).toLocaleDateString()}`;
+
+    details.appendChild(fileType);
+    details.appendChild(fileSize);
+    details.appendChild(uploadedDate);
+
+    label.appendChild(fileName);
+    label.appendChild(details);
+
+    materialItem.appendChild(checkbox);
+    materialItem.appendChild(label);
+
+    materialsList.appendChild(materialItem);
+  });
+}
+
+function updateAIGenerateButtonState() {
+  const generateBtn = document.getElementById("ai-generate-btn");
+  const checkboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  if (generateBtn) {
+    generateBtn.disabled = checkboxes.length === 0;
+  }
+}
+
+async function handleAIGenerateObjectives() {
+  const generateBtn = document.getElementById("ai-generate-btn");
+  const saveBtn = document.getElementById("ai-save-btn");
+  const statusDiv = document.getElementById("ai-generation-status");
+  const generatedContainer = document.getElementById("ai-generated-objectives-container");
+  const generatedList = document.getElementById("ai-generated-objectives-list");
+
+  // Get selected materials
+  const materialCheckboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+
+  if (selectedMaterials.length === 0) {
+    showToast("Please select at least one material", "warning");
+    return;
+  }
+
+  // Get number of objectives to generate
+  const objectivesCountInput = document.getElementById("ai-objectives-count");
+  let objectivesCount = 5; // Default
+  if (objectivesCountInput) {
+    const count = parseInt(objectivesCountInput.value, 10);
+    if (count >= 1 && count <= 10) {
+      objectivesCount = count;
+    } else {
+      showToast("Please enter a number between 1 and 10", "warning");
+      return;
+    }
+  }
+
+  // Get course info
+  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+  if (!selectedCourse || !selectedCourse.id) {
+    showToast("No course selected", "error");
+    return;
+  }
+
+  // Show loading state
+  if (generateBtn) {
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+  }
+  const regenerateBtn = document.getElementById("ai-regenerate-btn");
+  if (regenerateBtn) {
+    regenerateBtn.disabled = true;
+    regenerateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Regenerating...';
+  }
+  if (statusDiv) statusDiv.style.display = "block";
+  if (generatedContainer) generatedContainer.style.display = "none";
+  if (saveBtn) saveBtn.style.display = "none";
+
+  try {
+    const response = await fetch("/api/rag-llm/generate-learning-objectives", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        courseId: selectedCourse.id,
+        courseName: selectedCourse.name,
+        materialIds: selectedMaterials,
+        objectivesCount: objectivesCount,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to generate learning objectives");
+    }
+
+    if (data.success && data.objectives && data.objectives.length > 0) {
+      generatedObjectives = data.objectives;
+      displayGeneratedObjectives(data.objectives);
+      if (statusDiv) statusDiv.style.display = "none";
+      if (generatedContainer) generatedContainer.style.display = "block";
+      if (generateBtn) generateBtn.style.display = "none";
+      const regenerateBtn = document.getElementById("ai-regenerate-btn");
+      if (regenerateBtn) regenerateBtn.style.display = "inline-block";
+      if (saveBtn) saveBtn.style.display = "inline-block";
+      showToast(`Generated ${data.objectives.length} learning objective(s)`, "success");
+    } else {
+      throw new Error("No objectives generated");
+    }
+  } catch (error) {
+    console.error("Error generating learning objectives:", error);
+    showToast(error.message || "Failed to generate learning objectives", "error");
+    if (statusDiv) statusDiv.style.display = "none";
+  } finally {
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = '<i class="fas fa-magic"></i> Generate';
+    }
+    const regenerateBtn = document.getElementById("ai-regenerate-btn");
+    if (regenerateBtn) {
+      regenerateBtn.disabled = false;
+      regenerateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Regenerate';
+    }
+  }
+}
+
+function displayGeneratedObjectives(objectives) {
+  const generatedList = document.getElementById("ai-generated-objectives-list");
+  if (!generatedList) return;
+
+  generatedList.innerHTML = "";
+
+  objectives.forEach((objective, index) => {
+    const objectiveCard = document.createElement("div");
+    objectiveCard.className = "ai-objective-card";
+    objectiveCard.style.cssText = "margin-bottom: 16px; padding: 16px; border: 2px solid #e5e7eb; border-radius: 8px; background: #ffffff; display: flex; gap: 12px; transition: border-color 0.2s;";
+    objectiveCard.dataset.objectiveIndex = index;
+
+    // Checkbox
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "ai-objective-checkbox";
+    checkbox.id = `ai-objective-${index}`;
+    checkbox.checked = true; // Default to selected
+    checkbox.style.cssText = "margin-top: 4px; cursor: pointer; width: 18px; height: 18px; flex-shrink: 0;";
+    checkbox.addEventListener("change", () => {
+      updateAISaveButtonState();
+      // Update card border color based on selection
+      if (checkbox.checked) {
+        objectiveCard.style.borderColor = "#3b82f6";
+        objectiveCard.style.backgroundColor = "#ffffff";
+      } else {
+        objectiveCard.style.borderColor = "#e5e7eb";
+        objectiveCard.style.backgroundColor = "#f9fafb";
+      }
+    });
+
+    // Content wrapper
+    const contentWrapper = document.createElement("div");
+    contentWrapper.style.cssText = "flex: 1;";
+
+    // Main objective
+    const mainObjective = document.createElement("div");
+    mainObjective.style.cssText = "font-weight: 600; font-size: 16px; color: #1f2937; margin-bottom: 12px; cursor: pointer;";
+    mainObjective.textContent = `${index + 1}. ${objective.name}`;
+    mainObjective.addEventListener("click", () => {
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event("change"));
+    });
+
+    // Granular objectives
+    const granularList = document.createElement("ul");
+    granularList.style.cssText = "list-style: none; padding-left: 0; margin: 0;";
+    
+    objective.granularObjectives.forEach((granular, gIndex) => {
+      const granularItem = document.createElement("li");
+      granularItem.style.cssText = "padding: 8px 0 8px 24px; color: #4b5563; font-size: 14px; position: relative;";
+      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${granular}`;
+      granularList.appendChild(granularItem);
+    });
+
+    contentWrapper.appendChild(mainObjective);
+    contentWrapper.appendChild(granularList);
+
+    objectiveCard.appendChild(checkbox);
+    objectiveCard.appendChild(contentWrapper);
+    generatedList.appendChild(objectiveCard);
+
+    // Set initial border color
+    objectiveCard.style.borderColor = "#3b82f6";
+  });
+
+  // Update save button state
+  updateAISaveButtonState();
+}
+
+function updateAISaveButtonState() {
+  const saveBtn = document.getElementById("ai-save-btn");
+  const checkboxes = document.querySelectorAll(".ai-objective-checkbox:checked");
+  if (saveBtn) {
+    const count = checkboxes.length;
+    saveBtn.disabled = count === 0;
+    if (count > 0) {
+      saveBtn.innerHTML = `<i class="fas fa-save"></i> Save Selected (${count})`;
+    } else {
+      saveBtn.innerHTML = `<i class="fas fa-save"></i> Save Selected`;
+    }
+  }
+}
+
+async function handleAISaveObjectives() {
+  const saveBtn = document.getElementById("ai-save-btn");
+  const modal = document.getElementById("ai-generate-objective-modal");
+
+  // Get selected objectives
+  const objectiveCheckboxes = document.querySelectorAll(".ai-objective-checkbox:checked");
+  const selectedIndices = Array.from(objectiveCheckboxes).map(cb => {
+    const card = cb.closest(".ai-objective-card");
+    return card ? parseInt(card.dataset.objectiveIndex) : -1;
+  }).filter(idx => idx >= 0);
+
+  if (selectedIndices.length === 0) {
+    showToast("Please select at least one objective to save", "warning");
+    return;
+  }
+
+  if (!generatedObjectives || generatedObjectives.length === 0) {
+    showToast("No objectives to save", "warning");
+    return;
+  }
+
+  // Get selected materials
+  const materialCheckboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+
+  // Get course info
+  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+  if (!selectedCourse || !selectedCourse.id) {
+    showToast("No course selected", "error");
+    return;
+  }
+
+  // Disable button
+  const originalButtonText = saveBtn ? saveBtn.innerHTML : "Save Selected";
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  }
+
+  try {
+    // Save only selected objectives
+    const savedObjectives = [];
+    for (const index of selectedIndices) {
+      const objective = generatedObjectives[index];
+      if (!objective) continue;
+      const requestBody = {
+        name: objective.name,
+        granularObjectives: objective.granularObjectives.map(go => ({ text: go })),
+        materialIds: selectedMaterials,
+        courseId: selectedCourse.id,
+      };
+
+      const response = await fetch("/api/objective", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Failed to save objective: ${objective.name}`);
+      }
+
+      if (data.success && data.objective) {
+        savedObjectives.push({
+          parent: data.objective,
+          granular: data.granularObjectives || [],
+        });
+      }
+    }
+
+    // Add objectives to the page
+    for (const saved of savedObjectives) {
+      const objectiveId = saved.parent._id || saved.parent.id;
+      const objectiveName = saved.parent.name;
+      
+      // Create new learning objective group
+      const newGroupId = Date.now() + Math.random();
+      const newGroupNumber = state.objectiveGroups.length + 1;
+
+      const newGroup = {
+        id: newGroupId,
+        objectiveId: objectiveId.toString(),
+        metaId: `db-${objectiveId}`,
+        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        isOpen: true,
+        selected: false,
+        items: saved.granular.map((granular, index) => ({
+          id: parseFloat(`${newGroupNumber}.${index + 1}`),
+          granularId: granular._id ? granular._id.toString() : null,
+          text: granular.name,
+          bloom: [],
+          minQuestions: 2,
+          count: 2,
+          mode: "manual",
+          level: 1,
+          selected: false,
+        })),
+      };
+
+      // If no granular objectives, add a default one
+      if (newGroup.items.length === 0) {
+        newGroup.items.push({
+          id: parseFloat(`${newGroupNumber}.1`),
+          text: "Draft granular objective (edit me).",
+          bloom: [],
+          minQuestions: 2,
+          count: 2,
+          mode: "manual",
+          level: 1,
+          selected: false,
+        });
+      }
+
+      state.objectiveGroups.push(newGroup);
+    }
+
+    // Renumber all groups
+    renumberObjectiveGroups();
+    renderObjectiveGroups();
+
+    // Update dropdown to disable the newly added objectives
+    updateDropdownDisabledState();
+
+    showToast(`Successfully saved ${savedObjectives.length} learning objective(s)`, "success");
+    
+    // Close modal
+    if (modal) {
+      hideModal(modal);
+    }
+  } catch (error) {
+    console.error("Error saving objectives:", error);
+    showToast(error.message || "Failed to save learning objectives", "error");
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = originalButtonText;
+    }
+  }
+}
+
 function hideModal(modal) {
   if (modal) {
     modal.style.display = "none";
@@ -1314,6 +1820,36 @@ function hideModal(modal) {
     if (modal.id === "custom-objective-modal") {
       const materialCheckboxes = document.querySelectorAll(".material-checkbox");
       materialCheckboxes.forEach(cb => cb.checked = false);
+    }
+
+    // Reset AI generation modal if it's the AI modal
+    if (modal.id === "ai-generate-objective-modal") {
+      generatedObjectives = [];
+      const generateBtn = document.getElementById("ai-generate-btn");
+      const regenerateBtn = document.getElementById("ai-regenerate-btn");
+      const saveBtn = document.getElementById("ai-save-btn");
+      const statusDiv = document.getElementById("ai-generation-status");
+      const generatedContainer = document.getElementById("ai-generated-objectives-container");
+      const generatedList = document.getElementById("ai-generated-objectives-list");
+      
+      if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.style.display = "inline-block";
+        generateBtn.innerHTML = '<i class="fas fa-magic"></i> Generate';
+      }
+      if (regenerateBtn) regenerateBtn.style.display = "none";
+      if (saveBtn) saveBtn.style.display = "none";
+      if (statusDiv) statusDiv.style.display = "none";
+      if (generatedContainer) generatedContainer.style.display = "none";
+      if (generatedList) generatedList.innerHTML = "";
+      
+      const aiMaterialCheckboxes = document.querySelectorAll(".ai-material-checkbox");
+      aiMaterialCheckboxes.forEach(cb => cb.checked = false);
+      
+      const objectivesCountInput = document.getElementById("ai-objectives-count");
+      if (objectivesCountInput) {
+        objectivesCountInput.value = "5";
+      }
     }
   }
 }
@@ -2150,6 +2686,59 @@ function initializeModals() {
     });
   }
 
+  // AI Generate objective modal
+  const aiGenerateModal = document.getElementById("ai-generate-objective-modal");
+  const aiGenerateModalClose = document.getElementById("ai-generate-modal-close");
+  const aiGenerateModalCancel = document.getElementById("ai-generate-modal-cancel");
+  const aiGenerateBtn = document.getElementById("ai-generate-btn");
+  const aiRegenerateBtn = document.getElementById("ai-regenerate-btn");
+  const aiSaveBtn = document.getElementById("ai-save-btn");
+
+  if (aiGenerateModalClose) {
+    aiGenerateModalClose.addEventListener("click", () => hideModal(aiGenerateModal));
+  }
+  if (aiGenerateModalCancel) {
+    aiGenerateModalCancel.addEventListener("click", () => hideModal(aiGenerateModal));
+  }
+  if (aiGenerateBtn) {
+    aiGenerateBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleAIGenerateObjectives();
+    });
+  }
+  if (aiRegenerateBtn) {
+    aiRegenerateBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleAIGenerateObjectives();
+    });
+  }
+  if (aiSaveBtn) {
+    aiSaveBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleAISaveObjectives();
+    });
+  }
+
+  // Close AI modal on backdrop click and prevent content clicks from closing
+  if (aiGenerateModal) {
+    aiGenerateModal.addEventListener("click", (e) => {
+      if (e.target === aiGenerateModal) {
+        hideModal(aiGenerateModal);
+      }
+    });
+    
+    // Prevent clicks inside modal content from closing the modal
+    const modalContent = aiGenerateModal.querySelector(".modal__content");
+    if (modalContent) {
+      modalContent.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+    }
+  }
+
   // Delete confirmation modal
   const deleteModal = document.getElementById("delete-confirmation-modal");
   const deleteModalClose = document.getElementById("delete-modal-close");
@@ -2949,11 +3538,6 @@ function convertQuestionsToGroups(questions) {
         id: index + 1,
         title: metaCode,
         isOpen: index === 0,
-        stats: {
-          configured: totalQuestions,
-          min: Math.max(1, Math.floor(totalQuestions * 0.6)), // At least 60% of questions
-          bloomSummary: BLOOMLEVELS.slice(0, 3).join("/"), // First 3 bloom levels
-        },
         los: groupQuestions.map((question, itemIndex) => ({
           id: `lo-${index + 1}-${itemIndex + 1}`,
           code: `LO ${index + 1}.${itemIndex + 1}`,

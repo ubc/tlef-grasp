@@ -93,6 +93,10 @@
                                     </div>
                                     <div class="dropdown-separator"></div>
                                     <div class="dropdown-custom">
+                                        <button type="button" class="dropdown-custom__btn" id="generate-ai-btn"
+                                            onclick="window.showAIGenerateObjectiveModal(event)">
+                                            <i class="fas fa-magic"></i> Generate with AI...
+                                        </button>
                                         <button type="button" class="dropdown-custom__btn" id="create-custom-btn"
                                             onclick="window.showCustomObjectiveModalFromButton(event)">
                                             <i class="fas fa-plus"></i> Create custom objective...
@@ -166,6 +170,88 @@
                                             id="custom-modal-save">Create</button>
                                         <input type="hidden" id="custom-modal-mode" value="create">
                                         <input type="hidden" id="custom-modal-objective-id" value="">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- AI Generate Learning Objectives Modal -->
+                            <div class="modal" id="ai-generate-objective-modal" style="display: none;">
+                                <div class="modal__content" style="max-width: 800px;">
+                                    <div class="modal__header">
+                                        <h3>Generate Learning Objectives with AI</h3>
+                                        <button type="button" class="modal__close" id="ai-generate-modal-close">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="modal__body">
+                                        <div style="margin-bottom: 24px;">
+                                            <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
+                                                Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives.
+                                            </p>
+                                            
+                                            <div style="margin-bottom: 16px; padding: 12px; background: #f9fafb; border-radius: 8px;">
+                                                <label for="ai-objectives-count" style="display: block; margin-bottom: 8px; font-weight: 600;">Number of Learning Objectives:</label>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <input 
+                                                        type="number" 
+                                                        id="ai-objectives-count" 
+                                                        min="1" 
+                                                        max="10" 
+                                                        value="5" 
+                                                        class="text-input"
+                                                        style="width: 80px; padding: 8px 12px;"
+                                                        required
+                                                    >
+                                                    <span style="color: #6b7280; font-size: 14px;">(1-10 objectives)</span>
+                                                </div>
+                                                <p style="margin-top: 8px; margin-bottom: 0; color: #6b7280; font-size: 12px;">
+                                                    The AI will generate approximately this many learning objectives based on the selected materials.
+                                                </p>
+                                            </div>
+                                            
+                                            <label style="margin-bottom: 12px; display: block; font-weight: 600;">Select Materials:</label>
+                                            <div id="ai-materials-selection-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                                                <div id="ai-materials-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">
+                                                    <i class="fas fa-spinner fa-spin"></i> Loading materials...
+                                                </div>
+                                                <div id="ai-materials-list" style="display: none;">
+                                                    <!-- Materials will be added here -->
+                                                </div>
+                                                <div id="ai-materials-empty" style="display: none; text-align: center; padding: 20px; color: #7f8c8d;">
+                                                    No materials available for this course. Please upload materials first.
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Generation Status -->
+                                        <div id="ai-generation-status" style="display: none; margin-bottom: 20px;">
+                                            <div style="padding: 16px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
+                                                <div style="display: flex; align-items: center; gap: 12px;">
+                                                    <i class="fas fa-spinner fa-spin" style="color: #0284c7;"></i>
+                                                    <span style="color: #0c4a6e; font-weight: 500;">Generating learning objectives...</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Generated Objectives Preview -->
+                                        <div id="ai-generated-objectives-container" style="display: none; margin-top: 24px;">
+                                            <label style="margin-bottom: 12px; display: block; font-weight: 600;">Generated Learning Objectives:</label>
+                                            <div id="ai-generated-objectives-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+                                                <!-- Generated objectives will be shown here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal__footer">
+                                        <button type="button" class="btn btn--secondary" id="ai-generate-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--primary" id="ai-generate-btn" disabled>
+                                            <i class="fas fa-magic"></i> Generate
+                                        </button>
+                                        <button type="button" class="btn btn--secondary" id="ai-regenerate-btn" style="display: none;">
+                                            <i class="fas fa-sync-alt"></i> Regenerate
+                                        </button>
+                                        <button type="button" class="btn btn--primary" id="ai-save-btn" style="display: none;">
+                                            <i class="fas fa-save"></i> Save Selected
+                                        </button>
                                     </div>
                                 </div>
                             </div>

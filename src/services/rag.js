@@ -208,6 +208,45 @@ class RAGService {
       return '';
     }
   }
+
+  /**
+   * Get RAG content from multiple materials by sourceIds
+   * @param {Array<string>} sourceIds - Array of material sourceIds
+   * @param {string} query - Query string for RAG search
+   * @param {number} limit - Maximum number of chunks to retrieve (default: 100)
+   * @returns {Promise<string>} Combined RAG context from all materials
+   */
+  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 100) {
+    if (!this.RAGInstance) {
+      throw new Error("RAG instance is not initialized");
+    }
+
+    if (!sourceIds || sourceIds.length === 0) {
+      throw new Error("At least one sourceId is required");
+    }
+
+    // Use provided query for RAG search
+    let ragChunks = await this.RAGInstance.retrieveContext(query, {
+      limit: limit,
+    });
+
+    // Filter chunks to only include those from the specified materials
+    ragChunks = ragChunks.filter((chunk) => {
+      const chunkSourceId = chunk.metadata?.sourceId;
+      return chunkSourceId && sourceIds.includes(chunkSourceId);
+    });
+
+    console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials`);
+
+    if (ragChunks && ragChunks.length > 0) {
+      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
+      console.log("RAG context length:", ragContext.length);
+      return ragContext;
+    } else {
+      console.log("⚠️ No relevant chunks found in RAG for selected materials");
+      return '';
+    }
+  }
 }
 
 // Export singleton instance

@@ -561,4 +561,190 @@ router.delete("/delete-document/:sourceId", async (req, res) => {
   }
 });
 
+// Generate learning objectives from selected materials
+router.post("/generate-learning-objectives", express.json(), async (req, res) => {
+  try {
+    const { courseId, materialIds, courseName, objectivesCount = 5 } = req.body;
+
+    console.log("=== GENERATE LEARNING OBJECTIVES REQUEST ===");
+    console.log("Course ID:", courseId);
+    console.log("Material IDs:", materialIds);
+    console.log("Course Name:", courseName);
+
+    // Validate input
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        error: "Course ID is required",
+      });
+    }
+
+    if (!materialIds || !Array.isArray(materialIds) || materialIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "At least one material must be selected",
+      });
+    }
+
+    // Check user permissions
+    if (!isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({
+        success: false,
+        error: "User is not in course",
+      });
+    }
+
+    // Get RAG instance
+    const ragInstance = ragService.getRAGInstance();
+    if (!ragInstance) {
+      return res.status(500).json({
+        success: false,
+        error: "RAG instance is not initialized",
+      });
+    }
+
+    // Get LLM instance
+    const llmModule = await llmService.getLLMInstance();
+    if (!llmModule) {
+      return res.status(500).json({
+        success: false,
+        error: "LLM service is not initialized",
+      });
+    }
+
+    // Get RAG content from selected materials
+    console.log("Retrieving RAG content from selected materials...");
+    const ragContext = await ragService.getRagContentFromMaterials(
+      materialIds,
+      `course content learning objectives topics concepts from course: ${courseName}`,
+      100
+    );
+
+    if (!ragContext || ragContext.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No content found in selected materials. Please ensure materials have been processed.",
+      });
+    }
+
+    // Create prompt for generating learning objectives
+    const prompt = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
+
+COURSE: ${courseName || "Course"}
+
+COURSE MATERIALS CONTENT:
+${ragContext.substring(0, 8000)}${ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""}
+
+INSTRUCTIONS:
+1. Analyze the course materials and identify key topics, concepts, and learning outcomes
+2. Generate exactly ${objectivesCount} main learning objectives that cover the major themes in the materials
+3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes
+4. Use clear, action-oriented language (e.g., "Students will be able to...")
+5. Ensure objectives are specific to the content provided, not generic
+6. Format your response as JSON with this structure:
+{
+  "objectives": [
+    {
+      "name": "Main learning objective title",
+      "granularObjectives": [
+        "Granular objective 1",
+        "Granular objective 2",
+        "Granular objective 3"
+      ]
+    },
+    {
+      "name": "Another main learning objective",
+      "granularObjectives": [
+        "Granular objective 1",
+        "Granular objective 2"
+      ]
+    }
+  ]
+}
+
+IMPORTANT:
+- Base objectives on the actual content in the materials
+- Make objectives specific and measurable
+- Ensure granular objectives support their parent objective
+- Return ONLY valid JSON, no additional text or markdown formatting`;
+
+    console.log("Sending prompt to LLM service...");
+    const response = await llmModule.sendMessage(prompt);
+
+    console.log("✅ LLM service response received");
+
+    // Extract content from response
+    let responseContent;
+    if (response && typeof response === "object") {
+      responseContent =
+        response.content || response.text || response.message || JSON.stringify(response);
+    } else {
+      responseContent = response;
+    }
+
+    if (!responseContent) {
+      throw new Error("Empty response from LLM");
+    }
+
+    console.log("Response content:", responseContent.substring(0, 500));
+
+    // Try to parse JSON response
+    try {
+      let objectivesData;
+
+      // First try to parse the response content directly
+      try {
+        objectivesData = JSON.parse(responseContent);
+      } catch (directParseError) {
+        // If direct parsing fails, try to extract JSON from the response
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          objectivesData = JSON.parse(jsonMatch[0]);
+        } else {
+          throw directParseError;
+        }
+      }
+
+      // Validate the structure
+      if (!objectivesData.objectives || !Array.isArray(objectivesData.objectives)) {
+        throw new Error("Invalid response format: missing objectives array");
+      }
+
+      // Clean and validate objectives
+      const cleanedObjectives = objectivesData.objectives
+        .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
+        .map((obj) => ({
+          name: obj.name.trim(),
+          granularObjectives: obj.granularObjectives
+            .filter((go) => go && typeof go === "string" && go.trim())
+            .map((go) => go.trim()),
+        }))
+        .filter((obj) => obj.granularObjectives.length > 0);
+
+      if (cleanedObjectives.length === 0) {
+        throw new Error("No valid objectives generated");
+      }
+
+      console.log(`✅ Generated ${cleanedObjectives.length} learning objectives`);
+
+      res.json({
+        success: true,
+        objectives: cleanedObjectives,
+      });
+    } catch (parseError) {
+      console.error("Error parsing LLM response:", parseError);
+      console.error("Response content:", responseContent);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to parse generated objectives",
+        details: parseError.message,
+        rawResponse: responseContent.substring(0, 500),
+      });
+    }
+  } catch (error) {
+    console.error("Error generating learning objectives:", error);
+    returnErrorResponse(res, error, error.message);
+  }
+});
+
 module.exports = router;
