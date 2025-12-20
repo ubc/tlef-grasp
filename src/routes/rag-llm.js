@@ -91,21 +91,22 @@ router.post("/search", express.json(), async (req, res) => {
 });
 
 // Generate questions using RAG + LLM
-router.post("/generate-with-rag", express.json(), async (req, res) => {
+router.post("/generate-questions-with-rag", express.json(), async (req, res) => {
   try {
-    const { objective, content, bloomLevel, course } = req.body;
+    const { courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
-    console.log("Objective:", objective);
-    console.log("Content length:", content?.length || 0);
-    console.log("Bloom level:", bloomLevel);
-    console.log("Course:", course);
+    console.log("Course Name:", courseName);
+    console.log("Learning Objective ID:", learningObjectiveId);
+    console.log("Learning Objective Text:", learningObjectiveText);
+    console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
+    console.log("Bloom Level:", bloomLevel);
 
     // Validate required parameters
-    if (!objective || !content || !bloomLevel) {
+    if (!courseName || !learningObjectiveId || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
       return res.status(400).json({
         error: "Missing required parameters",
-        details: "objective, content, and bloomLevel are required",
+        details: "courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
       });
     }
 
@@ -120,113 +121,21 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
     }
 
     console.log("=== SERVER-SIDE RAG + LLM GENERATION ===");
-    console.log("Objective:", objective);
-    console.log("Content length:", content.length);
-    console.log("Bloom level:", bloomLevel);
-
-    let ragContext = content; // Use full content as fallback
-    let ragChunks = 0;
+    console.log("Course Name:", courseName);
+    console.log("Learning Objective ID:", learningObjectiveId);
+    console.log("Learning Objective Text:", learningObjectiveText);
+    console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
+    console.log("Bloom Level:", bloomLevel);
 
     // Try to use RAG for content retrieval
-    try {
-      console.log("=== USING GLOBAL RAG FOR CONTENT RETRIEVAL ===");
+    console.log("=== USING getLearningObjectiveRagContent ===");
+    // Use objective text as the query for RAG search
+    const ragContext = await ragService.getLearningObjectiveRagContent(
+      learningObjectiveId,
+      'Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}'
+    );
 
-      const ragInstance = ragService.getRAGInstance();
-
-      if (!ragInstance) {
-        throw new Error("Global RAG instance not available");
-      }
-
-      // Search for relevant content based on the learning objective
-      console.log("Searching for relevant content using objective:", objective);
-      const ragResults = await ragInstance.retrieveContext(objective, {
-        limit: 3,
-      });
-
-      console.log("RAG results:", ragResults);
-
-      if (ragResults && ragResults.length > 0) {
-        console.log(`✅ Found ${ragResults.length} relevant chunks from RAG`);
-        ragContext = ragResults.map((result) => result.content).join("\n\n");
-        ragChunks = ragResults.length;
-        console.log("RAG context length:", ragContext.length);
-      } else {
-        console.log(
-          "⚠️ No relevant chunks found in RAG, using provided content"
-        );
-        ragContext = content;
-        ragChunks = 0;
-      }
-    } catch (ragError) {
-      console.error("❌ RAG retrieval failed:", ragError);
-      console.error("Error message:", ragError.message);
-      console.error("Error stack:", ragError.stack);
-      console.log("💡 Falling back to provided content");
-      ragContext = content;
-      ragChunks = 0;
-    }
-
-    // Limit content length to prevent very long processing times
-    const maxContentLength = 5000; // 5k characters for summary
-    if (content.length > maxContentLength) {
-      console.log(
-        `Content too long (${content.length} chars), summarizing to ${maxContentLength} characters`
-      );
-
-      // Use LLM to summarize the entire content to 5000 characters
-      console.log("Generating content summary...");
-      try {
-        const LLM_CONFIG = {
-          apiKey: process.env.OPENAI_API_KEY,
-          defaultModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-          temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-        };
-
-        const summaryResponse = await fetch(
-          "https://api.openai.com/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${LLM_CONFIG.apiKey}`,
-            },
-            body: JSON.stringify({
-              model: LLM_CONFIG.defaultModel,
-              messages: [
-                {
-                  role: "user",
-                  content: `Please summarize the following content in exactly ${maxContentLength} characters or less, preserving the most important information, key concepts, and main points:\n\n${content}`,
-                },
-              ],
-              max_tokens: maxContentLength,
-              temperature: LLM_CONFIG.temperature,
-            }),
-          }
-        );
-
-        if (!summaryResponse.ok) {
-          throw new Error(
-            `OpenAI API error: ${summaryResponse.status} ${summaryResponse.statusText}`
-          );
-        }
-
-        const summaryData = await summaryResponse.json();
-        ragContext =
-          summaryData.choices?.[0]?.message?.content ||
-          content.substring(0, maxContentLength);
-        console.log(`✅ Content summarized to ${ragContext.length} characters`);
-      } catch (error) {
-        console.log(
-          "❌ Summary failed, using first 5000 characters as fallback"
-        );
-        ragContext =
-          content.substring(0, maxContentLength) +
-          "\n\n[Content summary - first 5000 characters]";
-      }
-    } else if (ragChunks === 0) {
-      // Only use content if RAG didn't provide context
-      ragContext = content;
-    }
+    console.log("RAG Context:", ragContext);
 
     // Use LLM service for generation
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
@@ -238,8 +147,9 @@ router.post("/generate-with-rag", express.json(), async (req, res) => {
       // Create prompt with RAG context
       const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
 
-OBJECTIVE: ${objective}
-BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+Learning Objective: ${learningObjectiveText}
+Granular Learning Objective: ${granularLearningObjectiveText}
+Bloom's Taxonomy Level(s): ${bloomLevel}
 
 INSTRUCTIONS:
 1. Create a specific, detailed question that tests understanding of the objective
@@ -256,7 +166,9 @@ INSTRUCTIONS:
   "explanation": "Why this answer is correct based on the content"
 }
 
-IMPORTANT: Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.
+IMPORTANT: 
+- Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.
+- The correctAnswer should be a number: 0 for A, 1 for B, 2 for C, or 3 for D. Randomly choose which position (0-3) contains the correct answer - do NOT always use the same position.
 
 CONTENT: ${ragContext}`;
 
@@ -303,10 +215,57 @@ CONTENT: ${ragContext}`;
           }
         }
 
+        // Normalize correctAnswer: convert letters to numbers if needed
+        // Save as number (0-3) to database, frontend will handle display normalization
+        if (questionData.correctAnswer !== undefined) {
+          if (typeof questionData.correctAnswer === 'string') {
+            const letter = questionData.correctAnswer.toUpperCase().trim();
+            if (letter === 'A') questionData.correctAnswer = 0;
+            else if (letter === 'B') questionData.correctAnswer = 1;
+            else if (letter === 'C') questionData.correctAnswer = 2;
+            else if (letter === 'D') questionData.correctAnswer = 3;
+            else {
+              // Try to parse as number
+              const num = parseInt(letter);
+              if (!isNaN(num) && num >= 0 && num <= 3) {
+                questionData.correctAnswer = num;
+              } else {
+                questionData.correctAnswer = 0; // Default to A
+              }
+            }
+          } else if (typeof questionData.correctAnswer === 'number') {
+            // Ensure it's a valid index (0-3)
+            if (questionData.correctAnswer < 0 || questionData.correctAnswer > 3) {
+              questionData.correctAnswer = 0; // Default to A
+            }
+          } else {
+            questionData.correctAnswer = 0; // Default to A
+          }
+        } else {
+          questionData.correctAnswer = 0; // Default to A
+        }
+
+        // Randomize answer positions to ensure variety (shuffle options and update correctAnswer index)
+        // This ensures the correct answer is distributed across A, B, C, D positions
+        if (questionData.options && Array.isArray(questionData.options) && questionData.options.length === 4) {
+          // Save the correct option text
+          const correctOption = questionData.options[questionData.correctAnswer];
+          
+          // Randomly shuffle the options
+          const shuffledIndices = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+          const shuffledOptions = shuffledIndices.map(idx => questionData.options[idx]);
+          
+          // Find where the correct option ended up after shuffling
+          const newCorrectIndex = shuffledOptions.findIndex(opt => opt === correctOption);
+          
+          // Update with shuffled options and new correct answer index (saved as number)
+          questionData.options = shuffledOptions;
+          questionData.correctAnswer = newCorrectIndex >= 0 ? newCorrectIndex : 0;
+        }
+
         res.json({
           success: true,
           question: questionData,
-          ragChunks: ragChunks,
           method: "RAG + LLM Service",
         });
       } catch (parseError) {
@@ -319,7 +278,6 @@ CONTENT: ${ragContext}`;
             correctAnswer: 0,
             explanation: "Generated using RAG + LLM Service",
           },
-          ragChunks: ragChunks,
           method: "RAG + LLM Service (Raw Response)",
         });
       }

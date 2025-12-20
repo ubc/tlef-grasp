@@ -13,7 +13,7 @@ const OPENAI_CONFIG = {
 };
 
 // Generate questions using direct OpenAI API
-router.post("/generate-with-rag", express.json(), async (req, res) => {
+router.post("/generate-questions-with-rag", express.json(), async (req, res) => {
   try {
     const { objective, content, bloomLevel, course } = req.body;
 

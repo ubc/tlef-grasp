@@ -17,28 +17,33 @@ class QuestionGenerator {
       this.llmService = {
         isAvailable: () => true,
         generateMultipleChoiceQuestion: async (
-          objective,
-          content,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
           bloomLevel
         ) => {
           console.log('Generating multiple choice question...', {
-            objective,
-            content,
-            bloomLevel,
+            courseName: courseName,
+            learningObjectiveId: learningObjectiveId,
+            learningObjectiveText: learningObjectiveText,
+            granularLearningObjectiveText: granularLearningObjectiveText,
+            bloomLevel: bloomLevel,
           });
           console.log("=== CALLING SERVER-SIDE RAG + LLM ===");
 
           try {
-            const response = await fetch("/api/rag-llm/generate-with-rag", {
+            const response = await fetch("/api/rag-llm/generate-questions-with-rag", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                objective: objective,
-                content: content,
+                courseName: courseName,
+                learningObjectiveId: learningObjectiveId,
+                learningObjectiveText: learningObjectiveText,
+                granularLearningObjectiveText: granularLearningObjectiveText,
                 bloomLevel: bloomLevel,
-                course: window.state?.course || "CHEM 121",
               }),
             });
 
@@ -56,7 +61,7 @@ class QuestionGenerator {
             console.log("✅ Server-side RAG + LLM response:", data);
 
             if (data.success) {
-              return JSON.stringify(data.question);
+              return JSON.stringify(data.questions);
             } else {
               throw new Error(
                 data.error ||
@@ -92,74 +97,47 @@ class QuestionGenerator {
           : false,
       });
 
-      // Generate questions using RAG-enhanced content
-      const questions = await this.generateRAGEnhancedQuestions(
-        course,
-        objectiveGroups
-      );
+      const allQuestions = [];
+
+      for (const learningObjective of objectiveGroups) {
+        console.log(
+          `Processing group: ${learningObjective.title} with ${learningObjective.items.length} items`
+        );
+  
+        for (const granularLearningObjective of learningObjective.items) {
+          console.log(`Processing objective: ${granularLearningObjective.text}`);
+  
+          try {
+            // Generate questions for this specific objective using RAG
+            const objectiveQuestions = await this.generateQuestionsForObjective(
+              course.name || '',
+              learningObjective,
+              granularLearningObjective
+            );
+  
+            console.log(
+              `Generated ${objectiveQuestions.length} questions for objective: ${granularLearningObjective.text}`
+            );
+            allQuestions.push(...objectiveQuestions);
+          } catch (error) {
+            console.error(
+              `Failed to generate questions for objective: ${granularLearningObjective.text}`,
+              error
+            );
+            throw error; // Re-throw to stop generation and show error in UI
+          }
+        }
+      }
 
       console.log("=== QUESTION GENERATOR RESULT ===");
-      console.log("Generated questions count:", questions.length);
-      console.log("Questions:", questions);
+      console.log("Generated questions count:", allQuestions.length);
+      console.log("Questions:", allQuestions);
 
-      return questions;
+      return allQuestions;
     } catch (error) {
       console.error("Failed to generate questions:", error);
       throw error;
     }
-  }
-
-  // Generate questions using RAG-enhanced content analysis
-  async generateRAGEnhancedQuestions(course, objectiveGroups) {
-    console.log("=== RAG-ENHANCED QUESTIONS DEBUG ===");
-    console.log("Starting RAG-enhanced question generation");
-    console.log("Objective groups:", objectiveGroups.length);
-
-    const allQuestions = [];
-
-    for (const learningObjective of objectiveGroups) {
-      console.log(
-        `Processing group: ${learningObjective.title} with ${learningObjective.items.length} items`
-      );
-
-      for (const granularLearningObjective of learningObjective.items) {
-        console.log(`Processing objective: ${granularLearningObjective.text}`);
-
-        try {
-          // Generate questions for this specific objective using RAG
-          const objectiveQuestions = await this.generateQuestionsForObjective(
-            course,
-            learningObjective,
-            granularLearningObjective
-          );
-
-          console.log(
-            `Generated ${objectiveQuestions.length} questions for objective: ${granularLearningObjective.text}`
-          );
-          allQuestions.push(...objectiveQuestions);
-        } catch (error) {
-          console.error(
-            `Failed to generate questions for objective: ${granularLearningObjective.text}`,
-            error
-          );
-          throw error; // Re-throw to stop generation and show error in UI
-        }
-      }
-    }
-
-    console.log(
-      `Total questions generated from objectives: ${allQuestions.length}`
-    );
-
-    // If no objectives, throw error
-    if (allQuestions.length === 0) {
-      throw new Error(
-        "No learning objectives found. Please add objectives to generate questions."
-      );
-    }
-
-    console.log(`Final question count: ${allQuestions.length}`);
-    return allQuestions;
   }
 
   prepareContentForQuestions(summary, objectiveGroups) {
@@ -211,7 +189,7 @@ class QuestionGenerator {
   }
 
   // Generate questions for specific objectives using enhanced content analysis
-  async generateQuestionsForObjective(course, learningObjective, granularLearningObjective) {
+  async generateQuestionsForObjective(courseName, learningObjective, granularLearningObjective) {
     console.log(
       `=== GENERATING QUESTIONS FOR OBJECTIVE: ${granularLearningObjective.text} ===`
     );
@@ -219,59 +197,6 @@ class QuestionGenerator {
     const questions = [];
 
     // Get comprehensive content for this objective
-    let relevantContent = "";
-
-    // Try RAG first if available
-    console.log("RAG available:", this.contentGenerator.isRAGAvailable());
-    if (this.contentGenerator.isRAGAvailable()) {
-      try {
-        const query = `Generate questions about learning objective: ${learningObjective.title} - ${granularLearningObjective.text} for ${course}`;
-        console.log("RAG query:", query);
-        let relevantChunks = await this.contentGenerator.searchKnowledgeBase(
-          query,
-          10
-        );
-
-        // Get course materials attached to learning objective.
-        const courseMaterials = await fetch(`/api/objective/${learningObjective.objectiveId}/materials`);
-        const courseMaterialsData = await courseMaterials.json();
-
-        console.log("Relevant chunks:", relevantChunks);
-        console.log("Course materials:", courseMaterialsData);
-
-        // Filter relevant chunks to only include chunks from course materials.
-        if ( courseMaterialsData.success && courseMaterialsData.materials && courseMaterialsData.materials.length > 0 ) {
-          relevantChunks = relevantChunks.filter((chunk) => {
-            return courseMaterialsData.materials.some((material) => material.sourceId === chunk.metadata.sourceId);
-          });
-        } else {
-          console.log("No course materials found");
-        }
-
-        console.log(
-          "RAG chunks found:",
-          relevantChunks ? relevantChunks.length : 0
-        );
-        if (relevantChunks && relevantChunks.length > 0) {
-          relevantContent = relevantChunks
-            .map((chunk) => chunk.content)
-            .join("\n\n");
-          console.log("Using RAG content for objective:", granularLearningObjective.text);
-          console.log("RAG content length:", relevantContent.length);
-        }
-      } catch (error) {
-        console.warn("RAG search failed, using enhanced local content:", error);
-      }
-    } else {
-      console.log("RAG not available, using local content only");
-    }
-
-
-
-    console.log("Final content length:", relevantContent.length);
-    console.log("Objective count:", granularLearningObjective.count);
-    console.log("Bloom levels:", granularLearningObjective.bloom);
-
     // Generate different types of questions based on Bloom's taxonomy
     const bloomLevels = granularLearningObjective.bloom || ["Understand"];
 
@@ -284,11 +209,12 @@ class QuestionGenerator {
       );
 
       const question = await this.createContextualQuestion(
-        granularLearningObjective.text,
-        relevantContent,
-        bloomLevel,
-        granularLearningObjective.granularId,
+        courseName,
+        learningObjective.objectiveId,
         learningObjective.title,
+        granularLearningObjective.granularId,
+        granularLearningObjective.text,
+        bloomLevel,
         i + 1
       );
 
@@ -304,36 +230,47 @@ class QuestionGenerator {
 
   // Create a contextual question based on content and Bloom's taxonomy
   async createContextualQuestion(
-    objectiveText,
-    content,
+    courseName,
+    learningObjectiveId,
+    learningObjectiveText,
+    granularLearningObjectiveId,
+    granularLearningObjectiveText,
     bloomLevel,
-    objectiveId,
-    groupTitle,
     questionNumber
   ) {
     // Use LLM service
     if (this.llmService && this.llmService.isAvailable()) {
-      console.log(`Generating LLM question for objective: ${objectiveText}`);
-      const llmResponse = await this.llmService.generateMultipleChoiceQuestion(
-        objectiveText,
-        content,
-        bloomLevel
-      );
-
-      // Parse LLM response
-      const questionData = JSON.parse(llmResponse);
+      console.log(`Generating LLM question for objective: ${learningObjectiveText}`);
+      const llmResponse = await fetch('/api/rag-llm/generate-questions-with-rag', {
+        method: 'POST',
+        body: JSON.stringify({
+          courseName: courseName,
+          learningObjectiveId: learningObjectiveId,
+          learningObjectiveText: learningObjectiveText,
+          granularLearningObjectiveText: granularLearningObjectiveText,
+          bloomLevel: bloomLevel,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!llmResponse.ok) {
+        throw new Error('Failed to generate question');
+      }
+      const response = await llmResponse.json();
+      const questionData = response.question;
 
       return {
-        id: `${objectiveId}-${questionNumber}`,
-        granularObjectiveId: `${objectiveId}`,
+        id: `${granularLearningObjectiveId}-${questionNumber}`,
+        granularObjectiveId: `${granularLearningObjectiveId}`,
         text: questionData.question,
         type: "multiple-choice",
         options: questionData.options,
         correctAnswer: questionData.correctAnswer,
         bloomLevel: bloomLevel,
         difficulty: this.determineDifficulty(bloomLevel),
-        metaCode: groupTitle,
-        loCode: objectiveText,
+        metaCode: learningObjectiveText,
+        loCode: granularLearningObjectiveText,
         lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
         by: "LLM + RAG System",
         explanation: questionData.explanation,
@@ -471,67 +408,6 @@ class QuestionGenerator {
         objectiveId: objective.id,
       },
     ];
-  }
-
-  // Generate questions with specific Bloom's taxonomy levels
-  async generateQuestionsByBloomLevel(course, bloomLevel, count = 5) {
-    try {
-      let content;
-
-      if (this.contentGenerator.isRAGAvailable()) {
-        const query = `Generate ${count} ${bloomLevel} level questions for ${course}`;
-        const relevantChunks = await this.contentGenerator.searchKnowledgeBase(
-          query,
-          10
-        );
-        const context = relevantChunks
-          .map((chunk) => chunk.content)
-          .join("\n\n");
-
-        content = `Course: ${course}\nBloom Level: ${bloomLevel}\nContext: ${context}\n\nGenerate ${count} multiple choice questions at the ${bloomLevel} level.`;
-      } else {
-        content = `Course: ${course}\nBloom Level: ${bloomLevel}\n\nGenerate ${count} multiple choice questions at the ${bloomLevel} level.`;
-      }
-
-      const response = await fetch("/api/question/generate-questions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: content,
-          course: course,
-          bloomLevel: bloomLevel,
-          count: count,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.questions;
-      } else {
-        throw new Error("Failed to generate questions by Bloom level");
-      }
-    } catch (error) {
-      console.error("Bloom level question generation failed:", error);
-      return this.getMockQuestionsByBloomLevel(bloomLevel, count);
-    }
-  }
-
-  getMockQuestionsByBloomLevel(bloomLevel, count) {
-    const questions = [];
-    for (let i = 0; i < count; i++) {
-      questions.push({
-        id: Date.now() + Math.random() + i,
-        text: `Sample ${bloomLevel} question ${i + 1}`,
-        type: "multiple-choice",
-        options: ["Option A", "Option B", "Option C", "Option D"],
-        correctAnswer: 0,
-        bloomLevel: bloomLevel,
-        difficulty: "Medium",
-      });
-    }
-    return questions;
   }
 
   // Validate question quality

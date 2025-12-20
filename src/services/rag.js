@@ -1,8 +1,6 @@
 // RAG Service - Singleton pattern
 // Handles all RAG initialization and provides helper functions
-
-// Import Qdrant patch to fix Float32Array issue
-require("../utils/qdrant-patch");
+const { getObjectiveWithMaterials } = require('./objective');
 
 class RAGService {
   constructor() {
@@ -170,6 +168,45 @@ class RAGService {
     });
 
     console.log(`✅ Document with sourceId ${sourceId} deleted successfully`);
+  }
+
+  async getLearningObjectiveRagContent(objectiveId, query) {
+    if (!this.RAGInstance) {
+      throw new Error("RAG instance is not initialized");
+    }
+
+    if (!query) {
+      throw new Error("Query parameter is required");
+    }
+
+    const objective = await getObjectiveWithMaterials(objectiveId);
+    if (!objective) {
+      throw new Error(`Objective with ID ${objectiveId} not found`);
+    }
+
+    // Use provided query for RAG search
+    let ragChunks = await this.RAGInstance.retrieveContext(query, {
+      limit: 50,
+    });
+
+    // Get materials source IDs, filter out chunks that are not in the materials
+    const materialsSourceIds = objective.materials.map((material) => material.sourceId);
+    ragChunks = ragChunks.filter((chunk) => materialsSourceIds.includes(chunk.metadata.sourceId));
+
+    console.log("RAG context:", ragChunks);
+
+    if (ragChunks && ragChunks.length > 0) {
+      const ragChunksCount = ragChunks.length;
+      console.log(`✅ Found ${ragChunksCount} relevant chunks from RAG`);
+      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
+      console.log("RAG context length:", ragContext.length);
+      return ragContext;
+    } else {
+      console.log(
+        "⚠️ No relevant chunks found in RAG, using provided content"
+      );
+      return '';
+    }
   }
 }
 

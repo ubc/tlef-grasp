@@ -55,220 +55,6 @@ const BLOOMLEVELS = [
   "Create",
 ];
 
-// Sample question data for Step 4
-const SAMPLE_QUESTION_DATA = [
-  {
-    id: "meta-1",
-    title: "Meta LO 1",
-    isOpen: true,
-    stats: {
-      configured: 8,
-      min: 5,
-      bloomSummary: "R/U/A",
-    },
-    los: [
-      {
-        id: "lo-1-1",
-        code: "LO 1.1",
-        generated: 3,
-        min: 2,
-        badges: ["1 top-up"],
-        questions: [
-          {
-            id: "q-1-1-1",
-            title: "Endergonic vs Exergonic",
-            stem: "Select the best answer:",
-            options: {
-              A: {
-                id: "A",
-                text: "Endergonic reactions release energy",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Endergonic reactions absorb energy from the surroundings.",
-              },
-              B: {
-                id: "B",
-                text: "Exergonic reactions absorb energy",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Exergonic reactions release energy to the surroundings.",
-              },
-              C: {
-                id: "C",
-                text: "Endergonic reactions absorb energy",
-                isCorrect: true,
-                feedback:
-                  "Correct — Endergonic reactions require energy input.",
-              },
-              D: {
-                id: "D",
-                text: "Both reactions release energy",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Only exergonic reactions release energy.",
-              },
-            },
-            status: "Draft",
-            bloom: "Analyze",
-            metaCode: "Meta LO 1",
-            loCode: "LO 1.1",
-            lastEdited: "2024-01-15 14:30",
-            by: "System",
-          },
-          {
-            id: "q-1-1-2",
-            title: "Thermodynamic Spontaneity",
-            stem: "Select the best answer:",
-            options: {
-              A: {
-                id: "A",
-                text: "Spontaneous reactions always occur quickly",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Spontaneity is about thermodynamic favorability, not speed.",
-              },
-              B: {
-                id: "B",
-                text: "Non-spontaneous reactions cannot occur",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Non-spontaneous reactions can occur with energy input.",
-              },
-              C: {
-                id: "C",
-                text: "Spontaneous reactions are thermodynamically favorable",
-                isCorrect: true,
-                feedback:
-                  "Correct — Spontaneous reactions are thermodynamically favorable.",
-              },
-              D: {
-                id: "D",
-                text: "All reactions are spontaneous",
-                isCorrect: false,
-                feedback: "Incorrect — Not all reactions are spontaneous.",
-              },
-            },
-            status: "Draft",
-            bloom: "Understand",
-            metaCode: "Meta LO 1",
-            loCode: "LO 1.1",
-            lastEdited: "2024-01-15 14:25",
-            by: "System",
-          },
-        ],
-      },
-      {
-        id: "lo-1-2",
-        code: "LO 1.2",
-        generated: 2,
-        min: 2,
-        badges: [],
-        questions: [
-          {
-            id: "q-1-2-1",
-            title: "Energy Conservation in Reactions",
-            stem: "Select the best answer:",
-            options: {
-              A: {
-                id: "A",
-                text: "Energy is always conserved",
-                isCorrect: true,
-                feedback:
-                  "Correct — Energy conservation is a fundamental law of physics.",
-              },
-              B: {
-                id: "B",
-                text: "Energy can be created in reactions",
-                isCorrect: false,
-                feedback: "Incorrect — Energy cannot be created or destroyed.",
-              },
-              C: {
-                id: "C",
-                text: "Energy is lost in exergonic reactions",
-                isCorrect: false,
-                feedback: "Incorrect — Energy is transferred, not lost.",
-              },
-              D: {
-                id: "D",
-                text: "Energy disappears in endergonic reactions",
-                isCorrect: false,
-                feedback: "Incorrect — Energy is transferred, not destroyed.",
-              },
-            },
-            status: "Approved",
-            bloom: "Remember",
-            metaCode: "Meta LO 1",
-            loCode: "LO 1.2",
-            lastEdited: "2024-01-15 13:45",
-            by: "System",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "meta-2",
-    title: "Meta LO 2",
-    isOpen: false,
-    stats: {
-      configured: 6,
-      min: 5,
-      bloomSummary: "U/A/E",
-    },
-    los: [
-      {
-        id: "lo-2-1",
-        code: "LO 2.1",
-        generated: 4,
-        min: 3,
-        badges: [],
-        questions: [
-          {
-            id: "q-2-1-1",
-            title: "Entropy and Disorder",
-            stem: "Select the best answer:",
-            options: {
-              A: {
-                id: "A",
-                text: "Entropy always increases",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Entropy increases in isolated systems, not always.",
-              },
-              B: {
-                id: "B",
-                text: "Entropy measures disorder",
-                isCorrect: true,
-                feedback:
-                  "Correct — Entropy is a measure of disorder or randomness.",
-              },
-              C: {
-                id: "C",
-                text: "Entropy decreases with temperature",
-                isCorrect: false,
-                feedback:
-                  "Incorrect — Entropy generally increases with temperature.",
-              },
-              D: {
-                id: "D",
-                text: "Entropy is independent of state",
-                isCorrect: false,
-                feedback: "Incorrect — Entropy varies with physical state.",
-              },
-            },
-            status: "Draft",
-            bloom: "Analyze",
-            metaCode: "Meta LO 2",
-            loCode: "LO 2.1",
-            lastEdited: "2024-01-15 14:20",
-            by: "System",
-          },
-        ],
-      },
-    ],
-  },
-];
-
 // Initialize the application
 document.addEventListener("DOMContentLoaded", async function () {
   console.log("DOM Content Loaded - Starting initialization...");
@@ -3183,22 +2969,22 @@ function convertQuestionsToGroups(questions) {
                 A: {
                   id: "A",
                   text: question.options[0] || "Option A",
-                  feedback: "A Incorrect",
+                  feedback: `${question.correctAnswer === 0 ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 B: {
                   id: "B",
                   text: question.options[1] || "Option B",
-                  feedback: "B Incorrect",
+                  feedback: `${question.correctAnswer === 1 ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 C: {
                   id: "C",
                   text: question.options[2] || "Option C",
-                  feedback: "C Correct",
+                  feedback: `${question.correctAnswer === 2 ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 D: {
                   id: "D",
                   text: question.options[3] || "Option D",
-                  feedback: "D Incorrect",
+                  feedback: `${question.correctAnswer === 3 ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
               },
               correctAnswer: question.correctAnswer || 0,
@@ -3220,6 +3006,8 @@ function convertQuestionsToGroups(questions) {
       groups.push(group);
     }
   );
+
+  console.log("groups", groups);
 
   return groups;
 }
@@ -3405,21 +3193,19 @@ function renderQuestionCard(question, group) {
             <div class="question-card__body">
                 <p class="question-card__stem">${question.stem}</p>
                 <div class="question-card__options">
-                    ${Object.values(question.options)
-      .map(
-        (option) => `
+                    ${Object.values(question.options).map(
+      (option, index) => `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
                             <input type="radio" name="q-${question.id
-          }" value="${option.id}" ${option.isCorrect ? "checked" : ""
+          }" value="${index}" ${index === question.correctAnswer ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${index}', this.value)">`
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
-                        <div class="question-card__feedback">${option.id} ${option.isCorrect ? "Correct" : "Incorrect"
-          } — ${option.feedback}</div>
+                        <div class="question-card__feedback">${index === question.correctAnswer ? "Correct" : "Incorrect"}</div>
                     `
       )
       .join("")}
