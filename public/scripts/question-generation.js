@@ -38,9 +38,9 @@ const state = {
 
 // Step titles for dynamic updates
 const STEPTITLES = {
-  3: "Create Objectives",
-  4: "Generate Questions",
-  5: "Select Output Format",
+  1: "Create Objectives",
+  2: "Generate Questions",
+  3: "Save Quiz to Question Bank",
 };
 
 // Bloom's taxonomy levels
@@ -165,15 +165,32 @@ async function checkCourseMaterials() {
 function initializeModules() {
   console.log("Initializing modules...");
 
-  // Initialize content generator
-  contentGenerator = new window.ContentGenerator();
-  console.log("Content generator created:", contentGenerator);
+  try {
+    // Initialize content generator
+    if (window.ContentGenerator) {
+      contentGenerator = new window.ContentGenerator();
+      console.log("Content generator created:", contentGenerator);
+    } else {
+      console.error("ContentGenerator class not found in window object");
+    }
 
-  // Initialize question generator with content generator
-  questionGenerator = new window.QuestionGenerator(contentGenerator);
-  console.log("Question generator created:", questionGenerator);
+    // Initialize question generator with content generator
+    if (window.QuestionGenerator) {
+      if (!contentGenerator) {
+        console.error("ContentGenerator must be initialized before QuestionGenerator");
+        return;
+      }
+      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      console.log("Question generator created:", questionGenerator);
+    } else {
+      console.error("QuestionGenerator class not found in window object");
+    }
 
-  console.log("Modules initialized successfully");
+    console.log("Modules initialized successfully");
+  } catch (error) {
+    console.error("Error initializing modules:", error);
+    showToast("Failed to initialize required modules. Please refresh the page.", "error");
+  }
 }
 
 // ===== Generate Questions FUNCTIONS =====
@@ -208,16 +225,16 @@ function initializeEventListeners() {
   // Step 1: Objectives
   initializeObjectives();
 
-  // Step 3: Export format selection
-  initializeExportFormat();
+  // Step 3: Quiz selection/creation
+  initializeQuizSelection();
 }
 
 function goToNextStep() {
   console.log("goToNextStep called, current step:", state.step);
 
   if (state.step === 3) {
-    // Final step - show export summary modal
-    showExportSummaryModal();
+    // Final step - save questions to quiz
+    handleSaveToQuiz();
     return;
   }
 
@@ -357,8 +374,14 @@ function handleStepTransition(fromStep, toStep) {
       step2();
       break;
     case 3:
-      console.log("Initializing Step 3 (Select Output Format)");
-      initializeStep3(); // Use the old step 3 function
+      console.log("Initializing Step 3 (Save Quiz to Question Bank)");
+      initializeQuizSelection();
+      loadQuizzesForCourse();
+      break;
+    case 3:
+      console.log("Initializing Step 3 (Save Quiz to Question Bank)");
+      initializeQuizSelection();
+      loadQuizzesForCourse();
       break;
   }
 }
@@ -396,10 +419,10 @@ function updatePageTitle() {
     title.textContent = STEPTITLES[state.step];
   }
 
-  // Also update the export title in Step 3 if it exists
-  const exportTitle = document.querySelector(".export-title");
-  if (exportTitle && state.step === 3) {
-    exportTitle.textContent = STEPTITLES[state.step];
+  // Also update the quiz save title in Step 3 if it exists
+  const quizSaveTitle = document.querySelector(".quiz-save-title");
+  if (quizSaveTitle && state.step === 3) {
+    quizSaveTitle.textContent = STEPTITLES[state.step];
   }
 }
 
@@ -439,9 +462,9 @@ function updateNavigationButtons() {
 
   if (continueBtn) {
     if (state.step === 3) {
-      continueBtn.textContent = "Export Now";
+      continueBtn.textContent = "Save to Quiz";
       continueBtn.className = "btn btn--primary";
-      // Export button state is managed by updateExportButtonState()
+      continueBtn.disabled = false;
     } else if (state.step === 1) {
       // Step 1: Disable if no learning objectives
       continueBtn.disabled = state.objectiveGroups.length === 0;
@@ -2702,27 +2725,48 @@ function renderKatex() {
   });
 }
 
-// ===== STEP 3: SELECT OUTPUT FORMAT FUNCTIONS =====
+// ===== STEP 3: SAVE QUIZ TO QUESTION BANK FUNCTIONS =====
 
-function initializeStep3() {
-  console.log("initializeStep3 called");
+function initializeQuizSelection() {
+  console.log("initializeQuizSelection called");
+  
+  // Reset state
+  selectedQuizId = null;
+  isCreatingNewQuiz = false;
+  
+  // Set up event listeners
+  setupQuizSelectionListeners();
+  
+  // Switch to select tab by default
+  switchQuizTab("select");
+}
 
-  // Set up event listeners for Step 3
-  setupStep3EventListeners();
-
-  // Initialize the view
-  updateStep3UI();
-
-  // Ensure initial state is reflected in UI
-  updateSelectedFormatsCount();
-  updateExportButtonState();
-  updateNamingConventionPanel();
-
-  console.log("Step 3 initialized with state:", {
-    formats: state.formats,
-    namingConvention: state.namingConvention,
-    saveAsDefault: state.saveAsDefault,
+function setupQuizSelectionListeners() {
+  // Tab switching
+  const tabButtons = document.querySelectorAll(".quiz-tab-btn");
+  tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      switchQuizTab(tab);
+    });
   });
+  
+  // Quiz selection dropdown
+  const dropdown = document.getElementById("quiz-select-dropdown");
+  if (dropdown) {
+    dropdown.addEventListener("change", (e) => {
+      selectedQuizId = e.target.value || null;
+      isCreatingNewQuiz = false;
+    });
+  }
+  
+  // Quiz name input (for new quiz)
+  const nameInput = document.getElementById("quiz-name-input");
+  if (nameInput) {
+    nameInput.addEventListener("input", () => {
+      // Validation handled in handleSaveToQuiz
+    });
+  }
 }
 
 function setupStep3EventListeners() {
@@ -3273,6 +3317,24 @@ async function generateQuestionsFromContent() {
   console.log("Summary length:", state.summary.length);
   console.log("Objective groups:", state.objectiveGroups.length);
 
+  // Check if questionGenerator is initialized
+  if (!questionGenerator) {
+    console.error("QuestionGenerator is not initialized. Attempting to initialize...");
+    try {
+      // Try to initialize if not already done
+      if (!contentGenerator) {
+        contentGenerator = new window.ContentGenerator();
+      }
+      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      console.log("QuestionGenerator initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize QuestionGenerator:", error);
+      setGenerationUI(false);
+      showToast("Failed to initialize question generator. Please refresh the page.", "error");
+      return;
+    }
+  }
+
   // Show loading UI
   setGenerationUI(true);
 
@@ -3480,25 +3542,9 @@ function setupStep2EventListeners() {
 
   // Action buttons
   const regenerateAllBtn = document.getElementById("regenerate-all-btn");
-  const exportBtn = document.getElementById("export-btn");
-  const addToBankBtn = document.getElementById("add-to-bank-btn");
 
   if (regenerateAllBtn)
     regenerateAllBtn.addEventListener("click", handleRegenerateAll);
-  if (exportBtn) exportBtn.addEventListener("click", handleExport);
-  if (addToBankBtn) addToBankBtn.addEventListener("click", handleAddToBank);
-
-  // Export dropdown
-  const exportDropdownClose = document.getElementById("export-dropdown-close");
-  if (exportDropdownClose)
-    exportDropdownClose.addEventListener("click", hideExportDropdown);
-
-  // Export option buttons
-  document.addEventListener("click", (e) => {
-    if (e.target.classList.contains("export-option-btn")) {
-      handleExportFormat(e.target.dataset.format);
-    }
-  });
 }
 
 function renderStep2() {
@@ -3718,33 +3764,7 @@ async function handleRegenerateAll() {
   }
 }
 
-function handleExport() {
-  showExportDropdown();
-}
 
-function showExportDropdown() {
-  const exportDropdown = document.getElementById("export-dropdown");
-  if (exportDropdown) {
-    exportDropdown.style.display = "block";
-  }
-}
-
-function hideExportDropdown() {
-  const exportDropdown = document.getElementById("export-dropdown");
-  if (exportDropdown) {
-    exportDropdown.style.display = "none";
-  }
-}
-
-function handleExportFormat(format) {
-  hideExportDropdown();
-  showToast(`Export prepared as ${format.toUpperCase()}`, "success");
-}
-
-async function handleAddToBank() {
-  // Show the quiz selection modal
-  showQuizSelectionModal();
-}
 
 async function handleAddQuestionToBank(question) {
   console.log("Adding question to question bank:", question);
@@ -3767,9 +3787,6 @@ async function handleAddQuestionToBank(question) {
         "success"
       );
 
-      // Disable AddToBank button
-      const addToBankBtn = document.getElementById("add-to-bank-btn");
-      if (addToBankBtn) addToBankBtn.disabled = true;
     }
   } catch (error) {
     console.error("Failed to add question to Question Bank:", error);
@@ -3978,6 +3995,44 @@ function showToast(message, type = "info") {
   }, 5000);
 }
 
+function showSuccessModal(message, questionsCount) {
+  const modal = document.getElementById("quiz-save-success-modal");
+  const messageEl = document.getElementById("quiz-save-success-message");
+  const closeBtn = document.getElementById("quiz-save-success-close");
+  const goToBankBtn = document.getElementById("go-to-question-bank-btn");
+  
+  if (!modal) return;
+  
+  // Update message
+  if (messageEl) {
+    messageEl.textContent = message;
+  }
+  
+  // Show modal
+  modal.style.display = "flex";
+  
+  // Close button handler
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      modal.style.display = "none";
+    };
+  }
+  
+  // Go to Question Bank button handler
+  if (goToBankBtn) {
+    goToBankBtn.onclick = () => {
+      window.location.href = "question-bank.html";
+    };
+  }
+  
+  // Close on background click
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+    }
+  };
+}
+
 function getToastIcon(type) {
   switch (type) {
     case "success":
@@ -4156,40 +4211,6 @@ window.setBloomMode = setBloomMode;
 let selectedQuizId = null;
 let isCreatingNewQuiz = false;
 
-async function showQuizSelectionModal() {
-  const modal = document.getElementById("quiz-selection-modal");
-  if (!modal) return;
-
-  // Reset state
-  selectedQuizId = null;
-  isCreatingNewQuiz = false;
-  
-  // Show modal
-  modal.style.display = "flex";
-  
-  // Load quizzes for the current course
-  await loadQuizzesForCourse();
-  
-  // Set up event listeners
-  setupQuizModalListeners();
-  
-  // Switch to select tab by default
-  switchQuizTab("select");
-}
-
-function hideQuizSelectionModal() {
-  const modal = document.getElementById("quiz-selection-modal");
-  if (modal) {
-    modal.style.display = "none";
-  }
-  
-  // Reset form
-  document.getElementById("quiz-name-input").value = "";
-  document.getElementById("quiz-description-input").value = "";
-  selectedQuizId = null;
-  isCreatingNewQuiz = false;
-  updateQuizConfirmButton();
-}
 
 async function loadQuizzesForCourse() {
   const dropdown = document.getElementById("quiz-select-dropdown");
@@ -4231,52 +4252,6 @@ async function loadQuizzesForCourse() {
   }
 }
 
-function setupQuizModalListeners() {
-  // Tab switching
-  const tabButtons = document.querySelectorAll(".quiz-tab-btn");
-  tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tab = btn.dataset.tab;
-      switchQuizTab(tab);
-    });
-  });
-  
-  // Close button
-  const closeBtn = document.getElementById("quiz-modal-close");
-  if (closeBtn) {
-    closeBtn.onclick = hideQuizSelectionModal;
-  }
-  
-  // Cancel button
-  const cancelBtn = document.getElementById("quiz-modal-cancel");
-  if (cancelBtn) {
-    cancelBtn.onclick = hideQuizSelectionModal;
-  }
-  
-  // Confirm button
-  const confirmBtn = document.getElementById("quiz-modal-confirm");
-  if (confirmBtn) {
-    confirmBtn.onclick = handleQuizConfirm;
-  }
-  
-  // Quiz selection dropdown
-  const dropdown = document.getElementById("quiz-select-dropdown");
-  if (dropdown) {
-    dropdown.addEventListener("change", (e) => {
-      selectedQuizId = e.target.value || null;
-      isCreatingNewQuiz = false;
-      updateQuizConfirmButton();
-    });
-  }
-  
-  // Quiz name input (for new quiz)
-  const nameInput = document.getElementById("quiz-name-input");
-  if (nameInput) {
-    nameInput.addEventListener("input", () => {
-      updateQuizConfirmButton();
-    });
-  }
-}
 
 function switchQuizTab(tab) {
   // Update tab buttons
@@ -4303,27 +4278,9 @@ function switchQuizTab(tab) {
     isCreatingNewQuiz = true;
     selectedQuizId = null;
   }
-  
-  updateQuizConfirmButton();
 }
 
-function updateQuizConfirmButton() {
-  const confirmBtn = document.getElementById("quiz-modal-confirm");
-  if (!confirmBtn) return;
-  
-  if (isCreatingNewQuiz) {
-    const nameInput = document.getElementById("quiz-name-input");
-    const hasName = nameInput && nameInput.value.trim().length > 0;
-    confirmBtn.disabled = !hasName;
-  } else {
-    confirmBtn.disabled = !selectedQuizId;
-  }
-}
-
-async function handleQuizConfirm() {
-  const confirmBtn = document.getElementById("quiz-modal-confirm");
-  if (confirmBtn && confirmBtn.disabled) return;
-  
+async function handleSaveToQuiz() {
   try {
     let quizId = selectedQuizId;
     
@@ -4392,12 +4349,14 @@ async function handleQuizConfirm() {
       return;
     }
     
-    // Disable button during processing
-    if (confirmBtn) confirmBtn.disabled = true;
-    if (confirmBtn) confirmBtn.textContent = "Adding...";
-    
     // Add questions to quiz
     const courseId = state.course.id || JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+    
+    const continueBtn = document.getElementById("continue-btn");
+    if (continueBtn) {
+      continueBtn.disabled = true;
+      continueBtn.textContent = "Saving...";
+    }
     
     const response = await fetch(`/api/quiz/${quizId}/questions`, {
       method: "POST",
@@ -4417,27 +4376,35 @@ async function handleQuizConfirm() {
     
     const data = await response.json();
     
-    showToast(
-      `Successfully added ${data.questionsAdded || questions.length} question${data.questionsAdded !== 1 ? 's' : ''} to quiz`,
-      "success"
+    const questionsCount = data.questionsAdded || questions.length;
+    
+    // Show success modal with button to question bank
+    showSuccessModal(
+      `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to quiz!`,
+      questionsCount
     );
     
-    // Close modal
-    hideQuizSelectionModal();
+    // Reset form
+    const nameInput = document.getElementById("quiz-name-input");
+    const descriptionInput = document.getElementById("quiz-description-input");
+    if (nameInput) nameInput.value = "";
+    if (descriptionInput) descriptionInput.value = "";
+    selectedQuizId = null;
+    isCreatingNewQuiz = false;
     
-    // Disable AddToBank button
-    const addToBankBtn = document.getElementById("add-to-bank-btn");
-    if (addToBankBtn) addToBankBtn.disabled = true;
+    if (continueBtn) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Save to Quiz";
+    }
     
   } catch (error) {
     console.error("Error adding questions to quiz:", error);
     showToast(error.message || "Failed to add questions to quiz", "error");
     
-    // Re-enable button
-    const confirmBtn = document.getElementById("quiz-modal-confirm");
-    if (confirmBtn) {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = "Add to Quiz";
+    const continueBtn = document.getElementById("continue-btn");
+    if (continueBtn) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Continue";
     }
   }
 }
