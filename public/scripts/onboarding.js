@@ -5,14 +5,86 @@ class OnboardingManager {
     this.totalSteps = 3;
     this.courseData = {};
     this.courses = null;
+    this.userAffiliation = null;
+    this.isFaculty = false;
     this.init();
   }
 
-  init() {
+  async init() {
+    await this.loadUserInfo();
     this.setupEventListeners();
     this.setupTabSwitching();
     this.updateProgressIndicator();
-    this.checkAndSetDefaultTab();
+    this.updateUIForUserRole();
+    await this.checkAndSetDefaultTab();
+  }
+
+  async loadUserInfo() {
+    try {
+      const response = await fetch("/api/current-user");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          this.userAffiliation = data.user.affiliation;
+          // Check if user is faculty - affiliation can be string (comma-separated) or array
+          const affiliations = Array.isArray(this.userAffiliation)
+            ? this.userAffiliation
+            : String(this.userAffiliation || '').split(',').map(a => a.trim());
+          this.isFaculty = affiliations.includes('faculty');
+        }
+      }
+    } catch (error) {
+      console.error("Error loading user info:", error);
+    }
+  }
+
+  updateUIForUserRole() {
+    // Hide "New Course Setup" tab for staff
+    const setupTabButton = document.querySelector('.tab-button[data-tab="setup"]');
+    if (setupTabButton && !this.isFaculty) {
+      setupTabButton.style.display = 'none';
+    }
+
+    // Hide "Create New Course" option in dropdown for staff
+    const courseNameSelect = document.getElementById("course-name");
+    if (courseNameSelect) {
+      const createNewOption = Array.from(courseNameSelect.options).find(
+        opt => opt.value === "custom"
+      );
+      if (createNewOption && !this.isFaculty) {
+        createNewOption.style.display = 'none';
+        // If "Create New Course" is selected, reset to first option
+        if (courseNameSelect.value === "custom") {
+          courseNameSelect.value = "";
+        }
+      }
+    }
+
+    // Hide custom course input groups for staff
+    const customCourseGroup = document.getElementById("custom-course-group");
+    const customCourseNameGroup = document.getElementById("custom-course-name-group");
+    if (customCourseGroup && !this.isFaculty) {
+      customCourseGroup.style.display = 'none';
+    }
+    if (customCourseNameGroup && !this.isFaculty) {
+      customCourseNameGroup.style.display = 'none';
+    }
+
+    // Update no-courses message for staff
+    const noCoursesMessage = document.getElementById("no-courses-message");
+    if (noCoursesMessage && !this.isFaculty) {
+      const createButton = noCoursesMessage.querySelector('button');
+      if (createButton) {
+        createButton.style.display = 'none';
+      }
+      const messageText = noCoursesMessage.querySelector('p');
+      if (messageText) {
+        messageText.textContent = "You don't have any courses set up yet. Please contact a faculty member to add you to a course.";
+      }
+    }
+
+    // Note: Tab visibility is now handled by checkAndSetDefaultTab() which runs after this
+    // This method just hides UI elements, not the tab switching logic
   }
 
   setupEventListeners() {
@@ -62,25 +134,54 @@ class OnboardingManager {
     console.log("Login tab:", loginTab);
     console.log("Setup tab:", setupTab);
 
-    // Ensure setup tab is visible by default and step 1 is active
-    if (setupTab) {
-      setupTab.style.display = "block";
-      setupTab.classList.add("active");
-      // Make sure step 1 is active
-      const step1 = document.getElementById("step-1");
-      if (step1) {
-        step1.classList.add("active");
+    // Default state: setup tab for faculty, login tab for staff
+    // This will be overridden by checkAndSetDefaultTab() if user has courses
+    if (!this.isFaculty) {
+      // Staff: show login tab by default (they can't create courses)
+      if (loginTab) {
+        loginTab.style.display = "block";
+        loginTab.style.visibility = "visible";
+        loginTab.classList.add("active");
       }
-    }
-    if (loginTab) {
-      loginTab.style.display = "none";
-      loginTab.classList.remove("active");
+      if (setupTab) {
+        setupTab.style.display = "none";
+        setupTab.classList.remove("active");
+      }
+      // Update tab buttons
+      tabButtons.forEach((btn) => {
+        if (btn.getAttribute("data-tab") === "login") {
+          btn.classList.add("active");
+        } else {
+          btn.classList.remove("active");
+        }
+      });
+    } else {
+      // Faculty: show setup tab by default (will be changed if they have courses)
+      if (setupTab) {
+        setupTab.style.display = "block";
+        setupTab.classList.add("active");
+        // Make sure step 1 is active
+        const step1 = document.getElementById("step-1");
+        if (step1) {
+          step1.classList.add("active");
+        }
+      }
+      if (loginTab) {
+        loginTab.style.display = "none";
+        loginTab.classList.remove("active");
+      }
     }
 
     tabButtons.forEach((button) => {
       button.addEventListener("click", () => {
         const tab = button.getAttribute("data-tab");
         console.log("Tab clicked:", tab);
+
+        // Prevent staff from accessing setup tab
+        if (tab === "setup" && !this.isFaculty) {
+          console.warn("Staff users cannot access course setup");
+          return;
+        }
 
         // Update active tab button
         tabButtons.forEach((btn) => btn.classList.remove("active"));
@@ -142,12 +243,20 @@ class OnboardingManager {
 
       const data = await response.json();
 
-      // If user has courses, switch to login tab and use the fetched data
-      if (data.success && data.courses && data.courses.length > 0) {
-        // Store courses in state to avoid duplicate API call
-        this.courses = data.courses;
-        
-        // Switch to login tab manually (without triggering click event)
+      // Determine which tab to show based on user role and course availability
+      const hasCourses = data.success && data.courses && data.courses.length > 0;
+      
+      // Store courses in state (even if empty array) to avoid duplicate API call
+      this.courses = data.success && data.courses ? data.courses : [];
+      
+      // Logic:
+      // 1. Staff users -> always show login tab (they can't create courses)
+      // 2. Faculty with courses -> show login tab (existing behavior)
+      // 3. Faculty without courses -> show setup tab (default for faculty)
+      const shouldShowLoginTab = !this.isFaculty || hasCourses;
+      
+      if (shouldShowLoginTab) {
+        // Switch to login tab
         const tabButtons = document.querySelectorAll(".tab-button");
         const loginButton = document.querySelector('[data-tab="login"]');
         const loginTab = document.getElementById("login-tab");
@@ -169,12 +278,36 @@ class OnboardingManager {
           setupTab.classList.remove("active");
         }
         
-        // Load courses using cached data (no API call)
-        this.loadExistingCourses(data.courses);
+        // Load courses into the login tab using the courses we already fetched
+        // Pass the courses array (even if empty) to avoid duplicate API call
+        this.loadExistingCourses(this.courses);
       }
+      // If faculty without courses, setup tab is already shown by setupTabSwitching()
     } catch (error) {
       console.error("Error checking for existing courses:", error);
-      // On error, default to setup tab (existing behavior)
+      // On error, default based on user role:
+      // Staff -> login tab, Faculty -> setup tab
+      if (!this.isFaculty) {
+        const tabButtons = document.querySelectorAll(".tab-button");
+        const loginButton = document.querySelector('[data-tab="login"]');
+        const loginTab = document.getElementById("login-tab");
+        const setupTab = document.getElementById("setup-tab");
+        
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        if (loginButton) loginButton.classList.add("active");
+        if (loginTab) {
+          loginTab.style.display = "block";
+          loginTab.style.visibility = "visible";
+          loginTab.classList.add("active");
+        }
+        if (setupTab) {
+          setupTab.style.display = "none";
+          setupTab.classList.remove("active");
+        }
+        
+        // Load courses (will show "no courses" message if fetch fails)
+        this.loadExistingCourses(null);
+      }
     }
   }
 
@@ -317,6 +450,11 @@ class OnboardingManager {
     }
 
     if (courseName === "custom") {
+      // Staff cannot create new courses
+      if (!this.isFaculty) {
+        this.showError("Only faculty can create new courses");
+        return;
+      }
       if (!customCourseCode || !customCourseTitle) {
         this.showError("Please provide both course code and title");
         return;
@@ -456,6 +594,12 @@ class OnboardingManager {
 
   async saveCourseProfile() {
     try {
+      // Staff cannot create new courses
+      if (!this.isFaculty) {
+        this.showError("Only faculty can create new courses");
+        return;
+      }
+
       // Log the data being sent for debugging
       console.log("Saving course profile with data:", this.courseData);
 
@@ -625,9 +769,13 @@ function accessCourseDashboard(buttonElement) {
 }
 
 function switchToSetupTab() {
+  // Check if user is faculty before allowing tab switch
+  // This is a fallback - the tab should already be hidden for staff
   const setupButton = document.querySelector('[data-tab="setup"]');
-  if (setupButton) {
+  if (setupButton && setupButton.style.display !== 'none') {
     setupButton.click();
+  } else {
+    console.warn("Course creation is not available for staff users");
   }
 }
 

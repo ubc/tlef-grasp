@@ -4,6 +4,16 @@ const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('
 const { isUserInCourse } = require('../services/user-course');
 const { getQuestionCourseId, getQuestion } = require('../services/question');
 
+// Helper function to check if user is faculty
+const isFaculty = (user) => {
+  if (!user || !user.affiliation) return false;
+  // affiliation can be a string (comma-separated) or an array
+  const affiliations = Array.isArray(user.affiliation) 
+    ? user.affiliation 
+    : String(user.affiliation).split(',').map(a => a.trim());
+  return affiliations.includes('faculty');
+};
+
 // Get questions for a course
 router.get("/", async (req, res) => {
   try {
@@ -148,6 +158,13 @@ router.put("/:questionId/status", express.json(), async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
 
+    // Staff cannot approve/unapprove questions
+    if (!isFaculty(req.user)) {
+      return res.status(403).json({ 
+        error: "Only faculty can approve or unapprove questions" 
+      });
+    }
+
     if (!status) {
       return res.status(400).json({ error: "Status is required" });
     }
@@ -158,12 +175,9 @@ router.put("/:questionId/status", express.json(), async (req, res) => {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    await updateQuestion(
-      {
-        ...question,
-        status: status,
-      }
-    );
+    await updateQuestion(questionId, {
+      status: status,
+    });
 
     res.json({
       success: true,
@@ -186,6 +200,18 @@ router.delete("/:questionId", async (req, res) => {
 
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
+    }
+
+    // Check if question is approved - staff cannot delete approved questions
+    const question = await getQuestion(questionId);
+    if (!question) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    if (!isFaculty(req.user) && question.status === "Approved") {
+      return res.status(403).json({ 
+        error: "Staff cannot delete approved questions" 
+      });
     }
 
     const result = await deleteQuestion(questionId);

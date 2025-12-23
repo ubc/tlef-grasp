@@ -40,16 +40,38 @@ class QuestionBankPage {
     this.quizzes = [];
     this.allQuizzes = []; // Store all quizzes for filter dropdown
     this.objectivesMap = new Map(); // Map objective ID to objective name
+    this.userAffiliation = null; // Store user affiliation for permission checks
+    this.isFaculty = false; // Cache faculty status
     this.init();
   }
 
   async init() {
+    await this.loadUserInfo();
     this.initializeNavigation();
     this.initializeData();
     this.initializeEventListeners();
     
     // Set initial tab based on URL or default to overview
     await this.switchTab(this.state.currentTab);
+  }
+
+  async loadUserInfo() {
+    try {
+      const response = await fetch("/api/current-user");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          this.userAffiliation = data.user.affiliation;
+          // Check if user is faculty - affiliation can be string (comma-separated) or array
+          const affiliations = Array.isArray(this.userAffiliation)
+            ? this.userAffiliation
+            : String(this.userAffiliation || '').split(',').map(a => a.trim());
+          this.isFaculty = affiliations.includes('faculty');
+        }
+      }
+    } catch (error) {
+      console.error("Error loading user info:", error);
+    }
   }
 
   initializeNavigation() {
@@ -748,11 +770,14 @@ class QuestionBankPage {
           <div class="quiz-bulk-actions ${
             quiz.selection.size > 0 ? "visible" : ""
           }">
-            <button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
-              quiz.id
-            }, 'approve')">
-              Approve selected
-            </button>
+            ${this.isFaculty 
+              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
+                  quiz.id
+                }, 'approve')">
+                Approve selected
+              </button>`
+              : ''
+            }
             <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
               quiz.id
             }, 'flag')">
@@ -823,12 +848,15 @@ class QuestionBankPage {
               </td>
               <td>${question.lastEdited}</td>
               <td class="question-actions">
-                <button class="question-action-btn approve" 
-                        onclick="window.questionBankPage.handleQuestionAction(${
-                          quiz.id
-                        }, ${question.id}, 'approve')">
-                  ${question.approved ? "Unapprove" : "Approve"}
-                </button>
+                ${this.isFaculty 
+                  ? `<button class="question-action-btn approve" 
+                            onclick="window.questionBankPage.handleQuestionAction(${
+                              quiz.id
+                            }, ${question.id}, 'approve')">
+                    ${question.approved ? "Unapprove" : "Approve"}
+                  </button>`
+                  : ''
+                }
                 <button class="question-action-btn flag" 
                         onclick="window.questionBankPage.handleQuestionAction(${
                           quiz.id
@@ -841,12 +869,15 @@ class QuestionBankPage {
                         }, ${question.id}, 'edit')">
                   Edit
                 </button>
-                <button class="question-action-btn delete" 
-                        onclick="window.questionBankPage.handleQuestionAction(${
-                          quiz.id
-                        }, ${question.id}, 'delete')">
-                  Delete
-                </button>
+                ${this.isFaculty || (question.status && question.status.toLowerCase() !== 'approved')
+                  ? `<button class="question-action-btn delete" 
+                            onclick="window.questionBankPage.handleQuestionAction(${
+                              quiz.id
+                            }, ${question.id}, 'delete')">
+                    Delete
+                  </button>`
+                  : ''
+                }
               </td>
             </tr>
           `
@@ -944,6 +975,11 @@ class QuestionBankPage {
 
     switch (action) {
       case "approve":
+        // Check permission - only faculty can approve
+        if (!this.isFaculty) {
+          this.showNotification("Only faculty can approve questions", "error");
+          return;
+        }
         question.approved = !question.approved;
         question.status = question.approved ? "Approved" : "Draft";
         this.showNotification(
@@ -963,6 +999,11 @@ class QuestionBankPage {
         this.handleQuestionEdit(quizId, questionId);
         return;
       case "delete":
+        // Check if staff is trying to delete approved question
+        if (!this.isFaculty && question.status && question.status.toLowerCase() === 'approved') {
+          this.showNotification("Staff cannot delete approved questions", "error");
+          return;
+        }
         this.showModal(
           "Delete Question",
           `Are you sure you want to delete "${question.title}"?`,
@@ -1002,6 +1043,11 @@ class QuestionBankPage {
 
     switch (action) {
       case "approve":
+        // Check permission - only faculty can approve
+        if (!this.isFaculty) {
+          this.showNotification("Only faculty can approve questions", "error");
+          return;
+        }
         selectedQuestions.forEach((q) => {
           q.approved = true;
           q.status = "Approved";
@@ -1022,6 +1068,16 @@ class QuestionBankPage {
         );
         break;
       case "delete":
+        // Check if staff is trying to delete approved questions
+        if (!this.isFaculty) {
+          const hasApproved = selectedQuestions.some(
+            (q) => q.status && q.status.toLowerCase() === 'approved'
+          );
+          if (hasApproved) {
+            this.showNotification("Staff cannot delete approved questions", "error");
+            return;
+          }
+        }
         this.showModal(
           "Delete Questions",
           `Are you sure you want to delete ${selectedQuestions.length} question(s)?`,
@@ -1069,18 +1125,49 @@ class QuestionBankPage {
         totalSelected !== 1 ? "s" : ""
       } selected`;
 
-      // Enable/disable cross-quiz action buttons
-      const crossButtons = [
-        "cross-approve-btn",
-        "cross-flag-btn",
-        "cross-delete-btn",
-      ];
-      crossButtons.forEach((btnId) => {
-        const btn = document.getElementById(btnId);
-        if (btn) {
-          btn.disabled = false;
+      // Show/hide approve button based on user role
+      const crossApproveBtn = document.getElementById("cross-approve-btn");
+      if (crossApproveBtn) {
+        if (this.isFaculty) {
+          crossApproveBtn.style.display = "inline-flex";
+          crossApproveBtn.disabled = false;
+        } else {
+          crossApproveBtn.style.display = "none";
         }
-      });
+      }
+
+      // Check if any selected questions are approved (for staff delete restriction)
+      let hasApprovedQuestions = false;
+      if (!this.isFaculty) {
+        this.quizzes.forEach((quiz) => {
+          if (quiz.selection.size > 0) {
+            quiz.questions.forEach((q) => {
+              if (quiz.selection.has(q.id) && q.status && q.status.toLowerCase() === 'approved') {
+                hasApprovedQuestions = true;
+              }
+            });
+          }
+        });
+      }
+
+      // Enable/disable cross-quiz action buttons
+      const crossFlagBtn = document.getElementById("cross-flag-btn");
+      const crossDeleteBtn = document.getElementById("cross-delete-btn");
+      
+      if (crossFlagBtn) {
+        crossFlagBtn.disabled = false;
+      }
+      
+      if (crossDeleteBtn) {
+        // Staff cannot delete if any selected questions are approved
+        if (!this.isFaculty && hasApprovedQuestions) {
+          crossDeleteBtn.disabled = true;
+          crossDeleteBtn.title = "Staff cannot delete approved questions";
+        } else {
+          crossDeleteBtn.disabled = false;
+          crossDeleteBtn.title = "";
+        }
+      }
     } else {
       crossQuizActions.style.display = "none";
 
@@ -1279,6 +1366,11 @@ class QuestionBankPage {
 
     switch (action) {
       case "approve":
+        // Check permission - only faculty can approve
+        if (!this.isFaculty) {
+          this.showNotification("Only faculty can approve questions", "error");
+          return;
+        }
         affectedQuizzes.forEach((quiz) => {
           quiz.questions.forEach((q) => {
             if (quiz.selection.has(q.id)) {
@@ -1311,6 +1403,21 @@ class QuestionBankPage {
         );
         break;
       case "delete":
+        // Check if staff is trying to delete approved questions
+        if (!this.isFaculty) {
+          let hasApproved = false;
+          affectedQuizzes.forEach((quiz) => {
+            quiz.questions.forEach((q) => {
+              if (quiz.selection.has(q.id) && q.status && q.status.toLowerCase() === 'approved') {
+                hasApproved = true;
+              }
+            });
+          });
+          if (hasApproved) {
+            this.showNotification("Staff cannot delete approved questions", "error");
+            return;
+          }
+        }
         this.showModal(
           "Delete Questions",
           `Are you sure you want to delete ${totalSelected} question(s) across ${
@@ -1479,17 +1586,19 @@ class QuestionBankPage {
                       title="View/Edit Question">
                 <i class="fas fa-eye"></i> View/Edit
               </button>
-              ${question.status && question.status.toLowerCase() === 'approved' 
-                ? `<button class="question-approve-btn question-approve-btn--unapprove" 
-                           onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', false)"
-                           title="Unapprove Question">
-                    <i class="fas fa-times-circle"></i> Unapprove
-                  </button>`
-                : `<button class="question-approve-btn question-approve-btn--approve" 
-                           onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', true)"
-                           title="Approve Question">
-                    <i class="fas fa-check-circle"></i> Approve
-                  </button>`
+              ${this.isFaculty 
+                ? (question.status && question.status.toLowerCase() === 'approved' 
+                  ? `<button class="question-approve-btn question-approve-btn--unapprove" 
+                             onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', false)"
+                             title="Unapprove Question">
+                      <i class="fas fa-times-circle"></i> Unapprove
+                    </button>`
+                  : `<button class="question-approve-btn question-approve-btn--approve" 
+                             onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', true)"
+                             title="Approve Question">
+                      <i class="fas fa-check-circle"></i> Approve
+                    </button>`)
+                : ''
               }
             </div>
           </div>

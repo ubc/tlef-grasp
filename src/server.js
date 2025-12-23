@@ -130,6 +130,7 @@ app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
       username: req.user.username,
       displayName: req.user.displayName,
       email: req.user.email,
+      affiliation: req.user.affiliation,
     },
   });
 });
