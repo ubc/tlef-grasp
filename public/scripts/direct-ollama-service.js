@@ -72,19 +72,40 @@ BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
 INSTRUCTIONS:
 1. Create a specific, detailed question that tests understanding of the objective
 2. Use actual content from the materials - don't be generic
-3. Include 4 answer options (A, B, C, D)
+3. Include 4 answer options
 4. Make the correct answer clearly correct based on the content
 5. Make incorrect answers plausible but clearly wrong
 6. Focus on the specific concepts, examples, or details mentioned in the content
 7. Format your response as JSON with this structure:
 {
   "question": "Your specific question here",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctAnswer": 0,
+  "options": {
+    "A": "First option text",
+    "B": "Second option text",
+    "C": "Third option text",
+    "D": "Fourth option text"
+  },
+  "correctAnswer": "A",
   "explanation": "Why this answer is correct based on the content"
 }
 
-IMPORTANT: Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.`;
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. Do NOT wrap the JSON in markdown code blocks (do not use triple backticks with json or triple backticks alone).
+- Do NOT include any text before or after the JSON object.
+- The response must start with { and end with }.
+- Return pure JSON that can be directly parsed with JSON.parse().
+
+IMPORTANT: 
+- Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.
+- CRITICAL: Use an object for options with keys "A", "B", "C", "D" (not an array). Place the correct answer at a random key (A, B, C, or D) and set correctAnswer to that exact key letter. For example, if the correct answer is in option "B", set correctAnswer to "B". This avoids array index confusion.
+- CRITICAL: You MUST randomly choose which option (A, B, C, or D) contains the correct answer. Each letter should have an equal 25% chance of being the correct answer. Do NOT bias toward A, B, or C - ensure D is also used frequently. After placing the correct answer text in one of the four options, set correctAnswer to that exact letter. Use a random number generator or random selection - do NOT always use A, B, or C. Option D must be selected approximately 25% of the time.
+- CRITICAL: Always wrap any mathematical expressions in LaTeX delimiters. You MUST use backslash-parenthesis \( ... \) for inline math (NOT plain parentheses). Examples:
+  * CORRECT: \( \frac{3}{4} \) or \( x^2 + 5 = 10 \)
+  * WRONG: (\frac{3}{4}) or (x^2 + 5 = 10) - these will NOT render as math
+  * Use \[ ... \] for display math (block equations on their own line)
+  * Do NOT use $ ... $ delimiters - only use \( ... \) for inline math and \[ ... \] for display math
+  * The backslash before the parenthesis is REQUIRED - \( not just (
+- CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options object values should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".`;
   }
 
   isAvailable() {

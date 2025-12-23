@@ -155,39 +155,6 @@ class QuestionGenerator {
     return content;
   }
 
-  getMockQuestions() {
-    return [
-      {
-        id: 1,
-        text: "What is the primary function of a catalyst in a chemical reaction?",
-        type: "multiple-choice",
-        options: [
-          "To increase the activation energy",
-          "To decrease the activation energy",
-          "To change the equilibrium constant",
-          "To increase the temperature",
-        ],
-        correctAnswer: 1,
-        bloomLevel: "Understand",
-        difficulty: "Medium",
-      },
-      {
-        id: 2,
-        text: "Which of the following best describes an exothermic reaction?",
-        type: "multiple-choice",
-        options: [
-          "A reaction that absorbs heat from the surroundings",
-          "A reaction that releases heat to the surroundings",
-          "A reaction that requires continuous heating",
-          "A reaction that occurs only at high temperatures",
-        ],
-        correctAnswer: 1,
-        bloomLevel: "Remember",
-        difficulty: "Easy",
-      },
-    ];
-  }
-
   // Generate questions for specific objectives using enhanced content analysis
   async generateQuestionsForObjective(courseName, learningObjective, granularLearningObjective) {
     console.log(
@@ -297,35 +264,6 @@ class QuestionGenerator {
     return [...new Set(concepts)].slice(0, 5);
   }
 
-  // Extract examples from content
-  extractExamplesForQuestion(content) {
-    const examples = [];
-
-    // Look for example patterns
-    const examplePatterns = [
-      /for example[:\s]+([^.!?]{10,100})/gi,
-      /such as[:\s]+([^.!?]{10,100})/gi,
-      /including[:\s]+([^.!?]{10,100})/gi,
-      /e\.g\.[:\s]+([^.!?]{10,100})/gi,
-    ];
-
-    examplePatterns.forEach((pattern) => {
-      const matches = content.match(pattern);
-      if (matches) {
-        matches.forEach((match) => {
-          const example = match
-            .replace(/^(for example|such as|including|e\.g\.)[:\s]+/i, "")
-            .trim();
-          if (example.length > 10 && example.length < 100) {
-            examples.push(example);
-          }
-        });
-      }
-    });
-
-    return [...new Set(examples)].slice(0, 3);
-  }
-
   // Determine difficulty based on Bloom's taxonomy
   determineDifficulty(bloomLevel) {
     const difficultyMap = {
@@ -338,105 +276,6 @@ class QuestionGenerator {
     };
 
     return difficultyMap[bloomLevel.toLowerCase()] || "Medium";
-  }
-
-  // Check if a word is common
-  isCommonWord(word) {
-    const commonWords = [
-      "This",
-      "That",
-      "With",
-      "From",
-      "They",
-      "Have",
-      "Been",
-      "Will",
-      "Were",
-      "Said",
-      "The",
-      "And",
-      "For",
-      "Are",
-      "But",
-      "Not",
-      "You",
-      "All",
-      "Can",
-      "Had",
-      "Her",
-      "Was",
-      "One",
-      "Our",
-      "Out",
-      "Day",
-      "Get",
-      "Has",
-      "Him",
-      "His",
-      "How",
-      "Man",
-      "New",
-      "Now",
-      "Old",
-      "See",
-      "Two",
-      "Way",
-      "Who",
-      "Boy",
-      "Did",
-      "Its",
-      "Let",
-      "Put",
-      "Say",
-      "She",
-      "Too",
-      "Use",
-    ];
-    return commonWords.includes(word);
-  }
-
-  getMockQuestionsForObjective(objective) {
-    return [
-      {
-        id: Date.now() + Math.random(),
-        text: `Sample question for: ${objective.text}`,
-        type: "multiple-choice",
-        options: ["Option A", "Option B", "Option C", "Option D"],
-        correctAnswer: 0,
-        bloomLevel: objective.bloom[0] || "Understand",
-        difficulty: "Medium",
-        objectiveId: objective.id,
-      },
-    ];
-  }
-
-  // Validate question quality
-  validateQuestion(question) {
-    const issues = [];
-
-    if (!question.text || question.text.length < 10) {
-      issues.push("Question text is too short");
-    }
-
-    if (!question.options || question.options.length < 2) {
-      issues.push("Question needs at least 2 options");
-    }
-
-    if (
-      question.correctAnswer === undefined ||
-      question.correctAnswer === null
-    ) {
-      issues.push("Question needs a correct answer");
-    }
-
-    if (!question.bloomLevel) {
-      issues.push("Question needs a Bloom's taxonomy level");
-    }
-
-    return {
-      isValid: issues.length === 0,
-      issues: issues,
-    };
   }
 
   // Format questions for export
@@ -456,9 +295,17 @@ class QuestionGenerator {
     let csv =
       "Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n";
     questions.forEach((q) => {
-      csv += `"${q.text}","${q.options[0]}","${q.options[1]}","${
-        q.options[2]
-      }","${q.options[3]}","${q.options[q.correctAnswer]}","${q.bloomLevel}","${
+      // Options are always objects with keys A, B, C, D
+      const optA = q.options?.A || '';
+      const optB = q.options?.B || '';
+      const optC = q.options?.C || '';
+      const optD = q.options?.D || '';
+      // correctAnswer is always a letter (A, B, C, D)
+      const correctAnswerLetter = typeof q.correctAnswer === 'string' 
+        ? q.correctAnswer.toUpperCase() 
+        : (typeof q.correctAnswer === 'number' ? ['A', 'B', 'C', 'D'][q.correctAnswer] : 'A');
+      const correctOpt = q.options?.[correctAnswerLetter] || '';
+      csv += `"${q.text}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel}","${
         q.difficulty
       }"\n`;
     });
@@ -493,17 +340,13 @@ class QuestionGenerator {
         </material>
         <response_lid ident="response1">
           <render_choice>
-            ${q.options
-              .map(
-                (option, optIndex) => `
+            ${['A', 'B', 'C', 'D'].map((key, optIndex) => `
             <response_label ident="choice${optIndex}">
               <material>
-                <mattext>${option}</mattext>
+                <mattext>${q.options?.[key] || ''}</mattext>
               </material>
             </response_label>
-            `
-              )
-              .join("")}
+            `).join("")}
           </render_choice>
         </response_lid>
       </presentation>
@@ -513,7 +356,19 @@ class QuestionGenerator {
         </outcomes>
         <respcondition continue="No">
           <conditionvar>
-            <varequal respident="response1">choice${q.correctAnswer}</varequal>
+            <varequal respident="response1">choice${(() => {
+              // Convert letter to index (0-3) for QTI format
+              if (typeof q.correctAnswer === 'string') {
+                const letter = q.correctAnswer.toUpperCase();
+                if (letter === 'A') return 0;
+                if (letter === 'B') return 1;
+                if (letter === 'C') return 2;
+                if (letter === 'D') return 3;
+              } else if (typeof q.correctAnswer === 'number') {
+                return q.correctAnswer;
+              }
+              return 0;
+            })()}</varequal>
           </conditionvar>
           <setvar action="Set">1</setvar>
         </respcondition>

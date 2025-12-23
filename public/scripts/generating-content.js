@@ -173,7 +173,7 @@ class ContentGenerator {
           await this.addDocumentToKnowledgeBase(file.content, {
             source: file.name,
             type: "file",
-            course: course,
+            course: course.name,
           });
         } else {
           console.log(`Skipping file (no content): ${file.name}`);
@@ -186,7 +186,7 @@ class ContentGenerator {
         await this.addDocumentToKnowledgeBase(`URL: ${url.url}`, {
           source: url.url,
           type: "url",
-          course: course,
+          course: course.name,
         });
       }
 
@@ -301,7 +301,7 @@ class ContentGenerator {
         return await this.addDocumentToKnowledgeBase(content, {
           source: file.name,
           type: "file",
-          course: course,
+          course: course.name,
           sourceId: sourceId,
         });
       }
@@ -351,7 +351,7 @@ class ContentGenerator {
       await this.addDocumentToKnowledgeBase(content, {
         source: url,
         type: "url",
-        course: course,
+        course: course.name,
         sourceId: sourceId,
         documentTitle: documentTitle || "",
       });
@@ -368,7 +368,7 @@ class ContentGenerator {
       return await this.addDocumentToKnowledgeBase(text, {
         source: "",
         type: "text",
-        course: course,
+        course: course.name,
         sourceId: sourceId,
         documentTitle: documentTitle || "",
       });

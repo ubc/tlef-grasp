@@ -4,9 +4,6 @@ const path = require("path");
 const fs = require("fs");
 const router = express.Router();
 
-// Import Qdrant patch to fix Float32Array issue
-require("../utils/qdrant-patch");
-
 // Import UBC GenAI Toolkit for document processing
 let RAGModule = null;
 let ChunkingModule = null;

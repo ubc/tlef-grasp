@@ -4,8 +4,6 @@
 // Development flag for mock API responses
 const DEV_MODE = true;
 
-// PDF Service
-let pdfService = null;
 let questionGenerator = null;
 let contentGenerator = null;
 
@@ -107,6 +105,25 @@ async function loadCourseData() {
   }
 }
 
+function showNoCourseSelectedMessage() {
+  const stepContent = document.getElementById("step-content");
+  const noMaterialsMessage = document.getElementById("no-materials-message");
+  if (stepContent) stepContent.style.display = "none";
+  if (noMaterialsMessage) {
+    noMaterialsMessage.style.display = "block";
+    // Update message for no course selected
+    const messageDiv = noMaterialsMessage.querySelector("h2");
+    if (messageDiv) {
+      messageDiv.textContent = "No Course Selected";
+    }
+    const messageP = noMaterialsMessage.querySelector("p");
+    if (messageP) {
+      messageP.textContent = "Please select a course first to generate questions.";
+    }
+  }
+}
+
+
 async function checkCourseMaterials() {
   try {
     const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
@@ -145,92 +162,8 @@ async function checkCourseMaterials() {
   }
 }
 
-function showNoCourseSelectedMessage() {
-  const stepContent = document.getElementById("step-content");
-  const noMaterialsMessage = document.getElementById("no-materials-message");
-  if (stepContent) stepContent.style.display = "none";
-  if (noMaterialsMessage) {
-    noMaterialsMessage.style.display = "block";
-    // Update message for no course selected
-    const messageDiv = noMaterialsMessage.querySelector("h2");
-    if (messageDiv) {
-      messageDiv.textContent = "No Course Selected";
-    }
-    const messageP = noMaterialsMessage.querySelector("p");
-    if (messageP) {
-      messageP.textContent = "Please select a course first to generate questions.";
-    }
-  }
-}
-
-function updateCourseDropdown(courses) {
-  const courseSelect = document.getElementById("course-select");
-  if (courseSelect) {
-    // Clear existing options except the first one
-    courseSelect.innerHTML = '<option value="">Select a course...</option>';
-
-    // Add course options
-    courses.forEach((course) => {
-      const option = document.createElement("option");
-      option.value = course.courseCode;
-      option.textContent = `${course.courseName}`;
-
-      if (course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id) {
-        option.selected = true;
-      }
-      courseSelect.appendChild(option);
-    });
-  }
-}
-
-function showNoCoursesMessage() {
-  const courseSelect = document.getElementById("course-select");
-  if (courseSelect) {
-    courseSelect.innerHTML =
-      '<option value="">No courses available. Please complete onboarding first.</option>';
-  }
-}
-
-function showNotification(message, type = "info") {
-  // Create notification element
-  const notification = document.createElement("div");
-  notification.className = `notification notification-${type}`;
-  notification.textContent = message;
-
-  // Style the notification
-  notification.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 12px 20px;
-    border-radius: 8px;
-    color: white;
-    font-weight: 500;
-    z-index: 10000;
-    background-color: ${type === "warning" ? "#f39c12" : type === "error" ? "#e74c3c" : "#3498db"
-    };
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    animation: slideIn 0.3s ease-out;
-  `;
-
-  // Add to page
-  document.body.appendChild(notification);
-
-  // Remove after 5 seconds
-  setTimeout(() => {
-    if (notification.parentNode) {
-      notification.remove();
-    }
-  }, 5000);
-}
-
 function initializeModules() {
   console.log("Initializing modules...");
-  console.log("PDFParsingService available:", window.PDFParsingService);
-
-  // Initialize PDF service
-  pdfService = new window.PDFParsingService();
-  console.log("PDF service created:", pdfService);
 
   // Initialize content generator
   contentGenerator = new window.ContentGenerator();
@@ -520,61 +453,6 @@ function updateNavigationButtons() {
       continueBtn.className = "btn btn--primary";
     }
   }
-}
-
-// Check if a word is a common word that shouldn't be treated as a concept
-function isCommonWord(word) {
-  const commonWords = [
-    "This",
-    "That",
-    "With",
-    "From",
-    "They",
-    "Have",
-    "Been",
-    "Will",
-    "Were",
-    "Said",
-    "The",
-    "And",
-    "For",
-    "Are",
-    "But",
-    "Not",
-    "You",
-    "All",
-    "Can",
-    "Had",
-    "Her",
-    "Was",
-    "One",
-    "Our",
-    "Out",
-    "Day",
-    "Get",
-    "Has",
-    "Him",
-    "His",
-    "How",
-    "Man",
-    "New",
-    "Now",
-    "Old",
-    "See",
-    "Two",
-    "Way",
-    "Who",
-    "Boy",
-    "Did",
-    "Its",
-    "Let",
-    "Put",
-    "Say",
-    "She",
-    "Too",
-    "Use",
-  ];
-  return commonWords.includes(word);
 }
 
 // Initialize Step 3 state
@@ -1012,23 +890,6 @@ function displayMaterialsInModal(materials, attachedMaterialIds = new Set()) {
 
     materialsList.appendChild(materialItem);
   });
-}
-
-function getMaterialTypeLabel(fileType) {
-  if (!fileType) return "Unknown";
-  if (fileType.includes("pdf")) return "PDF";
-  if (fileType.includes("text")) return "Text";
-  if (fileType.includes("word")) return "Word";
-  if (fileType === "link") return "Link";
-  return fileType;
-}
-
-function formatFileSize(bytes) {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
 }
 
 function addGranularObjectiveInput(text = "", granularId = null) {
@@ -1854,6 +1715,24 @@ function hideModal(modal) {
   }
 }
 
+function getMaterialTypeLabel(fileType) {
+  if (!fileType) return "Unknown";
+  if (fileType.includes("pdf")) return "PDF";
+  if (fileType.includes("text")) return "Text";
+  if (fileType.includes("word")) return "Word";
+  if (fileType === "link") return "Link";
+  return fileType;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+}
+
+
 async function handleObjectiveSelection(objectiveId, objectiveName) {
   // Normalize objectiveId to string for comparison
   const normalizedObjectiveId = objectiveId ? objectiveId.toString() : null;
@@ -2467,7 +2346,7 @@ function createObjectiveGroup(group) {
       ? `
                 <div class="objective-group__footer ${isWarning ? "objective-group__footer--warning" : ""
       }">
-                    Total: ${totalCount} Required minimum: 5 (${totalCount >= 5 ? "≥5" : "<5"
+                    Total questions: ${totalCount} Minimum required per learning objective: 5 (${totalCount >= 5 ? "≥5" : "<5"
       })
                 </div>
             `
@@ -2523,7 +2402,7 @@ function createObjectiveItem(item, groupId) {
   const bloomValidationMessage = showBloomValidation
     ? `<div class="objective-item__validation-message">
         <i class="fas fa-exclamation-circle"></i>
-        <span>Please select a Bloom level</span>
+        <span>Please select at least one Bloom's Taxonomy level.</span>
       </div>`
     : "";
 
@@ -2813,42 +2692,14 @@ function initializeExportFormat() {
   });
 }
 
-function renderQuestions() {
-  const questionsList = document.getElementById("questions-list");
-  if (!questionsList) return;
-
-  questionsList.innerHTML = "";
-
-  state.questions.forEach((question) => {
-    const questionItem = createQuestionItem(question);
-    questionsList.appendChild(questionItem);
+function renderKatex() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: "\\(", right: "\\)", display: false },
+      { left: "\\[", right: "\\]", display: true }
+    ],
+    throwOnError: false // prevents crashing on bad LaTeX
   });
-}
-
-function createQuestionItem(question) {
-  const options = question.options
-    .map((option, index) => {
-      const isCorrect = index === question.correctAnswer;
-      return `<li class="question-item__option ${isCorrect ? "question-item__option--correct" : ""
-        }">${option}</li>`;
-    })
-    .join("");
-
-  item.innerHTML = `
-        <div class="question-item__header">
-            <div class="question-item__metadata">
-                <span>Bloom: ${question.bloomLevel}</span>
-                <span>Difficulty: ${question.difficulty}</span>
-                <span>Type: ${question.type}</span>
-            </div>
-        </div>
-        <div class="question-item__text">${question.text}</div>
-        <ul class="question-item__options">
-            ${options}
-        </ul>
-    `;
-
-  return item;
 }
 
 // ===== STEP 3: SELECT OUTPUT FORMAT FUNCTIONS =====
@@ -3526,14 +3377,6 @@ function convertQuestionsToGroups(questions) {
   // Create question groups with the expected structure
   Object.entries(groupedQuestions).forEach(
     ([metaCode, groupQuestions], index) => {
-      // Calculate stats for the group
-      const totalQuestions = groupQuestions.length;
-      const totalCount = groupQuestions.reduce(
-        (sum, q) => sum + (q.count || 1),
-        0
-      );
-      const BLOOMLEVELS = [...new Set(groupQuestions.map((q) => q.bloomLevel))];
-
       const group = {
         id: index + 1,
         title: metaCode,
@@ -3552,26 +3395,26 @@ function convertQuestionsToGroups(questions) {
               options: {
                 A: {
                   id: "A",
-                  text: question.options[0] || "Option A",
-                  feedback: `${question.correctAnswer === 0 ? "Correct" : "Incorrect"} - ${question.explanation}`,
+                  text: question.options?.A || "Option A",
+                  feedback: `${question.correctAnswer === 'A' ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 B: {
                   id: "B",
-                  text: question.options[1] || "Option B",
-                  feedback: `${question.correctAnswer === 1 ? "Correct" : "Incorrect"} - ${question.explanation}`,
+                  text: question.options?.B || "Option B",
+                  feedback: `${question.correctAnswer === 'B' ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 C: {
                   id: "C",
-                  text: question.options[2] || "Option C",
-                  feedback: `${question.correctAnswer === 2 ? "Correct" : "Incorrect"} - ${question.explanation}`,
+                  text: question.options?.C || "Option C",
+                  feedback: `${question.correctAnswer === 'C' ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
                 D: {
                   id: "D",
-                  text: question.options[3] || "Option D",
-                  feedback: `${question.correctAnswer === 3 ? "Correct" : "Incorrect"} - ${question.explanation}`,
+                  text: question.options?.D || "Option D",
+                  feedback: `${question.correctAnswer === 'D' ? "Correct" : "Incorrect"} - ${question.explanation}`,
                 },
               },
-              correctAnswer: question.correctAnswer || 0,
+              correctAnswer: question.correctAnswer,
               bloom: question.bloomLevel || "Understand",
               difficulty: question.difficulty || "Medium",
               status: "Draft",
@@ -3660,6 +3503,7 @@ function setupStep2EventListeners() {
 
 function renderStep2() {
   renderQuestionGroups();
+  renderKatex();
 }
 
 function renderQuestionGroups() {
@@ -3778,19 +3622,24 @@ function renderQuestionCard(question, group) {
                 <p class="question-card__stem">${question.stem}</p>
                 <div class="question-card__options">
                     ${Object.values(question.options).map(
-      (option, index) => `
+      (option, index) => {
+        // correctAnswer is now a letter (A, B, C, D), compare with option.id
+        const isCorrect = option.id === question.correctAnswer || 
+                         (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
+        return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
                             <input type="radio" name="q-${question.id
-          }" value="${index}" ${index === question.correctAnswer ? "checked" : ""
+          }" value="${option.id}" ${isCorrect ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${index}', this.value)">`
+            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
-                        <div class="question-card__feedback">${index === question.correctAnswer ? "Correct" : "Incorrect"}</div>
-                    `
+                        <div class="question-card__feedback">${isCorrect ? "Correct" : "Incorrect"}</div>
+                    `;
+      }
       )
       .join("")}
                 </div>
@@ -4204,8 +4053,17 @@ function createMockCSV() {
   let csv =
     "Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n";
   state.questions.forEach((q) => {
-    csv += `"${q.text}","${q.options[0]}","${q.options[1]}","${q.options[2]
-      }","${q.options[3]}","${q.options[q.correctAnswer]}","${q.bloomLevel}","${q.difficulty
+    // Options are always objects with keys A, B, C, D
+    const optA = q.options?.A || '';
+    const optB = q.options?.B || '';
+    const optC = q.options?.C || '';
+    const optD = q.options?.D || '';
+    // correctAnswer is always a letter (A, B, C, D)
+    const correctAnswerLetter = typeof q.correctAnswer === 'string' 
+      ? q.correctAnswer.toUpperCase() 
+      : (typeof q.correctAnswer === 'number' ? ['A', 'B', 'C', 'D'][q.correctAnswer] : 'A');
+    const correctOpt = q.options?.[correctAnswerLetter] || '';
+    csv += `"${q.text}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel}","${q.difficulty
       }"\n`;
   });
   return csv;
@@ -4593,31 +4451,6 @@ window.selectAllGranularInGroup = selectAllGranularInGroup;
 window.deleteSelectedGranular = deleteSelectedGranular;
 window.showGranularizationModal = showGranularizationModal;
 window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
-
-// Test function for PDF parsing
-window.testPDFParsing = async function (file) {
-  console.log("Testing PDF parsing...");
-  console.log("PDF service:", pdfService);
-
-  if (!pdfService) {
-    console.error("PDF service not available!");
-    return;
-  }
-
-  if (!file) {
-    console.error("No file provided!");
-    return;
-  }
-
-  try {
-    const result = await pdfService.parsePDF(file);
-    console.log("PDF parsing result:", result);
-    return result;
-  } catch (error) {
-    console.error("PDF parsing test failed:", error);
-    return null;
-  }
-};
 
 // Step 2 function exports
 window.editQuestion = editQuestion;

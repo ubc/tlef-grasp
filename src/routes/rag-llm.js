@@ -144,143 +144,165 @@ router.post("/generate-questions-with-rag", express.json(), async (req, res) => 
       // Get LLM instance from service
       const llmModule = await llmService.getLLMInstance();
 
+      // Randomly determine which position will contain the correct answer (server-side)
+      const correctPosition = Math.floor(Math.random() * 4); // 0, 1, 2, or 3
+      const correctAnswerLetter = ['A', 'B', 'C', 'D'][correctPosition];
+      
+      console.log(`🎲 Randomly selected position: ${correctAnswerLetter} (index ${correctPosition})`);
+
       // Create prompt with RAG context
-      const prompt = `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
+      const createPrompt = () => `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
 
 Learning Objective: ${learningObjectiveText}
 Granular Learning Objective: ${granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): ${bloomLevel}
 
-INSTRUCTIONS:
-1. Create a specific, detailed question that tests understanding of the objective
-2. Use actual content from the materials - don't be generic
-3. Include 4 answer options (A, B, C, D)
-4. Make the correct answer clearly correct based on the content
-5. Make incorrect answers plausible but clearly wrong
-6. Focus on the specific concepts, examples, or details mentioned in the content
-7. Format your response as JSON with this structure:
+Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+
+PROCEDURE:
+1. Create the question content
+2. Generate 4 plausible answer options, placing the CORRECT answer text in position ${correctAnswerLetter}
+3. Set correctAnswer to "${correctAnswerLetter}" (this is mandatory - do not use any other letter)
+4. Write the explanation
+
+The response format must be a valid JSON with the exact structure as follows:
 {
   "question": "Your specific question here",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctAnswer": 0,
-  "explanation": "Why this answer is correct based on the content"
+  "options": {
+    "A": "First option text", // The first option
+    "B": "Second option text", // The second option
+    "C": "Third option text", // The third option
+    "D": "Fourth option text", // The fourth option
+  },
+  "correctAnswer": "${correctAnswerLetter}", // The letter of the correct answer
+  "explanation": "Why this answer is correct based on the content" // The explanation of why the correct answer is correct
 }
 
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. Do NOT wrap the JSON in markdown code blocks (do not use triple backticks with json or triple backticks alone).
+- Do NOT include any text before or after the JSON object.
+- The response must start with { and end with }.
+- Return pure JSON that can be directly parsed with JSON.parse().
+
+The distractors (incorrect answers) should be plausible but subtly flawed, to effectively test students' understanding.
+
 IMPORTANT: 
-- Base your question on the specific details, examples, formulas, or concepts mentioned in the provided content. Don't create generic questions - make them specific to what's actually in the materials.
-- The correctAnswer should be a number: 0 for A, 1 for B, 2 for C, or 3 for D. Randomly choose which position (0-3) contains the correct answer - do NOT always use the same position.
+- CRITICAL: Always wrap any mathematical expressions in LaTeX delimiters that the Katex library can parse. My Katex config is:
+      renderMathInElement(document.body, {
+        delimiters: [
+          { left: "\\(", right: "\\)", display: false },
+          { left: "\\[", right: "\\]", display: true }
+        ],
+        throwOnError: false // prevents crashing on bad LaTeX
+      });
+- CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options array should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".
 
 CONTENT: ${ragContext}`;
 
-      console.log("Sending prompt to LLM service...");
-      const response = await llmModule.sendMessage(prompt);
+      // Retry logic: regenerate until we get valid JSON
+      const maxRetries = 5;
+      let questionData = null;
+      let lastError = null;
 
-      console.log("✅ LLM service response received");
-      console.log(
-        "Response format:",
-        typeof response,
-        response ? Object.keys(response) : "null"
-      );
-
-      // Extract content from response
-      // sendMessage returns { content, model, usage, metadata }
-      let responseContent;
-      if (response && typeof response === "object") {
-        responseContent =
-          response.content || response.text || response.message || JSON.stringify(response);
-      } else {
-        responseContent = response;
-      }
-
-      console.log("Response content:", responseContent);
-
-      if (!responseContent) {
-        throw new Error("Empty response from LLM");
-      }
-
-      // Try to parse JSON response
-      try {
-        let questionData;
-
-        // First try to parse the response content directly
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          questionData = JSON.parse(responseContent);
-        } catch (directParseError) {
-          // If direct parsing fails, try to extract JSON from the response
-          const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            questionData = JSON.parse(jsonMatch[0]);
-          } else {
-            throw directParseError;
-          }
-        }
+          console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
+          const response = await llmModule.sendMessage(createPrompt());
 
-        // Normalize correctAnswer: convert letters to numbers if needed
-        // Save as number (0-3) to database, frontend will handle display normalization
-        if (questionData.correctAnswer !== undefined) {
-          if (typeof questionData.correctAnswer === 'string') {
-            const letter = questionData.correctAnswer.toUpperCase().trim();
-            if (letter === 'A') questionData.correctAnswer = 0;
-            else if (letter === 'B') questionData.correctAnswer = 1;
-            else if (letter === 'C') questionData.correctAnswer = 2;
-            else if (letter === 'D') questionData.correctAnswer = 3;
-            else {
-              // Try to parse as number
-              const num = parseInt(letter);
-              if (!isNaN(num) && num >= 0 && num <= 3) {
-                questionData.correctAnswer = num;
+          console.log("✅ LLM service response received");
+          console.log(
+            "Response format:",
+            typeof response,
+            response ? Object.keys(response) : "null"
+          );
+
+          // Extract content from response
+          // sendMessage returns { content, model, usage, metadata }
+          let responseContent;
+          if (response && typeof response === "object") {
+            responseContent =
+              response.content || response.text || response.message || JSON.stringify(response);
+          } else {
+            responseContent = response;
+          }
+
+          console.log("Response content:", responseContent);
+
+          if (!responseContent) {
+            throw new Error("Empty response from LLM");
+          }
+
+          // Try to parse JSON response
+          try {
+            // First try to parse the response content directly
+            try {
+              questionData = JSON.parse(responseContent);
+            } catch (directParseError) {
+              // If direct parsing fails, try to extract JSON from the response
+              const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                questionData = JSON.parse(jsonMatch[0]);
               } else {
-                questionData.correctAnswer = 0; // Default to A
+                throw directParseError;
               }
             }
-          } else if (typeof questionData.correctAnswer === 'number') {
-            // Ensure it's a valid index (0-3)
-            if (questionData.correctAnswer < 0 || questionData.correctAnswer > 3) {
-              questionData.correctAnswer = 0; // Default to A
+
+            // Validate that we have the required fields
+            if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
+              throw new Error("Missing required fields in JSON response");
             }
-          } else {
-            questionData.correctAnswer = 0; // Default to A
+
+            // If we got here, parsing was successful
+            console.log(`✅ Successfully parsed JSON on attempt ${attempt}`);
+            break;
+
+          } catch (parseError) {
+            lastError = parseError;
+            console.warn(`❌ JSON parsing failed on attempt ${attempt}:`, parseError.message);
+            if (attempt < maxRetries) {
+              console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
+              continue;
+            } else {
+              throw parseError;
+            }
           }
-        } else {
-          questionData.correctAnswer = 0; // Default to A
-        }
 
-        // Randomize answer positions to ensure variety (shuffle options and update correctAnswer index)
-        // This ensures the correct answer is distributed across A, B, C, D positions
-        if (questionData.options && Array.isArray(questionData.options) && questionData.options.length === 4) {
-          // Save the correct option text
-          const correctOption = questionData.options[questionData.correctAnswer];
-          
-          // Randomly shuffle the options
-          const shuffledIndices = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
-          const shuffledOptions = shuffledIndices.map(idx => questionData.options[idx]);
-          
-          // Find where the correct option ended up after shuffling
-          const newCorrectIndex = shuffledOptions.findIndex(opt => opt === correctOption);
-          
-          // Update with shuffled options and new correct answer index (saved as number)
-          questionData.options = shuffledOptions;
-          questionData.correctAnswer = newCorrectIndex >= 0 ? newCorrectIndex : 0;
+        } catch (error) {
+          lastError = error;
+          console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
+          if (attempt < maxRetries) {
+            console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
+            continue;
+          } else {
+            throw error;
+          }
         }
-
-        res.json({
-          success: true,
-          question: questionData,
-          method: "RAG + LLM Service",
-        });
-      } catch (parseError) {
-        // If JSON parsing fails, return the raw response
-        res.json({
-          success: true,
-          question: {
-            question: response,
-            options: ["Option A", "Option B", "Option C", "Option D"],
-            correctAnswer: 0,
-            explanation: "Generated using RAG + LLM Service",
-          },
-          method: "RAG + LLM Service (Raw Response)",
-        });
       }
+
+      // If we still don't have valid questionData after all retries, throw error
+      if (!questionData) {
+        throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
+      }
+
+      // Override correctAnswer with the server-selected position to ensure proper distribution
+      // We told the LLM which position to use, but we enforce it here to be safe
+      if (questionData.correctAnswer !== correctAnswerLetter) {
+        console.log(`⚠️ LLM returned correctAnswer="${questionData.correctAnswer}", but we're overriding it to "${correctAnswerLetter}" (server-selected position)`);
+      }
+      questionData.correctAnswer = correctAnswerLetter;
+      
+      // Verify that the correct answer text exists in the selected position
+      if (questionData.options && questionData.options[correctAnswerLetter]) {
+        console.log(`✅ Correct answer is in position ${correctAnswerLetter}: "${questionData.options[correctAnswerLetter].substring(0, 50)}..."`);
+      } else {
+        console.warn(`⚠️ Warning: No option found at position ${correctAnswerLetter}, but continuing anyway`);
+      }
+
+      res.json({
+        success: true,
+        question: questionData,
+        method: "RAG + LLM Service",
+      });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
       return returnErrorResponse(res, llmError, "LLM service failed");

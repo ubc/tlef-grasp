@@ -195,7 +195,18 @@ function showQuestion(questionIndex) {
   const answerOptions = document.getElementById("answerOptions");
   answerOptions.innerHTML = "";
 
-  question.options.forEach((option) => {
+  // Options are always objects with keys A, B, C, D - convert to array for display
+  const optionKeys = ['A', 'B', 'C', 'D'];
+  const optionsArray = optionKeys.map(key => {
+    const opt = question.options?.[key];
+    const text = typeof opt === 'string' ? opt : (opt?.text || opt || '');
+    return {
+      letter: key,
+      text: text
+    };
+  });
+
+  optionsArray.forEach((option) => {
     const optionElement = document.createElement("div");
     optionElement.className = "answer-option";
     optionElement.setAttribute("data-option", option.letter);

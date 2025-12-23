@@ -1944,21 +1944,11 @@ class QuestionBankPage {
 
       const question = data.question;
       
-      // Normalize options for storage
+      // Options are always objects with keys A, B, C, D - convert to array for display
+      const optionKeys = ['A', 'B', 'C', 'D'];
       let normalizedOptions = [];
-      if (Array.isArray(question.options)) {
-        normalizedOptions = question.options.map((opt, idx) => {
-          if (typeof opt === 'string') {
-            return { id: String.fromCharCode(65 + idx), text: opt };
-          } else if (opt && typeof opt === 'object') {
-            return { id: opt.id || String.fromCharCode(65 + idx), text: opt.text || opt };
-          } else {
-            return { id: String.fromCharCode(65 + idx), text: String(opt || '') };
-          }
-        });
-      } else if (question.options && typeof question.options === 'object') {
-        const keys = Object.keys(question.options).sort();
-        normalizedOptions = keys.map((key, idx) => {
+      if (question.options && typeof question.options === 'object') {
+        normalizedOptions = optionKeys.map((key) => {
           const opt = question.options[key];
           if (typeof opt === 'string') {
             return { id: key, text: opt };
@@ -1979,16 +1969,26 @@ class QuestionBankPage {
       }
 
       // Store original question for comparison
+      // Convert correctAnswer to letter format (A, B, C, D) if it's a number
+      let correctAnswerLetter = question.correctAnswer;
+      if (typeof question.correctAnswer === 'number') {
+        correctAnswerLetter = ['A', 'B', 'C', 'D'][question.correctAnswer] || 'A';
+      } else if (typeof question.correctAnswer === 'string') {
+        correctAnswerLetter = question.correctAnswer.toUpperCase();
+      } else {
+        correctAnswerLetter = 'A';
+      }
+      
       this.currentEditingQuestion = {
         id: questionId,
         title: question.title || question.stem || "",
         stem: question.stem || question.title || "",
         options: normalizedOptions,
-        correctAnswer: question.correctAnswer || 0,
+        correctAnswer: correctAnswerLetter,
       };
 
-      // Render question in modal
-      this.renderQuestionInModal(question);
+      // Render question in modal (uses this.currentEditingQuestion)
+      this.renderQuestionInModal();
       
       // Set up event listeners
       this.setupQuestionModalListeners();
@@ -2005,7 +2005,14 @@ class QuestionBankPage {
     }
   }
 
-  renderQuestionInModal(question) {
+  renderQuestionInModal() {
+    // Use currentEditingQuestion which has normalized data (correctAnswer as letter, options as array)
+    if (!this.currentEditingQuestion) {
+      console.error("currentEditingQuestion not set");
+      return;
+    }
+
+    const question = this.currentEditingQuestion;
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
     
@@ -2016,34 +2023,10 @@ class QuestionBankPage {
       ? (this.objectivesMap.get(question.learningObjectiveId.toString()) || "Unknown Objective")
       : (question.granularObjectiveId ? "Granular Objective" : "No Objective");
 
-    // Normalize options to array format
-    let optionsArray = [];
-    if (Array.isArray(question.options)) {
-      // Already an array - could be array of strings or array of objects
-      optionsArray = question.options.map((opt, idx) => {
-        if (typeof opt === 'string') {
-          return { id: String.fromCharCode(65 + idx), text: opt };
-        } else if (opt && typeof opt === 'object') {
-          return { id: opt.id || String.fromCharCode(65 + idx), text: opt.text || opt };
-        } else {
-          return { id: String.fromCharCode(65 + idx), text: String(opt || '') };
-        }
-      });
-    } else if (question.options && typeof question.options === 'object') {
-      // Object format with keys like A, B, C, D
-      const keys = Object.keys(question.options).sort();
-      optionsArray = keys.map((key, idx) => {
-        const opt = question.options[key];
-        if (typeof opt === 'string') {
-          return { id: key, text: opt };
-        } else if (opt && typeof opt === 'object') {
-          return { id: opt.id || key, text: opt.text || opt };
-        } else {
-          return { id: key, text: String(opt || '') };
-        }
-      });
-    } else {
-      // No options or invalid format - create empty options
+    // Options are already normalized to array format in currentEditingQuestion
+    let optionsArray = question.options || [];
+    if (!Array.isArray(optionsArray) || optionsArray.length === 0) {
+      // Fallback: create empty options
       optionsArray = [
         { id: 'A', text: '' },
         { id: 'B', text: '' },
@@ -2061,20 +2044,28 @@ class QuestionBankPage {
     }
 
     // Format options
+    // Get correctAnswer as letter (A, B, C, D) - already normalized in currentEditingQuestion
+    let correctAnswerLetter = question.correctAnswer || 'A';
+    if (typeof correctAnswerLetter === 'string') {
+      correctAnswerLetter = correctAnswerLetter.toUpperCase();
+    } else {
+      correctAnswerLetter = 'A';
+    }
+    
     const optionsHtml = optionsArray.map((option, index) => {
       const optionId = option.id || String.fromCharCode(65 + index); // A, B, C, D
       const optionText = option.text || '';
-      const isCorrect = index === (question.correctAnswer || 0);
+      const isCorrect = optionId === correctAnswerLetter;
       
       return `
         <div class="question-modal-option">
           <div class="question-modal-option-header">
             <input type="radio" 
                    name="question-correct-answer" 
-                   value="${index}" 
+                   value="${optionId}" 
                    ${isCorrect ? "checked" : ""}
                    id="option-${index}"
-                   onchange="window.questionBankPage.updateCorrectAnswer(${index})">
+                   onchange="window.questionBankPage.updateCorrectAnswer('${optionId}')">
             <label for="option-${index}" class="question-modal-option-label">
               <span class="option-letter">${optionId}</span>
             </label>
@@ -2090,15 +2081,6 @@ class QuestionBankPage {
 
     modalBody.innerHTML = `
       <div class="question-modal-content">
-        <div class="question-modal-header-info">
-          <div class="question-modal-chips">
-            <span class="question-modal-chip">${objectiveName}</span>
-            <span class="question-modal-chip">${question.bloom || "N/A"}</span>
-            <span class="question-modal-chip status-${(question.status || "Draft").toLowerCase()}">${question.status || "Draft"}</span>
-            ${question.flagStatus ? '<span class="question-modal-chip flagged">Flagged</span>' : ''}
-          </div>
-        </div>
-        
         <div class="question-modal-field">
           <label for="question-modal-title-input">Question Title</label>
           <input type="text" 
@@ -2157,9 +2139,12 @@ class QuestionBankPage {
     }
   }
 
-  updateCorrectAnswer(optionIndex) {
+  updateCorrectAnswer(optionLetter) {
     if (this.currentEditingQuestion) {
-      this.currentEditingQuestion.correctAnswer = optionIndex;
+      // optionLetter should be A, B, C, or D
+      this.currentEditingQuestion.correctAnswer = typeof optionLetter === 'string' 
+        ? optionLetter.toUpperCase() 
+        : (typeof optionLetter === 'number' ? ['A', 'B', 'C', 'D'][optionLetter] : 'A');
     }
   }
 
@@ -2197,12 +2182,26 @@ class QuestionBankPage {
         return;
       }
 
+      // Convert options array back to object format {A: "...", B: "...", C: "...", D: "..."}
+      const optionsObject = {};
+      options.forEach(opt => {
+        optionsObject[opt.id] = opt.text;
+      });
+      
+      // Ensure correctAnswer is a letter (A, B, C, D)
+      let correctAnswerLetter = this.currentEditingQuestion.correctAnswer || 'A';
+      if (typeof correctAnswerLetter === 'number') {
+        correctAnswerLetter = ['A', 'B', 'C', 'D'][correctAnswerLetter] || 'A';
+      } else if (typeof correctAnswerLetter === 'string') {
+        correctAnswerLetter = correctAnswerLetter.toUpperCase();
+      }
+      
       // Prepare update data
       const updateData = {
         title: title || stem,
         stem: stem || title,
-        options: options,
-        correctAnswer: this.currentEditingQuestion.correctAnswer || 0,
+        options: optionsObject,
+        correctAnswer: correctAnswerLetter,
       };
 
       // Update question in database

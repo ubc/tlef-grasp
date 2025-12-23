@@ -46,10 +46,12 @@ const getMaterialCourseId = async (sourceId) => {
 };
 
 const getCourseMaterials = async (courseId) => {
+    console.log("Getting course materials for courseId:", courseId);
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_material");
         const materials = await collection.find({ courseId: courseId }).toArray();
+        console.log("Found materials:", materials);
         return materials;
     }
     catch (error) {

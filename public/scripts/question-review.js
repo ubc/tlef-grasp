@@ -369,11 +369,30 @@ class QuestionReviewPage {
     }
 
     if (optionsElement) {
-      optionsElement.innerHTML = question.options.map(option => `
+      // Options are always objects with keys A, B, C, D - convert to array for display
+      const optionKeys = ['A', 'B', 'C', 'D'];
+      const correctAnswer = typeof question.correctAnswer === 'string' 
+        ? question.correctAnswer.toUpperCase() 
+        : (typeof question.correctAnswer === 'number' ? ['A', 'B', 'C', 'D'][question.correctAnswer] : 'A');
+      
+      const optionsArray = optionKeys.map(key => {
+        const opt = question.options?.[key];
+        const text = typeof opt === 'string' ? opt : (opt?.text || opt || '');
+        const feedback = opt?.feedback || '';
+        return {
+          id: key,
+          label: key,
+          text: text,
+          isCorrect: key === correctAnswer,
+          feedback: feedback
+        };
+      });
+      
+      optionsElement.innerHTML = optionsArray.map(option => `
         <div class="option-block ${option.isCorrect ? 'correct' : ''} ${this.state.review.editMode ? 'editing' : ''}">
           <span class="option-label">${option.label}.</span>
           ${this.state.review.editMode ? 
-            `<textarea class="edit-option-input">${option.text}</textarea>` :
+            `<textarea class="edit-option-input" data-option-id="${option.id}">${option.text}</textarea>` :
             `<div class="option-text">${option.text}</div>`
           }
           <div class="option-feedback">${option.feedback}</div>
@@ -511,11 +530,21 @@ class QuestionReviewPage {
       question.prompt = promptInput.value.trim();
     }
 
-    // Save options
+    // Save options - options are always objects with keys A, B, C, D
     const optionInputs = document.querySelectorAll('.edit-option-input');
-    optionInputs.forEach((input, index) => {
-      if (question.options[index]) {
-        question.options[index].text = input.value.trim();
+    optionInputs.forEach((input) => {
+      const optionId = input.getAttribute('data-option-id');
+      if (optionId && question.options) {
+        if (!question.options[optionId]) {
+          question.options[optionId] = {};
+        }
+        if (typeof question.options[optionId] === 'string') {
+          question.options[optionId] = input.value.trim();
+        } else if (typeof question.options[optionId] === 'object') {
+          question.options[optionId].text = input.value.trim();
+        } else {
+          question.options[optionId] = input.value.trim();
+        }
       }
     });
 

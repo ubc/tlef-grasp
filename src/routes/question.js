@@ -253,7 +253,29 @@ router.post("/export", express.json(), async (req, res) => {
 function createCSVExport(course, questions) {
   let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n';
   questions.forEach(q => {
-    csv += `"${q.text}","${q.options[0]}","${q.options[1]}","${q.options[2]}","${q.options[3]}","${q.options[q.correctAnswer]}","${q.bloomLevel}","${q.difficulty}"\n`;
+    // Options are always objects with keys A, B, C, D
+    const getOption = (key) => {
+      if (!q.options || typeof q.options !== 'object') return '';
+      const opt = q.options[key];
+      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
+    };
+    
+    const optA = getOption('A');
+    const optB = getOption('B');
+    const optC = getOption('C');
+    const optD = getOption('D');
+    
+    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
+    let correctAnswerLetter = q.correctAnswer;
+    if (typeof q.correctAnswer === 'number') {
+      correctAnswerLetter = ['A', 'B', 'C', 'D'][q.correctAnswer] || 'A';
+    }
+    if (typeof correctAnswerLetter === 'string') {
+      correctAnswerLetter = correctAnswerLetter.toUpperCase();
+    }
+    const correctOpt = getOption(correctAnswerLetter);
+    
+    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}","${q.difficulty || ''}"\n`;
   });
   return csv;
 }
@@ -270,6 +292,27 @@ function createQTIExport(course, questions) {
     </qtimetadata>`;
 
   questions.forEach((q, index) => {
+    // Options are always objects with keys A, B, C, D
+    const getOption = (key) => {
+      if (!q.options || typeof q.options !== 'object') return '';
+      const opt = q.options[key];
+      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
+    };
+    
+    const optA = getOption('A');
+    const optB = getOption('B');
+    const optC = getOption('C');
+    const optD = getOption('D');
+    
+    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
+    let correctAnswerLetter = q.correctAnswer;
+    if (typeof q.correctAnswer === 'number') {
+      correctAnswerLetter = ['A', 'B', 'C', 'D'][q.correctAnswer] || 'A';
+    }
+    if (typeof correctAnswerLetter === 'string') {
+      correctAnswerLetter = correctAnswerLetter.toUpperCase();
+    }
+    
     qti += `
     <section ident="section_${index + 1}">
       <item ident="item_${q.id}">
@@ -287,28 +330,28 @@ function createQTIExport(course, questions) {
         </itemmetadata>
         <presentation>
           <material>
-            <mattext texttype="text/html">${q.text}</mattext>
+            <mattext texttype="text/html">${q.text || q.title || q.stem || ''}</mattext>
           </material>
           <response_lid ident="response_${q.id}">
             <render_choice>
               <response_label ident="A">
                 <material>
-                  <mattext texttype="text/html">${q.options[0]}</mattext>
+                  <mattext texttype="text/html">${optA}</mattext>
                 </material>
               </response_label>
               <response_label ident="B">
                 <material>
-                  <mattext texttype="text/html">${q.options[1]}</mattext>
+                  <mattext texttype="text/html">${optB}</mattext>
                 </material>
               </response_label>
               <response_label ident="C">
                 <material>
-                  <mattext texttype="text/html">${q.options[2]}</mattext>
+                  <mattext texttype="text/html">${optC}</mattext>
                 </material>
               </response_label>
               <response_label ident="D">
                 <material>
-                  <mattext texttype="text/html">${q.options[3]}</mattext>
+                  <mattext texttype="text/html">${optD}</mattext>
                 </material>
               </response_label>
             </render_choice>
@@ -320,7 +363,7 @@ function createQTIExport(course, questions) {
           </outcomes>
           <respcondition continue="No">
             <conditionvar>
-              <varequal respident="response_${q.id}">${String.fromCharCode(65 + q.correctAnswer)}</varequal>
+              <varequal respident="response_${q.id}">${correctAnswerLetter}</varequal>
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
