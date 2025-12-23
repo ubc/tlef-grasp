@@ -171,23 +171,30 @@
 
 /* Filters Section */
 .filters-section {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
     margin-bottom: 30px;
     background: white;
-    padding: 20px 25px;
+    padding: 24px 28px;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .filters-row {
-    display: flex;
-    gap: 20px;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px 24px;
+    align-items: end;
 }
 
+.filters-row:first-of-type {
+    grid-template-columns: repeat(4, 1fr);
+}
 
+.filters-row:last-of-type {
+    grid-template-columns: 2fr 1fr;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e9ecef;
+}
 
 .filter-group {
     display: flex;
@@ -195,61 +202,32 @@
     gap: 8px;
 }
 
-.search-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.search-group input {
-    color: #000;
-}
-
-.search-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.search-box i {
-    position: absolute;
-    left: 12px;
-    color: #6c757d;
-    font-size: 14px;
-}
-
-.search-box input {
-    padding: 10px 12px 10px 36px;
-    border: 1px solid #e1e5e9;
-    border-radius: 6px;
-    font-size: 14px;
-    width: 250px;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.search-box input:focus {
-    outline: none;
-    border-color: #3498db;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-}
-
-.search-box input::placeholder {
-    color: #6c757d;
-}
-
 .filter-group label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: #495057;
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
 }
 
 .filter-group .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 0;
+    gap: 10px;
+    margin-top: 8px;
     cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #495057;
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 8px 0;
+}
+
+.filter-group .checkbox-label:hover {
+    color: #3498db;
 }
 
 .filter-checkbox {
@@ -257,18 +235,29 @@
     height: 18px;
     cursor: pointer;
     accent-color: #3498db;
+    flex-shrink: 0;
 }
 
 .filter-select {
-    padding: 10px 15px;
+    padding: 10px 14px;
     border: 1px solid #e1e5e9;
     border-radius: 8px;
     background: white;
     font-size: 14px;
     color: #495057;
     cursor: pointer;
-    min-width: 180px;
+    width: 100%;
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    transition: all 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23495057' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+}
+
+.filter-select:hover {
+    border-color: #cbd3da;
 }
 
 .filter-select:focus {
@@ -278,37 +267,51 @@
 }
 
 .search-group {
-    flex: 1;
-    max-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .search-group label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: #495057;
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
 }
 
 .search-box {
     position: relative;
     display: flex;
     align-items: center;
+    width: 100%;
 }
 
 .search-box i {
     position: absolute;
-    left: 12px;
+    left: 14px;
     color: #6c757d;
     font-size: 14px;
+    pointer-events: none;
+    z-index: 1;
 }
 
 .search-box input {
-    padding: 10px 12px 10px 36px;
+    padding: 10px 14px 10px 40px;
     border: 1px solid #e1e5e9;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 14px;
-    width: 250px;
+    width: 100%;
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    color: #495057;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.search-box input:hover {
+    border-color: #cbd3da;
 }
 
 .search-box input:focus {
@@ -318,7 +321,7 @@
 }
 
 .search-box input::placeholder {
-    color: #6c757d;
+    color: #adb5bd;
 }
 
 
@@ -1268,6 +1271,14 @@
     .quizzes-container {
         grid-template-columns: 1fr;
     }
+    
+    .filters-row:first-of-type {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .filters-row:last-of-type {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 768px) {
@@ -1283,6 +1294,19 @@
         flex-direction: column;
         gap: 20px;
         align-items: stretch;
+    }
+    
+    .filters-section {
+        padding: 20px;
+    }
+    
+    .filters-row:first-of-type,
+    .filters-row:last-of-type {
+        grid-template-columns: 1fr;
+    }
+    
+    .filters-row {
+        gap: 16px;
     }
     
 
