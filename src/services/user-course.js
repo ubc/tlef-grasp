@@ -254,10 +254,48 @@ const isUserInCourse = async (userId, courseId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user_course");
-        const result = await collection.findOne({ userId: userId, courseId: courseId });
+        
+        // Convert userId and courseId to ObjectId if they're strings
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+        const courseIdObj = typeof courseId === 'string' && ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+        
+        // Try both ObjectId and string formats for compatibility
+        const result = await collection.findOne({ 
+            $or: [
+                { userId: userIdObj, courseId: courseIdObj },
+                { userId: userId, courseId: courseId },
+                { userId: String(userId), courseId: String(courseId) }
+            ]
+        });
         return result ? true : false;
     } catch (error) {
         console.error("Error checking if user is in course:", error);
+        throw error;
+    }
+};
+
+/**
+ * Delete a specific user-course relationship
+ * @param {string|ObjectId} userId - User ID
+ * @param {string|ObjectId} courseId - Course ID
+ * @returns {Promise} Delete result
+ */
+const deleteUserCourse = async (userId, courseId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+        
+        // Convert to ObjectId if strings
+        const userIdObj = typeof userId === 'string' ? new ObjectId(userId) : userId;
+        const courseIdObj = typeof courseId === 'string' ? new ObjectId(courseId) : courseId;
+        
+        const result = await collection.deleteOne({ 
+            userId: userIdObj, 
+            courseId: courseIdObj 
+        });
+        return result;
+    } catch (error) {
+        console.error("Error deleting user course:", error);
         throw error;
     }
 };
@@ -270,5 +308,6 @@ module.exports = {
     getCourseUserIds,
     deleteUserCourseByUserID,
     deleteUserCourseByCourseID,
+    deleteUserCourse,
     isUserInCourse,
 };

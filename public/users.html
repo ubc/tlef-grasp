@@ -14,11 +14,102 @@
         <!-- Main Content Area -->
         <main class="main-content">
             <div class="content-wrapper">
-                <h1>Users</h1>
-                <p>This is the users page.</p>
-                <a href="dashboard.html">Go to Dashboard</a>
+                <div class="users-header">
+                    <h1>Course Users</h1>
+                    <p class="course-name" id="course-name-display">Loading course...</p>
+                </div>
+
+                <!-- Course Users Section -->
+                <section class="users-section">
+                    <div class="section-header">
+                        <h2>
+                            <i class="fas fa-users"></i>
+                            Users in Course
+                        </h2>
+                    </div>
+                    <div class="users-container">
+                        <div class="loading" id="course-users-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Loading users...</span>
+                        </div>
+                        <div class="table-wrapper" id="course-users-table-wrapper" style="display: none;">
+                            <table class="users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th class="actions-column">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="course-users-list">
+                                    <!-- Course users will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="empty-state" id="course-users-empty" style="display: none;">
+                            <i class="fas fa-users"></i>
+                            <p>No users found in this course.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Available Staff Section (only visible to faculty) -->
+                <section class="users-section" id="available-staff-section" style="display: none;">
+                    <div class="section-header">
+                        <h2>
+                            <i class="fas fa-user-plus"></i>
+                            Available Staff Members
+                        </h2>
+                        <p class="section-description">Staff members who can be added to this course</p>
+                    </div>
+                    <div class="users-container">
+                        <div class="loading" id="staff-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Loading staff members...</span>
+                        </div>
+                        <div class="table-wrapper" id="staff-table-wrapper" style="display: none;">
+                            <table class="users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th class="actions-column">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="available-staff-list">
+                                    <!-- Available staff will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="empty-state" id="staff-empty" style="display: none;">
+                            <i class="fas fa-user-check"></i>
+                            <p>All staff members have been added to this course.</p>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirm-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Confirm Action</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
     </div>
 
     <script src="scripts/navigation.js"></script>

@@ -14,6 +14,7 @@ const ragLlmRoutes = require("./routes/rag-llm");
 const materialRoutes = require("./routes/material");
 const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
+const userRoutes = require("./routes/users");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -122,11 +123,14 @@ app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
 app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
 app.use("/api/quiz", ensureAuthenticatedAPI, quizRoutes);
+app.use("/api/users", ensureAuthenticatedAPI, userRoutes);
 
 app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
   res.json({
     success: true,
     user: {
+      _id: req.user._id,
+      id: req.user._id,
       username: req.user.username,
       displayName: req.user.displayName,
       email: req.user.email,
