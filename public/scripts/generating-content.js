@@ -271,7 +271,7 @@ class ContentGenerator {
           reader.readAsText(file);
         } else if (
           file.type === "application/pdf" ||
-          file.name.endsWith(".pdf")
+          file.name.toLowerCase().endsWith(".pdf")
         ) {
           // Use PDF parsing service
           try {
@@ -283,6 +283,41 @@ class ContentGenerator {
               `PDF file: ${file.name}\nError: ${error.message}\n\nNote: PDF content could not be extracted.`
             );
           }
+        } else if (
+          file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          file.name.toLowerCase().endsWith(".docx")
+        ) {
+          // Use Mammoth.js for DOCX parsing
+          try {
+            if (typeof window !== "undefined" && window.mammoth) {
+              const arrayBuffer = await file.arrayBuffer();
+              const result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+              console.log(`DOCX content extracted: ${result.value.length} characters`);
+              if (result.messages && result.messages.length > 0) {
+                console.warn("DOCX parsing warnings:", result.messages);
+              }
+              if (result.value && result.value.length > 0) {
+                resolve(result.value);
+              } else {
+                throw new Error("No content extracted from DOCX file");
+              }
+            } else {
+              throw new Error("Mammoth.js library not available. Please ensure mammoth.js is loaded.");
+            }
+          } catch (error) {
+            console.error("DOCX parsing failed:", error);
+            resolve(
+              `DOCX file: ${file.name}\nError: ${error.message}\n\nNote: DOCX content could not be extracted.`
+            );
+          }
+        } else if (
+          file.type === "application/msword" ||
+          file.name.toLowerCase().endsWith(".doc")
+        ) {
+          // DOC files (older format) - limited browser support
+          resolve(
+            `DOC file: ${file.name}\n\nNote: DOC files (older Word format) have limited browser support. Please convert to DOCX format for better compatibility.`
+          );
         } else {
           resolve(`File: ${file.name} (${file.type})`);
         }

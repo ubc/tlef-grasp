@@ -132,7 +132,7 @@ function handleDrop(e) {
   }
 
   const files = Array.from(e.dataTransfer.files);
-  const validFiles = validatePDFFiles(files);
+  const validFiles = validateDocumentFiles(files);
   if (validFiles.length > 0) {
     addFiles(validFiles);
   }
@@ -146,7 +146,7 @@ function handleFileSelect(e) {
   // Reset the input value to allow re-selecting the same file after error
   const fileInput = e.target;
   
-  const validFiles = validatePDFFiles(files);
+  const validFiles = validateDocumentFiles(files);
   if (validFiles.length > 0) {
     addFiles(validFiles);
   }
@@ -156,18 +156,21 @@ function handleFileSelect(e) {
 }
 
 /**
- * Validates that all files are PDFs
+ * Validates that all files are PDF, DOC, or DOCX
  * @param {File[]} files - Array of files to validate
- * @returns {File[]} - Array of valid PDF files
+ * @returns {File[]} - Array of valid files
  */
-function validatePDFFiles(files) {
+function validateDocumentFiles(files) {
   const invalidFiles = [];
   const validFiles = [];
 
   for (const file of files) {
-    const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const fileName = file.name.toLowerCase();
+    const isPDF = file.type === "application/pdf" || fileName.endsWith(".pdf");
+    const isDOC = file.type === "application/msword" || fileName.endsWith(".doc");
+    const isDOCX = file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx");
     
-    if (isPDF) {
+    if (isPDF || isDOC || isDOCX) {
       validFiles.push(file);
     } else {
       invalidFiles.push(file.name);
@@ -176,17 +179,17 @@ function validatePDFFiles(files) {
 
   // Show error message if there are invalid files
   if (invalidFiles.length > 0) {
-    showNotification("PDF is the only supported file format at this time. Additional file formats will be supported soon.", "error");
+    showNotification("PDF, DOC, and DOCX are the only supported file formats at this time. Additional file formats will be supported soon.", "error");
   }
 
   return validFiles;
 }
 
 async function addFiles(files) {
-  // Validate all files are PDFs (safety check)
-  const validFiles = validatePDFFiles(files);
+  // Validate all files are PDF, DOC, or DOCX (safety check)
+  const validFiles = validateDocumentFiles(files);
   if (validFiles.length === 0) {
-    return; // No valid files, error already shown by validatePDFFiles
+    return; // No valid files, error already shown by validateDocumentFiles
   }
 
   // Show spinner when starting file upload
@@ -196,50 +199,6 @@ async function addFiles(files) {
     const selectedCourse = getSelectedCourse();
 
     for (const file of validFiles) {
-      const fileObj = {
-        id: Date.now() + Math.random(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        file: file,
-      };
-
-      // Extract content from file if possible
-      try {
-        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-          fileObj.content = await readTextFile(file);
-        } else if (
-          file.type === "application/pdf" ||
-          file.name.endsWith(".pdf")
-        ) {
-          // Use PDF parsing service
-          try {
-            if (pdfService) {
-              fileObj.content = await pdfService.parsePDFToText(file);
-              console.log(
-                `PDF content extracted: ${fileObj.content.length} characters`
-              );
-            } else {
-              throw new Error("PDF service not available");
-            }
-          } catch (error) {
-            console.error("PDF parsing failed:", error);
-            fileObj.content = `PDF Document: ${file.name
-              }\nFile Size: ${formatFileSize(file.size)}\nType: ${file.type
-              }\n\nError: ${error.message
-              }\n\nNote: PDF content could not be extracted.`;
-          }
-        } else {
-          fileObj.content = `File: ${file.name}\nType: ${file.type
-            }\nSize: ${formatFileSize(
-              file.size
-            )}\n\nThis file type is not directly readable as text content.`;
-        }
-      } catch (error) {
-        console.error("Error reading file content:", error);
-        fileObj.content = `File: ${file.name} (content could not be extracted)`;
-      }
-
       // Process file with content generator
       try {
         if (!selectedCourse) {
@@ -267,16 +226,16 @@ async function addFiles(files) {
                 sourceId,
                 selectedCourse.id,
                 {
-                  fileType: fileObj.file.type,
-                  fileSize: fileObj.file.size,
-                  documentTitle: fileObj.file.name, // For PDFs, use filename as documentTitle
+                  fileType: file.type,
+                  fileSize: file.size,
+                  documentTitle: file.name,
                 }
               );
 
               const stateFileObj = {
-                fileSize: fileObj.file.size,
-                fileType: fileObj.file.type,
-                documentTitle: fileObj.file.name, // For PDFs, use filename as documentTitle
+                fileSize: file.size,
+                fileType: file.type,
+                documentTitle: file.name,
                 sourceId: sourceId,
                 createdAt: new Date(),
               };
@@ -295,7 +254,7 @@ async function addFiles(files) {
     }
 
     if (validFiles.length > 0) {
-      showNotification(`${validFiles.length} PDF file(s) uploaded successfully`, "success");
+      showNotification(`${validFiles.length} file(s) uploaded successfully`, "success");
     }
 
     // Hide upload section after successful upload
@@ -347,14 +306,6 @@ async function saveMaterialToDatabase(sourceId, courseId, materialData) {
   }
 }
 
-function readTextFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = (e) => reject(e);
-    reader.readAsText(file);
-  });
-}
 
 // Upload spinner control functions
 function showUploadSpinner() {
