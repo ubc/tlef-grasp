@@ -281,9 +281,44 @@ function createCSVExport(course, questions) {
 }
 
 function createQTIExport(course, questions) {
+  // Helper function to escape XML content (for attributes and plain text)
+  const escapeXml = (text) => {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
+  // Helper function to escape HTML content for Canvas QTI
+  // Canvas supports HTML in mattext, but we need to escape XML special chars
+  // while preserving HTML structure. Use CDATA for complex HTML content.
+  const escapeHtmlForQTI = (text) => {
+    if (!text) return '';
+    const textStr = String(text);
+    
+    // If content contains HTML tags, use CDATA
+    if (/<[^>]+>/.test(textStr)) {
+      // Escape any existing CDATA sections
+      const escaped = textStr.replace(/]]>/g, ']]&gt;');
+      return `<![CDATA[${escaped}]]>`;
+    }
+    
+    // For plain text, escape XML special characters
+    return escapeXml(textStr);
+  };
+
+  // Helper function to create safe XML identifiers
+  const safeIdent = (id) => {
+    if (!id) return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return String(id).replace(/[^a-zA-Z0-9_]/g, '_');
+  };
+
   let qti = `<?xml version="1.0" encoding="UTF-8"?>
 <questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
-  <assessment ident="GRASP_QUESTIONS" title="${course} Questions">
+  <assessment ident="${safeIdent(course)}_${Date.now()}" title="${escapeXml(course)} Questions">
     <qtimetadata>
       <qtimetadatafield>
         <fieldlabel>qmd_timelimit</fieldlabel>
@@ -313,9 +348,13 @@ function createQTIExport(course, questions) {
       correctAnswerLetter = correctAnswerLetter.toUpperCase();
     }
     
+    const questionText = q.text || q.title || q.stem || '';
+    const questionId = safeIdent(q.id || `q${index + 1}`);
+    const responseId = `response_${questionId}`;
+    
     qti += `
     <section ident="section_${index + 1}">
-      <item ident="item_${q.id}">
+      <item ident="${questionId}">
         <itemmetadata>
           <qtimetadata>
             <qtimetadatafield>
@@ -330,28 +369,28 @@ function createQTIExport(course, questions) {
         </itemmetadata>
         <presentation>
           <material>
-            <mattext texttype="text/html">${q.text || q.title || q.stem || ''}</mattext>
+            <mattext texttype="text/html">${escapeHtmlForQTI(questionText)}</mattext>
           </material>
-          <response_lid ident="response_${q.id}">
+          <response_lid ident="${responseId}">
             <render_choice>
               <response_label ident="A">
                 <material>
-                  <mattext texttype="text/html">${optA}</mattext>
+                  <mattext texttype="text/html">${escapeHtmlForQTI(optA)}</mattext>
                 </material>
               </response_label>
               <response_label ident="B">
                 <material>
-                  <mattext texttype="text/html">${optB}</mattext>
+                  <mattext texttype="text/html">${escapeHtmlForQTI(optB)}</mattext>
                 </material>
               </response_label>
               <response_label ident="C">
                 <material>
-                  <mattext texttype="text/html">${optC}</mattext>
+                  <mattext texttype="text/html">${escapeHtmlForQTI(optC)}</mattext>
                 </material>
               </response_label>
               <response_label ident="D">
                 <material>
-                  <mattext texttype="text/html">${optD}</mattext>
+                  <mattext texttype="text/html">${escapeHtmlForQTI(optD)}</mattext>
                 </material>
               </response_label>
             </render_choice>
@@ -359,15 +398,23 @@ function createQTIExport(course, questions) {
         </presentation>
         <resprocessing>
           <outcomes>
-            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal" defaultval="0"/>
           </outcomes>
           <respcondition continue="No">
             <conditionvar>
-              <varequal respident="response_${q.id}">${correctAnswerLetter}</varequal>
+              <varequal respident="${responseId}">${correctAnswerLetter}</varequal>
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
         </resprocessing>
+        ${q.explanation ? `
+        <itemfeedback ident="general_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/html">${escapeHtmlForQTI(q.explanation)}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>` : ''}
       </item>
     </section>`;
   });

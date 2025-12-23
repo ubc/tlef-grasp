@@ -716,12 +716,18 @@ class QuestionBankPage {
               </div>
               <div class="progress-text">${this.getQuizProgress(
                 quiz
-              )}% Reviewed</div>
+              )}% Approved</div>
             </div>
-            <button class="review-btn" 
-                    onclick="event.stopPropagation(); window.questionBankPage.navigateToReview('${String(quiz.id).replace(/'/g, "\\'")}')">
-              Review
-            </button>
+            <div class="button-group">
+              <button class="review-btn" 
+                      onclick="event.stopPropagation(); window.questionBankPage.navigateToReview('${String(quiz.id).replace(/'/g, "\\'")}')">
+                Review
+              </button>
+              <button class="export-btn" 
+                      onclick="event.stopPropagation(); window.questionBankPage.exportQuiz('${String(quiz.id).replace(/'/g, "\\'")}')">
+                Export
+              </button>
+            </div>
           </div>
         </div>
         <div class="quiz-details ${quiz.isOpen ? "expanded" : ""}">
@@ -1833,6 +1839,212 @@ class QuestionBankPage {
       const firstQuestionId = quiz.questions[0].id;
       window.location.href = `question-review.html?quizId=${quizId}&questionId=${firstQuestionId}`;
     }
+  }
+
+  // Export quiz questions (only approved questions)
+  async exportQuiz(quizId) {
+    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
+    if (!quiz || !quiz.questions || quiz.questions.length === 0) {
+      this.showNotification("No questions to export", "error");
+      return;
+    }
+
+    // Filter to only approved questions
+    const approvedQuestions = quiz.questions.filter(q => 
+      q.approved === true || q.status === "Approved"
+    );
+
+    if (approvedQuestions.length === 0) {
+      this.showNotification("No approved questions to export", "error");
+      return;
+    }
+
+    // Show export modal with format selection
+    this.showExportModal(quiz, approvedQuestions);
+  }
+
+  showExportModal(quiz, approvedQuestions) {
+    const modal = document.getElementById("export-summary-modal");
+    const modalBody = document.getElementById("export-summary-modal-body");
+    
+    if (!modal || !modalBody) {
+      console.error("Export modal not found");
+      return;
+    }
+
+    // Helper function to escape HTML
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
+    const quizName = escapeHtml(quiz.name || quiz.title || 'Untitled Quiz');
+    const quizId = String(quiz.id).replace(/'/g, "\\'");
+
+    // Generate export options HTML
+    const exportOptionsHTML = `
+      <div class="export-options">
+        <div class="export-info">
+          <h3>${quizName}</h3>
+          <div class="export-stats">
+            <div class="stat-item">
+              <span class="stat-label">Total Questions:</span>
+              <strong class="stat-value">${quiz.questions.length}</strong>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Approved Questions:</span>
+              <strong class="stat-value approved">${approvedQuestions.length}</strong>
+            </div>
+          </div>
+          <p class="export-note">
+            <i class="fas fa-info-circle"></i>
+            Only approved questions will be exported.
+          </p>
+        </div>
+        
+        <h4 class="export-format-title">Select Export Format</h4>
+        <div class="export-format-buttons">
+          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('csv', '${quizId}')">
+            <i class="fas fa-file-csv"></i>
+            <span>CSV</span>
+          </button>
+          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('json', '${quizId}')">
+            <i class="fas fa-file-code"></i>
+            <span>JSON</span>
+          </button>
+          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('qti', '${quizId}')">
+            <i class="fas fa-file-code"></i>
+            <span>QTI</span>
+            <small>Canvas</small>
+          </button>
+        </div>
+      </div>
+    `;
+
+    modalBody.innerHTML = exportOptionsHTML;
+    modal.style.display = "flex";
+
+    // Setup close button
+    const closeBtn = document.getElementById("export-summary-modal-close");
+    const confirmBtn = document.getElementById("export-summary-confirm");
+    
+    if (closeBtn) {
+      closeBtn.onclick = () => this.hideExportModal();
+    }
+    if (confirmBtn) {
+      confirmBtn.onclick = () => this.hideExportModal();
+    }
+  }
+
+  hideExportModal() {
+    const modal = document.getElementById("export-summary-modal");
+    if (modal) {
+      modal.style.display = "none";
+    }
+  }
+
+  async handleExportFormat(format, quizId) {
+    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
+    if (!quiz || !quiz.questions || quiz.questions.length === 0) {
+      this.showNotification("No questions to export", "error");
+      return;
+    }
+
+    // Filter to only approved questions
+    const approvedQuestions = quiz.questions.filter(q => 
+      q.approved === true || q.status === "Approved"
+    );
+
+    if (approvedQuestions.length === 0) {
+      this.showNotification("No approved questions to export", "error");
+      this.hideExportModal();
+      return;
+    }
+
+    // Get course information
+    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
+    const courseName = selectedCourse?.courseName || "Course";
+
+    // Fetch full question details for approved questions only
+    const questionPromises = approvedQuestions.map(async (q) => {
+      try {
+        const response = await fetch(`/api/question/${q.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.question) {
+            return data.question;
+          }
+        }
+        // Fallback to basic question data if fetch fails
+        return q;
+      } catch (error) {
+        console.error(`Error fetching question ${q.id}:`, error);
+        return q;
+      }
+    });
+
+    const fullQuestions = await Promise.all(questionPromises);
+
+    // Convert questions to export format
+    const questions = fullQuestions.map(q => ({
+      text: q.title || q.stem || "",
+      stem: q.stem || q.title || "",
+      options: q.options || {},
+      correctAnswer: q.correctAnswer || "A",
+      bloomLevel: q.bloom || q.bloomLevel || "Understand",
+      difficulty: q.difficulty || "Medium",
+    }));
+
+    try {
+      const response = await fetch(`/api/question/export?format=${format}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          course: courseName,
+          questions: questions,
+        }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const filename = `${quiz.title || quiz.name || 'quiz'}-${format}.${this.getFileExtension(format)}`;
+        this.downloadFile(blob, filename);
+        this.showNotification(`Exported as ${format.toUpperCase()}`, "success");
+        this.hideExportModal();
+      } else {
+        throw new Error("Export failed");
+      }
+    } catch (error) {
+      console.error("Export failed:", error);
+      this.showNotification("Export failed. Please try again.", "error");
+    }
+  }
+
+  getFileExtension(format) {
+    switch (format) {
+      case "csv":
+        return "csv";
+      case "json":
+        return "json";
+      case "qti":
+        return "xml";
+      default:
+        return "txt";
+    }
+  }
+
+  downloadFile(blob, filename) {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   }
 
   // Navigate to Overview tab with quiz and status filters set

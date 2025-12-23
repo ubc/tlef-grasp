@@ -6,6 +6,7 @@
     <title>Question Bank - GRASP</title>
     <link rel="stylesheet" href="styles/navigation.css">
     <link rel="stylesheet" href="styles/question-bank.css">
+    <link rel="stylesheet" href="styles/question-generation.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -202,6 +203,24 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="question-modal-cancel">Cancel</button>
                 <button class="btn btn-primary" id="question-modal-save" style="display: none;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Summary Modal -->
+    <div class="export-summary-modal" id="export-summary-modal" style="display: none;">
+        <div class="export-summary-modal__content">
+            <div class="export-summary-modal__header">
+                <h3>Export Summary</h3>
+                <button type="button" class="export-summary-modal__close" id="export-summary-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="export-summary-modal__body" id="export-summary-modal-body">
+                <!-- Summary content will be populated here -->
+            </div>
+            <div class="export-summary-modal__footer">
+                <button type="button" class="btn btn--primary" id="export-summary-confirm">Close</button>
             </div>
         </div>
     </div>

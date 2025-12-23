@@ -591,6 +591,12 @@
     gap: 12px;
 }
 
+.quiz-header-right .button-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .quiz-progress {
     text-align: center;
 }
@@ -617,7 +623,8 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
-.review-btn {
+.review-btn,
+.export-btn {
     background: #3498db;
     border: none;
     color: white;
@@ -628,12 +635,22 @@
     padding: 8px 16px;
     border-radius: 6px;
     transition: all 0.2s ease;
+    margin-left: 8px;
 }
 
-.review-btn:hover {
+.review-btn:hover,
+.export-btn:hover {
     background: #2980b9;
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.export-btn {
+    background: #27ae60;
+}
+
+.export-btn:hover {
+    background: #229954;
 }
 
 /* Quiz Details Section */
