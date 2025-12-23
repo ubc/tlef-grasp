@@ -132,26 +132,70 @@ function handleDrop(e) {
   }
 
   const files = Array.from(e.dataTransfer.files);
-  addFiles(files);
+  const validFiles = validatePDFFiles(files);
+  if (validFiles.length > 0) {
+    addFiles(validFiles);
+  }
 }
 
 function handleFileSelect(e) {
   console.log("File select triggered:", e.target.files);
   const files = Array.from(e.target.files);
   console.log("Files selected:", files.length);
-  if (files.length > 0) {
-    addFiles(files);
+  
+  // Reset the input value to allow re-selecting the same file after error
+  const fileInput = e.target;
+  
+  const validFiles = validatePDFFiles(files);
+  if (validFiles.length > 0) {
+    addFiles(validFiles);
   }
+  
+  // Reset input to allow selecting the same file again
+  fileInput.value = '';
+}
+
+/**
+ * Validates that all files are PDFs
+ * @param {File[]} files - Array of files to validate
+ * @returns {File[]} - Array of valid PDF files
+ */
+function validatePDFFiles(files) {
+  const invalidFiles = [];
+  const validFiles = [];
+
+  for (const file of files) {
+    const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    
+    if (isPDF) {
+      validFiles.push(file);
+    } else {
+      invalidFiles.push(file.name);
+    }
+  }
+
+  // Show error message if there are invalid files
+  if (invalidFiles.length > 0) {
+    showNotification("PDF is the only supported file format at this time. Additional file formats will be supported soon.", "error");
+  }
+
+  return validFiles;
 }
 
 async function addFiles(files) {
+  // Validate all files are PDFs (safety check)
+  const validFiles = validatePDFFiles(files);
+  if (validFiles.length === 0) {
+    return; // No valid files, error already shown by validatePDFFiles
+  }
+
   // Show spinner when starting file upload
   showUploadSpinner();
 
   try {
     const selectedCourse = getSelectedCourse();
 
-    for (const file of files) {
+    for (const file of validFiles) {
       const fileObj = {
         id: Date.now() + Math.random(),
         name: file.name,
@@ -250,7 +294,9 @@ async function addFiles(files) {
       }
     }
 
-    showNotification(`${files.length} file(s) uploaded successfully`, "success");
+    if (validFiles.length > 0) {
+      showNotification(`${validFiles.length} PDF file(s) uploaded successfully`, "success");
+    }
 
     // Hide upload section after successful upload
     hideUploadSection();
