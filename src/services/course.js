@@ -17,7 +17,6 @@ async function createCourse(courseData) {
         const collection = db.collection("grasp_course");
         const course = await collection.insertOne({
             courseCode: courseData.courseCode,
-            courseTitle: courseData.courseTitle,
             courseName: courseData.courseName,
             instructorName: courseData.instructorName,
             semester: courseData.semester,

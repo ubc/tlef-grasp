@@ -269,7 +269,7 @@ router.post("/update", express.json(), async (req, res) => {
                 try {
                     const course = await getCourseById(materialCourseId);
                     if (course) {
-                        courseName = course.courseName || course.courseTitle || "Unknown Course";
+                        courseName = course.courseName || "Unknown Course";
                     }
                 } catch (courseError) {
                     console.error("Error getting course name:", courseError);
@@ -362,7 +362,7 @@ router.post("/refetch", express.json(), async (req, res) => {
             try {
                 const course = await getCourseById(materialCourseId);
                 if (course) {
-                    courseName = course.courseName || course.courseTitle || "Unknown Course";
+                    courseName = course.courseName || "Unknown Course";
                 }
             } catch (courseError) {
                 console.error("Error getting course name:", courseError);

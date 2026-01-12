@@ -228,7 +228,6 @@ router.post("/new", express.json(), async (req, res) => {
 
     const {
       courseCode,
-      courseTitle,
       courseName,
       instructorName,
       semester,
@@ -243,14 +242,14 @@ router.post("/new", express.json(), async (req, res) => {
     // Validate required fields
     if (
       !courseCode ||
-      !courseTitle ||
+      !courseName ||
       !instructorName ||
       !semester ||
       !expectedStudents
     ) {
       return res.status(400).json({
         error:
-          "Missing required fields: courseCode, courseTitle, instructorName, semester, and expectedStudents are required",
+          "Missing required fields: courseCode, courseName, instructorName, semester, and expectedStudents are required",
       });
     }
 
@@ -265,8 +264,7 @@ router.post("/new", express.json(), async (req, res) => {
     // Prepare course data for database
     const courseData = {
       courseCode: courseCode.trim(),
-      courseTitle: courseTitle.trim(),
-      courseName: courseName || `${courseCode} - ${courseTitle}`,
+      courseName: courseName.trim(),
       instructorName,
       semester: semester.trim(),
       expectedStudents,
@@ -299,8 +297,7 @@ router.post("/new", express.json(), async (req, res) => {
     const newCourse = {
       _id: courseId.toString(),
       code: courseCode,
-      name: courseTitle,
-      fullName: courseName || `${courseCode} - ${courseTitle}`,
+      courseName: courseName.trim(),
       instructor: instructorName,
       semester: semester,
       students: expectedStudents,

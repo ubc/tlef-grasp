@@ -113,7 +113,6 @@ const getUserCourses = async (userId) => {
                     courseId: 1,
                     // Include all course fields at top level for easier access
                     courseCode: "$course.courseCode",
-                    courseTitle: "$course.courseTitle",
                     courseName: "$course.courseName",
                     createdAt: "$course.createdAt",
                     // Keep full course object if needed

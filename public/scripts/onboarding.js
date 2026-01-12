@@ -442,7 +442,7 @@ class OnboardingManager {
     const formData = new FormData(e.target);
     const courseName = formData.get("courseName");
     const customCourseCode = formData.get("customCourseCode");
-    const customCourseTitle = formData.get("customCourseTitle");
+    const customCourseName = formData.get("customCourseName");
 
     if (!courseName) {
       this.showError("Please select or create a course");
@@ -455,37 +455,28 @@ class OnboardingManager {
         this.showError("Only faculty can create new courses");
         return;
       }
-      if (!customCourseCode || !customCourseTitle) {
-        this.showError("Please provide both course code and title");
+      if (!customCourseCode || !customCourseName) {
+        this.showError("Please provide both course code and name");
         return;
       }
       this.courseData.courseCode = customCourseCode.trim();
-      this.courseData.courseTitle = customCourseTitle.trim();
-      this.courseData.courseName = `${customCourseCode.trim()} - ${customCourseTitle.trim()}`;
+      this.courseData.courseName = customCourseName.trim(); // Just the course name, not including code
     } else {
-      this.courseData.courseName = courseName;
-      // Parse course name: format should be "CODE - TITLE"
-      const parts = courseName.split(" - ");
-      if (parts.length >= 2) {
-        this.courseData.courseCode = parts[0].trim();
-        // Join remaining parts in case title contains " - "
-        this.courseData.courseTitle = parts.slice(1).join(" - ").trim();
+      // Find the course from the courses list to get both code and name
+      const selectedCourse = this.courses.find(c => c.courseName === courseName);
+      if (selectedCourse) {
+        this.courseData.courseCode = selectedCourse.courseCode;
+        this.courseData.courseName = selectedCourse.courseName; // Just the course name, not including code
       } else {
-        // If format doesn't match, use entire name as title and try to extract code
-        this.courseData.courseTitle = courseName.trim();
-        // Try to extract code from beginning (assume first word or first few characters)
-        const firstSpace = courseName.indexOf(" ");
-        if (firstSpace > 0) {
-          this.courseData.courseCode = courseName.substring(0, firstSpace).trim();
-        } else {
-          this.courseData.courseCode = courseName.trim();
-        }
+        // If course not found, show error
+        this.showError("Could not find course information. Please try selecting the course again.");
+        return;
       }
     }
 
-    // Validate that we have both code and title
-    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
-      this.showError("Could not parse course code and title. Please use the format 'CODE - TITLE' or create a custom course.");
+    // Validate that we have both code and name
+    if (!this.courseData.courseCode || !this.courseData.courseName) {
+      this.showError("Could not determine course code and name. Please try again or create a custom course.");
       return;
     }
 
@@ -528,8 +519,8 @@ class OnboardingManager {
     }
 
     // Validate that all required fields from previous steps are present
-    if (!this.courseData.courseCode || !this.courseData.courseTitle) {
-      this.showError("Course code and title are missing. Please go back to step 1 and select a course.");
+    if (!this.courseData.courseCode || !this.courseData.courseName) {
+      this.showError("Course code and name are missing. Please go back to step 1 and select a course.");
       return;
     }
 
@@ -543,7 +534,7 @@ class OnboardingManager {
     // Validate all required fields one more time before sending
     const requiredFields = {
       courseCode: this.courseData.courseCode,
-      courseTitle: this.courseData.courseTitle,
+      courseName: this.courseData.courseName,
       instructorName: this.courseData.instructorName,
       semester: this.courseData.semester,
       expectedStudents: this.courseData.expectedStudents,
