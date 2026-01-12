@@ -3,16 +3,7 @@ const router = express.Router();
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse } = require('../services/user-course');
 const { getStaffUsersNotInCourse } = require('../services/user');
 const { getCourseById } = require('../services/course');
-
-// Helper function to check if user is faculty
-const isFaculty = (user) => {
-  if (!user || !user.affiliation) return false;
-  // affiliation can be a string (comma-separated) or an array
-  const affiliations = Array.isArray(user.affiliation) 
-    ? user.affiliation 
-    : String(user.affiliation).split(',').map(a => a.trim());
-  return affiliations.includes('faculty');
-};
+const { isFaculty } = require('../utils/auth');
 
 // Get all users in a course
 router.get("/course/:courseId", async (req, res) => {
