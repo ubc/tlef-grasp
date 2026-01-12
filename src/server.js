@@ -73,7 +73,7 @@ app.get("/onboarding", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
-app.get("/dashboard", ensureAuthenticated, (req, res) => {
+app.get("/dashboard", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
@@ -107,6 +107,14 @@ app.get("/achievements", ensureAuthenticated(), (req, res) => {
 
 app.get("/users", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/users.html"));
+});
+
+app.get("/question-bank", ensureAuthenticated(), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-bank.html"));
+});
+
+app.get("/question-review", ensureAuthenticated(), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-review.html"));
 });
 
 // API endpoints - pass middleware function by reference (no parentheses)

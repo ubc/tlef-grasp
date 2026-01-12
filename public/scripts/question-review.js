@@ -734,7 +734,7 @@ class QuestionReviewPage {
 
   navigateBack() {
     // Navigate back to question bank review tab
-    window.location.href = 'question-bank.html?tab=review';
+    window.location.href = '/question-bank?tab=review';
   }
 
   showUnsavedModal(onDiscard) {

@@ -423,7 +423,7 @@ class OnboardingManager {
       console.log("Accessing course:", { id: courseId, name: courseName });
       sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: courseId, name: courseName}));
 
-      window.location.href = "/dashboard.html";
+      window.location.href = "/dashboard";
     } catch (error) {
       console.error("Error accessing course dashboard:", error);
       this.showError("Failed to access dashboard. Please try again.");
@@ -758,7 +758,7 @@ function goToStep(stepNumber) {
 }
 
 function redirectToDashboard() {
-  window.location.href = "/dashboard.html";
+  window.location.href = "/dashboard";
 }
 
 // Global functions for HTML onclick handlers

@@ -121,25 +121,25 @@ class GRASPNavigation {
     if (this.currentRole === "student") {
       return `
         <li class="nav-item" data-page="my-quizzes">
-          <a href="student-dashboard.html" style="text-decoration: none; color: inherit;">
+          <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
             <i class="fas fa-list-check"></i>
             <span>My Quizzes</span>
           </a>
         </li>
         <li class="nav-item" data-page="course-materials">
-          <a href="course-materials.html" style="text-decoration: none; color: inherit;">
+          <a href="/course-materials" style="text-decoration: none; color: inherit;">
             <i class="fas fa-book"></i>
             <span>Course Materials</span>
           </a>
         </li>
         <li class="nav-item" data-page="achievements">
-          <a href="achievements.html" style="text-decoration: none; color: inherit;">
+          <a href="/achievements" style="text-decoration: none; color: inherit;">
             <i class="fas fa-trophy"></i>
             <span>Achievements</span>
           </a>
         </li>
         <li class="nav-item" data-page="settings">
-          <a href="settings.html" style="text-decoration: none; color: inherit;">
+          <a href="/settings" style="text-decoration: none; color: inherit;">
             <i class="fas fa-cog"></i>
             <span>Settings</span>
           </a>
@@ -148,37 +148,37 @@ class GRASPNavigation {
     } else {
       return `
         <li class="nav-item" data-page="dashboard">
-          <a href="dashboard.html" style="text-decoration: none; color: inherit;">
+          <a href="/dashboard" style="text-decoration: none; color: inherit;">
             <i class="fas fa-home"></i>
             <span>Dashboard</span>
           </a>
         </li>
         <li class="nav-item" data-page="question-bank">
-          <a href="question-bank.html" style="text-decoration: none; color: inherit;">
+          <a href="/question-bank" style="text-decoration: none; color: inherit;">
             <i class="fas fa-book"></i>
             <span>Question Bank</span>
           </a>
         </li>
         <li class="nav-item" data-page="question-generation">
-          <a href="question-generation.html" style="text-decoration: none; color: inherit;">
+          <a href="/question-generation" style="text-decoration: none; color: inherit;">
             <i class="fas fa-puzzle-piece"></i>
             <span>Question Generation</span>
           </a>
         </li>
         <li class="nav-item" data-page="course-materials">
-          <a href="course-materials.html" style="text-decoration: none; color: inherit;">
+          <a href="/course-materials" style="text-decoration: none; color: inherit;">
             <i class="fas fa-folder"></i>
             <span>Course Materials</span>
           </a>
         </li>
         <li class="nav-item" data-page="users">
-          <a href="users.html" style="text-decoration: none; color: inherit;">
+          <a href="/users" style="text-decoration: none; color: inherit;">
             <i class="fas fa-users"></i>
             <span>Users</span>
           </a>
         </li>
         <li class="nav-item" data-page="settings">
-          <a href="settings.html" style="text-decoration: none; color: inherit;">
+          <a href="/settings" style="text-decoration: none; color: inherit;">
             <i class="fas fa-cog"></i>
             <span>Settings</span>
           </a>
@@ -579,10 +579,10 @@ class GRASPNavigation {
   navigateToRoleDashboard() {
     if (this.currentRole === "student") {
       // Navigate to student dashboard
-      window.location.href = "student-dashboard.html";
+      window.location.href = "/student-dashboard";
     } else {
       // Navigate to instructor dashboard
-      window.location.href = "dashboard.html";
+      window.location.href = "/dashboard";
     }
   }
 

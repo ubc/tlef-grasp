@@ -4021,7 +4021,7 @@ function showSuccessModal(message, questionsCount) {
   // Go to Question Bank button handler
   if (goToBankBtn) {
     goToBankBtn.onclick = () => {
-      window.location.href = "question-bank.html";
+      window.location.href = "/question-bank";
     };
   }
   

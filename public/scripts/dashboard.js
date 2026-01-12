@@ -85,7 +85,7 @@ function handleQuickStartAction(action) {
       break;
     case "review":
       // Navigate to question review page
-      window.location.href = "/question-bank.html?tab=review";
+      window.location.href = "/question-bank?tab=review";
       break;
     case "quizzes":
       // Navigate to quiz page
@@ -93,7 +93,7 @@ function handleQuickStartAction(action) {
       break;
     case "questions":
       // Navigate to question generation page
-      window.location.href = "/question-bank.html";
+      window.location.href = "/question-bank";
       break;
     default:
       console.log(`Unknown action: ${action}`);
@@ -191,7 +191,7 @@ function updateFlaggedCount(count) {
     viewButton.setAttribute("data-listener-added", "true");
     viewButton.addEventListener("click", () => {
       // Navigate to question bank with flagged filter enabled
-      window.location.href = "/question-bank.html?tab=overview&flagged=true";
+      window.location.href = "/question-bank?tab=overview&flagged=true";
     });
   }
 }

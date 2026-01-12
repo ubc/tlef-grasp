@@ -182,7 +182,7 @@ function startQuiz(quizId) {
 
         // Navigate to the quiz page
         setTimeout(() => {
-          window.location.href = `quiz.html?quiz=${quizId}&session=${data.data.sessionId}`;
+          window.location.href = `/quiz?quiz=${quizId}&session=${data.data.sessionId}`;
         }, 1000);
       } else {
         throw new Error(data.message);

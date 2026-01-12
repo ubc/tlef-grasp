@@ -696,7 +696,7 @@ class QuestionBankPage {
         <div class="empty-state">
           <h3>No quizzes to review</h3>
           <p>You haven't saved any quizzes from question generation yet.</p>
-          <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first quiz.</p>
+          <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first quiz.</p>
         </div>
       `;
       return;
@@ -1554,7 +1554,7 @@ class QuestionBankPage {
           <td colspan="5" class="empty-state">
             <p>No questions available.</p>
             <p>You haven't saved any questions from question generation yet.</p>
-            <p>Go to <a href="question-generation.html">Question Generation</a> to create and save your first questions.</p>
+            <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first questions.</p>
           </td>
         </tr>
       `;
@@ -1946,7 +1946,7 @@ class QuestionBankPage {
     const quiz = this.quizzes.find((q) => q.id === quizId);
     if (quiz && quiz.questions.length > 0) {
       const firstQuestionId = quiz.questions[0].id;
-      window.location.href = `question-review.html?quizId=${quizId}&questionId=${firstQuestionId}`;
+      window.location.href = `/question-review?quizId=${quizId}&questionId=${firstQuestionId}`;
     }
   }
 
