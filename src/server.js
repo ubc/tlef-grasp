@@ -1,15 +1,12 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
-const session = require("express-session");
 const databaseService = require("./services/database");
-const exampleRoutes = require("./routes/example/hello");
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/question");
 //const quizQuestionRoutes = require("./routes/quiz-questions");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
-const simpleOllamaRoutes = require("./routes/simple-ollama");
 const ragLlmRoutes = require("./routes/rag-llm");
 const materialRoutes = require("./routes/material");
 const objectiveRoutes = require("./routes/objective");
@@ -113,7 +110,6 @@ app.get("/users", ensureAuthenticated(), (req, res) => {
 });
 
 // API endpoints - pass middleware function by reference (no parentheses)
-app.use("/api/example", ensureAuthenticatedAPI, exampleRoutes);
 app.use("/api/upload", ensureAuthenticatedAPI, uploadRoutes);
 app.use("/api/question", ensureAuthenticatedAPI, questionRoutes);
 //app.use("/api/quiz-questions", ensureAuthenticatedAPI, quizQuestionRoutes);
