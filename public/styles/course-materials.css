@@ -62,42 +62,6 @@
     border-color: #bdc3c7;
 }
 
-.search-group {
-    display: flex;
-    align-items: center;
-}
-
-.filters-section .search-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-    background: white;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 12px 16px;
-    min-width: 300px;
-    transition: all 0.3s ease;
-}
-
-.filters-section .search-box:focus-within {
-    border-color: #3498db;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-}
-
-.filters-section .search-box i {
-    color: #95a5a6;
-    margin-right: 12px;
-    font-size: 16px;
-}
-
-.filters-section .search-box input {
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14px;
-    color: #555;
-    width: 100%;
-}
 
 .filters-section .search-box input::placeholder {
     color: #95a5a6;
@@ -513,86 +477,6 @@
     100% { transform: rotate(360deg); }
 }
 
-/* File List */
-.file-list {
-    margin-top: 32px;
-}
-
-.file-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px;
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    margin-bottom: 12px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.file-item:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-color: #d1d5db;
-}
-
-.file-item__info {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex: 1;
-}
-
-.file-item__icon {
-    font-size: 24px;
-    color: #6b7280;
-    transition: color 0.3s ease;
-}
-
-.file-item:hover .file-item__icon {
-    color: #3498db;
-}
-
-.file-item__details {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.file-item__name {
-    font-weight: 600;
-    color: #374151;
-    font-size: 15px;
-    line-height: 1.4;
-}
-
-.file-item__size {
-    font-size: 13px;
-    color: #6b7280;
-    font-weight: 500;
-}
-
-.file-item__remove {
-    background: none;
-    border: none;
-    color: #9ca3af;
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 8px;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-}
-
-.file-item__remove:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
-    transform: scale(1.1);
-}
 
 /* ===== MODALS ===== */
 .modal {

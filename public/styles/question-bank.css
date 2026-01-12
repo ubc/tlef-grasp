@@ -29,30 +29,6 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-.header-left {
-    display: flex;
-    align-items: center;
-}
-
-.course-selector {
-    padding: 10px 15px;
-    border: 1px solid #e1e5e9;
-    border-radius: 8px;
-    background: white;
-    font-size: 16px;
-    font-weight: 500;
-    color: #2c3e50;
-    cursor: pointer;
-    min-width: 150px;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.course-selector:focus {
-    outline: none;
-    border-color: #3498db;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-}
-
 /* Header Tabs */
 .header-tabs {
     display: flex;
@@ -88,82 +64,6 @@
 
 
 
-.action-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border: 1px solid #e1e5e9;
-    background: white;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    color: #6c757d;
-    font-size: 14px;
-    font-weight: 500;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    min-height: 36px;
-}
-
-.action-btn:hover:not(:disabled) {
-    border-color: #3498db;
-    color: #3498db;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
-}
-
-.action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.action-btn i {
-    font-size: 14px;
-}
-
-.action-btn span {
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.action-btn.danger {
-    color: #e74c3c;
-    border-color: #e74c3c;
-}
-
-.action-btn.danger:hover:not(:disabled) {
-    background: #e74c3c;
-    color: white;
-}
-
-.action-btn.primary {
-    background: #3498db;
-    color: white;
-    border-color: #3498db;
-}
-
-.action-btn.primary:hover:not(:disabled) {
-    background: #2980b9;
-    border-color: #2980b9;
-}
-
-.action-btn i {
-    font-size: 12px;
-}
-
-.action-btn span {
-    font-size: 13px;
-    font-weight: 500;
-}
 
 
 
@@ -428,89 +328,6 @@
 
 .tab-panel.active {
     display: block;
-}
-
-/* Overview Tab Panels */
-.panels-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 20px;
-    height: calc(100vh - 280px);
-    min-height: 500px;
-}
-
-/* Panel Styles */
-.panel {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.panel-header {
-    padding: 20px 25px;
-    border-bottom: 1px solid #e1e5e9;
-    background: #f8f9fa;
-}
-
-.panel-header-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.panel-header h3 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-    color: #2c3e50;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.sort-toggle {
-    background: none;
-    border: none;
-    color: #6c757d;
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    font-size: 16px;
-}
-
-.sort-toggle:hover {
-    background: rgba(52, 152, 219, 0.1);
-    color: #3498db;
-}
-
-.select-all-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.select-all-checkbox {
-    width: 18px;
-    height: 18px;
-    accent-color: #3498db;
-    cursor: pointer;
-}
-
-.select-all-container label {
-    font-size: 14px;
-    color: #495057;
-    cursor: pointer;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-weight: 500;
-}
-
-.panel-content {
-    flex: 1;
-    padding: 20px 25px;
-    overflow-y: auto;
 }
 
 /* Review Tab - Quiz Cards */
@@ -908,228 +725,6 @@
     color: #6c757d;
 }
 
-.clear-filters-link {
-    color: #3498db;
-    text-decoration: none;
-    font-weight: 500;
-    cursor: pointer;
-}
-
-.clear-filters-link:hover {
-    text-decoration: underline;
-}
-
-.clear-filters-link {
-    color: #3498db;
-    text-decoration: none;
-    font-weight: 500;
-    cursor: pointer;
-    display: inline-block;
-    margin-top: 8px;
-}
-
-/* Question List Panel */
-.question-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid #f1f3f4;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.question-item:last-child {
-    border-bottom: none;
-}
-
-.question-item:hover {
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-left: -12px;
-    margin-right: -12px;
-}
-
-.question-item input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: #3498db;
-    cursor: pointer;
-}
-
-.question-item label {
-    flex: 1;
-    font-size: 14px;
-    color: #495057;
-    cursor: pointer;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-weight: 500;
-}
-
-.question-item.editing {
-    background-color: #fff3cd;
-    border: 1px solid #ffeaa7;
-    border-radius: 8px;
-    padding: 12px;
-    margin: 0;
-}
-
-.question-item.editing input[type="text"] {
-    flex: 1;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.question-item.editing .edit-actions {
-    display: flex;
-    gap: 8px;
-    margin-left: 12px;
-}
-
-.edit-actions button {
-    padding: 4px 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.edit-actions .save-btn {
-    background: #27ae60;
-    color: white;
-    border-color: #27ae60;
-}
-
-.edit-actions .cancel-btn {
-    background: #e74c3c;
-    color: white;
-    border-color: #e74c3c;
-}
-
-/* Objectives Panel */
-.objectives-table {
-    width: 100%;
-}
-
-.table-header {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    padding: 12px 0;
-    border-bottom: 2px solid #e1e5e9;
-    margin-bottom: 15px;
-}
-
-.header-cell {
-    font-size: 14px;
-    font-weight: 600;
-    color: #495057;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.table-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.table-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    padding: 12px 0;
-    border-bottom: 1px solid #f1f3f4;
-}
-
-.table-row:last-child {
-    border-bottom: none;
-}
-
-.cell {
-    font-size: 14px;
-    color: #495057;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-weight: 500;
-}
-
-.cell.mixed {
-    color: #f39c12;
-    font-style: italic;
-}
-
-/* History Panel */
-.history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.history-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid #f1f3f4;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.history-item:last-child {
-    border-bottom: none;
-}
-
-.history-item:hover {
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-left: -12px;
-    margin-right: -12px;
-}
-
-.history-item input[type="radio"] {
-    width: 16px;
-    height: 16px;
-    accent-color: #3498db;
-    cursor: pointer;
-}
-
-.history-item label {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    cursor: pointer;
-}
-
-.history-text {
-    font-size: 14px;
-    color: #495057;
-    font-weight: 500;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.radio-time {
-    font-size: 12px;
-    color: #6c757d;
-    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.history-item.selected {
-    background-color: #e3f2fd;
-    border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-left: -12px;
-    margin-right: -12px;
-}
 
 /* Modal Styles */
 .modal {
@@ -1258,16 +853,6 @@
 
 /* Responsive Design */
 @media (max-width: 1200px) {
-    .panels-container {
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto;
-    }
-    
-    .history-panel {
-        grid-column: 1 / -1;
-        grid-row: 2;
-    }
-    
     .quizzes-container {
         grid-template-columns: 1fr;
     }
@@ -1308,37 +893,6 @@
     .filters-row {
         gap: 16px;
     }
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-}
-
-/* Scrollbar Styling */
-.panel-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.panel-content::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-}
-
-.panel-content::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-}
-
-.panel-content::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
 }
 
 /* Questions Table for Overview Tab */
@@ -1434,10 +988,6 @@
     font-size: 12px;
 }
 
-.sortable-header[data-sort="views"] i {
-    color: #3498db;
-}
-
 .questions-table th.sortable-header {
     cursor: pointer;
     user-select: none;
@@ -1454,9 +1004,6 @@
     font-size: 12px;
 }
 
-.questions-table th.sortable-header[data-sort="views"] i {
-    color: #3498db;
-}
 
 .questions-table th.sortable-header[aria-sort="ascending"] i {
     color: #3498db;
@@ -1649,12 +1196,6 @@
     min-width: 80px;
 }
 
-.views-cell {
-    text-align: right;
-    font-weight: 500;
-    color: #6c757d;
-}
-
 .select-cell {
     text-align: center;
 }
@@ -1671,9 +1212,6 @@
     text-align: center;
 }
 
-.questions-table td.views-cell {
-    text-align: right;
-}
 
 /* Edit Mode */
 .question-title-input {

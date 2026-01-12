@@ -20,9 +20,6 @@ async function initializeDashboard() {
 
     // Update current date
     updateCurrentDate();
-
-    // Initialize progress animations
-    initializeProgressAnimations();
   } catch (error) {
     console.error("Error initializing dashboard:", error);
   }
@@ -49,11 +46,6 @@ function updateWelcomeMessage(instructorName) {
   if (welcomeElement && instructorName) {
     welcomeElement.textContent = `Hello, ${instructorName}`;
   }
-}
-
-function showEmptyStates() {
-  // Show empty states for all sections
-  // (Generation and Review sections removed)
 }
 
 async function initializeDashboardContent() {
@@ -108,22 +100,6 @@ function updateCurrentDate() {
     const formattedDate = now.toLocaleDateString("en-US", options);
     dateElement.textContent = formattedDate;
   }
-}
-
-function initializeProgressAnimations() {
-  // Animate progress bars on page load
-  setTimeout(() => {
-    const progressBars = document.querySelectorAll(".progress-fill");
-
-    progressBars.forEach((bar) => {
-      const width = bar.style.width;
-      bar.style.width = "0%";
-
-      setTimeout(() => {
-        bar.style.width = width;
-      }, 500);
-    });
-  }, 1000); // Delay to allow content to load
 }
 
 async function loadFlaggedQuestionsCount() {

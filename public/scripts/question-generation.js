@@ -1,9 +1,6 @@
 // Question Generation JavaScript
 // State management and functionality for the 5-step question generation process
 
-// Development flag for mock API responses
-const DEV_MODE = true;
-
 let questionGenerator = null;
 let contentGenerator = null;
 
@@ -12,10 +9,6 @@ const state = {
   step: 1, // Step 1 is now Create Objectives (was step 3)
   course: JSON.parse(sessionStorage.getItem("grasp-selected-course")) || "",
   selectedCourse: JSON.parse(sessionStorage.getItem("grasp-selected-course")).courseName || "", // Course name for display
-  summary: "",
-  objectives: [],
-  questions: [],
-  exportFormat: "qti",
   objectiveGroups: [], // Step 1: Create Objectives
   // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
@@ -26,14 +19,6 @@ const state = {
     status: "all",
     q: "", // search query
   },
-  // Step 3: Select Output Format
-  formats: {
-    canvasSingle: { selected: false, releaseNow: true, date: "", time: "" },
-    canvasSpaced: { selected: false, releaseNow: true, date: "", time: "" },
-    h5p: { selected: false },
-  },
-  namingConvention: "module_week_quiz",
-  saveAsDefault: false,
 };
 
 // Step titles for dynamic updates
@@ -90,13 +75,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
 async function loadCourseData() {
   try {
-    if (state.selectedCourse) {
-      // Update course display
-      const courseValue = document.getElementById("course-value");
-      if (courseValue) {
-        courseValue.textContent = state.selectedCourse;
-      }
-    } else {
+    if (!state.selectedCourse) {
       showNoCourseSelectedMessage();
     }
   } catch (error) {
@@ -392,7 +371,6 @@ function updateUI() {
   console.log("updateUI called for step:", state.step);
   updateStepper();
   updatePageTitle();
-  updateCourseDisplay();
   updateStepContent();
   updateNavigationButtons();
 }
@@ -426,13 +404,6 @@ function updatePageTitle() {
   }
 }
 
-function updateCourseDisplay() {
-  const courseValue = document.getElementById("course-value");
-
-  if (courseValue) {
-    courseValue.textContent = state.selectedCourse || state.course;
-  }
-}
 
 function updateStepContent() {
   const panels = document.querySelectorAll(".step-panel");
@@ -2701,20 +2672,6 @@ function initializeModals() {
   });
 }
 
-// ===== STEP 3: EXPORT FORMAT FUNCTIONS =====
-
-function initializeExportFormat() {
-  const exportOptions = document.querySelectorAll(
-    'input[name="export-format"]'
-  );
-
-  exportOptions.forEach((option) => {
-    option.addEventListener("change", (e) => {
-      state.exportFormat = e.target.value;
-    });
-  });
-}
-
 function renderKatex() {
   renderMathInElement(document.body, {
     delimiters: [
@@ -2769,502 +2726,6 @@ function setupQuizSelectionListeners() {
   }
 }
 
-function setupStep3EventListeners() {
-  // Format selection checkboxes
-  const canvasSingleCheckbox = document.getElementById(
-    "canvas-single-checkbox"
-  );
-  const canvasSpacedCheckbox = document.getElementById(
-    "canvas-spaced-checkbox"
-  );
-  const h5pCheckbox = document.getElementById("h5p-checkbox");
-
-  if (canvasSingleCheckbox)
-    canvasSingleCheckbox.addEventListener("change", handleFormatSelection);
-  if (canvasSpacedCheckbox)
-    canvasSpacedCheckbox.addEventListener("change", handleFormatSelection);
-  if (h5pCheckbox)
-    h5pCheckbox.addEventListener("change", handleFormatSelection);
-
-  // Release immediately toggles
-  const canvasSingleReleaseNow = document.getElementById(
-    "canvas-single-release-now"
-  );
-  const canvasSpacedReleaseNow = document.getElementById(
-    "canvas-spaced-release-now"
-  );
-
-  if (canvasSingleReleaseNow)
-    canvasSingleReleaseNow.addEventListener("change", handleReleaseNowToggle);
-  if (canvasSpacedReleaseNow)
-    canvasSpacedReleaseNow.addEventListener("change", handleReleaseNowToggle);
-
-  // Date and time inputs
-  const dateInputs = document.querySelectorAll(".date-input");
-  const timeInputs = document.querySelectorAll(".time-input");
-
-  dateInputs.forEach((input) =>
-    input.addEventListener("change", handleDateChange)
-  );
-  timeInputs.forEach((input) =>
-    input.addEventListener("change", handleTimeChange)
-  );
-
-  // Naming convention select
-  const namingConventionSelect = document.getElementById(
-    "naming-convention-select"
-  );
-  if (namingConventionSelect)
-    namingConventionSelect.addEventListener(
-      "change",
-      handleNamingConventionChange
-    );
-
-  // Save as default checkbox
-  const saveAsDefaultCheckbox = document.getElementById("save-as-default");
-  if (saveAsDefaultCheckbox)
-    saveAsDefaultCheckbox.addEventListener("change", handleSaveAsDefaultChange);
-
-  // Export summary modal
-  const exportSummaryModalClose = document.getElementById(
-    "export-summary-modal-close"
-  );
-  const exportSummaryConfirm = document.getElementById(
-    "export-summary-confirm"
-  );
-
-  if (exportSummaryModalClose)
-    exportSummaryModalClose.addEventListener("click", hideExportSummaryModal);
-  if (exportSummaryConfirm)
-    exportSummaryConfirm.addEventListener("click", hideExportSummaryModal);
-
-  // Make entire cards clickable
-  const exportOptionCards = document.querySelectorAll(".export-option-card");
-  exportOptionCards.forEach((card) => {
-    card.addEventListener("click", (e) => {
-      // Don't trigger if clicking on checkbox or input
-      if (
-        e.target.type === "checkbox" ||
-        e.target.tagName === "INPUT" ||
-        e.target.tagName === "SELECT"
-      ) {
-        return;
-      }
-
-      const checkbox = card.querySelector(".export-option-card__checkbox");
-      if (checkbox) {
-        checkbox.checked = !checkbox.checked;
-        handleFormatSelection();
-      }
-    });
-  });
-}
-
-function handleFormatSelection() {
-  const canvasSingleCheckbox = document.getElementById(
-    "canvas-single-checkbox"
-  );
-  const canvasSpacedCheckbox = document.getElementById(
-    "canvas-spaced-checkbox"
-  );
-  const h5pCheckbox = document.getElementById("h5p-checkbox");
-
-  // Update state
-  state.formats.canvasSingle.selected = canvasSingleCheckbox
-    ? canvasSingleCheckbox.checked
-    : false;
-  state.formats.canvasSpaced.selected = canvasSpacedCheckbox
-    ? canvasSpacedCheckbox.checked
-    : false;
-  state.formats.h5p.selected = h5pCheckbox ? h5pCheckbox.checked : false;
-
-  console.log("Format selection updated:", {
-    canvasSingle: state.formats.canvasSingle.selected,
-    canvasSpaced: state.formats.canvasSpaced.selected,
-    h5p: state.formats.h5p.selected,
-  });
-
-  // Update UI
-  updateStep3UI();
-  updateExportButtonState();
-}
-
-function handleReleaseNowToggle() {
-  const canvasSingleReleaseNow = document.getElementById(
-    "canvas-single-release-now"
-  );
-  const canvasSpacedReleaseNow = document.getElementById(
-    "canvas-spaced-release-now"
-  );
-
-  // Update state
-  state.formats.canvasSingle.releaseNow = canvasSingleReleaseNow
-    ? canvasSingleReleaseNow.checked
-    : false;
-  state.formats.canvasSpaced.releaseNow = canvasSpacedReleaseNow
-    ? canvasSpacedReleaseNow.checked
-    : false;
-
-  // Update UI
-  updateScheduleControls();
-}
-
-function handleDateChange() {
-  const canvasSingleDate = document.getElementById(
-    "canvas-single-release-date"
-  );
-  const canvasSpacedDate = document.getElementById(
-    "canvas-spaced-release-date"
-  );
-
-  // Update state
-  state.formats.canvasSingle.date = canvasSingleDate
-    ? canvasSingleDate.value
-    : "";
-  state.formats.canvasSpaced.date = canvasSpacedDate
-    ? canvasSpacedDate.value
-    : "";
-
-  // Validate dates
-  validateDates();
-}
-
-function handleTimeChange() {
-  const canvasSingleTime = document.getElementById(
-    "canvas-single-release-time"
-  );
-  const canvasSpacedTime = document.getElementById(
-    "canvas-spaced-release-time"
-  );
-
-  // Update state
-  state.formats.canvasSingle.time = canvasSingleTime
-    ? canvasSingleTime.value
-    : "";
-  state.formats.canvasSpaced.time = canvasSpacedTime
-    ? canvasSpacedTime.value
-    : "";
-}
-
-function handleNamingConventionChange() {
-  const namingConventionSelect = document.getElementById(
-    "naming-convention-select"
-  );
-  if (namingConventionSelect) {
-    state.namingConvention = namingConventionSelect.value;
-    updateNamingConventionPreview();
-  }
-}
-
-function handleSaveAsDefaultChange() {
-  const saveAsDefaultCheckbox = document.getElementById("save-as-default");
-  if (saveAsDefaultCheckbox) {
-    state.saveAsDefault = saveAsDefaultCheckbox.checked;
-  }
-}
-
-function updateStep3UI() {
-  console.log("updateStep3UI called");
-  updateSelectedFormatsCount();
-  updateCardSelectionStates();
-  updateNamingConventionPanel();
-  updateScheduleControls();
-  updateExportButtonState();
-}
-
-function updateSelectedFormatsCount() {
-  // Calculate count based on actual checkbox states
-  const canvasSingleSelected = state.formats.canvasSingle.selected;
-  const canvasSpacedSelected = state.formats.canvasSpaced.selected;
-  const h5pSelected = state.formats.h5p.selected;
-
-  const count = [
-    canvasSingleSelected,
-    canvasSpacedSelected,
-    h5pSelected,
-  ].filter(Boolean).length;
-
-  const countElement = document.getElementById("selected-formats-count");
-  if (countElement) {
-    countElement.textContent = count;
-  }
-
-  console.log(
-    "Selected formats count updated:",
-    count,
-    "Canvas Single:",
-    canvasSingleSelected,
-    "Canvas Spaced:",
-    canvasSpacedSelected,
-    "H5P:",
-    h5pSelected
-  );
-}
-
-function updateCardSelectionStates() {
-  const cards = document.querySelectorAll(".export-option-card");
-  cards.forEach((card) => {
-    const format = card.dataset.format;
-    const checkbox = card.querySelector(".export-option-card__checkbox");
-
-    if (checkbox && checkbox.checked) {
-      card.classList.add("export-option-card--selected");
-    } else {
-      card.classList.remove("export-option-card--selected");
-    }
-  });
-}
-
-function updateNamingConventionPanel() {
-  const namingConventionPanel = document.getElementById(
-    "naming-convention-panel"
-  );
-  const hasCanvasFormat =
-    state.formats.canvasSingle.selected || state.formats.canvasSpaced.selected;
-
-  if (namingConventionPanel) {
-    namingConventionPanel.style.display = hasCanvasFormat ? "block" : "none";
-    console.log(
-      "Naming convention panel visibility:",
-      hasCanvasFormat ? "visible" : "hidden"
-    );
-
-    // Update the preview when the panel becomes visible
-    if (hasCanvasFormat) {
-      updateNamingConventionPreview();
-    }
-  }
-}
-
-function updateScheduleControls() {
-  // Canvas Single
-  const canvasSingleScheduleControls = document.getElementById(
-    "canvas-single-schedule-controls"
-  );
-  if (canvasSingleScheduleControls) {
-    if (state.formats.canvasSingle.releaseNow) {
-      canvasSingleScheduleControls.classList.add("schedule-controls--disabled");
-    } else {
-      canvasSingleScheduleControls.classList.remove(
-        "schedule-controls--disabled"
-      );
-    }
-  }
-
-  // Canvas Spaced
-  const canvasSpacedScheduleControls = document.getElementById(
-    "canvas-spaced-schedule-controls"
-  );
-  if (canvasSpacedScheduleControls) {
-    if (state.formats.canvasSpaced.releaseNow) {
-      canvasSpacedScheduleControls.classList.add("schedule-controls--disabled");
-    } else {
-      canvasSpacedScheduleControls.classList.remove(
-        "schedule-controls--disabled"
-      );
-    }
-  }
-}
-
-function updateNamingConventionPreview() {
-  const exampleElement = document.getElementById("naming-convention-example");
-  if (!exampleElement) return;
-
-  switch (state.namingConvention) {
-    case "course_quiz":
-      exampleElement.textContent = "CHEM 101 – Quiz 1";
-      break;
-    case "module_week_quiz":
-      exampleElement.textContent = "Week 05 – Quiz";
-      break;
-    case "topic_date":
-      exampleElement.textContent = "Thermodynamics – 2024-01-15";
-      break;
-    default:
-      exampleElement.textContent = "Week 05 – Quiz";
-  }
-}
-
-function validateDates() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Validate Canvas Single date
-  if (
-    state.formats.canvasSingle.date &&
-    !state.formats.canvasSingle.releaseNow
-  ) {
-    const selectedDate = new Date(state.formats.canvasSingle.date);
-    if (selectedDate < today) {
-      showDateWarning(
-        "canvas-single-release-date",
-        "Date cannot be in the past"
-      );
-    } else {
-      hideDateWarning("canvas-single-release-date");
-    }
-  }
-
-  // Validate Canvas Spaced date
-  if (
-    state.formats.canvasSpaced.date &&
-    !state.formats.canvasSpaced.releaseNow
-  ) {
-    const selectedDate = new Date(state.formats.canvasSpaced.date);
-    if (selectedDate < today) {
-      showDateWarning(
-        "canvas-spaced-release-date",
-        "Date cannot be in the past"
-      );
-    } else {
-      hideDateWarning("canvas-spaced-release-date");
-    }
-  }
-}
-
-function showDateWarning(dateInputId, message) {
-  const dateInput = document.getElementById(dateInputId);
-  if (dateInput) {
-    // Remove existing warning
-    const existingWarning = dateInput.parentNode.querySelector(".date-warning");
-    if (existingWarning) {
-      existingWarning.remove();
-    }
-
-    // Add new warning
-    const warning = document.createElement("div");
-    warning.className = "date-warning";
-    warning.textContent = message;
-    warning.style.color = "#e74c3c";
-    warning.style.fontSize = "12px";
-    warning.style.marginTop = "4px";
-    dateInput.parentNode.appendChild(warning);
-  }
-}
-
-function hideDateWarning(dateInputId) {
-  const dateInput = document.getElementById(dateInputId);
-  if (dateInput) {
-    const existingWarning = dateInput.parentNode.querySelector(".date-warning");
-    if (existingWarning) {
-      existingWarning.remove();
-    }
-  }
-}
-
-function updateExportButtonState() {
-  const continueBtn = document.getElementById("continue-btn");
-  if (continueBtn) {
-    // Check if any format is selected
-    const hasSelectedFormats =
-      state.formats.canvasSingle.selected ||
-      state.formats.canvasSpaced.selected ||
-      state.formats.h5p.selected;
-
-    continueBtn.disabled = !hasSelectedFormats;
-
-    console.log("Export button state updated:", {
-      hasSelectedFormats,
-      disabled: !hasSelectedFormats,
-      canvasSingle: state.formats.canvasSingle.selected,
-      canvasSpaced: state.formats.canvasSpaced.selected,
-      h5p: state.formats.h5p.selected,
-    });
-
-    if (state.step === 3) {
-      continueBtn.textContent = "Export Now";
-    }
-  }
-}
-
-function showExportSummaryModal() {
-  const modal = document.getElementById("export-summary-modal");
-  const modalBody = document.getElementById("export-summary-modal-body");
-
-  if (modal && modalBody) {
-    modalBody.innerHTML = generateExportSummaryHTML();
-    modal.style.display = "flex";
-
-    // Focus trap
-    const closeBtn = document.getElementById("export-summary-modal-close");
-    if (closeBtn) closeBtn.focus();
-  }
-}
-
-function hideExportSummaryModal() {
-  const modal = document.getElementById("export-summary-modal");
-  if (modal) {
-    modal.style.display = "none";
-  }
-}
-
-function generateExportSummaryHTML() {
-  let html = '<div class="export-summary">';
-
-  // Selected formats
-  html += "<h4>Selected Formats:</h4><ul>";
-  if (state.formats.canvasSingle.selected) {
-    html += "<li>Canvas (single quiz)";
-    if (state.formats.canvasSingle.releaseNow) {
-      html += " - Release immediately";
-    } else {
-      html += ` - Scheduled for ${state.formats.canvasSingle.date}${state.formats.canvasSingle.time
-        ? ` at ${state.formats.canvasSingle.time}`
-        : ""
-        }`;
-    }
-    html += "</li>";
-  }
-
-  if (state.formats.canvasSpaced.selected) {
-    html += "<li>Canvas (spaced review quiz)";
-    if (state.formats.canvasSpaced.releaseNow) {
-      html += " - Release immediately";
-    } else {
-      html += ` - Scheduled for ${state.formats.canvasSpaced.date}${state.formats.canvasSpaced.time
-        ? ` at ${state.formats.canvasSpaced.time}`
-        : ""
-        }`;
-    }
-    html += "</li>";
-  }
-
-  if (state.formats.h5p.selected) {
-    html += "<li>H5P (individual elements)</li>";
-  }
-  html += "</ul>";
-
-  // Naming convention
-  if (
-    state.formats.canvasSingle.selected ||
-    state.formats.canvasSpaced.selected
-  ) {
-    html += "<h4>Canvas Naming Convention:</h4>";
-    html += `<p>${getNamingConventionDisplayText()}</p>`;
-  }
-
-  // Save as default
-  if (state.saveAsDefault) {
-    html += "<h4>Settings:</h4>";
-    html += "<p>Save export settings as default</p>";
-  }
-
-  html += "</div>";
-  return html;
-}
-
-function getNamingConventionDisplayText() {
-  switch (state.namingConvention) {
-    case "course_quiz":
-      return "Course – Quiz 1, 2, 3…";
-    case "module_week_quiz":
-      return "Module Week – Quiz";
-    case "topic_date":
-      return "Topic – YYYY-MM-DD";
-    default:
-      return "Module Week – Quiz";
-  }
-}
 
 // ===== STEP 4: QUESTION GENERATION FUNCTIONS =====
 
@@ -3314,7 +2775,6 @@ function setGenerationUI(showLoading) {
 // Generate questions from uploaded content
 async function generateQuestionsFromContent() {
   console.log("=== GENERATING QUESTIONS FROM CONTENT ===");
-  console.log("Summary length:", state.summary.length);
   console.log("Objective groups:", state.objectiveGroups.length);
 
   // Check if questionGenerator is initialized
@@ -3505,7 +2965,6 @@ function step2() {
   console.log("step2 called");
 
   // Clear any existing questions
-  state.questions = [];
   state.questionGroups = [];
 
   // Generate questions from uploaded content instead of loading sample data
@@ -3741,7 +3200,6 @@ async function handleRegenerateAll() {
 
   try {
     // Clear existing questions
-    state.questions = [];
     state.questionGroups = [];
 
     // Generate new questions from content
@@ -4046,147 +3504,6 @@ function getToastIcon(type) {
   }
 }
 
-// ===== STEP 3: EXPORT FUNCTIONS =====
-
-async function exportQuestions() {
-  const format = state.exportFormat;
-
-  try {
-    const response = await fetch(`/api/question/export?format=${format}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        course: state.course,
-        summary: state.summary,
-        objectives: state.objectiveGroups, // Export the full objectiveGroups array
-        questions: state.questions,
-      }),
-    });
-
-    if (response.ok) {
-      const blob = await response.blob();
-      downloadFile(
-        blob,
-        `questions-${state.course}-${format}.${getFileExtension(format)}`
-      );
-    } else {
-      throw new Error("Export failed");
-    }
-  } catch (error) {
-    console.error("Export failed:", error);
-    if (DEV_MODE) {
-      // Mock export for development
-      const mockData = createMockExportData();
-      const blob = new Blob([mockData], { type: getMimeType(format) });
-      downloadFile(
-        blob,
-        `questions-${state.course}-${format}.${getFileExtension(format)}`
-      );
-    } else {
-      alert("Export failed. Please try again.");
-    }
-  }
-}
-
-function createMockExportData() {
-  const format = state.exportFormat;
-
-  switch (format) {
-    case "csv":
-      return createMockCSV();
-    case "json":
-      return createMockJSON();
-    case "qti":
-    default:
-      return createMockQTI();
-  }
-}
-
-function createMockCSV() {
-  let csv =
-    "Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n";
-  state.questions.forEach((q) => {
-    // Options are always objects with keys A, B, C, D
-    const optA = q.options?.A || '';
-    const optB = q.options?.B || '';
-    const optC = q.options?.C || '';
-    const optD = q.options?.D || '';
-    // correctAnswer is always a letter (A, B, C, D)
-    const correctAnswerLetter = typeof q.correctAnswer === 'string' 
-      ? q.correctAnswer.toUpperCase() 
-      : (typeof q.correctAnswer === 'number' ? ['A', 'B', 'C', 'D'][q.correctAnswer] : 'A');
-    const correctOpt = q.options?.[correctAnswerLetter] || '';
-    csv += `"${q.text}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel}","${q.difficulty
-      }"\n`;
-  });
-  return csv;
-}
-
-function createMockJSON() {
-  return JSON.stringify(
-    {
-      course: state.course,
-      summary: state.summary,
-      objectives: state.objectiveGroups, // Export the full objectiveGroups array
-      questions: state.questions,
-    },
-    null,
-    2
-  );
-}
-
-function createMockQTI() {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
-  <assessment ident="GRASP_QUESTIONS" title="${state.course} Questions">
-    <qtimetadata>
-      <qtimetadatafield>
-        <fieldlabel>qmd_timelimit</fieldlabel>
-        <fieldentry>PT30M</fieldentry>
-      </qtimetadatafield>
-    </qtimetadata>
-  </assessment>
-</questestinterop>`;
-}
-
-function getFileExtension(format) {
-  switch (format) {
-    case "csv":
-      return "csv";
-    case "json":
-      return "json";
-    case "qti":
-      return "xml";
-    default:
-      return "txt";
-  }
-}
-
-function getMimeType(format) {
-  switch (format) {
-    case "csv":
-      return "text/csv";
-    case "json":
-      return "application/json";
-    case "qti":
-      return "application/xml";
-    default:
-      return "text/plain";
-  }
-}
-
-function downloadFile(blob, filename) {
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
-}
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -4429,9 +3746,3 @@ window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
-window.handleFormatSelection = handleFormatSelection;
-window.handleReleaseNowToggle = handleReleaseNowToggle;
-window.handleDateChange = handleDateChange;
-window.handleTimeChange = handleTimeChange;
-window.handleNamingConventionChange = handleNamingConventionChange;
-window.handleSaveAsDefaultChange = handleSaveAsDefaultChange;

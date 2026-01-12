@@ -2,7 +2,6 @@
 // Handles file uploads, text input, and URL input for course materials
 
 let contentGenerator = null;
-let pdfService = null;
 
 // Initialize upload functionality
 document.addEventListener("DOMContentLoaded", async function () {
@@ -24,13 +23,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 function initializeModules() {
   console.log("Initializing upload modules...");
   console.log("ContentGenerator available:", window.ContentGenerator);
-  console.log("PDFParsingService available:", window.PDFParsingService);
-
-  // Initialize PDF service
-  if (window.PDFParsingService) {
-    pdfService = new window.PDFParsingService();
-    console.log("PDF service created:", pdfService);
-  }
 
   // Initialize content generator
   if (window.ContentGenerator) {
@@ -346,12 +338,6 @@ function hideUploadSpinner() {
   }
 }
 
-function getFileIcon(type) {
-  if (type.includes("pdf")) return "fas fa-file-pdf";
-  if (type.includes("text")) return "fas fa-file-alt";
-  if (type.includes("word")) return "fas fa-file-word";
-  return "fas fa-file";
-}
 
 function formatFileSize(bytes) {
   if (bytes === 0) return "0 Bytes";
@@ -390,6 +376,7 @@ function handleMaterialTileClick(type) {
       }
       break;
     case "url":
+      // openUrlModal();
       showNotification("URL upload coming soon!", "info");
       break;
     case "panopto":

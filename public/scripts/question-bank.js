@@ -31,12 +31,10 @@ class QuestionBankPage {
       },
       sort: { key: "title", dir: "asc" },
       selectedQuestionIds: new Set(),
-      selectedHistoryId: null,
       currentTab: defaultTab,
     };
 
     this.questions = [];
-    this.history = [];
     this.quizzes = [];
     this.allQuizzes = []; // Store all quizzes for filter dropdown
     this.objectivesMap = new Map(); // Map objective ID to objective name
@@ -404,31 +402,6 @@ class QuestionBankPage {
 
     // Update filter options based on loaded data
     this.updateFilterOptions();
-
-    // Sample history data
-    this.history = [
-      {
-        id: 1,
-        questionIds: [1, 2, 3, 4, 5],
-        count: 5,
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-        label: "Today, 3:00 PM",
-      },
-      {
-        id: 2,
-        questionIds: [6, 7],
-        count: 2,
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-        label: "Yesterday, 12:34 PM",
-      },
-      {
-        id: 3,
-        questionIds: [8],
-        count: 1,
-        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
-        label: "Today, 2:00 PM",
-      },
-    ];
   }
 
   initializeEventListeners() {
@@ -796,7 +769,6 @@ class QuestionBankPage {
       .join("");
 
     // Re-attach event listeners
-    this.attachQuizEventListeners();
 
     // Update filter options after rendering
     this.updateFilterOptions();
@@ -1501,45 +1473,6 @@ class QuestionBankPage {
     });
   }
 
-  // Overview tab methods (existing functionality)
-  renderQuestions() {
-    const questionList = document.getElementById("question-list");
-    if (!questionList) return;
-
-    const filteredQuestions = this.getFilteredQuestions();
-    const sortedQuestions = this.sortQuestions(filteredQuestions);
-
-    if (sortedQuestions.length === 0) {
-      questionList.innerHTML = `
-        <div class="empty-state">
-          <p>No questions match the current filters.</p>
-          <a href="#" class="clear-filters-link" onclick="window.questionBankPage.clearFilters()">Clear filters</a>
-        </div>
-      `;
-      return;
-    }
-
-    questionList.innerHTML = sortedQuestions
-      .map(
-        (question) => `
-      <div class="question-item" data-question-id="${question.id}">
-        <input type="checkbox" id="q${question.id}" 
-               ${
-                 this.state.selectedQuestionIds.has(question.id)
-                   ? "checked"
-                   : ""
-               }
-               onchange="window.questionBankPage.toggleQuestionSelection(${
-                 question.id
-               })">
-        <label for="q${question.id}">${question.title}</label>
-      </div>
-    `
-      )
-      .join("");
-
-    this.attachQuestionEventListeners();
-  }
 
   renderQuestionsTable() {
     const tableBody = document.getElementById("questions-table-body");
@@ -1620,65 +1553,6 @@ class QuestionBankPage {
 
     this.updateSelectAllCheckbox();
     this.updateActionButtons();
-  }
-
-  renderObjectives() {
-    const tableBody = document.getElementById("objectives-table-body");
-    if (!tableBody) return;
-
-    const selectedQuestions = this.getSelectedQuestions();
-    let objectivesData = [];
-
-    if (selectedQuestions.length === 0) {
-      objectivesData = this.getGlobalObjectivesSummary();
-    } else if (selectedQuestions.length === 1) {
-      const question = selectedQuestions[0];
-      objectivesData = [
-        {
-          objective: question.objective,
-          bloomLevel: question.bloomLevel,
-        },
-      ];
-    } else {
-      objectivesData = this.getMergedObjectivesView(selectedQuestions);
-    }
-
-    tableBody.innerHTML = objectivesData
-      .map(
-        (item) => `
-      <div class="table-row">
-        <div class="cell">${item.objective}</div>
-        <div class="cell ${item.bloomLevel === "Mixed" ? "mixed" : ""}">${
-          item.bloomLevel
-        }</div>
-      </div>
-    `
-      )
-      .join("");
-  }
-
-  renderHistory() {
-    const historyList = document.getElementById("history-list");
-    if (!historyList) return;
-
-    historyList.innerHTML = this.history
-      .map(
-        (item) => `
-      <div class="history-item ${
-        this.state.selectedHistoryId === item.id ? "selected" : ""
-      }" 
-           data-history-id="${item.id}">
-        <input type="radio" name="radio" id="h${item.id}" 
-               ${this.state.selectedHistoryId === item.id ? "checked" : ""}
-               onchange="window.questionBankPage.selectHistoryItem(${item.id})">
-        <label for="h${item.id}">
-          <span class="history-text">${item.count} questions approved</span>
-          <span class="radio-time">${item.label}</span>
-        </label>
-      </div>
-    `
-      )
-      .join("");
   }
 
   getFilteredQuestions() {
@@ -1765,35 +1639,6 @@ class QuestionBankPage {
     });
   }
 
-  getGlobalObjectivesSummary() {
-    const summary = {};
-    this.questions.forEach((q) => {
-      if (!summary[q.objective]) {
-        summary[q.objective] = new Set();
-      }
-      summary[q.objective].add(q.bloomLevel);
-    });
-
-    return Object.entries(summary).map(([objective, bloomLevels]) => ({
-      objective,
-      bloomLevel: bloomLevels.size > 1 ? "Mixed" : Array.from(bloomLevels)[0],
-    }));
-  }
-
-  getMergedObjectivesView(questions) {
-    const summary = {};
-    questions.forEach((q) => {
-      if (!summary[q.objective]) {
-        summary[q.objective] = new Set();
-      }
-      summary[q.objective].add(q.bloomLevel);
-    });
-
-    return Object.entries(summary).map(([objective, bloomLevels]) => ({
-      objective,
-      bloomLevel: bloomLevels.size > 1 ? "Mixed" : Array.from(bloomLevels)[0],
-    }));
-  }
 
   toggleQuestionSelection(questionId) {
     // Ensure questionId is a string for consistent comparison
@@ -1811,16 +1656,6 @@ class QuestionBankPage {
     this.renderQuestionsTable();
   }
 
-  selectHistoryItem(historyId) {
-    if (this.state.selectedHistoryId === historyId) {
-      this.state.selectedHistoryId = null;
-    } else {
-      this.state.selectedHistoryId = historyId;
-    }
-
-    this.renderHistory();
-    this.renderQuestions();
-  }
 
   updateSelectAllCheckbox() {
     const selectAllCheckbox = document.getElementById("select-all");
@@ -1877,7 +1712,6 @@ class QuestionBankPage {
       flagged: false,
       q: "",
     };
-    this.state.selectedHistoryId = null;
 
     const quizFilter = document.getElementById("quiz-filter");
     const objectiveFilter = document.getElementById("objective-filter");
@@ -1903,13 +1737,6 @@ class QuestionBankPage {
     });
   }
 
-  attachQuestionEventListeners() {
-    // Event listeners are already attached via inline onchange in the HTML
-  }
-
-  attachQuizEventListeners() {
-    // Event listeners are already attached via inline onclick in the HTML
-  }
 
   // Modal Management
   showModal(title, message, onConfirm) {
