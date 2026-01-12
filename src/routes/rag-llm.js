@@ -24,6 +24,48 @@ function returnErrorResponse(res, error, details = null) {
   });
 }
 
+/**
+ * Parse JSON response from LLM
+ * The LLM should return valid JSON with properly escaped LaTeX.
+ * This function provides minimal fallback handling for edge cases.
+ * @param {string|Object} jsonInput - The JSON string to parse, or already parsed object
+ * @returns {Object} Parsed JSON object
+ */
+function safeJsonParse(jsonInput) {
+  // If it's already an object, return it
+  if (typeof jsonInput === 'object' && jsonInput !== null && !Array.isArray(jsonInput)) {
+    return jsonInput;
+  }
+  
+  // If it's not a string, convert it
+  const jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
+  
+  try {
+    // Try direct parsing - the LLM should return valid JSON
+    return JSON.parse(jsonString);
+  } catch (error) {
+    // Fallback: try extracting JSON from markdown code blocks if present
+    try {
+      const codeBlockMatch = jsonString.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (codeBlockMatch) {
+        return JSON.parse(codeBlockMatch[1]);
+      }
+      
+      // Try to extract JSON object from the string
+      const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      
+      throw error;
+    } catch (fallbackError) {
+      // If parsing fails, the LLM response was invalid JSON
+      // This should not happen if the LLM follows the prompt instructions
+      throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${error.message}`);
+    }
+  }
+}
+
 // Add document to RAG
 router.post(
   "/add-document",
@@ -132,7 +174,7 @@ router.post("/generate-questions-with-rag", express.json(), async (req, res) => 
     // Use objective text as the query for RAG search
     const ragContext = await ragService.getLearningObjectiveRagContent(
       learningObjectiveId,
-      'Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}'
+      `Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}`
     );
 
     console.log("RAG Context:", ragContext);
@@ -183,6 +225,14 @@ CRITICAL FORMATTING REQUIREMENTS:
 - Do NOT include any text before or after the JSON object.
 - The response must start with { and end with }.
 - Return pure JSON that can be directly parsed with JSON.parse().
+- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string. In JSON, backslashes must be escaped as \\\\ (double backslash). For example:
+  * LaTeX \\( should be written as \\\\( in JSON
+  * LaTeX \\[ should be written as \\\\[ in JSON
+  * LaTeX \\text should be written as \\\\text in JSON
+  * LaTeX \\mathbb should be written as \\\\mathbb in JSON
+  * Any other LaTeX command with a backslash must be escaped: \\command becomes \\\\command
+  * Regular quotes must be escaped as \\"
+  * The JSON must be valid and parseable - test that all backslashes are properly escaped.
 
 The distractors (incorrect answers) should be plausible but subtly flawed, to effectively test students' understanding.
 
@@ -195,6 +245,7 @@ IMPORTANT:
         ],
         throwOnError: false // prevents crashing on bad LaTeX
       });
+  When including LaTeX in your JSON response, remember to escape backslashes: use \\\\( and \\\\) for inline math, and \\\\[ and \\\\] for display math.
 - CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options array should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".
 
 CONTENT: ${ragContext}`;
@@ -234,18 +285,8 @@ CONTENT: ${ragContext}`;
 
           // Try to parse JSON response
           try {
-            // First try to parse the response content directly
-            try {
-              questionData = JSON.parse(responseContent);
-            } catch (directParseError) {
-              // If direct parsing fails, try to extract JSON from the response
-              const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                questionData = JSON.parse(jsonMatch[0]);
-              } else {
-                throw directParseError;
-              }
-            }
+            // Use safe JSON parser that handles LaTeX and other edge cases
+            questionData = safeJsonParse(responseContent);
 
             // Validate that we have the required fields
             if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
@@ -712,20 +753,8 @@ IMPORTANT:
 
     // Try to parse JSON response
     try {
-      let objectivesData;
-
-      // First try to parse the response content directly
-      try {
-        objectivesData = JSON.parse(responseContent);
-      } catch (directParseError) {
-        // If direct parsing fails, try to extract JSON from the response
-        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          objectivesData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw directParseError;
-        }
-      }
+      // Use safe JSON parser that handles LaTeX and other edge cases
+      const objectivesData = safeJsonParse(responseContent);
 
       // Validate the structure
       if (!objectivesData.objectives || !Array.isArray(objectivesData.objectives)) {

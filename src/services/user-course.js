@@ -25,7 +25,11 @@ const deleteUserCourseByUserID = async (userId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user_course");
-        const result = await collection.deleteMany({ userId });
+        
+        // Convert userId to ObjectId if it's a string
+        const userIdObj = typeof userId === 'string' ? new ObjectId(userId) : userId;
+        
+        const result = await collection.deleteMany({ userId: userIdObj });
         return result;
     } catch (error) {
         console.error("Error deleting user course:", error);
@@ -37,7 +41,11 @@ const deleteUserCourseByCourseID = async (courseId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user_course");
-        const result = await collection.deleteMany({ courseId });
+        
+        // Convert courseId to ObjectId if it's a string
+        const courseIdObj = typeof courseId === 'string' ? new ObjectId(courseId) : courseId;
+        
+        const result = await collection.deleteMany({ courseId: courseIdObj });
         return result;
     } catch (error) {
         console.error("Error deleting user course:", error);

@@ -1,12 +1,17 @@
 const databaseService = require('./database');
+const { ObjectId } = require('mongodb');
 
 const saveMaterial = async (sourceId, courseId, materialData) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_material");
+        
+        // Convert courseId to ObjectId if it's a string
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+        
         await collection.insertOne({
             sourceId: sourceId,
-            courseId: courseId,
+            courseId: courseIdObj,
             fileType: materialData.fileType,
             fileSize: materialData.fileSize,
             fileContent: materialData.fileContent || null,
@@ -50,7 +55,11 @@ const getCourseMaterials = async (courseId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_material");
-        const materials = await collection.find({ courseId: courseId }).toArray();
+        
+        // Convert courseId to ObjectId if it's a string
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+        
+        const materials = await collection.find({ courseId: courseIdObj }).toArray();
         console.log("Found materials:", materials);
         return materials;
     }

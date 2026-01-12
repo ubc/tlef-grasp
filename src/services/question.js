@@ -7,6 +7,17 @@ const saveQuestion = async (courseId, questionData) => {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
         
+        // Convert courseId to ObjectId if it's a string
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+        
+        // Convert granularObjectiveId to ObjectId if it's provided and valid
+        let granularObjectiveIdObj = null;
+        if (questionData.granularObjectiveId) {
+            granularObjectiveIdObj = ObjectId.isValid(questionData.granularObjectiveId) 
+                ? new ObjectId(questionData.granularObjectiveId) 
+                : questionData.granularObjectiveId;
+        }
+        
         // Save the full question data including granularObjectiveId
         const question = await collection.insertOne({
             title: questionData.title,
@@ -15,8 +26,8 @@ const saveQuestion = async (courseId, questionData) => {
             correctAnswer: questionData.correctAnswer,
             bloom: questionData.bloom,
             difficulty: questionData.difficulty,
-            courseId: courseId,
-            granularObjectiveId: questionData.granularObjectiveId,
+            courseId: courseIdObj,
+            granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
             status: questionData.status || "Draft",
             flagStatus: questionData.flagStatus || false,
@@ -37,7 +48,10 @@ const getQuestions = async (courseId) => {
         const questionCollection = db.collection("grasp_question");
         const objectiveCollection = db.collection("grasp_objective");
         
-        const questions = await questionCollection.find({ courseId: courseId }).toArray();
+        // Convert courseId to ObjectId if it's a string
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+        
+        const questions = await questionCollection.find({ courseId: courseIdObj }).toArray();
 
         // Get all unique granular objective IDs from questions
         // First normalize to strings to get unique values, then convert to ObjectIds
@@ -135,7 +149,14 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.difficulty !== undefined) update.difficulty = updateData.difficulty;
         if (updateData.status !== undefined) update.status = updateData.status;
         if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
-        if (updateData.granularObjectiveId !== undefined) update.granularObjectiveId = updateData.granularObjectiveId;
+        if (updateData.granularObjectiveId !== undefined) {
+            // Convert granularObjectiveId to ObjectId if it's a string
+            update.granularObjectiveId = updateData.granularObjectiveId 
+                ? (ObjectId.isValid(updateData.granularObjectiveId) 
+                    ? new ObjectId(updateData.granularObjectiveId) 
+                    : updateData.granularObjectiveId)
+                : null;
+        }
         
         const result = await collection.updateOne(
             { _id: id },
