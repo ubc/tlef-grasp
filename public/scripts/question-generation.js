@@ -1385,6 +1385,17 @@ async function handleAIGenerateObjectives() {
     regenerateBtn.disabled = true;
     regenerateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Regenerating...';
   }
+  
+  // Disable cancel and close buttons during generation
+  const cancelBtn = document.getElementById("ai-generate-modal-cancel");
+  const closeBtn = document.getElementById("ai-generate-modal-close");
+  if (cancelBtn) {
+    cancelBtn.disabled = true;
+  }
+  if (closeBtn) {
+    closeBtn.disabled = true;
+  }
+  
   if (statusDiv) statusDiv.style.display = "block";
   if (generatedContainer) generatedContainer.style.display = "none";
   if (saveBtn) saveBtn.style.display = "none";
@@ -1435,6 +1446,16 @@ async function handleAIGenerateObjectives() {
     if (regenerateBtn) {
       regenerateBtn.disabled = false;
       regenerateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Regenerate';
+    }
+    
+    // Re-enable cancel and close buttons after generation completes
+    const cancelBtn = document.getElementById("ai-generate-modal-cancel");
+    const closeBtn = document.getElementById("ai-generate-modal-close");
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+    }
+    if (closeBtn) {
+      closeBtn.disabled = false;
     }
   }
 }
@@ -1697,6 +1718,16 @@ function hideModal(modal) {
       if (statusDiv) statusDiv.style.display = "none";
       if (generatedContainer) generatedContainer.style.display = "none";
       if (generatedList) generatedList.innerHTML = "";
+      
+      // Re-enable cancel and close buttons when modal is reset
+      const cancelBtn = document.getElementById("ai-generate-modal-cancel");
+      const closeBtn = document.getElementById("ai-generate-modal-close");
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+      }
+      if (closeBtn) {
+        closeBtn.disabled = false;
+      }
       
       const aiMaterialCheckboxes = document.querySelectorAll(".ai-material-checkbox");
       aiMaterialCheckboxes.forEach(cb => cb.checked = false);
@@ -2568,10 +2599,22 @@ function initializeModals() {
   const aiSaveBtn = document.getElementById("ai-save-btn");
 
   if (aiGenerateModalClose) {
-    aiGenerateModalClose.addEventListener("click", () => hideModal(aiGenerateModal));
+    aiGenerateModalClose.addEventListener("click", () => {
+      // Prevent closing if button is disabled (during generation)
+      if (aiGenerateModalClose.disabled) {
+        return;
+      }
+      hideModal(aiGenerateModal);
+    });
   }
   if (aiGenerateModalCancel) {
-    aiGenerateModalCancel.addEventListener("click", () => hideModal(aiGenerateModal));
+    aiGenerateModalCancel.addEventListener("click", () => {
+      // Prevent closing if button is disabled (during generation)
+      if (aiGenerateModalCancel.disabled) {
+        return;
+      }
+      hideModal(aiGenerateModal);
+    });
   }
   if (aiGenerateBtn) {
     aiGenerateBtn.addEventListener("click", (e) => {
@@ -2599,6 +2642,15 @@ function initializeModals() {
   if (aiGenerateModal) {
     aiGenerateModal.addEventListener("click", (e) => {
       if (e.target === aiGenerateModal) {
+        // Prevent closing if generation is in progress (buttons are disabled)
+        const cancelBtn = document.getElementById("ai-generate-modal-cancel");
+        const closeBtn = document.getElementById("ai-generate-modal-close");
+        if (cancelBtn && cancelBtn.disabled) {
+          return;
+        }
+        if (closeBtn && closeBtn.disabled) {
+          return;
+        }
         hideModal(aiGenerateModal);
       }
     });
@@ -2902,7 +2954,7 @@ function convertQuestionsToGroups(questions) {
       const group = {
         id: index + 1,
         title: metaCode,
-        isOpen: index === 0,
+        isOpen: true, // Open all panels by default when generating for multiple learning objectives
         los: groupQuestions.map((question, itemIndex) => ({
           id: `lo-${index + 1}-${itemIndex + 1}`,
           code: `LO ${index + 1}.${itemIndex + 1}`,
@@ -3052,6 +3104,9 @@ function renderQuestionGroups() {
 
   // Set up question card event listeners
   setupQuestionCardListeners();
+  
+  // Re-render LaTeX after rendering questions
+  renderKatex();
 }
 
 // Toggle meta learning objective group expand/collapse
@@ -3124,7 +3179,10 @@ function renderQuestionCard(question, group) {
                 </div>
             </div>
             <div class="question-card__body">
-                <p class="question-card__stem">${question.stem}</p>
+                ${isEditing
+      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
+      : `<p class="question-card__stem">${question.stem}</p>`
+    }
                 <div class="question-card__options">
                     ${Object.values(question.options).map(
       (option, index) => {
@@ -3138,7 +3196,7 @@ function renderQuestionCard(question, group) {
           }" value="${option.id}" ${isCorrect ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${option.text}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            ? `<input type="text" value="${(option.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
@@ -3257,6 +3315,7 @@ function editQuestion(questionId) {
   if (question) {
     question.isEditing = !question.isEditing;
     renderQuestionGroups();
+    // LaTeX will be automatically re-rendered by renderQuestionGroups()
   }
 }
 
@@ -3274,6 +3333,13 @@ function updateQuestionOption(questionId, optionId, newText) {
   }
 }
 
+function updateQuestionStem(questionId, newStem) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.stem = newStem.trim();
+  }
+}
+
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
   if (!question) {
@@ -3285,7 +3351,7 @@ function saveQuestionEdit(questionId) {
   question.isEditing = false;
   question.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
   
-  // Render the question groups
+  // Render the question groups (LaTeX will be automatically re-rendered)
   renderQuestionGroups();
   showToast("Question updated successfully", "success");
 }
@@ -3740,6 +3806,7 @@ window.regenerateAllObjectivesFromContent = regenerateAllObjectivesFromContent;
 window.editQuestion = editQuestion;
 window.saveQuestionEdit = saveQuestionEdit;
 window.saveOptionEdit = saveOptionEdit;
+window.updateQuestionStem = updateQuestionStem;
 window.updateQuestionTitle = updateQuestionTitle;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
