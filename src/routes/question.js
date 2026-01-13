@@ -150,7 +150,7 @@ router.put("/:questionId/status", express.json(), async (req, res) => {
     }
 
     // Staff cannot approve/unapprove questions
-    if (!isFaculty(req.user)) {
+    if (!(await isFaculty(req.user))) {
       return res.status(403).json({ 
         error: "Only faculty can approve or unapprove questions" 
       });

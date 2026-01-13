@@ -12,6 +12,7 @@ const materialRoutes = require("./routes/material");
 const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
+const { isFaculty } = require("./utils/auth");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -129,18 +130,31 @@ app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
 app.use("/api/quiz", ensureAuthenticatedAPI, quizRoutes);
 app.use("/api/users", ensureAuthenticatedAPI, userRoutes);
 
-app.use("/api/current-user", ensureAuthenticatedAPI, (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      _id: req.user._id,
-      id: req.user._id,
-      username: req.user.username,
-      displayName: req.user.displayName,
-      email: req.user.email,
-      affiliation: req.user.affiliation,
-    },
-  });
+app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
+  try {
+    // Check if user is faculty (includes administrator check)
+    const userIsFaculty = await isFaculty(req.user);
+    
+    res.json({
+      success: true,
+      user: {
+        _id: req.user._id,
+        id: req.user._id,
+        username: req.user.username,
+        displayName: req.user.displayName,
+        email: req.user.email,
+        affiliation: req.user.affiliation,
+        puid: req.user.puid,
+        isFaculty: userIsFaculty,
+      },
+    });
+  } catch (error) {
+    console.error("Error in /api/current-user:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch user information",
+    });
+  }
 });
 
 // Final 404 handler for any requests that do not match a route

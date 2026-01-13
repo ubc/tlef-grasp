@@ -38,7 +38,6 @@ class QuestionBankPage {
     this.quizzes = [];
     this.allQuizzes = []; // Store all quizzes for filter dropdown
     this.objectivesMap = new Map(); // Map objective ID to objective name
-    this.userAffiliation = null; // Store user affiliation for permission checks
     this.isFaculty = false; // Cache faculty status
     this.init();
   }
@@ -59,12 +58,8 @@ class QuestionBankPage {
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
-          this.userAffiliation = data.user.affiliation;
-          // Check if user is faculty - affiliation can be string (comma-separated) or array
-          const affiliations = Array.isArray(this.userAffiliation)
-            ? this.userAffiliation
-            : String(this.userAffiliation || '').split(',').map(a => a.trim());
-          this.isFaculty = affiliations.includes('faculty');
+          // Use isFaculty from API response (includes administrator check)
+          this.isFaculty = data.user.isFaculty || false;
         }
       }
     } catch (error) {

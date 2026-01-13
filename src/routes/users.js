@@ -56,7 +56,7 @@ router.get("/staff/not-in-course/:courseId", async (req, res) => {
     const { courseId } = req.params;
 
     // Only faculty can view available staff
-    if (!isFaculty(req.user)) {
+    if (!(await isFaculty(req.user))) {
       return res.status(403).json({ 
         success: false,
         error: "Only faculty can view available staff" 
@@ -93,7 +93,7 @@ router.post("/course/:courseId/add", express.json(), async (req, res) => {
     const { userId } = req.body;
 
     // Only faculty can add users to courses
-    if (!isFaculty(req.user)) {
+    if (!(await isFaculty(req.user))) {
       return res.status(403).json({ 
         success: false,
         error: "Only faculty can add users to courses" 
@@ -145,7 +145,7 @@ router.delete("/course/:courseId/remove/:userId", async (req, res) => {
     const { courseId, userId } = req.params;
 
     // Only faculty can remove users from courses
-    if (!isFaculty(req.user)) {
+    if (!(await isFaculty(req.user))) {
       return res.status(403).json({ 
         success: false,
         error: "Only faculty can remove users from courses" 

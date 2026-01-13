@@ -211,7 +211,7 @@ router.get("/:courseId/stats", (req, res) => {
 router.post("/new", express.json(), async (req, res) => {
   try {
     // Staff cannot create new courses
-    if (!isFaculty(req.user)) {
+    if (!(await isFaculty(req.user))) {
       return res.status(403).json({ 
         error: "Only faculty can create new courses" 
       });
