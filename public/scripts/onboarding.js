@@ -111,14 +111,15 @@ class OnboardingManager {
     // This will be overridden by checkAndSetDefaultTab() if user has courses
     if (!this.isFaculty) {
       // Staff: show login tab by default (they can't create courses)
-      if (loginTab) {
-        loginTab.style.display = "block";
-        loginTab.style.visibility = "visible";
-        loginTab.classList.add("active");
-      }
+      // Always hide setup tab first
       if (setupTab) {
         setupTab.style.display = "none";
         setupTab.classList.remove("active");
+      }
+      // Then show login tab
+      if (loginTab) {
+        loginTab.style.display = "block";
+        loginTab.classList.add("active");
       }
       // Update tab buttons
       tabButtons.forEach((btn) => {
@@ -130,6 +131,12 @@ class OnboardingManager {
       });
     } else {
       // Faculty: show setup tab by default (will be changed if they have courses)
+      // Always hide login tab first
+      if (loginTab) {
+        loginTab.style.display = "none";
+        loginTab.classList.remove("active");
+      }
+      // Then show setup tab
       if (setupTab) {
         setupTab.style.display = "block";
         setupTab.classList.add("active");
@@ -138,10 +145,6 @@ class OnboardingManager {
         if (step1) {
           step1.classList.add("active");
         }
-      }
-      if (loginTab) {
-        loginTab.style.display = "none";
-        loginTab.classList.remove("active");
       }
     }
 
@@ -160,41 +163,40 @@ class OnboardingManager {
         tabButtons.forEach((btn) => btn.classList.remove("active"));
         button.classList.add("active");
 
+        // Get fresh references to tabs to ensure we're working with current DOM
+        const currentLoginTab = document.getElementById("login-tab");
+        const currentSetupTab = document.getElementById("setup-tab");
+
         // Show/hide appropriate content
         if (tab === "login") {
           console.log("Switching to login tab");
-          if (loginTab) {
-            loginTab.style.display = "block";
-            loginTab.style.visibility = "visible";
-            loginTab.classList.add("active");
-            console.log("Login tab display set to block, visibility visible");
-            console.log("Login tab element:", loginTab);
-            console.log(
-              "Login tab computed style:",
-              window.getComputedStyle(loginTab).display
-            );
+          // Always hide setup tab first
+          if (currentSetupTab) {
+            currentSetupTab.style.display = "none";
+            currentSetupTab.classList.remove("active");
+            console.log("Setup tab display set to none");
+          }
+          // Then show login tab
+          if (currentLoginTab) {
+            currentLoginTab.style.display = "block";
+            currentLoginTab.classList.add("active");
+            console.log("Login tab display set to block");
             // Use courses from state if available, otherwise fetch from API
             this.loadExistingCourses(this.courses);
           }
-          if (setupTab) {
-            setupTab.style.display = "none";
-            setupTab.style.visibility = "hidden";
-            setupTab.classList.remove("active");
-            console.log("Setup tab display set to none, visibility hidden");
-          }
         } else {
           console.log("Switching to setup tab");
-          if (loginTab) {
-            loginTab.style.display = "none";
-            loginTab.style.visibility = "hidden";
-            loginTab.classList.remove("active");
-            console.log("Login tab display set to none, visibility hidden");
+          // Always hide login tab first
+          if (currentLoginTab) {
+            currentLoginTab.style.display = "none";
+            currentLoginTab.classList.remove("active");
+            console.log("Login tab display set to none");
           }
-          if (setupTab) {
-            setupTab.style.display = "block";
-            setupTab.style.visibility = "visible";
-            setupTab.classList.add("active");
-            console.log("Setup tab display set to block, visibility visible");
+          // Then show setup tab
+          if (currentSetupTab) {
+            currentSetupTab.style.display = "block";
+            currentSetupTab.classList.add("active");
+            console.log("Setup tab display set to block");
             // Ensure step 1 is active when switching to setup tab
             const step1 = document.getElementById("step-1");
             if (step1) {
@@ -228,13 +230,14 @@ class OnboardingManager {
       // 3. Faculty without courses -> show setup tab (default for faculty)
       const shouldShowLoginTab = !this.isFaculty || hasCourses;
       
+      const tabButtons = document.querySelectorAll(".tab-button");
+      const loginButton = document.querySelector('[data-tab="login"]');
+      const setupButton = document.querySelector('[data-tab="setup"]');
+      const loginTab = document.getElementById("login-tab");
+      const setupTab = document.getElementById("setup-tab");
+      
       if (shouldShowLoginTab) {
         // Switch to login tab
-        const tabButtons = document.querySelectorAll(".tab-button");
-        const loginButton = document.querySelector('[data-tab="login"]');
-        const loginTab = document.getElementById("login-tab");
-        const setupTab = document.getElementById("setup-tab");
-        
         // Update active tab button
         tabButtons.forEach((btn) => btn.classList.remove("active"));
         if (loginButton) loginButton.classList.add("active");
@@ -242,20 +245,37 @@ class OnboardingManager {
         // Show/hide appropriate content
         if (loginTab) {
           loginTab.style.display = "block";
-          loginTab.style.visibility = "visible";
           loginTab.classList.add("active");
         }
         if (setupTab) {
           setupTab.style.display = "none";
-          setupTab.style.visibility = "hidden";
           setupTab.classList.remove("active");
         }
         
         // Load courses into the login tab using the courses we already fetched
         // Pass the courses array (even if empty) to avoid duplicate API call
         this.loadExistingCourses(this.courses);
+      } else {
+        // Faculty without courses -> show setup tab
+        // Update active tab button
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        if (setupButton) setupButton.classList.add("active");
+        
+        // Show/hide appropriate content
+        if (setupTab) {
+          setupTab.style.display = "block";
+          setupTab.classList.add("active");
+          // Make sure step 1 is active
+          const step1 = document.getElementById("step-1");
+          if (step1) {
+            step1.classList.add("active");
+          }
+        }
+        if (loginTab) {
+          loginTab.style.display = "none";
+          loginTab.classList.remove("active");
+        }
       }
-      // If faculty without courses, setup tab is already shown by setupTabSwitching()
     } catch (error) {
       console.error("Error checking for existing courses:", error);
       // On error, default based on user role:
@@ -270,7 +290,6 @@ class OnboardingManager {
         if (loginButton) loginButton.classList.add("active");
         if (loginTab) {
           loginTab.style.display = "block";
-          loginTab.style.visibility = "visible";
           loginTab.classList.add("active");
         }
         if (setupTab) {
@@ -383,13 +402,8 @@ class OnboardingManager {
 
   async accessCourseDashboard(buttonElement) {
     try {
-      // Show loading state
-      const button = buttonElement || event.target.closest(".access-btn");
-      const originalText = button.innerHTML;
-      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Accessing...';
-      button.disabled = true;
-
       // Get course data from data attributes
+      const button = buttonElement || event.target.closest(".access-btn");
       const courseId = button.dataset.courseId;
       const courseName = button.dataset.courseName;
       
@@ -400,12 +414,6 @@ class OnboardingManager {
     } catch (error) {
       console.error("Error accessing course dashboard:", error);
       this.showError("Failed to access dashboard. Please try again.");
-
-      // Reset button state
-      if (button) {
-        button.innerHTML = originalText;
-        button.disabled = false;
-      }
     }
   }
 

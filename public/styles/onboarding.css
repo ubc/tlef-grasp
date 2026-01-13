@@ -5,9 +5,10 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 20px;
+    padding-top: 40px;
 }
 
 .onboarding-container {
@@ -86,8 +87,12 @@ body {
     padding-left: 48px;
 }
 
-/* Ensure setup tab is visible by default */
+/* Tab visibility - controlled by JavaScript, but provide defaults */
 .setup-tab {
+    display: none;
+}
+
+.setup-tab.active {
     display: block !important;
 }
 
@@ -96,7 +101,11 @@ body {
 }
 
 .login-tab {
-    display: none !important;
+    display: none;
+}
+
+.login-tab.active {
+    display: block !important;
 }
 
 /* Course Selection Styles */
@@ -128,11 +137,14 @@ body {
     gap: 1rem;
     max-height: 400px;
     overflow-y: auto;
+    padding-top: 2px;
 }
 
 .course-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
+    gap: 20px;
     padding: 1.5rem;
     background: #f8f9fa;
     border: 2px solid transparent;
@@ -162,7 +174,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 1rem;
     color: white;
     font-size: 1.2rem;
 }
@@ -184,13 +195,15 @@ body {
 .course-details {
     font-size: 0.9rem;
     opacity: 0.8;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 1rem;
 }
 
 .course-details span {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.25rem;
 }
 
@@ -286,8 +299,12 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
-/* Override any conflicting styles */
+/* Tab visibility - only show when active class is present */
 #setup-tab {
+    display: none !important;
+}
+
+#setup-tab.active {
     display: block !important;
 }
 
@@ -295,12 +312,7 @@ body {
     display: none !important;
 }
 
-/* Force tab visibility when active */
 #login-tab.active {
-    display: block !important;
-}
-
-#setup-tab.active {
     display: block !important;
 }
 
@@ -475,6 +487,30 @@ h2 {
 /* Form Styles */
 .onboarding-form {
     text-align: left;
+}
+
+/* Course Details Form - CSS Grid Layout */
+#course-details-form {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 25px;
+    max-width: 500px;
+    margin: 0 auto;
+    justify-items: center;
+}
+
+#course-details-form .form-group {
+    width: 100%;
+    margin-bottom: 0;
+}
+
+#course-details-form .form-buttons {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 10px;
 }
 
 .form-group {
