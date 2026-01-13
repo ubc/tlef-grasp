@@ -887,15 +887,24 @@ function addMaterial(material) {
 function loadMaterials() {
   const materialsGrid = document.getElementById("materialsGrid");
   const noResults = document.getElementById("noResults");
+  const filtersSection = document.querySelector(".filters-section");
 
   if (filteredMaterials.length === 0) {
     materialsGrid.style.display = "none";
     noResults.style.display = "flex";
+    // Hide type filter when no materials found
+    if (filtersSection) {
+      filtersSection.style.display = "none";
+    }
     return;
   }
 
   materialsGrid.style.display = "grid";
   noResults.style.display = "none";
+  // Show type filter when materials are found
+  if (filtersSection) {
+    filtersSection.style.display = "block";
+  }
 
   materialsGrid.innerHTML = "";
 console.log("Loading materials:", filteredMaterials);
