@@ -40,21 +40,6 @@ class OnboardingManager {
       setupTabButton.style.display = 'none';
     }
 
-    // Hide "Create New Course" option in dropdown for staff
-    const courseNameSelect = document.getElementById("course-name");
-    if (courseNameSelect) {
-      const createNewOption = Array.from(courseNameSelect.options).find(
-        opt => opt.value === "custom"
-      );
-      if (createNewOption && !this.isFaculty) {
-        createNewOption.style.display = 'none';
-        // If "Create New Course" is selected, reset to first option
-        if (courseNameSelect.value === "custom") {
-          courseNameSelect.value = "";
-        }
-      }
-    }
-
     // Hide custom course input groups for staff
     const customCourseGroup = document.getElementById("custom-course-group");
     const customCourseNameGroup = document.getElementById("custom-course-name-group");
@@ -111,13 +96,6 @@ class OnboardingManager {
       );
     }
 
-    // Course name dropdown change
-    const courseNameSelect = document.getElementById("course-name");
-    if (courseNameSelect) {
-      courseNameSelect.addEventListener("change", (e) =>
-        this.handleCourseNameChange(e)
-      );
-    }
   }
 
   setupTabSwitching() {
@@ -435,43 +413,26 @@ class OnboardingManager {
     e.preventDefault();
 
     const formData = new FormData(e.target);
-    const courseName = formData.get("courseName");
     const customCourseCode = formData.get("customCourseCode");
     const customCourseName = formData.get("customCourseName");
 
-    if (!courseName) {
-      this.showError("Please select or create a course");
+    // Staff cannot create new courses
+    if (!this.isFaculty) {
+      this.showError("Only faculty can create new courses");
       return;
     }
 
-    if (courseName === "custom") {
-      // Staff cannot create new courses
-      if (!this.isFaculty) {
-        this.showError("Only faculty can create new courses");
-        return;
-      }
-      if (!customCourseCode || !customCourseName) {
-        this.showError("Please provide both course code and name");
-        return;
-      }
-      this.courseData.courseCode = customCourseCode.trim();
-      this.courseData.courseName = customCourseName.trim(); // Just the course name, not including code
-    } else {
-      // Find the course from the courses list to get both code and name
-      const selectedCourse = this.courses.find(c => c.courseName === courseName);
-      if (selectedCourse) {
-        this.courseData.courseCode = selectedCourse.courseCode;
-        this.courseData.courseName = selectedCourse.courseName; // Just the course name, not including code
-      } else {
-        // If course not found, show error
-        this.showError("Could not find course information. Please try selecting the course again.");
-        return;
-      }
+    if (!customCourseCode || !customCourseName) {
+      this.showError("Please provide both course code and name");
+      return;
     }
+
+    this.courseData.courseCode = customCourseCode.trim();
+    this.courseData.courseName = customCourseName.trim();
 
     // Validate that we have both code and name
     if (!this.courseData.courseCode || !this.courseData.courseName) {
-      this.showError("Could not determine course code and name. Please try again or create a custom course.");
+      this.showError("Please provide both course code and name");
       return;
     }
 
@@ -562,21 +523,6 @@ class OnboardingManager {
     }
   }
 
-  handleCourseNameChange(e) {
-    const selectedValue = e.target.value;
-    const customCourseGroup = document.getElementById("custom-course-group");
-    const customCourseNameGroup = document.getElementById(
-      "custom-course-name-group"
-    );
-
-    if (selectedValue === "custom") {
-      customCourseGroup.style.display = "block";
-      customCourseNameGroup.style.display = "block";
-    } else {
-      customCourseGroup.style.display = "none";
-      customCourseNameGroup.style.display = "none";
-    }
-  }
 
   async saveCourseProfile() {
     try {

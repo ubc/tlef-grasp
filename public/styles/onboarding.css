@@ -479,6 +479,9 @@ h2 {
 
 .form-group {
     margin-bottom: 25px;
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .form-group label {
@@ -499,6 +502,7 @@ h2 {
     font-size: 16px;
     transition: all 0.3s ease;
     background: white;
+    box-sizing: border-box;
 }
 
 .form-group input:focus,
@@ -540,7 +544,6 @@ h2 {
 
 /* Buttons */
 .continue-btn {
-    width: 100%;
     padding: 16px 24px;
     background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     color: white;
@@ -550,7 +553,14 @@ h2 {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
     margin-top: 20px;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
 }
 
 .continue-btn:hover {
@@ -563,7 +573,7 @@ h2 {
 }
 
 .back-btn {
-    padding: 12px 24px;
+    padding: 14px 22px;
     background: transparent;
     color: #7f8c8d;
     border: 2px solid #e1e8ed;
@@ -573,6 +583,10 @@ h2 {
     cursor: pointer;
     transition: all 0.3s ease;
     margin-right: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 }
 
 .back-btn:hover {
@@ -584,8 +598,14 @@ h2 {
 .form-buttons {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     margin-top: 30px;
+    gap: 15px;
+}
+
+.form-buttons .continue-btn {
+    margin-top: 0;
+    width: auto;
 }
 
 /* Completion Actions */
@@ -641,6 +661,11 @@ h2 {
     .back-btn {
         margin-right: 0;
         width: 100%;
+    }
+    
+    .form-buttons .continue-btn {
+        width: 100%;
+        margin-top: 0;
     }
 }
 
