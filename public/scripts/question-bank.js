@@ -1592,6 +1592,11 @@ class QuestionBankPage {
           <div class="question-title-wrapper">
             <div class="question-title-text ${question.flagged ? "flagged" : ""}">${escapedTitle}</div>
             <div class="question-action-buttons">
+              <button class="question-flag-btn ${question.flagged ? 'question-flag-btn--flagged' : ''}" 
+                      onclick="window.questionBankPage.toggleQuestionFlag('${escapedId}')"
+                      title="${question.flagged ? 'Unflag Question' : 'Flag Question'}">
+                <i class="fas fa-flag"></i> ${question.flagged ? 'Unflag' : 'Flag'}
+              </button>
               <button class="question-view-btn" 
                       onclick="window.questionBankPage.openQuestionModal('${escapedId}')"
                       title="${this.canEditQuestion(questionId) ? 'View/Edit Question' : 'View Question (Read-only - approved question)'}">
@@ -2625,6 +2630,57 @@ class QuestionBankPage {
       modal.style.display = "none";
     }
     this.currentEditingQuestion = null;
+  }
+
+  async toggleQuestionFlag(questionId) {
+    try {
+      // Find the question to get current flag status
+      const question = this.questions.find(q => String(q.id || "") === String(questionId));
+      if (!question) {
+        throw new Error("Question not found");
+      }
+
+      const newFlagStatus = !question.flagged;
+      
+      const response = await fetch(`/api/question/${questionId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flagStatus: newFlagStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update question flag status");
+      }
+
+      // Update local state
+      if (question) {
+        question.flagged = newFlagStatus;
+      }
+
+      // Also update in quiz questions if present
+      for (const quiz of this.quizzes) {
+        const quizQuestion = quiz.questions.find(q => String(q.id) === String(questionId));
+        if (quizQuestion) {
+          quizQuestion.flagged = newFlagStatus;
+        }
+      }
+
+      // Refresh table to show updated button
+      this.renderQuestionsTable();
+      this.showNotification(
+        `Question ${newFlagStatus ? "flagged" : "unflagged"} successfully`,
+        "success"
+      );
+
+    } catch (error) {
+      console.error("Error toggling question flag:", error);
+      this.showNotification(error.message || "Failed to update question flag status", "error");
+    }
   }
 
   async toggleQuestionApproval(questionId, approve) {
