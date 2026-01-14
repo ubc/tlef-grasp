@@ -4,6 +4,8 @@ const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('
 const { isUserInCourse } = require('../services/user-course');
 const { getQuestionCourseId, getQuestion } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
+const quizService = require('../services/quiz');
+const { ObjectId } = require('mongodb');
 
 // Get questions for a course
 router.get("/", async (req, res) => {
@@ -124,6 +126,16 @@ router.put("/:questionId", express.json(), async (req, res) => {
       return res.status(404).json({ error: "Question not found" });
     }
 
+    // Check if question is approved - non-faculty cannot edit approved questions
+    if (!(await isFaculty(req.user))) {
+      const questionStatus = question.status || "Draft";
+      if (questionStatus.toLowerCase() === "approved") {
+        return res.status(403).json({ 
+          error: "You cannot edit approved questions" 
+        });
+      }
+    }
+
     const result = await updateQuestion(questionId, updateData);
 
     res.json({
@@ -193,16 +205,16 @@ router.delete("/:questionId", async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
 
-    // Check if question is approved - staff cannot delete approved questions
+    // Only faculty can delete questions
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ 
+        error: "Only faculty can delete questions" 
+      });
+    }
+
     const question = await getQuestion(questionId);
     if (!question) {
       return res.status(404).json({ error: "Question not found" });
-    }
-
-    if (!isFaculty(req.user) && question.status === "Approved") {
-      return res.status(403).json({ 
-        error: "Staff cannot delete approved questions" 
-      });
     }
 
     const result = await deleteQuestion(questionId);

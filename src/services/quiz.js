@@ -25,6 +25,7 @@ const createQuiz = async (courseId, quizData) => {
             courseId: new ObjectId(courseId),
             name: quizData.name.trim(),
             description: quizData.description || "",
+            published: false, // Default to unpublished
             createdAt: new Date(),
             updatedAt: new Date(),
         });
@@ -112,6 +113,10 @@ const updateQuiz = async (quizId, quizData) => {
             updateData.description = quizData.description;
         }
         
+        if (quizData.published !== undefined) {
+            updateData.published = quizData.published;
+        }
+        
         const result = await collection.updateOne(
             { _id: new ObjectId(quizId) },
             { $set: updateData }
@@ -134,12 +139,25 @@ const deleteQuiz = async (quizId) => {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_quiz");
         const relationshipCollection = db.collection("grasp_quiz_question");
+        const questionCollection = db.collection("grasp_question");
         
         if (!ObjectId.isValid(quizId)) {
             throw new Error("Invalid quiz ID");
         }
         
         const quizObjectId = new ObjectId(quizId);
+        
+        // Get all question IDs associated with this quiz
+        const relationships = await relationshipCollection
+            .find({ quizId: quizObjectId })
+            .toArray();
+        
+        const questionIds = relationships.map(rel => rel.questionId);
+        
+        // Delete all associated questions
+        if (questionIds.length > 0) {
+            await questionCollection.deleteMany({ _id: { $in: questionIds } });
+        }
         
         // Delete all quiz-question relationships
         await relationshipCollection.deleteMany({ quizId: quizObjectId });

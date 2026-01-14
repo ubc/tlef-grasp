@@ -3,6 +3,7 @@ const router = express.Router();
 const quizService = require("../services/quiz");
 const questionService = require("../services/question");
 const { ObjectId } = require("mongodb");
+const { isFaculty } = require("../utils/auth");
 
 /**
  * GET /api/quiz/course/:courseId
@@ -69,9 +70,17 @@ router.post("/", express.json(), async (req, res) => {
 router.put("/:quizId", express.json(), async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description } = req.body;
+    const { name, description, published } = req.body;
     
-    const result = await quizService.updateQuiz(quizId, { name, description });
+    // Check if user is trying to publish/unpublish - only faculty can do this
+    if (published !== undefined && !(await isFaculty(req.user))) {
+      return res.status(403).json({ 
+        success: false, 
+        error: "Only faculty can publish or unpublish quizzes" 
+      });
+    }
+    
+    const result = await quizService.updateQuiz(quizId, { name, description, published });
     
     if (result.matchedCount === 0) {
       return res.status(404).json({ success: false, error: "Quiz not found" });
@@ -90,6 +99,14 @@ router.put("/:quizId", express.json(), async (req, res) => {
  */
 router.delete("/:quizId", async (req, res) => {
   try {
+    // Only faculty can delete quizzes
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ 
+        success: false, 
+        error: "Only faculty can delete quizzes" 
+      });
+    }
+    
     const { quizId } = req.params;
     const result = await quizService.deleteQuiz(quizId);
     

@@ -174,10 +174,15 @@ const deleteQuestion = async (questionId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
+        const relationshipCollection = db.collection("grasp_quiz_question");
         
         // Convert questionId to ObjectId if it's a string
         const id = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
         
+        // Delete all quiz-question relationships for this question
+        await relationshipCollection.deleteMany({ questionId: id });
+        
+        // Delete the question
         const result = await collection.deleteOne({ _id: id });
         
         return result;
