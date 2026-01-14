@@ -77,12 +77,6 @@ class UsersPage {
       return;
     }
 
-    // Update course name display
-    const courseNameDisplay = document.getElementById("course-name-display");
-    if (courseNameDisplay) {
-      courseNameDisplay.textContent = this.courseName || "Unknown Course";
-    }
-
     // Load course users
     await this.loadCourseUsers();
 

@@ -4,6 +4,7 @@
 class GRASPNavigation {
   constructor() {
     this.currentPage = this.detectCurrentPage();
+    this.isFaculty = false;
     this.init();
   }
 
@@ -23,14 +24,30 @@ class GRASPNavigation {
     return "dashboard"; // default
   }
 
-  init() {
+  async init() {
+    await this.loadUserInfo();
     this.createNavigation();
     this.initializeNavigation();
     this.initializeSearch();
     this.initializeUserControls();
     this.initializeRoleSwitch();
+    this.initializeSignOut();
     this.setActiveNavigationItem();
     this.loadCourseSelector();
+  }
+
+  async loadUserInfo() {
+    try {
+      const response = await fetch("/api/current-user");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          this.isFaculty = data.user.isFaculty || false;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading user info:", error);
+    }
   }
 
   createNavigation() {
@@ -81,11 +98,12 @@ class GRASPNavigation {
           </div>
         </div>
 
-        <!-- Course Selection Dropdown -->
+        <!-- Current Course Display -->
         <div class="course-selection-section">
-          <label style="margin-bottom: 10px; display: block;" for="course-selector">Current Course:</label>
-          <select class="course-selector" id="course-selector">
-          </select>
+          <div class="current-course-display" id="currentCourseDisplay">
+            <label style="margin-bottom: 8px; display: block; font-size: 12px; color: rgba(255, 255, 255, 0.7);">Current Course:</label>
+            <div class="current-course-name" id="currentCourseName">Loading...</div>
+          </div>
         </div>
 
         <!-- Navigation Menu -->
@@ -104,6 +122,10 @@ class GRASPNavigation {
               this.currentRole === "instructor" ? "Instructor" : "Student"
             }</strong></span>
           </div>
+          <button class="sign-out-button" id="signOutButton">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Sign Out</span>
+          </button>
         </div>
       </nav>
     `;
@@ -296,22 +318,17 @@ class GRASPNavigation {
         margin-bottom: 25px;
       }
 
-      .course-selection-section select {
+      .current-course-display {
         width: 100%;
-        padding: 5px 10px;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-        color: white;
-        font-size: 14px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        transition: all 0.3s ease;
       }
 
-      .course-selection-section select:focus {
-        outline: none;
-        border-color: #3498db;
-        background: rgba(255, 255, 255, 0.15);
+      .current-course-name {
+        padding: 0;
+        color: white;
+        font-size: 18px;
+        font-weight: 600;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        word-wrap: break-word;
       }
 
       /* Navigation Menu */
@@ -423,6 +440,37 @@ class GRASPNavigation {
         font-weight: 600;
       }
 
+      /* Sign Out Button */
+      .sign-out-button {
+        width: 100%;
+        padding: 12px 16px;
+        background: rgba(231, 76, 60, 0.2);
+        border: 1px solid rgba(231, 76, 60, 0.4);
+        border-radius: 8px;
+        color: #e74c3c;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 15px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      }
+
+      .sign-out-button:hover {
+        background: rgba(231, 76, 60, 0.3);
+        border-color: rgba(231, 76, 60, 0.6);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(231, 76, 60, 0.2);
+      }
+
+      .sign-out-button i {
+        font-size: 16px;
+      }
+
       /* Main content adjustment for sidebar */
       .main-content {
         margin-left: 280px;
@@ -448,30 +496,31 @@ class GRASPNavigation {
   }
 
   async loadCourseSelector() {
-    const courseSelector = document.getElementById("course-selector");
+    const currentCourseName = document.getElementById("currentCourseName");
     
-    const courses = await fetch("/api/courses/my-courses");
-    const data = await courses.json();
-
-    if (data.success && data.courses.length > 0) {
-      data.courses.forEach((course) => {
-        const option = document.createElement("option");
-        option.value = course._id;
-        option.textContent = `${course.courseName}`;
-        if (course._id === JSON.parse(sessionStorage.getItem("grasp-selected-course")).id) {
-          option.selected = true;
+    try {
+      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
+      
+      if (selectedCourse && selectedCourse.name) {
+        // Display the current course name
+        if (currentCourseName) {
+          currentCourseName.textContent = selectedCourse.name;
         }
-        courseSelector.appendChild(option);
-      }); 
+      } else {
+        // No course selected
+        if (currentCourseName) {
+          currentCourseName.textContent = "No course selected";
+          currentCourseName.style.color = "rgba(255, 255, 255, 0.5)";
+          currentCourseName.style.fontStyle = "italic";
+        }
+      }
+    } catch (error) {
+      console.error("Error loading current course:", error);
+      if (currentCourseName) {
+        currentCourseName.textContent = "Error loading course";
+        currentCourseName.style.color = "rgba(255, 255, 255, 0.5)";
+      }
     }
-    
-    // Attach click event to course selector, update selected course in session storage and refresh page upon change.
-    courseSelector.addEventListener("change", (e) => {
-      const courseId = e.target.value;
-      const courseName = data.courses.find((course) => course._id === courseId).courseName;
-      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: courseId, name: courseName}));
-      window.location.href = window.location.pathname;
-    });
   }
 
   initializeNavigation() {
@@ -547,6 +596,23 @@ class GRASPNavigation {
         this.switchRole();
       });
     }
+  }
+
+  initializeSignOut() {
+    const signOutButton = document.getElementById("signOutButton");
+    if (signOutButton) {
+      signOutButton.addEventListener("click", () => {
+        this.handleSignOut();
+      });
+    }
+  }
+
+  handleSignOut() {
+    // Clear selected course from sessionStorage
+    sessionStorage.removeItem("grasp-selected-course");
+    
+    // Redirect to onboarding page
+    window.location.href = "/onboarding";
   }
 
   switchRole() {
