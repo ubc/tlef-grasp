@@ -3,13 +3,22 @@ const objectiveMaterialService = require('./objective-material');
 const { ObjectId } = require('mongodb');
 
 /**
- * Get all parent learning objectives (parent = 0)
+ * Get all parent learning objectives (parent = 0) for a specific course
+ * @param {string} courseId - The course ID to filter by
  */
-const getParentObjectives = async () => {
+const getParentObjectives = async (courseId) => {
   try {
     const db = await databaseService.connect();
     const collection = db.collection('grasp_objective');
-    const objectives = await collection.find({ parent: 0 }).toArray();
+    
+    // Build query with courseId filter
+    const query = { parent: 0 };
+    if (courseId) {
+      const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+      query.courseId = courseIdObj;
+    }
+    
+    const objectives = await collection.find(query).toArray();
     return objectives;
   } catch (error) {
     console.error('Error getting parent objectives:', error);
@@ -19,12 +28,27 @@ const getParentObjectives = async () => {
 
 /**
  * Get all granular objectives for a parent objective
+ * @param {string|ObjectId} parentId - The parent objective ID
+ * @param {string} courseId - Optional course ID to filter by (for additional validation)
  */
-const getGranularObjectives = async (parentId) => {
+const getGranularObjectives = async (parentId, courseId = null) => {
   try {
     const db = await databaseService.connect();
     const collection = db.collection('grasp_objective');
-    const objectives = await collection.find({ parent: parentId }).toArray();
+    
+    // Convert parentId to ObjectId if needed
+    const id = ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId;
+    
+    // Build query
+    const query = { parent: id };
+    
+    // If courseId is provided, filter by it (granular objectives inherit courseId from parent)
+    if (courseId) {
+      const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+      query.courseId = courseIdObj;
+    }
+    
+    const objectives = await collection.find(query).toArray();
     return objectives;
   } catch (error) {
     console.error('Error getting granular objectives:', error);
