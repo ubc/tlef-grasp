@@ -20,6 +20,9 @@ async function initializeDashboard() {
 
     // Update current date
     updateCurrentDate();
+    
+    // Initialize calendar
+    initializeCalendar();
   } catch (error) {
     console.error("Error initializing dashboard:", error);
   }
@@ -99,6 +102,76 @@ function updateCurrentDate() {
     const options = { weekday: "long", month: "long", day: "numeric" };
     const formattedDate = now.toLocaleDateString("en-US", options);
     dateElement.textContent = formattedDate;
+  }
+}
+
+function initializeCalendar() {
+  const calendarHeader = document.querySelector(".calendar-header h4");
+  const calendarDays = document.querySelector(".calendar-days");
+  
+  if (!calendarHeader || !calendarDays) {
+    return;
+  }
+  
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  const currentDate = today.getDate();
+  
+  // Set month and year header
+  const monthNames = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  calendarHeader.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+  
+  // Get first day of month and number of days
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const lastDay = new Date(currentYear, currentMonth + 1, 0);
+  const daysInMonth = lastDay.getDate();
+  const startingDayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  
+  // Adjust for Monday as first day (0 = Monday, 6 = Sunday)
+  // JavaScript: 0=Sunday, 1=Monday, ..., 6=Saturday
+  // Calendar: 0=Monday, 1=Tuesday, ..., 6=Sunday
+  const adjustedStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+  
+  // Get previous month's last days
+  const prevMonth = new Date(currentYear, currentMonth, 0);
+  const daysInPrevMonth = prevMonth.getDate();
+  
+  // Clear existing calendar days
+  calendarDays.innerHTML = "";
+  
+  // Add previous month's trailing days
+  for (let i = adjustedStartingDay - 1; i >= 0; i--) {
+    const day = daysInPrevMonth - i;
+    const dayElement = document.createElement("span");
+    dayElement.className = "other-month";
+    dayElement.textContent = day;
+    calendarDays.appendChild(dayElement);
+  }
+  
+  // Add current month's days
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayElement = document.createElement("span");
+    
+    // Check if this is today
+    if (day === currentDate) {
+      dayElement.className = "current-day";
+    }
+    
+    dayElement.textContent = day;
+    calendarDays.appendChild(dayElement);
+  }
+  
+  // Add next month's leading days to fill the calendar
+  const totalCells = calendarDays.children.length;
+  const remainingCells = 42 - totalCells; // 6 rows × 7 days = 42 cells
+  
+  for (let day = 1; day <= remainingCells; day++) {
+    const dayElement = document.createElement("span");
+    dayElement.className = "other-month";
+    dayElement.textContent = day;
+    calendarDays.appendChild(dayElement);
   }
 }
 
