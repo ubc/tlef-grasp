@@ -148,22 +148,10 @@ class GRASPNavigation {
             <span>My Quizzes</span>
           </a>
         </li>
-        <li class="nav-item" data-page="course-materials">
-          <a href="/course-materials" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-book"></i>
-            <span>Course Materials</span>
-          </a>
-        </li>
         <li class="nav-item" data-page="achievements">
           <a href="/achievements" style="text-decoration: none; color: inherit;">
             <i class="fas fa-trophy"></i>
             <span>Achievements</span>
-          </a>
-        </li>
-        <li class="nav-item" data-page="settings">
-          <a href="/settings" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-cog"></i>
-            <span>Settings</span>
           </a>
         </li>
       `;
