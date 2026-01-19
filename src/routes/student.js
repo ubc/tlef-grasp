@@ -225,6 +225,50 @@ router.post("/quizzes/:quizId/start", async (req, res) => {
   }
 });
 
+// Helper function to shuffle an array (Fisher-Yates algorithm)
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Helper function to shuffle question options and update correct answer
+function shuffleQuestionOptions(question) {
+  const optionKeys = ['A', 'B', 'C', 'D'];
+  const originalCorrectAnswer = question.correctAnswer;
+  const correctOptionText = question.options[originalCorrectAnswer];
+  
+  // Create array of option entries and shuffle
+  const optionEntries = optionKeys.map(key => ({
+    key,
+    text: question.options[key]
+  }));
+  const shuffledEntries = shuffleArray(optionEntries);
+  
+  // Rebuild options object with shuffled order
+  const newOptions = {};
+  let newCorrectAnswer = 'A';
+  
+  shuffledEntries.forEach((entry, index) => {
+    const newKey = optionKeys[index];
+    newOptions[newKey] = entry.text;
+    
+    // Track where the correct answer moved to
+    if (entry.text === correctOptionText) {
+      newCorrectAnswer = newKey;
+    }
+  });
+  
+  return {
+    ...question,
+    options: newOptions,
+    correctAnswer: newCorrectAnswer
+  };
+}
+
 // Get quiz questions (for students - only published quizzes with approved questions)
 router.get("/quizzes/:quizId/questions", async (req, res) => {
   try {
@@ -335,6 +379,12 @@ router.get("/quizzes/:quizId/questions", async (req, res) => {
       }
     }
 
+    // Randomize question order for each student attempt
+    const shuffledQuestions = shuffleArray(transformedQuestions);
+    
+    // Randomize options within each question
+    const randomizedQuestions = shuffledQuestions.map(q => shuffleQuestionOptions(q));
+
     res.json({
       success: true,
       data: {
@@ -342,7 +392,7 @@ router.get("/quizzes/:quizId/questions", async (req, res) => {
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0, // TODO: Add duration field to quiz model if needed
-        questions: transformedQuestions,
+        questions: randomizedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
