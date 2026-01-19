@@ -9,12 +9,12 @@ const { isUserInCourse } = require("../services/user-course");
  */
 router.post("/", express.json(), async (req, res) => {
   try {
-    const { userId, courseId, quizId, title, description, type } = req.body;
+    const { userId, courseId, quizId, type } = req.body;
 
-    if (!userId || !courseId || !quizId) {
+    if (!userId || !courseId || !quizId || !type) {
       return res.status(400).json({
         success: false,
-        error: "User ID, Course ID, and Quiz ID are required"
+        error: "User ID, Course ID, Quiz ID, and type are required"
       });
     }
 
@@ -30,12 +30,16 @@ router.post("/", express.json(), async (req, res) => {
       userId,
       courseId,
       quizId,
-      {
-        title: title || "Perfect Score!",
-        description: description || "Answered all questions correctly",
-        type: type || "quiz_perfect"
-      }
+      type
     );
+
+    if (!achievement) {
+      return res.json({
+        success: true,
+        data: null,
+        message: "Achievement already exists"
+      });
+    }
 
     res.json({
       success: true,
@@ -44,6 +48,69 @@ router.post("/", express.json(), async (req, res) => {
     });
   } catch (error) {
     console.error("Error saving achievement:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get achievements for the current user
+ * GET /api/achievement/my
+ */
+router.get("/my", async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { courseId } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "User not authenticated"
+      });
+    }
+
+    const achievements = await achievementService.getUserAchievements(userId.toString(), courseId);
+
+    res.json({
+      success: true,
+      data: achievements,
+      count: achievements.length
+    });
+  } catch (error) {
+    console.error("Error fetching achievements:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get achievement counts for the current user
+ * GET /api/achievement/my/counts
+ */
+router.get("/my/counts", async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { courseId } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "User not authenticated"
+      });
+    }
+
+    const counts = await achievementService.getAchievementCounts(userId.toString(), courseId);
+
+    res.json({
+      success: true,
+      data: counts
+    });
+  } catch (error) {
+    console.error("Error fetching achievement counts:", error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -83,8 +150,9 @@ router.get("/user/:userId", async (req, res) => {
 router.get("/check/:userId/:quizId", async (req, res) => {
   try {
     const { userId, quizId } = req.params;
+    const { type } = req.query;
 
-    const hasAchievement = await achievementService.hasAchievement(userId, quizId);
+    const hasAchievement = await achievementService.hasAchievement(userId, quizId, type);
 
     res.json({
       success: true,
@@ -100,4 +168,3 @@ router.get("/check/:userId/:quizId", async (req, res) => {
 });
 
 module.exports = router;
-

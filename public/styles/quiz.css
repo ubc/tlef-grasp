@@ -56,12 +56,78 @@
     padding: 20px;
     background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
     color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
 }
 
 .quiz-card-header h3 {
     font-size: 20px;
     font-weight: 600;
     margin: 0;
+    flex: 1;
+}
+
+/* Quiz Achievement Badges */
+.quiz-achievements {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.achievement-badge-mini {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.achievement-badge-mini.completed {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white;
+}
+
+.achievement-badge-mini.perfect {
+    background: linear-gradient(135deg, #f1c40f, #f39c12);
+    color: white;
+}
+
+.quiz-card-achievements-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed #ecf0f1;
+}
+
+.achievement-detail {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.achievement-detail.completed {
+    background: rgba(46, 204, 113, 0.15);
+    color: #27ae60;
+}
+
+.achievement-detail.perfect {
+    background: rgba(241, 196, 15, 0.2);
+    color: #d68910;
+}
+
+.achievement-detail i {
+    font-size: 11px;
 }
 
 .quiz-card-content {

@@ -410,7 +410,7 @@ router.get("/quizzes/:quizId/questions", async (req, res) => {
 router.post("/quizzes/:quizId/submit", express.json(), async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { answers, timeSpent, sessionId } = req.body;
+    const { answers, timeSpent, sessionId, score: clientScore, correctAnswers: clientCorrectAnswers, totalQuestions: clientTotalQuestions } = req.body;
 
     if (!answers || typeof answers !== 'object') {
       return res.status(400).json({
@@ -419,7 +419,7 @@ router.post("/quizzes/:quizId/submit", express.json(), async (req, res) => {
       });
     }
 
-    // Use the quiz service to get the quiz and questions
+    // Use the quiz service to get the quiz
     const quizService = require("../services/quiz");
     const quiz = await quizService.getQuizById(quizId);
 
@@ -438,45 +438,42 @@ router.post("/quizzes/:quizId/submit", express.json(), async (req, res) => {
       });
     }
 
-    // Get approved questions for this quiz
+    // Get question count for validation
     const questions = await quizService.getQuizQuestions(quizId, true); // approvedOnly = true
+    const totalQuestions = questions ? questions.length : 0;
 
-    if (!questions || questions.length === 0) {
+    if (totalQuestions === 0) {
       return res.status(400).json({
         success: false,
         message: "This quiz has no approved questions.",
       });
     }
 
-    // Calculate score based on actual answers
-    let correctAnswers = 0;
-    const totalQuestions = questions.length;
-    
-    // answers is an object with question index as key and selected answer as value
-    // e.g., { "0": "A", "1": "B", ... } or { 0: "A", 1: "B", ... }
-    questions.forEach((question, index) => {
-      // Try both string and number keys
-      const userAnswer = answers[String(index)] || answers[index];
-      const correctAnswer = question.correctAnswer;
+    // Use client-provided score since options are shuffled and only frontend knows the correct mapping
+    const score = Number(clientScore);
+    const correctAnswers = Number(clientCorrectAnswers) || 0;
+
+    // Award achievements
+    let newAchievements = [];
+    try {
+      const userId = req.user._id || req.user.id;
+      const courseId = quiz.courseId;
+      const quizName = quiz.name || "Quiz";
       
-      if (userAnswer && correctAnswer) {
-        // Normalize answers to uppercase for comparison
-        const normalizedUserAnswer = String(userAnswer).toUpperCase().trim();
-        const normalizedCorrectAnswer = String(correctAnswer).toUpperCase().trim();
-        
-        if (normalizedUserAnswer === normalizedCorrectAnswer) {
-          correctAnswers++;
-        }
+      if (userId && courseId) {
+        const { awardQuizAchievements } = require("../services/achievement");
+        newAchievements = await awardQuizAchievements(
+          userId.toString(),
+          courseId.toString(),
+          quizId,
+          quizName,
+          score
+        );
       }
-    });
-
-    const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
-
-    // TODO: In a real application, you would:
-    // 1. Validate the session
-    // 2. Check if the quiz is still active
-    // 3. Save the results to the database
-    // 4. Update the student's progress
+    } catch (achievementError) {
+      console.error("Error awarding achievements:", achievementError);
+      // Continue even if achievement awarding fails
+    }
 
     res.json({
       success: true,
@@ -489,6 +486,7 @@ router.post("/quizzes/:quizId/submit", express.json(), async (req, res) => {
         timeSpent: timeSpent,
         submittedAt: new Date().toISOString(),
         message: "Quiz submitted successfully",
+        newAchievements: newAchievements,
       },
       message: "Quiz submitted successfully",
     });

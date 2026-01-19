@@ -23,15 +23,34 @@
                     
                     <!-- Achievement Stats -->
                     <div class="achievement-stats">
-                        <div class="stats-info">
-                            <span class="achievement-count">0 of 0 Achievements Earned</span>
-                        </div>
-                        <div class="completion-section">
-                            <span class="completion-label">Completion</span>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 0%"></div>
+                        <div class="stats-cards">
+                            <div class="stat-card">
+                                <div class="stat-icon total">
+                                    <i class="fas fa-trophy"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-value" id="totalAchievements">0</span>
+                                    <span class="stat-label">Total Achievements</span>
+                                </div>
                             </div>
-                            <span class="completion-percentage">0%</span>
+                            <div class="stat-card">
+                                <div class="stat-icon completion">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-value" id="completedAchievements">0</span>
+                                    <span class="stat-label">Quizzes Completed</span>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon perfect">
+                                    <i class="fas fa-star"></i>
+                                </div>
+                                <div class="stat-info">
+                                    <span class="stat-value" id="perfectAchievements">0</span>
+                                    <span class="stat-label">Perfect Scores</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -39,8 +58,12 @@
                 <!-- Filter Tabs -->
                 <div class="filter-tabs">
                     <button class="tab-button active" data-filter="all">All</button>
-                    <button class="tab-button" data-filter="earned">Earned</button>
-                    <button class="tab-button" data-filter="locked">Locked</button>
+                    <button class="tab-button" data-filter="quiz_completed">
+                        <i class="fas fa-check-circle"></i> Completed
+                    </button>
+                    <button class="tab-button" data-filter="quiz_perfect">
+                        <i class="fas fa-star"></i> Perfect Scores
+                    </button>
                 </div>
 
                 <!-- Achievements Grid -->
@@ -52,8 +75,8 @@
                 <div class="no-results" id="noResults" style="display: none;">
                     <div class="no-results-content">
                         <i class="fas fa-trophy"></i>
-                        <h3>No achievements found</h3>
-                        <p>Try adjusting your filter to see different achievements.</p>
+                        <h3>No achievements yet</h3>
+                        <p>Complete quizzes to earn achievements! Get a perfect score for bonus achievements.</p>
                     </div>
                 </div>
             </div>
@@ -65,6 +88,3 @@
     <script src="scripts/achievements.js"></script>
 </body>
 </html>
-
-
-

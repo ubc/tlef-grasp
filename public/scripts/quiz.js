@@ -69,18 +69,31 @@ async function loadQuizList() {
     // Update course name display
     document.getElementById("courseNameDisplay").textContent = selectedCourse.name || "Unknown Course";
 
-    const response = await fetch(`/api/quiz/course/${quizState.courseId}`);
-    const data = await response.json();
+    // Fetch quizzes and achievements in parallel
+    const [quizzesResponse, achievementsResponse] = await Promise.all([
+      fetch(`/api/quiz/course/${quizState.courseId}`),
+      fetch(`/api/achievement/my?courseId=${quizState.courseId}`)
+    ]);
+    
+    const quizzesData = await quizzesResponse.json();
+    let userAchievements = [];
+    
+    if (achievementsResponse.ok) {
+      const achievementsData = await achievementsResponse.json();
+      if (achievementsData.success && achievementsData.data) {
+        userAchievements = achievementsData.data;
+      }
+    }
 
-    if (data.success && data.quizzes) {
+    if (quizzesData.success && quizzesData.quizzes) {
       // Filter to only show published quizzes
-      const publishedQuizzes = data.quizzes.filter(quiz => quiz.published === true);
+      const publishedQuizzes = quizzesData.quizzes.filter(quiz => quiz.published === true);
       
       if (publishedQuizzes.length === 0) {
         showEmptyState("No published quizzes available for this course.");
       } else {
-        // Fetch question counts for each quiz
-        const quizzesWithCounts = await Promise.all(
+        // Fetch question counts for each quiz and attach achievements
+        const quizzesWithDetails = await Promise.all(
           publishedQuizzes.map(async (quiz) => {
             const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
             let questionCount = 0;
@@ -98,14 +111,21 @@ async function loadQuizList() {
               console.error(`Error fetching question count for quiz ${quizId}:`, error);
             }
             
+            // Find achievements for this quiz
+            const quizAchievements = userAchievements.filter(a => {
+              const achievementQuizId = a.quizId?.toString ? a.quizId.toString() : String(a.quizId || "");
+              return achievementQuizId === quizId;
+            });
+            
             return {
               ...quiz,
-              questionCount: questionCount
+              questionCount: questionCount,
+              achievements: quizAchievements
             };
           })
         );
         
-        quizState.quizzes = quizzesWithCounts;
+        quizState.quizzes = quizzesWithDetails;
         renderQuizList();
       }
     } else {
@@ -142,13 +162,38 @@ function createQuizCard(quiz) {
   card.className = "quiz-card";
   
   const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
+  
+  // Check for achievements
+  const achievements = quiz.achievements || [];
+  const hasCompleted = achievements.some(a => a.type === 'quiz_completed');
+  const hasPerfect = achievements.some(a => a.type === 'quiz_perfect');
+  
+  // Build achievement badges HTML
+  let achievementBadgesHtml = '';
+  if (achievements.length > 0) {
+    achievementBadgesHtml = `
+      <div class="quiz-achievements">
+        ${hasCompleted ? `
+          <span class="achievement-badge-mini completed" title="Quiz Completed">
+            <i class="fas fa-check-circle"></i>
+          </span>
+        ` : ''}
+        ${hasPerfect ? `
+          <span class="achievement-badge-mini perfect" title="Perfect Score">
+            <i class="fas fa-star"></i>
+          </span>
+        ` : ''}
+      </div>
+    `;
+  }
 
   card.innerHTML = `
     <div class="quiz-card-header">
-      <h3>${quiz.name || "Unnamed Quiz"}</h3>
+      <h3>${escapeHtml(quiz.name || "Unnamed Quiz")}</h3>
+      ${achievementBadgesHtml}
     </div>
     <div class="quiz-card-content">
-      <p class="quiz-description">${quiz.description || "No description available"}</p>
+      <p class="quiz-description">${escapeHtml(quiz.description || "No description available")}</p>
       <div class="quiz-card-meta">
         <span class="quiz-date">
           <i class="fas fa-calendar"></i>
@@ -159,11 +204,17 @@ function createQuizCard(quiz) {
           ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) !== 1 ? 's' : ''}
         </span>
       </div>
+      ${achievements.length > 0 ? `
+        <div class="quiz-card-achievements-detail">
+          ${hasCompleted ? `<span class="achievement-detail completed"><i class="fas fa-check-circle"></i> Completed</span>` : ''}
+          ${hasPerfect ? `<span class="achievement-detail perfect"><i class="fas fa-star"></i> Perfect Score</span>` : ''}
+        </div>
+      ` : ''}
     </div>
     <div class="quiz-card-actions">
       <button class="start-quiz-button" onclick="window.quizApp.startQuiz('${quizId}')">
         <i class="fas fa-play"></i>
-        Start Quiz
+        ${hasCompleted ? 'Retake Quiz' : 'Start Quiz'}
       </button>
     </div>
   `;
@@ -374,9 +425,10 @@ function showQuestion(questionIndex) {
   // Update answer options
   renderAnswerOptions(question, questionIndex);
 
-    // Show feedback if answer was already selected
-    if (quizState.feedback[questionIndex]) {
-      showFeedback(questionIndex, quizState.answers[questionIndex], question.correctAnswer);
+    // Show feedback if answer was already selected (check by question ID)
+    const questionId = question.id;
+    if (quizState.feedback[questionId]) {
+      showFeedback(questionIndex, questionId, quizState.answers[questionId], question.correctAnswer);
     } else {
       hideFeedback();
     }
@@ -400,7 +452,8 @@ function renderAnswerOptions(question, questionIndex) {
   answerOptions.innerHTML = "";
 
   const optionKeys = ['A', 'B', 'C', 'D'];
-  const selectedAnswer = quizState.answers[questionIndex];
+  const questionId = question.id;
+  const selectedAnswer = quizState.answers[questionId];
 
   optionKeys.forEach(optionKey => {
     const optionText = question.options[optionKey] || "";
@@ -415,8 +468,8 @@ function renderAnswerOptions(question, questionIndex) {
       optionDiv.classList.add("selected");
     }
 
-    // Add correct/incorrect classes if feedback exists
-    if (quizState.feedback[questionIndex]) {
+    // Add correct/incorrect classes if feedback exists (check by question ID)
+    if (quizState.feedback[questionId]) {
       if (optionKey === question.correctAnswer) {
         optionDiv.classList.add("correct");
       } else if (selectedAnswer === optionKey && selectedAnswer !== question.correctAnswer) {
@@ -432,8 +485,8 @@ function renderAnswerOptions(question, questionIndex) {
     `;
 
     // Only allow selection if not already answered
-    if (!quizState.feedback[questionIndex]) {
-      optionDiv.addEventListener("click", () => selectAnswer(optionKey, questionIndex, question.correctAnswer));
+    if (!quizState.feedback[questionId]) {
+      optionDiv.addEventListener("click", () => selectAnswer(optionKey, questionIndex, questionId, question.correctAnswer));
     }
 
     answerOptions.appendChild(optionDiv);
@@ -443,12 +496,12 @@ function renderAnswerOptions(question, questionIndex) {
   renderKatex();
 }
 
-function selectAnswer(selectedOption, questionIndex, correctAnswer) {
-  // Store answer
-  quizState.answers[questionIndex] = selectedOption;
+function selectAnswer(selectedOption, questionIndex, questionId, correctAnswer) {
+  // Store answer by question ID (not index) to handle shuffled questions
+  quizState.answers[questionId] = selectedOption;
 
   // Show immediate feedback
-  showFeedback(questionIndex, selectedOption, correctAnswer);
+  showFeedback(questionIndex, questionId, selectedOption, correctAnswer);
 
   // Update highlighting immediately on all options
   const options = document.querySelectorAll(".answer-option");
@@ -476,7 +529,7 @@ function selectAnswer(selectedOption, questionIndex, correctAnswer) {
   updateQuestionIndicators();
 }
 
-function showFeedback(questionIndex, selectedAnswer, correctAnswer) {
+function showFeedback(questionIndex, questionId, selectedAnswer, correctAnswer) {
   const feedbackSection = document.getElementById("feedbackSection");
   const feedbackMessage = document.getElementById("feedbackMessage");
   const correctAnswerDisplay = document.getElementById("correctAnswerDisplay");
@@ -484,8 +537,8 @@ function showFeedback(questionIndex, selectedAnswer, correctAnswer) {
 
   const isCorrect = selectedAnswer === correctAnswer;
   
-  // Store feedback
-  quizState.feedback[questionIndex] = {
+  // Store feedback by question ID
+  quizState.feedback[questionId] = {
     isCorrect: isCorrect,
     selectedAnswer: selectedAnswer,
     correctAnswer: correctAnswer
@@ -526,10 +579,14 @@ function updateQuestionIndicators() {
       indicator.classList.add("current");
     }
     
-    if (quizState.answers[index]) {
+    // Get question ID for this index
+    const question = quizState.quizData.questions[index];
+    const questionId = question?.id;
+    
+    if (questionId && quizState.answers[questionId]) {
       indicator.classList.add("answered");
-      if (quizState.feedback[index]) {
-        if (quizState.feedback[index].isCorrect) {
+      if (quizState.feedback[questionId]) {
+        if (quizState.feedback[questionId].isCorrect) {
           indicator.classList.add("correct");
         } else {
           indicator.classList.add("incorrect");
@@ -539,17 +596,18 @@ function updateQuestionIndicators() {
   });
 }
 
-function showCompletion() {
+async function showCompletion() {
   // Hide quiz content
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
 
-  // Calculate stats
+  // Calculate stats using question IDs
   let correctCount = 0;
   const totalQuestions = quizState.quizData.questions.length;
 
-  quizState.quizData.questions.forEach((question, index) => {
-    if (quizState.feedback[index] && quizState.feedback[index].isCorrect) {
+  quizState.quizData.questions.forEach((question) => {
+    const questionId = question.id;
+    if (quizState.feedback[questionId] && quizState.feedback[questionId].isCorrect) {
       correctCount++;
     }
   });
@@ -561,50 +619,174 @@ function showCompletion() {
   document.getElementById("totalCount").textContent = totalQuestions;
   document.getElementById("scorePercentage").textContent = `${score}%`;
 
-  // Show achievement badge if perfect score
-  const achievementBadge = document.getElementById("achievementBadge");
-  if (correctCount === totalQuestions && totalQuestions > 0) {
-    achievementBadge.style.display = "block";
-    // Save achievement
-    saveAchievement();
-  } else {
-    achievementBadge.style.display = "none";
-  }
+  // Submit quiz to backend and get achievements
+  const newAchievements = await submitQuizToBackend(score, correctCount, totalQuestions);
+  
+  // Show achievements
+  displayNewAchievements(newAchievements, score === 100);
 
   // Show completion section
   document.getElementById("completionSection").style.display = "block";
 }
 
-async function saveAchievement() {
-  if (!quizState.userId || !quizState.courseId || !quizState.currentQuiz) {
-    console.warn("Cannot save achievement: missing user, course, or quiz ID");
-    return;
+async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
+  if (!quizState.currentQuiz) {
+    console.warn("Cannot submit quiz: missing quiz ID");
+    return [];
   }
 
   try {
-    const response = await fetch("/api/achievement", {
+    const response = await fetch(`/api/student/quizzes/${quizState.currentQuiz}/submit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        userId: quizState.userId,
-        courseId: quizState.courseId,
-        quizId: quizState.currentQuiz,
-        title: "Perfect Score!",
-        description: `Answered all ${quizState.quizData.questions.length} questions correctly in "${quizState.quizData.title}"`,
-        type: "quiz_perfect"
+        answers: quizState.answers,
+        score: score,
+        correctAnswers: correctAnswers,
+        totalQuestions: totalQuestions,
+        timeSpent: 0,
+        sessionId: Date.now().toString()
       })
     });
 
     const data = await response.json();
-    if (data.success) {
-      console.log("Achievement saved successfully!");
+    if (data.success && data.data) {
+      return data.data.newAchievements || [];
     } else {
-      console.error("Failed to save achievement:", data.error);
+      console.error("Failed to submit quiz:", data.message);
+      return [];
     }
   } catch (error) {
-    console.error("Error saving achievement:", error);
+    console.error("Error submitting quiz:", error);
+    return [];
+  }
+}
+
+function displayNewAchievements(achievements, isPerfectScore) {
+  const achievementBadge = document.getElementById("achievementBadge");
+  
+  if (!achievements || achievements.length === 0) {
+    // No new achievements, but still show perfect score badge if applicable
+    if (isPerfectScore) {
+      achievementBadge.style.display = "block";
+      achievementBadge.innerHTML = `
+        <i class="fas fa-star"></i>
+        <span>Perfect Score!</span>
+      `;
+    } else {
+      achievementBadge.style.display = "none";
+    }
+    return;
+  }
+
+  // Display new achievements
+  achievementBadge.style.display = "block";
+  
+  if (achievements.length === 1) {
+    const achievement = achievements[0];
+    achievementBadge.innerHTML = `
+      <i class="${achievement.icon || 'fas fa-trophy'}"></i>
+      <span>${escapeHtml(achievement.title)}</span>
+    `;
+  } else {
+    // Multiple achievements
+    achievementBadge.innerHTML = `
+      <i class="fas fa-trophy"></i>
+      <span>${achievements.length} New Achievements!</span>
+    `;
+  }
+  
+  // Show achievement notification
+  showAchievementNotification(achievements);
+}
+
+function showAchievementNotification(achievements) {
+  if (!achievements || achievements.length === 0) return;
+  
+  // Create notification container if it doesn't exist
+  let notificationContainer = document.getElementById("achievementNotifications");
+  if (!notificationContainer) {
+    notificationContainer = document.createElement("div");
+    notificationContainer.id = "achievementNotifications";
+    notificationContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    `;
+    document.body.appendChild(notificationContainer);
+  }
+  
+  achievements.forEach((achievement, index) => {
+    setTimeout(() => {
+      const notification = document.createElement("div");
+      notification.className = "achievement-notification";
+      notification.style.cssText = `
+        background: linear-gradient(135deg, #2ecc71, #27ae60);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        animation: slideInRight 0.5s ease, fadeOut 0.5s ease 4.5s forwards;
+        max-width: 350px;
+      `;
+      
+      // Different colors for different achievement types
+      if (achievement.type === 'quiz_perfect') {
+        notification.style.background = "linear-gradient(135deg, #f1c40f, #f39c12)";
+      }
+      
+      notification.innerHTML = `
+        <i class="${achievement.icon || 'fas fa-trophy'}" style="font-size: 24px;"></i>
+        <div>
+          <div style="font-weight: 600; font-size: 14px;">Achievement Unlocked!</div>
+          <div style="font-size: 16px; font-weight: 700;">${escapeHtml(achievement.title)}</div>
+          <div style="font-size: 12px; opacity: 0.9;">${escapeHtml(achievement.description)}</div>
+        </div>
+      `;
+      
+      notificationContainer.appendChild(notification);
+      
+      // Remove notification after 5 seconds
+      setTimeout(() => {
+        notification.remove();
+      }, 5000);
+    }, index * 500); // Stagger notifications
+  });
+  
+  // Add animation styles if not already present
+  if (!document.getElementById("achievementAnimationStyles")) {
+    const style = document.createElement("style");
+    style.id = "achievementAnimationStyles";
+    style.textContent = `
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes fadeOut {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   }
 }
 

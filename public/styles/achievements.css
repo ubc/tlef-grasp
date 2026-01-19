@@ -26,59 +26,71 @@
 }
 
 .achievement-stats {
+    margin-bottom: 10px;
+}
+
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.stat-card {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 15px;
     background: white;
     padding: 20px 25px;
     border-radius: 12px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
-.stats-info {
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: white;
+    flex-shrink: 0;
+}
+
+.stat-icon.total {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+}
+
+.stat-icon.completion {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+}
+
+.stat-icon.perfect {
+    background: linear-gradient(135deg, #f1c40f, #f39c12);
+}
+
+.stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 13px;
+    color: #7f8c8d;
+    font-weight: 500;
 }
 
 .achievement-count {
     font-size: 16px;
     font-weight: 600;
     color: #2c3e50;
-}
-
-.completion-section {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.completion-label {
-    font-size: 14px;
-    font-weight: 500;
-    color: #7f8c8d;
-}
-
-.progress-bar {
-    width: 200px;
-    height: 8px;
-    background: #ecf0f1;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3498db, #2980b9);
-    border-radius: 4px;
-    transition: width 0.3s ease;
-}
-
-.completion-percentage {
-    font-size: 14px;
-    font-weight: 600;
-    color: #2c3e50;
-    min-width: 35px;
 }
 
 /* Filter Tabs */
@@ -197,6 +209,14 @@
     background: linear-gradient(135deg, #2ecc71, #27ae60);
 }
 
+.achievement-icon.earned.completion {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+}
+
+.achievement-icon.earned.perfect {
+    background: linear-gradient(135deg, #f1c40f, #f39c12);
+}
+
 .achievement-icon.locked {
     background: linear-gradient(135deg, #95a5a6, #7f8c8d);
 }
@@ -206,7 +226,7 @@
 }
 
 .achievement-icon.star {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    background: linear-gradient(135deg, #f1c40f, #f39c12);
 }
 
 .achievement-icon.lightning {
@@ -223,6 +243,10 @@
 
 .achievement-icon.diploma {
     background: linear-gradient(135deg, #1abc9c, #16a085);
+}
+
+.achievement-icon.default {
+    background: linear-gradient(135deg, #3498db, #2980b9);
 }
 
 .achievement-info {
@@ -255,8 +279,47 @@
     font-size: 14px;
     color: #555;
     line-height: 1.5;
-    margin-bottom: 20px;
-    flex-grow: 1;
+    margin-bottom: 12px;
+}
+
+.achievement-quiz,
+.achievement-score {
+    font-size: 13px;
+    color: #7f8c8d;
+    margin-bottom: 8px;
+}
+
+.achievement-category {
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid #ecf0f1;
+}
+
+.category-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.category-badge.completion {
+    background: rgba(46, 204, 113, 0.15);
+    color: #27ae60;
+}
+
+.category-badge.perfect {
+    background: rgba(241, 196, 15, 0.2);
+    color: #d68910;
+}
+
+.category-badge.default {
+    background: rgba(52, 152, 219, 0.15);
+    color: #2980b9;
 }
 
 .view-details-button {
@@ -330,23 +393,34 @@
         margin-bottom: 15px;
     }
 
-    .achievement-stats {
-        flex-direction: column;
+    .stats-cards {
+        grid-template-columns: 1fr;
         gap: 15px;
-        align-items: stretch;
     }
 
-    .completion-section {
-        justify-content: space-between;
+    .stat-card {
+        padding: 15px 20px;
     }
 
-    .progress-bar {
-        width: 150px;
+    .stat-icon {
+        width: 45px;
+        height: 45px;
+        font-size: 20px;
+    }
+
+    .stat-value {
+        font-size: 24px;
     }
 
     .filter-tabs {
         width: 100%;
+        flex-wrap: wrap;
         justify-content: center;
+    }
+
+    .tab-button {
+        padding: 8px 15px;
+        font-size: 13px;
     }
 
     .achievements-grid {
