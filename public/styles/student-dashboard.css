@@ -429,6 +429,8 @@ section h3 {
     border-radius: 12px;
     padding: 25px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 .course-info-header {
@@ -507,6 +509,11 @@ section h3 {
     cursor: pointer;
     transition: all 0.3s ease;
     text-decoration: none;
+    box-sizing: border-box;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .view-quizzes-btn:hover {

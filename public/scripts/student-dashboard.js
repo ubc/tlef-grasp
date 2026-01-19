@@ -20,6 +20,7 @@ const API_ENDPOINTS = {
   currentUser: '/api/current-user',
   studentCourses: '/api/student/courses',
   quizzesByCourse: (courseId) => `/api/quiz/course/${courseId}`,
+  myAchievements: (courseId) => `/api/achievement/my?courseId=${courseId}`,
 };
 
 const ROUTES = {
@@ -368,20 +369,35 @@ class StudentDashboardManager {
     if (!selectedCourse?.id) return;
 
     try {
-      const response = await fetch(API_ENDPOINTS.quizzesByCourse(selectedCourse.id));
-      if (!response.ok) return;
+      // Fetch quizzes and achievements in parallel
+      const [quizzesResponse, achievementsResponse] = await Promise.all([
+        fetch(API_ENDPOINTS.quizzesByCourse(selectedCourse.id)),
+        fetch(API_ENDPOINTS.myAchievements(selectedCourse.id))
+      ]);
 
-      const data = await response.json();
-      if (data.success && data.quizzes) {
-        // Count published quizzes
-        const publishedQuizzes = data.quizzes.filter(q => q.published === true);
-        const quizCount = publishedQuizzes.length;
-        
-        // For now, completed count is 0 - would need to fetch student's quiz attempts
-        const completedCount = 0;
+      let quizCount = 0;
+      let completedCount = 0;
 
-        this.updateCourseStats(quizCount, completedCount);
+      // Get quiz count
+      if (quizzesResponse.ok) {
+        const quizzesData = await quizzesResponse.json();
+        if (quizzesData.success && quizzesData.quizzes) {
+          const publishedQuizzes = quizzesData.quizzes.filter(q => q.published === true);
+          quizCount = publishedQuizzes.length;
+        }
       }
+
+      // Get completed count from achievements (count unique quizzes with quiz_completed achievement)
+      if (achievementsResponse.ok) {
+        const achievementsData = await achievementsResponse.json();
+        if (achievementsData.success && achievementsData.data) {
+          // Count quiz_completed achievements (each represents a completed quiz)
+          const completedAchievements = achievementsData.data.filter(a => a.type === 'quiz_completed');
+          completedCount = completedAchievements.length;
+        }
+      }
+
+      this.updateCourseStats(quizCount, completedCount);
     } catch (error) {
       console.error('Error loading course stats:', error);
     }
