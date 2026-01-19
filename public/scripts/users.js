@@ -8,8 +8,12 @@ class UsersPage {
     
     this.isFaculty = false;
     this.courseUsers = [];
-    this.availableStaff = [];
-    this.availableStudents = [];
+    this.availableUsers = [];
+    this.filteredUsers = [];
+    
+    // Filter state
+    this.searchTerm = "";
+    this.roleFilter = "all";
     
     this.init();
   }
@@ -28,7 +32,6 @@ class UsersPage {
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
-          // Use isFaculty from API response (includes administrator check)
           this.isFaculty = data.user.isFaculty || false;
         }
       }
@@ -62,18 +65,31 @@ class UsersPage {
         }
       });
     }
+    
+    // Search and filter handlers
+    const searchInput = document.getElementById("user-search");
+    const roleFilter = document.getElementById("role-filter");
+    
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        this.searchTerm = e.target.value.toLowerCase().trim();
+        this.applyFilters();
+      });
+    }
+    
+    if (roleFilter) {
+      roleFilter.addEventListener("change", (e) => {
+        this.roleFilter = e.target.value;
+        this.applyFilters();
+      });
+    }
   }
 
   updateUIForUserRole() {
-    // Show available staff and students sections only for faculty
-    const availableStaffSection = document.getElementById("available-staff-section");
-    const availableStudentsSection = document.getElementById("available-students-section");
+    const availableUsersSection = document.getElementById("available-users-section");
     
-    if (availableStaffSection) {
-      availableStaffSection.style.display = this.isFaculty ? "block" : "none";
-    }
-    if (availableStudentsSection) {
-      availableStudentsSection.style.display = this.isFaculty ? "block" : "none";
+    if (availableUsersSection) {
+      availableUsersSection.style.display = this.isFaculty ? "block" : "none";
     }
   }
 
@@ -86,12 +102,9 @@ class UsersPage {
     // Load course users
     await this.loadCourseUsers();
 
-    // Load available staff and students (only for faculty)
+    // Load available users (only for faculty)
     if (this.isFaculty) {
-      await Promise.all([
-        this.loadAvailableStaff(),
-        this.loadAvailableStudents()
-      ]);
+      await this.loadAvailableUsers();
     }
   }
 
@@ -127,67 +140,90 @@ class UsersPage {
     }
   }
 
-  async loadAvailableStaff() {
-    const loadingElement = document.getElementById("staff-loading");
-    const listElement = document.getElementById("available-staff-list");
-    const emptyElement = document.getElementById("staff-empty");
+  async loadAvailableUsers() {
+    const loadingElement = document.getElementById("available-users-loading");
+    const listElement = document.getElementById("available-users-list");
+    const emptyElement = document.getElementById("available-users-empty");
 
     try {
       if (loadingElement) loadingElement.style.display = "flex";
       if (listElement) listElement.innerHTML = "";
       if (emptyElement) emptyElement.style.display = "none";
 
-      const response = await fetch(`/api/users/staff/not-in-course/${this.courseId}`);
+      const response = await fetch(`/api/users/all/not-in-course/${this.courseId}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
       if (data.success && data.users) {
-        this.availableStaff = data.users;
-        this.renderAvailableStaff();
+        this.availableUsers = data.users;
+        this.applyFilters();
       } else {
-        this.availableStaff = [];
-        this.renderAvailableStaff();
+        this.availableUsers = [];
+        this.applyFilters();
       }
     } catch (error) {
-      console.error("Error loading available staff:", error);
-      this.showError("Failed to load available staff");
+      console.error("Error loading available users:", error);
+      this.showError("Failed to load available users");
       if (emptyElement) emptyElement.style.display = "block";
     } finally {
       if (loadingElement) loadingElement.style.display = "none";
     }
   }
-
-  async loadAvailableStudents() {
-    const loadingElement = document.getElementById("students-loading");
-    const listElement = document.getElementById("available-students-list");
-    const emptyElement = document.getElementById("students-empty");
-
-    try {
-      if (loadingElement) loadingElement.style.display = "flex";
-      if (listElement) listElement.innerHTML = "";
-      if (emptyElement) emptyElement.style.display = "none";
-
-      const response = await fetch(`/api/users/students/not-in-course/${this.courseId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.success && data.users) {
-        this.availableStudents = data.users;
-        this.renderAvailableStudents();
-      } else {
-        this.availableStudents = [];
-        this.renderAvailableStudents();
-      }
-    } catch (error) {
-      console.error("Error loading available students:", error);
-      this.showError("Failed to load available students");
-      if (emptyElement) emptyElement.style.display = "block";
-    } finally {
-      if (loadingElement) loadingElement.style.display = "none";
+  
+  applyFilters() {
+    // Start with all available users
+    let filtered = [...this.availableUsers];
+    
+    // Apply role filter
+    if (this.roleFilter !== "all") {
+      filtered = filtered.filter(user => {
+        const userRole = this.getUserRole(user);
+        return userRole === this.roleFilter;
+      });
+    }
+    
+    // Apply search filter
+    if (this.searchTerm) {
+      filtered = filtered.filter(user => {
+        const name = (user.displayName || "").toLowerCase();
+        const email = (user.email || "").toLowerCase();
+        return name.includes(this.searchTerm) || email.includes(this.searchTerm);
+      });
+    }
+    
+    this.filteredUsers = filtered;
+    this.renderAvailableUsers();
+    this.updateResultsCount();
+  }
+  
+  getUserRole(user) {
+    // Check if role is already set (from API)
+    if (user.role) {
+      return user.role;
+    }
+    
+    // Determine from affiliation
+    const affiliation = user.affiliation || "";
+    const affiliations = Array.isArray(affiliation)
+      ? affiliation
+      : String(affiliation).split(',').map(a => a.trim());
+    
+    if (affiliations.includes('faculty')) {
+      return 'faculty';
+    } else if (affiliations.includes('staff')) {
+      return 'staff';
+    } else if (affiliations.includes('student') || affiliations.includes('affiliate')) {
+      return 'student';
+    }
+    return 'unknown';
+  }
+  
+  updateResultsCount() {
+    const countElement = document.getElementById("filtered-count");
+    if (countElement) {
+      countElement.textContent = this.filteredUsers.length;
     }
   }
 
@@ -269,14 +305,14 @@ class UsersPage {
     listElement.innerHTML = usersHTML;
   }
 
-  renderAvailableStaff() {
-    const listElement = document.getElementById("available-staff-list");
-    const emptyElement = document.getElementById("staff-empty");
-    const tableWrapper = document.getElementById("staff-table-wrapper");
+  renderAvailableUsers() {
+    const listElement = document.getElementById("available-users-list");
+    const emptyElement = document.getElementById("available-users-empty");
+    const tableWrapper = document.getElementById("available-users-table-wrapper");
 
     if (!listElement) return;
 
-    if (this.availableStaff.length === 0) {
+    if (this.filteredUsers.length === 0) {
       if (emptyElement) emptyElement.style.display = "block";
       if (tableWrapper) tableWrapper.style.display = "none";
       listElement.innerHTML = "";
@@ -286,11 +322,21 @@ class UsersPage {
     if (emptyElement) emptyElement.style.display = "none";
     if (tableWrapper) tableWrapper.style.display = "block";
 
-    const staffHTML = this.availableStaff.map(user => {
+    const usersHTML = this.filteredUsers.map(user => {
       const userId = user._id;
       const userIdStr = userId ? (userId.toString ? userId.toString() : String(userId)) : "";
       const displayName = user.displayName || "Unknown User";
       const email = user.email || "";
+      const role = this.getUserRole(user);
+
+      let roleBadge = '';
+      if (role === 'faculty') {
+        roleBadge = '<span class="badge badge-faculty"><i class="fas fa-graduation-cap"></i> Faculty</span>';
+      } else if (role === 'staff') {
+        roleBadge = '<span class="badge badge-staff"><i class="fas fa-user-tie"></i> Staff</span>';
+      } else if (role === 'student') {
+        roleBadge = '<span class="badge badge-student"><i class="fas fa-user-graduate"></i> Student</span>';
+      }
 
       return `
         <tr data-user-id="${userIdStr}">
@@ -305,72 +351,20 @@ class UsersPage {
           <td class="user-email-cell">${this.escapeHtml(email)}</td>
           <td>
             <div class="user-badges-cell">
-              <span class="badge badge-staff"><i class="fas fa-user-tie"></i> Staff</span>
+              ${roleBadge}
             </div>
           </td>
           <td class="actions-cell">
             <button class="btn btn-primary btn-sm" onclick="window.usersPage.addUser('${userIdStr}')" title="Add to course">
               <i class="fas fa-user-plus"></i>
-              Add to Course
+              Add
             </button>
           </td>
         </tr>
       `;
     }).join("");
 
-    listElement.innerHTML = staffHTML;
-  }
-
-  renderAvailableStudents() {
-    const listElement = document.getElementById("available-students-list");
-    const emptyElement = document.getElementById("students-empty");
-    const tableWrapper = document.getElementById("students-table-wrapper");
-
-    if (!listElement) return;
-
-    if (this.availableStudents.length === 0) {
-      if (emptyElement) emptyElement.style.display = "block";
-      if (tableWrapper) tableWrapper.style.display = "none";
-      listElement.innerHTML = "";
-      return;
-    }
-
-    if (emptyElement) emptyElement.style.display = "none";
-    if (tableWrapper) tableWrapper.style.display = "block";
-
-    const studentsHTML = this.availableStudents.map(user => {
-      const userId = user._id;
-      const userIdStr = userId ? (userId.toString ? userId.toString() : String(userId)) : "";
-      const displayName = user.displayName || "Unknown User";
-      const email = user.email || "";
-
-      return `
-        <tr data-user-id="${userIdStr}">
-          <td>
-            <div class="user-name-cell">
-              <div class="user-avatar-small">
-                <i class="fas fa-user"></i>
-              </div>
-              <span class="user-name">${this.escapeHtml(displayName)}</span>
-            </div>
-          </td>
-          <td class="user-email-cell">${this.escapeHtml(email)}</td>
-          <td>
-            <div class="user-badges-cell">
-              <span class="badge badge-student"><i class="fas fa-user-graduate"></i> Student</span>
-            </div>
-          </td>
-          <td class="actions-cell">
-            <button class="btn btn-primary btn-sm" onclick="window.usersPage.addUser('${userIdStr}')" title="Add to course">
-              <i class="fas fa-user-plus"></i>
-              Add to Course
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join("");
-
-    listElement.innerHTML = studentsHTML;
+    listElement.innerHTML = usersHTML;
   }
 
   async addUser(userId) {
@@ -397,10 +391,9 @@ class UsersPage {
       if (data.success) {
         this.showSuccess("User added to course successfully");
         // Reload all lists
-        await this.loadCourseUsers();
         await Promise.all([
-          this.loadAvailableStaff(),
-          this.loadAvailableStudents()
+          this.loadCourseUsers(),
+          this.loadAvailableUsers()
         ]);
       }
     } catch (error) {
@@ -440,10 +433,9 @@ class UsersPage {
           if (data.success) {
             this.showSuccess("User removed from course successfully");
             // Reload all lists
-            await this.loadCourseUsers();
             await Promise.all([
-              this.loadAvailableStaff(),
-              this.loadAvailableStudents()
+              this.loadCourseUsers(),
+              this.loadAvailableUsers()
             ]);
           }
         } catch (error) {
@@ -508,8 +500,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const response = await fetch("/api/current-user");
     const data = await response.json();
     if (data.success && data.user) {
-      // Store user ID globally for comparison
-      // Note: The user object from session might have _id as string
       window.currentUserId = data.user._id || data.user.id;
     }
   } catch (error) {

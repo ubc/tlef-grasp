@@ -122,6 +122,59 @@ router.get("/students/not-in-course/:courseId", async (req, res) => {
   }
 });
 
+// Get all users not in a course (combined - faculty, staff, students)
+router.get("/all/not-in-course/:courseId", async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    // Only faculty can view available users
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ 
+        success: false,
+        error: "Only faculty can view available users" 
+      });
+    }
+
+    // Check if user is in course
+    if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
+      return res.status(403).json({ 
+        success: false,
+        error: "User is not in course" 
+      });
+    }
+
+    // Get both staff and students not in course
+    const [staffUsers, studentUsers] = await Promise.all([
+      getStaffUsersNotInCourse(courseId),
+      getStudentsNotInCourse(courseId)
+    ]);
+
+    // Combine and add role info
+    const allUsers = [
+      ...staffUsers.map(u => ({ ...u, role: 'staff' })),
+      ...studentUsers.map(u => ({ ...u, role: 'student' }))
+    ];
+
+    // Sort alphabetically by displayName
+    allUsers.sort((a, b) => {
+      const nameA = (a.displayName || '').toLowerCase();
+      const nameB = (b.displayName || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    res.json({
+      success: true,
+      users: allUsers,
+    });
+  } catch (error) {
+    console.error("Error fetching all users not in course:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch users" 
+    });
+  }
+});
+
 // Add a user to a course
 router.post("/course/:courseId/add", express.json(), async (req, res) => {
   try {

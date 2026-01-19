@@ -56,21 +56,42 @@
                     </div>
                 </section>
 
-                <!-- Available Staff Section (only visible to faculty) -->
-                <section class="users-section" id="available-staff-section" style="display: none;">
+                <!-- Available Users Section (only visible to faculty) -->
+                <section class="users-section" id="available-users-section" style="display: none;">
                     <div class="section-header">
                         <h2>
                             <i class="fas fa-user-plus"></i>
-                            Available Staff Members
+                            Available Users
                         </h2>
-                        <p class="section-description">Staff members who can be added to this course</p>
+                        <p class="section-description">Users who can be added to this course</p>
                     </div>
-                    <div class="users-container">
-                        <div class="loading" id="staff-loading">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <span>Loading staff members...</span>
+                    
+                    <!-- Filters and Search -->
+                    <div class="filters-container">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="user-search" placeholder="Search by name or email...">
                         </div>
-                        <div class="table-wrapper" id="staff-table-wrapper" style="display: none;">
+                        <div class="filter-group">
+                            <label for="role-filter">Filter by Role:</label>
+                            <select id="role-filter">
+                                <option value="all">All Roles</option>
+                                <option value="faculty">Faculty</option>
+                                <option value="staff">Staff</option>
+                                <option value="student">Student</option>
+                            </select>
+                        </div>
+                        <div class="results-count">
+                            <span id="filtered-count">0</span> users found
+                        </div>
+                    </div>
+                    
+                    <div class="users-container">
+                        <div class="loading" id="available-users-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Loading available users...</span>
+                        </div>
+                        <div class="table-wrapper" id="available-users-table-wrapper" style="display: none;">
                             <table class="users-table">
                                 <thead>
                                     <tr>
@@ -80,50 +101,14 @@
                                         <th class="actions-column">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="available-staff-list">
-                                    <!-- Available staff will be populated here -->
+                                <tbody id="available-users-list">
+                                    <!-- Available users will be populated here -->
                                 </tbody>
                             </table>
                         </div>
-                        <div class="empty-state" id="staff-empty" style="display: none;">
+                        <div class="empty-state" id="available-users-empty" style="display: none;">
                             <i class="fas fa-user-check"></i>
-                            <p>All staff members have been added to this course.</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Available Students Section (only visible to faculty) -->
-                <section class="users-section" id="available-students-section" style="display: none;">
-                    <div class="section-header">
-                        <h2>
-                            <i class="fas fa-user-graduate"></i>
-                            Available Students
-                        </h2>
-                        <p class="section-description">Students who can be added to this course to view quizzes</p>
-                    </div>
-                    <div class="users-container">
-                        <div class="loading" id="students-loading">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <span>Loading students...</span>
-                        </div>
-                        <div class="table-wrapper" id="students-table-wrapper" style="display: none;">
-                            <table class="users-table">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Role</th>
-                                        <th class="actions-column">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="available-students-list">
-                                    <!-- Available students will be populated here -->
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="empty-state" id="students-empty" style="display: none;">
-                            <i class="fas fa-user-check"></i>
-                            <p>All students have been added to this course.</p>
+                            <p>No users available to add.</p>
                         </div>
                     </div>
                 </section>
