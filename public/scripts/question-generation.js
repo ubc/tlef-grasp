@@ -1,14 +1,53 @@
 // Question Generation JavaScript
 // State management and functionality for the 5-step question generation process
 
+// Constants
+const API_ENDPOINTS = {
+  material: '/api/material',
+  materialCourse: '/api/material/course',
+  objective: '/api/objective',
+  question: '/api/question',
+  questionSave: '/api/question/save',
+  quiz: '/api/quiz',
+  quizCourse: '/api/quiz/course',
+  ragLlmGenerateLO: '/api/rag-llm/generate-learning-objectives',
+};
+
+const STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
+
+/**
+ * Get the selected course from session storage
+ * @returns {Object|null} The selected course object or null
+ */
+function getSelectedCourse() {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the course ID from state or session storage
+ * @returns {string|null} The course ID or null
+ */
+function getCourseId() {
+  if (state.course?.id) return state.course.id;
+  const selectedCourse = getSelectedCourse();
+  return selectedCourse?.id || null;
+}
+
 let questionGenerator = null;
 let contentGenerator = null;
 
 // Main state object
+const selectedCourseData = getSelectedCourse();
 const state = {
   step: 1, // Step 1 is now Create Objectives (was step 3)
-  course: JSON.parse(sessionStorage.getItem("grasp-selected-course")) || "",
-  selectedCourse: JSON.parse(sessionStorage.getItem("grasp-selected-course")).courseName || "", // Course name for display
+  course: selectedCourseData || '',
+  selectedCourse: selectedCourseData?.courseName || '', // Course name for display
   objectiveGroups: [], // Step 1: Create Objectives
   // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
@@ -39,36 +78,18 @@ const BLOOMLEVELS = [
 ];
 
 // Initialize the application
-document.addEventListener("DOMContentLoaded", async function () {
-  console.log("DOM Content Loaded - Starting initialization...");
-
+document.addEventListener('DOMContentLoaded', async function () {
   // Initialize GRASP navigation first to create sidebar
   if (window.GRASPNavigation) {
-    console.log("GRASPNavigation available, creating instance...");
     new window.GRASPNavigation();
-  } else {
-    console.error("GRASPNavigation not available!");
   }
 
-  console.log("Calling initializeNavigation...");
   initializeNavigation();
-
-  console.log("Calling initializeEventListeners...");
   initializeEventListeners();
-
-  console.log("Initializing content and question generators...");
   initializeModules();
-
-  console.log("Loading course data...");
   await loadCourseData();
-
-  console.log("Checking for course materials...");
   await checkCourseMaterials();
-
-  console.log("Calling updateUI...");
   updateUI();
-
-  console.log("Initialization complete!");
 });
 
 // ===== MODULE INITIALIZATION =====
@@ -78,8 +99,7 @@ async function loadCourseData() {
     if (!state.selectedCourse) {
       showNoCourseSelectedMessage();
     }
-  } catch (error) {
-    console.error("Error loading course data:", error);
+  } catch {
     showNoCourseSelectedMessage();
   }
 }
@@ -104,71 +124,44 @@ function showNoCourseSelectedMessage() {
 
 
 async function checkCourseMaterials() {
+  const stepContent = document.getElementById('step-content');
+  const noMaterialsMessage = document.getElementById('no-materials-message');
+
+  const showContent = (hasContent) => {
+    if (stepContent) stepContent.style.display = hasContent ? 'block' : 'none';
+    if (noMaterialsMessage) noMaterialsMessage.style.display = hasContent ? 'none' : 'block';
+  };
+
   try {
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    if (!selectedCourse || !selectedCourse.id) {
+    const selectedCourse = getSelectedCourse();
+    if (!selectedCourse?.id) {
       showNoCourseSelectedMessage();
       return;
     }
 
-    // Check if course has materials
-    const response = await fetch(`/api/material/course/${selectedCourse.id}`);
+    const response = await fetch(`${API_ENDPOINTS.materialCourse}/${selectedCourse.id}`);
     const data = await response.json();
 
-    if (data.success && data.materials && data.materials.length > 0) {
-      console.log("Course has materials:", data.materials.length);
-      // Show step content, hide no materials message
-      const stepContent = document.getElementById("step-content");
-      const noMaterialsMessage = document.getElementById("no-materials-message");
-      if (stepContent) stepContent.style.display = "block";
-      if (noMaterialsMessage) noMaterialsMessage.style.display = "none";
-
-    } else {
-      console.log("No materials found for course");
-      // Show no materials message, hide step content
-      const stepContent = document.getElementById("step-content");
-      const noMaterialsMessage = document.getElementById("no-materials-message");
-      if (stepContent) stepContent.style.display = "none";
-      if (noMaterialsMessage) noMaterialsMessage.style.display = "block";
-    }
+    const hasContent = data.success && data.materials && data.materials.length > 0;
+    showContent(hasContent);
   } catch (error) {
-    console.error("Error checking course materials:", error);
-    // On error, show no materials message
-    const stepContent = document.getElementById("step-content");
-    const noMaterialsMessage = document.getElementById("no-materials-message");
-    if (stepContent) stepContent.style.display = "none";
-    if (noMaterialsMessage) noMaterialsMessage.style.display = "block";
+    console.error('Error checking course materials:', error);
+    showContent(false);
   }
 }
 
 function initializeModules() {
-  console.log("Initializing modules...");
-
   try {
-    // Initialize content generator
     if (window.ContentGenerator) {
       contentGenerator = new window.ContentGenerator();
-      console.log("Content generator created:", contentGenerator);
-    } else {
-      console.error("ContentGenerator class not found in window object");
     }
 
-    // Initialize question generator with content generator
-    if (window.QuestionGenerator) {
-      if (!contentGenerator) {
-        console.error("ContentGenerator must be initialized before QuestionGenerator");
-        return;
-      }
+    if (window.QuestionGenerator && contentGenerator) {
       questionGenerator = new window.QuestionGenerator(contentGenerator);
-      console.log("Question generator created:", questionGenerator);
-    } else {
-      console.error("QuestionGenerator class not found in window object");
     }
-
-    console.log("Modules initialized successfully");
   } catch (error) {
-    console.error("Error initializing modules:", error);
-    showToast("Failed to initialize required modules. Please refresh the page.", "error");
+    console.error('Error initializing modules:', error);
+    showToast('Failed to initialize required modules. Please refresh the page.', 'error');
   }
 }
 
@@ -178,13 +171,8 @@ function initializeModules() {
 // ===== NAVIGATION FUNCTIONS =====
 
 function initializeNavigation() {
-  console.log("Initializing navigation...");
-  // Initialize GRASP navigation
   if (window.GRASPNavigation) {
-    console.log("GRASPNavigation found, creating instance...");
     new window.GRASPNavigation();
-  } else {
-    console.error("GRASPNavigation not found!");
   }
 }
 
@@ -209,7 +197,6 @@ function initializeEventListeners() {
 }
 
 function goToNextStep() {
-  console.log("goToNextStep called, current step:", state.step);
 
   if (state.step === 3) {
     // Final step - save questions to quiz
@@ -221,18 +208,11 @@ function goToNextStep() {
     const currentStep = state.step;
     const nextStep = currentStep + 1;
 
-    console.log("Moving from step", currentStep, "to step", nextStep);
-
     // Validate current step before proceeding
     if (validateCurrentStep()) {
-      console.log("Step validation passed, updating step to:", nextStep);
       state.step = nextStep;
       updateUI();
-
-      // Handle step-specific actions
       handleStepTransition(currentStep, nextStep);
-    } else {
-      console.log("Step validation failed for step:", currentStep);
     }
   }
 }
@@ -245,8 +225,6 @@ function goToPreviousStep() {
 }
 
 function validateCurrentStep() {
-  console.log("validateCurrentStep called for step:", state.step);
-
   switch (state.step) {
     case 1:
       // Validation: Each learning objective must have at least 5 questions total
@@ -303,62 +281,29 @@ function validateCurrentStep() {
         
         // Re-render to show/hide inline Bloom validation messages
         renderObjectiveGroups();
-        
-        console.log("Step 1 validation errors:", validationErrors);
         return false;
       }
       
       // Re-render to hide any validation messages if validation passes
       renderObjectiveGroups();
-
-      const step1Valid = true;
-      console.log(
-        "Step 1 validation:",
-        step1Valid,
-        "objectiveGroups:",
-        state.objectiveGroups.length
-      );
-      return step1Valid;
+      return true;
     case 2:
       // Step 2 validation - check if we have question groups with questions
-      const step2Valid =
-        state.questionGroups.length > 0 &&
+      return state.questionGroups.length > 0 &&
         state.questionGroups.some((group) =>
           group.los.some((lo) => lo.questions.length > 0)
         );
-      console.log(
-        "Step 2 validation:",
-        step2Valid,
-        "questionGroups:",
-        state.questionGroups.length
-      );
-      return step2Valid;
     default:
-      console.log("Default case, returning true");
       return true;
   }
 }
 
 function handleStepTransition(fromStep, toStep) {
-  console.log(
-    "handleStepTransition called from step",
-    fromStep,
-    "to step",
-    toStep
-  );
-
   switch (toStep) {
     case 2:
-      console.log("Initializing Step 2 (Generate Questions)");
       step2();
       break;
     case 3:
-      console.log("Initializing Step 3 (Save Quiz to Question Bank)");
-      initializeQuizSelection();
-      loadQuizzesForCourse();
-      break;
-    case 3:
-      console.log("Initializing Step 3 (Save Quiz to Question Bank)");
       initializeQuizSelection();
       loadQuizzesForCourse();
       break;
@@ -368,7 +313,6 @@ function handleStepTransition(fromStep, toStep) {
 // ===== UI UPDATE FUNCTIONS =====
 
 function updateUI() {
-  console.log("updateUI called for step:", state.step);
   updateStepper();
   updatePageTitle();
   updateStepContent();
@@ -482,9 +426,8 @@ async function initializeAddObjectivesDropdown() {
 
     // Fetch learning objectives from API
     try {
-      // Get courseId from state.course
-      const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-      const response = await fetch(`/api/objective?courseId=${encodeURIComponent(courseId)}`);
+      const courseId = getCourseId();
+      const response = await fetch(`${API_ENDPOINTS.objective}?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       if (data.success && data.objectives) {
@@ -786,17 +729,17 @@ async function loadMaterialsForModal(objectiveId = null) {
   if (materialsEmpty) materialsEmpty.style.display = "none";
 
   try {
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    if (!selectedCourse || !selectedCourse.id) {
-      if (loadingDiv) loadingDiv.style.display = "none";
-      if (materialsEmpty) materialsEmpty.style.display = "block";
+    const selectedCourse = getSelectedCourse();
+    if (!selectedCourse?.id) {
+      if (loadingDiv) loadingDiv.style.display = 'none';
+      if (materialsEmpty) materialsEmpty.style.display = 'block';
       return;
     }
 
     // Load materials and optionally get attached materials for edit mode
     const [materialsResponse, objectiveMaterialsResponse] = await Promise.all([
-      fetch(`/api/material/course/${selectedCourse.id}`),
-      objectiveId ? fetch(`/api/objective/${objectiveId}/materials`) : Promise.resolve(null)
+      fetch(`${API_ENDPOINTS.materialCourse}/${selectedCourse.id}`),
+      objectiveId ? fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`) : Promise.resolve(null)
     ]);
 
     const materialsData = await materialsResponse.json();
@@ -970,8 +913,7 @@ async function handleCustomObjectiveSubmission() {
   }, 30000);
 
   try {
-    // Get courseId from state.course (which is stored as {id: courseId, name: courseName})
-    const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+    const courseId = getCourseId();
     
     const requestBody = {
       name: nameInput.value.trim(),
@@ -980,44 +922,31 @@ async function handleCustomObjectiveSubmission() {
       courseId: courseId,
     };
 
-    console.log(`${mode === "edit" ? "Updating" : "Creating"} learning objective:`, {
-      name: nameInput.value.trim(),
-      granularCount: granularObjectives.length,
-      mode: mode,
-      objectiveId: objectiveId
-    });
-
     // Create a timeout promise
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error("Request timeout after 25 seconds")), 25000);
     });
 
     // Save to database with timeout - use PUT for edit, POST for create
-    const url = mode === "edit" && objectiveId
-      ? `/api/objective/${objectiveId}`
-      : "/api/objective";
-    const method = mode === "edit" ? "PUT" : "POST";
-
-    console.log(`Sending ${method} request to ${url}...`);
+    const url = mode === 'edit' && objectiveId
+      ? `${API_ENDPOINTS.objective}/${objectiveId}`
+      : API_ENDPOINTS.objective;
+    const method = mode === 'edit' ? 'PUT' : 'POST';
 
     const fetchPromise = fetch(url, {
       method: method,
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
     }).catch((fetchError) => {
-      console.error("Fetch error:", fetchError);
       throw new Error(`Network error: ${fetchError.message}`);
     });
 
-    console.log("Fetch request sent, waiting for response...");
     let response;
     try {
       response = await Promise.race([fetchPromise, timeoutPromise]);
-      console.log("Response received:", response.status, response.statusText);
     } catch (raceError) {
-      console.error("Request failed or timed out:", raceError);
       throw raceError;
     }
 
@@ -1025,20 +954,15 @@ async function handleCustomObjectiveSubmission() {
     let data;
     try {
       const responseText = await response.text();
-      console.log("Response text:", responseText);
       data = responseText ? JSON.parse(responseText) : {};
-    } catch (parseError) {
-      console.error("Error parsing response:", parseError);
-      throw new Error("Invalid response from server");
+    } catch {
+      throw new Error('Invalid response from server');
     }
 
     if (!response.ok || !data.success) {
-      const errorMessage = data.error || `Failed to ${mode === "edit" ? "update" : "create"} learning objective: ${response.status}`;
-      console.error("Error response:", errorMessage);
+      const errorMessage = data.error || `Failed to ${mode === 'edit' ? 'update' : 'create'} learning objective: ${response.status}`;
       throw new Error(errorMessage);
     }
-
-    console.log("Response data:", data);
 
     const objectiveName = nameInput.value.trim();
 
@@ -1244,29 +1168,29 @@ async function loadAIMaterialsForModal() {
   if (materialsEmpty) materialsEmpty.style.display = "none";
 
   try {
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    if (!selectedCourse || !selectedCourse.id) {
-      if (loadingDiv) loadingDiv.style.display = "none";
-      if (materialsEmpty) materialsEmpty.style.display = "block";
+    const selectedCourse = getSelectedCourse();
+    if (!selectedCourse?.id) {
+      if (loadingDiv) loadingDiv.style.display = 'none';
+      if (materialsEmpty) materialsEmpty.style.display = 'block';
       return;
     }
 
-    const response = await fetch(`/api/material/course/${selectedCourse.id}`);
+    const response = await fetch(`${API_ENDPOINTS.materialCourse}/${selectedCourse.id}`);
     const data = await response.json();
 
-    if (loadingDiv) loadingDiv.style.display = "none";
+    if (loadingDiv) loadingDiv.style.display = 'none';
 
     if (data.success && data.materials && data.materials.length > 0) {
       displayAIMaterialsInModal(data.materials);
-      if (materialsList) materialsList.style.display = "block";
+      if (materialsList) materialsList.style.display = 'block';
       if (generateBtn) generateBtn.disabled = false;
     } else {
-      if (materialsEmpty) materialsEmpty.style.display = "block";
+      if (materialsEmpty) materialsEmpty.style.display = 'block';
     }
   } catch (error) {
-    console.error("Error loading materials:", error);
-    if (loadingDiv) loadingDiv.style.display = "none";
-    if (materialsEmpty) materialsEmpty.style.display = "block";
+    console.error('Error loading materials:', error);
+    if (loadingDiv) loadingDiv.style.display = 'none';
+    if (materialsEmpty) materialsEmpty.style.display = 'block';
   }
 }
 
@@ -1363,15 +1287,15 @@ async function handleAIGenerateObjectives() {
     if (count >= 1 && count <= 10) {
       objectivesCount = count;
     } else {
-      showToast("Please enter a number between 1 and 10", "warning");
+      showToast('Please enter a number between 1 and 10', 'warning');
       return;
     }
   }
 
   // Get course info
-  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-  if (!selectedCourse || !selectedCourse.id) {
-    showToast("No course selected", "error");
+  const selectedCourse = getSelectedCourse();
+  if (!selectedCourse?.id) {
+    showToast('No course selected', 'error');
     return;
   }
 
@@ -1380,7 +1304,7 @@ async function handleAIGenerateObjectives() {
     generateBtn.disabled = true;
     generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
   }
-  const regenerateBtn = document.getElementById("ai-regenerate-btn");
+  const regenerateBtn = document.getElementById('ai-regenerate-btn');
   if (regenerateBtn) {
     regenerateBtn.disabled = true;
     regenerateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Regenerating...';
@@ -1401,10 +1325,10 @@ async function handleAIGenerateObjectives() {
   if (saveBtn) saveBtn.style.display = "none";
 
   try {
-    const response = await fetch("/api/rag-llm/generate-learning-objectives", {
-      method: "POST",
+    const response = await fetch(API_ENDPOINTS.ragLlmGenerateLO, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         courseId: selectedCourse.id,
@@ -1417,25 +1341,25 @@ async function handleAIGenerateObjectives() {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || "Failed to generate learning objectives");
+      throw new Error(data.error || 'Failed to generate learning objectives');
     }
 
     if (data.success && data.objectives && data.objectives.length > 0) {
       generatedObjectives = data.objectives;
       displayGeneratedObjectives(data.objectives);
-      if (statusDiv) statusDiv.style.display = "none";
-      if (generatedContainer) generatedContainer.style.display = "block";
-      if (generateBtn) generateBtn.style.display = "none";
-      const regenerateBtn = document.getElementById("ai-regenerate-btn");
-      if (regenerateBtn) regenerateBtn.style.display = "inline-block";
-      if (saveBtn) saveBtn.style.display = "inline-block";
-      showToast(`Generated ${data.objectives.length} learning objective(s)`, "success");
+      if (statusDiv) statusDiv.style.display = 'none';
+      if (generatedContainer) generatedContainer.style.display = 'block';
+      if (generateBtn) generateBtn.style.display = 'none';
+      const regenerateBtn = document.getElementById('ai-regenerate-btn');
+      if (regenerateBtn) regenerateBtn.style.display = 'inline-block';
+      if (saveBtn) saveBtn.style.display = 'inline-block';
+      showToast(`Generated ${data.objectives.length} learning objective(s)`, 'success');
     } else {
-      throw new Error("No objectives generated");
+      throw new Error('No objectives generated');
     }
   } catch (error) {
-    console.error("Error generating learning objectives:", error);
-    showToast(error.message || "Failed to generate learning objectives", "error");
+    console.error('Error generating learning objectives:', error);
+    showToast(error.message || 'Failed to generate learning objectives', 'error');
     if (statusDiv) statusDiv.style.display = "none";
   } finally {
     if (generateBtn) {
@@ -1566,18 +1490,18 @@ async function handleAISaveObjectives() {
   }
 
   // Get selected materials
-  const materialCheckboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  const materialCheckboxes = document.querySelectorAll('.ai-material-checkbox:checked');
   const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
 
   // Get course info
-  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-  if (!selectedCourse || !selectedCourse.id) {
-    showToast("No course selected", "error");
+  const selectedCourse = getSelectedCourse();
+  if (!selectedCourse?.id) {
+    showToast('No course selected', 'error');
     return;
   }
 
   // Disable button
-  const originalButtonText = saveBtn ? saveBtn.innerHTML : "Save Selected";
+  const originalButtonText = saveBtn ? saveBtn.innerHTML : 'Save Selected';
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
@@ -1596,10 +1520,10 @@ async function handleAISaveObjectives() {
         courseId: selectedCourse.id,
       };
 
-      const response = await fetch("/api/objective", {
-        method: "POST",
+      const response = await fetch(API_ENDPOINTS.objective, {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
       });
@@ -1792,9 +1716,8 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
   } else {
     // Fetch granular objectives from API
     try {
-      // Get courseId from state.course
-      const courseId = state.course ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-      const response = await fetch(`/api/objective/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
+      const courseId = getCourseId();
+      const response = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
       const data = await response.json();
 
       let granularObjectives = [];
@@ -1935,27 +1858,13 @@ function deleteGranularObjective(groupId, itemId) {
 // ===== GRANULAR SELECTION FUNCTIONS =====
 
 function toggleGranularSelection(groupId, itemId) {
-  console.log(
-    "toggleGranularSelection called with groupId:",
-    groupId,
-    "itemId:",
-    itemId
-  );
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group) {
-    console.error("Group not found:", groupId);
-    return;
-  }
+  if (!group) return;
 
   const item = group.items.find((i) => i.id === itemId);
-  if (!item) {
-    console.error("Item not found:", itemId);
-    return;
-  }
+  if (!item) return;
 
-  console.log("Found item:", item, "current selected state:", item.selected);
   item.selected = !item.selected;
-  console.log("Item selected state changed to:", item.selected);
 
   // Update granular toolbar visibility and counts
   updateGranularToolbar(groupId);
@@ -1996,12 +1905,8 @@ function selectAllGranularInGroup(groupId) {
 }
 
 function updateGranularToolbar(groupId) {
-  console.log("updateGranularToolbar called with groupId:", groupId);
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group) {
-    console.error("Group not found for toolbar update:", groupId);
-    return;
-  }
+  if (!group) return;
 
   const toolbar = document.getElementById(`granular-toolbar-${groupId}`);
   const selectionCount = document.querySelector(
@@ -2011,18 +1916,10 @@ function updateGranularToolbar(groupId) {
     `#granular-toolbar-${groupId} .select-all-granular-checkbox`
   );
 
-  console.log("Toolbar elements found:", {
-    toolbar: !!toolbar,
-    selectionCount: !!selectionCount,
-    selectAllCheckbox: !!selectAllCheckbox,
-  });
-
   if (toolbar && selectionCount && selectAllCheckbox) {
     const selectedCount = group.items.filter((item) => item.selected).length;
     const allSelected =
       group.items.length > 0 && group.items.every((item) => item.selected);
-
-    console.log("Selection state:", { selectedCount, allSelected });
 
     // Show/hide toolbar based on selection
     toolbar.style.display = selectedCount > 0 ? "flex" : "none";
@@ -2034,14 +1931,6 @@ function updateGranularToolbar(groupId) {
     selectAllCheckbox.checked = allSelected;
     selectAllCheckbox.indeterminate = selectedCount > 0 && !allSelected;
 
-    console.log("Toolbar updated, display set to:", toolbar.style.display);
-  } else {
-    console.error("Some toolbar elements not found for group:", groupId);
-    console.log("Available elements:", {
-      toolbar: toolbar,
-      selectionCount: selectionCount,
-      selectAllCheckbox: selectAllCheckbox,
-    });
   }
 }
 
@@ -2070,25 +1959,12 @@ function deleteSelectedGranular(groupId) {
 // ===== GRANULARIZATION FUNCTIONS =====
 
 function showGranularizationModal(groupId) {
-  console.log("showGranularizationModal called with groupId:", groupId);
-  console.log("GroupId type:", typeof groupId, "Value:", groupId);
-  console.log(
-    "Current state.objectiveGroups:",
-    state.objectiveGroups.map((g) => ({ id: g.id, type: typeof g.id }))
-  );
-
-  const modal = document.getElementById("granularization-modal");
+  const modal = document.getElementById('granularization-modal');
   if (modal) {
-    modal.style.display = "flex";
+    modal.style.display = 'flex';
     modal.dataset.groupId = groupId;
-    console.log("Modal displayed, groupId set to:", modal.dataset.groupId);
-    console.log("Modal dataset groupId type:", typeof modal.dataset.groupId);
-
-    // Focus the modal
-    const closeBtn = document.getElementById("granularization-modal-close");
+    const closeBtn = document.getElementById('granularization-modal-close');
     if (closeBtn) closeBtn.focus();
-  } else {
-    console.error("Granularization modal not found!");
   }
 }
 
@@ -2101,64 +1977,31 @@ function hideGranularizationModal() {
 }
 
 function confirmGranularization() {
-  console.log("confirmGranularization called");
-  const modal = document.getElementById("granularization-modal");
+  const modal = document.getElementById('granularization-modal');
   const groupId = parseInt(modal.dataset.groupId);
 
-  console.log("Modal groupId (raw):", modal.dataset.groupId);
-  console.log("Modal groupId (parsed):", groupId);
-
-  if (!groupId || isNaN(groupId)) {
-    console.error("Invalid groupId found in modal:", modal.dataset.groupId);
-    return;
-  }
+  if (!groupId || isNaN(groupId)) return;
 
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group) {
-    console.error("Group not found for ID:", groupId);
-    console.log(
-      "Available group IDs:",
-      state.objectiveGroups.map((g) => g.id)
-    );
-    return;
-  }
-
-  console.log("Found group:", group);
-  console.log("Group ID type:", typeof group.id, "Value:", group.id);
+  if (!group) return;
 
   const selectedItems = group.items.filter((item) => item.selected);
-  console.log("Selected items:", selectedItems);
-
-  if (selectedItems.length === 0) {
-    console.error("No items selected");
-    return;
-  }
+  if (selectedItems.length === 0) return;
 
   // Get modal options
   const countPerItem = parseInt(
     document.querySelector('input[name="granular-count"]:checked').value
   );
-  const useDefaults = document.getElementById("use-defaults").checked;
-
-  console.log(
-    "Modal options - countPerItem:",
-    countPerItem,
-    "useDefaults:",
-    useDefaults
-  );
+  const useDefaults = document.getElementById('use-defaults').checked;
 
   // Create sub-LOs for each selected item
   let totalSubLOs = 0;
 
   selectedItems.forEach((item) => {
     const subLOs = createSubLOs(item, countPerItem, useDefaults);
-    console.log("Created subLOs for item", item.id, ":", subLOs);
     group.items.push(...subLOs);
     totalSubLOs += subLOs.length;
   });
-
-  console.log("Total subLOs created:", totalSubLOs);
-  console.log("Group items after creation:", group.items);
 
   // Clear selection
   group.items.forEach((item) => (item.selected = false));
@@ -2295,15 +2138,8 @@ function createObjectiveGroup(group) {
             <p>No granular objectives yet</p>
         </div>
     `
-      : "";
+      : '';
 
-  console.log(
-    "Creating objective group HTML for group:",
-    group.id,
-    "with",
-    group.items.length,
-    "items"
-  );
   groupElement.innerHTML = `
         <div class="objective-group__header">
             <div class="objective-group__header-left">
@@ -2575,10 +2411,9 @@ function initializeModals() {
     customModalCancel.addEventListener("click", () => hideModal(customModal));
   }
   if (customModalSave) {
-    customModalSave.addEventListener("click", (e) => {
+    customModalSave.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      console.log("Create button clicked");
       handleCustomObjectiveSubmission();
     });
   }
@@ -2737,8 +2572,6 @@ function renderKatex() {
 // ===== STEP 3: SAVE QUIZ TO QUESTION BANK FUNCTIONS =====
 
 function initializeQuizSelection() {
-  console.log("initializeQuizSelection called");
-  
   // Reset state
   selectedQuizId = null;
   isCreatingNewQuiz = false;
@@ -2747,7 +2580,7 @@ function initializeQuizSelection() {
   setupQuizSelectionListeners();
   
   // Switch to select tab by default
-  switchQuizTab("select");
+  switchQuizTab('select');
 }
 
 function setupQuizSelectionListeners() {
@@ -2826,23 +2659,18 @@ function setGenerationUI(showLoading) {
 
 // Generate questions from uploaded content
 async function generateQuestionsFromContent() {
-  console.log("=== GENERATING QUESTIONS FROM CONTENT ===");
-  console.log("Objective groups:", state.objectiveGroups.length);
-
   // Check if questionGenerator is initialized
   if (!questionGenerator) {
-    console.error("QuestionGenerator is not initialized. Attempting to initialize...");
     try {
       // Try to initialize if not already done
       if (!contentGenerator) {
         contentGenerator = new window.ContentGenerator();
       }
       questionGenerator = new window.QuestionGenerator(contentGenerator);
-      console.log("QuestionGenerator initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize QuestionGenerator:", error);
+      console.error('Failed to initialize QuestionGenerator:', error);
       setGenerationUI(false);
-      showToast("Failed to initialize question generator. Please refresh the page.", "error");
+      showToast('Failed to initialize question generator. Please refresh the page.', 'error');
       return;
     }
   }
@@ -2857,17 +2685,13 @@ async function generateQuestionsFromContent() {
       state.objectiveGroups
     );
 
-    console.log("Generated questions:", questions.length);
-
     // Convert questions to question groups format
     state.questionGroups = convertQuestionsToGroups(questions);
-
-    console.log("Question groups created:", state.questionGroups.length);
 
     // Update the UI
     renderStep2();
   } catch (error) {
-    console.error("Failed to generate questions from content:", error);
+    console.error('Failed to generate questions from content:', error);
 
     // Show error message in UI
     showQuestionGenerationError(error.message);
@@ -2929,7 +2753,6 @@ function showQuestionGenerationError(errorMessage) {
 
 // Retry question generation
 function retryQuestionGeneration() {
-  console.log("Retrying question generation...");
   generateQuestionsFromContent();
 }
 
@@ -3008,29 +2831,19 @@ function convertQuestionsToGroups(questions) {
     }
   );
 
-  console.log("groups", groups);
-
   return groups;
 }
 
 function step2() {
-  console.log("step2 called");
-
   // Clear any existing questions
   state.questionGroups = [];
 
   // Generate questions from uploaded content instead of loading sample data
   if (state.objectiveGroups.length > 0) {
-    console.log("Generating questions from uploaded content...");
     generateQuestionsFromContent();
   } else {
-    console.log("No content available for question generation");
     // Load sample data only if no real content
     state.questionGroups = JSON.parse(JSON.stringify(SAMPLE_QUESTION_DATA));
-    console.log(
-      "Sample data loaded, questionGroups length:",
-      state.questionGroups.length
-    );
   }
 
   // Set up event listeners for Step 2
@@ -3243,8 +3056,6 @@ function setupQuestionCardListeners() {
 
 // ===== STEP 4 EVENT HANDLERS =====
 async function handleRegenerateAll() {
-  console.log("=== REGENERATING ALL QUESTIONS FROM CONTENT ===");
-
   const ui = getStep2UIElements();
 
   // Update button state
@@ -3263,10 +3074,9 @@ async function handleRegenerateAll() {
     // Generate new questions from content
     await generateQuestionsFromContent();
 
-    console.log("Questions regenerated successfully");
-    showToast("Questions regenerated from uploaded content", "success");
+    showToast('Questions regenerated from uploaded content', 'success');
   } catch (error) {
-    console.error("Failed to regenerate questions:", error);
+    console.error('Failed to regenerate questions:', error);
     showQuestionGenerationError(error.message);
   } finally {
     // Restore button state
@@ -3283,30 +3093,24 @@ async function handleRegenerateAll() {
 
 
 async function handleAddQuestionToBank(question) {
-  console.log("Adding question to question bank:", question);
-  // Adding questions to question bank.
   try {
-    const response = await fetch(`/api/question/save`, {
-      method: "POST",
+    const response = await fetch(API_ENDPOINTS.questionSave, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         question: question,
-        courseId: state.course.id ? state.course.id : JSON.parse(sessionStorage.getItem("grasp-selected-course")).id,
+        courseId: getCourseId(),
       }),
     });
 
     if (response.ok) {
-      showToast(
-        `Added 1 question to Question Bank`,
-        "success"
-      );
-
+      showToast('Added 1 question to Question Bank', 'success');
     }
   } catch (error) {
-    console.error("Failed to add question to Question Bank:", error);
-    showToast("Failed to add question to Question Bank", "error");
+    console.error('Failed to add question to Question Bank:', error);
+    showToast('Failed to add question to Question Bank', 'error');
   }
 }
 
@@ -3596,42 +3400,41 @@ let isCreatingNewQuiz = false;
 
 
 async function loadQuizzesForCourse() {
-  const dropdown = document.getElementById("quiz-select-dropdown");
-  const emptyMessage = document.getElementById("quiz-select-empty");
+  const dropdown = document.getElementById('quiz-select-dropdown');
+  const emptyMessage = document.getElementById('quiz-select-empty');
   
   if (!dropdown) return;
   
   try {
-    const courseId = state.course.id || JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-    const response = await fetch(`/api/quiz/course/${courseId}`);
+    const courseId = getCourseId();
+    const response = await fetch(`${API_ENDPOINTS.quizCourse}/${courseId}`);
     
     if (!response.ok) {
-      throw new Error("Failed to load quizzes");
+      throw new Error('Failed to load quizzes');
     }
     
     const data = await response.json();
     const quizzes = data.quizzes || [];
     
-    // Clear existing options
-    dropdown.innerHTML = "";
+    dropdown.innerHTML = '';
     
     if (quizzes.length === 0) {
       dropdown.innerHTML = '<option value="">No quizzes available</option>';
-      if (emptyMessage) emptyMessage.style.display = "block";
+      if (emptyMessage) emptyMessage.style.display = 'block';
     } else {
       dropdown.innerHTML = '<option value="">Select a quiz...</option>';
       quizzes.forEach((quiz) => {
-        const option = document.createElement("option");
+        const option = document.createElement('option');
         option.value = quiz._id;
         option.textContent = quiz.name;
         dropdown.appendChild(option);
       });
-      if (emptyMessage) emptyMessage.style.display = "none";
+      if (emptyMessage) emptyMessage.style.display = 'none';
     }
   } catch (error) {
-    console.error("Error loading quizzes:", error);
+    console.error('Error loading quizzes:', error);
     dropdown.innerHTML = '<option value="">Error loading quizzes</option>';
-    showToast("Failed to load quizzes", "error");
+    showToast('Failed to load quizzes', 'error');
   }
 }
 
@@ -3677,23 +3480,23 @@ async function handleSaveToQuiz() {
         return;
       }
       
-      const courseId = state.course.id || JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+      const courseId = getCourseId();
       
-      const response = await fetch("/api/quiz", {
-        method: "POST",
+      const response = await fetch(API_ENDPOINTS.quiz, {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           courseId: courseId,
           name: nameInput.value.trim(),
-          description: descriptionInput.value.trim() || "",
+          description: descriptionInput.value.trim() || '',
         }),
       });
       
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to create quiz");
+        throw new Error(error.error || 'Failed to create quiz');
       }
       
       const data = await response.json();
@@ -3733,18 +3536,18 @@ async function handleSaveToQuiz() {
     }
     
     // Add questions to quiz
-    const courseId = state.course.id || JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
+    const courseId = getCourseId();
     
-    const continueBtn = document.getElementById("continue-btn");
+    const continueBtn = document.getElementById('continue-btn');
     if (continueBtn) {
       continueBtn.disabled = true;
-      continueBtn.textContent = "Saving...";
+      continueBtn.textContent = 'Saving...';
     }
     
-    const response = await fetch(`/api/quiz/${quizId}/questions`, {
-      method: "POST",
+    const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}/questions`, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         courseId: courseId,
@@ -3754,7 +3557,7 @@ async function handleSaveToQuiz() {
     
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to add questions to quiz");
+      throw new Error(error.error || 'Failed to add questions to quiz');
     }
     
     const data = await response.json();
