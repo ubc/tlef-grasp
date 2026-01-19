@@ -211,6 +211,9 @@ class GRASPNavigation {
         <div class="course-selection-section">
           <div class="current-course-display" id="currentCourseDisplay">
             <label style="margin-bottom: 8px; display: block; font-size: 12px; color: rgba(255, 255, 255, 0.7);">Current Course:</label>
+            <select class="course-dropdown" id="courseDropdown" style="display: none;">
+              <option value="">Select a course...</option>
+            </select>
             <div class="current-course-name" id="currentCourseName">Loading...</div>
           </div>
         </div>
@@ -484,6 +487,44 @@ class GRASPNavigation {
         word-wrap: break-word;
       }
 
+      .course-dropdown {
+        width: 100%;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        font-weight: 500;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='white' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 35px;
+      }
+
+      .course-dropdown:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+
+      .course-dropdown:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+      }
+
+      .course-dropdown option {
+        background: #2c3e50;
+        color: white;
+        padding: 10px;
+      }
+
       /* Navigation Menu */
       .nav-menu {
         list-style: none;
@@ -650,29 +691,108 @@ class GRASPNavigation {
 
   async loadCourseSelector() {
     const currentCourseName = document.getElementById("currentCourseName");
+    const courseDropdown = document.getElementById("courseDropdown");
     
     try {
+      // Fetch courses based on user role
+      const apiEndpoint = this.isStudent ? '/api/student/courses' : '/api/courses/my-courses';
+      const response = await fetch(apiEndpoint);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch courses');
+      }
+      
+      const data = await response.json();
+      const courses = data.courses || [];
+      
+      // Get currently selected course from session
       const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
       
-      if (selectedCourse && selectedCourse.name) {
-        // Display the current course name
+      if (courses.length > 1) {
+        // Multiple courses - show dropdown
+        if (courseDropdown) {
+          courseDropdown.innerHTML = '<option value="">Select a course...</option>';
+          courses.forEach(course => {
+            const courseId = course._id || course.id;
+            const courseName = course.name || course.courseName || 'Unknown Course';
+            const option = document.createElement('option');
+            option.value = courseId;
+            option.textContent = courseName;
+            if (selectedCourse && (selectedCourse.id === courseId)) {
+              option.selected = true;
+            }
+            courseDropdown.appendChild(option);
+          });
+          
+          courseDropdown.style.display = 'block';
+          if (currentCourseName) {
+            currentCourseName.style.display = 'none';
+          }
+          
+          // Add change event listener
+          courseDropdown.addEventListener('change', (e) => {
+            this.handleCourseChange(e.target.value, courses);
+          });
+        }
+      } else if (courses.length === 1) {
+        // Single course - just display the name
+        const course = courses[0];
+        const courseId = course._id || course.id;
+        const courseName = course.name || course.courseName || 'Unknown Course';
+        
+        // Save to session if not already saved
+        if (!selectedCourse || !selectedCourse.id) {
+          sessionStorage.setItem("grasp-selected-course", JSON.stringify({
+            id: courseId,
+            name: courseName
+          }));
+        }
+        
         if (currentCourseName) {
-          currentCourseName.textContent = selectedCourse.name;
+          currentCourseName.textContent = courseName;
+          currentCourseName.style.display = 'block';
+        }
+        if (courseDropdown) {
+          courseDropdown.style.display = 'none';
         }
       } else {
-        // No course selected
+        // No courses
         if (currentCourseName) {
-          currentCourseName.textContent = "No course selected";
+          currentCourseName.textContent = "No course available";
           currentCourseName.style.color = "rgba(255, 255, 255, 0.5)";
           currentCourseName.style.fontStyle = "italic";
+          currentCourseName.style.display = 'block';
+        }
+        if (courseDropdown) {
+          courseDropdown.style.display = 'none';
         }
       }
     } catch (error) {
-      console.error("Error loading current course:", error);
+      console.error("Error loading courses:", error);
       if (currentCourseName) {
-        currentCourseName.textContent = "Error loading course";
+        currentCourseName.textContent = "Error loading courses";
         currentCourseName.style.color = "rgba(255, 255, 255, 0.5)";
+        currentCourseName.style.display = 'block';
       }
+      if (courseDropdown) {
+        courseDropdown.style.display = 'none';
+      }
+    }
+  }
+  
+  handleCourseChange(courseId, courses) {
+    if (!courseId) return;
+    
+    const selectedCourse = courses.find(c => (c._id || c.id) === courseId);
+    if (selectedCourse) {
+      const courseData = {
+        id: selectedCourse._id || selectedCourse.id,
+        name: selectedCourse.name || selectedCourse.courseName || 'Unknown Course'
+      };
+      sessionStorage.setItem("grasp-selected-course", JSON.stringify(courseData));
+      
+      // Reload the page to reflect the course change
+      window.location.reload();
     }
   }
 
