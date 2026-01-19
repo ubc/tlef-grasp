@@ -9,6 +9,7 @@ class UsersPage {
     this.isFaculty = false;
     this.courseUsers = [];
     this.availableStaff = [];
+    this.availableStudents = [];
     
     this.init();
   }
@@ -64,10 +65,15 @@ class UsersPage {
   }
 
   updateUIForUserRole() {
-    // Show available staff section only for faculty
+    // Show available staff and students sections only for faculty
     const availableStaffSection = document.getElementById("available-staff-section");
+    const availableStudentsSection = document.getElementById("available-students-section");
+    
     if (availableStaffSection) {
       availableStaffSection.style.display = this.isFaculty ? "block" : "none";
+    }
+    if (availableStudentsSection) {
+      availableStudentsSection.style.display = this.isFaculty ? "block" : "none";
     }
   }
 
@@ -80,9 +86,12 @@ class UsersPage {
     // Load course users
     await this.loadCourseUsers();
 
-    // Load available staff (only for faculty)
+    // Load available staff and students (only for faculty)
     if (this.isFaculty) {
-      await this.loadAvailableStaff();
+      await Promise.all([
+        this.loadAvailableStaff(),
+        this.loadAvailableStudents()
+      ]);
     }
   }
 
@@ -150,6 +159,38 @@ class UsersPage {
     }
   }
 
+  async loadAvailableStudents() {
+    const loadingElement = document.getElementById("students-loading");
+    const listElement = document.getElementById("available-students-list");
+    const emptyElement = document.getElementById("students-empty");
+
+    try {
+      if (loadingElement) loadingElement.style.display = "flex";
+      if (listElement) listElement.innerHTML = "";
+      if (emptyElement) emptyElement.style.display = "none";
+
+      const response = await fetch(`/api/users/students/not-in-course/${this.courseId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.success && data.users) {
+        this.availableStudents = data.users;
+        this.renderAvailableStudents();
+      } else {
+        this.availableStudents = [];
+        this.renderAvailableStudents();
+      }
+    } catch (error) {
+      console.error("Error loading available students:", error);
+      this.showError("Failed to load available students");
+      if (emptyElement) emptyElement.style.display = "block";
+    } finally {
+      if (loadingElement) loadingElement.style.display = "none";
+    }
+  }
+
   renderCourseUsers() {
     const listElement = document.getElementById("course-users-list");
     const emptyElement = document.getElementById("course-users-empty");
@@ -174,12 +215,13 @@ class UsersPage {
       const email = user.email || user.user?.email || "";
       const affiliation = user.affiliation || user.user?.affiliation || "";
       
-      // Check if user is faculty
+      // Determine user role based on affiliation
       const affiliations = Array.isArray(affiliation)
         ? affiliation
         : String(affiliation || '').split(',').map(a => a.trim());
       const isUserFaculty = affiliations.includes('faculty');
       const isUserStaff = affiliations.includes('staff') && !isUserFaculty;
+      const isUserStudent = (affiliations.includes('student') || affiliations.includes('affiliate')) && !isUserFaculty && !isUserStaff;
       
       // Check if this is the current user
       const isCurrentUser = userIdStr === String(window.currentUserId || "");
@@ -189,6 +231,8 @@ class UsersPage {
         roleBadge = '<span class="badge badge-faculty"><i class="fas fa-graduation-cap"></i> Faculty</span>';
       } else if (isUserStaff) {
         roleBadge = '<span class="badge badge-staff"><i class="fas fa-user-tie"></i> Staff</span>';
+      } else if (isUserStudent) {
+        roleBadge = '<span class="badge badge-student"><i class="fas fa-user-graduate"></i> Student</span>';
       }
 
       const currentUserBadge = isCurrentUser ? '<span class="badge badge-current"><i class="fas fa-user-circle"></i> You</span>' : '';
@@ -277,6 +321,58 @@ class UsersPage {
     listElement.innerHTML = staffHTML;
   }
 
+  renderAvailableStudents() {
+    const listElement = document.getElementById("available-students-list");
+    const emptyElement = document.getElementById("students-empty");
+    const tableWrapper = document.getElementById("students-table-wrapper");
+
+    if (!listElement) return;
+
+    if (this.availableStudents.length === 0) {
+      if (emptyElement) emptyElement.style.display = "block";
+      if (tableWrapper) tableWrapper.style.display = "none";
+      listElement.innerHTML = "";
+      return;
+    }
+
+    if (emptyElement) emptyElement.style.display = "none";
+    if (tableWrapper) tableWrapper.style.display = "block";
+
+    const studentsHTML = this.availableStudents.map(user => {
+      const userId = user._id;
+      const userIdStr = userId ? (userId.toString ? userId.toString() : String(userId)) : "";
+      const displayName = user.displayName || "Unknown User";
+      const email = user.email || "";
+
+      return `
+        <tr data-user-id="${userIdStr}">
+          <td>
+            <div class="user-name-cell">
+              <div class="user-avatar-small">
+                <i class="fas fa-user"></i>
+              </div>
+              <span class="user-name">${this.escapeHtml(displayName)}</span>
+            </div>
+          </td>
+          <td class="user-email-cell">${this.escapeHtml(email)}</td>
+          <td>
+            <div class="user-badges-cell">
+              <span class="badge badge-student"><i class="fas fa-user-graduate"></i> Student</span>
+            </div>
+          </td>
+          <td class="actions-cell">
+            <button class="btn btn-primary btn-sm" onclick="window.usersPage.addUser('${userIdStr}')" title="Add to course">
+              <i class="fas fa-user-plus"></i>
+              Add to Course
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    listElement.innerHTML = studentsHTML;
+  }
+
   async addUser(userId) {
     if (!this.isFaculty) {
       this.showError("Only faculty can add users to courses");
@@ -300,9 +396,12 @@ class UsersPage {
       const data = await response.json();
       if (data.success) {
         this.showSuccess("User added to course successfully");
-        // Reload both lists
+        // Reload all lists
         await this.loadCourseUsers();
-        await this.loadAvailableStaff();
+        await Promise.all([
+          this.loadAvailableStaff(),
+          this.loadAvailableStudents()
+        ]);
       }
     } catch (error) {
       console.error("Error adding user:", error);
@@ -340,9 +439,12 @@ class UsersPage {
           const data = await response.json();
           if (data.success) {
             this.showSuccess("User removed from course successfully");
-            // Reload both lists
+            // Reload all lists
             await this.loadCourseUsers();
-            await this.loadAvailableStaff();
+            await Promise.all([
+              this.loadAvailableStaff(),
+              this.loadAvailableStudents()
+            ]);
           }
         } catch (error) {
           console.error("Error removing user:", error);

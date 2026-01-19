@@ -17,232 +17,168 @@
         <!-- Main Content Area -->
         <main class="main-content">
             <div class="content-wrapper">
-                <!-- Header Section -->
-                <div class="header-section">
-                    <h1>My Quizzes</h1>
-                    
-                    <!-- Filters and Search -->
-                    <div class="filters-section">
-                        <div class="filter-group">
-                            <select class="filter-select" id="courseFilter">
-                                <option value="all">All Courses</option>
-                                <option value="CS101">CS101</option>
-                                <option value="MATH200">MATH200</option>
-                                <option value="PHYS150">PHYS150</option>
-                            </select>
-                            
-                            <select class="filter-select" id="objectiveFilter">
-                                <option value="all">All Objectives</option>
-                                <option value="lecture1">Lecture 1</option>
-                                <option value="lecture2">Lecture 2</option>
-                                <option value="lecture3">Lecture 3</option>
-                                <option value="lecture4">Lecture 4</option>
-                                <option value="lecture5">Lecture 5</option>
-                            </select>
-                            
-                            <select class="filter-select" id="weekFilter">
-                                <option value="all">All Weeks</option>
-                                <option value="week1">Week 1</option>
-                                <option value="week2">Week 2</option>
-                                <option value="week3">Week 3</option>
-                                <option value="week4">Week 4</option>
-                            </select>
+                <!-- No Course State (shown by default, hidden when course is found) -->
+                <div class="no-course-state" id="noCourseState">
+                    <div class="no-course-welcome">
+                        <h2 id="no-course-welcome-message">Hello, Student</h2>
+                        <p class="date" id="no-course-date"></p>
+                    </div>
+                    <div class="no-course-content">
+                        <div class="no-course-icon">
+                            <i class="fas fa-book-open"></i>
                         </div>
-                        
-                        <div class="search-group">
-                            <div class="search-box">
-                                <i class="fas fa-search"></i>
-                                <input type="text" placeholder="Search quiz name..." id="quizSearch">
-                            </div>
+                        <h3>No Course Associated</h3>
+                        <p>You haven't been added to any courses yet. Please contact your course instructor to get access to quizzes and course materials.</p>
+                        <div class="contact-info">
+                            <i class="fas fa-envelope"></i>
+                            <span>Reach out to your instructor for assistance</span>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Quiz Cards Grid -->
-                <div class="quiz-grid" id="quizGrid">
-                    <!-- Quiz Card 1 -->
-                    <div class="quiz-card" data-course="CS101" data-objective="lecture3" data-week="week3">
-                        <div class="quiz-header">
-                            <h3>CS101 Lecture 3</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status">0% attempted</span>
-                            </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Dec 15, 2024</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 30 min</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-question-circle"></i>
-                                    <span>15 Questions</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button start-button" onclick="startQuiz('CS101-Lecture3')">
-                                Start
-                            </button>
-                        </div>
-                    </div>
 
-                    <!-- Quiz Card 2 -->
-                    <div class="quiz-card" data-course="CS101" data-objective="lecture4" data-week="week4">
-                        <div class="quiz-header">
-                            <h3>CS101 Lecture 4</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status partial">40% attempted</span>
-                            </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Dec 20, 2024</span>
+                <!-- Dashboard Content (shown when user has a course) -->
+                <div class="dashboard-content" id="dashboardContent" style="display: none;">
+                    <!-- Left Column -->
+                    <div class="left-column">
+                        <!-- Welcome Section -->
+                        <section class="welcome-section">
+                            <h2 id="welcome-message">Hello, Student</h2>
+                            <p class="date" id="current-date"></p>
+                        </section>
+                        
+                        <!-- Quick Start Section -->
+                        <section class="quick-start-section">
+                            <h3>Quick Start</h3>
+                            <div class="quick-start-grid">
+                                <div class="quick-start-card" data-action="quizzes">
+                                    <i class="fas fa-list-check"></i>
+                                    <span>My Quizzes</span>
                                 </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 45 min</span>
+                                <div class="quick-start-card" data-action="achievements">
+                                    <i class="fas fa-trophy"></i>
+                                    <span>Achievements</span>
                                 </div>
-                                <div class="info-item">
+                                <div class="quick-start-card" data-action="progress">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Progress</span>
+                                </div>
+                                <div class="quick-start-card" data-action="help">
                                     <i class="fas fa-question-circle"></i>
-                                    <span>20 Questions</span>
+                                    <span>Help</span>
                                 </div>
                             </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button start-button" onclick="startQuiz('CS101-Lecture4')">
-                                Continue
-                            </button>
-                        </div>
+                        </section>
+                        
+                        <!-- Getting Started Section -->
+                        <section class="how-to-use-section">
+                            <h3>Getting Started with GRASP</h3>
+                            <p class="section-intro">Welcome to GRASP! Here's how to get the most out of your learning experience.</p>
+                            
+                            <div class="instructions-container">
+                                <div class="instruction-step">
+                                    <div class="step-number">1</div>
+                                    <div class="step-content">
+                                        <h4><a href="/quiz">Take Practice Quizzes</a></h4>
+                                        <p>Access quizzes created by your instructor to test your understanding of course materials. Each quiz contains multiple-choice questions designed to reinforce key concepts.</p>
+                                        <div class="step-tip">
+                                            <i class="fas fa-lightbulb"></i>
+                                            <span>Take quizzes multiple times to improve your understanding and track your progress!</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step">
+                                    <div class="step-number">2</div>
+                                    <div class="step-content">
+                                        <h4><a href="/quiz">Review Your Answers</a></h4>
+                                        <p>After completing a quiz, review your answers to understand what you got right and where you can improve. The system provides immediate feedback on your responses.</p>
+                                        <ul class="step-details">
+                                            <li>See which questions you answered correctly</li>
+                                            <li>Review explanations for each question</li>
+                                            <li>Identify areas that need more study</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step">
+                                    <div class="step-number">3</div>
+                                    <div class="step-content">
+                                        <h4><a href="/achievements">Track Your Progress</a></h4>
+                                        <p>Monitor your learning journey through the achievements system. Earn badges and see your improvement over time as you complete more quizzes.</p>
+                                        <ul class="step-details">
+                                            <li>View your quiz completion history</li>
+                                            <li>Track your scores across different topics</li>
+                                            <li>Earn achievements for milestones</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step instruction-step--info">
+                                    <div class="step-number"><i class="fas fa-star"></i></div>
+                                    <div class="step-content">
+                                        <h4>Tips for Success</h4>
+                                        <ul class="feature-list">
+                                            <li><i class="fas fa-clock"></i> <strong>Practice regularly:</strong> Consistent practice helps reinforce learning</li>
+                                            <li><i class="fas fa-redo"></i> <strong>Retake quizzes:</strong> Don't be afraid to retry quizzes to improve your score</li>
+                                            <li><i class="fas fa-book"></i> <strong>Review materials:</strong> If you struggle with questions, review the related course content</li>
+                                            <li><i class="fas fa-comments"></i> <strong>Ask questions:</strong> Reach out to your instructor if you need clarification</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     </div>
-
-                    <!-- Quiz Card 3 -->
-                    <div class="quiz-card" data-course="MATH200" data-objective="lecture5" data-week="week5">
-                        <div class="quiz-header">
-                            <h3>MATH200 Lecture 5</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status completed">100% attempted</span>
-                            </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Dec 10, 2024</span>
+                    
+                    <!-- Right Column -->
+                    <div class="right-column">
+                        <!-- Calendar Section -->
+                        <section class="calendar-section">
+                            <h3>Calendar</h3>
+                            <div class="calendar">
+                                <div class="calendar-header">
+                                    <h4>Loading...</h4>
                                 </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 60 min</span>
+                                <div class="calendar-weekdays">
+                                    <span>Mon</span>
+                                    <span>Tue</span>
+                                    <span>Wed</span>
+                                    <span>Thu</span>
+                                    <span>Fri</span>
+                                    <span>Sat</span>
+                                    <span>Sun</span>
                                 </div>
-                                <div class="info-item">
-                                    <i class="fas fa-question-circle"></i>
-                                    <span>25 Questions</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button review-button" onclick="reviewQuiz('MATH200-Lecture5')">
-                                Review
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Quiz Card 4 -->
-                    <div class="quiz-card" data-course="PHYS150" data-objective="lecture2" data-week="week2">
-                        <div class="quiz-header">
-                            <h3>PHYS150 Lecture 2</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status partial">60% attempted</span>
-                            </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Dec 25, 2024</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 40 min</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-question-circle"></i>
-                                    <span>18 Questions</span>
+                                <div class="calendar-days">
+                                    <!-- Days will be populated by JavaScript -->
                                 </div>
                             </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button start-button" onclick="startQuiz('PHYS150-Lecture2')">
-                                Continue
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Additional Quiz Cards -->
-                    <div class="quiz-card" data-course="CS101" data-objective="lecture1" data-week="week1">
-                        <div class="quiz-header">
-                            <h3>CS101 Lecture 1</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status completed">100% attempted</span>
+                        </section>
+                        
+                        <!-- Course Info Section -->
+                        <section class="course-info-section">
+                            <div class="course-info-header">
+                                <h3>Current Course</h3>
                             </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Nov 30, 2024</span>
+                            <div class="course-info-content" id="courseInfoContent">
+                                <div class="course-name-display" id="courseNameDisplay">
+                                    <i class="fas fa-book"></i>
+                                    <span>Loading...</span>
                                 </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 25 min</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-question-circle"></i>
-                                    <span>12 Questions</span>
+                                <div class="course-stats" id="courseStats">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="quizCount">-</span>
+                                        <span class="stat-label">Quizzes</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="completedCount">-</span>
+                                        <span class="stat-label">Completed</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button review-button" onclick="reviewQuiz('CS101-Lecture1')">
-                                Review
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="quiz-card" data-course="MATH200" data-objective="lecture3" data-week="week3">
-                        <div class="quiz-header">
-                            <h3>MATH200 Lecture 3</h3>
-                            <div class="quiz-status">
-                                <span class="attempt-status">0% attempted</span>
-                            </div>
-                        </div>
-                        <div class="quiz-content">
-                            <div class="quiz-info">
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>Due: Dec 28, 2024</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-clock"></i>
-                                    <span>Time Limit: 50 min</span>
-                                </div>
-                                <div class="info-item">
-                                    <i class="fas fa-question-circle"></i>
-                                    <span>22 Questions</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="quiz-actions">
-                            <button class="quiz-button start-button" onclick="startQuiz('MATH200-Lecture3')">
-                                Start
-                            </button>
-                        </div>
+                            <a href="/quiz" class="view-quizzes-btn">
+                                <i class="fas fa-arrow-right"></i>
+                                View All Quizzes
+                            </a>
+                        </section>
                     </div>
                 </div>
             </div>
@@ -253,7 +189,3 @@
     <script src="scripts/student-dashboard.js"></script>
 </body>
 </html>
-
-
-
-

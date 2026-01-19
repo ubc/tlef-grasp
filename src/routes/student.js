@@ -1,5 +1,38 @@
 const express = require("express");
 const router = express.Router();
+const { getStudentCourses } = require('../services/user-course');
+
+// Get courses for the current student
+router.get("/courses", async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    
+    console.log('[Student API] /courses - userId:', userId);
+    console.log('[Student API] /courses - req.user:', JSON.stringify(req.user, null, 2));
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "User not authenticated"
+      });
+    }
+
+    const courses = await getStudentCourses(userId);
+    
+    console.log('[Student API] /courses - found courses:', courses);
+    
+    res.json({
+      success: true,
+      courses: courses,
+    });
+  } catch (error) {
+    console.error("[Student API] Error fetching student courses:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch student courses",
+    });
+  }
+});
 
 // Mock student quiz data
 const mockStudentQuizzes = [

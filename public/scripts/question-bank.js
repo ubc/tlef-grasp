@@ -2665,7 +2665,7 @@ class QuestionBankPage {
         throw new Error(error.error || 'Failed to update question flag status');
       }
 
-      question.flagged = newFlagStatus;
+        question.flagged = newFlagStatus;
 
       // Also update in quiz questions if present
       for (const quiz of this.quizzes) {

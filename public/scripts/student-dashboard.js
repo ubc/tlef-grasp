@@ -1,430 +1,406 @@
 // GRASP Student Dashboard JavaScript
-document.addEventListener("DOMContentLoaded", function () {
-  // Initialize student dashboard functionality
-  initializeStudentDashboard();
-});
 
-function initializeStudentDashboard() {
-  // Initialize shared navigation
-  new window.GRASPNavigation();
+// Constants
+const SELECTORS = {
+  welcomeMessage: 'welcome-message',
+  currentDate: 'current-date',
+  noCourseWelcome: 'no-course-welcome-message',
+  noCourseDate: 'no-course-date',
+  calendarHeader: '.calendar-header h4',
+  calendarDays: '.calendar-days',
+  quickStartCards: '.quick-start-card',
+  noCourseState: 'noCourseState',
+  dashboardContent: 'dashboardContent',
+  courseNameDisplay: 'courseNameDisplay',
+  quizCount: 'quizCount',
+  completedCount: 'completedCount',
+};
 
-  // Initialize student-specific functionality
-  initializeStudentContent();
+const API_ENDPOINTS = {
+  currentUser: '/api/current-user',
+  studentCourses: '/api/student/courses',
+  quizzesByCourse: (courseId) => `/api/quiz/course/${courseId}`,
+};
 
-  // Initialize interactive elements
-  initializeInteractiveElements();
+const ROUTES = {
+  quizzes: '/quiz',
+  achievements: '/achievements',
+  help: '#', // Placeholder for help page
+};
 
-  // Initialize filters and search
-  initializeFilters();
+const QUICK_ACTIONS = {
+  quizzes: ROUTES.quizzes,
+  achievements: ROUTES.achievements,
+  progress: ROUTES.achievements,
+  help: ROUTES.help,
+};
 
-  // Load quiz data
-  loadQuizData();
-}
+const STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
 
-function initializeStudentContent() {
-  // Student-specific initialization logic
-  console.log("Initializing student dashboard content...");
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
-  // Set page title
-  document.title = "My Quizzes - GRASP Student Dashboard";
-}
-
-function initializeInteractiveElements() {
-  // Quiz cards
-  const quizCards = document.querySelectorAll(".quiz-card");
-  quizCards.forEach((card) => {
-    card.addEventListener("click", function (e) {
-      // Don't trigger if clicking on button
-      if (e.target.classList.contains("quiz-button")) {
-        return;
-      }
-
-      const quizTitle = this.querySelector("h3").textContent;
-      console.log(`Quiz card clicked: ${quizTitle}`);
-      // You could open a quiz preview modal here
-    });
-  });
-
-  // Quiz buttons
-  const quizButtons = document.querySelectorAll(".quiz-button");
-  quizButtons.forEach((button) => {
-    button.addEventListener("click", function (e) {
-      e.stopPropagation(); // Prevent card click event
-      const action = this.textContent.trim();
-      const quizCard = this.closest(".quiz-card");
-      const quizTitle = quizCard.querySelector("h3").textContent;
-
-      handleQuizAction(action, quizTitle);
-    });
-  });
-}
-
-function initializeFilters() {
-  // Course filter
-  const courseFilter = document.getElementById("courseFilter");
-  if (courseFilter) {
-    courseFilter.addEventListener("change", function () {
-      const selectedCourse = this.value;
-      filterQuizzes("course", selectedCourse);
-    });
+/**
+ * Calendar component for displaying a monthly calendar view
+ */
+class Calendar {
+  constructor(headerSelector, daysSelector) {
+    this.headerElement = document.querySelector(headerSelector);
+    this.daysElement = document.querySelector(daysSelector);
   }
 
-  // Objective filter
-  const objectiveFilter = document.getElementById("objectiveFilter");
-  if (objectiveFilter) {
-    objectiveFilter.addEventListener("change", function () {
-      const selectedObjective = this.value;
-      filterQuizzes("objective", selectedObjective);
-    });
-  }
-
-  // Week filter
-  const weekFilter = document.getElementById("weekFilter");
-  if (weekFilter) {
-    weekFilter.addEventListener("change", function () {
-      const selectedWeek = this.value;
-      filterQuizzes("week", selectedWeek);
-    });
-  }
-
-  // Search functionality
-  const quizSearch = document.getElementById("quizSearch");
-  if (quizSearch) {
-    quizSearch.addEventListener("input", function () {
-      const searchTerm = this.value.toLowerCase();
-      searchQuizzes(searchTerm);
-    });
-  }
-}
-
-function filterQuizzes(filterType, filterValue) {
-  const quizCards = document.querySelectorAll(".quiz-card");
-
-  quizCards.forEach((card) => {
-    const cardValue = card.getAttribute(`data-${filterType}`);
-    const shouldShow = filterValue === "all" || cardValue === filterValue;
-
-    if (shouldShow) {
-      card.style.display = "block";
-      card.style.animation = "fadeInUp 0.3s ease-out";
-    } else {
-      card.style.display = "none";
+  render() {
+    if (!this.headerElement || !this.daysElement) {
+      return;
     }
-  });
 
-  // Update visible count
-  updateVisibleCount();
-}
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const currentDate = today.getDate();
 
-function searchQuizzes(searchTerm) {
-  const quizCards = document.querySelectorAll(".quiz-card");
-
-  quizCards.forEach((card) => {
-    const quizTitle = card.querySelector("h3").textContent.toLowerCase();
-    const shouldShow = quizTitle.includes(searchTerm);
-
-    if (shouldShow) {
-      card.style.display = "block";
-      card.style.animation = "fadeInUp 0.3s ease-out";
-    } else {
-      card.style.display = "none";
-    }
-  });
-
-  // Update visible count
-  updateVisibleCount();
-}
-
-function updateVisibleCount() {
-  const visibleCards = document.querySelectorAll(
-    ".quiz-card[style*='block'], .quiz-card:not([style*='none'])"
-  );
-  console.log(`Showing ${visibleCards.length} quiz cards`);
-}
-
-function handleQuizAction(action, quizTitle) {
-  console.log(`Quiz action: ${action} for ${quizTitle}`);
-
-  switch (action.toLowerCase()) {
-    case "start":
-      startQuiz(quizTitle);
-      break;
-    case "continue":
-      continueQuiz(quizTitle);
-      break;
-    case "review":
-      reviewQuiz(quizTitle);
-      break;
-    default:
-      console.log(`Unknown action: ${action}`);
-  }
-}
-
-function startQuiz(quizId) {
-  console.log(`Starting quiz: ${quizId}`);
-
-  // Navigate directly to the quiz page - it will auto-start
-  window.location.href = `/quiz?quiz=${quizId}`;
-}
-
-function continueQuiz(quizTitle) {
-  console.log(`Continuing quiz: ${quizTitle}`);
-
-  showLoadingState();
-
-  setTimeout(() => {
-    hideLoadingState();
-    showNotification(`Resuming quiz: ${quizTitle}`, "info");
-
-    // You could redirect to the quiz page with resume state:
-    // window.location.href = `quiz.html?quiz=${encodeURIComponent(quizTitle)}&resume=true`;
-  }, 1000);
-}
-
-function reviewQuiz(quizId) {
-  console.log(`Reviewing quiz: ${quizId}`);
-
-  showLoadingState();
-
-  // Call API to get quiz results
-  fetch(`/api/student/quizzes/${quizId}/results`)
-    .then((response) => response.json())
-    .then((data) => {
-      hideLoadingState();
-
-      if (data.success) {
-        showNotification(`Opening quiz review: ${quizId}`, "info");
-
-        // In a real application, you would navigate to the review page
-        // window.location.href = `quiz-review.html?quiz=${quizId}`;
-
-        // For now, you could open a modal with the results
-        console.log("Quiz results:", data.data);
-      } else {
-        throw new Error(data.message);
-      }
-    })
-    .catch((error) => {
-      hideLoadingState();
-      console.error("Error fetching quiz results:", error);
-      showNotification(`Failed to load quiz review: ${error.message}`, "error");
-    });
-}
-
-async function loadQuizData() {
-  // Get course from sessionStorage
-  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
-  const courseId = selectedCourse.id;
-
-  if (!courseId) {
-    const quizGrid = document.getElementById("quizGrid");
-    if (quizGrid) {
-      quizGrid.innerHTML = `
-        <div class="empty-state">
-          <i class="fas fa-exclamation-triangle"></i>
-          <h3>No Course Selected</h3>
-          <p>Please select a course to view available quizzes.</p>
-        </div>
-      `;
-    }
-    return;
+    this.renderHeader(currentMonth, currentYear);
+    this.renderDays(currentYear, currentMonth, currentDate);
   }
 
-  console.log("Loading quiz data for course:", courseId);
+  renderHeader(month, year) {
+    this.headerElement.textContent = `${MONTH_NAMES[month]} ${year}`;
+  }
 
-  try {
-    // Fetch quizzes for the current course
-    const response = await fetch(`/api/quiz/course/${courseId}`);
+  renderDays(year, month, highlightDate) {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    // Adjust starting day for Monday-first calendar
+    const startingDayOfWeek = firstDay.getDay();
+    const adjustedStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
 
-    const data = await response.json();
+    // Get previous month's last days
+    const prevMonthLastDay = new Date(year, month, 0);
+    const daysInPrevMonth = prevMonthLastDay.getDate();
+
+    // Clear and rebuild calendar
+    this.daysElement.innerHTML = '';
+
+    // Add previous month's trailing days
+    this.addPreviousMonthDays(daysInPrevMonth, adjustedStartingDay);
+
+    // Add current month's days
+    this.addCurrentMonthDays(daysInMonth, highlightDate);
+
+    // Add next month's leading days
+    this.addNextMonthDays();
+  }
+
+  addPreviousMonthDays(daysInPrevMonth, startOffset) {
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const day = daysInPrevMonth - i;
+      this.createDayElement(day, 'other-month');
+    }
+  }
+
+  addCurrentMonthDays(daysInMonth, highlightDate) {
+    for (let day = 1; day <= daysInMonth; day++) {
+      const className = day === highlightDate ? 'current-day' : '';
+      this.createDayElement(day, className);
+    }
+  }
+
+  addNextMonthDays() {
+    const totalCells = this.daysElement.children.length;
+    const remainingCells = 42 - totalCells; // 6 rows × 7 days
+
+    for (let day = 1; day <= remainingCells; day++) {
+      this.createDayElement(day, 'other-month');
+    }
+  }
+
+  createDayElement(day, className = '') {
+    const dayElement = document.createElement('span');
+    if (className) {
+      dayElement.className = className;
+    }
+    dayElement.textContent = day;
+    this.daysElement.appendChild(dayElement);
+  }
+}
+
+/**
+ * Main Student Dashboard Manager
+ */
+class StudentDashboardManager {
+  constructor() {
+    console.log('[StudentDashboard] Constructor called');
+    this.calendar = new Calendar(SELECTORS.calendarHeader, SELECTORS.calendarDays);
+    this.elements = {
+      welcomeMessage: document.getElementById(SELECTORS.welcomeMessage),
+      currentDate: document.getElementById(SELECTORS.currentDate),
+      noCourseWelcome: document.getElementById(SELECTORS.noCourseWelcome),
+      noCourseDate: document.getElementById(SELECTORS.noCourseDate),
+      quickStartCards: document.querySelectorAll(SELECTORS.quickStartCards),
+      noCourseState: document.getElementById(SELECTORS.noCourseState),
+      dashboardContent: document.getElementById(SELECTORS.dashboardContent),
+      courseNameDisplay: document.getElementById(SELECTORS.courseNameDisplay),
+      quizCount: document.getElementById(SELECTORS.quizCount),
+      completedCount: document.getElementById(SELECTORS.completedCount),
+    };
+    this.hasCourse = false;
+    this.selectedCourse = null;
     
-    if (data.success && data.quizzes) {
-      // Filter to only show published quizzes
-      const publishedQuizzes = data.quizzes.filter(quiz => quiz.published === true);
+    // Debug: log all elements
+    console.log('[StudentDashboard] Elements cached:', Object.keys(this.elements).map(k => `${k}: ${!!this.elements[k]}`).join(', '));
+  }
+
+  async init() {
+    try {
+      console.log('[StudentDashboard] Initializing...');
+      console.log('[StudentDashboard] Elements:', {
+        noCourseState: !!this.elements.noCourseState,
+        dashboardContent: !!this.elements.dashboardContent,
+      });
       
-      // Transform quiz data to match expected format
-      const transformedQuizzes = await Promise.all(
-        publishedQuizzes.map(async (quiz) => {
-          // Get approved question count for this quiz (students only see approved questions)
-          const questionsResponse = await fetch(`/api/quiz/${quiz._id}/questions?approvedOnly=true`);
-          let questionCount = 0;
-          if (questionsResponse.ok) {
-            const questionsData = await questionsResponse.json();
-            if (questionsData.success && questionsData.questions) {
-              // All questions returned are already approved (filtered by backend)
-              questionCount = questionsData.questions.length;
+      this.initNavigation();
+      await this.loadUserData();
+      
+      // Always update dates (both for course and no-course states)
+      this.updateCurrentDate();
+      this.updateNoCourseDate();
+      
+      await this.checkCourseAccess();
+      
+      console.log('[StudentDashboard] After checkCourseAccess, hasCourse:', this.hasCourse);
+      
+      if (this.hasCourse) {
+        this.calendar.render();
+        this.setupQuickStartCards();
+        await this.loadCourseStats();
+      }
+      
+      console.log('[StudentDashboard] Initialization complete');
+    } catch (error) {
+      console.error('[StudentDashboard] Error initializing:', error);
+    }
+  }
+
+  initNavigation() {
+    if (window.GRASPNavigation) {
+      new window.GRASPNavigation();
+    }
+  }
+
+  async checkCourseAccess() {
+    try {
+      // Always verify course access from API (don't trust session storage alone)
+      // This ensures removed students lose access immediately
+      console.log('[StudentDashboard] Verifying course access from API...');
+      const response = await fetch(API_ENDPOINTS.studentCourses);
+      console.log('[StudentDashboard] API response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[StudentDashboard] API data:', data);
+        
+        if (data.success && data.courses && data.courses.length > 0) {
+          // Student has courses - check if currently selected course is still valid
+          const sessionCourse = this.getSelectedCourse();
+          let courseToUse = null;
+          
+          // Check if session course is still in the list of valid courses
+          if (sessionCourse && sessionCourse.id) {
+            const stillValid = data.courses.some(c => 
+              (c._id === sessionCourse.id) || (c.id === sessionCourse.id)
+            );
+            if (stillValid) {
+              courseToUse = sessionCourse;
+              console.log('[StudentDashboard] Session course still valid:', courseToUse);
+            } else {
+              console.log('[StudentDashboard] Session course no longer valid, clearing...');
+              sessionStorage.removeItem(STORAGE_KEYS.selectedCourse);
             }
           }
-
-          // Format dates
-          const createdAt = quiz.createdAt ? new Date(quiz.createdAt) : new Date();
-          const dueDate = quiz.dueDate ? new Date(quiz.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No due date';
           
-          return {
-            id: quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || ""),
-            title: quiz.name || "Unnamed Quiz",
-            course: selectedCourse.name || "Unknown Course",
-            objective: "", // Not available in quiz data
-            week: "", // Not available in quiz data
-            dueDate: dueDate,
-            timeLimit: "No limit", // Not stored in quiz data
-            questionCount: questionCount,
-            completion: 0, // TODO: Get actual completion from student quiz attempts
-            createdAt: createdAt
-          };
-        })
-      );
+          // If no valid session course, use the first available course
+          if (!courseToUse) {
+            const firstCourse = data.courses[0];
+            courseToUse = {
+              id: firstCourse._id || firstCourse.id,
+              name: firstCourse.name || firstCourse.courseName || 'Unknown Course',
+            };
+            console.log('[StudentDashboard] Using first available course:', courseToUse);
+            sessionStorage.setItem(STORAGE_KEYS.selectedCourse, JSON.stringify(courseToUse));
+          }
+          
+          this.hasCourse = true;
+          this.selectedCourse = courseToUse;
+          this.showDashboard();
+          this.updateCourseDisplay(courseToUse);
+          return;
+        }
+      }
 
-      renderQuizCards(transformedQuizzes);
-    } else {
-      throw new Error(data.error || "Failed to load quizzes");
+      // No courses found - clear any stale session data
+      console.log('[StudentDashboard] No courses found, clearing session and showing no-course state');
+      sessionStorage.removeItem(STORAGE_KEYS.selectedCourse);
+      this.hasCourse = false;
+      this.showNoCourseState();
+    } catch (error) {
+      console.error('[StudentDashboard] Error checking course access:', error);
+      // On error, clear session and show no-course state for safety
+      sessionStorage.removeItem(STORAGE_KEYS.selectedCourse);
+      this.hasCourse = false;
+      this.showNoCourseState();
     }
-  } catch (error) {
-    console.error("Error loading quiz data:", error);
-    showNotification("Failed to load quiz data", "error");
+  }
 
-    // Show empty state on error
-    const quizGrid = document.getElementById("quizGrid");
-    if (quizGrid) {
-      quizGrid.innerHTML = `
-        <div class="empty-state">
-          <i class="fas fa-exclamation-triangle"></i>
-          <h3>Unable to Load Quizzes</h3>
-          <p>There was an error loading your quizzes. Please try refreshing the page or contact support if the problem persists.</p>
-        </div>
+  getSelectedCourse() {
+    try {
+      return JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  showDashboard() {
+    console.log('[StudentDashboard] showDashboard called');
+    const { noCourseState, dashboardContent } = this.elements;
+    console.log('[StudentDashboard] Elements found:', { noCourseState: !!noCourseState, dashboardContent: !!dashboardContent });
+    if (noCourseState) {
+      noCourseState.style.display = 'none';
+      console.log('[StudentDashboard] noCourseState hidden');
+    }
+    if (dashboardContent) {
+      dashboardContent.style.display = 'flex';
+      console.log('[StudentDashboard] dashboardContent shown');
+    }
+  }
+
+  showNoCourseState() {
+    console.log('[StudentDashboard] showNoCourseState called');
+    const { noCourseState, dashboardContent } = this.elements;
+    if (noCourseState) noCourseState.style.display = 'flex';
+    if (dashboardContent) dashboardContent.style.display = 'none';
+  }
+
+  updateCourseDisplay(course) {
+    const { courseNameDisplay } = this.elements;
+    if (courseNameDisplay && course.name) {
+      courseNameDisplay.innerHTML = `
+        <i class="fas fa-book"></i>
+        <span>${this.escapeHtml(course.name)}</span>
       `;
     }
   }
-}
 
-function renderQuizCards(quizData) {
-  const quizGrid = document.getElementById("quizGrid");
+  async loadUserData() {
+    try {
+      const response = await fetch(API_ENDPOINTS.currentUser);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-  if (!quizData || quizData.length === 0) {
-    quizGrid.innerHTML = `
-      <div class="empty-state">
-        <i class="fas fa-question-circle"></i>
-        <h3>No Quizzes Available</h3>
-        <p>There are currently no quizzes available for you. Check back later or contact your instructor.</p>
-      </div>
-    `;
-    return;
+      const data = await response.json();
+      if (data.success && data.user) {
+        this.updateWelcomeMessage(data.user.displayName);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
   }
 
-  // Clear existing cards
-  quizGrid.innerHTML = "";
-
-  // Render quiz cards
-  quizData.forEach((quiz, index) => {
-    const quizCard = createQuizCard(quiz, index);
-    quizGrid.appendChild(quizCard);
-  });
-
-  // Re-initialize interactive elements for new cards
-  initializeInteractiveElements();
-}
-
-function createQuizCard(quiz, index) {
-  const card = document.createElement("div");
-  card.className = "quiz-card";
-  card.setAttribute("data-course", quiz.course || "");
-  card.setAttribute("data-objective", quiz.objective || "");
-  card.setAttribute("data-week", quiz.week || "");
-  card.style.animationDelay = `${index * 0.1}s`;
-
-  const statusClass =
-    quiz.completion === 100
-      ? "completed"
-      : quiz.completion > 0
-      ? "partial"
-      : "";
-
-  // Format the quiz ID for use in onclick handlers
-  const quizIdEscaped = String(quiz.id).replace(/'/g, "\\'");
-
-  card.innerHTML = `
-    <div class="quiz-header">
-      <h3>${quiz.title || "Unnamed Quiz"}</h3>
-      ${quiz.completion > 0 ? `
-      <div class="quiz-status">
-        <span class="attempt-status ${statusClass}">${quiz.completion}% attempted</span>
-      </div>
-      ` : ''}
-    </div>
-    <div class="quiz-content">
-      <div class="quiz-info">
-        ${quiz.dueDate && quiz.dueDate !== 'No due date' ? `
-        <div class="info-item">
-          <i class="fas fa-calendar"></i>
-          <span>Due: ${quiz.dueDate}</span>
-        </div>
-        ` : ''}
-        ${quiz.timeLimit && quiz.timeLimit !== 'No limit' ? `
-        <div class="info-item">
-          <i class="fas fa-clock"></i>
-          <span>Time Limit: ${quiz.timeLimit}</span>
-        </div>
-        ` : ''}
-        <div class="info-item">
-          <i class="fas fa-question-circle"></i>
-          <span>${quiz.questionCount} Question${quiz.questionCount !== 1 ? 's' : ''}</span>
-        </div>
-      </div>
-    </div>
-    <div class="quiz-actions">
-      <button class="quiz-button ${
-        quiz.completion === 100 ? "review-button" : "start-button"
-      }" 
-              onclick="window.GRASPStudentDashboard.${
-                quiz.completion === 100 ? "reviewQuiz" : "startQuiz"
-              }('${quizIdEscaped}')">
-        ${
-          quiz.completion === 100
-            ? "Review"
-            : quiz.completion > 0
-            ? "Continue"
-            : "Start"
-        }
-      </button>
-    </div>
-  `;
-
-  return card;
-}
-
-function showLoadingState() {
-  const quizGrid = document.getElementById("quizGrid");
-  const loadingDiv = document.createElement("div");
-  loadingDiv.className = "loading-state";
-  loadingDiv.innerHTML = `
-    <div class="loading-spinner"></div>
-  `;
-
-  quizGrid.appendChild(loadingDiv);
-}
-
-function hideLoadingState() {
-  const loadingState = document.querySelector(".loading-state");
-  if (loadingState) {
-    loadingState.remove();
+  updateWelcomeMessage(userName) {
+    const { welcomeMessage, noCourseWelcome } = this.elements;
+    const greeting = userName ? `Hello, ${userName}` : 'Hello, Student';
+    
+    if (welcomeMessage) {
+      welcomeMessage.textContent = greeting;
+    }
+    if (noCourseWelcome) {
+      noCourseWelcome.textContent = greeting;
+    }
+    
+    // Also update the date in no course state
+    this.updateNoCourseDate();
   }
-}
+  
+  updateNoCourseDate() {
+    const { noCourseDate } = this.elements;
+    if (noCourseDate) {
+      const now = new Date();
+      const options = { weekday: 'long', month: 'long', day: 'numeric' };
+      noCourseDate.textContent = now.toLocaleDateString('en-US', options);
+    }
+  }
 
-function showNotification(message, type = "info") {
-  // Use the notification system from navigation.js if available
-  if (
-    window.GRASPNavigation &&
-    window.GRASPNavigation.prototype.showNotification
-  ) {
-    const nav = new window.GRASPNavigation();
-    nav.showNotification(message, type);
-  } else {
-    // Fallback notification
-    const notification = document.createElement("div");
+  updateCurrentDate() {
+    const { currentDate } = this.elements;
+    if (currentDate) {
+      const now = new Date();
+      const options = { weekday: 'long', month: 'long', day: 'numeric' };
+      currentDate.textContent = now.toLocaleDateString('en-US', options);
+    }
+  }
+
+  setupQuickStartCards() {
+    this.elements.quickStartCards.forEach((card) => {
+      card.addEventListener('click', () => {
+        const action = card.getAttribute('data-action');
+        this.handleQuickStartAction(action);
+      });
+    });
+  }
+
+  handleQuickStartAction(action) {
+    const route = QUICK_ACTIONS[action];
+    if (route && route !== '#') {
+      window.location.href = route;
+    } else if (action === 'help') {
+      this.showNotification('Help documentation coming soon!', 'info');
+    }
+  }
+
+  async loadCourseStats() {
+    const selectedCourse = this.getSelectedCourse();
+    if (!selectedCourse?.id) return;
+
+    try {
+      const response = await fetch(API_ENDPOINTS.quizzesByCourse(selectedCourse.id));
+      if (!response.ok) return;
+
+      const data = await response.json();
+      if (data.success && data.quizzes) {
+        // Count published quizzes
+        const publishedQuizzes = data.quizzes.filter(q => q.published === true);
+        const quizCount = publishedQuizzes.length;
+        
+        // For now, completed count is 0 - would need to fetch student's quiz attempts
+        const completedCount = 0;
+
+        this.updateCourseStats(quizCount, completedCount);
+      }
+    } catch (error) {
+      console.error('Error loading course stats:', error);
+    }
+  }
+
+  updateCourseStats(quizCount, completedCount) {
+    const { quizCount: quizEl, completedCount: completedEl } = this.elements;
+    if (quizEl) quizEl.textContent = quizCount;
+    if (completedEl) completedEl.textContent = completedCount;
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
 
@@ -440,26 +416,24 @@ function showNotification(message, type = "info") {
       animation: slideIn 0.3s ease-out;
     `;
 
-    // Set background color based on type
     switch (type) {
-      case "success":
-        notification.style.backgroundColor = "#27ae60";
+      case 'success':
+        notification.style.backgroundColor = '#27ae60';
         break;
-      case "error":
-        notification.style.backgroundColor = "#e74c3c";
+      case 'error':
+        notification.style.backgroundColor = '#e74c3c';
         break;
-      case "warning":
-        notification.style.backgroundColor = "#f39c12";
+      case 'warning':
+        notification.style.backgroundColor = '#f39c12';
         break;
       default:
-        notification.style.backgroundColor = "#3498db";
+        notification.style.backgroundColor = '#3498db';
     }
 
     document.body.appendChild(notification);
 
-    // Remove after 3 seconds
     setTimeout(() => {
-      notification.style.animation = "slideOut 0.3s ease-in";
+      notification.style.animation = 'slideOut 0.3s ease-in';
       setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
@@ -469,12 +443,15 @@ function showNotification(message, type = "info") {
   }
 }
 
-// Export functions for potential external use
-window.GRASPStudentDashboard = {
-  startQuiz,
-  continueQuiz,
-  reviewQuiz,
-  filterQuizzes,
-  searchQuizzes,
-  showNotification,
-};
+// Initialize dashboard when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  const dashboard = new StudentDashboardManager();
+  dashboard.init();
+
+  // Export for potential external use
+  window.GRASPStudentDashboard = {
+    showNotification: (msg, type) => dashboard.showNotification(msg, type),
+  };
+});
+
+// Note: CSS animations for notifications are defined in navigation.js

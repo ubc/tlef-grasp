@@ -64,7 +64,20 @@ const getUserCourses = async (userId) => {
         const collection = db.collection("grasp_user_course");
         
         // Convert userId to ObjectId if it's a string
-        const userIdObj = typeof userId === 'string' ? new ObjectId(userId) : userId;
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+        
+        console.log('[getUserCourses] Input userId:', userId, 'Type:', typeof userId);
+        console.log('[getUserCourses] Converted userIdObj:', userIdObj);
+        
+        // Debug: Check all records in user_course for this user
+        const simpleQuery = await collection.find({
+            $or: [
+                { userId: userIdObj },
+                { userId: userId },
+                { userId: String(userId) }
+            ]
+        }).toArray();
+        console.log('[getUserCourses] Simple query results:', JSON.stringify(simpleQuery, null, 2));
         
         // Use aggregation with $lookup to join with courses collection
         const userCourses = await collection.aggregate([
@@ -307,6 +320,34 @@ const deleteUserCourse = async (userId, courseId) => {
     }
 };
 
+/**
+ * Get student courses in a simplified format for frontend consumption
+ * @param {string|ObjectId} userId - User ID
+ * @returns {Promise<Array>} Array of courses with id and name
+ */
+const getStudentCourses = async (userId) => {
+    try {
+        console.log('[getStudentCourses] Looking up courses for userId:', userId);
+        const userCourses = await getUserCourses(userId);
+        console.log('[getStudentCourses] Raw userCourses result:', JSON.stringify(userCourses, null, 2));
+        
+        // Transform to expected format: { id, name, ... }
+        const transformed = userCourses.map(uc => ({
+            _id: uc.courseId ? uc.courseId.toString() : '',
+            id: uc.courseId ? uc.courseId.toString() : '',
+            name: uc.courseName || uc.courseCode || 'Unknown Course',
+            courseCode: uc.courseCode || '',
+            courseName: uc.courseName || '',
+        })).filter(course => course.id); // Filter out courses without valid ID
+        
+        console.log('[getStudentCourses] Transformed courses:', JSON.stringify(transformed, null, 2));
+        return transformed;
+    } catch (error) {
+        console.error("[getStudentCourses] Error:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createUserCourse,
     getUserCourses,
@@ -317,4 +358,5 @@ module.exports = {
     deleteUserCourseByCourseID,
     deleteUserCourse,
     isUserInCourse,
+    getStudentCourses,
 };

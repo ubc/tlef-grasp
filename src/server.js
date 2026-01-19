@@ -4,7 +4,6 @@ const path = require("path");
 const databaseService = require("./services/database");
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/question");
-//const quizQuestionRoutes = require("./routes/quiz-questions");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
 const ragLlmRoutes = require("./routes/rag-llm");
@@ -13,7 +12,7 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
-const { isFaculty } = require("./utils/auth");
+const { isFaculty, isStaff, isStudent, getUserRole, hasMinimumRole, ROLES } = require("./utils/auth");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -39,7 +38,6 @@ function ensureAuthenticatedAPI(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   }
-  // For API requests, return JSON error instead of redirecting
   res.status(401).json({
     success: false,
     error: 'Authentication required',
@@ -47,18 +45,81 @@ function ensureAuthenticatedAPI(req, res, next) {
   });
 }
 
+/**
+ * Middleware to require minimum role for access
+ * @param {string} minRole - Minimum required role (faculty, staff, or student)
+ */
+function requireRole(minRole) {
+  return async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+        authenticated: false
+      });
+    }
+
+    const hasAccess = await hasMinimumRole(req.user, minRole);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Insufficient permissions.',
+        requiredRole: minRole
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Middleware to require faculty role (includes admins)
+ */
+function requireFaculty(req, res, next) {
+  return requireRole(ROLES.FACULTY)(req, res, next);
+}
+
+/**
+ * Middleware to require at least staff role (faculty or staff)
+ */
+function requireStaff(req, res, next) {
+  return requireRole(ROLES.STAFF)(req, res, next);
+}
+
+/**
+ * Page-level role check middleware for HTML pages
+ * Redirects to appropriate page based on role
+ */
+function requirePageRole(minRole) {
+  return async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.redirect('/auth/login');
+    }
+
+    const hasAccess = await hasMinimumRole(req.user, minRole);
+    if (!hasAccess) {
+      const userRole = await getUserRole(req.user);
+      // Redirect students to their dashboard
+      if (userRole === ROLES.STUDENT) {
+        return res.redirect('/student-dashboard');
+      }
+      return res.status(403).send('Access denied. Insufficient permissions.');
+    }
+
+    next();
+  };
+}
+
 // Authentication routes (no /api prefix as they serve HTML too)
 app.use('/auth', express.json(), express.urlencoded({extended: true }), authRoutes);
 
 // Shibboleth SP endpoint - traditional Shibboleth callback path
-// This handles POST requests from UBC IdP if configured to use /Shibboleth.sso/SAML2/POST
 app.post(
   '/Shibboleth.sso/SAML2/POST',
-  express.json(),  // allow up to 50 MB
+  express.json(),
   express.urlencoded({ extended: true }),
   passport.authenticate('ubcshib', { failureRedirect: '/login' }),
   (req, res) => {
-    // Successful authentication
     res.redirect('/onboarding');
   }
 );
@@ -68,25 +129,51 @@ app.use(express.static(path.join(__dirname, "../public")));
 
 // Page routes
 app.get("/", (req, res) => {
-
+  // Redirect to onboarding or login
+  if (req.isAuthenticated()) {
+    res.redirect('/onboarding');
+  } else {
+    res.redirect('/auth/login');
+  }
 });
 
+// Onboarding - all authenticated users can access
 app.get("/onboarding", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
-app.get("/dashboard", ensureAuthenticated(), (req, res) => {
+// Faculty and Staff pages (require at least staff role)
+app.get("/dashboard", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
-app.get("/question-generation", ensureAuthenticated(), (req, res) => {
+app.get("/question-generation", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/question-generation.html"));
 });
 
+app.get("/course-materials", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/course-materials.html"));
+});
+
+app.get("/question-bank", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-bank.html"));
+});
+
+app.get("/question-review", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/question-review.html"));
+});
+
+// Users page - faculty only
+app.get("/users", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/users.html"));
+});
+
+// Settings - all authenticated users
 app.get("/settings", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/settings.html"));
 });
 
+// Student pages - all authenticated users (students see their view, others can preview)
 app.get("/student-dashboard", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
 });
@@ -99,43 +186,40 @@ app.get("/quiz-summary", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/quiz-summary.html"));
 });
 
-app.get("/course-materials", ensureAuthenticated(), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/course-materials.html"));
-});
-
 app.get("/achievements", ensureAuthenticated(), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/achievements.html"));
 });
 
-app.get("/users", ensureAuthenticated(), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/users.html"));
-});
+// API endpoints
+// Upload, question generation, materials - require at least staff role
+app.use("/api/upload", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), uploadRoutes);
+app.use("/api/question", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), questionRoutes);
+app.use("/api/rag-llm", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ragLlmRoutes);
+app.use("/api/material", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), materialRoutes);
+app.use("/api/objective", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), objectiveRoutes);
 
-app.get("/question-bank", ensureAuthenticated(), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-bank.html"));
-});
-
-app.get("/question-review", ensureAuthenticated(), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-review.html"));
-});
-
-// API endpoints - pass middleware function by reference (no parentheses)
-app.use("/api/upload", ensureAuthenticatedAPI, uploadRoutes);
-app.use("/api/question", ensureAuthenticatedAPI, questionRoutes);
-//app.use("/api/quiz-questions", ensureAuthenticatedAPI, quizQuestionRoutes);
+// Course routes - staff and above for management, but students might need read access
 app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
-app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
-app.use("/api/rag-llm", ensureAuthenticatedAPI, ragLlmRoutes);
-app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
-app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
+
+// Quiz routes - all authenticated users (students take quizzes, staff/faculty manage)
 app.use("/api/quiz", ensureAuthenticatedAPI, quizRoutes);
-app.use("/api/users", ensureAuthenticatedAPI, userRoutes);
+
+// Student routes - all authenticated users
+app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
+
+// Achievement routes - all authenticated users
 app.use("/api/achievement", ensureAuthenticatedAPI, achievementRoutes);
 
+// Users management - faculty only
+app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), userRoutes);
+
+// Current user endpoint - all authenticated users
 app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
   try {
-    // Check if user is faculty (includes administrator check)
-    const userIsFaculty = await isFaculty(req.user);
+    const userRole = await getUserRole(req.user);
+    const userIsFaculty = userRole === ROLES.FACULTY;
+    const userIsStaff = userRole === ROLES.STAFF;
+    const userIsStudent = userRole === ROLES.STUDENT;
     
     res.json({
       success: true,
@@ -147,7 +231,10 @@ app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
         email: req.user.email,
         affiliation: req.user.affiliation,
         puid: req.user.puid,
+        role: userRole,
         isFaculty: userIsFaculty,
+        isStaff: userIsStaff,
+        isStudent: userIsStudent,
       },
     });
   } catch (error) {
@@ -161,17 +248,16 @@ app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
 
 // Final 404 handler for any requests that do not match a route
 app.use((req, res) => {
-  // If it's an API path, send a JSON 404
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
-  // For all other paths, send a simple text 404
   res.status(404).send('404: Page Not Found');
 });
 
 app.listen(port, async () => {
   console.log(`Server is running on http://localhost:${port}`);
-  console.log("GRASP Test");
+  console.log("GRASP - Role-based access control enabled");
+  console.log("Roles: Faculty (full access), Staff (instructor features), Student (quiz access)");
 
   // Initialize MongoDB connection
   try {

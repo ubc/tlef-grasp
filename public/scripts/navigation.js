@@ -1,18 +1,29 @@
 // GRASP Navigation Component
 // Shared navigation functionality for all GRASP pages
 
+// Role constants (must match server-side)
+const USER_ROLES = {
+  FACULTY: 'faculty',
+  STAFF: 'staff',
+  STUDENT: 'student',
+};
+
 class GRASPNavigation {
   constructor() {
     this.currentPage = this.detectCurrentPage();
+    this.userRole = null;
     this.isFaculty = false;
+    this.isStaff = false;
+    this.isStudent = false;
+    this.hasCourse = false;
     this.init();
   }
 
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("quiz-summary")) return "quiz-summary";
+    if (path.includes("student-dashboard")) return "student-dashboard";
     if (path.includes("quiz")) return "my-quizzes";
-    if (path.includes("student-dashboard")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("achievements")) return "achievements";
     if (path.includes("dashboard")) return "dashboard";
@@ -38,22 +49,116 @@ class GRASPNavigation {
 
   async loadUserInfo() {
     try {
-      const response = await fetch("/api/current-user");
+      const response = await fetch('/api/current-user');
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
+          this.userRole = data.user.role || USER_ROLES.STUDENT;
           this.isFaculty = data.user.isFaculty || false;
+          this.isStaff = data.user.isStaff || false;
+          this.isStudent = data.user.isStudent || false;
+          
+          // Store role in localStorage for quick access
+          localStorage.setItem('grasp-user-role', this.userRole);
+          
+          // Check if user has a course
+          await this.checkCourseAccess();
+          
+          // If user is a student and tries to access instructor pages, redirect
+          if (this.isStudent && this.isInstructorOnlyPage()) {
+            window.location.href = '/student-dashboard';
+            return;
+          }
+          
+          // If student has no course and tries to access pages requiring course, redirect to dashboard
+          if (this.isStudent && !this.hasCourse && this.requiresCourse()) {
+            window.location.href = '/student-dashboard';
+            return;
+          }
         }
       }
     } catch (error) {
-      console.error("Error loading user info:", error);
+      console.error('Error loading user info:', error);
     }
+  }
+  
+  async checkCourseAccess() {
+    // For students, always verify course access from API (ensures removed students lose access immediately)
+    if (this.isStudent) {
+      try {
+        const response = await fetch('/api/student/courses');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.courses && data.courses.length > 0) {
+            // Student has courses - verify session course is still valid
+            const sessionCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+            
+            if (sessionCourse && sessionCourse.id) {
+              const stillValid = data.courses.some(c => 
+                (c._id === sessionCourse.id) || (c.id === sessionCourse.id)
+              );
+              if (stillValid) {
+                this.hasCourse = true;
+                return;
+              }
+              // Session course no longer valid, clear it
+              sessionStorage.removeItem('grasp-selected-course');
+            }
+            
+            // Use the first available course
+            const firstCourse = data.courses[0];
+            const courseData = {
+              id: firstCourse._id || firstCourse.id,
+              name: firstCourse.name || firstCourse.courseName || 'Unknown Course',
+            };
+            sessionStorage.setItem('grasp-selected-course', JSON.stringify(courseData));
+            this.hasCourse = true;
+            return;
+          }
+        }
+        // No courses found - clear stale session data
+        sessionStorage.removeItem('grasp-selected-course');
+        this.hasCourse = false;
+      } catch (error) {
+        console.error('Error checking student courses:', error);
+        sessionStorage.removeItem('grasp-selected-course');
+        this.hasCourse = false;
+      }
+    } else {
+      // For faculty/staff, check session storage first, then assume access
+      try {
+        const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+        if (selectedCourse && selectedCourse.id) {
+          this.hasCourse = true;
+          return;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+      // For faculty/staff, assume they have course access even without session
+      this.hasCourse = true;
+    }
+  }
+  
+  requiresCourse() {
+    // Pages that require a course to be selected
+    const courseRequiredPages = ['my-quizzes', 'achievements', 'quiz-summary'];
+    return courseRequiredPages.includes(this.currentPage);
+  }
+
+  isInstructorOnlyPage() {
+    const instructorPages = ['dashboard', 'question-bank', 'question-generation', 'course-materials', 'users'];
+    return instructorPages.includes(this.currentPage);
+  }
+
+  canSwitchRoles() {
+    // Only faculty and staff can switch between instructor/student views
+    return this.isFaculty || this.isStaff;
   }
 
   createNavigation() {
     // Check if navigation already exists
     if (document.querySelector(".sidebar")) {
-      console.log("Sidebar already exists, skipping creation");
       return; // Navigation already exists
     }
 
@@ -64,11 +169,15 @@ class GRASPNavigation {
       return;
     }
 
-    console.log("Creating sidebar navigation...");
-
-    // Get current role
-    this.currentRole =
-      localStorage.getItem("grasp-current-role") || "instructor";
+    // Determine current role view
+    // Students can ONLY see student view, faculty/staff can switch between views
+    if (this.isStudent) {
+      this.currentRole = 'student';
+      localStorage.setItem('grasp-current-role', 'student');
+    } else {
+      // Faculty and staff can switch views, get from localStorage or default to instructor
+      this.currentRole = localStorage.getItem("grasp-current-role") || "instructor";
+    }
 
     // Create sidebar with consistent styling
     const sidebar = document.createElement("aside");
@@ -113,14 +222,9 @@ class GRASPNavigation {
 
         <!-- Role Switch Section -->
         <div class="role-switch-section">
-          <button class="role-switch-button" id="roleSwitchButton">
-            <i class="fas fa-exchange-alt"></i>
-            <span>Instructors/Students</span>
-          </button>
+          ${this.getRoleSwitchButton()}
           <div class="current-role" id="currentRole">
-            <span>Viewing: <strong>${
-              this.currentRole === "instructor" ? "Instructor" : "Student"
-            }</strong></span>
+            ${this.getCurrentRoleDisplay()}
           </div>
           <button class="sign-out-button" id="signOutButton">
             <i class="fas fa-sign-out-alt"></i>
@@ -133,15 +237,33 @@ class GRASPNavigation {
     // Insert sidebar at the beginning of the app container
     appContainer.insertBefore(sidebar, appContainer.firstChild);
 
-    console.log("Sidebar created and inserted:", sidebar);
-
     // Add consistent navigation styles
     this.addNavigationStyles();
   }
 
   getNavigationMenu() {
-    if (this.currentRole === "student") {
+    // Student view (either actual student or instructor previewing student view)
+    if (this.currentRole === 'student') {
+      // If student has no course, only show Dashboard
+      if (this.isStudent && !this.hasCourse) {
+        return `
+          <li class="nav-item" data-page="student-dashboard">
+            <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
+              <i class="fas fa-home"></i>
+              <span>Dashboard</span>
+            </a>
+          </li>
+        `;
+      }
+      
+      // Student with course - show full menu
       return `
+        <li class="nav-item" data-page="student-dashboard">
+          <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-home"></i>
+            <span>Dashboard</span>
+          </a>
+        </li>
         <li class="nav-item" data-page="my-quizzes">
           <a href="/quiz" style="text-decoration: none; color: inherit;">
             <i class="fas fa-list-check"></i>
@@ -155,46 +277,89 @@ class GRASPNavigation {
           </a>
         </li>
       `;
-    } else {
-      return `
-        <li class="nav-item" data-page="dashboard">
-          <a href="/dashboard" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-home"></i>
-            <span>Dashboard</span>
-          </a>
-        </li>
-        <li class="nav-item" data-page="question-bank">
-          <a href="/question-bank" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-book"></i>
-            <span>Question Bank</span>
-          </a>
-        </li>
-        <li class="nav-item" data-page="question-generation">
-          <a href="/question-generation" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-puzzle-piece"></i>
-            <span>Question Generation</span>
-          </a>
-        </li>
-        <li class="nav-item" data-page="course-materials">
-          <a href="/course-materials" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-folder"></i>
-            <span>Course Materials</span>
-          </a>
-        </li>
+    }
+    
+    // Instructor view - base menu for staff
+    let menu = `
+      <li class="nav-item" data-page="dashboard">
+        <a href="/dashboard" style="text-decoration: none; color: inherit;">
+          <i class="fas fa-home"></i>
+          <span>Dashboard</span>
+        </a>
+      </li>
+      <li class="nav-item" data-page="question-bank">
+        <a href="/question-bank" style="text-decoration: none; color: inherit;">
+          <i class="fas fa-book"></i>
+          <span>Question Bank</span>
+        </a>
+      </li>
+      <li class="nav-item" data-page="question-generation">
+        <a href="/question-generation" style="text-decoration: none; color: inherit;">
+          <i class="fas fa-puzzle-piece"></i>
+          <span>Question Generation</span>
+        </a>
+      </li>
+      <li class="nav-item" data-page="course-materials">
+        <a href="/course-materials" style="text-decoration: none; color: inherit;">
+          <i class="fas fa-folder"></i>
+          <span>Course Materials</span>
+        </a>
+      </li>
+    `;
+    
+    // Users management - faculty only
+    if (this.isFaculty) {
+      menu += `
         <li class="nav-item" data-page="users">
           <a href="/users" style="text-decoration: none; color: inherit;">
             <i class="fas fa-users"></i>
             <span>Users</span>
           </a>
         </li>
-        <li class="nav-item" data-page="settings">
-          <a href="/settings" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-cog"></i>
-            <span>Settings</span>
-          </a>
-        </li>
       `;
     }
+    
+    menu += `
+      <li class="nav-item" data-page="settings">
+        <a href="/settings" style="text-decoration: none; color: inherit;">
+          <i class="fas fa-cog"></i>
+          <span>Settings</span>
+        </a>
+      </li>
+    `;
+    
+    return menu;
+  }
+
+  getRoleSwitchButton() {
+    // Only show role switch button for faculty and staff
+    if (this.isStudent) {
+      return ''; // Students can't switch roles
+    }
+    
+    return `
+      <button class="role-switch-button" id="roleSwitchButton">
+        <i class="fas fa-exchange-alt"></i>
+        <span>Switch View</span>
+      </button>
+    `;
+  }
+
+  getCurrentRoleDisplay() {
+    const viewingRole = this.currentRole === 'instructor' ? 'Instructor' : 'Student';
+    const actualRole = this.getUserRoleLabel();
+    
+    if (this.isStudent) {
+      return `<span>Role: <strong>Student</strong></span>`;
+    }
+    
+    return `<span>Viewing: <strong>${viewingRole}</strong></span>`;
+  }
+
+  getUserRoleLabel() {
+    if (this.isFaculty) return 'Faculty';
+    if (this.isStaff) return 'Staff';
+    return 'Student';
   }
 
   addNavigationStyles() {
@@ -522,8 +687,6 @@ class GRASPNavigation {
         }
         // Handle navigation
         const navText = item.querySelector("span").textContent;
-        console.log(`Navigating to: ${navText}`);
-
         // Update page title based on navigation
         this.updatePageTitle(navText);
       });
@@ -571,16 +734,23 @@ class GRASPNavigation {
   }
 
   initializeRoleSwitch() {
-    const roleSwitchButton = document.getElementById("roleSwitchButton");
-    const currentRoleElement = document.getElementById("currentRole");
+    const roleSwitchButton = document.getElementById('roleSwitchButton');
+    const currentRoleElement = document.getElementById('currentRole');
+
+    // For students, force student view
+    if (this.isStudent) {
+      this.currentRole = 'student';
+      localStorage.setItem('grasp-current-role', 'student');
+      this.updateRoleDisplay();
+      return;
+    }
 
     if (roleSwitchButton && currentRoleElement) {
       // Get current role from localStorage or default to instructor
-      this.currentRole =
-        localStorage.getItem("grasp-current-role") || "instructor";
+      this.currentRole = localStorage.getItem('grasp-current-role') || 'instructor';
       this.updateRoleDisplay();
 
-      roleSwitchButton.addEventListener("click", () => {
+      roleSwitchButton.addEventListener('click', () => {
         this.switchRole();
       });
     }
@@ -622,18 +792,21 @@ class GRASPNavigation {
   }
 
   updateRoleDisplay() {
-    const currentRoleElement = document.getElementById("currentRole");
+    const currentRoleElement = document.getElementById('currentRole');
     if (currentRoleElement) {
-      const roleText =
-        this.currentRole === "instructor" ? "Instructor" : "Student";
-      currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+      if (this.isStudent) {
+        currentRoleElement.innerHTML = `<span>Role: <strong>Student</strong></span>`;
+      } else {
+        const roleText = this.currentRole === 'instructor' ? 'Instructor' : 'Student';
+        currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+      }
     }
   }
 
   navigateToRoleDashboard() {
     if (this.currentRole === "student") {
-      // Navigate directly to quiz list page
-      window.location.href = "/quiz";
+      // Navigate to student dashboard
+      window.location.href = "/student-dashboard";
     } else {
       // Navigate to instructor dashboard
       window.location.href = "/dashboard";
@@ -680,29 +853,20 @@ class GRASPNavigation {
   }
 
   performSearch(searchTerm) {
-    console.log(`Searching for: ${searchTerm}`);
-    // This is where you would implement actual search logic
-    // For now, we'll just log the search term
-
-    // You could search through:
-    // - Questions
-    // - Course materials
-    // - Users
-    // - etc.
+    // Search functionality placeholder
+    // Could search through questions, course materials, users, etc.
   }
 
   openUserProfile() {
-    console.log("Opening user profile...");
     // Navigate to user profile page or open modal
   }
 
   openSettings() {
-    console.log("Opening settings...");
-    // Navigate to settings page or open modal
+    // Navigate to settings page
+    window.location.href = '/settings';
   }
 
   openNotifications() {
-    console.log("Opening notifications...");
     // Open notifications panel or modal
   }
 

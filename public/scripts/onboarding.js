@@ -34,6 +34,13 @@ const STORAGE_KEYS = {
   selectedCourse: 'grasp-selected-course',
 };
 
+// User roles (must match server-side)
+const USER_ROLES = {
+  FACULTY: 'faculty',
+  STAFF: 'staff',
+  STUDENT: 'student',
+};
+
 /**
  * Manages tab switching functionality
  */
@@ -211,7 +218,16 @@ class OnboardingManager {
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
+          this.userRole = data.user.role || USER_ROLES.STUDENT;
           this.isFaculty = data.user.isFaculty || false;
+          this.isStaff = data.user.isStaff || false;
+          this.isStudent = data.user.isStudent || false;
+          
+          // Students go directly to student dashboard
+          if (this.isStudent) {
+            window.location.href = '/student-dashboard';
+            return;
+          }
         }
       }
     } catch (error) {
@@ -220,6 +236,7 @@ class OnboardingManager {
   }
 
   updateUIForUserRole() {
+    // Faculty has full access
     if (this.isFaculty) return;
 
     // Hide setup tab button for staff

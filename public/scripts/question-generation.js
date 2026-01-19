@@ -505,7 +505,7 @@ async function initializeAddObjectivesDropdown() {
         if (isHandling) return; // Prevent duplicate calls
         if (e.target.classList.contains("dropdown-option") &&
           !e.target.classList.contains("dropdown-option--empty") &&
-          !e.target.classList.contains("dropdown-option--disabled")) {
+          !e.target.classList.contains("dropdown-option--di abled")) {
           isHandling = true;
           const objectiveId = e.target.dataset.objectiveId;
           const objectiveName = e.target.dataset.objectiveName;

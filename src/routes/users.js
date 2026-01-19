@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse } = require('../services/user-course');
-const { getStaffUsersNotInCourse } = require('../services/user');
+const { getStaffUsersNotInCourse, getStudentsNotInCourse } = require('../services/user');
 const { getCourseById } = require('../services/course');
 const { isFaculty } = require('../utils/auth');
 
@@ -82,6 +82,42 @@ router.get("/staff/not-in-course/:courseId", async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: "Failed to fetch staff users" 
+    });
+  }
+});
+
+// Get all students not in a course
+router.get("/students/not-in-course/:courseId", async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    // Only faculty can view available students
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ 
+        success: false,
+        error: "Only faculty can view available students" 
+      });
+    }
+
+    // Check if user is in course
+    if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
+      return res.status(403).json({ 
+        success: false,
+        error: "User is not in course" 
+      });
+    }
+
+    const students = await getStudentsNotInCourse(courseId);
+
+    res.json({
+      success: true,
+      users: students,
+    });
+  } catch (error) {
+    console.error("Error fetching students not in course:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch students" 
     });
   }
 });

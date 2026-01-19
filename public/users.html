@@ -91,6 +91,42 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- Available Students Section (only visible to faculty) -->
+                <section class="users-section" id="available-students-section" style="display: none;">
+                    <div class="section-header">
+                        <h2>
+                            <i class="fas fa-user-graduate"></i>
+                            Available Students
+                        </h2>
+                        <p class="section-description">Students who can be added to this course to view quizzes</p>
+                    </div>
+                    <div class="users-container">
+                        <div class="loading" id="students-loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Loading students...</span>
+                        </div>
+                        <div class="table-wrapper" id="students-table-wrapper" style="display: none;">
+                            <table class="users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th class="actions-column">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="available-students-list">
+                                    <!-- Available students will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="empty-state" id="students-empty" style="display: none;">
+                            <i class="fas fa-user-check"></i>
+                            <p>All students have been added to this course.</p>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>

@@ -7,8 +7,11 @@
 const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
-const path = require('path');
 const { createOrUpdateUser, getUserByPuid } = require('../services/user');
+const { getUserRole, ROLES } = require('../utils/auth');
+
+// Valid affiliations that can access the application
+const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
 
 passport.use(
 	new Strategy(
@@ -33,10 +36,6 @@ passport.use(
 		// Verify callback: called with user profile after successful authentication
 		async (profile, done) => {
 			// Extract UBC Shibboleth attributes
-			// The attribute is called 'ubcEduCwlPuid' and can be in multiple formats:
-			// 1. profile.attributes.ubcEduCwlPuid (friendly name)
-			// 2. profile['urn:mace:dir:attribute-def:ubcEduCwlPuid'] (MACE format)
-			// 3. profile['urn:oid:1.3.6.1.4.1.60.6.1.6'] (OID format)
 			const ubcEduCwlPuid = profile.attributes?.ubcEduCwlPuid ||
 				profile['urn:mace:dir:attribute-def:ubcEduCwlPuid'] ||
 				profile['urn:oid:1.3.6.1.4.1.60.6.1.6'];
@@ -53,19 +52,21 @@ passport.use(
 				profile.attributes?.cn ||
 				profile['urn:oid:2.16.840.1.113730.3.1.241'] ||
 				email;
+
 			const affiliations = profile.attributes?.eduPersonAffiliation ||
 				profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.1'] ||
 				[];
 
 			// Making sure PUID is present
 			if (!ubcEduCwlPuid) {
-				return done(new Error("PUID is required"));
+				return done(new Error('PUID is required'));
 			}
 
-			// The application currently only supports faculty, and staff.
-			// eduPersonAffiliation is a comma-separated string
-			if (!affiliations.includes('faculty') && !affiliations.includes('staff')) {
-				return done(new Error("The Grasp application is currently only accessible to faculty and staff"));
+			// Check if user has a valid affiliation (faculty, staff, student, or affiliate)
+			const hasValidAffiliation = VALID_AFFILIATIONS.some(aff => affiliations.includes(aff));
+			
+			if (!hasValidAffiliation) {
+				return done(new Error('Access denied. This application is only available to UBC faculty, staff, and students.'));
 			}
 
 			// Get database connection and save user
@@ -83,10 +84,12 @@ passport.use(
 					user = await getUserByPuid(ubcEduCwlPuid);
 				}
 
-				return done(null, user);
+				// Get user role for session
+				const role = await getUserRole(user);
+
+				return done(null, { ...user, role });
 			} catch (error) {
-				// Log error but don't fail authentication
-				return done(new Error("Error saving user to database: " + error.message));
+				return done(new Error('Error saving user to database: ' + error.message));
 			}
 		}
 	)
@@ -94,27 +97,22 @@ passport.use(
 
 // Serialize user to session
 // Runs ONCE on login - stores full user data in session
-// Convert ObjectId to string so it serializes properly to JSON
 passport.serializeUser((user, done) => {
 	// Convert MongoDB document to plain JavaScript object
-	// Convert ObjectId to string for JSON serialization in session
 	const userObj = {
 		...user,
 		_id: user._id ? user._id.toString() : user._id
 	};
 
 	// Store full user object in session
-	// This avoids DB queries on every request
 	done(null, userObj);
 });
 
 // Deserialize user from session
 // Runs on EVERY authenticated request
-// Simply returns the user stored in session (no DB query needed!)
 passport.deserializeUser((user, done) => {
 	// User is already stored in session from serializeUser
-	// No database query needed - just return it
 	done(null, user);
 });
 
-module.exports = { passport };
+module.exports = { passport, VALID_AFFILIATIONS, ROLES };

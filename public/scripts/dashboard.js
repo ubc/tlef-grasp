@@ -55,14 +55,14 @@ class Calendar {
    */
   render() {
     if (!this.headerElement || !this.daysElement) {
-      return;
-    }
-
-    const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    const currentDate = today.getDate();
-
+    return;
+  }
+  
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  const currentDate = today.getDate();
+  
     this.renderHeader(currentMonth, currentYear);
     this.renderDays(currentYear, currentMonth, currentDate);
   }
@@ -80,20 +80,20 @@ class Calendar {
   renderDays(year, month, highlightDate) {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    
+  const daysInMonth = lastDay.getDate();
+  
     // Adjust starting day for Monday-first calendar
     const startingDayOfWeek = firstDay.getDay();
-    const adjustedStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
-
-    // Get previous month's last days
+  const adjustedStartingDay = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+  
+  // Get previous month's last days
     const prevMonthLastDay = new Date(year, month, 0);
     const daysInPrevMonth = prevMonthLastDay.getDate();
-
+  
     // Clear and rebuild calendar
     this.daysElement.innerHTML = '';
-
-    // Add previous month's trailing days
+  
+  // Add previous month's trailing days
     this.addPreviousMonthDays(daysInPrevMonth, adjustedStartingDay);
 
     // Add current month's days
@@ -108,29 +108,29 @@ class Calendar {
    */
   addPreviousMonthDays(daysInPrevMonth, startOffset) {
     for (let i = startOffset - 1; i >= 0; i--) {
-      const day = daysInPrevMonth - i;
+    const day = daysInPrevMonth - i;
       this.createDayElement(day, 'other-month');
     }
   }
-
+  
   /**
    * Add days for the current month
    */
   addCurrentMonthDays(daysInMonth, highlightDate) {
-    for (let day = 1; day <= daysInMonth; day++) {
+  for (let day = 1; day <= daysInMonth; day++) {
       const className = day === highlightDate ? 'current-day' : '';
       this.createDayElement(day, className);
     }
   }
-
+  
   /**
    * Add days from the next month to fill remaining cells
    */
   addNextMonthDays() {
     const totalCells = this.daysElement.children.length;
     const remainingCells = 42 - totalCells; // 6 rows × 7 days
-
-    for (let day = 1; day <= remainingCells; day++) {
+  
+  for (let day = 1; day <= remainingCells; day++) {
       this.createDayElement(day, 'other-month');
     }
   }
@@ -167,18 +167,18 @@ class FlaggedQuestionsManager {
   async load() {
     try {
       const selectedCourse = this.getSelectedCourse();
-      
+
       if (!selectedCourse?.id) {
         this.updateDisplay(0);
-        return;
-      }
+      return;
+    }
 
       const response = await fetch(`${API_ENDPOINTS.questions}?courseId=${selectedCourse.id}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-      const data = await response.json();
+    const data = await response.json();
       const flaggedCount = this.countFlaggedQuestions(data);
       this.updateDisplay(flaggedCount);
     } catch (error) {
@@ -216,7 +216,7 @@ class FlaggedQuestionsManager {
 
     if (countEl) {
       countEl.textContent = count;
-    }
+  }
 
     const hasFlagged = count > 0;
     
@@ -354,8 +354,8 @@ document.addEventListener('DOMContentLoaded', () => {
   dashboard.init();
 
   // Export for potential external use
-  window.GRASPDashboard = {
+window.GRASPDashboard = {
     handleQuickStartAction: (action) => dashboard.handleQuickStartAction(action),
     loadFlaggedQuestionsCount: () => dashboard.flaggedQuestions.load(),
-  };
+};
 });
