@@ -11,7 +11,7 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("quiz-summary")) return "quiz-summary";
-    if (path.includes("quiz")) return "quiz";
+    if (path.includes("quiz")) return "my-quizzes";
     if (path.includes("student-dashboard")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("achievements")) return "achievements";
@@ -143,7 +143,7 @@ class GRASPNavigation {
     if (this.currentRole === "student") {
       return `
         <li class="nav-item" data-page="my-quizzes">
-          <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
+          <a href="/quiz" style="text-decoration: none; color: inherit;">
             <i class="fas fa-list-check"></i>
             <span>My Quizzes</span>
           </a>
@@ -632,8 +632,8 @@ class GRASPNavigation {
 
   navigateToRoleDashboard() {
     if (this.currentRole === "student") {
-      // Navigate to student dashboard
-      window.location.href = "/student-dashboard";
+      // Navigate directly to quiz list page
+      window.location.href = "/quiz";
     } else {
       // Navigate to instructor dashboard
       window.location.href = "/dashboard";

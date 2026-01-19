@@ -69,6 +69,9 @@ class DatabaseService {
       await this.db.collection("grasp_quiz_question").createIndex({ quizId: 1, questionId: 1 }, { unique: true });
       await this.db.collection("grasp_quiz_question").createIndex({ quizId: 1 });
       await this.db.collection("grasp_quiz_question").createIndex({ questionId: 1 });
+      await this.db.collection("grasp_achievement").createIndex({ userId: 1, quizId: 1 }, { unique: true });
+      await this.db.collection("grasp_achievement").createIndex({ userId: 1 });
+      await this.db.collection("grasp_achievement").createIndex({ courseId: 1 });
     
       console.log("✅ MongoDB collections initialized");
     } catch (error) {

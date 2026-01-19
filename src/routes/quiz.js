@@ -183,11 +183,14 @@ router.post("/:quizId/questions", express.json(), async (req, res) => {
 /**
  * GET /api/quiz/:quizId/questions
  * Get all questions in a quiz
+ * Query params: approvedOnly (optional) - if true, only return approved questions (for students)
  */
 router.get("/:quizId/questions", async (req, res) => {
   try {
     const { quizId } = req.params;
-    const questions = await quizService.getQuizQuestions(quizId);
+    const { approvedOnly } = req.query;
+    const approvedOnlyBool = approvedOnly === 'true' || approvedOnly === true;
+    const questions = await quizService.getQuizQuestions(quizId, approvedOnlyBool);
     res.json({ success: true, questions });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);

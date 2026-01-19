@@ -163,36 +163,8 @@ function handleQuizAction(action, quizTitle) {
 function startQuiz(quizId) {
   console.log(`Starting quiz: ${quizId}`);
 
-  // Show loading state
-  showLoadingState();
-
-  // Call API to start quiz
-  fetch(`/api/student/quizzes/${quizId}/start`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      hideLoadingState();
-
-      if (data.success) {
-        showNotification(`Starting quiz: ${quizId}`, "success");
-
-        // Navigate to the quiz page
-        setTimeout(() => {
-          window.location.href = `/quiz?quiz=${quizId}&session=${data.data.sessionId}`;
-        }, 1000);
-      } else {
-        throw new Error(data.message);
-      }
-    })
-    .catch((error) => {
-      hideLoadingState();
-      console.error("Error starting quiz:", error);
-      showNotification(`Failed to start quiz: ${error.message}`, "error");
-    });
+  // Navigate directly to the quiz page - it will auto-start
+  window.location.href = `/quiz?quiz=${quizId}`;
 }
 
 function continueQuiz(quizTitle) {
@@ -239,25 +211,85 @@ function reviewQuiz(quizId) {
     });
 }
 
-function loadQuizData() {
-  // Load quiz data from API
-  console.log("Loading quiz data...");
+async function loadQuizData() {
+  // Get course from sessionStorage
+  const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
+  const courseId = selectedCourse.id;
 
-  fetch("/api/student/quizzes")
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success) {
-        renderQuizCards(data.data);
-      } else {
-        throw new Error(data.message);
-      }
-    })
-    .catch((error) => {
-      console.error("Error loading quiz data:", error);
-      showNotification("Failed to load quiz data", "error");
+  if (!courseId) {
+    const quizGrid = document.getElementById("quizGrid");
+    if (quizGrid) {
+      quizGrid.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-exclamation-triangle"></i>
+          <h3>No Course Selected</h3>
+          <p>Please select a course to view available quizzes.</p>
+        </div>
+      `;
+    }
+    return;
+  }
 
-      // Show empty state on error
-      const quizGrid = document.getElementById("quizGrid");
+  console.log("Loading quiz data for course:", courseId);
+
+  try {
+    // Fetch quizzes for the current course
+    const response = await fetch(`/api/quiz/course/${courseId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success && data.quizzes) {
+      // Filter to only show published quizzes
+      const publishedQuizzes = data.quizzes.filter(quiz => quiz.published === true);
+      
+      // Transform quiz data to match expected format
+      const transformedQuizzes = await Promise.all(
+        publishedQuizzes.map(async (quiz) => {
+          // Get approved question count for this quiz (students only see approved questions)
+          const questionsResponse = await fetch(`/api/quiz/${quiz._id}/questions?approvedOnly=true`);
+          let questionCount = 0;
+          if (questionsResponse.ok) {
+            const questionsData = await questionsResponse.json();
+            if (questionsData.success && questionsData.questions) {
+              // All questions returned are already approved (filtered by backend)
+              questionCount = questionsData.questions.length;
+            }
+          }
+
+          // Format dates
+          const createdAt = quiz.createdAt ? new Date(quiz.createdAt) : new Date();
+          const dueDate = quiz.dueDate ? new Date(quiz.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No due date';
+          
+          return {
+            id: quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || ""),
+            title: quiz.name || "Unnamed Quiz",
+            course: selectedCourse.name || "Unknown Course",
+            objective: "", // Not available in quiz data
+            week: "", // Not available in quiz data
+            dueDate: dueDate,
+            timeLimit: "No limit", // Not stored in quiz data
+            questionCount: questionCount,
+            completion: 0, // TODO: Get actual completion from student quiz attempts
+            createdAt: createdAt
+          };
+        })
+      );
+
+      renderQuizCards(transformedQuizzes);
+    } else {
+      throw new Error(data.error || "Failed to load quizzes");
+    }
+  } catch (error) {
+    console.error("Error loading quiz data:", error);
+    showNotification("Failed to load quiz data", "error");
+
+    // Show empty state on error
+    const quizGrid = document.getElementById("quizGrid");
+    if (quizGrid) {
       quizGrid.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-exclamation-triangle"></i>
@@ -265,7 +297,8 @@ function loadQuizData() {
           <p>There was an error loading your quizzes. Please try refreshing the page or contact support if the problem persists.</p>
         </div>
       `;
-    });
+    }
+  }
 }
 
 function renderQuizCards(quizData) {
@@ -298,9 +331,9 @@ function renderQuizCards(quizData) {
 function createQuizCard(quiz, index) {
   const card = document.createElement("div");
   card.className = "quiz-card";
-  card.setAttribute("data-course", quiz.course);
-  card.setAttribute("data-objective", quiz.objective);
-  card.setAttribute("data-week", quiz.week);
+  card.setAttribute("data-course", quiz.course || "");
+  card.setAttribute("data-objective", quiz.objective || "");
+  card.setAttribute("data-week", quiz.week || "");
   card.style.animationDelay = `${index * 0.1}s`;
 
   const statusClass =
@@ -310,28 +343,35 @@ function createQuizCard(quiz, index) {
       ? "partial"
       : "";
 
+  // Format the quiz ID for use in onclick handlers
+  const quizIdEscaped = String(quiz.id).replace(/'/g, "\\'");
+
   card.innerHTML = `
     <div class="quiz-header">
-      <h3>${quiz.title}</h3>
+      <h3>${quiz.title || "Unnamed Quiz"}</h3>
+      ${quiz.completion > 0 ? `
       <div class="quiz-status">
-        <span class="attempt-status ${statusClass}">${
-    quiz.completion
-  }% attempted</span>
+        <span class="attempt-status ${statusClass}">${quiz.completion}% attempted</span>
       </div>
+      ` : ''}
     </div>
     <div class="quiz-content">
       <div class="quiz-info">
+        ${quiz.dueDate && quiz.dueDate !== 'No due date' ? `
         <div class="info-item">
           <i class="fas fa-calendar"></i>
           <span>Due: ${quiz.dueDate}</span>
         </div>
+        ` : ''}
+        ${quiz.timeLimit && quiz.timeLimit !== 'No limit' ? `
         <div class="info-item">
           <i class="fas fa-clock"></i>
           <span>Time Limit: ${quiz.timeLimit}</span>
         </div>
+        ` : ''}
         <div class="info-item">
           <i class="fas fa-question-circle"></i>
-          <span>${quiz.questionCount} Questions</span>
+          <span>${quiz.questionCount} Question${quiz.questionCount !== 1 ? 's' : ''}</span>
         </div>
       </div>
     </div>
@@ -339,9 +379,9 @@ function createQuizCard(quiz, index) {
       <button class="quiz-button ${
         quiz.completion === 100 ? "review-button" : "start-button"
       }" 
-              onclick="${
+              onclick="window.GRASPStudentDashboard.${
                 quiz.completion === 100 ? "reviewQuiz" : "startQuiz"
-              }('${quiz.id}')">
+              }('${quizIdEscaped}')">
         ${
           quiz.completion === 100
             ? "Review"

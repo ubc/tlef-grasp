@@ -12,6 +12,7 @@ const materialRoutes = require("./routes/material");
 const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
+const achievementRoutes = require("./routes/achievement");
 const { isFaculty } = require("./utils/auth");
 
 const app = express();
@@ -129,6 +130,7 @@ app.use("/api/material", ensureAuthenticatedAPI, materialRoutes);
 app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes);
 app.use("/api/quiz", ensureAuthenticatedAPI, quizRoutes);
 app.use("/api/users", ensureAuthenticatedAPI, userRoutes);
+app.use("/api/achievement", ensureAuthenticatedAPI, achievementRoutes);
 
 app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
   try {

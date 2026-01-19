@@ -131,11 +131,16 @@ router.get("/quizzes/:quizId", (req, res) => {
 });
 
 // Start a quiz
-router.post("/quizzes/:quizId/start", (req, res) => {
+router.post("/quizzes/:quizId/start", async (req, res) => {
   try {
     const { quizId } = req.params;
 
-    const quiz = mockStudentQuizzes.find((q) => q.id === quizId);
+    // Log the quizId for debugging
+    console.log("Starting quiz with ID:", quizId, "Type:", typeof quizId);
+
+    // Use the quiz service to get the quiz
+    const quizService = require("../services/quiz");
+    const quiz = await quizService.getQuizById(quizId);
 
     if (!quiz) {
       return res.status(404).json({
@@ -144,16 +149,36 @@ router.post("/quizzes/:quizId/start", (req, res) => {
       });
     }
 
-    // In a real application, you would:
+    // Check if quiz is published - students can only start published quizzes
+    if (!quiz.published) {
+      return res.status(403).json({
+        success: false,
+        message: "This quiz is not available. Only published quizzes can be accessed.",
+      });
+    }
+
+    // Verify quiz has approved questions
+    const questions = await quizService.getQuizQuestions(quizId, true); // approvedOnly = true
+    if (!questions || questions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "This quiz has no approved questions available.",
+      });
+    }
+
+    // Create a quiz session
+    // TODO: In a real application, you would:
     // 1. Check if the student can start the quiz (not expired, not already completed, etc.)
-    // 2. Create a quiz session
-    // 3. Return the quiz questions and session info
+    // 2. Store the session in the database
+    // 3. Track start time, etc.
+
+    const sessionId = `session_${Date.now()}_${quizId}`;
 
     res.json({
       success: true,
       data: {
-        quizId: quiz.id,
-        sessionId: `session_${Date.now()}`,
+        quizId: quizId,
+        sessionId: sessionId,
         message: "Quiz started successfully",
       },
     });
@@ -167,13 +192,16 @@ router.post("/quizzes/:quizId/start", (req, res) => {
   }
 });
 
-// Get quiz questions
-router.get("/quizzes/:quizId/questions", (req, res) => {
+// Get quiz questions (for students - only published quizzes with approved questions)
+router.get("/quizzes/:quizId/questions", async (req, res) => {
   try {
     const { quizId } = req.params;
 
-    const quiz = mockStudentQuizzes.find((q) => q.id === quizId);
-
+    // Use the quiz service to get quiz and questions
+    const quizService = require("../services/quiz");
+    
+    // First, verify the quiz exists and is published
+    const quiz = await quizService.getQuizById(quizId);
     if (!quiz) {
       return res.status(404).json({
         success: false,
@@ -181,73 +209,107 @@ router.get("/quizzes/:quizId/questions", (req, res) => {
       });
     }
 
-    // Mock quiz questions
-    const mockQuestions = [
-      {
-        id: 1,
-        question: "What is the time complexity of binary search algorithm?",
-        options: [
-          { letter: "A", text: "O(n)" },
-          { letter: "B", text: "O(log n)" },
-          { letter: "C", text: "O(n²)" },
-          { letter: "D", text: "O(1)" },
-        ],
-        correctAnswer: "B",
-      },
-      {
-        id: 2,
-        question: "Which data structure uses LIFO principle?",
-        options: [
-          { letter: "A", text: "Queue" },
-          { letter: "B", text: "Stack" },
-          { letter: "C", text: "Array" },
-          { letter: "D", text: "Linked List" },
-        ],
-        correctAnswer: "B",
-      },
-      {
-        id: 3,
-        question: "What is the worst-case time complexity of quicksort?",
-        options: [
-          { letter: "A", text: "O(n log n)" },
-          { letter: "B", text: "O(n²)" },
-          { letter: "C", text: "O(n)" },
-          { letter: "D", text: "O(log n)" },
-        ],
-        correctAnswer: "B",
-      },
-      {
-        id: 4,
-        question: "Which sorting algorithm is stable?",
-        options: [
-          { letter: "A", text: "Quicksort" },
-          { letter: "B", text: "Heapsort" },
-          { letter: "C", text: "Merge sort" },
-          { letter: "D", text: "Selection sort" },
-        ],
-        correctAnswer: "C",
-      },
-      {
-        id: 5,
-        question: "What is the space complexity of recursive binary search?",
-        options: [
-          { letter: "A", text: "O(1)" },
-          { letter: "B", text: "O(log n)" },
-          { letter: "C", text: "O(n)" },
-          { letter: "D", text: "O(n log n)" },
-        ],
-        correctAnswer: "B",
-      },
-    ];
+    // Check if quiz is published - students can only access published quizzes
+    if (!quiz.published) {
+      return res.status(403).json({
+        success: false,
+        message: "This quiz is not available. Only published quizzes can be accessed.",
+      });
+    }
+
+    // Get questions, but only approved ones (for students)
+    const questions = await quizService.getQuizQuestions(quizId, true); // approvedOnly = true
+
+    if (!questions || questions.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          quizId: quizId,
+          title: quiz.name || "Quiz",
+          course: "",
+          duration: 0,
+          questions: [],
+        },
+        message: "No approved questions available for this quiz",
+      });
+    }
+
+    // Debug: Log first question structure
+    if (questions.length > 0) {
+      console.log("Sample question structure:", {
+        hasStem: !!questions[0].stem,
+        hasTitle: !!questions[0].title,
+        stem: questions[0].stem,
+        title: questions[0].title,
+        options: questions[0].options,
+        correctAnswer: questions[0].correctAnswer
+      });
+    }
+
+    // Transform questions to match expected format
+    // Frontend expects options as an object with keys A, B, C, D containing text strings
+    const transformedQuestions = questions.map((q, index) => {
+      // Ensure options is an object (not array) with A, B, C, D keys
+      let optionsObj = {};
+      if (q.options && typeof q.options === 'object') {
+        // If options is already an object, use it
+        if (!Array.isArray(q.options)) {
+          // Options might be nested objects with 'text' property or simple strings
+          optionsObj = {
+            A: (q.options.A?.text || q.options.A || "").toString(),
+            B: (q.options.B?.text || q.options.B || "").toString(),
+            C: (q.options.C?.text || q.options.C || "").toString(),
+            D: (q.options.D?.text || q.options.D || "").toString()
+          };
+        } else {
+          // If options is an array, convert to object
+          optionsObj = {
+            A: (q.options[0]?.text || q.options[0] || "").toString(),
+            B: (q.options[1]?.text || q.options[1] || "").toString(),
+            C: (q.options[2]?.text || q.options[2] || "").toString(),
+            D: (q.options[3]?.text || q.options[3] || "").toString()
+          };
+        }
+      }
+
+      // Get question text - prefer title (full question), fallback to stem
+      // Title usually contains the full question, stem might just be a prefix like "Select the best answer:"
+      const questionText = (q.title || q.stem || "").trim();
+      if (!questionText) {
+        console.warn(`Question ${index} (ID: ${q._id}) has no title or stem. Available fields:`, Object.keys(q));
+      }
+
+      return {
+        id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+        question: questionText || "Question text not available",
+        options: optionsObj,
+        correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
+      };
+    });
+
+    // Get course name if courseId is available
+    let courseName = "";
+    if (quiz.courseId) {
+      try {
+        const { getCourseById } = require("../services/course");
+        const course = await getCourseById(quiz.courseId.toString());
+        if (course) {
+          courseName = course.courseName || "";
+        }
+      } catch (courseError) {
+        console.error("Error fetching course name:", courseError);
+        // Continue without course name
+      }
+    }
 
     res.json({
       success: true,
       data: {
-        quizId: quiz.id,
-        title: quiz.title,
-        course: quiz.course,
-        duration: parseInt(quiz.timeLimit),
-        questions: mockQuestions,
+        quizId: quizId,
+        title: quiz.name || "Quiz",
+        course: courseName,
+        duration: 0, // TODO: Add duration field to quiz model if needed
+        questions: transformedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
@@ -262,12 +324,21 @@ router.get("/quizzes/:quizId/questions", (req, res) => {
 });
 
 // Submit quiz answers
-router.post("/quizzes/:quizId/submit", (req, res) => {
+router.post("/quizzes/:quizId/submit", express.json(), async (req, res) => {
   try {
     const { quizId } = req.params;
     const { answers, timeSpent, sessionId } = req.body;
 
-    const quiz = mockStudentQuizzes.find((q) => q.id === quizId);
+    if (!answers || typeof answers !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: "Answers are required",
+      });
+    }
+
+    // Use the quiz service to get the quiz and questions
+    const quizService = require("../services/quiz");
+    const quiz = await quizService.getQuizById(quizId);
 
     if (!quiz) {
       return res.status(404).json({
@@ -276,22 +347,58 @@ router.post("/quizzes/:quizId/submit", (req, res) => {
       });
     }
 
-    // In a real application, you would:
+    // Check if quiz is published
+    if (!quiz.published) {
+      return res.status(403).json({
+        success: false,
+        message: "This quiz is not available. Only published quizzes can be accessed.",
+      });
+    }
+
+    // Get approved questions for this quiz
+    const questions = await quizService.getQuizQuestions(quizId, true); // approvedOnly = true
+
+    if (!questions || questions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "This quiz has no approved questions.",
+      });
+    }
+
+    // Calculate score based on actual answers
+    let correctAnswers = 0;
+    const totalQuestions = questions.length;
+    
+    // answers is an object with question index as key and selected answer as value
+    // e.g., { "0": "A", "1": "B", ... } or { 0: "A", 1: "B", ... }
+    questions.forEach((question, index) => {
+      // Try both string and number keys
+      const userAnswer = answers[String(index)] || answers[index];
+      const correctAnswer = question.correctAnswer;
+      
+      if (userAnswer && correctAnswer) {
+        // Normalize answers to uppercase for comparison
+        const normalizedUserAnswer = String(userAnswer).toUpperCase().trim();
+        const normalizedCorrectAnswer = String(correctAnswer).toUpperCase().trim();
+        
+        if (normalizedUserAnswer === normalizedCorrectAnswer) {
+          correctAnswers++;
+        }
+      }
+    });
+
+    const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+
+    // TODO: In a real application, you would:
     // 1. Validate the session
     // 2. Check if the quiz is still active
-    // 3. Calculate the score
-    // 4. Save the results to the database
-    // 5. Update the student's progress
-
-    // Mock score calculation
-    const totalQuestions = 5; // This would come from the actual quiz data
-    const correctAnswers = Math.floor(Math.random() * totalQuestions) + 1; // Random for demo
-    const score = Math.round((correctAnswers / totalQuestions) * 100);
+    // 3. Save the results to the database
+    // 4. Update the student's progress
 
     res.json({
       success: true,
       data: {
-        quizId: quiz.id,
+        quizId: quizId,
         sessionId: sessionId,
         score: score,
         correctAnswers: correctAnswers,

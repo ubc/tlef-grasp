@@ -74,11 +74,20 @@ const getQuizById = async (quizId) => {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_quiz");
         
-        if (!ObjectId.isValid(quizId)) {
-            throw new Error("Invalid quiz ID");
+        // Handle null, undefined, or empty string
+        if (!quizId) {
+            throw new Error("Quiz ID is required");
         }
         
-        const quiz = await collection.findOne({ _id: new ObjectId(quizId) });
+        // Convert to string if it's not already
+        const quizIdStr = String(quizId).trim();
+        
+        if (!ObjectId.isValid(quizIdStr)) {
+            console.error("Invalid quiz ID format:", quizIdStr, "Type:", typeof quizId);
+            throw new Error(`Invalid quiz ID: ${quizIdStr}`);
+        }
+        
+        const quiz = await collection.findOne({ _id: new ObjectId(quizIdStr) });
         return quiz;
     } catch (error) {
         console.error("Error fetching quiz:", error);
@@ -239,9 +248,10 @@ const addQuestionsToQuiz = async (quizId, questionIds) => {
 /**
  * Get all questions in a quiz
  * @param {string} quizId - The quiz ID
+ * @param {boolean} approvedOnly - If true, only return approved questions (for students)
  * @returns {Promise<Array>} Array of questions
  */
-const getQuizQuestions = async (quizId) => {
+const getQuizQuestions = async (quizId, approvedOnly = false) => {
     try {
         const db = await databaseService.connect();
         const relationshipCollection = db.collection("grasp_quiz_question");
@@ -265,9 +275,15 @@ const getQuizQuestions = async (quizId) => {
         // Get all question IDs
         const questionIds = relationships.map(rel => rel.questionId);
         
+        // Build query - filter by approved status if requested
+        const query = { _id: { $in: questionIds } };
+        if (approvedOnly) {
+            query.status = "Approved";
+        }
+        
         // Fetch the questions
         const questions = await questionCollection
-            .find({ _id: { $in: questionIds } })
+            .find(query)
             .toArray();
         
         return questions;
