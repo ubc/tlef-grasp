@@ -1,19 +1,98 @@
 // Question Bank Page JavaScript
 // Handles interactions and functionality for the new 3-panel layout and Review tab
 
+// Constants
+const SELECTORS = {
+  tabButton: '.tab-button',
+  tabPanel: '.tab-panel',
+  filtersSection: '.filters-section',
+  quizFilter: 'quiz-filter',
+  objectiveFilter: 'objective-filter',
+  bloomFilter: 'bloom-filter',
+  statusFilter: 'status-filter',
+  flaggedFilter: 'flagged-filter',
+  searchInput: 'search-input',
+  questionsTableBody: 'questions-table-body',
+  quizzesContainer: 'quizzes-container',
+  selectAll: 'select-all',
+  selectionCount: 'selection-count',
+  actionBar: 'action-bar',
+  flagBtn: 'flag-btn',
+  deleteBtn: 'delete-btn',
+  crossQuizActions: 'cross-quiz-actions',
+  crossQuizCount: 'cross-quiz-count',
+  crossApproveBtn: 'cross-approve-btn',
+  crossFlagBtn: 'cross-flag-btn',
+  crossDeleteBtn: 'cross-delete-btn',
+  confirmModal: 'confirm-modal',
+  questionDetailModal: 'question-detail-modal',
+  exportSummaryModal: 'export-summary-modal',
+};
+
+const API_ENDPOINTS = {
+  currentUser: '/api/current-user',
+  question: '/api/question',
+  quiz: '/api/quiz',
+  quizCourse: '/api/quiz/course',
+  objective: '/api/objective',
+  questionExport: '/api/question/export',
+};
+
+const STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
+
+const TAB_NAMES = {
+  overview: 'overview',
+  review: 'review',
+  approvedHistory: 'approved-history',
+};
+
+const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review, TAB_NAMES.approvedHistory];
+
+const QUESTION_STATUS = {
+  approved: 'Approved',
+  draft: 'Draft',
+  flagged: 'Flagged',
+};
+
+const NOTIFICATION_TIMEOUT = 3000;
+
+/**
+ * Convert MongoDB ID to string format consistently
+ * @param {any} id - The ID to convert (can be ObjectId, string, or object with toString)
+ * @returns {string} The ID as a string
+ */
+function toStringId(id) {
+  if (!id) return '';
+  if (typeof id === 'string') return id;
+  if (id.toString) return id.toString();
+  return String(id);
+}
+
+/**
+ * Get ID from an object that may have _id or id property
+ * @param {Object} obj - Object with _id or id property
+ * @returns {string} The ID as a string
+ */
+function getObjectId(obj) {
+  if (!obj) return '';
+  return toStringId(obj._id || obj.id);
+}
+
 class QuestionBankPage {
   constructor() {
     // Get course from sessionStorage
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
+    const selectedCourse = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse) || '{}');
     this.courseId = selectedCourse.id || null;
-    this.courseName = selectedCourse.courseName || "";
+    this.courseName = selectedCourse.courseName || '';
 
     // Get current tab from URL search params, default to "overview"
     const urlParams = new URLSearchParams(window.location.search);
-    const tabParam = urlParams.get("tab");
-    const defaultTab = tabParam && ["overview", "review", "approved-history"].includes(tabParam) 
+    const tabParam = urlParams.get('tab');
+    const defaultTab = tabParam && VALID_TABS.includes(tabParam) 
       ? tabParam 
-      : "overview";
+      : TAB_NAMES.overview;
     
     // Check if flagged filter should be enabled from URL
     const flaggedParam = urlParams.get("flagged");
@@ -55,16 +134,15 @@ class QuestionBankPage {
 
   async loadUserInfo() {
     try {
-      const response = await fetch("/api/current-user");
+      const response = await fetch(API_ENDPOINTS.currentUser);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
-          // Use isFaculty from API response (includes administrator check)
           this.isFaculty = data.user.isFaculty || false;
         }
       }
     } catch (error) {
-      console.error("Error loading user info:", error);
+      console.error('Error loading user info:', error);
     }
   }
 
@@ -76,14 +154,13 @@ class QuestionBankPage {
 
   async loadSavedQuestionSets() {
     if (!this.courseId) {
-      console.error("No course ID available");
       this.quizzes = [];
       return;
     }
 
     try {
       // Load quizzes for the current course
-      const response = await fetch(`/api/quiz/course/${this.courseId}`);
+      const response = await fetch(`${API_ENDPOINTS.quizCourse}/${this.courseId}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -95,7 +172,7 @@ class QuestionBankPage {
         const quizzesWithQuestions = await Promise.all(
           data.quizzes.map(async (quiz) => {
             try {
-              const questionsResponse = await fetch(`/api/quiz/${quiz._id}/questions`);
+              const questionsResponse = await fetch(`${API_ENDPOINTS.quiz}/${quiz._id}/questions`);
               if (questionsResponse.ok) {
                 const questionsData = await questionsResponse.json();
                 const questions = questionsData.success && questionsData.questions 
@@ -103,7 +180,7 @@ class QuestionBankPage {
                   : [];
 
                 return {
-                  id: quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || ""),
+                  id: getObjectId(quiz),
                   title: quiz.name || "Unnamed Quiz",
                   course: this.courseName,
                   week: null,
@@ -117,7 +194,7 @@ class QuestionBankPage {
                     },
                   ],
                   questions: questions.map((q, qIndex) => {
-                    const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || `q_${qIndex}`);
+                    const qId = getObjectId(q) || `q_${qIndex}`;
                     return {
                       id: qId,
                       title: q.title || q.stem || q.questionText || "",
@@ -137,8 +214,7 @@ class QuestionBankPage {
                 };
               }
               return null;
-            } catch (error) {
-              console.error(`Error loading questions for quiz ${quiz._id}:`, error);
+            } catch {
               return null;
             }
           })
@@ -147,11 +223,10 @@ class QuestionBankPage {
         // Filter out null results
         this.quizzes = quizzesWithQuestions.filter(quiz => quiz !== null);
       } else {
-        // No saved question sets - show empty state
         this.quizzes = [];
       }
     } catch (error) {
-      console.error("Error loading saved question sets:", error);
+      console.error('Error loading saved question sets:', error);
       this.quizzes = [];
     }
   }
@@ -272,13 +347,12 @@ class QuestionBankPage {
 
   async loadQuestionsForOverview() {
     if (!this.courseId) {
-      console.error("No course ID available");
       this.questions = [];
       return;
     }
 
     try {
-      const response = await fetch(`/api/question?courseId=${this.courseId}`);
+      const response = await fetch(`${API_ENDPOINTS.question}?courseId=${this.courseId}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -288,9 +362,8 @@ class QuestionBankPage {
       if (data.success && data.questions) {
         // Map questions from database format to Overview format
         this.questions = data.questions.map((question) => {
-          // Convert ID to string for consistent comparison
-          const questionId = question._id ? (question._id.toString ? question._id.toString() : String(question._id)) : String(question.id || "");
-          const objectiveId = question.learningObjectiveId ? (question.learningObjectiveId.toString ? question.learningObjectiveId.toString() : String(question.learningObjectiveId)) : null;
+          const questionId = getObjectId(question);
+          const objectiveId = toStringId(question.learningObjectiveId) || null;
           
           return {
             id: questionId,
@@ -324,7 +397,7 @@ class QuestionBankPage {
         this.questions = [];
       }
     } catch (error) {
-      console.error("Error loading questions for overview:", error);
+      console.error('Error loading questions for overview:', error);
       this.questions = [];
     }
   }
@@ -333,20 +406,18 @@ class QuestionBankPage {
     if (!this.courseId) return;
 
     try {
-      // Load all parent objectives for the course
-      const response = await fetch(`/api/objective?courseId=${this.courseId}`);
+      const response = await fetch(`${API_ENDPOINTS.objective}?courseId=${this.courseId}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.objectives) {
-          // Build map of objective ID to name
           data.objectives.forEach(objective => {
-            const objId = objective._id ? (objective._id.toString ? objective._id.toString() : String(objective._id)) : String(objective.id || "");
-            this.objectivesMap.set(objId, objective.name || "Unnamed Objective");
+            const objId = getObjectId(objective);
+            this.objectivesMap.set(objId, objective.name || 'Unnamed Objective');
           });
         }
       }
     } catch (error) {
-      console.error("Error loading learning objectives:", error);
+      console.error('Error loading learning objectives:', error);
     }
   }
 
@@ -354,31 +425,25 @@ class QuestionBankPage {
     if (!this.courseId) return;
 
     try {
-      // Load all quizzes for the course
-      const quizzesResponse = await fetch(`/api/quiz/course/${this.courseId}`);
+      const quizzesResponse = await fetch(`${API_ENDPOINTS.quizCourse}/${this.courseId}`);
       if (quizzesResponse.ok) {
         const quizzesData = await quizzesResponse.json();
         if (quizzesData.success && quizzesData.quizzes) {
           this.allQuizzes = quizzesData.quizzes;
 
-          // For each quiz, get its questions and map quizId to questions
           for (const quiz of this.allQuizzes) {
-            const quizQuestionsResponse = await fetch(`/api/quiz/${quiz._id}/questions`);
+            const quizQuestionsResponse = await fetch(`${API_ENDPOINTS.quiz}/${quiz._id}/questions`);
             if (quizQuestionsResponse.ok) {
               const quizQuestionsData = await quizQuestionsResponse.json();
               if (quizQuestionsData.success && quizQuestionsData.questions) {
                 const questionIds = new Set(
-                  quizQuestionsData.questions.map(q => {
-                    const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || "");
-                    return qId;
-                  })
+                  quizQuestionsData.questions.map(q => getObjectId(q))
                 );
                 
-                // Update questions with quizId and quiz published status
                 this.questions.forEach(question => {
-                  const questionId = String(question.id || "");
+                  const questionId = toStringId(question.id);
                   if (questionIds.has(questionId)) {
-                    question.quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
+                    question.quizId = getObjectId(quiz);
                     question.quizName = quiz.name;
                     question.isInPublishedQuiz = quiz.published || false;
                   }
@@ -389,7 +454,7 @@ class QuestionBankPage {
         }
       }
     } catch (error) {
-      console.error("Error loading quiz relationships:", error);
+      console.error('Error loading quiz relationships:', error);
     }
   }
 
@@ -680,58 +745,52 @@ class QuestionBankPage {
 
   async switchTab(tabName) {
     this.state.currentTab = tabName;
-    console.log(`Switching to ${tabName} tab`);
 
     // Update tab button states
-    const tabButtons = document.querySelectorAll(".tab-button");
+    const tabButtons = document.querySelectorAll(SELECTORS.tabButton);
     tabButtons.forEach((btn) => {
-      if (btn.getAttribute("data-tab") === tabName) {
-        btn.classList.add("active");
-      } else {
-        btn.classList.remove("active");
-      }
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
     });
 
     // Show/hide filters section based on tab
-    const filtersSection = document.querySelector(".filters-section");
+    const filtersSection = document.querySelector(SELECTORS.filtersSection);
     if (filtersSection) {
-      if (tabName === "overview") {
-        filtersSection.style.display = "block";
-      } else {
-        // Hide filters for Review and Approved History tabs
-        filtersSection.style.display = "none";
-      }
+      filtersSection.style.display = tabName === TAB_NAMES.overview ? 'block' : 'none';
     }
 
     // Hide all tab panels
-    const tabPanels = document.querySelectorAll(".tab-panel");
-    tabPanels.forEach((panel) => (panel.style.display = "none"));
+    const tabPanels = document.querySelectorAll(SELECTORS.tabPanel);
+    tabPanels.forEach((panel) => (panel.style.display = 'none'));
 
     // Show the selected tab panel
     const selectedPanel = document.getElementById(`${tabName}-panel`);
     if (selectedPanel) {
-      selectedPanel.style.display = "block";
+      selectedPanel.style.display = 'block';
     }
 
-    // Update page title
-    if (tabName === "overview") {
-      document.title = "Overview - Question Bank - GRASP";
+    // Update page title and render appropriate content
+    const tabTitles = {
+      [TAB_NAMES.overview]: 'Overview',
+      [TAB_NAMES.review]: 'Review',
+      [TAB_NAMES.approvedHistory]: 'Approved History',
+    };
+    document.title = `${tabTitles[tabName] || 'Question Bank'} - Question Bank - GRASP`;
+
+    if (tabName === TAB_NAMES.overview) {
       await this.renderOverview();
-    } else if (tabName === "review") {
-      document.title = "Review - Question Bank - GRASP";
+    } else if (tabName === TAB_NAMES.review) {
       await this.renderReview();
-    } else if (tabName === "approved-history") {
-      document.title = "Approved History - Question Bank - GRASP";
+    } else if (tabName === TAB_NAMES.approvedHistory) {
       this.renderApprovedHistory();
     }
   }
 
   async renderAll() {
-    if (this.state.currentTab === "overview") {
+    if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
-    } else if (this.state.currentTab === "review") {
+    } else if (this.state.currentTab === TAB_NAMES.review) {
       this.renderReview();
-    } else if (this.state.currentTab === "approved-history") {
+    } else if (this.state.currentTab === TAB_NAMES.approvedHistory) {
       this.renderApprovedHistory();
     }
   }
@@ -1107,8 +1166,8 @@ class QuestionBankPage {
   }
 
   handleQuestionEdit(quizId, questionId) {
-    // Implementation for inline editing
-    console.log(`Editing question ${questionId} in quiz ${quizId}`);
+    // Open the question modal for editing
+    this.openQuestionModal(questionId);
   }
 
   handleQuizBulkAction(quizId, action) {
@@ -1299,14 +1358,14 @@ class QuestionBankPage {
 
       // Update all selected questions
       const updatePromises = selectedQuestions.map(async (id) => {
-        const question = this.questions.find((q) => String(q.id || "") === String(id));
-        if (!question) return;
+        const question = this.questions.find((q) => toStringId(q.id) === toStringId(id));
+        if (!question) return { success: false, id };
 
         try {
-          const response = await fetch(`/api/question/${id}`, {
-            method: "PUT",
+          const response = await fetch(`${API_ENDPOINTS.question}/${id}`, {
+            method: 'PUT',
             headers: {
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               flagStatus: shouldFlag,
@@ -1316,12 +1375,9 @@ class QuestionBankPage {
           if (response.ok) {
             question.flagged = shouldFlag;
             return { success: true, id };
-          } else {
-            console.error(`Failed to update question ${id}`);
-            return { success: false, id };
           }
-        } catch (error) {
-          console.error(`Error updating question ${id}:`, error);
+          return { success: false, id };
+        } catch {
           return { success: false, id };
         }
       });
@@ -1369,18 +1425,12 @@ class QuestionBankPage {
       // Delete all selected questions from database
       const deletePromises = selectedQuestions.map(async (id) => {
         try {
-          const response = await fetch(`/api/question/${id}`, {
-            method: "DELETE",
+          const response = await fetch(`${API_ENDPOINTS.question}/${id}`, {
+            method: 'DELETE',
           });
 
-          if (response.ok) {
-            return { success: true, id };
-          } else {
-            console.error(`Failed to delete question ${id}`);
-            return { success: false, id };
-          }
-        } catch (error) {
-          console.error(`Error deleting question ${id}:`, error);
+          return { success: response.ok, id };
+        } catch {
           return { success: false, id };
         }
       });
@@ -1391,11 +1441,11 @@ class QuestionBankPage {
       // Remove successfully deleted questions from local state
       results.forEach((result) => {
         if (result.success) {
-          const index = this.questions.findIndex((q) => String(q.id || "") === String(result.id));
+          const index = this.questions.findIndex((q) => toStringId(q.id) === toStringId(result.id));
           if (index > -1) {
             this.questions.splice(index, 1);
           }
-          this.state.selectedQuestionIds.delete(String(result.id));
+          this.state.selectedQuestionIds.delete(toStringId(result.id));
         }
       });
 
@@ -1507,9 +1557,9 @@ class QuestionBankPage {
     // Clear selections for rows no longer visible
     this.clearOutOfViewSelections();
 
-    if (this.state.currentTab === "review") {
+    if (this.state.currentTab === TAB_NAMES.review) {
       this.renderQuizzes();
-    } else if (this.state.currentTab === "overview") {
+    } else if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
     }
   }
@@ -1854,15 +1904,6 @@ class QuestionBankPage {
     this.hideModal();
   }
 
-  // Navigation to Question Review
-  navigateToQuestionReview(quizId) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    if (quiz && quiz.questions.length > 0) {
-      const firstQuestionId = quiz.questions[0].id;
-      window.location.href = `/question-review?quizId=${quizId}&questionId=${firstQuestionId}`;
-    }
-  }
-
   // Export quiz questions (only approved questions)
   async exportQuiz(quizId) {
     const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
@@ -1900,46 +1941,42 @@ class QuestionBankPage {
 
     // Show confirmation modal
     this.showModal(
-      "Delete Quiz",
+      'Delete Quiz',
       `Are you sure you want to delete "${quizTitle}"? This will permanently delete the quiz and all ${questionCount} question(s) associated with it. This action cannot be undone.`,
       async () => {
         try {
-          // Call the delete API
-          const response = await fetch(`/api/quiz/${quizId}`, {
-            method: "DELETE",
+          const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
+            method: 'DELETE',
           });
 
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || "Failed to delete quiz");
+            throw new Error(error.error || 'Failed to delete quiz');
           }
 
           // Remove quiz from local state
-          const quizIndex = this.quizzes.findIndex((q) => String(q.id) === String(quizId));
+          const quizIndex = this.quizzes.findIndex((q) => toStringId(q.id) === toStringId(quizId));
           if (quizIndex > -1) {
             this.quizzes.splice(quizIndex, 1);
           }
 
           // Also remove from allQuizzes if it exists there
-          const allQuizIndex = this.allQuizzes.findIndex((q) => {
-            const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || "");
-            return qId === String(quizId);
-          });
+          const allQuizIndex = this.allQuizzes.findIndex((q) => getObjectId(q) === toStringId(quizId));
           if (allQuizIndex > -1) {
             this.allQuizzes.splice(allQuizIndex, 1);
           }
 
           // Remove questions from local state that were associated with this quiz
-          const questionIds = new Set(quiz.questions.map(q => String(q.id)));
-          this.questions = this.questions.filter(q => !questionIds.has(String(q.id)));
+          const questionIds = new Set(quiz.questions.map(q => toStringId(q.id)));
+          this.questions = this.questions.filter(q => !questionIds.has(toStringId(q.id)));
 
           // Refresh the UI
           this.renderQuizzes();
           this.updateFilterOptions();
-          this.showNotification(`Quiz "${quizTitle}" and ${questionCount} question(s) deleted successfully`, "success");
+          this.showNotification(`Quiz "${quizTitle}" and ${questionCount} question(s) deleted successfully`, 'success');
         } catch (error) {
-          console.error("Error deleting quiz:", error);
-          this.showNotification(error.message || "Failed to delete quiz", "error");
+          console.error('Error deleting quiz:', error);
+          this.showNotification(error.message || 'Failed to delete quiz', 'error');
         }
       }
     );
@@ -1960,11 +1997,10 @@ class QuestionBankPage {
     const quizTitle = quiz.title || "this quiz";
 
     try {
-      // Call the update API
-      const response = await fetch(`/api/quiz/${quizId}`, {
-        method: "PUT",
+      const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           published: newPublishedStatus,
@@ -1980,20 +2016,17 @@ class QuestionBankPage {
       quiz.published = newPublishedStatus;
 
       // Also update in allQuizzes if it exists there
-      const allQuiz = this.allQuizzes.find((q) => {
-        const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || "");
-        return qId === String(quizId);
-      });
+      const allQuiz = this.allQuizzes.find((q) => getObjectId(q) === toStringId(quizId));
       if (allQuiz) {
         allQuiz.published = newPublishedStatus;
       }
 
       // Refresh the UI
       this.renderQuizzes();
-      this.showNotification(`Quiz "${quizTitle}" ${newPublishedStatus ? "published" : "unpublished"} successfully`, "success");
+      this.showNotification(`Quiz "${quizTitle}" ${newPublishedStatus ? 'published' : 'unpublished'} successfully`, 'success');
     } catch (error) {
       console.error(`Error ${action}ing quiz:`, error);
-      this.showNotification(error.message || `Failed to ${action} quiz`, "error");
+      this.showNotification(error.message || `Failed to ${action} quiz`, 'error');
     }
   }
 
@@ -2097,23 +2130,21 @@ class QuestionBankPage {
     }
 
     // Get course information
-    const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-    const courseName = selectedCourse?.courseName || "Course";
+    const selectedCourse = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse));
+    const courseName = selectedCourse?.courseName || 'Course';
 
     // Fetch full question details for approved questions only
     const questionPromises = approvedQuestions.map(async (q) => {
       try {
-        const response = await fetch(`/api/question/${q.id}`);
+        const response = await fetch(`${API_ENDPOINTS.question}/${q.id}`);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.question) {
             return data.question;
           }
         }
-        // Fallback to basic question data if fetch fails
         return q;
-      } catch (error) {
-        console.error(`Error fetching question ${q.id}:`, error);
+      } catch {
         return q;
       }
     });
@@ -2131,10 +2162,10 @@ class QuestionBankPage {
     }));
 
     try {
-      const response = await fetch(`/api/question/export?format=${format}`, {
-        method: "POST",
+      const response = await fetch(`${API_ENDPOINTS.questionExport}?format=${format}`, {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           course: courseName,
@@ -2146,14 +2177,14 @@ class QuestionBankPage {
         const blob = await response.blob();
         const filename = `${quiz.title || quiz.name || 'quiz'}-${format}.${this.getFileExtension(format)}`;
         this.downloadFile(blob, filename);
-        this.showNotification(`Exported as ${format.toUpperCase()}`, "success");
+        this.showNotification(`Exported as ${format.toUpperCase()}`, 'success');
         this.hideExportModal();
       } else {
-        throw new Error("Export failed");
+        throw new Error('Export failed');
       }
     } catch (error) {
-      console.error("Export failed:", error);
-      this.showNotification("Export failed. Please try again.", "error");
+      console.error('Export failed:', error);
+      this.showNotification('Export failed. Please try again.', 'error');
     }
   }
 
@@ -2228,37 +2259,15 @@ class QuestionBankPage {
   }
 
   // Notification System
-  showNotification(message, type = "info") {
-    console.log(`${type.toUpperCase()}: ${message}`);
-
-    // Create a simple notification
-    const notification = document.createElement("div");
+  showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 15px 20px;
-      border-radius: 8px;
-      color: white;
-      font-weight: 500;
-      z-index: 1000;
-      background-color: ${
-        type === "success"
-          ? "#27ae60"
-          : type === "warning"
-          ? "#f39c12"
-          : "#3498db"
-      };
-      animation: slideIn 0.3s ease-out;
-    `;
-
     document.body.appendChild(notification);
 
     setTimeout(() => {
       notification.remove();
-    }, 3000);
+    }, NOTIFICATION_TIMEOUT);
   }
 
   // Question Detail Modal Functions
@@ -2279,14 +2288,14 @@ class QuestionBankPage {
 
     try {
       // Fetch full question details from API
-      const response = await fetch(`/api/question/${questionId}`);
+      const response = await fetch(`${API_ENDPOINTS.question}/${questionId}`);
       if (!response.ok) {
-        throw new Error("Failed to load question");
+        throw new Error('Failed to load question');
       }
 
       const data = await response.json();
       if (!data.success || !data.question) {
-        throw new Error("Question not found");
+        throw new Error('Question not found');
       }
 
       const question = data.question;
@@ -2591,21 +2600,21 @@ class QuestionBankPage {
       };
 
       // Update question in database
-      const response = await fetch(`/api/question/${this.currentEditingQuestion.id}`, {
-        method: "PUT",
+      const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(updateData),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to update question");
+        throw new Error(error.error || 'Failed to update question');
       }
 
       // Update local state
-      const question = this.questions.find(q => String(q.id || "") === String(this.currentEditingQuestion.id));
+      const question = this.questions.find(q => toStringId(q.id) === toStringId(this.currentEditingQuestion.id));
       if (question) {
         question.title = updateData.title;
         question.stem = updateData.stem;
@@ -2634,18 +2643,17 @@ class QuestionBankPage {
 
   async toggleQuestionFlag(questionId) {
     try {
-      // Find the question to get current flag status
-      const question = this.questions.find(q => String(q.id || "") === String(questionId));
+      const question = this.questions.find(q => toStringId(q.id) === toStringId(questionId));
       if (!question) {
-        throw new Error("Question not found");
+        throw new Error('Question not found');
       }
 
       const newFlagStatus = !question.flagged;
       
-      const response = await fetch(`/api/question/${questionId}`, {
-        method: "PUT",
+      const response = await fetch(`${API_ENDPOINTS.question}/${questionId}`, {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           flagStatus: newFlagStatus,
@@ -2654,43 +2662,39 @@ class QuestionBankPage {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to update question flag status");
+        throw new Error(error.error || 'Failed to update question flag status');
       }
 
-      // Update local state
-      if (question) {
-        question.flagged = newFlagStatus;
-      }
+      question.flagged = newFlagStatus;
 
       // Also update in quiz questions if present
       for (const quiz of this.quizzes) {
-        const quizQuestion = quiz.questions.find(q => String(q.id) === String(questionId));
+        const quizQuestion = quiz.questions.find(q => toStringId(q.id) === toStringId(questionId));
         if (quizQuestion) {
           quizQuestion.flagged = newFlagStatus;
         }
       }
 
-      // Refresh table to show updated button
       this.renderQuestionsTable();
       this.showNotification(
-        `Question ${newFlagStatus ? "flagged" : "unflagged"} successfully`,
-        "success"
+        `Question ${newFlagStatus ? 'flagged' : 'unflagged'} successfully`,
+        'success'
       );
 
     } catch (error) {
-      console.error("Error toggling question flag:", error);
-      this.showNotification(error.message || "Failed to update question flag status", "error");
+      console.error('Error toggling question flag:', error);
+      this.showNotification(error.message || 'Failed to update question flag status', 'error');
     }
   }
 
   async toggleQuestionApproval(questionId, approve) {
     try {
-      const newStatus = approve ? "Approved" : "Draft";
+      const newStatus = approve ? QUESTION_STATUS.approved : QUESTION_STATUS.draft;
       
-      const response = await fetch(`/api/question/${questionId}`, {
-        method: "PUT",
+      const response = await fetch(`${API_ENDPOINTS.question}/${questionId}`, {
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           status: newStatus,
@@ -2699,25 +2703,23 @@ class QuestionBankPage {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to update question status");
+        throw new Error(error.error || 'Failed to update question status');
       }
 
-      // Update local state
-      const question = this.questions.find(q => String(q.id || "") === String(questionId));
+      const question = this.questions.find(q => toStringId(q.id) === toStringId(questionId));
       if (question) {
         question.status = newStatus;
       }
 
-      // Refresh table to show updated button
       this.renderQuestionsTable();
       this.showNotification(
-        `Question ${approve ? "approved" : "unapproved"} successfully`,
-        "success"
+        `Question ${approve ? 'approved' : 'unapproved'} successfully`,
+        'success'
       );
 
     } catch (error) {
-      console.error("Error toggling question approval:", error);
-      this.showNotification(error.message || "Failed to update question status", "error");
+      console.error('Error toggling question approval:', error);
+      this.showNotification(error.message || 'Failed to update question status', 'error');
     }
   }
 }
