@@ -146,7 +146,6 @@ class TabManager {
 class OnboardingManager {
   constructor() {
     this.currentStep = 1;
-    this.totalSteps = 3;
     this.courseData = {};
     this.courses = null;
     this.isFaculty = false;

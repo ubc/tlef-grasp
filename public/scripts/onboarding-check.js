@@ -14,7 +14,6 @@ function checkOnboardingStatus() {
   if (currentPath === "/onboarding") {
     // If onboarded and on onboarding page, redirect to dashboard
     if (isOnboarded) {
-      console.log("User is onboarded, redirecting from onboarding to dashboard");
       window.location.href = "/dashboard";
     }
     return;
@@ -22,7 +21,6 @@ function checkOnboardingStatus() {
 
   // If user is NOT onboarded and trying to access protected pages, redirect to onboarding
   if (!isOnboarded) {
-    console.log("User is not onboarded, redirecting to onboarding");
     window.location.href = "/onboarding";
     return;
   }
