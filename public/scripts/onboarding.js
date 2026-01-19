@@ -1,4 +1,148 @@
 // Onboarding JavaScript functionality
+
+// Constants for DOM selectors and identifiers
+const SELECTORS = {
+  loginTab: 'login-tab',
+  setupTab: 'setup-tab',
+  tabButton: '.tab-button',
+  stepContent: '.step-content',
+  progressStep: '.progress-step',
+  courseSelectionForm: 'course-selection-form',
+  courseStructureForm: 'course-structure-form',
+  courseDetailsForm: 'course-details-form',
+  loadingCourses: 'loading-courses',
+  coursesList: 'courses-list',
+  noCoursesMessage: 'no-courses-message',
+  customCourseGroup: 'custom-course-group',
+  customCourseNameGroup: 'custom-course-name-group',
+  selectedCourseDisplay: 'selected-course-display',
+  stepComplete: 'step-complete',
+};
+
+const TAB_NAMES = {
+  login: 'login',
+  setup: 'setup',
+};
+
+const API_ENDPOINTS = {
+  currentUser: '/api/current-user',
+  myCourses: '/api/courses/my-courses',
+  newCourse: '/api/courses/new',
+};
+
+const STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
+
+/**
+ * Manages tab switching functionality
+ */
+class TabManager {
+  constructor(onTabChange) {
+    this.elements = {
+      loginTab: document.getElementById(SELECTORS.loginTab),
+      setupTab: document.getElementById(SELECTORS.setupTab),
+      tabButtons: document.querySelectorAll(SELECTORS.tabButton),
+    };
+    this.onTabChange = onTabChange;
+    this.currentTab = null;
+  }
+
+  /**
+   * Initialize tab event listeners
+   * @param {Function} canAccessTab - Callback to check if tab is accessible
+   */
+  setupListeners(canAccessTab) {
+    this.elements.tabButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const tab = button.dataset.tab;
+        
+        if (!canAccessTab(tab)) {
+          return;
+        }
+
+        this.switchTo(tab);
+      });
+    });
+  }
+
+  /**
+   * Switch to a specific tab
+   * @param {string} tabName - The tab to switch to ('login' or 'setup')
+   */
+  switchTo(tabName) {
+    if (this.currentTab === tabName) return;
+
+    const { loginTab, setupTab, tabButtons } = this.elements;
+
+    // Update button states
+    tabButtons.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+
+    // Update tab visibility
+    if (tabName === TAB_NAMES.login) {
+      this.hideTab(setupTab);
+      this.showTab(loginTab);
+    } else {
+      this.hideTab(loginTab);
+      this.showTab(setupTab);
+    }
+
+    this.currentTab = tabName;
+    
+    if (this.onTabChange) {
+      this.onTabChange(tabName);
+    }
+  }
+
+  /**
+   * Show a tab element
+   * @param {HTMLElement} tab 
+   */
+  showTab(tab) {
+    if (tab) {
+      tab.style.display = 'block';
+      tab.classList.add('active');
+    }
+  }
+
+  /**
+   * Hide a tab element
+   * @param {HTMLElement} tab 
+   */
+  hideTab(tab) {
+    if (tab) {
+      tab.style.display = 'none';
+      tab.classList.remove('active');
+    }
+  }
+
+  /**
+   * Hide a specific tab button
+   * @param {string} tabName 
+   */
+  hideTabButton(tabName) {
+    const button = document.querySelector(`${SELECTORS.tabButton}[data-tab="${tabName}"]`);
+    if (button) {
+      button.style.display = 'none';
+    }
+  }
+
+  /**
+   * Ensure step 1 is active when showing setup tab
+   */
+  activateStep1() {
+    const step1 = document.getElementById('step-1');
+    if (step1) {
+      step1.classList.add('active');
+    }
+  }
+}
+
+/**
+ * Main onboarding manager class
+ */
 class OnboardingManager {
   constructor() {
     this.currentStep = 1;
@@ -6,53 +150,94 @@ class OnboardingManager {
     this.courseData = {};
     this.courses = null;
     this.isFaculty = false;
+    
+    this.cacheElements();
+    this.tabManager = new TabManager((tab) => this.handleTabChange(tab));
     this.init();
+  }
+
+  /**
+   * Cache frequently accessed DOM elements
+   */
+  cacheElements() {
+    this.elements = {
+      courseSelectionForm: document.getElementById(SELECTORS.courseSelectionForm),
+      courseStructureForm: document.getElementById(SELECTORS.courseStructureForm),
+      courseDetailsForm: document.getElementById(SELECTORS.courseDetailsForm),
+      loadingCourses: document.getElementById(SELECTORS.loadingCourses),
+      coursesList: document.getElementById(SELECTORS.coursesList),
+      noCoursesMessage: document.getElementById(SELECTORS.noCoursesMessage),
+      customCourseGroup: document.getElementById(SELECTORS.customCourseGroup),
+      customCourseNameGroup: document.getElementById(SELECTORS.customCourseNameGroup),
+      selectedCourseDisplay: document.getElementById(SELECTORS.selectedCourseDisplay),
+    };
   }
 
   async init() {
     await this.loadUserInfo();
     this.setupEventListeners();
-    this.setupTabSwitching();
+    this.tabManager.setupListeners((tab) => this.canAccessTab(tab));
     this.updateProgressIndicator();
     this.updateUIForUserRole();
-    await this.checkAndSetDefaultTab();
+    await this.determineInitialTab();
+  }
+
+  /**
+   * Check if user can access a specific tab
+   * @param {string} tab 
+   * @returns {boolean}
+   */
+  canAccessTab(tab) {
+    if (tab === TAB_NAMES.setup && !this.isFaculty) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Handle tab change events
+   * @param {string} tab 
+   */
+  handleTabChange(tab) {
+    if (tab === TAB_NAMES.login) {
+      this.loadExistingCourses(this.courses);
+    } else {
+      this.tabManager.activateStep1();
+    }
   }
 
   async loadUserInfo() {
     try {
-      const response = await fetch("/api/current-user");
+      const response = await fetch(API_ENDPOINTS.currentUser);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.user) {
-          // Use isFaculty from API response (includes administrator check)
           this.isFaculty = data.user.isFaculty || false;
         }
       }
     } catch (error) {
-      console.error("Error loading user info:", error);
+      console.error('Error loading user info:', error);
     }
   }
 
   updateUIForUserRole() {
-    // Hide "New Course Setup" tab for staff
-    const setupTabButton = document.querySelector('.tab-button[data-tab="setup"]');
-    if (setupTabButton && !this.isFaculty) {
-      setupTabButton.style.display = 'none';
-    }
+    if (this.isFaculty) return;
+
+    // Hide setup tab button for staff
+    this.tabManager.hideTabButton(TAB_NAMES.setup);
 
     // Hide custom course input groups for staff
-    const customCourseGroup = document.getElementById("custom-course-group");
-    const customCourseNameGroup = document.getElementById("custom-course-name-group");
-    if (customCourseGroup && !this.isFaculty) {
+    const { customCourseGroup, customCourseNameGroup, noCoursesMessage } = this.elements;
+    
+    if (customCourseGroup) {
       customCourseGroup.style.display = 'none';
     }
-    if (customCourseNameGroup && !this.isFaculty) {
+    if (customCourseNameGroup) {
       customCourseNameGroup.style.display = 'none';
     }
 
     // Update no-courses message for staff
-    const noCoursesMessage = document.getElementById("no-courses-message");
-    if (noCoursesMessage && !this.isFaculty) {
+    if (noCoursesMessage) {
       const createButton = noCoursesMessage.querySelector('button');
       if (createButton) {
         createButton.style.display = 'none';
@@ -62,277 +247,92 @@ class OnboardingManager {
         messageText.textContent = "You don't have any courses set up yet. Please contact a faculty member to add you to a course.";
       }
     }
-
-    // Note: Tab visibility is now handled by checkAndSetDefaultTab() which runs after this
-    // This method just hides UI elements, not the tab switching logic
   }
 
   setupEventListeners() {
-    // Course selection form
-    const courseSelectionForm = document.getElementById(
-      "course-selection-form"
-    );
+    const { courseSelectionForm, courseStructureForm, courseDetailsForm } = this.elements;
+
     if (courseSelectionForm) {
-      courseSelectionForm.addEventListener("submit", (e) =>
-        this.handleCourseSelection(e)
-      );
+      courseSelectionForm.addEventListener('submit', (e) => this.handleCourseSelection(e));
     }
 
-    // Course structure form
-    const courseStructureForm = document.getElementById(
-      "course-structure-form"
-    );
     if (courseStructureForm) {
-      courseStructureForm.addEventListener("submit", (e) =>
-        this.handleCourseStructure(e)
-      );
+      courseStructureForm.addEventListener('submit', (e) => this.handleCourseStructure(e));
     }
 
-    // Course details form
-    const courseDetailsForm = document.getElementById("course-details-form");
     if (courseDetailsForm) {
-      courseDetailsForm.addEventListener("submit", (e) =>
-        this.handleCourseDetails(e)
-      );
+      courseDetailsForm.addEventListener('submit', (e) => this.handleCourseDetails(e));
     }
 
-  }
-
-  setupTabSwitching() {
-    const tabButtons = document.querySelectorAll(".tab-button");
-    const loginTab = document.getElementById("login-tab");
-    const setupTab = document.getElementById("setup-tab");
-
-    console.log("Setting up tab switching...");
-    console.log("Login tab:", loginTab);
-    console.log("Setup tab:", setupTab);
-
-    // Default state: setup tab for faculty, login tab for staff
-    // This will be overridden by checkAndSetDefaultTab() if user has courses
-    if (!this.isFaculty) {
-      // Staff: show login tab by default (they can't create courses)
-      // Always hide setup tab first
-      if (setupTab) {
-        setupTab.style.display = "none";
-        setupTab.classList.remove("active");
-      }
-      // Then show login tab
-      if (loginTab) {
-        loginTab.style.display = "block";
-        loginTab.classList.add("active");
-      }
-      // Update tab buttons
-      tabButtons.forEach((btn) => {
-        if (btn.getAttribute("data-tab") === "login") {
-          btn.classList.add("active");
-        } else {
-          btn.classList.remove("active");
+    // Event delegation for course access buttons
+    const coursesListElement = this.elements.coursesList;
+    if (coursesListElement) {
+      coursesListElement.addEventListener('click', (e) => {
+        const accessBtn = e.target.closest('.access-btn');
+        if (accessBtn) {
+          this.accessCourseDashboard(accessBtn);
         }
       });
-    } else {
-      // Faculty: show setup tab by default (will be changed if they have courses)
-      // Always hide login tab first
-      if (loginTab) {
-        loginTab.style.display = "none";
-        loginTab.classList.remove("active");
-      }
-      // Then show setup tab
-      if (setupTab) {
-        setupTab.style.display = "block";
-        setupTab.classList.add("active");
-        // Make sure step 1 is active
-        const step1 = document.getElementById("step-1");
-        if (step1) {
-          step1.classList.add("active");
-        }
-      }
     }
-
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const tab = button.getAttribute("data-tab");
-        console.log("Tab clicked:", tab);
-
-        // Prevent staff from accessing setup tab
-        if (tab === "setup" && !this.isFaculty) {
-          console.warn("Staff users cannot access course setup");
-          return;
-        }
-
-        // Update active tab button
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
-        button.classList.add("active");
-
-        // Get fresh references to tabs to ensure we're working with current DOM
-        const currentLoginTab = document.getElementById("login-tab");
-        const currentSetupTab = document.getElementById("setup-tab");
-
-        // Show/hide appropriate content
-        if (tab === "login") {
-          console.log("Switching to login tab");
-          // Always hide setup tab first
-          if (currentSetupTab) {
-            currentSetupTab.style.display = "none";
-            currentSetupTab.classList.remove("active");
-            console.log("Setup tab display set to none");
-          }
-          // Then show login tab
-          if (currentLoginTab) {
-            currentLoginTab.style.display = "block";
-            currentLoginTab.classList.add("active");
-            console.log("Login tab display set to block");
-            // Use courses from state if available, otherwise fetch from API
-            this.loadExistingCourses(this.courses);
-          }
-        } else {
-          console.log("Switching to setup tab");
-          // Always hide login tab first
-          if (currentLoginTab) {
-            currentLoginTab.style.display = "none";
-            currentLoginTab.classList.remove("active");
-            console.log("Login tab display set to none");
-          }
-          // Then show setup tab
-          if (currentSetupTab) {
-            currentSetupTab.style.display = "block";
-            currentSetupTab.classList.add("active");
-            console.log("Setup tab display set to block");
-            // Ensure step 1 is active when switching to setup tab
-            const step1 = document.getElementById("step-1");
-            if (step1) {
-              step1.classList.add("active");
-            }
-          }
-        }
-      });
-    });
   }
 
-  async checkAndSetDefaultTab() {
+  async determineInitialTab() {
     try {
-      // Check if user has existing courses
-      const response = await fetch("/api/courses/my-courses");
+      const response = await fetch(API_ENDPOINTS.myCourses);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
-
-      // Determine which tab to show based on user role and course availability
       const hasCourses = data.success && data.courses && data.courses.length > 0;
       
-      // Store courses in state (even if empty array) to avoid duplicate API call
+      // Store courses in state to avoid duplicate API calls
       this.courses = data.success && data.courses ? data.courses : [];
       
-      // Logic:
-      // 1. Staff users -> always show login tab (they can't create courses)
-      // 2. Faculty with courses -> show login tab (existing behavior)
-      // 3. Faculty without courses -> show setup tab (default for faculty)
+      // Staff users or faculty with courses -> login tab
+      // Faculty without courses -> setup tab
       const shouldShowLoginTab = !this.isFaculty || hasCourses;
+      const initialTab = shouldShowLoginTab ? TAB_NAMES.login : TAB_NAMES.setup;
       
-      const tabButtons = document.querySelectorAll(".tab-button");
-      const loginButton = document.querySelector('[data-tab="login"]');
-      const setupButton = document.querySelector('[data-tab="setup"]');
-      const loginTab = document.getElementById("login-tab");
-      const setupTab = document.getElementById("setup-tab");
+      this.tabManager.switchTo(initialTab);
       
-      if (shouldShowLoginTab) {
-        // Switch to login tab
-        // Update active tab button
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
-        if (loginButton) loginButton.classList.add("active");
-        
-        // Show/hide appropriate content
-        if (loginTab) {
-          loginTab.style.display = "block";
-          loginTab.classList.add("active");
-        }
-        if (setupTab) {
-          setupTab.style.display = "none";
-          setupTab.classList.remove("active");
-        }
-        
-        // Load courses into the login tab using the courses we already fetched
-        // Pass the courses array (even if empty) to avoid duplicate API call
-        this.loadExistingCourses(this.courses);
-      } else {
-        // Faculty without courses -> show setup tab
-        // Update active tab button
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
-        if (setupButton) setupButton.classList.add("active");
-        
-        // Show/hide appropriate content
-        if (setupTab) {
-          setupTab.style.display = "block";
-          setupTab.classList.add("active");
-          // Make sure step 1 is active
-          const step1 = document.getElementById("step-1");
-          if (step1) {
-            step1.classList.add("active");
-          }
-        }
-        if (loginTab) {
-          loginTab.style.display = "none";
-          loginTab.classList.remove("active");
-        }
+      if (initialTab === TAB_NAMES.setup) {
+        this.tabManager.activateStep1();
       }
     } catch (error) {
-      console.error("Error checking for existing courses:", error);
-      // On error, default based on user role:
-      // Staff -> login tab, Faculty -> setup tab
-      if (!this.isFaculty) {
-        const tabButtons = document.querySelectorAll(".tab-button");
-        const loginButton = document.querySelector('[data-tab="login"]');
-        const loginTab = document.getElementById("login-tab");
-        const setupTab = document.getElementById("setup-tab");
-        
-        tabButtons.forEach((btn) => btn.classList.remove("active"));
-        if (loginButton) loginButton.classList.add("active");
-        if (loginTab) {
-          loginTab.style.display = "block";
-          loginTab.classList.add("active");
-        }
-        if (setupTab) {
-          setupTab.style.display = "none";
-          setupTab.classList.remove("active");
-        }
-        
-        // Load courses (will show "no courses" message if fetch fails)
+      console.error('Error checking for existing courses:', error);
+      // Default to login tab for staff, setup for faculty
+      const fallbackTab = this.isFaculty ? TAB_NAMES.setup : TAB_NAMES.login;
+      this.tabManager.switchTo(fallbackTab);
+      
+      if (fallbackTab === TAB_NAMES.login) {
         this.loadExistingCourses(null);
       }
     }
   }
 
-  setupCourseSelection() {
-    // This method sets up course selection for the login tab
-    // Courses will be loaded when the login tab is activated
-  }
-
   async loadExistingCourses(coursesFromState = null) {
-    const loadingElement = document.getElementById("loading-courses");
-    const coursesListElement = document.getElementById("courses-list");
-    const noCoursesElement = document.getElementById("no-courses-message");
+    const { loadingCourses, coursesList, noCoursesMessage } = this.elements;
 
     try {
       // Show loading state only if we need to fetch from API
       if (!coursesFromState) {
-        if (loadingElement) loadingElement.style.display = "flex";
-        if (coursesListElement) coursesListElement.style.display = "none";
-        if (noCoursesElement) noCoursesElement.style.display = "none";
+        this.setElementVisibility(loadingCourses, true, 'flex');
+        this.setElementVisibility(coursesList, false);
+        this.setElementVisibility(noCoursesMessage, false);
       }
 
       let courses = coursesFromState;
 
       // Only fetch from API if courses not in state
       if (!courses) {
-        const response = await fetch("/api/courses/my-courses");
+        const response = await fetch(API_ENDPOINTS.myCourses);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
         courses = data.success && data.courses ? data.courses : [];
-        // Store in state for future use
         this.courses = courses;
       }
 
@@ -342,107 +342,122 @@ class OnboardingManager {
         this.showNoCoursesMessage();
       }
     } catch (error) {
-      console.error("Error loading courses:", error);
+      console.error('Error loading courses:', error);
       this.showNoCoursesMessage();
     } finally {
-      if (loadingElement) loadingElement.style.display = "none";
+      this.setElementVisibility(loadingCourses, false);
+    }
+  }
+
+  /**
+   * Helper to set element visibility
+   * @param {HTMLElement} element 
+   * @param {boolean} visible 
+   * @param {string} displayType 
+   */
+  setElementVisibility(element, visible, displayType = 'block') {
+    if (element) {
+      element.style.display = visible ? displayType : 'none';
     }
   }
 
   displayCourses(courses) {
-    const coursesListElement = document.getElementById("courses-list");
-    const noCoursesElement = document.getElementById("no-courses-message");
+    const { coursesList, noCoursesMessage } = this.elements;
 
-    if (!coursesListElement) return;
+    if (!coursesList) return;
 
-    // Clear existing content
-    coursesListElement.innerHTML = "";
+    coursesList.innerHTML = courses.map((course) => this.createCourseItemHTML(course)).join('');
+    
+    this.setElementVisibility(coursesList, true, 'flex');
+    this.setElementVisibility(noCoursesMessage, false);
+  }
 
-    // Create course items
-    courses.forEach((course) => {
-      const courseItem = document.createElement("div");
-      courseItem.className = "course-item";
-      courseItem.dataset.courseId = course._id;
-
-      courseItem.innerHTML = `
+  /**
+   * Generate HTML for a course item
+   * @param {Object} course 
+   * @returns {string}
+   */
+  createCourseItemHTML(course) {
+    const escapedName = this.escapeHTML(course.courseName);
+    const escapedInstructor = this.escapeHTML(course.instructorName);
+    const escapedSemester = this.escapeHTML(course.semester);
+    
+    return `
+      <div class="course-item" data-course-id="${course._id}">
         <div class="course-icon">
           <i class="fas fa-graduation-cap"></i>
         </div>
         <div class="course-info">
-          <div class="course-name">${course.courseName}</div>
+          <div class="course-name">${escapedName}</div>
           <div class="course-details">
-            <span><i class="fas fa-user"></i> ${course.instructorName}</span>
-            <span><i class="fas fa-calendar"></i> ${course.semester}</span>
+            <span><i class="fas fa-user"></i> ${escapedInstructor}</span>
+            <span><i class="fas fa-calendar"></i> ${escapedSemester}</span>
             <span><i class="fas fa-users"></i> ${course.expectedStudents} students</span>
           </div>
         </div>
         <div class="course-actions">
-          <button class="access-btn" data-course-id="${course._id}" data-course-name="${course.courseName}" onclick="accessCourseDashboard(this)" title="Access Dashboard">
+          <button class="access-btn" data-course-id="${course._id}" data-course-name="${escapedName}" title="Access Dashboard">
             <i class="fas fa-arrow-right"></i>
             <span>Access</span>
           </button>
         </div>
-      `;
+      </div>
+    `;
+  }
 
-      coursesListElement.appendChild(courseItem);
-    });
-
-    // Show courses list
-    coursesListElement.style.display = "flex";
-    if (noCoursesElement) noCoursesElement.style.display = "none";
+  /**
+   * Escape HTML to prevent XSS
+   * @param {string} str 
+   * @returns {string}
+   */
+  escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   showNoCoursesMessage() {
-    const coursesListElement = document.getElementById("courses-list");
-    const noCoursesElement = document.getElementById("no-courses-message");
-
-    if (coursesListElement) coursesListElement.style.display = "none";
-    if (noCoursesElement) noCoursesElement.style.display = "block";
+    const { coursesList, noCoursesMessage } = this.elements;
+    this.setElementVisibility(coursesList, false);
+    this.setElementVisibility(noCoursesMessage, true);
   }
 
-  async accessCourseDashboard(buttonElement) {
+  accessCourseDashboard(buttonElement) {
     try {
-      // Get course data from data attributes
-      const button = buttonElement || event.target.closest(".access-btn");
-      const courseId = button.dataset.courseId;
-      const courseName = button.dataset.courseName;
+      const courseId = buttonElement.dataset.courseId;
+      const courseName = buttonElement.dataset.courseName;
       
-      console.log("Accessing course:", { id: courseId, name: courseName });
-      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: courseId, name: courseName}));
+      sessionStorage.setItem(
+        STORAGE_KEYS.selectedCourse,
+        JSON.stringify({ id: courseId, name: courseName })
+      );
 
-      window.location.href = "/dashboard";
+      window.location.href = '/dashboard';
     } catch (error) {
-      console.error("Error accessing course dashboard:", error);
-      this.showError("Failed to access dashboard. Please try again.");
+      console.error('Error accessing course dashboard:', error);
+      this.showError('Failed to access dashboard. Please try again.');
     }
   }
 
   handleCourseSelection(e) {
     e.preventDefault();
 
-    const formData = new FormData(e.target);
-    const customCourseCode = formData.get("customCourseCode");
-    const customCourseName = formData.get("customCourseName");
-
-    // Staff cannot create new courses
     if (!this.isFaculty) {
-      this.showError("Only faculty can create new courses");
+      this.showError('Only faculty can create new courses');
       return;
     }
+
+    const formData = new FormData(e.target);
+    const customCourseCode = formData.get('customCourseCode')?.trim();
+    const customCourseName = formData.get('customCourseName')?.trim();
 
     if (!customCourseCode || !customCourseName) {
-      this.showError("Please provide both course code and name");
+      this.showError('Please provide both course code and name');
       return;
     }
 
-    this.courseData.courseCode = customCourseCode.trim();
-    this.courseData.courseName = customCourseName.trim();
-
-    // Validate that we have both code and name
-    if (!this.courseData.courseCode || !this.courseData.courseName) {
-      this.showError("Please provide both course code and name");
-      return;
-    }
+    this.courseData.courseCode = customCourseCode;
+    this.courseData.courseName = customCourseName;
 
     this.updateSelectedCourseDisplay();
     this.goToStep(2);
@@ -452,12 +467,12 @@ class OnboardingManager {
     e.preventDefault();
 
     const formData = new FormData(e.target);
-    const courseWeeks = parseInt(formData.get("courseWeeks"));
-    const lecturesPerWeek = parseInt(formData.get("lecturesPerWeek"));
-    const courseCredits = parseInt(formData.get("courseCredits"));
+    const courseWeeks = parseInt(formData.get('courseWeeks'), 10);
+    const lecturesPerWeek = parseInt(formData.get('lecturesPerWeek'), 10);
+    const courseCredits = parseInt(formData.get('courseCredits'), 10);
 
     if (!courseWeeks || !lecturesPerWeek || !courseCredits) {
-      this.showError("Please fill in all required fields");
+      this.showError('Please fill in all required fields');
       return;
     }
 
@@ -472,121 +487,112 @@ class OnboardingManager {
     e.preventDefault();
 
     const formData = new FormData(e.target);
-    const instructorName = formData.get("instructorName");
-    const semester = formData.get("semester");
-    const expectedStudents = parseInt(formData.get("expectedStudents"));
-    const courseDescription = formData.get("courseDescription");
+    const instructorName = formData.get('instructorName')?.trim();
+    const semester = formData.get('semester')?.trim();
+    const expectedStudents = parseInt(formData.get('expectedStudents'), 10);
+    const courseDescription = formData.get('courseDescription') || '';
 
     if (!instructorName || !semester || isNaN(expectedStudents) || expectedStudents <= 0) {
-      this.showError("Please fill in all required fields with valid values");
+      this.showError('Please fill in all required fields with valid values');
       return;
     }
 
-    // Validate that all required fields from previous steps are present
     if (!this.courseData.courseCode || !this.courseData.courseName) {
-      this.showError("Course code and name are missing. Please go back to step 1 and select a course.");
+      this.showError('Course code and name are missing. Please go back to step 1 and select a course.');
       return;
     }
 
-    this.courseData.instructorName = instructorName.trim();
-    this.courseData.semester = semester.trim();
-    this.courseData.expectedStudents = expectedStudents;
-    this.courseData.courseDescription = courseDescription || "";
-    this.courseData.status = "active";
-    this.courseData.createdAt = new Date().toISOString();
+    Object.assign(this.courseData, {
+      instructorName,
+      semester,
+      expectedStudents,
+      courseDescription,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    });
 
-    // Validate all required fields one more time before sending
-    const requiredFields = {
-      courseCode: this.courseData.courseCode,
-      courseName: this.courseData.courseName,
-      instructorName: this.courseData.instructorName,
-      semester: this.courseData.semester,
-      expectedStudents: this.courseData.expectedStudents,
-    };
-
-    const missingFields = Object.entries(requiredFields)
-      .filter(([key, value]) => !value || (key === 'expectedStudents' && (isNaN(value) || value <= 0)))
-      .map(([key]) => key);
-
-    if (missingFields.length > 0) {
-      this.showError(`Missing or invalid required fields: ${missingFields.join(", ")}`);
+    const validationError = this.validateCourseData();
+    if (validationError) {
+      this.showError(validationError);
       return;
     }
 
-    // Show loading state
     this.showLoading(true);
 
     try {
-      // Save course profile to backend
       await this.saveCourseProfile();
-
-      // Show completion step
       this.showCompletion();
     } catch (error) {
-      console.error("Error saving course profile:", error);
-      const errorMessage = error.message || "Failed to save course profile. Please try again.";
-      this.showError(errorMessage);
+      console.error('Error saving course profile:', error);
+      this.showError(error.message || 'Failed to save course profile. Please try again.');
     } finally {
       this.showLoading(false);
     }
   }
 
+  /**
+   * Validate course data before submission
+   * @returns {string|null} Error message or null if valid
+   */
+  validateCourseData() {
+    const requiredFields = ['courseCode', 'courseName', 'instructorName', 'semester', 'expectedStudents'];
+    const missingFields = requiredFields.filter((field) => {
+      const value = this.courseData[field];
+      if (field === 'expectedStudents') {
+        return isNaN(value) || value <= 0;
+      }
+      return !value;
+    });
+
+    if (missingFields.length > 0) {
+      return `Missing or invalid required fields: ${missingFields.join(', ')}`;
+    }
+    return null;
+  }
 
   async saveCourseProfile() {
-    try {
-      // Staff cannot create new courses
-      if (!this.isFaculty) {
-        this.showError("Only faculty can create new courses");
-        return;
-      }
-
-      // Log the data being sent for debugging
-      console.log("Saving course profile with data:", this.courseData);
-
-      const response = await fetch("/api/courses/new", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(this.courseData),
-      });
-
-      if (!response.ok) {
-        // Try to get error message from response
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-          console.error("Backend error response:", errorData);
-        } catch (e) {
-          // If response is not JSON, use status text
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
-      console.log("Course profile saved successfully:", result);
-
-      sessionStorage.setItem("grasp-selected-course", JSON.stringify({id: result.course._id, name: result.course.courseName}));
-      return result;
-    } catch (error) {
-      console.error("Error saving course profile:", error);
-      throw error;
+    if (!this.isFaculty) {
+      throw new Error('Only faculty can create new courses');
     }
+
+    const response = await fetch(API_ENDPOINTS.newCourse, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(this.courseData),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+
+    sessionStorage.setItem(
+      STORAGE_KEYS.selectedCourse,
+      JSON.stringify({ id: result.course._id, name: result.course.courseName })
+    );
+
+    return result;
   }
 
   goToStep(stepNumber) {
-    // Hide current step
-    const currentStepElement = document.querySelector(".step-content.active");
+    const currentStepElement = document.querySelector(`${SELECTORS.stepContent}.active`);
     if (currentStepElement) {
-      currentStepElement.classList.remove("active");
+      currentStepElement.classList.remove('active');
     }
 
-    // Show target step
     const targetStepElement = document.getElementById(`step-${stepNumber}`);
     if (targetStepElement) {
-      targetStepElement.classList.add("active");
+      targetStepElement.classList.add('active');
     }
 
     this.currentStep = stepNumber;
@@ -594,133 +600,89 @@ class OnboardingManager {
   }
 
   updateProgressIndicator() {
-    const progressSteps = document.querySelectorAll(".progress-step");
+    const progressSteps = document.querySelectorAll(SELECTORS.progressStep);
 
     progressSteps.forEach((step, index) => {
       const stepNumber = index + 1;
-      step.classList.remove("active", "completed");
+      step.classList.remove('active', 'completed');
 
       if (stepNumber === this.currentStep) {
-        step.classList.add("active");
+        step.classList.add('active');
       } else if (stepNumber < this.currentStep) {
-        step.classList.add("completed");
+        step.classList.add('completed');
       }
     });
   }
 
   updateSelectedCourseDisplay() {
-    const displayElement = document.getElementById("selected-course-display");
-    if (displayElement && this.courseData.courseName) {
-      displayElement.textContent = this.courseData.courseName;
+    const { selectedCourseDisplay } = this.elements;
+    if (selectedCourseDisplay && this.courseData.courseName) {
+      selectedCourseDisplay.textContent = this.courseData.courseName;
     }
   }
 
   showCompletion() {
-    // Hide current step
-    const currentStepElement = document.querySelector(".step-content.active");
+    const currentStepElement = document.querySelector(`${SELECTORS.stepContent}.active`);
     if (currentStepElement) {
-      currentStepElement.classList.remove("active");
+      currentStepElement.classList.remove('active');
     }
 
-    // Show completion step
-    const completionElement = document.getElementById("step-complete");
+    const completionElement = document.getElementById(SELECTORS.stepComplete);
     if (completionElement) {
-      completionElement.classList.add("active");
-      completionElement.classList.add("success-animation");
+      completionElement.classList.add('active', 'success-animation');
     }
   }
 
   showLoading(show) {
-    const forms = document.querySelectorAll(".onboarding-form");
-    const buttons = document.querySelectorAll(".continue-btn");
+    const forms = document.querySelectorAll('.onboarding-form');
+    const buttons = document.querySelectorAll('.continue-btn');
 
-    forms.forEach((form) => {
-      if (show) {
-        form.classList.add("loading");
-      } else {
-        form.classList.remove("loading");
-      }
-    });
-
-    buttons.forEach((button) => {
-      if (show) {
-        button.classList.add("loading");
-      } else {
-        button.classList.remove("loading");
-      }
-    });
+    const method = show ? 'add' : 'remove';
+    forms.forEach((form) => form.classList[method]('loading'));
+    buttons.forEach((button) => button.classList[method]('loading'));
   }
 
   showError(message) {
     // Remove existing error messages
-    const existingError = document.querySelector(".error-message");
+    const existingError = document.querySelector('.error-message');
     if (existingError) {
       existingError.remove();
     }
 
-    // Create error message element
-    const errorElement = document.createElement("div");
-    errorElement.className = "error-message";
-    errorElement.style.cssText = `
-            background: #fee;
-            color: #c33;
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border: 1px solid #fcc;
-            font-size: 14px;
-            text-align: center;
-        `;
+    const errorElement = document.createElement('div');
+    errorElement.className = 'error-message';
     errorElement.textContent = message;
 
-    // Insert error message at the top of the current form
-    const currentForm = document.querySelector(
-      ".step-content.active .onboarding-form"
-    );
+    const currentForm = document.querySelector(`${SELECTORS.stepContent}.active .onboarding-form`);
     if (currentForm) {
       currentForm.insertBefore(errorElement, currentForm.firstChild);
     }
 
     // Auto-remove error after 5 seconds
     setTimeout(() => {
-      if (errorElement.parentNode) {
-        errorElement.remove();
-      }
+      errorElement.remove();
     }, 5000);
   }
 }
 
-// Global functions for button clicks
+// Global functions for button clicks (keeping minimal global API)
 function goToStep(stepNumber) {
-  if (window.onboardingManager) {
-    window.onboardingManager.goToStep(stepNumber);
-  }
+  window.onboardingManager?.goToStep(stepNumber);
 }
 
 function redirectToDashboard() {
-  window.location.href = "/dashboard";
-}
-
-// Global functions for HTML onclick handlers
-function accessCourseDashboard(buttonElement) {
-  if (window.onboardingManager) {
-    window.onboardingManager.accessCourseDashboard(buttonElement);
-  }
+  window.location.href = '/dashboard';
 }
 
 function switchToSetupTab() {
-  // Check if user is faculty before allowing tab switch
-  // This is a fallback - the tab should already be hidden for staff
-  const setupButton = document.querySelector('[data-tab="setup"]');
+  const setupButton = document.querySelector(`${SELECTORS.tabButton}[data-tab="${TAB_NAMES.setup}"]`);
   if (setupButton && setupButton.style.display !== 'none') {
     setupButton.click();
-  } else {
-    console.warn("Course creation is not available for staff users");
   }
 }
 
-// Initialize onboarding when DOM is loaded (only once)
-document.addEventListener("DOMContentLoaded", () => {
+// Initialize onboarding when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
   if (!window.onboardingManager) {
     window.onboardingManager = new OnboardingManager();
   }
