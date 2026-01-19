@@ -1,36 +1,41 @@
 // Course Materials Upload Functionality
 // Handles file uploads, text input, and URL input for course materials
 
+// Constants
+const UPLOAD_API_ENDPOINTS = {
+  materialSave: '/api/material/save',
+};
+
+const UPLOAD_STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
+
+/**
+ * Get the selected course from session storage
+ * @returns {Object|null} The selected course object or null
+ */
+function getSelectedCourse() {
+  try {
+    return JSON.parse(sessionStorage.getItem(UPLOAD_STORAGE_KEYS.selectedCourse)) || null;
+  } catch {
+    return null;
+  }
+}
+
 let contentGenerator = null;
 
 // Initialize upload functionality
-document.addEventListener("DOMContentLoaded", async function () {
-  console.log("Initializing course materials upload...");
-
-  // Initialize modules
+document.addEventListener('DOMContentLoaded', async function () {
   initializeModules();
-
-  // Initialize upload UI
   initializeUploadUI();
-
-  // Initialize file upload handlers
   initializeFileUpload();
-
-  // Initialize material tiles
   initializeMaterialTiles();
 });
 
 function initializeModules() {
-  console.log("Initializing upload modules...");
-  console.log("ContentGenerator available:", window.ContentGenerator);
-
-  // Initialize content generator
   if (window.ContentGenerator) {
     contentGenerator = new window.ContentGenerator();
-    console.log("Content generator created:", contentGenerator);
   }
-
-  console.log("Upload modules initialized successfully");
 }
 
 function initializeUploadUI() {
@@ -64,28 +69,19 @@ function hideUploadSection() {
 // ===== FILE UPLOAD FUNCTIONS =====
 
 function initializeFileUpload() {
-  const dropArea = document.getElementById("drop-area");
-  const fileInput = document.getElementById("file-input");
-  const chooseFileBtn = document.getElementById("choose-file-btn");
-
-  console.log("Initializing file upload:", {
-    dropArea: !!dropArea,
-    fileInput: !!fileInput,
-    chooseFileBtn: !!chooseFileBtn,
-  });
+  const dropArea = document.getElementById('drop-area');
+  const fileInput = document.getElementById('file-input');
+  const chooseFileBtn = document.getElementById('choose-file-btn');
 
   if (dropArea) {
-    // Drag and drop events
-    dropArea.addEventListener("dragover", handleDragOver);
-    dropArea.addEventListener("dragleave", handleDragLeave);
-    dropArea.addEventListener("drop", handleDrop);
+    dropArea.addEventListener('dragover', handleDragOver);
+    dropArea.addEventListener('dragleave', handleDragLeave);
+    dropArea.addEventListener('drop', handleDrop);
 
-    // Click to choose file
     if (chooseFileBtn) {
-      chooseFileBtn.addEventListener("click", (e) => {
+      chooseFileBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log("Choose file button clicked");
         if (fileInput) {
           fileInput.click();
         }
@@ -93,10 +89,8 @@ function initializeFileUpload() {
     }
 
     if (fileInput) {
-      fileInput.addEventListener("change", handleFileSelect);
+      fileInput.addEventListener('change', handleFileSelect);
     }
-  } else {
-    console.error("Drop area not found!");
   }
 }
 
@@ -131,11 +125,7 @@ function handleDrop(e) {
 }
 
 function handleFileSelect(e) {
-  console.log("File select triggered:", e.target.files);
   const files = Array.from(e.target.files);
-  console.log("Files selected:", files.length);
-  
-  // Reset the input value to allow re-selecting the same file after error
   const fileInput = e.target;
   
   const validFiles = validateDocumentFiles(files);
@@ -178,33 +168,28 @@ function validateDocumentFiles(files) {
 }
 
 async function addFiles(files) {
-  // Validate all files are PDF, DOC, or DOCX (safety check)
   const validFiles = validateDocumentFiles(files);
   if (validFiles.length === 0) {
-    return; // No valid files, error already shown by validateDocumentFiles
+    return;
   }
 
-  // Show spinner when starting file upload
   showUploadSpinner();
 
   try {
     const selectedCourse = getSelectedCourse();
 
     for (const file of validFiles) {
-      // Process file with content generator
       try {
         if (!selectedCourse) {
-          console.warn(
-            "No course selected, file will be processed without course association"
-          );
           showNotification(
-            "Please select a course before uploading files for proper organization.",
-            "warning"
+            'Please select a course before uploading files for proper organization.',
+            'warning'
           );
+          continue;
         }
 
         if (contentGenerator) {
-          const sourceId = selectedCourse.id + "-" + Date.now() + "-" + Math.random();
+          const sourceId = selectedCourse.id + '-' + Date.now() + '-' + Math.random();
           const response = await contentGenerator.processFileForRAG(
             file,
             selectedCourse,
@@ -213,7 +198,6 @@ async function addFiles(files) {
 
           if (response.success) {
             try {
-              console.log('Saving material to database...');
               await saveMaterialToDatabase(
                 sourceId,
                 selectedCourse.id,
@@ -232,50 +216,41 @@ async function addFiles(files) {
                 createdAt: new Date(),
               };
 
-              // Add to materials list
               addMaterialToCourseMaterials(stateFileObj, sourceId);
             } catch (error) {
-              console.error("Error saving material to database:", error);
+              console.error('Error saving material to database:', error);
             }
           }
-
         }
       } catch (error) {
-        console.error("Error processing file:", error);
+        console.error('Error processing file:', error);
       }
     }
 
     if (validFiles.length > 0) {
-      showNotification(`${validFiles.length} file(s) uploaded successfully`, "success");
+      showNotification(`${validFiles.length} file(s) uploaded successfully`, 'success');
     }
 
-    // Hide upload section after successful upload
     hideUploadSection();
   } catch (error) {
-    console.error("Error processing files:", error);
-    showNotification("Error processing files. Please try again.", "error");
+    console.error('Error processing files:', error);
+    showNotification('Error processing files. Please try again.', 'error');
   } finally {
-    // Hide spinner when upload is complete
     hideUploadSpinner();
   }
 }
 
 async function saveMaterialToDatabase(sourceId, courseId, materialData) {
-  try {
-    if (!courseId) {
-      console.warn("No course selected, skipping database save");
-      return;
-    }
+  if (!courseId) return;
 
-    const response = await fetch("/api/material/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+  try {
+    const response = await fetch(UPLOAD_API_ENDPOINTS.materialSave, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceId: sourceId,
-        courseId: courseId,
-        materialData: materialData,
+        sourceId,
+        courseId,
+        materialData,
       }),
     });
 
@@ -285,16 +260,11 @@ async function saveMaterialToDatabase(sourceId, courseId, materialData) {
 
     const data = await response.json();
 
-    if (data.success) {
-      console.log("Material saved to database:", data);
-    } else {
-      console.error("Failed to save material:", data.error);
-      showNotification("Failed to save material to database", "error");
+    if (!data.success) {
+      showNotification('Failed to save material to database', 'error');
     }
   } catch (error) {
-    console.error("Error saving material to database:", error);
-    // Don't show error notification for every failure to avoid spam
-    // The material is still added to the UI, just not persisted
+    console.error('Error saving material to database:', error);
   }
 }
 
@@ -446,26 +416,25 @@ function closeTextModal() {
 }
 
 async function saveTextContent() {
-  const textContentEl = document.getElementById("text-content");
+  const textContentEl = document.getElementById('text-content');
   if (!textContentEl) return;
 
   const textContent = textContentEl.value.trim();
-  const documentTitleEl = document.getElementById("text-document-title");
-  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+  const documentTitleEl = document.getElementById('text-document-title');
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : '';
 
   if (textContent) {
     const selectedCourse = getSelectedCourse();
     const textFile = {
       id: Date.now() + Math.random(),
-      name: documentTitle || "",
+      name: documentTitle || '',
       size: new Blob([textContent]).size,
-      type: "text/plain",
+      type: 'text/plain',
       content: textContent,
     };
 
-    // Add text content to content generator
-    if (contentGenerator) {
-      const sourceId = selectedCourse.id + "-" + Date.now() + "-" + Math.random();
+    if (contentGenerator && selectedCourse) {
+      const sourceId = selectedCourse.id + '-' + Date.now() + '-' + Math.random();
 
       try {
         await contentGenerator.processTextForRAG(
@@ -494,16 +463,12 @@ async function saveTextContent() {
           createdAt: new Date(),
         };
   
-        // Add to materials list
         addMaterialToCourseMaterials(stateFileObj, sourceId);
-  
         closeTextModal();
-        showNotification("Text content added", "success");
-  
-        // Hide upload section after successful upload
+        showNotification('Text content added', 'success');
         hideUploadSection();
       } catch (error) {
-        console.error("Error processing text for RAG:", error);
+        console.error('Error processing text for RAG:', error);
       }
     }
   }
@@ -536,26 +501,30 @@ function closeUrlModal() {
 }
 
 async function saveUrlContent() {
-  const urlInput = document.getElementById("url-input");
+  const urlInput = document.getElementById('url-input');
 
   if (!urlInput) {
-    showNotification("Please enter a URL", "error");
+    showNotification('Please enter a URL', 'error');
     return;
   }
 
   const url = urlInput.value.trim();
   if (!url) {
-    showNotification("Please enter a URL", "error");
+    showNotification('Please enter a URL', 'error');
     return;
   }
 
-  const documentTitleEl = document.getElementById("url-document-title");
-  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+  const documentTitleEl = document.getElementById('url-document-title');
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : '';
 
   const selectedCourse = getSelectedCourse();
-  const sourceId = selectedCourse.id + "-" + Date.now() + "-" + Math.random();
+  if (!selectedCourse) {
+    showNotification('Please select a course first', 'error');
+    return;
+  }
 
-  // Add URL to content generator
+  const sourceId = selectedCourse.id + '-' + Date.now() + '-' + Math.random();
+
   if (contentGenerator) {
     try {
       const content = await contentGenerator.processUrlForRAG(url, selectedCourse.name, sourceId, documentTitle);
@@ -566,36 +535,27 @@ async function saveUrlContent() {
         {
           fileType: 'link',
           fileSize: new Blob([content]).size,
-          fileContent: url, // For links, save URL to fileContent
+          fileContent: url,
           documentTitle: documentTitle,
         });
   
       const stateUrlObj = {
         fileSize: new Blob([content]).size,
         fileType: 'link',
-        fileContent: url, // For links, save URL to fileContent
+        fileContent: url,
         documentTitle: documentTitle,
         sourceId: sourceId,
         createdAt: new Date(),
       };
   
-      // Add to materials list
       addMaterialToCourseMaterials(stateUrlObj, sourceId);
-  
       closeUrlModal();
-      showNotification("URL Content added!", "success");
-  
-      // Hide upload section after successful upload
+      showNotification('URL Content added!', 'success');
       hideUploadSection();
     } catch (error) {
-      console.error("Error processing URL for RAG:", error);
+      console.error('Error processing URL for RAG:', error);
     }
   }
-}
-
-// Helper function to get selected course
-function getSelectedCourse() {
-  return JSON.parse(sessionStorage.getItem("grasp-selected-course"));
 }
 
 // Helper function to add material to course materials list
@@ -618,12 +578,11 @@ function addMaterialToCourseMaterials(fileObj, sourceId) {
 }
 
 // Helper function for notifications (reuse from course-materials.js if available)
-function showNotification(message, type = "info") {
+function showNotification(message, type = 'info') {
   if (window.CourseMaterials && window.CourseMaterials.showNotification) {
     window.CourseMaterials.showNotification(message, type);
   } else {
     // Fallback notification
-    console.log(`[${type.toUpperCase()}] ${message}`);
     alert(message);
   }
 }

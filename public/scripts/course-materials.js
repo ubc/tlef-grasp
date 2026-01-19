@@ -1,23 +1,52 @@
 // Course Materials Page JavaScript
 
+// Constants
+const API_ENDPOINTS = {
+  materialCourse: '/api/material/course',
+  materialUpdate: '/api/material/update',
+  materialDelete: '/api/material/delete',
+  materialRefetch: '/api/material/refetch',
+  ragLlmDeleteDocument: '/api/rag-llm/delete-document',
+  ragLlmFetchUrlContent: '/api/rag-llm/fetch-url-content',
+};
+
+const STORAGE_KEYS = {
+  selectedCourse: 'grasp-selected-course',
+};
+
+/**
+ * Get the selected course from session storage
+ * @returns {Object|null} The selected course object or null
+ */
+function getSelectedCourse() {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the course ID from session storage
+ * @returns {string|null} The course ID or null
+ */
+function getCourseId() {
+  const selectedCourse = getSelectedCourse();
+  return selectedCourse?.id || null;
+}
+
 let materials = [];
 let filteredMaterials = [];
 
 // Initialize page when DOM is loaded
-document.addEventListener("DOMContentLoaded", function () {
-  // Initialize navigation
-  new window.GRASPNavigation();
+document.addEventListener('DOMContentLoaded', function () {
+  if (window.GRASPNavigation) {
+    new window.GRASPNavigation();
+  }
 
-  // Initialize course materials
   initializeCourseMaterials();
-
-  // Initialize edit modal event listeners
   initializeEditModal();
-  
-  // Initialize edit link modal event listeners
   initializeEditLinkModal();
-  
-  // Initialize edit PDF modal event listeners
   initializeEditPdfModal();
 });
 
@@ -100,39 +129,30 @@ function initializeEditLinkModal() {
 }
 
 async function initializeCourseMaterials() {
-  console.log("Initializing Course Materials page...");
-  console.log("Course materials script is running!");
-
-  // Set page title
-  document.title = "Course Materials - GRASP";
-
-  // Load course data first
+  document.title = 'Course Materials - GRASP';
   await loadCourseMaterials();
-
-  // Load materials
   loadMaterials();
-
-  // Initialize filters
   initializeFilters();
 }
 
 async function loadCourseMaterials() {
   try {
-    const courseId = JSON.parse(sessionStorage.getItem("grasp-selected-course")).id;
-    const response = await fetch(`/api/material/course/${courseId}`);
+    const courseId = getCourseId();
+    if (!courseId) {
+      showNotification('No course selected', 'error');
+      return;
+    }
+
+    const response = await fetch(`${API_ENDPOINTS.materialCourse}/${courseId}`);
     const data = await response.json();
 
     if (data.success && data.materials) {
       materials = data.materials;
-
       filteredMaterials = [...materials];
-    } else {
-      console.log("No courses found or invalid response");
     }
-
   } catch (error) {
-    console.error("Error loading course data:", error);
-    showNotification("Error loading course data", "error");
+    console.error('Error loading course data:', error);
+    showNotification('Error loading course data', 'error');
   }
 }
 
@@ -330,34 +350,22 @@ function closeDeleteModal() {
 
 // Show edit modal for textbook
 function openEditModal(material) {
-  const modal = document.getElementById("edit-text-modal");
-  const textContent = document.getElementById("edit-text-content");
-  const documentTitleEl = document.getElementById("edit-document-title");
+  const modal = document.getElementById('edit-text-modal');
+  const textContent = document.getElementById('edit-text-content');
+  const documentTitleEl = document.getElementById('edit-document-title');
   
-  if (!modal || !textContent) {
-    console.error("Edit modal elements not found");
-    return;
-  }
+  if (!modal || !textContent) return;
 
-  // Load existing document title
   if (documentTitleEl) {
-    documentTitleEl.value = material.documentTitle || "";
+    documentTitleEl.value = material.documentTitle || '';
   }
 
-  // Load existing content
-  textContent.value = material.fileContent || "";
-
-  // Store material data for save
+  textContent.value = material.fileContent || '';
   textContent.dataset.sourceId = material.sourceId;
   textContent.dataset.courseId = material.courseId;
 
-  // Show modal
-  modal.classList.add("modal--active");
-  if (documentTitleEl) {
-    documentTitleEl.focus();
-  } else {
-    textContent.focus();
-  }
+  modal.classList.add('modal--active');
+  (documentTitleEl || textContent).focus();
 }
 
 function closeEditModal() {
@@ -378,101 +386,73 @@ function closeEditModal() {
 }
 
 async function saveEditedTextContent() {
-  const textContentEl = document.getElementById("edit-text-content");
+  const textContentEl = document.getElementById('edit-text-content');
   if (!textContentEl) return;
 
   const textContent = textContentEl.value.trim();
   if (!textContent) {
-    showNotification("Please enter some content", "error");
+    showNotification('Please enter some content', 'error');
     return;
   }
 
-  const documentTitleEl = document.getElementById("edit-document-title");
-  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+  const documentTitleEl = document.getElementById('edit-document-title');
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : '';
 
   const sourceId = textContentEl.dataset.sourceId;
-  let courseId = textContentEl.dataset.courseId;
+  const courseId = textContentEl.dataset.courseId || getCourseId();
 
   if (!sourceId) {
-    showNotification("Error: Material source ID not found", "error");
+    showNotification('Error: Material source ID not found', 'error');
     return;
   }
 
-  // Fallback: get courseId from selected course if not in material
   if (!courseId) {
-    try {
-      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-      if (selectedCourse && selectedCourse.id) {
-        courseId = selectedCourse.id;
-      }
-    } catch (e) {
-      console.error("Error getting selected course:", e);
-    }
-  }
-
-  if (!courseId) {
-    showNotification("Error: Course ID not found", "error");
+    showNotification('Error: Course ID not found', 'error');
     return;
   }
 
   try {
-    // Call API to update material (delete old, save new)
-    const response = await fetch("/api/material/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const response = await fetch(API_ENDPOINTS.materialUpdate, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceId: sourceId,
-        courseId: courseId,
-        documentType: "text",
-        documentData: {
-          textContent: textContent,
-        },
-        documentTitle: documentTitle,
+        sourceId,
+        courseId,
+        documentType: 'text',
+        documentData: { textContent },
+        documentTitle,
       }),
     });
 
     const data = await response.json();
 
     if (!data.success) {
-      showNotification(data.error || "Failed to update material", "error");
+      showNotification(data.error || 'Failed to update material', 'error');
       return;
     }
 
-    // Reload materials from server to ensure consistency
     await loadCourseMaterials();
-    
-    // Reapply filters to refresh the display
     applyFilters();
-
     closeEditModal();
-    showNotification("Textbook updated successfully", "success");
+    showNotification('Textbook updated successfully', 'success');
   } catch (error) {
-    console.error("Error updating textbook:", error);
-    showNotification("Error updating textbook. Please try again.", "error");
+    console.error('Error updating textbook:', error);
+    showNotification('Error updating textbook. Please try again.', 'error');
   }
 }
 
 // Show edit modal for PDF
 function openEditPdfModal(material) {
-  const modal = document.getElementById("edit-pdf-modal");
-  const documentTitleEl = document.getElementById("edit-pdf-document-title");
+  const modal = document.getElementById('edit-pdf-modal');
+  const documentTitleEl = document.getElementById('edit-pdf-document-title');
   
-  if (!modal || !documentTitleEl) {
-    console.error("Edit PDF modal elements not found");
-    return;
-  }
+  if (!modal || !documentTitleEl) return;
 
-  // Load existing document title
-  documentTitleEl.value = material.documentTitle || "";
-
-  // Store material data for save
+  documentTitleEl.value = material.documentTitle || '';
   documentTitleEl.dataset.sourceId = material.sourceId;
   documentTitleEl.dataset.courseId = material.courseId;
 
-  // Show modal
-  modal.classList.add("modal--active");
+  modal.classList.add('modal--active');
   documentTitleEl.focus();
 }
 
@@ -490,103 +470,71 @@ function closeEditPdfModal() {
 }
 
 async function saveEditedPdfContent() {
-  const documentTitleEl = document.getElementById("edit-pdf-document-title");
+  const documentTitleEl = document.getElementById('edit-pdf-document-title');
   if (!documentTitleEl) return;
 
   const documentTitle = documentTitleEl.value.trim();
-
   const sourceId = documentTitleEl.dataset.sourceId;
-  let courseId = documentTitleEl.dataset.courseId;
+  const courseId = documentTitleEl.dataset.courseId || getCourseId();
 
   if (!sourceId) {
-    showNotification("Error: Material source ID not found", "error");
+    showNotification('Error: Material source ID not found', 'error');
     return;
   }
 
-  // Fallback: get courseId from selected course if not in material
   if (!courseId) {
-    try {
-      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-      if (selectedCourse && selectedCourse.id) {
-        courseId = selectedCourse.id;
-      }
-    } catch (e) {
-      console.error("Error getting selected course:", e);
-    }
-  }
-
-  if (!courseId) {
-    showNotification("Error: Course ID not found", "error");
+    showNotification('Error: Course ID not found', 'error');
     return;
   }
 
   try {
-    // Call API to update PDF document title
-    const response = await fetch("/api/material/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const response = await fetch(API_ENDPOINTS.materialUpdate, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceId: sourceId,
-        courseId: courseId,
-        documentType: "pdf",
-        documentData: {}, // PDFs don't need documentData, only documentTitle
-        documentTitle: documentTitle,
+        sourceId,
+        courseId,
+        documentType: 'pdf',
+        documentData: {},
+        documentTitle,
       }),
     });
 
     const data = await response.json();
 
     if (!data.success) {
-      showNotification(data.error || "Failed to update PDF", "error");
+      showNotification(data.error || 'Failed to update PDF', 'error');
       return;
     }
 
-    // Reload materials from server to ensure consistency
     await loadCourseMaterials();
-    
-    // Reapply filters to refresh the display
     applyFilters();
-
     closeEditPdfModal();
-    showNotification("PDF updated successfully", "success");
+    showNotification('PDF updated successfully', 'success');
   } catch (error) {
-    console.error("Error updating PDF:", error);
-    showNotification("Error updating PDF. Please try again.", "error");
+    console.error('Error updating PDF:', error);
+    showNotification('Error updating PDF. Please try again.', 'error');
   }
 }
 
 // Show edit modal for link
 function openEditLinkModal(material) {
-  const modal = document.getElementById("edit-link-modal");
-  const urlInput = document.getElementById("edit-link-url");
-  const documentTitleEl = document.getElementById("edit-link-document-title");
+  const modal = document.getElementById('edit-link-modal');
+  const urlInput = document.getElementById('edit-link-url');
+  const documentTitleEl = document.getElementById('edit-link-document-title');
   
-  if (!modal || !urlInput) {
-    console.error("Edit link modal elements not found");
-    return;
-  }
+  if (!modal || !urlInput) return;
 
-  // Load existing document title
   if (documentTitleEl) {
-    documentTitleEl.value = material.documentTitle || "";
+    documentTitleEl.value = material.documentTitle || '';
   }
 
-  // Load existing URL (stored in fileContent for links)
-  urlInput.value = material.fileContent || "";
-
-  // Store material data for save
+  urlInput.value = material.fileContent || '';
   urlInput.dataset.sourceId = material.sourceId;
   urlInput.dataset.courseId = material.courseId;
 
-  // Show modal
-  modal.classList.add("modal--active");
-  if (documentTitleEl) {
-    documentTitleEl.focus();
-  } else {
-    urlInput.focus();
-  }
+  modal.classList.add('modal--active');
+  (documentTitleEl || urlInput).focus();
 }
 
 function closeEditLinkModal() {
@@ -607,210 +555,164 @@ function closeEditLinkModal() {
 }
 
 async function saveEditedLinkContent() {
-  const urlInput = document.getElementById("edit-link-url");
+  const urlInput = document.getElementById('edit-link-url');
   if (!urlInput) return;
 
   const url = urlInput.value.trim();
   if (!url) {
-    showNotification("Please enter a URL", "error");
+    showNotification('Please enter a URL', 'error');
     return;
   }
 
-  const documentTitleEl = document.getElementById("edit-link-document-title");
-  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : "";
+  const documentTitleEl = document.getElementById('edit-link-document-title');
+  const documentTitle = documentTitleEl ? documentTitleEl.value.trim() : '';
 
   const sourceId = urlInput.dataset.sourceId;
-  let courseId = urlInput.dataset.courseId;
+  const courseId = urlInput.dataset.courseId || getCourseId();
 
   if (!sourceId) {
-    showNotification("Error: Material source ID not found", "error");
+    showNotification('Error: Material source ID not found', 'error');
     return;
   }
 
-  // Fallback: get courseId from selected course if not in material
   if (!courseId) {
-    try {
-      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-      if (selectedCourse && selectedCourse.id) {
-        courseId = selectedCourse.id;
-      }
-    } catch (e) {
-      console.error("Error getting selected course:", e);
-    }
-  }
-
-  if (!courseId) {
-    showNotification("Error: Course ID not found", "error");
+    showNotification('Error: Course ID not found', 'error');
     return;
   }
 
   try {
-    // Show loading notification
-    showNotification("Updating link...", "info");
+    showNotification('Updating link...', 'info');
 
-    // Call API to update link material (backend will automatically fetch content from URL)
-    const response = await fetch("/api/material/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const response = await fetch(API_ENDPOINTS.materialUpdate, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceId: sourceId,
-        courseId: courseId,
-        documentType: "link",
-        documentData: {
-          url: url,
-        },
-        documentTitle: documentTitle,
+        sourceId,
+        courseId,
+        documentType: 'link',
+        documentData: { url },
+        documentTitle,
       }),
     });
 
     const data = await response.json();
 
     if (!data.success) {
-      showNotification(data.error || "Failed to update link", "error");
+      showNotification(data.error || 'Failed to update link', 'error');
       return;
     }
 
-    // Reload materials from server to ensure consistency
     await loadCourseMaterials();
-    
-    // Reapply filters to refresh the display
     applyFilters();
-
     closeEditLinkModal();
-    showNotification("Link updated successfully", "success");
+    showNotification('Link updated successfully', 'success');
   } catch (error) {
-    console.error("Error updating link:", error);
-    showNotification("Error updating link. Please try again.", "error");
+    console.error('Error updating link:', error);
+    showNotification('Error updating link. Please try again.', 'error');
   }
 }
 
 async function refetchLinkContent(material) {
   if (!material.sourceId || !material.fileContent) {
-    showNotification("Error: Material information not found", "error");
+    showNotification('Error: Material information not found', 'error');
     return;
   }
 
-  const url = material.fileContent; // URL is stored in fileContent for links
+  const url = material.fileContent;
   const sourceId = material.sourceId;
-  let courseId = material.courseId;
-
-  // Fallback: get courseId from selected course if not in material
-  if (!courseId) {
-    try {
-      const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course"));
-      if (selectedCourse && selectedCourse.id) {
-        courseId = selectedCourse.id;
-      }
-    } catch (e) {
-      console.error("Error getting selected course:", e);
-    }
-  }
+  const courseId = material.courseId || getCourseId();
 
   if (!courseId) {
-    showNotification("Error: Course ID not found", "error");
+    showNotification('Error: Course ID not found', 'error');
     return;
   }
 
   try {
-    // Show loading notification
-    showNotification("Refetching URL content...", "info");
+    showNotification('Refetching URL content...', 'info');
 
     // Step 1: Fetch new content from URL
-    const fetchResponse = await fetch("/api/rag-llm/fetch-url-content", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ url: url }),
+    const fetchResponse = await fetch(API_ENDPOINTS.ragLlmFetchUrlContent, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
     });
 
     if (!fetchResponse.ok) {
       const errorData = await fetchResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || "Failed to fetch URL content");
+      throw new Error(errorData.error || 'Failed to fetch URL content');
     }
 
     const fetchData = await fetchResponse.json();
     if (!fetchData.success || !fetchData.content) {
-      throw new Error("No content retrieved from URL");
+      throw new Error('No content retrieved from URL');
     }
 
-    const newContent = fetchData.content;
-
-    // Step 2: Call API to refetch material (delete old, save new)
-    const response = await fetch("/api/material/refetch", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    // Step 2: Call API to refetch material
+    const response = await fetch(API_ENDPOINTS.materialRefetch, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceId: sourceId,
-        courseId: courseId,
-        url: url,
-        content: newContent,
+        sourceId,
+        courseId,
+        url,
+        content: fetchData.content,
       }),
     });
 
     const data = await response.json();
 
     if (!data.success) {
-      showNotification(data.error || "Failed to refetch material", "error");
+      showNotification(data.error || 'Failed to refetch material', 'error');
       return;
     }
 
-    // Reload materials from server to ensure consistency
     await loadCourseMaterials();
-    
-    // Reapply filters to refresh the display
     applyFilters();
-
-    showNotification("Link content refetched successfully", "success");
+    showNotification('Link content refetched successfully', 'success');
   } catch (error) {
-    console.error("Error refetching link content:", error);
-    showNotification("Error refetching link content. Please try again.", "error");
+    console.error('Error refetching link content:', error);
+    showNotification('Error refetching link content. Please try again.', 'error');
   }
 }
 
 async function confirmDelete(sourceId) {
-  // Delete material from RAG.
-  let response = await fetch(`/api/rag-llm/delete-document/${sourceId}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  try {
+    // Delete material from RAG
+    let response = await fetch(`${API_ENDPOINTS.ragLlmDeleteDocument}/${sourceId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-  let data = await response.json();
+    let data = await response.json();
 
-  if (!data.success) {
-    showNotification("Failed to delete material from RAG", "error");
-    return;
+    if (!data.success) {
+      showNotification('Failed to delete material from RAG', 'error');
+      return;
+    }
+    
+    // Delete material from database
+    response = await fetch(`${API_ENDPOINTS.materialDelete}/${sourceId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    data = await response.json();
+
+    if (!data.success) {
+      showNotification('Failed to delete material from database', 'error');
+      return;
+    }
+
+    // Remove material from arrays
+    materials = materials.filter((material) => material.sourceId !== sourceId);
+    filteredMaterials = filteredMaterials.filter((material) => material.sourceId !== sourceId);
+
+    loadMaterials();
+    showNotification('Material deleted successfully', 'success');
+  } catch (error) {
+    console.error('Error deleting material:', error);
+    showNotification('Error deleting material. Please try again.', 'error');
   }
-  
-  // Delete material from database.
-  response = await fetch(`/api/material/delete/${sourceId}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  data = await response.json();
-
-  if (!data.success) {
-    showNotification("Failed to delete material from database", "error");
-    return;
-  }
-
-  // Remove material from arrays
-  materials = materials.filter((material) => material.sourceId !== sourceId);
-  filteredMaterials = filteredMaterials.filter((material) => material.sourceId !== sourceId);
-
-  // Reload materials.
-  loadMaterials();
-
-  showNotification("Material deleted successfully", "success");
 }
 
 // Keep deleteMaterial for backward compatibility (now shows confirmation)
@@ -906,8 +808,7 @@ function loadMaterials() {
     filtersSection.style.display = "block";
   }
 
-  materialsGrid.innerHTML = "";
-console.log("Loading materials:", filteredMaterials);
+  materialsGrid.innerHTML = '';
   filteredMaterials.forEach((material) => {
     const materialCard = createMaterialCard(material);
     materialsGrid.appendChild(materialCard);
