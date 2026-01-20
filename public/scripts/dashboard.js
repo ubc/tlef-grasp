@@ -265,6 +265,12 @@ class DashboardManager {
    */
   async init() {
     try {
+      // Check user role first and redirect students - stop initialization if redirect happens
+      const redirected = await this.checkUserRole();
+      if (redirected) {
+        return; // Stop initialization if student was redirected
+      }
+      
       this.initNavigation();
       await this.loadUserData();
       this.updateCurrentDate();
@@ -274,6 +280,37 @@ class DashboardManager {
     } catch (error) {
       console.error('Error initializing dashboard:', error);
     }
+  }
+
+  /**
+   * Check user role and redirect students (or faculty/staff viewing as students) to student dashboard
+   * This prevents students and faculty/staff in student view from seeing the faculty dashboard
+   */
+  async checkUserRole() {
+    try {
+      // First check localStorage for current view mode (for faculty/staff role switching)
+      const currentViewRole = localStorage.getItem('grasp-current-role');
+      if (currentViewRole === 'student') {
+        window.location.href = '/student-dashboard';
+        return true; // Indicate redirect happened
+      }
+
+      // Then check actual user role from API
+      const response = await fetch(API_ENDPOINTS.currentUser);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          // If user is a student, redirect to student dashboard immediately
+          if (data.user.isStudent || data.user.role === 'student') {
+            window.location.href = '/student-dashboard';
+            return true; // Indicate redirect happened
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user role:', error);
+    }
+    return false; // No redirect needed
   }
 
   /**
