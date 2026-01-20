@@ -287,7 +287,7 @@ class OnboardingManager {
         const accessBtn = e.target.closest('.access-btn');
         if (accessBtn) {
           this.accessCourseDashboard(accessBtn);
-        }
+          }
       });
     }
   }
@@ -417,8 +417,8 @@ class OnboardingManager {
             <span>Access</span>
           </button>
         </div>
-      </div>
-    `;
+        </div>
+      `;
   }
 
   /**
@@ -567,37 +567,37 @@ class OnboardingManager {
   }
 
   async saveCourseProfile() {
-    if (!this.isFaculty) {
+      if (!this.isFaculty) {
       throw new Error('Only faculty can create new courses');
     }
 
     const response = await fetch(API_ENDPOINTS.newCourse, {
       method: 'POST',
-      headers: {
+        headers: {
         'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(this.courseData),
-    });
+        },
+        body: JSON.stringify(this.courseData),
+      });
 
-    if (!response.ok) {
-      let errorMessage = `HTTP error! status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
       } catch {
-        errorMessage = response.statusText || errorMessage;
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
-      throw new Error(errorMessage);
-    }
 
-    const result = await response.json();
+      const result = await response.json();
 
     sessionStorage.setItem(
       STORAGE_KEYS.selectedCourse,
       JSON.stringify({ id: result.course._id, name: result.course.courseName })
     );
 
-    return result;
+      return result;
   }
 
   goToStep(stepNumber) {
@@ -676,7 +676,7 @@ class OnboardingManager {
 
     // Auto-remove error after 5 seconds
     setTimeout(() => {
-      errorElement.remove();
+        errorElement.remove();
     }, 5000);
   }
 }

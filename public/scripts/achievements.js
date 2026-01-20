@@ -167,27 +167,27 @@ function createAchievementCard(achievement) {
   const scoreInfo = achievement.score !== undefined ? `<div class="achievement-score">Score: ${achievement.score}%</div>` : "";
 
   card.innerHTML = `
-    <div class="achievement-header">
+        <div class="achievement-header">
       <div class="achievement-icon earned ${achievement.iconType}">
-        <i class="${achievement.icon}"></i>
-      </div>
-      <div class="achievement-info">
+                <i class="${achievement.icon}"></i>
+            </div>
+            <div class="achievement-info">
         <h3 class="achievement-title">${escapeHtml(achievement.title)}</h3>
         <div class="achievement-status earned">Earned on ${achievement.earnedDate}</div>
-      </div>
-    </div>
-    
-    <div class="achievement-description">
+            </div>
+        </div>
+        
+        <div class="achievement-description">
       ${escapeHtml(achievement.description)}
-    </div>
-    
+        </div>
+        
     ${quizInfo}
     ${scoreInfo}
     
     <div class="achievement-category">
       <span class="category-badge ${achievement.iconType}">${achievement.category}</span>
     </div>
-  `;
+    `;
 
   return card;
 }
@@ -275,7 +275,7 @@ Status: Earned on ${achievement.earnedDate}
 Description: ${achievement.description}
 ${achievement.quizName ? `Quiz: ${achievement.quizName}` : ""}
 ${achievement.score !== undefined ? `Score: ${achievement.score}%` : ""}
-    `;
+        `;
 
     alert(details);
   }

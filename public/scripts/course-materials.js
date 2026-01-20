@@ -41,7 +41,7 @@ let filteredMaterials = [];
 // Initialize page when DOM is loaded
 document.addEventListener('DOMContentLoaded', function () {
   if (window.GRASPNavigation) {
-    new window.GRASPNavigation();
+  new window.GRASPNavigation();
   }
 
   initializeCourseMaterials();
@@ -681,33 +681,33 @@ async function confirmDelete(sourceId) {
     let response = await fetch(`${API_ENDPOINTS.ragLlmDeleteDocument}/${sourceId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-    });
+  });
 
-    let data = await response.json();
+  let data = await response.json();
 
-    if (!data.success) {
+  if (!data.success) {
       showNotification('Failed to delete material from RAG', 'error');
-      return;
-    }
-    
+    return;
+  }
+  
     // Delete material from database
     response = await fetch(`${API_ENDPOINTS.materialDelete}/${sourceId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-    });
+  });
 
-    data = await response.json();
+  data = await response.json();
 
-    if (!data.success) {
+  if (!data.success) {
       showNotification('Failed to delete material from database', 'error');
-      return;
-    }
+    return;
+  }
 
-    // Remove material from arrays
-    materials = materials.filter((material) => material.sourceId !== sourceId);
-    filteredMaterials = filteredMaterials.filter((material) => material.sourceId !== sourceId);
+  // Remove material from arrays
+  materials = materials.filter((material) => material.sourceId !== sourceId);
+  filteredMaterials = filteredMaterials.filter((material) => material.sourceId !== sourceId);
 
-    loadMaterials();
+  loadMaterials();
     showNotification('Material deleted successfully', 'success');
   } catch (error) {
     console.error('Error deleting material:', error);

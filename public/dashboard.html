@@ -31,21 +31,21 @@
                     <section class="quick-start-section">
                         <h3>Quick Start</h3>
                         <div class="quick-start-grid">
-                            <div class="quick-start-card">
+                            <div class="quick-start-card" data-action="upload">
                                 <i class="fas fa-upload"></i>
                                 <span>Upload</span>
                             </div>
-                            <div class="quick-start-card">
+                            <div class="quick-start-card" data-action="questions">
                                 <i class="fas fa-lightbulb"></i>
                                 <span>Questions</span>
                             </div>
-                            <div class="quick-start-card">
+                            <div class="quick-start-card" data-action="review">
                                 <i class="fas fa-eye"></i>
                                 <span>Review</span>
                             </div>
-                            <div class="quick-start-card">
-                                <i class="fas fa-question-circle"></i>
-                                <span>Quizzes</span>
+                            <div class="quick-start-card" data-action="users">
+                                <i class="fas fa-users"></i>
+                                <span>Users</span>
                             </div>
                         </div>
                     </section>
@@ -89,12 +89,7 @@
                                                     <i class="fas fa-info-circle"></i>
                                                     <span>When creating new learning objectives (manually or with AI), you must select and attach the relevant course materials. The AI will only use content from attached documents when generating questions, ensuring questions are relevant and accurate.</span>
                                                 </div>
-                                                <p>Each objective can have multiple <strong>granular objectives</strong> that break down the main objective into smaller, specific learning goals:</p>
-                                                <ul class="step-details">
-                                                    <li>Add granular objectives to each main learning objective</li>
-                                                    <li>Select Bloom's Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create) for each granular objective</li>
-                                                    <li>Each learning objective must have at least 5 questions total (across all its granular objectives)</li>
-                                                </ul>
+                                                <p>Each objective can have multiple <strong>granular objectives</strong> that break down the main objective into smaller, specific learning goals.</p>
                                             </div>
                                         </div>
                                         
@@ -106,7 +101,7 @@
                                                 <ul class="step-details">
                                                     <li>Review and edit generated questions before saving</li>
                                                     <li>Use <strong>Regenerate All</strong> to regenerate all questions at once</li>
-                                                    <li>Edit question text, options, and correct answers</li>
+                                                    <li>Edit question text and options</li>
                                                     <li>Flag questions that need attention</li>
                                                 </ul>
                                             </div>
@@ -144,8 +139,9 @@
                                             <li><i class="fas fa-filter"></i> <strong>Filter:</strong> Narrow down questions by Quiz, Learning Objective, Bloom Level, Status (Approved/Draft), or Flagged status</li>
                                             <li><i class="fas fa-search"></i> <strong>Search:</strong> Find questions by keywords in titles or content</li>
                                             <li><i class="fas fa-sort"></i> <strong>Sort:</strong> Organize questions by title, learning objective, Bloom level, or status</li>
-                                            <li><i class="fas fa-check-square"></i> <strong>Bulk Actions:</strong> Select multiple questions to flag or delete them at once</li>
+                                            <li><i class="fas fa-check-square"></i> <strong>Bulk Actions:</strong> Select multiple questions to flag or delete them at once </li>
                                             <li><i class="fas fa-flag"></i> <strong>Flag Questions:</strong> Mark questions that need review or attention</li>
+                                            <li><i class="fas fa-toggle-on"></i> <strong>Publish/Unpublish Quizzes:</strong> Toggle quiz visibility for students</li>
                                         </ul>
                                         
                                         <h5><i class="fas fa-clipboard-check"></i> <a href="/question-bank?tab=review">Review Tab</a></h5>
@@ -163,6 +159,44 @@
                                 </div>
                             </div>
                             
+                            <div class="instruction-step">
+                                <div class="step-number">4</div>
+                                <div class="step-content">
+                                    <h4><a href="/users">Manage Course Users</a> <span class="instructor-only-badge">Instructor Only</span></h4>
+                                    <p>Add students and staff to your course so they can access quizzes. Navigate to the <a href="/users">Users page</a> to manage who has access to your course.</p>
+                                    <ul class="step-details">
+                                        <li><strong>View enrolled users:</strong> See all students and staff currently in your course</li>
+                                        <li><strong>Add users:</strong> Search and filter available users by role (Faculty, Staff, Student) and add them to your course</li>
+                                        <li><strong>Remove users:</strong> Remove users who no longer need access to the course</li>
+                                    </ul>
+                                    <div class="step-tip">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span>Students can only access quizzes from courses they've been added to. Make sure to add your students before expecting them to take quizzes.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="instruction-step">
+                                <div class="step-number">5</div>
+                                <div class="step-content">
+                                    <h4>Publish Quizzes for Students <span class="instructor-only-badge">Instructor Only</span></h4>
+                                    <p>Before students can see and take quizzes, you need to publish them. In the <a href="/question-bank">Question Bank</a>:</p>
+                                    <ul class="step-details">
+                                        <li><strong>Review questions:</strong> Approve all questions you want students to see</li>
+                                        <li><strong>Publish quiz:</strong> Toggle the publish status to make the quiz visible to students</li>
+                                        <li><strong>Student experience:</strong> Students will see published quizzes with approved questions only</li>
+                                    </ul>
+                                    <div class="step-tip">
+                                        <i class="fas fa-trophy"></i>
+                                        <span>When students complete quizzes, they earn achievements! They get a "Quiz Completed" badge on first completion, and a "Perfect Score" badge for getting 100%.</span>
+                                    </div>
+                                    <div class="step-tip">
+                                        <i class="fas fa-random"></i>
+                                        <span>Questions and answer options are randomized for each student attempt to ensure fair assessment.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="instruction-step instruction-step--info">
                                 <div class="step-number"><i class="fas fa-star"></i></div>
                                 <div class="step-content">
@@ -174,6 +208,7 @@
                                         <li><i class="fas fa-bookmark"></i> Flag questions during generation to review them later in the Question Bank</li>
                                         <li><i class="fas fa-layer-group"></i> Organize questions into multiple quizzes for different topics or assessments</li>
                                         <li><i class="fas fa-check-double"></i> Approve questions only after thorough review to maintain quality</li>
+                                        <li><i class="fas fa-random"></i> Questions and answer options are automatically randomized for each student attempt</li>
                                     </ul>
                                 </div>
                             </div>

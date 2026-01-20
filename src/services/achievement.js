@@ -64,22 +64,22 @@ const saveAchievement = async (userId, courseId, quizId, type, additionalData = 
             icon: additionalData.icon || "fas fa-trophy"
         };
         
-        // Create new achievement
+            // Create new achievement
         const achievement = {
-            userId: userIdObj,
-            courseId: courseIdObj,
-            quizId: quizIdObj,
+                userId: userIdObj,
+                courseId: courseIdObj,
+                quizId: quizIdObj,
             type: type,
             title: definition.title,
             description: definition.description,
             icon: definition.icon,
             ...additionalData,
-            earnedAt: new Date(),
+                earnedAt: new Date(),
             createdAt: new Date()
         };
         
         const result = await collection.insertOne(achievement);
-        
+            
         return { _id: result.insertedId, ...achievement, isNew: true };
     } catch (error) {
         // Handle duplicate key error gracefully

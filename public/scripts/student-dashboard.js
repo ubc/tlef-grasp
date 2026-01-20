@@ -26,11 +26,14 @@ const API_ENDPOINTS = {
 const ROUTES = {
   quizzes: '/quiz',
   achievements: '/achievements',
+  help: '#', // Placeholder for help page
 };
 
 const QUICK_ACTIONS = {
   quizzes: ROUTES.quizzes,
   achievements: ROUTES.achievements,
+  progress: ROUTES.achievements,
+  help: ROUTES.help,
 };
 
 const STORAGE_KEYS = {
@@ -354,8 +357,10 @@ class StudentDashboardManager {
 
   handleQuickStartAction(action) {
     const route = QUICK_ACTIONS[action];
-    if (route) {
+    if (route && route !== '#') {
       window.location.href = route;
+    } else if (action === 'help') {
+      this.showNotification('Help documentation coming soon!', 'info');
     }
   }
 

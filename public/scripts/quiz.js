@@ -77,7 +77,7 @@ async function loadQuizList() {
     
     const quizzesData = await quizzesResponse.json();
     let userAchievements = [];
-    
+
     if (achievementsResponse.ok) {
       const achievementsData = await achievementsResponse.json();
       if (achievementsData.success && achievementsData.data) {

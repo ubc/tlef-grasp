@@ -249,7 +249,7 @@ class GRASPNavigation {
     if (this.currentRole === 'student') {
       // If student has no course, only show Dashboard
       if (this.isStudent && !this.hasCourse) {
-        return `
+      return `
           <li class="nav-item" data-page="student-dashboard">
             <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
               <i class="fas fa-home"></i>
@@ -284,30 +284,30 @@ class GRASPNavigation {
     
     // Instructor view - base menu for staff
     let menu = `
-      <li class="nav-item" data-page="dashboard">
-        <a href="/dashboard" style="text-decoration: none; color: inherit;">
-          <i class="fas fa-home"></i>
-          <span>Dashboard</span>
-        </a>
-      </li>
-      <li class="nav-item" data-page="question-bank">
-        <a href="/question-bank" style="text-decoration: none; color: inherit;">
-          <i class="fas fa-book"></i>
-          <span>Question Bank</span>
-        </a>
-      </li>
-      <li class="nav-item" data-page="question-generation">
-        <a href="/question-generation" style="text-decoration: none; color: inherit;">
-          <i class="fas fa-puzzle-piece"></i>
-          <span>Question Generation</span>
-        </a>
-      </li>
-      <li class="nav-item" data-page="course-materials">
-        <a href="/course-materials" style="text-decoration: none; color: inherit;">
-          <i class="fas fa-folder"></i>
-          <span>Course Materials</span>
-        </a>
-      </li>
+        <li class="nav-item" data-page="dashboard">
+          <a href="/dashboard" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-home"></i>
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="question-bank">
+          <a href="/question-bank" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-book"></i>
+            <span>Question Bank</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="question-generation">
+          <a href="/question-generation" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-puzzle-piece"></i>
+            <span>Question Generation</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="course-materials">
+          <a href="/course-materials" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-folder"></i>
+            <span>Course Materials</span>
+          </a>
+        </li>
     `;
     
     // Users management - faculty only
@@ -323,13 +323,13 @@ class GRASPNavigation {
     }
     
     menu += `
-      <li class="nav-item" data-page="settings">
-        <a href="/settings" style="text-decoration: none; color: inherit;">
-          <i class="fas fa-cog"></i>
-          <span>Settings</span>
-        </a>
-      </li>
-    `;
+        <li class="nav-item" data-page="settings">
+          <a href="/settings" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+          </a>
+        </li>
+      `;
     
     return menu;
   }
@@ -725,7 +725,7 @@ class GRASPNavigation {
           });
           
           courseDropdown.style.display = 'block';
-          if (currentCourseName) {
+        if (currentCourseName) {
             currentCourseName.style.display = 'none';
           }
           
@@ -918,7 +918,7 @@ class GRASPNavigation {
         currentRoleElement.innerHTML = `<span>Role: <strong>Student</strong></span>`;
       } else {
         const roleText = this.currentRole === 'instructor' ? 'Instructor' : 'Student';
-        currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+      currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
       }
     }
   }

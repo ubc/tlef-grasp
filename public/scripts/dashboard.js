@@ -23,13 +23,14 @@ const ROUTES = {
   questionBankReview: '/question-bank?tab=review',
   questionBankFlagged: '/question-bank?tab=overview&flagged=true',
   quiz: '/quiz',
+  users: '/users',
 };
 
 const QUICK_ACTIONS = {
   upload: ROUTES.courseMaterials,
   review: ROUTES.questionBankReview,
-  quizzes: ROUTES.quiz,
   questions: ROUTES.questionBank,
+  users: ROUTES.users,
 };
 
 const STORAGE_KEYS = {
