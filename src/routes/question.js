@@ -559,7 +559,7 @@ function createQTIExport(course, questions, assessmentId) {
 
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
-  
+
   let qti = `<?xml version="1.0" encoding="UTF-8"?>
 <questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
   <assessment ident="${assessmentId}" title="${assessmentTitle}">
