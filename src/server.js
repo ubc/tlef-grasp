@@ -12,7 +12,7 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
-const { isFaculty, isStaff, isStudent, getUserRole, hasMinimumRole, ROLES } = require("./utils/auth");
+const { getUserRole, hasMinimumRole, ROLES } = require("./utils/auth");
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -73,20 +73,6 @@ function requireRole(minRole) {
 }
 
 /**
- * Middleware to require faculty role (includes admins)
- */
-function requireFaculty(req, res, next) {
-  return requireRole(ROLES.FACULTY)(req, res, next);
-}
-
-/**
- * Middleware to require at least staff role (faculty or staff)
- */
-function requireStaff(req, res, next) {
-  return requireRole(ROLES.STAFF)(req, res, next);
-}
-
-/**
  * Page-level role check middleware for HTML pages
  * Redirects to appropriate page based on role
  */
@@ -138,7 +124,7 @@ app.get("/", (req, res) => {
 });
 
 // Onboarding - all authenticated users can access
-app.get("/onboarding", ensureAuthenticated(), (req, res) => {
+app.get("/onboarding", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/onboarding.html"));
 });
 
@@ -169,24 +155,24 @@ app.get("/users", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, r
 });
 
 // Settings - all authenticated users
-app.get("/settings", ensureAuthenticated(), (req, res) => {
+app.get("/settings", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/settings.html"));
 });
 
 // Student pages - all authenticated users (students see their view, others can preview)
-app.get("/student-dashboard", ensureAuthenticated(), (req, res) => {
+app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
 });
 
-app.get("/quiz", ensureAuthenticated(), (req, res) => {
+app.get("/quiz", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/quiz.html"));
 });
 
-app.get("/quiz-summary", ensureAuthenticated(), (req, res) => {
+app.get("/quiz-summary", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/quiz-summary.html"));
 });
 
-app.get("/achievements", ensureAuthenticated(), (req, res) => {
+app.get("/achievements", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/achievements.html"));
 });
 
@@ -199,22 +185,22 @@ app.use("/api/material", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), mater
 app.use("/api/objective", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), objectiveRoutes);
 
 // Course routes - staff and above for management, but students might need read access
-app.use("/api/courses", ensureAuthenticatedAPI, courseRoutes);
+app.use("/api/courses", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), courseRoutes);
 
 // Quiz routes - all authenticated users (students take quizzes, staff/faculty manage)
-app.use("/api/quiz", ensureAuthenticatedAPI, quizRoutes);
+app.use("/api/quiz", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), quizRoutes);
 
 // Student routes - all authenticated users
-app.use("/api/student", ensureAuthenticatedAPI, studentRoutes);
+app.use("/api/student", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), studentRoutes);
 
 // Achievement routes - all authenticated users
-app.use("/api/achievement", ensureAuthenticatedAPI, achievementRoutes);
+app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), achievementRoutes);
 
 // Users management - faculty only
 app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), userRoutes);
 
 // Current user endpoint - all authenticated users
-app.use("/api/current-user", ensureAuthenticatedAPI, async (req, res) => {
+app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), async (req, res) => {
   try {
     const userRole = await getUserRole(req.user);
     const userIsFaculty = userRole === ROLES.FACULTY;
