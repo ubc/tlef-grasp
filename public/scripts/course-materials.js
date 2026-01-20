@@ -794,19 +794,12 @@ function loadMaterials() {
   if (filteredMaterials.length === 0) {
     materialsGrid.style.display = "none";
     noResults.style.display = "flex";
-    // Hide type filter when no materials found
-    if (filtersSection) {
-      filtersSection.style.display = "none";
-    }
+    // Keep filters visible even when no materials found
     return;
   }
 
   materialsGrid.style.display = "grid";
   noResults.style.display = "none";
-  // Show type filter when materials are found
-  if (filtersSection) {
-    filtersSection.style.display = "block";
-  }
 
   materialsGrid.innerHTML = '';
   filteredMaterials.forEach((material) => {
