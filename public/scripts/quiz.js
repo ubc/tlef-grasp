@@ -425,23 +425,29 @@ function showQuestion(questionIndex) {
   // Update answer options
   renderAnswerOptions(question, questionIndex);
 
-    // Show feedback if answer was already selected (check by question ID)
-    const questionId = question.id;
-    if (quizState.feedback[questionId]) {
-      showFeedback(questionIndex, questionId, quizState.answers[questionId], question.correctAnswer);
-    } else {
-      hideFeedback();
-    }
+  // Get question ID for checking answers and feedback
+  const questionId = question.id;
+  
+  // Show feedback if answer was already selected (check by question ID)
+  if (quizState.feedback[questionId]) {
+    showFeedback(questionIndex, questionId, quizState.answers[questionId], question.correctAnswer);
+  } else {
+    hideFeedback();
+  }
 
-    // Render LaTeX after content is updated
-    renderKatex();
+  // Render LaTeX after content is updated
+  renderKatex();
 
-    // Update navigation buttons
+  // Update navigation buttons
   document.getElementById("prevButton").disabled = questionIndex === 0;
   document.getElementById("nextButton").textContent = questionIndex === quizState.quizData.questions.length - 1 ? "Finish" : "Next";
   document.getElementById("nextButton").innerHTML = questionIndex === quizState.quizData.questions.length - 1 
     ? "Finish <i class=\"fas fa-check\"></i>" 
     : "Next <i class=\"fas fa-chevron-right\"></i>";
+  
+  // Disable next button if current question hasn't been answered
+  const hasAnswer = quizState.answers[questionId] !== undefined;
+  document.getElementById("nextButton").disabled = !hasAnswer;
 
   // Update question indicators
   updateQuestionIndicators();
@@ -499,6 +505,9 @@ function renderAnswerOptions(question, questionIndex) {
 function selectAnswer(selectedOption, questionIndex, questionId, correctAnswer) {
   // Store answer by question ID (not index) to handle shuffled questions
   quizState.answers[questionId] = selectedOption;
+
+  // Enable next button now that an answer is selected
+  document.getElementById("nextButton").disabled = false;
 
   // Show immediate feedback
   showFeedback(questionIndex, questionId, selectedOption, correctAnswer);
