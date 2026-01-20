@@ -2170,6 +2170,8 @@ class QuestionBankPage {
         body: JSON.stringify({
           course: courseName,
           questions: questions,
+          quizName: quiz.title || quiz.name || 'Quiz',
+          quizDescription: quiz.description || '',
         }),
       });
 
@@ -2195,7 +2197,7 @@ class QuestionBankPage {
       case "json":
         return "json";
       case "qti":
-        return "xml";
+        return "zip"; // Canvas requires QTI in ZIP format
       default:
         return "txt";
     }
