@@ -212,7 +212,7 @@ function createQuizCard(quiz) {
       ` : ''}
     </div>
     <div class="quiz-card-actions">
-      <button class="start-quiz-button">
+      <button class="start-quiz-button" ${(!quiz.questionCount || quiz.questionCount === 0) ? 'disabled' : ''}>
         <i class="fas fa-play"></i>
         ${hasCompleted ? 'Retake Quiz' : 'Start Quiz'}
       </button>

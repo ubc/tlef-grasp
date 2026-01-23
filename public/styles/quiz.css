@@ -190,6 +190,12 @@
     background: linear-gradient(135deg, #2980b9 0%, #1f5f8b 100%);
 }
 
+.start-quiz-button:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .start-quiz-button i {
     font-size: 14px;
 }
