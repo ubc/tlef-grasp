@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const { createCourse, getCourseByCourseCode, getCourseById, getAllCourses } = require('../services/course');
 const { createUserCourse, getUserCourses } = require('../services/user-course');
+const materialService = require('../services/material');
+const questionService = require('../services/question');
 const { isFaculty } = require('../utils/auth');
 
 // Get all courses
@@ -19,9 +21,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/:my-courses", async (req, res) => {
+router.get("/my", async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
     const userCourses = await getUserCourses(userId);
     const courses = userCourses.map((course) => course.course);
 
@@ -30,7 +32,7 @@ router.get("/:my-courses", async (req, res) => {
       courses: courses,
     });
   } catch (error) {
-    console.error("Error getting courses:", error);
+    console.error("Error getting user courses:", error);
     res.status(500).json({ error: "Failed to retrieve courses" });
   }
 });
@@ -56,18 +58,21 @@ router.get("/:courseId", async (req, res) => {
 });
 
 // Get course materials
-router.get("/:courseId/materials", (req, res) => {
+router.get("/:courseId/materials", async (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = courses.find((c) => c.id === courseId);
 
+    // Verify course exists
+    const course = await getCourseById(courseId);
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
 
+    const materials = await materialService.getCourseMaterials(courseId);
+
     res.json({
       success: true,
-      materials: course.materials,
+      materials: materials,
     });
   } catch (error) {
     console.error("Error getting course materials:", error);
@@ -75,23 +80,25 @@ router.get("/:courseId/materials", (req, res) => {
   }
 });
 
-// Get course question sets
-router.get("/:courseId/questions", (req, res) => {
+// Get course questions
+router.get("/:courseId/questions", async (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = courses.find((c) => c.id === courseId);
 
+    const course = await getCourseById(courseId);
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
 
+    const questions = await questionService.getQuestions(courseId);
+
     res.json({
       success: true,
-      questionSets: course.questionSets,
+      questions: questions,
     });
   } catch (error) {
-    console.error("Error getting course question sets:", error);
-    res.status(500).json({ error: "Failed to retrieve course question sets" });
+    console.error("Error getting course questions:", error);
+    res.status(500).json({ error: "Failed to retrieve course questions" });
   }
 });
 
@@ -99,26 +106,31 @@ router.get("/:courseId/questions", (req, res) => {
 router.post("/:courseId/materials", express.json(), async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title, type, date, status = "pending" } = req.body;
+    const { title, type, date, status = "pending", sourceId, fileContent, fileSize } = req.body;
 
     if (!title || !type) {
       return res.status(400).json({ error: "Title and type are required" });
     }
 
-    const course = courses.find((c) => c.id === courseId);
+    const course = await getCourseById(courseId);
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    const newMaterial = {
-      id: `m${Date.now()}`,
-      title,
-      type,
-      date: date || new Date().toISOString().split("T")[0],
-      status,
-    };
+    // Generate a sourceId if not provided (e.g. for manual entries)
+    const materialSourceId = sourceId || `m${Date.now()}`;
 
-    course.materials.push(newMaterial);
+    await materialService.saveMaterial(materialSourceId, courseId, {
+      fileType: type,
+      fileSize: fileSize || 0,
+      fileContent: fileContent,
+      documentTitle: title,
+    });
+
+
+
+    // Fetch the stored material to return it
+    const newMaterial = await materialService.getMaterialBySourceId(materialSourceId);
 
     res.json({
       success: true,
@@ -144,22 +156,24 @@ router.put(
         return res.status(400).json({ error: "Status is required" });
       }
 
-      const course = courses.find((c) => c.id === courseId);
+      const course = await getCourseById(courseId);
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
 
-      const material = course.materials.find((m) => m.id === materialId);
-      if (!material) {
+      // materialId here corresponds to sourceId
+      const result = await materialService.updateMaterialStatus(courseId, materialId, status);
+
+      if (result.matchedCount === 0) {
         return res.status(404).json({ error: "Material not found" });
       }
 
-      material.status = status;
+      const updatedMaterial = await materialService.getMaterialBySourceId(materialId);
 
       res.json({
         success: true,
         message: "Material status updated successfully",
-        material: material,
+        material: updatedMaterial,
       });
     } catch (error) {
       console.error("Error updating material status:", error);
@@ -169,32 +183,27 @@ router.put(
 );
 
 // Get course statistics
-router.get("/:courseId/stats", (req, res) => {
+router.get("/:courseId/stats", async (req, res) => {
   try {
     const { courseId } = req.params;
-    const course = courses.find((c) => c.id === courseId);
+    const course = await getCourseById(courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
 
+    // Fetch real data
+    const materials = await materialService.getCourseMaterials(courseId);
+    const questions = await questionService.getQuestions(courseId);
+
+    // Calculate stats
     const stats = {
-      totalMaterials: course.materials.length,
-      completedMaterials: course.materials.filter(
-        (m) => m.status === "completed"
-      ).length,
-      inProgressMaterials: course.materials.filter(
-        (m) => m.status === "in-progress"
-      ).length,
-      totalQuestionSets: course.questionSets.length,
-      reviewedQuestionSets: course.questionSets.filter(
-        (qs) => qs.status === "reviewed"
-      ).length,
-      totalQuestions: course.questionSets.reduce(
-        (sum, qs) => sum + qs.questions,
-        0
-      ),
-      studentCount: course.students,
+      totalMaterials: materials.length,
+      completedMaterials: materials.filter(m => m.status === "completed").length,
+      inProgressMaterials: materials.filter(m => m.status === "in-progress").length,
+      totalQuestions: questions.length,
+      approvedQuestions: questions.filter(q => q.status === "Approved").length,
+      studentCount: course.students || course.expectedStudents || 0,
     };
 
     res.json({
@@ -212,8 +221,8 @@ router.post("/new", express.json(), async (req, res) => {
   try {
     // Staff cannot create new courses
     if (!(await isFaculty(req.user))) {
-      return res.status(403).json({ 
-        error: "Only faculty can create new courses" 
+      return res.status(403).json({
+        error: "Only faculty can create new courses"
       });
     }
 
@@ -298,7 +307,7 @@ router.post("/new", express.json(), async (req, res) => {
       credits: courseCredits || null,
       status: status,
       materials: [],
-      questionSets: [],
+      questions: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -310,9 +319,9 @@ router.post("/new", express.json(), async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating course:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to create course",
-      details: error.message 
+      details: error.message
     });
   }
 });
