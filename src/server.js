@@ -28,7 +28,36 @@ const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
 
 // Middleware
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "https://cdnjs.cloudflare.com",
+          "https://cdn.jsdelivr.net",
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://cdnjs.cloudflare.com",
+          "https://fonts.googleapis.com",
+          "https://cdn.jsdelivr.net",
+        ],
+        fontSrc: [
+          "'self'",
+          "https://cdnjs.cloudflare.com",
+          "https://fonts.gstatic.com",
+          "https://cdn.jsdelivr.net",
+        ],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'", "https://api.openai.com"],
+        workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
+      },
+    },
+  })
+);
 app.use(cors());
 app.use(sessionMiddleware);
 app.use(passport.initialize());
