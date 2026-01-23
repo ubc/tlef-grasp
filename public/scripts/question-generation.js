@@ -2495,20 +2495,6 @@ function initializeModals() {
 
   // Close AI modal on backdrop click and prevent content clicks from closing
   if (aiGenerateModal) {
-    aiGenerateModal.addEventListener("click", (e) => {
-      if (e.target === aiGenerateModal) {
-        // Prevent closing if generation is in progress (buttons are disabled)
-        const cancelBtn = document.getElementById("ai-generate-modal-cancel");
-        const closeBtn = document.getElementById("ai-generate-modal-close");
-        if (cancelBtn && cancelBtn.disabled) {
-          return;
-        }
-        if (closeBtn && closeBtn.disabled) {
-          return;
-        }
-        hideModal(aiGenerateModal);
-      }
-    });
 
     // Prevent clicks inside modal content from closing the modal
     const modalContent = aiGenerateModal.querySelector(".modal__content");
