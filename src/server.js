@@ -70,6 +70,17 @@ app.use(dbMiddleware);
 app.use(express.static(path.join(__dirname, "../public")));
 
 // Authentication routes (no /api prefix as they serve HTML too)
+// Shibboleth SP endpoint - traditional Shibboleth callback path
+app.post(
+  '/Shibboleth.sso/SAML2/POST',
+  express.json(),
+  express.urlencoded({ extended: true }),
+  passport.authenticate('ubcshib', { failureRedirect: '/auth/login' }),
+  (req, res) => {
+    res.redirect('/onboarding');
+  }
+);
+
 app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);
 
 // Page routes

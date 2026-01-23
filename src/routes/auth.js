@@ -22,17 +22,7 @@ router.post(
 	}
 );
 
-// Shibboleth SP endpoint - traditional Shibboleth callback path
-// Note: Mounted under /auth, so path is /auth/Shibboleth.sso/SAML2/POST
-router.post(
-	'/Shibboleth.sso/SAML2/POST',
-	express.json(),
-	express.urlencoded({ extended: true }),
-	passport.authenticate('ubcshib', { failureRedirect: '/login' }),
-	(req, res) => {
-		res.redirect('/onboarding');
-	}
-);
+
 
 // Logout
 router.get('/logout', logout('/'));
