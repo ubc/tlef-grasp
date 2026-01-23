@@ -90,23 +90,23 @@ class QuestionBankPage {
     // Get current tab from URL search params, default to "overview"
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    const defaultTab = tabParam && VALID_TABS.includes(tabParam) 
-      ? tabParam 
+    const defaultTab = tabParam && VALID_TABS.includes(tabParam)
+      ? tabParam
       : TAB_NAMES.overview;
-    
+
     // Check if flagged filter should be enabled from URL
     const flaggedParam = urlParams.get("flagged");
     const flaggedFilterEnabled = flaggedParam === "true";
     this.flaggedFilterEnabled = flaggedFilterEnabled; // Store for use in initializeEventListeners
 
     this.state = {
-      filters: { 
-        quiz: "all", 
-        objective: "all", 
-        bloom: "all", 
-        status: "all", 
+      filters: {
+        quiz: "all",
+        objective: "all",
+        bloom: "all",
+        status: "all",
         flagged: flaggedFilterEnabled,
-        q: "" 
+        q: ""
       },
       sort: { key: "title", dir: "asc" },
       selectedQuestionIds: new Set(),
@@ -127,7 +127,7 @@ class QuestionBankPage {
     this.initializeData();
     this.initializeEventListeners();
     this.initializePermissionBasedUI();
-    
+
     // Set initial tab based on URL or default to overview
     await this.switchTab(this.state.currentTab);
   }
@@ -175,8 +175,8 @@ class QuestionBankPage {
               const questionsResponse = await fetch(`${API_ENDPOINTS.quiz}/${quiz._id}/questions`);
               if (questionsResponse.ok) {
                 const questionsData = await questionsResponse.json();
-                const questions = questionsData.success && questionsData.questions 
-                  ? questionsData.questions 
+                const questions = questionsData.success && questionsData.questions
+                  ? questionsData.questions
                   : [];
 
                 return {
@@ -364,7 +364,7 @@ class QuestionBankPage {
         this.questions = data.questions.map((question) => {
           const questionId = getObjectId(question);
           const objectiveId = toStringId(question.learningObjectiveId) || null;
-          
+
           return {
             id: questionId,
             title: question.title || question.stem || "",
@@ -383,7 +383,7 @@ class QuestionBankPage {
 
         // Load learning objectives to get their names
         await this.loadLearningObjectives();
-        
+
         // Update questions with objective names
         this.questions.forEach(question => {
           if (question.objectiveId && this.objectivesMap.has(question.objectiveId)) {
@@ -439,7 +439,7 @@ class QuestionBankPage {
                 const questionIds = new Set(
                   quizQuestionsData.questions.map(q => getObjectId(q))
                 );
-                
+
                 this.questions.forEach(question => {
                   const questionId = toStringId(question.id);
                   if (questionIds.has(questionId)) {
@@ -477,12 +477,12 @@ class QuestionBankPage {
         tabButtons.forEach((btn) => btn.classList.remove("active"));
         button.classList.add("active");
         const tabName = button.getAttribute("data-tab");
-        
+
         // Update URL search params
         const url = new URL(window.location);
         url.searchParams.set("tab", tabName);
         window.history.pushState({ tab: tabName }, "", url);
-        
+
         await this.switchTab(tabName);
       });
     });
@@ -637,7 +637,7 @@ class QuestionBankPage {
   }
 
   // ==================== Permission & Authorization Helpers ====================
-  
+
   /**
    * Check if user has faculty permissions, show error if not
    * @param {string} action - The action being attempted (for error message)
@@ -678,14 +678,14 @@ class QuestionBankPage {
    */
   canEditQuestion(questionId) {
     if (this.isFaculty) return true; // Faculty can always edit
-    
+
     // Non-faculty can only edit draft questions, not approved questions
     const question = this.questions.find(q => String(q.id || "") === String(questionId));
     if (question) {
       const status = question.status || "Draft";
       return status.toLowerCase() !== "approved";
     }
-    
+
     // Also check in quiz questions
     for (const quiz of this.quizzes) {
       const quizQuestion = quiz.questions.find(q => String(q.id) === String(questionId));
@@ -694,7 +694,7 @@ class QuestionBankPage {
         return status.toLowerCase() !== "approved";
       }
     }
-    
+
     return true; // Default to allowing edit if question not found
   }
 
@@ -844,12 +844,12 @@ class QuestionBankPage {
     quizzesContainer.innerHTML = filteredQuizzes
       .map(
         (quiz) => {
-          const createdDate = quiz.createdAt 
+          const createdDate = quiz.createdAt
             ? new Date(quiz.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
             : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
           const progressPercent = this.getQuizProgress(quiz);
           const quizIdEscaped = String(quiz.id).replace(/'/g, "\\'");
-          
+
           return `
       <div class="quiz-card" data-quiz-id="${quiz.id}">
         <div class="quiz-card-header">
@@ -891,9 +891,8 @@ class QuestionBankPage {
               <div class="details-select-all">
                 <input type="checkbox" class="quiz-select-all" 
                        onclick="event.stopPropagation()"
-                       onchange="window.questionBankPage.handleQuizSelectAll(${
-                         quiz.id
-                       }, this.checked)">
+                       onchange="window.questionBankPage.handleQuizSelectAll(${quiz.id
+            }, this.checked)">
                 <label>Select all</label>
               </div>
             `, this.isFaculty)}
@@ -901,25 +900,21 @@ class QuestionBankPage {
           <div class="quiz-questions">
             ${this.renderQuizQuestions(quiz)}
           </div>
-          <div class="quiz-bulk-actions ${
-            quiz.selection.size > 0 ? "visible" : ""
-          }">
-            ${this.isFaculty 
-              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
-                  quiz.id
-                }, 'approve')">
+          <div class="quiz-bulk-actions ${quiz.selection.size > 0 ? "visible" : ""
+            }">
+            ${this.isFaculty
+              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
+              }, 'approve')">
                 Approve selected
               </button>`
               : ''
             }
             ${this.renderIfPermitted(`
-              <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
-                quiz.id
+              <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
               }, 'flag')">
                 Flag selected
               </button>
-              <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${
-                quiz.id
+              <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
               }, 'delete')">
                 Delete selected
               </button>
@@ -964,66 +959,60 @@ class QuestionBankPage {
         </thead>
         <tbody>
           ${filteredQuestions
-            .map(
-              (question) => `
+        .map(
+          (question) => `
             <tr data-question-id="${question.id}">
               ${this.renderIfPermitted(`
               <td>
                 <input type="checkbox" class="question-checkbox" 
                        ${quiz.selection.has(question.id) ? "checked" : ""}
-                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${
-                         quiz.id
-                       }, ${question.id})">
+                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${quiz.id
+            }, ${question.id})">
               </td>
             `, this.isFaculty)}
               <td class="question-title">${question.title}</td>
               <td><span class="question-lo">${question.loCode}</span></td>
               <td class="question-bloom">${question.bloom}</td>
               <td>
-                <span class="question-status status-${question.status.toLowerCase()}">${
-                question.status
-              }</span>
+                <span class="question-status status-${question.status.toLowerCase()}">${question.status
+            }</span>
               </td>
               <td>${question.lastEdited}</td>
               <td class="question-actions">
-                ${this.isFaculty 
-                  ? `<button class="question-action-btn approve" 
-                            onclick="window.questionBankPage.handleQuestionAction(${
-                              quiz.id
-                            }, ${question.id}, 'approve')">
+                ${this.isFaculty
+              ? `<button class="question-action-btn approve" 
+                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
+              }, ${question.id}, 'approve')">
                     ${question.approved ? "Unapprove" : "Approve"}
                   </button>`
-                  : ''
-                }
+              : ''
+            }
                 <button class="question-action-btn flag" 
-                        onclick="window.questionBankPage.handleQuestionAction(${
-                          quiz.id
-                        }, ${question.id}, 'flag')">
+                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id
+            }, ${question.id}, 'flag')">
                   ${question.flagged ? "Unflag" : "Flag"}
                 </button>
                 ${this.canEditQuestion(question.id)
-                  ? `<button class="question-action-btn edit" 
-                            onclick="window.questionBankPage.handleQuestionAction(${
-                              quiz.id
-                            }, ${question.id}, 'edit')">
+              ? `<button class="question-action-btn edit" 
+                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
+              }, ${question.id}, 'edit')">
                       Edit
                     </button>`
-                  : ''
-                }
+              : ''
+            }
                 ${this.isFaculty
-                  ? `<button class="question-action-btn delete" 
-                            onclick="window.questionBankPage.handleQuestionAction(${
-                              quiz.id
-                            }, ${question.id}, 'delete')">
+              ? `<button class="question-action-btn delete" 
+                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
+              }, ${question.id}, 'delete')">
                     Delete
                   </button>`
-                  : ''
-                }
+              : ''
+            }
               </td>
             </tr>
           `
-            )
-            .join("")}
+        )
+        .join("")}
         </tbody>
       </table>
     `;
@@ -1246,9 +1235,8 @@ class QuestionBankPage {
 
     if (totalSelected > 0) {
       crossQuizActions.style.display = "flex";
-      crossQuizCount.textContent = `${totalSelected} question${
-        totalSelected !== 1 ? "s" : ""
-      } selected`;
+      crossQuizCount.textContent = `${totalSelected} question${totalSelected !== 1 ? "s" : ""
+        } selected`;
 
       // Show/hide approve button based on user role
       const crossApproveBtn = document.getElementById("cross-approve-btn");
@@ -1279,11 +1267,11 @@ class QuestionBankPage {
       // Buttons are already hidden/shown in initializePermissionBasedUI for non-faculty
       const crossFlagBtn = document.getElementById("cross-flag-btn");
       const crossDeleteBtn = document.getElementById("cross-delete-btn");
-      
+
       if (crossFlagBtn && this.isFaculty) {
         crossFlagBtn.disabled = false;
       }
-      
+
       if (crossDeleteBtn && this.isFaculty) {
         crossDeleteBtn.disabled = false;
         crossDeleteBtn.title = "";
@@ -1351,7 +1339,7 @@ class QuestionBankPage {
 
     try {
       // Determine if we're flagging or unflagging based on first question
-      const firstQuestion = this.questions.find((q) => 
+      const firstQuestion = this.questions.find((q) =>
         String(q.id || "") === String(selectedQuestions[0])
       );
       const shouldFlag = !firstQuestion?.flagged;
@@ -1491,8 +1479,7 @@ class QuestionBankPage {
           });
         });
         this.showNotification(
-          `Approved ${totalSelected} questions across ${
-            affectedQuizzes.length
+          `Approved ${totalSelected} questions across ${affectedQuizzes.length
           } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
           "success"
         );
@@ -1508,8 +1495,7 @@ class QuestionBankPage {
           });
         });
         this.showNotification(
-          `Flagged ${totalSelected} questions across ${
-            affectedQuizzes.length
+          `Flagged ${totalSelected} questions across ${affectedQuizzes.length
           } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
           "success"
         );
@@ -1518,8 +1504,7 @@ class QuestionBankPage {
         if (!this.requireFaculty("delete questions")) return;
         this.showModal(
           "Delete Questions",
-          `Are you sure you want to delete ${totalSelected} question(s) across ${
-            affectedQuizzes.length
+          `Are you sure you want to delete ${totalSelected} question(s) across ${affectedQuizzes.length
           } quiz${affectedQuizzes.length !== 1 ? "es" : ""}?`,
           () => {
             affectedQuizzes.forEach((quiz) => {
@@ -1628,7 +1613,7 @@ class QuestionBankPage {
           const escapedId = questionId.replace(/"/g, '&quot;');
           const escapedTitle = (question.title || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
           const escapedGlo = (question.glo || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-          
+
           return `
       <tr data-question-id="${escapedId}" class="${isSelected ? "selected" : ""}">
         ${this.renderIfPermitted(`
@@ -1652,20 +1637,20 @@ class QuestionBankPage {
                       title="${this.canEditQuestion(questionId) ? 'View/Edit Question' : 'View Question (Read-only - approved question)'}">
                 <i class="fas fa-eye"></i> ${this.canEditQuestion(questionId) ? 'View/Edit' : 'View Only'}
               </button>
-              ${this.isFaculty 
-                ? (question.status && question.status.toLowerCase() === 'approved' 
-                  ? `<button class="question-approve-btn question-approve-btn--unapprove" 
+              ${this.isFaculty
+              ? (question.status && question.status.toLowerCase() === 'approved'
+                ? `<button class="question-approve-btn question-approve-btn--unapprove" 
                              onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', false)"
                              title="Unapprove Question">
                       <i class="fas fa-times-circle"></i> Unapprove
                     </button>`
-                  : `<button class="question-approve-btn question-approve-btn--approve" 
+                : `<button class="question-approve-btn question-approve-btn--approve" 
                              onclick="window.questionBankPage.toggleQuestionApproval('${escapedId}', true)"
                              title="Approve Question">
                       <i class="fas fa-check-circle"></i> Approve
                     </button>`)
-                : ''
-              }
+              : ''
+            }
             </div>
           </div>
         </td>
@@ -1776,7 +1761,7 @@ class QuestionBankPage {
   toggleQuestionSelection(questionId) {
     // Ensure questionId is a string for consistent comparison
     const id = String(questionId || "");
-    
+
     if (this.state.selectedQuestionIds.has(id)) {
       this.state.selectedQuestionIds.delete(id);
     } else {
@@ -1833,9 +1818,8 @@ class QuestionBankPage {
     const selectionCount = document.getElementById("selection-count");
     if (selectionCount) {
       const count = this.state.selectedQuestionIds.size;
-      selectionCount.textContent = `${count} question${
-        count !== 1 ? "s" : ""
-      } selected`;
+      selectionCount.textContent = `${count} question${count !== 1 ? "s" : ""
+        } selected`;
     }
   }
 
@@ -1913,7 +1897,7 @@ class QuestionBankPage {
     }
 
     // Filter to only approved questions
-    const approvedQuestions = quiz.questions.filter(q => 
+    const approvedQuestions = quiz.questions.filter(q =>
       q.approved === true || q.status === "Approved"
     );
 
@@ -2033,7 +2017,7 @@ class QuestionBankPage {
   showExportModal(quiz, approvedQuestions) {
     const modal = document.getElementById("export-summary-modal");
     const modalBody = document.getElementById("export-summary-modal-body");
-    
+
     if (!modal || !modalBody) {
       console.error("Export modal not found");
       return;
@@ -2095,7 +2079,7 @@ class QuestionBankPage {
     // Setup close button
     const closeBtn = document.getElementById("export-summary-modal-close");
     const confirmBtn = document.getElementById("export-summary-confirm");
-    
+
     if (closeBtn) {
       closeBtn.onclick = () => this.hideExportModal();
     }
@@ -2119,7 +2103,7 @@ class QuestionBankPage {
     }
 
     // Filter to only approved questions
-    const approvedQuestions = quiz.questions.filter(q => 
+    const approvedQuestions = quiz.questions.filter(q =>
       q.approved === true || q.status === "Approved"
     );
 
@@ -2229,24 +2213,32 @@ class QuestionBankPage {
     });
 
     // Use the ID from allQuizzes if found, otherwise use the quizId
-    const quizIdForFilter = quizForFilter 
+    const quizIdForFilter = quizForFilter
       ? (quizForFilter._id ? (quizForFilter._id.toString ? quizForFilter._id.toString() : String(quizForFilter._id)) : String(quizForFilter.id || quizId))
       : String(quizId);
 
-    // Set filters
+    // Set filters - RESET everything else
     this.state.filters.quiz = quizIdForFilter;
     this.state.filters.status = "Draft";
+    this.state.filters.objective = "all";
+    this.state.filters.bloom = "all";
+    this.state.filters.flagged = false;
+    this.state.filters.q = "";
 
     // Update filter UI
     const quizFilter = document.getElementById("quiz-filter");
     const statusFilter = document.getElementById("status-filter");
-    
-    if (quizFilter) {
-      quizFilter.value = quizIdForFilter;
-    }
-    if (statusFilter) {
-      statusFilter.value = "Draft";
-    }
+    const objectiveFilter = document.getElementById("objective-filter");
+    const bloomFilter = document.getElementById("bloom-filter");
+    const flaggedFilter = document.getElementById("flagged-filter");
+    const searchInput = document.getElementById("search-input");
+
+    if (quizFilter) quizFilter.value = quizIdForFilter;
+    if (statusFilter) statusFilter.value = "Draft";
+    if (objectiveFilter) objectiveFilter.value = "all";
+    if (bloomFilter) bloomFilter.value = "all";
+    if (flaggedFilter) flaggedFilter.checked = false;
+    if (searchInput) searchInput.value = "";
 
     // Switch to Overview tab
     await this.switchTab("overview");
@@ -2278,12 +2270,12 @@ class QuestionBankPage {
     const modal = document.getElementById("question-detail-modal");
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
-    
+
     if (!modal || !modalBody) return;
 
     // Show modal
     modal.style.display = "flex";
-    
+
     // Show loading state
     modalBody.innerHTML = '<div style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin" style="font-size: 24px;"></i><p>Loading question...</p></div>';
     saveBtn.style.display = "none";
@@ -2301,10 +2293,10 @@ class QuestionBankPage {
       }
 
       const question = data.question;
-      
+
       // Check if user can edit this question
       const canEdit = this.canEditQuestion(questionId);
-      
+
       // Options are always objects with keys A, B, C, D - convert to array for display
       const optionKeys = ['A', 'B', 'C', 'D'];
       let normalizedOptions = [];
@@ -2323,9 +2315,9 @@ class QuestionBankPage {
 
       // Ensure we have at least 4 options
       while (normalizedOptions.length < 4) {
-        normalizedOptions.push({ 
-          id: String.fromCharCode(65 + normalizedOptions.length), 
-          text: '' 
+        normalizedOptions.push({
+          id: String.fromCharCode(65 + normalizedOptions.length),
+          text: ''
         });
       }
 
@@ -2339,7 +2331,7 @@ class QuestionBankPage {
       } else {
         correctAnswerLetter = 'A';
       }
-      
+
       this.currentEditingQuestion = {
         id: questionId,
         title: question.title || question.stem || "",
@@ -2351,10 +2343,10 @@ class QuestionBankPage {
 
       // Render question in modal (uses this.currentEditingQuestion)
       this.renderQuestionInModal();
-      
+
       // Set up event listeners
       this.setupQuestionModalListeners();
-      
+
     } catch (error) {
       console.error("Error loading question:", error);
       modalBody.innerHTML = `
@@ -2377,14 +2369,14 @@ class QuestionBankPage {
     const question = this.currentEditingQuestion;
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
-    
+
     if (!modalBody) return;
 
     // Get canEdit from currentEditingQuestion
     const canEdit = question.canEdit !== undefined ? question.canEdit : this.canEditQuestion(question.id);
 
     // Get objective name if available
-    const objectiveName = question.learningObjectiveId 
+    const objectiveName = question.learningObjectiveId
       ? (this.objectivesMap.get(question.learningObjectiveId.toString()) || "Unknown Objective")
       : (question.granularObjectiveId ? "Granular Objective" : "No Objective");
 
@@ -2402,9 +2394,9 @@ class QuestionBankPage {
 
     // Ensure we have at least 4 options
     while (optionsArray.length < 4) {
-      optionsArray.push({ 
-        id: String.fromCharCode(65 + optionsArray.length), 
-        text: '' 
+      optionsArray.push({
+        id: String.fromCharCode(65 + optionsArray.length),
+        text: ''
       });
     }
 
@@ -2416,7 +2408,7 @@ class QuestionBankPage {
     } else {
       correctAnswerLetter = 'A';
     }
-    
+
     const isReadOnly = !(question.canEdit !== undefined ? question.canEdit : this.canEditQuestion(question.id));
     const readonlyAttr = isReadOnly ? 'readonly' : '';
     const disabledAttr = isReadOnly ? 'disabled' : '';
@@ -2428,7 +2420,7 @@ class QuestionBankPage {
       const optionText = option.text || '';
       const isCorrect = optionId === correctAnswerLetter;
       const escapedText = (optionText || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      
+
       return `
         <div class="question-modal-option">
           <div class="question-modal-option-header">
@@ -2455,7 +2447,7 @@ class QuestionBankPage {
     }).join("");
 
     // Build warning HTML separately to avoid template literal nesting issues
-    const warningHtml = isReadOnly 
+    const warningHtml = isReadOnly
       ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
       : '';
 
@@ -2532,8 +2524,8 @@ class QuestionBankPage {
   updateCorrectAnswer(optionLetter) {
     if (this.currentEditingQuestion) {
       // optionLetter should be A, B, C, or D
-      this.currentEditingQuestion.correctAnswer = typeof optionLetter === 'string' 
-        ? optionLetter.toUpperCase() 
+      this.currentEditingQuestion.correctAnswer = typeof optionLetter === 'string'
+        ? optionLetter.toUpperCase()
         : (typeof optionLetter === 'number' ? ['A', 'B', 'C', 'D'][optionLetter] : 'A');
     }
   }
@@ -2584,7 +2576,7 @@ class QuestionBankPage {
       options.forEach(opt => {
         optionsObject[opt.id] = opt.text;
       });
-      
+
       // Ensure correctAnswer is a letter (A, B, C, D)
       let correctAnswerLetter = this.currentEditingQuestion.correctAnswer || 'A';
       if (typeof correctAnswerLetter === 'number') {
@@ -2592,7 +2584,7 @@ class QuestionBankPage {
       } else if (typeof correctAnswerLetter === 'string') {
         correctAnswerLetter = correctAnswerLetter.toUpperCase();
       }
-      
+
       // Prepare update data
       const updateData = {
         title: title || stem,
@@ -2651,7 +2643,7 @@ class QuestionBankPage {
       }
 
       const newFlagStatus = !question.flagged;
-      
+
       const response = await fetch(`${API_ENDPOINTS.question}/${questionId}`, {
         method: 'PUT',
         headers: {
@@ -2667,7 +2659,7 @@ class QuestionBankPage {
         throw new Error(error.error || 'Failed to update question flag status');
       }
 
-        question.flagged = newFlagStatus;
+      question.flagged = newFlagStatus;
 
       // Also update in quiz questions if present
       for (const quiz of this.quizzes) {
@@ -2692,7 +2684,7 @@ class QuestionBankPage {
   async toggleQuestionApproval(questionId, approve) {
     try {
       const newStatus = approve ? QUESTION_STATUS.approved : QUESTION_STATUS.draft;
-      
+
       const response = await fetch(`${API_ENDPOINTS.question}/${questionId}`, {
         method: 'PUT',
         headers: {
