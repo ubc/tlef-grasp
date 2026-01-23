@@ -35,6 +35,7 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
+          "'unsafe-inline'",
           "https://cdnjs.cloudflare.com",
           "https://cdn.jsdelivr.net",
         ],
