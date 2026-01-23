@@ -1,7 +1,14 @@
 require("dotenv").config();
-const express = require("express");
 const path = require("path");
-const databaseService = require("./services/database");
+
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const { sessionMiddleware } = require('./middleware/session');
+const { passport } = require('./middleware/passport');
+const { dbMiddleware } = require('./middleware/database');
+
+const authRoutes = require('./routes/auth');
 const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/question");
 const courseRoutes = require("./routes/courses");
@@ -12,106 +19,27 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
-const { getUserRole, hasMinimumRole, ROLES } = require("./utils/auth");
+
+const { getUserRole, ROLES } = require("./utils/auth");
+const { ensureAuthenticated } = require('passport-ubcshib');
+const { ensureAuthenticatedAPI, requireRole, requirePageRole } = require('./middleware/auth');
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
 
 // Middleware
-const { sessionMiddleware } = require('./middleware/session');
-const { passport } = require('./middleware/passport');
-const { dbMiddleware } = require('./middleware/database');
-
-// Session middleware - must be before passport
+app.use(helmet());
+app.use(cors());
 app.use(sessionMiddleware);
-// Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
-// Database middleware
 app.use(dbMiddleware);
-
-const authRoutes = require('./routes/auth');
-const { ensureAuthenticated } = require('passport-ubcshib');
-
-// Custom middleware for API routes - returns JSON instead of redirecting
-function ensureAuthenticatedAPI(req, res, next) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({
-    success: false,
-    error: 'Authentication required',
-    authenticated: false
-  });
-}
-
-/**
- * Middleware to require minimum role for access
- * @param {string} minRole - Minimum required role (faculty, staff, or student)
- */
-function requireRole(minRole) {
-  return async (req, res, next) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-        authenticated: false
-      });
-    }
-
-    const hasAccess = await hasMinimumRole(req.user, minRole);
-    if (!hasAccess) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied. Insufficient permissions.',
-        requiredRole: minRole
-      });
-    }
-
-    next();
-  };
-}
-
-/**
- * Page-level role check middleware for HTML pages
- * Redirects to appropriate page based on role
- */
-function requirePageRole(minRole) {
-  return async (req, res, next) => {
-    if (!req.isAuthenticated()) {
-      return res.redirect('/auth/login');
-    }
-
-    const hasAccess = await hasMinimumRole(req.user, minRole);
-    if (!hasAccess) {
-      const userRole = await getUserRole(req.user);
-      // Redirect students to their dashboard
-      if (userRole === ROLES.STUDENT) {
-        return res.redirect('/student-dashboard');
-      }
-      return res.status(403).send('Access denied. Insufficient permissions.');
-    }
-
-    next();
-  };
-}
-
-// Authentication routes (no /api prefix as they serve HTML too)
-app.use('/auth', express.json(), express.urlencoded({extended: true }), authRoutes);
-
-// Shibboleth SP endpoint - traditional Shibboleth callback path
-app.post(
-  '/Shibboleth.sso/SAML2/POST',
-  express.json(),
-  express.urlencoded({ extended: true }),
-  passport.authenticate('ubcshib', { failureRedirect: '/login' }),
-  (req, res) => {
-    res.redirect('/onboarding');
-  }
-);
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, "../public")));
+
+// Authentication routes (no /api prefix as they serve HTML too)
+app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);
 
 // Page routes
 app.get("/", (req, res) => {
@@ -206,7 +134,7 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
     const userIsFaculty = userRole === ROLES.FACULTY;
     const userIsStaff = userRole === ROLES.STAFF;
     const userIsStudent = userRole === ROLES.STUDENT;
-    
+
     res.json({
       success: true,
       user: {
@@ -242,14 +170,4 @@ app.use((req, res) => {
 
 app.listen(port, async () => {
   console.log(`Server is running on http://localhost:${port}`);
-  console.log("GRASP - Role-based access control enabled");
-  console.log("Roles: Faculty (full access), Staff (instructor features), Student (quiz access)");
-
-  // Initialize MongoDB connection
-  try {
-    await databaseService.connect();
-  } catch (error) {
-    console.error("Failed to connect to MongoDB:", error);
-    console.log("Please make sure MongoDB is installed and running");
-  }
 });
