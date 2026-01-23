@@ -94,11 +94,18 @@ function loadQuizSummaryData() {
             <i class="fas fa-exclamation-triangle"></i>
             <h3>Unable to Load Quiz Summary</h3>
             <p>There was an error loading the quiz summary. Please try refreshing the page or contact support if the problem persists.</p>
-            <button onclick="window.location.href='/student-dashboard'" class="retry-button">
+            <button id="retryErrorButton" class="retry-button">
               Return to Dashboard
             </button>
           </div>
         `;
+
+        const retryButton = document.getElementById("retryErrorButton");
+        if (retryButton) {
+          retryButton.addEventListener("click", () => {
+            window.location.href = '/student-dashboard';
+          });
+        }
       }
     });
 }
@@ -156,9 +163,8 @@ function showQuestion(questionIndex) {
   const question = window.quizSummaryState.quizSummary.questions[questionIndex];
 
   // Update question title
-  document.getElementById("questionTitle").textContent = `Question ${
-    questionIndex + 1
-  } of ${window.quizSummaryState.quizSummary.totalQuestions}`;
+  document.getElementById("questionTitle").textContent = `Question ${questionIndex + 1
+    } of ${window.quizSummaryState.quizSummary.totalQuestions}`;
 
   // Update question text
   document.getElementById("questionText").textContent = question.question;
@@ -166,9 +172,8 @@ function showQuestion(questionIndex) {
   // Update status badge
   const statusBadge = document.getElementById("statusBadge");
   statusBadge.textContent = question.isCorrect ? "Correct" : "Incorrect";
-  statusBadge.className = `status-badge ${
-    question.isCorrect ? "correct" : "incorrect"
-  }`;
+  statusBadge.className = `status-badge ${question.isCorrect ? "correct" : "incorrect"
+    }`;
 
   // Update user answer
   document.getElementById("userAnswer").textContent = question.userAnswer;

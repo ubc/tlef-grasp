@@ -26,13 +26,13 @@ async function initializeQuiz() {
   // Check for URL parameters to auto-start quiz
   const urlParams = new URLSearchParams(window.location.search);
   const quizId = urlParams.get("quiz");
-  
+
   if (quizId) {
     // Hide list container immediately and show quiz container
     document.getElementById("quizListContainer").style.display = "none";
     document.getElementById("quizContainer").style.display = "block";
     quizState.currentView = 'quiz';
-    
+
     // Auto-start the quiz if quiz ID is in URL
     await startQuiz(quizId);
   } else {
@@ -74,7 +74,7 @@ async function loadQuizList() {
       fetch(`/api/quiz/course/${quizState.courseId}`),
       fetch(`/api/achievement/my?courseId=${quizState.courseId}`)
     ]);
-    
+
     const quizzesData = await quizzesResponse.json();
     let userAchievements = [];
 
@@ -88,7 +88,7 @@ async function loadQuizList() {
     if (quizzesData.success && quizzesData.quizzes) {
       // Filter to only show published quizzes
       const publishedQuizzes = quizzesData.quizzes.filter(quiz => quiz.published === true);
-      
+
       if (publishedQuizzes.length === 0) {
         showEmptyState("No published quizzes available for this course.");
       } else {
@@ -97,7 +97,7 @@ async function loadQuizList() {
           publishedQuizzes.map(async (quiz) => {
             const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
             let questionCount = 0;
-            
+
             try {
               // Get approved questions count (for students)
               const questionsResponse = await fetch(`/api/quiz/${quizId}/questions?approvedOnly=true`);
@@ -110,13 +110,13 @@ async function loadQuizList() {
             } catch (error) {
               console.error(`Error fetching question count for quiz ${quizId}:`, error);
             }
-            
+
             // Find achievements for this quiz
             const quizAchievements = userAchievements.filter(a => {
               const achievementQuizId = a.quizId?.toString ? a.quizId.toString() : String(a.quizId || "");
               return achievementQuizId === quizId;
             });
-            
+
             return {
               ...quiz,
               questionCount: questionCount,
@@ -124,7 +124,7 @@ async function loadQuizList() {
             };
           })
         );
-        
+
         quizState.quizzes = quizzesWithDetails;
         renderQuizList();
       }
@@ -160,14 +160,14 @@ function renderQuizList() {
 function createQuizCard(quiz) {
   const card = document.createElement("div");
   card.className = "quiz-card";
-  
+
   const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
-  
+
   // Check for achievements
   const achievements = quiz.achievements || [];
   const hasCompleted = achievements.some(a => a.type === 'quiz_completed');
   const hasPerfect = achievements.some(a => a.type === 'quiz_perfect');
-  
+
   // Build achievement badges HTML
   let achievementBadgesHtml = '';
   if (achievements.length > 0) {
@@ -212,12 +212,20 @@ function createQuizCard(quiz) {
       ` : ''}
     </div>
     <div class="quiz-card-actions">
-      <button class="start-quiz-button" onclick="window.quizApp.startQuiz('${quizId}')">
+      <button class="start-quiz-button">
         <i class="fas fa-play"></i>
         ${hasCompleted ? 'Retake Quiz' : 'Start Quiz'}
       </button>
     </div>
   `;
+
+  // Add event listener programmatically to avoid CSP violations
+  const startButton = card.querySelector(".start-quiz-button");
+  if (startButton) {
+    startButton.addEventListener("click", () => {
+      startQuiz(quizId);
+    });
+  }
 
   return card;
 }
@@ -257,7 +265,7 @@ async function startQuiz(quizId) {
   try {
     // Immediately switch to quiz view and hide list
     showQuizView();
-    
+
     // Show loading overlay instead of replacing HTML
     const quizContainer = document.getElementById("quizContainer");
     if (quizContainer) {
@@ -295,7 +303,7 @@ async function startQuiz(quizId) {
       // Render quiz
       renderQuiz();
       showQuestion(0);
-      
+
       // Clear URL parameters to prevent re-loading on refresh
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -305,13 +313,13 @@ async function startQuiz(quizId) {
     }
   } catch (error) {
     console.error("Error starting quiz:", error);
-    
+
     // Hide loading overlay on error
     const loadingOverlay = document.getElementById("quizLoadingOverlay");
     if (loadingOverlay) {
       loadingOverlay.style.display = "none";
     }
-    
+
     alert("Failed to load quiz: " + error.message);
     // Go back to list view on error
     showQuizList();
@@ -341,13 +349,13 @@ function resetQuizState() {
   quizState.answers = {};
   quizState.feedback = {};
   quizState.quizData = null;
-  
+
   // Also hide completion section if it's visible
   const completionSection = document.getElementById("completionSection");
   if (completionSection) {
     completionSection.style.display = "none";
   }
-  
+
   // Show quiz content and navigation in case they were hidden
   const quizContent = document.querySelector(".quiz-content");
   const quizNavigation = document.querySelector(".quiz-navigation");
@@ -427,7 +435,7 @@ function showQuestion(questionIndex) {
 
   // Get question ID for checking answers and feedback
   const questionId = question.id;
-  
+
   // Show feedback if answer was already selected (check by question ID)
   if (quizState.feedback[questionId]) {
     showFeedback(questionIndex, questionId, quizState.answers[questionId], question.correctAnswer);
@@ -441,10 +449,10 @@ function showQuestion(questionIndex) {
   // Update navigation buttons
   document.getElementById("prevButton").disabled = questionIndex === 0;
   document.getElementById("nextButton").textContent = questionIndex === quizState.quizData.questions.length - 1 ? "Finish" : "Next";
-  document.getElementById("nextButton").innerHTML = questionIndex === quizState.quizData.questions.length - 1 
-    ? "Finish <i class=\"fas fa-check\"></i>" 
+  document.getElementById("nextButton").innerHTML = questionIndex === quizState.quizData.questions.length - 1
+    ? "Finish <i class=\"fas fa-check\"></i>"
     : "Next <i class=\"fas fa-chevron-right\"></i>";
-  
+
   // Disable next button if current question hasn't been answered
   const hasAnswer = quizState.answers[questionId] !== undefined;
   document.getElementById("nextButton").disabled = !hasAnswer;
@@ -468,7 +476,7 @@ function renderAnswerOptions(question, questionIndex) {
     const optionDiv = document.createElement("div");
     optionDiv.className = "answer-option";
     optionDiv.dataset.option = optionKey;
-    
+
     // Add selected class if this option was selected
     if (selectedAnswer === optionKey) {
       optionDiv.classList.add("selected");
@@ -497,7 +505,7 @@ function renderAnswerOptions(question, questionIndex) {
 
     answerOptions.appendChild(optionDiv);
   });
-  
+
   // Render LaTeX in options after they're added
   renderKatex();
 }
@@ -516,20 +524,20 @@ function selectAnswer(selectedOption, questionIndex, questionId, correctAnswer) 
   const options = document.querySelectorAll(".answer-option");
   options.forEach(option => {
     const optionKey = option.dataset.option;
-    
+
     // Remove existing classes
     option.classList.remove("selected", "correct", "incorrect");
-    
+
     // Add correct class to the correct answer
     if (optionKey === correctAnswer) {
       option.classList.add("correct");
     }
-    
+
     // Add incorrect class to the selected wrong answer
     if (optionKey === selectedOption && selectedOption !== correctAnswer) {
       option.classList.add("incorrect");
     }
-    
+
     // Disable pointer events
     option.style.pointerEvents = "none";
   });
@@ -545,7 +553,7 @@ function showFeedback(questionIndex, questionId, selectedAnswer, correctAnswer) 
   const correctAnswerText = document.getElementById("correctAnswerText");
 
   const isCorrect = selectedAnswer === correctAnswer;
-  
+
   // Store feedback by question ID
   quizState.feedback[questionId] = {
     isCorrect: isCorrect,
@@ -563,13 +571,13 @@ function showFeedback(questionIndex, questionId, selectedAnswer, correctAnswer) 
   } else {
     // For incorrect answers, hide the feedback message and just show the correct answer
     feedbackMessage.style.display = "none";
-    
+
     // Show correct answer (with LaTeX support)
     const correctOptionText = quizState.quizData.questions[questionIndex].options[correctAnswer] || correctAnswer;
     correctAnswerText.innerHTML = `${correctAnswer}: ${escapeHtml(correctOptionText)}`;
     correctAnswerDisplay.style.display = "block";
     feedbackSection.style.display = "block";
-    
+
     // Render LaTeX in the feedback section
     renderKatex();
   }
@@ -583,15 +591,15 @@ function updateQuestionIndicators() {
   const indicators = document.querySelectorAll(".question-indicator");
   indicators.forEach((indicator, index) => {
     indicator.classList.remove("current", "answered", "correct", "incorrect");
-    
+
     if (index === quizState.currentQuestionIndex) {
       indicator.classList.add("current");
     }
-    
+
     // Get question ID for this index
     const question = quizState.quizData.questions[index];
     const questionId = question?.id;
-    
+
     if (questionId && quizState.answers[questionId]) {
       indicator.classList.add("answered");
       if (quizState.feedback[questionId]) {
@@ -630,7 +638,7 @@ async function showCompletion() {
 
   // Submit quiz to backend and get achievements
   const newAchievements = await submitQuizToBackend(score, correctCount, totalQuestions);
-  
+
   // Show achievements
   displayNewAchievements(newAchievements, score === 100);
 
@@ -675,7 +683,7 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
 
 function displayNewAchievements(achievements, isPerfectScore) {
   const achievementBadge = document.getElementById("achievementBadge");
-  
+
   if (!achievements || achievements.length === 0) {
     // No new achievements, but still show perfect score badge if applicable
     if (isPerfectScore) {
@@ -692,7 +700,7 @@ function displayNewAchievements(achievements, isPerfectScore) {
 
   // Display new achievements
   achievementBadge.style.display = "block";
-  
+
   if (achievements.length === 1) {
     const achievement = achievements[0];
     achievementBadge.innerHTML = `
@@ -706,14 +714,14 @@ function displayNewAchievements(achievements, isPerfectScore) {
       <span>${achievements.length} New Achievements!</span>
     `;
   }
-  
+
   // Show achievement notification
   showAchievementNotification(achievements);
 }
 
 function showAchievementNotification(achievements) {
   if (!achievements || achievements.length === 0) return;
-  
+
   // Create notification container if it doesn't exist
   let notificationContainer = document.getElementById("achievementNotifications");
   if (!notificationContainer) {
@@ -730,7 +738,7 @@ function showAchievementNotification(achievements) {
     `;
     document.body.appendChild(notificationContainer);
   }
-  
+
   achievements.forEach((achievement, index) => {
     setTimeout(() => {
       const notification = document.createElement("div");
@@ -747,12 +755,12 @@ function showAchievementNotification(achievements) {
         animation: slideInRight 0.5s ease, fadeOut 0.5s ease 4.5s forwards;
         max-width: 350px;
       `;
-      
+
       // Different colors for different achievement types
       if (achievement.type === 'quiz_perfect') {
         notification.style.background = "linear-gradient(135deg, #f1c40f, #f39c12)";
       }
-      
+
       notification.innerHTML = `
         <i class="${achievement.icon || 'fas fa-trophy'}" style="font-size: 24px;"></i>
         <div>
@@ -761,16 +769,16 @@ function showAchievementNotification(achievements) {
           <div style="font-size: 12px; opacity: 0.9;">${escapeHtml(achievement.description)}</div>
         </div>
       `;
-      
+
       notificationContainer.appendChild(notification);
-      
+
       // Remove notification after 5 seconds
       setTimeout(() => {
         notification.remove();
       }, 5000);
     }, index * 500); // Stagger notifications
   });
-  
+
   // Add animation styles if not already present
   if (!document.getElementById("achievementAnimationStyles")) {
     const style = document.createElement("style");

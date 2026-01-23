@@ -57,19 +57,19 @@ class GRASPNavigation {
           this.isFaculty = data.user.isFaculty || false;
           this.isStaff = data.user.isStaff || false;
           this.isStudent = data.user.isStudent || false;
-          
+
           // Store role in localStorage for quick access
           localStorage.setItem('grasp-user-role', this.userRole);
-          
+
           // Check if user has a course
           await this.checkCourseAccess();
-          
+
           // If user is a student and tries to access instructor pages, redirect
           if (this.isStudent && this.isInstructorOnlyPage()) {
             window.location.href = '/student-dashboard';
             return;
           }
-          
+
           // If student has no course and tries to access pages requiring course, redirect to dashboard
           if (this.isStudent && !this.hasCourse && this.requiresCourse()) {
             window.location.href = '/student-dashboard';
@@ -81,7 +81,7 @@ class GRASPNavigation {
       console.error('Error loading user info:', error);
     }
   }
-  
+
   async checkCourseAccess() {
     // For students, always verify course access from API (ensures removed students lose access immediately)
     if (this.isStudent) {
@@ -92,9 +92,9 @@ class GRASPNavigation {
           if (data.success && data.courses && data.courses.length > 0) {
             // Student has courses - verify session course is still valid
             const sessionCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
-            
+
             if (sessionCourse && sessionCourse.id) {
-              const stillValid = data.courses.some(c => 
+              const stillValid = data.courses.some(c =>
                 (c._id === sessionCourse.id) || (c.id === sessionCourse.id)
               );
               if (stillValid) {
@@ -104,7 +104,7 @@ class GRASPNavigation {
               // Session course no longer valid, clear it
               sessionStorage.removeItem('grasp-selected-course');
             }
-            
+
             // Use the first available course
             const firstCourse = data.courses[0];
             const courseData = {
@@ -139,7 +139,7 @@ class GRASPNavigation {
       this.hasCourse = true;
     }
   }
-  
+
   requiresCourse() {
     // Pages that require a course to be selected
     const courseRequiredPages = ['my-quizzes', 'achievements', 'quiz-summary'];
@@ -249,7 +249,7 @@ class GRASPNavigation {
     if (this.currentRole === 'student') {
       // If student has no course, only show Dashboard
       if (this.isStudent && !this.hasCourse) {
-      return `
+        return `
           <li class="nav-item" data-page="student-dashboard">
             <a href="/student-dashboard" style="text-decoration: none; color: inherit;">
               <i class="fas fa-home"></i>
@@ -258,7 +258,7 @@ class GRASPNavigation {
           </li>
         `;
       }
-      
+
       // Student with course - show full menu
       return `
         <li class="nav-item" data-page="student-dashboard">
@@ -281,7 +281,7 @@ class GRASPNavigation {
         </li>
       `;
     }
-    
+
     // Instructor view - base menu for staff
     let menu = `
         <li class="nav-item" data-page="dashboard">
@@ -309,7 +309,7 @@ class GRASPNavigation {
           </a>
         </li>
     `;
-    
+
     // Users management - faculty only
     if (this.isFaculty) {
       menu += `
@@ -321,7 +321,7 @@ class GRASPNavigation {
         </li>
       `;
     }
-    
+
     menu += `
         <li class="nav-item" data-page="settings">
           <a href="/settings" style="text-decoration: none; color: inherit;">
@@ -330,7 +330,7 @@ class GRASPNavigation {
           </a>
         </li>
       `;
-    
+
     return menu;
   }
 
@@ -339,7 +339,7 @@ class GRASPNavigation {
     if (this.isStudent) {
       return ''; // Students can't switch roles
     }
-    
+
     return `
       <button class="role-switch-button" id="roleSwitchButton">
         <i class="fas fa-exchange-alt"></i>
@@ -351,11 +351,11 @@ class GRASPNavigation {
   getCurrentRoleDisplay() {
     const viewingRole = this.currentRole === 'instructor' ? 'Instructor' : 'Student';
     const actualRole = this.getUserRoleLabel();
-    
+
     if (this.isStudent) {
       return `<span>Role: <strong>Student</strong></span>`;
     }
-    
+
     return `<span>Viewing: <strong>${viewingRole}</strong></span>`;
   }
 
@@ -692,22 +692,22 @@ class GRASPNavigation {
   async loadCourseSelector() {
     const currentCourseName = document.getElementById("currentCourseName");
     const courseDropdown = document.getElementById("courseDropdown");
-    
+
     try {
       // Fetch courses based on user role
-      const apiEndpoint = this.isStudent ? '/api/student/courses' : '/api/courses/my-courses';
+      const apiEndpoint = this.isStudent ? '/api/student/courses' : '/api/courses/my';
       const response = await fetch(apiEndpoint);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch courses');
       }
-      
+
       const data = await response.json();
       const courses = data.courses || [];
-      
+
       // Get currently selected course from session
       const selectedCourse = JSON.parse(sessionStorage.getItem("grasp-selected-course") || "{}");
-      
+
       if (courses.length > 1) {
         // Multiple courses - show dropdown
         if (courseDropdown) {
@@ -723,12 +723,12 @@ class GRASPNavigation {
             }
             courseDropdown.appendChild(option);
           });
-          
+
           courseDropdown.style.display = 'block';
-        if (currentCourseName) {
+          if (currentCourseName) {
             currentCourseName.style.display = 'none';
           }
-          
+
           // Add change event listener
           courseDropdown.addEventListener('change', (e) => {
             this.handleCourseChange(e.target.value, courses);
@@ -739,7 +739,7 @@ class GRASPNavigation {
         const course = courses[0];
         const courseId = course._id || course.id;
         const courseName = course.name || course.courseName || 'Unknown Course';
-        
+
         // Save to session if not already saved
         if (!selectedCourse || !selectedCourse.id) {
           sessionStorage.setItem("grasp-selected-course", JSON.stringify({
@@ -747,7 +747,7 @@ class GRASPNavigation {
             name: courseName
           }));
         }
-        
+
         if (currentCourseName) {
           currentCourseName.textContent = courseName;
           currentCourseName.style.display = 'block';
@@ -779,10 +779,10 @@ class GRASPNavigation {
       }
     }
   }
-  
+
   handleCourseChange(courseId, courses) {
     if (!courseId) return;
-    
+
     const selectedCourse = courses.find(c => (c._id || c.id) === courseId);
     if (selectedCourse) {
       const courseData = {
@@ -790,7 +790,7 @@ class GRASPNavigation {
         name: selectedCourse.name || selectedCourse.courseName || 'Unknown Course'
       };
       sessionStorage.setItem("grasp-selected-course", JSON.stringify(courseData));
-      
+
       // Reload the page to reflect the course change
       window.location.reload();
     }
@@ -888,7 +888,7 @@ class GRASPNavigation {
   handleSignOut() {
     // Clear selected course from sessionStorage
     sessionStorage.removeItem("grasp-selected-course");
-    
+
     // Redirect to onboarding page
     window.location.href = "/onboarding";
   }
@@ -918,7 +918,7 @@ class GRASPNavigation {
         currentRoleElement.innerHTML = `<span>Role: <strong>Student</strong></span>`;
       } else {
         const roleText = this.currentRole === 'instructor' ? 'Instructor' : 'Student';
-      currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
+        currentRoleElement.innerHTML = `<span>Viewing: <strong>${roleText}</strong></span>`;
       }
     }
   }

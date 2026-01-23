@@ -26,7 +26,7 @@ const TAB_NAMES = {
 
 const API_ENDPOINTS = {
   currentUser: '/api/current-user',
-  myCourses: '/api/courses/my-courses',
+  myCourses: '/api/courses/my',
   newCourse: '/api/courses/new',
 };
 
@@ -63,7 +63,7 @@ class TabManager {
     this.elements.tabButtons.forEach((button) => {
       button.addEventListener('click', () => {
         const tab = button.dataset.tab;
-        
+
         if (!canAccessTab(tab)) {
           return;
         }
@@ -97,7 +97,7 @@ class TabManager {
     }
 
     this.currentTab = tabName;
-    
+
     if (this.onTabChange) {
       this.onTabChange(tabName);
     }
@@ -156,7 +156,7 @@ class OnboardingManager {
     this.courseData = {};
     this.courses = null;
     this.isFaculty = false;
-    
+
     this.cacheElements();
     this.tabManager = new TabManager((tab) => this.handleTabChange(tab));
     this.init();
@@ -222,7 +222,7 @@ class OnboardingManager {
           this.isFaculty = data.user.isFaculty || false;
           this.isStaff = data.user.isStaff || false;
           this.isStudent = data.user.isStudent || false;
-          
+
           // Students go directly to student dashboard
           if (this.isStudent) {
             window.location.href = '/student-dashboard';
@@ -244,7 +244,7 @@ class OnboardingManager {
 
     // Hide custom course input groups for staff
     const { customCourseGroup, customCourseNameGroup, noCoursesMessage } = this.elements;
-    
+
     if (customCourseGroup) {
       customCourseGroup.style.display = 'none';
     }
@@ -287,7 +287,7 @@ class OnboardingManager {
         const accessBtn = e.target.closest('.access-btn');
         if (accessBtn) {
           this.accessCourseDashboard(accessBtn);
-          }
+        }
       });
     }
   }
@@ -301,17 +301,17 @@ class OnboardingManager {
 
       const data = await response.json();
       const hasCourses = data.success && data.courses && data.courses.length > 0;
-      
+
       // Store courses in state to avoid duplicate API calls
       this.courses = data.success && data.courses ? data.courses : [];
-      
+
       // Staff users or faculty with courses -> login tab
       // Faculty without courses -> setup tab
       const shouldShowLoginTab = !this.isFaculty || hasCourses;
       const initialTab = shouldShowLoginTab ? TAB_NAMES.login : TAB_NAMES.setup;
-      
+
       this.tabManager.switchTo(initialTab);
-      
+
       if (initialTab === TAB_NAMES.setup) {
         this.tabManager.activateStep1();
       }
@@ -320,7 +320,7 @@ class OnboardingManager {
       // Default to login tab for staff, setup for faculty
       const fallbackTab = this.isFaculty ? TAB_NAMES.setup : TAB_NAMES.login;
       this.tabManager.switchTo(fallbackTab);
-      
+
       if (fallbackTab === TAB_NAMES.login) {
         this.loadExistingCourses(null);
       }
@@ -383,7 +383,7 @@ class OnboardingManager {
     if (!coursesList) return;
 
     coursesList.innerHTML = courses.map((course) => this.createCourseItemHTML(course)).join('');
-    
+
     this.setElementVisibility(coursesList, true, 'flex');
     this.setElementVisibility(noCoursesMessage, false);
   }
@@ -397,7 +397,7 @@ class OnboardingManager {
     const escapedName = this.escapeHTML(course.courseName);
     const escapedInstructor = this.escapeHTML(course.instructorName);
     const escapedSemester = this.escapeHTML(course.semester);
-    
+
     return `
       <div class="course-item" data-course-id="${course._id}">
         <div class="course-icon">
@@ -442,7 +442,7 @@ class OnboardingManager {
     try {
       const courseId = buttonElement.dataset.courseId;
       const courseName = buttonElement.dataset.courseName;
-      
+
       sessionStorage.setItem(
         STORAGE_KEYS.selectedCourse,
         JSON.stringify({ id: courseId, name: courseName })
@@ -567,37 +567,37 @@ class OnboardingManager {
   }
 
   async saveCourseProfile() {
-      if (!this.isFaculty) {
+    if (!this.isFaculty) {
       throw new Error('Only faculty can create new courses');
     }
 
     const response = await fetch(API_ENDPOINTS.newCourse, {
       method: 'POST',
-        headers: {
+      headers: {
         'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(this.courseData),
-      });
+      },
+      body: JSON.stringify(this.courseData),
+    });
 
-      if (!response.ok) {
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
       } catch {
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
+        errorMessage = response.statusText || errorMessage;
       }
+      throw new Error(errorMessage);
+    }
 
-      const result = await response.json();
+    const result = await response.json();
 
     sessionStorage.setItem(
       STORAGE_KEYS.selectedCourse,
       JSON.stringify({ id: result.course._id, name: result.course.courseName })
     );
 
-      return result;
+    return result;
   }
 
   goToStep(stepNumber) {
@@ -676,7 +676,7 @@ class OnboardingManager {
 
     // Auto-remove error after 5 seconds
     setTimeout(() => {
-        errorElement.remove();
+      errorElement.remove();
     }, 5000);
   }
 }

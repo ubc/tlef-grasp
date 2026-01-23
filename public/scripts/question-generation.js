@@ -180,6 +180,11 @@ function initializeEventListeners() {
   // Navigation buttons
   const backBtn = document.getElementById("back-btn");
   const continueBtn = document.getElementById("continue-btn");
+  const refreshNoMaterialsBtn = document.getElementById("refresh-no-materials-btn");
+
+  if (refreshNoMaterialsBtn) {
+    refreshNoMaterialsBtn.addEventListener("click", () => window.location.reload());
+  }
 
   if (backBtn) {
     backBtn.addEventListener("click", goToPreviousStep);
@@ -273,17 +278,17 @@ function validateCurrentStep() {
         const nonBloomErrors = validationErrors.filter(
           (error) => !error.includes("Bloom level selected")
         );
-        
+
         // Show first non-Bloom error as toast, log all errors
         if (nonBloomErrors.length > 0) {
           showToast(nonBloomErrors[0], "error");
         }
-        
+
         // Re-render to show/hide inline Bloom validation messages
         renderObjectiveGroups();
         return false;
       }
-      
+
       // Re-render to hide any validation messages if validation passes
       renderObjectiveGroups();
       return true;
@@ -404,6 +409,21 @@ function initializeObjectives() {
     addObjectivesBtn.addEventListener("click", toggleAddObjectivesDropdown);
   }
 
+  // Initialize dropdown buttons (AI and Custom)
+  const generateAiBtn = document.getElementById("generate-ai-btn");
+  if (generateAiBtn) {
+    generateAiBtn.addEventListener("click", (e) => {
+      window.showAIGenerateObjectiveModal(e);
+    });
+  }
+
+  const createCustomBtn = document.getElementById("create-custom-btn");
+  if (createCustomBtn) {
+    createCustomBtn.addEventListener("click", (e) => {
+      window.showCustomObjectiveModalFromButton(e);
+    });
+  }
+
   // Initialize dropdown functionality
   initializeAddObjectivesDropdown();
 
@@ -464,14 +484,14 @@ async function initializeAddObjectivesDropdown() {
       // Clone to remove old listeners
       const newSearchInput = searchInput.cloneNode(true);
       searchInput.parentNode.replaceChild(newSearchInput, searchInput);
-      
+
       const updatedSearchInput = document.getElementById("objective-search");
       if (updatedSearchInput) {
         updatedSearchInput.addEventListener("input", (e) => {
           const searchTerm = e.target.value.toLowerCase();
           const updatedDropdownOptions = document.getElementById("dropdown-options");
           if (!updatedDropdownOptions) return;
-          
+
           const options = updatedDropdownOptions.querySelectorAll(".dropdown-option");
 
           options.forEach((option) => {
@@ -495,10 +515,10 @@ async function initializeAddObjectivesDropdown() {
     if (currentDropdownOptions) {
       const newDropdownOptions = currentDropdownOptions.cloneNode(true);
       currentDropdownOptions.parentNode.replaceChild(newDropdownOptions, currentDropdownOptions);
-      
+
       // Update reference for search functionality
       const updatedDropdownOptions = document.getElementById("dropdown-options");
-      
+
       // Add fresh event listener with a guard to prevent double-firing
       let isHandling = false;
       updatedDropdownOptions.addEventListener("click", async (e) => {
@@ -914,7 +934,7 @@ async function handleCustomObjectiveSubmission() {
 
   try {
     const courseId = getCourseId();
-    
+
     const requestBody = {
       name: nameInput.value.trim(),
       granularObjectives: granularObjectives,
@@ -1309,7 +1329,7 @@ async function handleAIGenerateObjectives() {
     regenerateBtn.disabled = true;
     regenerateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Regenerating...';
   }
-  
+
   // Disable cancel and close buttons during generation
   const cancelBtn = document.getElementById("ai-generate-modal-cancel");
   const closeBtn = document.getElementById("ai-generate-modal-close");
@@ -1319,7 +1339,7 @@ async function handleAIGenerateObjectives() {
   if (closeBtn) {
     closeBtn.disabled = true;
   }
-  
+
   if (statusDiv) statusDiv.style.display = "block";
   if (generatedContainer) generatedContainer.style.display = "none";
   if (saveBtn) saveBtn.style.display = "none";
@@ -1371,7 +1391,7 @@ async function handleAIGenerateObjectives() {
       regenerateBtn.disabled = false;
       regenerateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Regenerate';
     }
-    
+
     // Re-enable cancel and close buttons after generation completes
     const cancelBtn = document.getElementById("ai-generate-modal-cancel");
     const closeBtn = document.getElementById("ai-generate-modal-close");
@@ -1431,7 +1451,7 @@ function displayGeneratedObjectives(objectives) {
     // Granular objectives
     const granularList = document.createElement("ul");
     granularList.style.cssText = "list-style: none; padding-left: 0; margin: 0;";
-    
+
     objective.granularObjectives.forEach((granular, gIndex) => {
       const granularItem = document.createElement("li");
       granularItem.style.cssText = "padding: 8px 0 8px 24px; color: #4b5563; font-size: 14px; position: relative;";
@@ -1546,7 +1566,7 @@ async function handleAISaveObjectives() {
     for (const saved of savedObjectives) {
       const objectiveId = saved.parent._id || saved.parent.id;
       const objectiveName = saved.parent.name;
-      
+
       // Create new learning objective group
       const newGroupId = Date.now() + Math.random();
       const newGroupNumber = state.objectiveGroups.length + 1;
@@ -1596,7 +1616,7 @@ async function handleAISaveObjectives() {
     updateDropdownDisabledState();
 
     showToast(`Successfully saved ${savedObjectives.length} learning objective(s)`, "success");
-    
+
     // Close modal
     if (modal) {
       hideModal(modal);
@@ -1631,7 +1651,7 @@ function hideModal(modal) {
       const statusDiv = document.getElementById("ai-generation-status");
       const generatedContainer = document.getElementById("ai-generated-objectives-container");
       const generatedList = document.getElementById("ai-generated-objectives-list");
-      
+
       if (generateBtn) {
         generateBtn.disabled = true;
         generateBtn.style.display = "inline-block";
@@ -1642,7 +1662,7 @@ function hideModal(modal) {
       if (statusDiv) statusDiv.style.display = "none";
       if (generatedContainer) generatedContainer.style.display = "none";
       if (generatedList) generatedList.innerHTML = "";
-      
+
       // Re-enable cancel and close buttons when modal is reset
       const cancelBtn = document.getElementById("ai-generate-modal-cancel");
       const closeBtn = document.getElementById("ai-generate-modal-close");
@@ -1652,10 +1672,10 @@ function hideModal(modal) {
       if (closeBtn) {
         closeBtn.disabled = false;
       }
-      
+
       const aiMaterialCheckboxes = document.querySelectorAll(".ai-material-checkbox");
       aiMaterialCheckboxes.forEach(cb => cb.checked = false);
-      
+
       const objectivesCountInput = document.getElementById("ai-objectives-count");
       if (objectivesCountInput) {
         objectivesCountInput.value = "5";
@@ -1685,7 +1705,7 @@ function formatFileSize(bytes) {
 async function handleObjectiveSelection(objectiveId, objectiveName) {
   // Normalize objectiveId to string for comparison
   const normalizedObjectiveId = objectiveId ? objectiveId.toString() : null;
-  
+
   // Check if this objective already exists (compare as strings)
   const existingGroup = state.objectiveGroups.find(
     (group) => group.objectiveId && group.objectiveId.toString() === normalizedObjectiveId
@@ -2257,7 +2277,7 @@ function createObjectiveItem(item, groupId) {
   const isSubLO = item.level === 2;
   const indentClass = isSubLO ? "objective-item--sub" : "";
   const subLOBadge = isSubLO ? '<span class="sub-lo-badge">Sub-LO</span>' : "";
-  
+
   // Show validation message if mode is manual and no Bloom level is selected
   const showBloomValidation = item.mode === "manual" && item.bloom.length === 0;
   const bloomValidationMessage = showBloomValidation
@@ -2489,7 +2509,7 @@ function initializeModals() {
         hideModal(aiGenerateModal);
       }
     });
-    
+
     // Prevent clicks inside modal content from closing the modal
     const modalContent = aiGenerateModal.querySelector(".modal__content");
     if (modalContent) {
@@ -2575,10 +2595,10 @@ function initializeQuizSelection() {
   // Reset state
   selectedQuizId = null;
   isCreatingNewQuiz = false;
-  
+
   // Set up event listeners
   setupQuizSelectionListeners();
-  
+
   // Switch to select tab by default
   switchQuizTab('select');
 }
@@ -2592,7 +2612,7 @@ function setupQuizSelectionListeners() {
       switchQuizTab(tab);
     });
   });
-  
+
   // Quiz selection dropdown
   const dropdown = document.getElementById("quiz-select-dropdown");
   if (dropdown) {
@@ -2601,7 +2621,7 @@ function setupQuizSelectionListeners() {
       isCreatingNewQuiz = false;
     });
   }
-  
+
   // Quiz name input (for new quiz)
   const nameInput = document.getElementById("quiz-name-input");
   if (nameInput) {
@@ -2636,7 +2656,7 @@ function isGeneratingQuestions() {
 // Helper function to show/hide generation UI
 function setGenerationUI(showLoading) {
   const ui = getStep2UIElements();
-  
+
   if (showLoading) {
     // Show loading state
     if (ui.questionsLoading) ui.questionsLoading.style.display = "block";
@@ -2917,7 +2937,7 @@ function renderQuestionGroups() {
 
   // Set up question card event listeners
   setupQuestionCardListeners();
-  
+
   // Re-render LaTeX after rendering questions
   renderKatex();
 }
@@ -3000,8 +3020,8 @@ function renderQuestionCard(question, group) {
                     ${Object.values(question.options).map(
       (option, index) => {
         // correctAnswer is now a letter (A, B, C, D), compare with option.id
-        const isCorrect = option.id === question.correctAnswer || 
-                         (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
+        const isCorrect = option.id === question.correctAnswer ||
+          (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3016,7 +3036,7 @@ function renderQuestionCard(question, group) {
                         <div class="question-card__feedback">${isCorrect ? "Correct" : "Incorrect"}</div>
                     `;
       }
-      )
+    )
       .join("")}
                 </div>
             </div>
@@ -3028,11 +3048,10 @@ function renderQuestionCard(question, group) {
                     </button>
                     <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
                             onclick="toggleQuestionFlag('${question.id}')"
-                            ${
-                              question.flagStatus === false
-                                ? 'style="background: #ffebee; color: #d32f2f;"'
-                                : ""
-                            }
+                            ${question.flagStatus === false
+      ? 'style="background: #ffebee; color: #d32f2f;"'
+      : ""
+    }
                             >
                         ${question.flagStatus === true ? "Unflag" : "Flag"}
                     </button>
@@ -3154,7 +3173,7 @@ function saveQuestionEdit(questionId) {
   // Simply update state - mark as not editing and update timestamp
   question.isEditing = false;
   question.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
-  
+
   // Render the question groups (LaTeX will be automatically re-rendered)
   renderQuestionGroups();
   showToast("Question updated successfully", "success");
@@ -3188,7 +3207,7 @@ function deleteQuestion(questionId) {
       const questionIndex = lo.questions.findIndex((q) => q.id === questionId || q._id === questionId);
       if (questionIndex > -1) {
         lo.questions.splice(questionIndex, 1);
-        
+
         // If this LO has no questions left, remove it from the group
         if (lo.questions.length === 0) {
           const loIndex = group.los.findIndex(l => l.id === lo.id);
@@ -3198,7 +3217,7 @@ function deleteQuestion(questionId) {
         }
       }
     });
-    
+
     // Remove empty LOs from the group
     group.los = group.los.filter(lo => lo.questions.length > 0);
   });
@@ -3328,31 +3347,31 @@ function showSuccessModal(message, questionsCount) {
   const messageEl = document.getElementById("quiz-save-success-message");
   const closeBtn = document.getElementById("quiz-save-success-close");
   const goToBankBtn = document.getElementById("go-to-question-bank-btn");
-  
+
   if (!modal) return;
-  
+
   // Update message
   if (messageEl) {
     messageEl.textContent = message;
   }
-  
+
   // Show modal
   modal.style.display = "flex";
-  
+
   // Close button handler
   if (closeBtn) {
     closeBtn.onclick = () => {
       modal.style.display = "none";
     };
   }
-  
+
   // Go to Question Bank button handler
   if (goToBankBtn) {
     goToBankBtn.onclick = () => {
       window.location.href = "/question-bank";
     };
   }
-  
+
   // Close on background click
   modal.onclick = (e) => {
     if (e.target === modal) {
@@ -3402,22 +3421,22 @@ let isCreatingNewQuiz = false;
 async function loadQuizzesForCourse() {
   const dropdown = document.getElementById('quiz-select-dropdown');
   const emptyMessage = document.getElementById('quiz-select-empty');
-  
+
   if (!dropdown) return;
-  
+
   try {
     const courseId = getCourseId();
     const response = await fetch(`${API_ENDPOINTS.quizCourse}/${courseId}`);
-    
+
     if (!response.ok) {
       throw new Error('Failed to load quizzes');
     }
-    
+
     const data = await response.json();
     const quizzes = data.quizzes || [];
-    
+
     dropdown.innerHTML = '';
-    
+
     if (quizzes.length === 0) {
       dropdown.innerHTML = '<option value="">No quizzes available</option>';
       if (emptyMessage) emptyMessage.style.display = 'block';
@@ -3449,11 +3468,11 @@ function switchQuizTab(tab) {
       btn.classList.remove("quiz-tab-btn--active");
     }
   });
-  
+
   // Update tab content
   const selectTab = document.getElementById("quiz-select-tab");
   const createTab = document.getElementById("quiz-create-tab");
-  
+
   if (tab === "select") {
     if (selectTab) selectTab.classList.add("quiz-tab-content--active");
     if (createTab) createTab.classList.remove("quiz-tab-content--active");
@@ -3469,19 +3488,19 @@ function switchQuizTab(tab) {
 async function handleSaveToQuiz() {
   try {
     let quizId = selectedQuizId;
-    
+
     // If creating new quiz, create it first
     if (isCreatingNewQuiz) {
       const nameInput = document.getElementById("quiz-name-input");
       const descriptionInput = document.getElementById("quiz-description-input");
-      
+
       if (!nameInput || !nameInput.value.trim()) {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      
+
       const courseId = getCourseId();
-      
+
       const response = await fetch(API_ENDPOINTS.quiz, {
         method: 'POST',
         headers: {
@@ -3493,21 +3512,21 @@ async function handleSaveToQuiz() {
           description: descriptionInput.value.trim() || '',
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to create quiz');
       }
-      
+
       const data = await response.json();
       quizId = data.quiz.insertedId.toString();
     }
-    
+
     if (!quizId) {
       showToast("Please select or create a quiz", "error");
       return;
     }
-    
+
     // Collect all questions from state
     const questions = [];
     for (const group of state.questionGroups) {
@@ -3529,21 +3548,21 @@ async function handleSaveToQuiz() {
         }
       }
     }
-    
+
     if (questions.length === 0) {
       showToast("No questions to add", "warning");
       return;
     }
-    
+
     // Add questions to quiz
     const courseId = getCourseId();
-    
+
     const continueBtn = document.getElementById('continue-btn');
     if (continueBtn) {
       continueBtn.disabled = true;
       continueBtn.textContent = 'Saving...';
     }
-    
+
     const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}/questions`, {
       method: 'POST',
       headers: {
@@ -3554,22 +3573,22 @@ async function handleSaveToQuiz() {
         questions: questions,
       }),
     });
-    
+
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Failed to add questions to quiz');
     }
-    
+
     const data = await response.json();
-    
+
     const questionsCount = data.questionsAdded || questions.length;
-    
+
     // Show success modal with button to question bank
     showSuccessModal(
       `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to quiz!`,
       questionsCount
     );
-    
+
     // Reset form
     const nameInput = document.getElementById("quiz-name-input");
     const descriptionInput = document.getElementById("quiz-description-input");
@@ -3577,16 +3596,16 @@ async function handleSaveToQuiz() {
     if (descriptionInput) descriptionInput.value = "";
     selectedQuizId = null;
     isCreatingNewQuiz = false;
-    
+
     if (continueBtn) {
       continueBtn.disabled = false;
       continueBtn.textContent = "Save to Quiz";
     }
-    
+
   } catch (error) {
     console.error("Error adding questions to quiz:", error);
     showToast(error.message || "Failed to add questions to quiz", "error");
-    
+
     const continueBtn = document.getElementById("continue-btn");
     if (continueBtn) {
       continueBtn.disabled = false;

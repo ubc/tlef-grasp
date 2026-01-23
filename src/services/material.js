@@ -5,10 +5,10 @@ const saveMaterial = async (sourceId, courseId, materialData) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_material");
-        
+
         // Convert courseId to ObjectId if it's a string
         const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
-        
+
         await collection.insertOne({
             sourceId: sourceId,
             courseId: courseIdObj,
@@ -55,10 +55,10 @@ const getCourseMaterials = async (courseId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_material");
-        
+
         // Convert courseId to ObjectId if it's a string
         const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
-        
+
         const materials = await collection.find({ courseId: courseIdObj }).toArray();
         console.log("Found materials:", materials);
         return materials;
@@ -82,10 +82,31 @@ const getMaterialBySourceId = async (sourceId) => {
     }
 };
 
+const updateMaterialStatus = async (courseId, materialId, status) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+
+        // Convert courseId to ObjectId if needed
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+        const result = await collection.updateOne(
+            { sourceId: materialId, courseId: courseIdObj },
+            { $set: { status: status, updatedAt: new Date() } }
+        );
+
+        return result;
+    } catch (error) {
+        console.error("Error updating material status:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     saveMaterial,
     deleteMaterial,
     getCourseMaterials,
     getMaterialCourseId,
     getMaterialBySourceId,
+    updateMaterialStatus,
 };

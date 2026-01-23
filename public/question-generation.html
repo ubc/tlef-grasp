@@ -54,7 +54,7 @@
                             <a href="/course-materials" class="btn btn--primary" style="text-decoration: none;">
                                 <i class="fas fa-upload"></i> Go to Course Materials
                             </a>
-                            <button type="button" class="btn btn--secondary" onclick="window.location.reload()">
+                            <button type="button" class="btn btn--secondary" id="refresh-no-materials-btn">
                                 <i class="fas fa-sync"></i> Refresh
                             </button>
                         </div>
@@ -96,12 +96,10 @@
                                     </div>
                                     <div class="dropdown-separator"></div>
                                     <div class="dropdown-custom">
-                                        <button type="button" class="dropdown-custom__btn" id="generate-ai-btn"
-                                            onclick="window.showAIGenerateObjectiveModal(event)">
+                                        <button type="button" class="dropdown-custom__btn" id="generate-ai-btn">
                                             <i class="fas fa-magic"></i> Generate with AI...
                                         </button>
-                                        <button type="button" class="dropdown-custom__btn" id="create-custom-btn"
-                                            onclick="window.showCustomObjectiveModalFromButton(event)">
+                                        <button type="button" class="dropdown-custom__btn" id="create-custom-btn">
                                             <i class="fas fa-plus"></i> Create custom objective...
                                         </button>
                                     </div>
