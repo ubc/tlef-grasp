@@ -49,8 +49,17 @@ async function processAndStoreDocument(content, metadata) {
     // Initialize RAG module
     const ragModule = await RAGModule.create(RAG_CONFIG);
 
+    // Sanitize content to remove all surrogate characters.
+    // This prevents the RAG chunker from slicing surrogate pairs in half and crashing Qdrant.
+    const sanitizeText = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(/[\uD800-\uDFFF]/g, '');
+    };
+
+    const sanitizedContent = sanitizeText(content);
+
     // Add document to RAG with metadata
-    const chunkIds = await ragModule.addDocument(content, {
+    const chunkIds = await ragModule.addDocument(sanitizedContent, {
       ...metadata,
       timestamp: new Date().toISOString(),
       processed: true,

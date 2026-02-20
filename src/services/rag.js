@@ -143,8 +143,17 @@ class RAGService {
     console.log("Content length:", content.length);
     console.log("Metadata:", metadata);
 
+    // Sanitize content to remove all surrogate characters.
+    // This prevents the RAG chunker from slicing surrogate pairs in half and crashing Qdrant.
+    const sanitizeText = (str) => {
+      if (typeof str !== 'string') return str;
+      return str.replace(/[\uD800-\uDFFF]/g, '');
+    };
+
+    const sanitizedContent = sanitizeText(content);
+
     // Add content to RAG
-    const chunkIds = await this.RAGInstance.addDocument(content, {
+    const chunkIds = await this.RAGInstance.addDocument(sanitizedContent, {
       ...metadata,
       timestamp: new Date().toISOString(),
     });
