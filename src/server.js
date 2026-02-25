@@ -9,7 +9,6 @@ const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
 
 const authRoutes = require('./routes/auth');
-const uploadRoutes = require("./routes/upload");
 const questionRoutes = require("./routes/question");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
@@ -147,8 +146,7 @@ app.get("/achievements", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), 
 });
 
 // API endpoints
-// Upload, question generation, materials - require at least staff role
-app.use("/api/upload", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), uploadRoutes);
+// Question generation, materials - require at least staff role
 app.use("/api/question", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), questionRoutes);
 app.use("/api/rag-llm", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ragLlmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), materialRoutes);

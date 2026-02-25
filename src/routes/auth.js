@@ -5,26 +5,20 @@
  */
 
 const express = require('express');
-const { passport } = require('../middleware/passport');
-const { logout } = require('passport-ubcshib');
 const router = express.Router();
+const authController = require('../controllers/auth');
 
 // Login route - redirects to UBC IdP
-router.get('/ubcshib', passport.authenticate('ubcshib'));
+router.get('/ubcshib', authController.login);
 
 // Callback route - called by UBC IdP after authentication
 router.post(
 	'/saml/callback',
-	passport.authenticate('ubcshib', { failureRedirect: '/login' }),
-	(req, res) => {
-		// Successful authentication
-		res.redirect('/onboarding');
-	}
+	authController.callback,
+	authController.callbackSuccess
 );
 
-
-
 // Logout
-router.get('/logout', logout('/'));
+router.get('/logout', authController.logoutHandler);
 
 module.exports = router;

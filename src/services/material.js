@@ -82,25 +82,6 @@ const getMaterialBySourceId = async (sourceId) => {
     }
 };
 
-const updateMaterialStatus = async (courseId, materialId, status) => {
-    try {
-        const db = await databaseService.connect();
-        const collection = db.collection("grasp_material");
-
-        // Convert courseId to ObjectId if needed
-        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
-
-        const result = await collection.updateOne(
-            { sourceId: materialId, courseId: courseIdObj },
-            { $set: { status: status, updatedAt: new Date() } }
-        );
-
-        return result;
-    } catch (error) {
-        console.error("Error updating material status:", error);
-        throw error;
-    }
-};
 
 module.exports = {
     saveMaterial,
@@ -108,5 +89,4 @@ module.exports = {
     getCourseMaterials,
     getMaterialCourseId,
     getMaterialBySourceId,
-    updateMaterialStatus,
 };

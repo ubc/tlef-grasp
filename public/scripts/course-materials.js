@@ -7,7 +7,7 @@ const API_ENDPOINTS = {
   materialDelete: '/api/material/delete',
   materialRefetch: '/api/material/refetch',
   ragLlmDeleteDocument: '/api/rag-llm/delete-document',
-  ragLlmFetchUrlContent: '/api/rag-llm/fetch-url-content',
+  fetchUrlContent: '/api/material/fetch-url-content',
 };
 
 const STORAGE_KEYS = {
@@ -631,7 +631,7 @@ async function refetchLinkContent(material) {
     showNotification('Refetching URL content...', 'info');
 
     // Step 1: Fetch new content from URL
-    const fetchResponse = await fetch(API_ENDPOINTS.ragLlmFetchUrlContent, {
+    const fetchResponse = await fetch(API_ENDPOINTS.fetchUrlContent, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),

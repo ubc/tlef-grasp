@@ -36,18 +36,6 @@ async function createCourse(courseData) {
     }
 }
 
-async function getAllCourses() {
-    try {
-        const db = await databaseService.connect();
-        const collection = db.collection("grasp_course");
-        const courses = await collection.find({}).toArray();
-        return courses;
-    } catch (error) {
-        console.error("Error getting all courses:", error);
-        throw error;
-    }
-}
-
 async function getCourseByCourseCode(courseCode) {
     try {
         const db = await databaseService.connect();
@@ -83,7 +71,6 @@ async function getCourseById(courseId) {
 
 module.exports = {
     createCourse,
-    getAllCourses,
     getCourseByCourseCode,
     getCourseById,
 };

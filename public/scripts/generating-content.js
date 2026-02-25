@@ -356,7 +356,7 @@ class ContentGenerator {
 
       try {
         // Use server-side endpoint to fetch URL content (bypasses CORS)
-        const response = await fetch("/api/rag-llm/fetch-url-content", {
+        const response = await fetch("/api/material/fetch-url-content", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

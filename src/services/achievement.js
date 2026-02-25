@@ -169,38 +169,7 @@ const getUserAchievements = async (userId, courseId = null) => {
     }
 };
 
-/**
- * Check if user has a specific achievement type for a quiz
- * @param {string} userId - The user ID
- * @param {string} quizId - The quiz ID
- * @param {string} type - Optional achievement type to check for
- * @returns {Promise<boolean>} True if achievement exists
- */
-const hasAchievement = async (userId, quizId, type = null) => {
-    try {
-        const db = await databaseService.connect();
-        const collection = db.collection("grasp_achievement");
-        
-        const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
-        const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
-        
-        const query = {
-            userId: userIdObj,
-            quizId: quizIdObj
-        };
-        
-        if (type) {
-            query.type = type;
-        }
-        
-        const achievement = await collection.findOne(query);
-        
-        return !!achievement;
-    } catch (error) {
-        console.error("Error checking achievement:", error);
-        throw error;
-    }
-};
+
 
 /**
  * Get achievement counts by type for a user
@@ -250,6 +219,5 @@ module.exports = {
     saveAchievement,
     awardQuizAchievements,
     getUserAchievements,
-    hasAchievement,
     getAchievementCounts
 };
