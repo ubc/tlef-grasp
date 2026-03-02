@@ -46,4 +46,10 @@ router.put('/:id/materials', express.json(), objectiveController.updateObjective
  */
 router.put('/:id', express.json(), objectiveController.updateObjectiveHandler);
 
+/**
+ * DELETE /api/objective/:id
+ * Completely delete a learning objective and its granular objectives
+ */
+router.delete('/:id', objectiveController.deleteObjectiveHandler);
+
 module.exports = router;

@@ -463,24 +463,17 @@ INSTRUCTIONS:
 1. Analyze the course materials and identify key topics, concepts, and learning outcomes
 2. Generate exactly ${objectivesCount} main learning objectives that cover the major themes in the materials
 3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes
-4. Use clear, action-oriented language (e.g., "Students will be able to...")
-5. Ensure objectives are specific to the content provided, not generic
-6. Format your response as JSON with this structure:
+4. For each granular objective, identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create)
+5. Use clear, action-oriented language (e.g., "Students will be able to...")
+6. Ensure objectives are specific to the content provided, not generic
+7. Format your response as JSON with this structure:
 {
   "objectives": [
     {
       "name": "Main learning objective title",
       "granularObjectives": [
-        "Granular objective 1",
-        "Granular objective 2",
-        "Granular objective 3"
-      ]
-    },
-    {
-      "name": "Another main learning objective",
-      "granularObjectives": [
-        "Granular objective 1",
-        "Granular objective 2"
+        { "text": "Granular objective 1", "bloomTaxonomies": ["Understand", "Apply"] },
+        { "text": "Granular objective 2", "bloomTaxonomies": ["Analyze"] }
       ]
     }
   ]
@@ -523,13 +516,22 @@ IMPORTANT:
       }
 
       // Clean and validate objectives
+      const validBloomLevels = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
         .map((obj) => ({
           name: obj.name.trim(),
           granularObjectives: obj.granularObjectives
-            .filter((go) => go && typeof go === "string" && go.trim())
-            .map((go) => go.trim()),
+            .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
+            .map((go) => {
+              const text = typeof go === "string" ? go.trim() : go.text.trim();
+              let bloomTaxonomies = ["Understand"]; // default
+              if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
+                 const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
+                 if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
+              }
+              return { text, bloomTaxonomies };
+            }),
         }))
         .filter((obj) => obj.granularObjectives.length > 0);
 

@@ -87,6 +87,7 @@ const createObjective = async (objectiveData) => {
     if (objectiveData.granularObjectives && objectiveData.granularObjectives.length > 0) {
       const granularObjectives = objectiveData.granularObjectives.map((granular) => ({
         name: granular.text || granular.name,
+        bloomTaxonomies: granular.bloomTaxonomies || [],
         parent: parentId,
         courseId: courseIdObj,
         createdAt: new Date(),
@@ -248,11 +249,13 @@ const updateObjective = async (objectiveId, updateData) => {
           granularToUpdate.push({
             id: granularId,
             name: granular.text || granular.name,
+            bloomTaxonomies: granular.bloomTaxonomies || [],
           });
         } else {
           // New granular objective - create it
           granularToCreate.push({
             name: granular.text || granular.name,
+            bloomTaxonomies: granular.bloomTaxonomies || [],
             parent: id,
             courseId: courseIdForGranular,
             createdAt: new Date(),
@@ -265,6 +268,7 @@ const updateObjective = async (objectiveId, updateData) => {
       const updatePromises = granularToUpdate.map(granular => {
         const update = {
           name: granular.name,
+          bloomTaxonomies: granular.bloomTaxonomies,
           updatedAt: new Date()
         };
         // Update courseId if provided
@@ -313,6 +317,43 @@ const updateObjective = async (objectiveId, updateData) => {
   }
 };
 
+/**
+ * Delete a learning objective and its granular objectives
+ * @param {string|ObjectId} objectiveId - The learning objective ID
+ */
+const deleteObjective = async (objectiveId) => {
+  try {
+    const db = await databaseService.connect();
+    const collection = db.collection('grasp_objective');
+    const { ObjectId } = require('mongodb');
+    
+    // Convert string ID to ObjectId if needed
+    const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
+    
+    // 1. Delete all granular objectives associated with this parent
+    await collection.deleteMany({ parent: id });
+    
+    // 2. Delete the parent objective
+    const result = await collection.deleteOne({ _id: id });
+    
+    // 3. Remove material associations
+    try {
+      await objectiveMaterialService.updateObjectiveMaterialRelations(id.toString(), []);
+    } catch (err) {
+      console.warn("Could not remove material relations during objective deletion:", err);
+    }
+    
+    if (result.deletedCount === 0) {
+      throw new Error('Objective not found');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting objective:', error);
+    throw error;
+  }
+};
+
 const getObjectiveCourseId = async (objectiveId) => {
   try {
     const db = await databaseService.connect();
@@ -336,5 +377,6 @@ module.exports = {
   getObjectiveById,
   getObjectiveWithMaterials,
   updateObjective,
+  deleteObjective,
   getObjectiveCourseId,
 };

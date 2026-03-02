@@ -680,62 +680,23 @@ async function showCustomObjectiveModal(mode = "create", editData = null) {
 
   // Update modal title and button text
   if (modalTitle) {
-    modalTitle.textContent = mode === "edit" ? "Edit Learning Objective" : "Create New Learning Objective";
+    modalTitle.textContent = mode === "edit" ? "Learning Objective Settings" : "Create New Learning Objective";
   }
   if (modalSaveButton) {
     modalSaveButton.textContent = mode === "edit" ? "Save Changes" : "Create";
   }
 
-  const nameInput = document.getElementById("custom-objective-name");
-  const container = document.getElementById("granular-objectives-container");
-
   // Clear or populate form based on mode
   if (mode === "edit" && editData) {
-    // Edit mode - populate with existing data
-    if (nameInput) {
-      nameInput.value = editData.name || "";
-    }
-
-    if (container) {
-      container.innerHTML = "";
-      // Add granular objectives from edit data
-      if (editData.granularObjectives && editData.granularObjectives.length > 0) {
-        editData.granularObjectives.forEach((item) => {
-          addGranularObjectiveInput(item.text || "", item.granularId || null);
-        });
-      } else {
-        // Add one empty input if no granular objectives
-        addGranularObjectiveInput();
-      }
-    }
-
     // Load materials with pre-selection for edit mode
     await loadMaterialsForModal(editData.objectiveId);
   } else {
-    // Create mode - clear form
-    if (nameInput) {
-      nameInput.value = "";
-    }
-
-    if (container) {
-      container.innerHTML = "";
-      // Add one initial granular objective input
-      addGranularObjectiveInput();
-    }
-
+    // Create mode
     // Load materials (no pre-selection)
     loadMaterialsForModal();
   }
 
   modal.style.display = "flex";
-
-  // Focus name input
-  if (nameInput) {
-    setTimeout(() => {
-      nameInput.focus();
-      nameInput.select();
-    }, 100);
-  }
 }
 
 async function loadMaterialsForModal(objectiveId = null) {
@@ -849,13 +810,16 @@ function displayMaterialsInModal(materials, attachedMaterialIds = new Set()) {
   });
 }
 
-function addGranularObjectiveInput(text = "", granularId = null) {
+function addGranularObjectiveInput(text = "", granularId = null, bloomTaxonomies = null) {
   const container = document.getElementById("granular-objectives-container");
   if (!container) return;
 
   const granularDiv = document.createElement("div");
   granularDiv.className = "granular-objective-item";
   granularDiv.setAttribute("data-granular-id", granularId || `new-${Date.now()}-${Math.random()}`);
+  if (bloomTaxonomies) {
+    granularDiv.setAttribute("data-bloom-taxonomies", JSON.stringify(bloomTaxonomies));
+  }
   granularDiv.style.cssText = "margin: 0; padding: 0;";
   // Trim the text value to remove any leading/trailing whitespace
   const trimmedText = text.trim();
@@ -874,8 +838,6 @@ function addGranularObjectiveInput(text = "", granularId = null) {
 
 async function handleCustomObjectiveSubmission() {
   const modal = document.getElementById("custom-objective-modal");
-  const nameInput = document.getElementById("custom-objective-name");
-  const container = document.getElementById("granular-objectives-container");
   const saveButton = document.getElementById("custom-modal-save");
   const modeInput = document.getElementById("custom-modal-mode");
   const objectiveIdInput = document.getElementById("custom-modal-objective-id");
@@ -883,38 +845,14 @@ async function handleCustomObjectiveSubmission() {
   const mode = modeInput ? modeInput.value : "create";
   const objectiveId = objectiveIdInput ? objectiveIdInput.value : null;
 
-  if (!nameInput || !nameInput.value.trim()) {
-    showToast("Please enter a learning objective name", "warning");
-    return;
-  }
-
-  // Collect granular objectives with IDs for edit mode
-  const granularInputs = container.querySelectorAll(".granular-objective-input");
-  const granularObjectives = [];
-  granularInputs.forEach((input) => {
-    const text = input.value.trim();
-    if (text) {
-      const granularItem = input.closest(".granular-objective-item");
-      const granularId = granularItem ? granularItem.getAttribute("data-granular-id") : null;
-      // Only include id if it's a valid MongoDB ObjectId (not a new item)
-      if (granularId && granularId.startsWith("new-")) {
-        granularObjectives.push({ text });
-      } else if (granularId) {
-        granularObjectives.push({ id: granularId, text });
-      } else {
-        granularObjectives.push({ text });
-      }
-    }
-  });
-
-  if (granularObjectives.length === 0) {
-    showToast("Please add at least one granular objective", "warning");
-    return;
-  }
-
   // Collect selected materials
   const materialCheckboxes = document.querySelectorAll(".material-checkbox:checked");
   const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+
+  if (selectedMaterials.length === 0) {
+    showToast("Please attach at least one course material", "warning");
+    return;
+  }
 
   // Disable button to prevent double submission
   const originalButtonText = saveButton ? saveButton.innerHTML : (mode === "edit" ? "Save Changes" : "Create");
@@ -935,12 +873,29 @@ async function handleCustomObjectiveSubmission() {
   try {
     const courseId = getCourseId();
 
-    const requestBody = {
-      name: nameInput.value.trim(),
-      granularObjectives: granularObjectives,
-      materialIds: selectedMaterials,
-      courseId: courseId,
-    };
+    let requestBody;
+    
+    if (mode === 'edit') {
+      const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
+      requestBody = {
+        name: group.title,
+        granularObjectives: group.items.map(i => ({
+          id: i.granularId,
+          text: i.text,
+          bloomTaxonomies: i.bloom || []
+        })),
+        materialIds: selectedMaterials,
+        courseId: courseId,
+      };
+    } else {
+      // Create mode generates default templates that the user can inline edit later
+      requestBody = {
+        name: "New Learning Objective",
+        granularObjectives: [],
+        materialIds: selectedMaterials,
+        courseId: courseId,
+      };
+    }
 
     // Create a timeout promise
     const timeoutPromise = new Promise((_, reject) => {
@@ -984,7 +939,7 @@ async function handleCustomObjectiveSubmission() {
       throw new Error(errorMessage);
     }
 
-    const objectiveName = nameInput.value.trim();
+    const objectiveName = requestBody.name;
 
     if (mode === "edit" && currentEditGroupId) {
       // Update existing group in UI
@@ -992,7 +947,7 @@ async function handleCustomObjectiveSubmission() {
       if (group) {
         // Update the group title
         const groupNumber = state.objectiveGroups.findIndex((g) => g.id === currentEditGroupId) + 1;
-        group.title = `Learning Objective ${groupNumber}: ${objectiveName}`;
+        group.title = objectiveName;
 
         // Update granular objectives in the group
         if (data.granularObjectives && Array.isArray(data.granularObjectives)) {
@@ -1000,7 +955,7 @@ async function handleCustomObjectiveSubmission() {
             id: parseFloat(`${groupNumber}.${index + 1}`),
             granularId: granular._id ? granular._id.toString() : null,
             text: granular.name || granular.text || "",
-            bloom: [],
+            bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
             minQuestions: 2,
             count: 2,
             mode: "manual",
@@ -1039,14 +994,14 @@ async function handleCustomObjectiveSubmission() {
         id: newGroupId,
         objectiveId: data.objective._id.toString(),
         metaId: `db-${data.objective._id}`,
-        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        title: objectiveName,
         isOpen: true,
         selected: false,
         items: data.granularObjectives.map((granular, index) => ({
           id: parseFloat(`${newGroupNumber}.${index + 1}`),
           granularId: granular._id ? granular._id.toString() : null,
           text: granular.name || granular.text || "",
-          bloom: [],
+          bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
           minQuestions: 2,
           count: 2,
           mode: "manual",
@@ -1083,7 +1038,7 @@ async function handleCustomObjectiveSubmission() {
 
       showToast("Learning objective created successfully", "success");
       announceToScreenReader(
-        `Added learning objective: ${objectiveName} with ${granularObjectives.length} granular objective${granularObjectives.length !== 1 ? 's' : ''}.`
+        `Added learning objective: ${objectiveName} with ${requestBody.granularObjectives.length} granular objective${requestBody.granularObjectives.length !== 1 ? 's' : ''}.`
       );
 
       // Refresh dropdown to include new objective
@@ -1095,9 +1050,6 @@ async function handleCustomObjectiveSubmission() {
       }
     }
 
-    // Clear the form and hide modal
-    nameInput.value = "";
-    container.innerHTML = "";
 
     // Clear material selections
     const materialCheckboxes = document.querySelectorAll(".material-checkbox");
@@ -1453,9 +1405,10 @@ function displayGeneratedObjectives(objectives) {
     granularList.style.cssText = "list-style: none; padding-left: 0; margin: 0;";
 
     objective.granularObjectives.forEach((granular, gIndex) => {
+      const granularText = typeof granular === 'string' ? granular : granular.text;
       const granularItem = document.createElement("li");
       granularItem.style.cssText = "padding: 8px 0 8px 24px; color: #4b5563; font-size: 14px; position: relative;";
-      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${granular}`;
+      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${granularText}`;
       granularList.appendChild(granularItem);
     });
 
@@ -1535,7 +1488,7 @@ async function handleAISaveObjectives() {
       if (!objective) continue;
       const requestBody = {
         name: objective.name,
-        granularObjectives: objective.granularObjectives.map(go => ({ text: go })),
+        granularObjectives: objective.granularObjectives.map(go => typeof go === 'string' ? { text: go } : { text: go.text, bloomTaxonomies: go.bloomTaxonomies }),
         materialIds: selectedMaterials,
         courseId: selectedCourse.id,
       };
@@ -1575,14 +1528,14 @@ async function handleAISaveObjectives() {
         id: newGroupId,
         objectiveId: objectiveId.toString(),
         metaId: `db-${objectiveId}`,
-        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        title: objectiveName,
         isOpen: true,
         selected: false,
         items: saved.granular.map((granular, index) => ({
           id: parseFloat(`${newGroupNumber}.${index + 1}`),
           granularId: granular._id ? granular._id.toString() : null,
           text: granular.name,
-          bloom: [],
+          bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
           minQuestions: 2,
           count: 2,
           mode: "manual",
@@ -1591,19 +1544,7 @@ async function handleAISaveObjectives() {
         })),
       };
 
-      // If no granular objectives, add a default one
-      if (newGroup.items.length === 0) {
-        newGroup.items.push({
-          id: parseFloat(`${newGroupNumber}.1`),
-          text: "Draft granular objective (edit me).",
-          bloom: [],
-          minQuestions: 2,
-          count: 2,
-          mode: "manual",
-          level: 1,
-          selected: false,
-        });
-      }
+
 
       state.objectiveGroups.push(newGroup);
     }
@@ -1753,14 +1694,14 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
         id: newGroupId,
         objectiveId: objectiveId,
         metaId: `db-${objectiveId}`,
-        title: `Learning Objective ${newGroupNumber}: ${objectiveName}`,
+        title: objectiveName,
         isOpen: true,
         selected: false,
         items: granularObjectives.map((granular, index) => ({
           id: parseFloat(`${newGroupNumber}.${index + 1}`),
           granularId: granular._id ? granular._id.toString() : null,
           text: granular.name,
-          bloom: [],
+          bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
           minQuestions: 2,
           count: 2,
           mode: "manual",
@@ -1769,19 +1710,7 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
         })),
       };
 
-      // If no granular objectives, add a default one
-      if (newGroup.items.length === 0) {
-        newGroup.items.push({
-          id: parseFloat(`${newGroupNumber}.1`),
-          text: "Draft granular objective (edit me).",
-          bloom: [],
-          minQuestions: 2,
-          count: 2,
-          mode: "manual",
-          level: 1,
-          selected: false,
-        });
-      }
+
 
       // Append to the end of the groups array
       state.objectiveGroups.push(newGroup);
@@ -1825,22 +1754,69 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
 }
 
 function renumberObjectiveGroups() {
-  state.objectiveGroups.forEach((group, index) => {
-    const groupNumber = index + 1;
-    const titleMatch = group.title.match(/^Learning Objective \d+: (.+)$/);
-    if (titleMatch) {
-      group.title = `Learning Objective ${groupNumber}: ${titleMatch[1]}`;
-    }
-  });
+  // Title prefixing has been removed, so this function is intentionally empty.
+  // Group numbers are implied by their array index when rendering.
 }
 
 // ===== DELETE OBJECTIVE GROUP FUNCTION =====
 
-function deleteObjectiveGroup(groupId) {
+async function deleteObjectiveGroup(groupId, action = null) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   if (!group) return;
 
-  // Remove the group
+  if (!action) {
+    // Stage 1: Ask the user what they want to do
+    currentEditGroupId = groupId;
+    const deleteModal = document.getElementById("delete-confirmation-modal");
+    
+    if (group.objectiveId) {
+      if (deleteModal) deleteModal.style.display = "flex";
+    } else {
+        // If it's a completely new unsaved draft group, just strip it from view.
+        deleteObjectiveGroup(groupId, 'view-only'); 
+    }
+    return;
+  }
+
+  // Stage 2: Actually perform the deletion based on user choice
+  if (action === 'db-complete' && group.objectiveId) {
+    const deletingToast = showToast("Deleting objective from database...", "info");
+    try {
+      const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+         method: 'DELETE',
+      });
+      
+      let data;
+      try {
+        const responseText = await response.text();
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error('Invalid response from server');
+      }
+      
+      if (!response.ok || !data.success) {
+         throw new Error(data.error || "Failed to delete learning objective from database");
+      }
+      
+      if (deletingToast) deletingToast.remove();
+      showToast("Objective fully deleted from database", "success");
+      
+      // Update dropdown options to permanently remove it
+      try {
+         await initializeAddObjectivesDropdown();
+      } catch(err) {
+         console.error('Failed to update dropdown post-deletion', err);
+      }
+      
+    } catch (error) {
+       console.error("Error full-deleting group:", error);
+       if (deletingToast) deletingToast.remove();
+       showToast(error.message || "Failed to delete objective from database", "error");
+       return; // Abort UI removal if DB delete fails
+    }
+  }
+
+  // Remove the group from UI state
   state.objectiveGroups = state.objectiveGroups.filter(
     (g) => g.id !== groupId
   );
@@ -1851,27 +1827,77 @@ function deleteObjectiveGroup(groupId) {
   // Update UI
   renderObjectiveGroups();
 
-  // Update dropdown to re-enable deleted objective
-  updateDropdownDisabledState();
-
-  // Announce deletion
-  announceToScreenReader(`Deleted ${group.title} from page.`);
+  if (action === 'view-only') {
+     // Update dropdown to re-enable deleted objective so it can be added back
+     updateDropdownDisabledState();
+     announceToScreenReader(`Removed ${group.title} from view.`);
+  } else {
+      announceToScreenReader(`Deleted ${group.title} completely.`);
+  }
+  
+  currentEditGroupId = null;
 }
 
-function deleteGranularObjective(groupId, itemId) {
+async function deleteGranularObjective(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   if (!group) return;
 
-  const item = group.items.find((i) => i.id === itemId);
-  if (!item) return;
+  const itemIndex = group.items.findIndex((i) => i.id === itemId);
+  if (itemIndex === -1) return;
+  
+  const item = group.items[itemIndex];
 
-  // Remove the item from the group
-  group.items = group.items.filter((i) => i.id !== itemId);
+  // Remove the item from the group array
+  group.items.splice(itemIndex, 1);
 
-  // Update UI
+  // If this objective is linked to the backend, save the change
+  if (group.objectiveId) {
+    const savingToast = showToast("Deleting granular objective...", "info");
+    try {
+      const courseId = getCourseId();
+
+      const requestBody = {
+        name: group.title, // Group title is already cleaned from prefix
+        courseId: courseId,
+        materialIds: group.materialIds || [],
+        granularObjectives: group.items.map(i => ({
+          id: i.granularId,
+          text: i.text,
+          bloomTaxonomies: i.bloom || []
+        }))
+      };
+
+      const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete from database");
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || "Failed to delete from database");
+      }
+
+      if (savingToast) savingToast.remove();
+      showToast("Granular objective deleted successfully", "success");
+    } catch (err) {
+      console.error("Error deleting granular objective:", err);
+      if (savingToast) savingToast.remove();
+      showToast(err.message || "Failed to delete objective. Reverting.", "error");
+      
+      // Revert the deletion in UI state
+      group.items.splice(itemIndex, 0, item);
+      renderObjectiveGroups();
+      return;
+    }
+  }
+
+  // Update UI and announce
   renderObjectiveGroups();
-
-  // Announce deletion
   announceToScreenReader(`Deleted granular objective: ${item.text}`);
 }
 
@@ -2137,8 +2163,20 @@ function renderObjectiveGroups() {
     });
     // Enable continue button when objectives are added
     updateNavigationButtons();
+
+    // Trigger auto-resize for all textareas so they fit content perfectly on load
+    setTimeout(autoResizeTextareas, 0);
   }
 
+}
+
+function autoResizeTextareas() {
+  const textareas = document.querySelectorAll('.objective-group__title-input, .granular-objective-input');
+  textareas.forEach(textarea => {
+    // Reset height to auto first to get true scrollHeight (especially when expanding/collapsing)
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  });
 }
 
 function createObjectiveGroup(group) {
@@ -2146,6 +2184,8 @@ function createObjectiveGroup(group) {
   groupElement.className = `objective-group ${group.isOpen ? "objective-group--expanded" : "objective-group--collapsed"
     }`;
   groupElement.setAttribute("data-group-id", group.id);
+
+  const currentName = group.title;
 
   const itemCount = group.items.length;
   const totalCount = group.items.reduce((sum, item) => sum + item.count, 0);
@@ -2162,35 +2202,38 @@ function createObjectiveGroup(group) {
 
   groupElement.innerHTML = `
         <div class="objective-group__header">
-            <div class="objective-group__header-left">
+            <div class="objective-group__header-left" style="flex: 1; display: flex; align-items: center; min-width: 0;">
                 <button type="button" 
                     class="objective-group__delete-btn" 
                     onclick="deleteObjectiveGroup(${group.id})"
                     title="Delete learning objective from page"
                     aria-label="Delete ${group.title}"
+                    style="flex-shrink: 0;"
                 >
                     <i class="fas fa-trash-alt"></i>
                 </button>
-                <h3 class="objective-group__title" 
-                    tabindex="0" 
-                    onclick="toggleObjectiveGroup(${group.id})"
-                >${group.title}</h3>
+                <textarea class="objective-group__title-input" rows="1"
+                    title="Click to edit title"
+                    onblur="updateMetaObjectiveTitle(${group.id}, this.value)"
+                    onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
+                    oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                    style="background: transparent; border: 1px solid transparent; padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
+                    onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                    onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
+                >${currentName.replace(/"/g, '&quot;')}</textarea>
             </div>
             <div class="objective-group__header-right">
                 ${group.objectiveId ? `
                 <button type="button" 
                     class="objective-group__edit-btn" 
                     onclick="editMetaObjective(${group.id})"
-                    title="Edit learning objective"
-                    aria-label="Edit ${group.title}"
+                    title="Objective Settings"
+                    aria-label="Settings for ${group.title}"
                 >
-                    <i style="margin-right: 5px;" class="fas fa-pencil-alt"></i>
-                    Edit
+                    <i class="fas fa-cog"></i>
                 </button>
                 ` : ''}
-                <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id
-    })">
-                    <span>${itemCount} objectives</span>
+                <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id})">
                     <i class="fas fa-chevron-down"></i>
                 </div>
             </div>
@@ -2223,16 +2266,16 @@ function createObjectiveGroup(group) {
             ${group.items
       .map((item) => createObjectiveItem(item, group.id))
       .join("")}
-            ${itemCount > 0
-      ? `
-                <div class="objective-group__footer ${isWarning ? "objective-group__footer--warning" : ""
-      }">
-                    Total questions: ${totalCount} Minimum required per learning objective: 5 (${totalCount >= 5 ? "≥5" : "<5"
-      })
+            <div class="objective-group__footer ${isWarning ? "objective-group__footer--warning" : ""}" style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="objective-group__footer-left">
+                    <button type="button" class="btn btn--secondary btn--small" onclick="addNewGranularObjective(${group.id})" style="background: white; border: 1px solid #3498db; color: #3498db; border-radius: 4px; padding: 6px 12px; font-weight: 600; font-size: 12px; transition: all 0.2s; display: flex; align-items: center; gap: 6px;" onmouseover="this.style.backgroundColor='#f0f7ff'; this.style.borderColor='#2980b9';" onmouseout="this.style.backgroundColor='white'; this.style.borderColor='#3498db';">
+                        <i class="fas fa-plus"></i> Add Granular Objective
+                    </button>
                 </div>
-            `
-      : ""
-    }
+                <div class="objective-group__footer-right">
+                    Total questions: ${totalCount} Minimum required per learning objective: 5 (${totalCount >= 5 ? "≥5" : "<5"})
+                </div>
+            </div>
         </div>
     `;
 
@@ -2300,10 +2343,18 @@ function createObjectiveItem(item, groupId) {
                     <i class="fas fa-trash-alt"></i>
                 </button>
             </div>
-            <div class="objective-item__content">
-                <div class="objective-item__header">
-                    <div class="objective-item__text">
-                        ${item.text}
+            <div class="objective-item__content" style="flex: 1; min-width: 0;">
+                <div class="objective-item__header" style="flex: 1; display: flex; width: 100%; min-width: 0;">
+                    <div class="objective-item__text" style="flex: 1; width: 100%; min-width: 0;">
+                        <textarea class="granular-objective-input" rows="1"
+                            title="Click to edit granular objective"
+                            onblur="updateGranularObjectiveText(${groupId}, ${item.id}, this.value)"
+                            onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
+                            oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                            style="background: transparent; border: 1px solid transparent; padding: 4px; margin: 0; width: 100%; box-sizing: border-box; font-family: inherit; font-size: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
+                            onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                            onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
+                        >${item.text.replace(/"/g, '&quot;')}</textarea>
                     </div>
                     ${subLOBadge}
                 </div>
@@ -2354,6 +2405,51 @@ function toggleBloomChip(groupId, itemId, level) {
       item.bloom.push(level);
     }
     renderObjectiveGroups();
+    
+    // Auto-save the new bloom selection if it's an existing objective
+    if (group.objectiveId) {
+      updateGranularObjectiveBloom(groupId);
+    }
+  }
+}
+
+/**
+ * Handle auto-saving Bloom taxonomy changes
+ */
+async function updateGranularObjectiveBloom(groupId) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group || !group.objectiveId) return;
+
+  try {
+    const courseId = getCourseId();
+    const currentName = group.title;
+
+    const requestBody = {
+      name: currentName,
+      courseId: courseId,
+      materialIds: group.materialIds || [],
+      // Re-map the granular objectives, implicitly including our bloom update via state
+      granularObjectives: group.items.map(i => ({
+        id: i.granularId,
+        text: i.text,
+        bloomTaxonomies: i.bloom || []
+      }))
+    };
+
+    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+        throw new Error("Failed to save bloom taxonomy");
+    }
+    
+    // Silently succeed, no toast needed for every checkbox click
+  } catch (err) {
+    console.error("Error updating bloom taxonomy:", err);
+    showToast("Failed to save changes automatically. Try refreshing.", "error");
   }
 }
 
@@ -2402,9 +2498,7 @@ async function editMetaObjective(groupId) {
     return;
   }
 
-  // Extract the objective name from the title (remove "Learning Objective X: " prefix)
-  const titleMatch = group.title.match(/^Learning Objective \d+: (.+)$/);
-  const currentName = titleMatch ? titleMatch[1] : group.title;
+  const currentName = group.title;
 
   // Use the shared modal in edit mode
   currentEditGroupId = groupId;
@@ -2413,6 +2507,194 @@ async function editMetaObjective(groupId) {
     name: currentName,
     granularObjectives: group.items || [],
   });
+}
+
+/**
+ * Handle inline title edits for Meta Learning Objectives
+ */
+async function updateMetaObjectiveTitle(groupId, newTitle) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group || !group.objectiveId) return;
+
+  // Since the user requested the removal of "Learning Objective N: " 
+  // group.title will exactly match the intended objective name.
+  const currentName = group.title;
+  const trimmedNewTitle = newTitle.trim();
+
+  // Abort if no change or empty
+  if (!trimmedNewTitle || currentName === trimmedNewTitle) {
+    if (!trimmedNewTitle) {
+        // Reset view if empty
+        renderObjectiveGroups(); 
+    }
+    return;
+  }
+
+  const savingToast = showToast("Saving title...", "info");
+
+  try {
+    const courseId = getCourseId();
+
+    // The PUT endpoint requires name, materialIds, and granularObjectives
+    const requestBody = {
+      name: trimmedNewTitle,
+      courseId: courseId,
+      // Pass existing materials and granular objectives unchanged
+      materialIds: group.materialIds || [],
+      granularObjectives: (group.items || []).map(item => ({
+        id: item.granularId, // Maps back to existing ID
+        text: item.text,
+        bloomTaxonomies: item.bloom || []
+      }))
+    };
+
+    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    let data;
+    try {
+      const responseText = await response.text();
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error('Invalid response from server');
+    }
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || "Failed to update learning objective title");
+    }
+
+    // Update state and UI
+    group.title = trimmedNewTitle;
+    
+    if (savingToast) savingToast.remove();
+    showToast("Title updated successfully", "success");
+  } catch (err) {
+    console.error("Error updating title:", err);
+    if (savingToast) savingToast.remove();
+    showToast(err.message || "Failed to save title", "error");
+    renderObjectiveGroups(); // Revert UI on failure
+  }
+}
+
+/**
+ * Handle inline text edits for Granular Objectives
+ */
+async function updateGranularObjectiveText(groupId, itemId, newText) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group || !group.objectiveId) return;
+
+  const item = group.items.find((i) => i.id === itemId);
+  if (!item) return;
+
+  const trimmedNewText = newText.trim();
+
+  // Abort if no change or empty
+  if (!trimmedNewText || item.text.trim() === trimmedNewText) {
+    if (!trimmedNewText) {
+        // Reset view if empty
+        renderObjectiveGroups(); 
+    }
+    return;
+  }
+
+  // Update local state temporarily
+  const previousText = item.text;
+  item.text = trimmedNewText;
+
+  const savingToast = showToast("Saving granular objective...", "info");
+
+  try {
+    const courseId = getCourseId();
+    const currentName = group.title;
+
+    // The PUT endpoint requires name, materialIds, and granularObjectives
+    const requestBody = {
+      name: currentName,
+      courseId: courseId,
+      materialIds: group.materialIds || [],
+      // Re-map the granular objectives, implicitly including our text update via state
+      granularObjectives: group.items.map(i => ({
+        id: i.granularId,
+        text: i.text,
+        bloomTaxonomies: i.bloom || []
+      }))
+    };
+
+    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    let data;
+    try {
+      const responseText = await response.text();
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error('Invalid response from server');
+    }
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || "Failed to update granular objective");
+    }
+
+    // Update newly created items with their DB-generated IDs
+    if (data.granularObjectives && Array.isArray(data.granularObjectives)) {
+      data.granularObjectives.forEach(dbObj => {
+        // Try to match items that don't have an ID yet by their exact text
+        const matchedItem = group.items.find(i => (!i.granularId && i.text === (dbObj.name || dbObj.text)) || i.granularId === dbObj._id?.toString());
+        if (matchedItem && !matchedItem.granularId && dbObj._id) {
+          matchedItem.granularId = dbObj._id.toString();
+        }
+      });
+    }
+
+    if (savingToast) savingToast.remove();
+    showToast("Granular objective updated successfully", "success");
+    // Background render to clean up focus states
+    renderObjectiveGroups();
+  } catch (err) {
+    console.error("Error updating granular objective:", err);
+    if (savingToast) savingToast.remove();
+    showToast(err.message || "Failed to save granular objective", "error");
+    // Revert local state
+    item.text = previousText;
+    renderObjectiveGroups(); 
+  }
+}
+
+function addNewGranularObjective(groupId) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group) return;
+
+  const newIndex = group.items.length + 1;
+  const newItem = {
+    id: Date.now() + newIndex,
+    granularId: null, // Will be assigned by backend upon first blur/save
+    text: "",
+    bloom: [],
+    minQuestions: 2,
+    count: 2,
+    mode: "manual",
+    level: 1,
+    selected: false,
+  };
+
+  group.items.push(newItem);
+  renderObjectiveGroups();
+
+  // Focus the newly created input
+  setTimeout(() => {
+    const inputs = document.querySelectorAll(`[data-group-id="${groupId}"] .granular-objective-input`);
+    if (inputs && inputs.length > 0) {
+      const lastInput = inputs[inputs.length - 1];
+      lastInput.focus();
+      lastInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
 }
 
 
@@ -2509,13 +2791,33 @@ function initializeModals() {
   const deleteModal = document.getElementById("delete-confirmation-modal");
   const deleteModalClose = document.getElementById("delete-modal-close");
   const deleteModalCancel = document.getElementById("delete-modal-cancel");
-  const deleteModalConfirm = document.getElementById("delete-modal-confirm");
+  const deleteModalViewOnly = document.getElementById("delete-modal-view-only");
+  const deleteModalDbComplete = document.getElementById("delete-modal-db-complete");
 
   if (deleteModalClose) {
     deleteModalClose.addEventListener("click", () => hideModal(deleteModal));
   }
   if (deleteModalCancel) {
     deleteModalCancel.addEventListener("click", () => hideModal(deleteModal));
+  }
+  
+  if (deleteModalViewOnly) {
+    deleteModalViewOnly.addEventListener("click", () => {
+      // Use the stored edit group id to know which objective group to delete
+      if (currentEditGroupId) {
+        deleteObjectiveGroup(currentEditGroupId, 'view-only');
+      }
+      hideModal(deleteModal);
+    });
+  }
+  
+  if (deleteModalDbComplete) {
+    deleteModalDbComplete.addEventListener("click", () => {
+      if (currentEditGroupId) {
+        deleteObjectiveGroup(currentEditGroupId, 'db-complete');
+      }
+      hideModal(deleteModal);
+    });
   }
 
   // Granularization modal
@@ -3326,6 +3628,8 @@ function showToast(message, type = "info") {
       toast.remove();
     }
   }, 5000);
+
+  return toast;
 }
 
 function showSuccessModal(message, questionsCount) {
@@ -3602,6 +3906,8 @@ async function handleSaveToQuiz() {
 window.incrementCount = incrementCount;
 window.decrementCount = decrementCount;
 window.editMetaObjective = editMetaObjective;
+window.updateMetaObjectiveTitle = updateMetaObjectiveTitle;
+window.updateGranularObjectiveText = updateGranularObjectiveText;
 window.deleteObjectiveGroup = deleteObjectiveGroup;
 window.deleteGranularObjective = deleteGranularObjective;
 window.toggleGranularSelection = toggleGranularSelection;

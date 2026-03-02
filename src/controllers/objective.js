@@ -1,5 +1,5 @@
 const { isUserInCourse } = require('../services/user-course');
-const { getObjectiveCourseId, getParentObjectives, getGranularObjectives, createObjective, updateObjective } = require('../services/objective');
+const { getObjectiveCourseId, getParentObjectives, getGranularObjectives, createObjective, updateObjective, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
@@ -208,11 +208,44 @@ const updateObjectiveHandler = async (req, res) => {
   }
 };
 
+const deleteObjectiveHandler = async (req, res) => {
+  try {
+    const objectiveId = req.params.id;
+
+    // We still need to verify course permission for deletion.
+    const courseId = await getObjectiveCourseId(objectiveId);
+
+    if (courseId && !isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
+    await deleteObjective(objectiveId);
+
+    res.json({
+      success: true,
+      message: 'Learning objective deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting objective:', error);
+    if (error.message === 'Objective not found') {
+      return res.status(404).json({
+        success: false,
+        error: 'Learning objective not found',
+      });
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete learning objective',
+    });
+  }
+};
+
 module.exports = {
   getAllObjectives,
   getGranularObjectivesHandler,
   createObjectiveHandler,
   getObjectiveMaterials,
   updateObjectiveMaterials,
-  updateObjectiveHandler
+  updateObjectiveHandler,
+  deleteObjectiveHandler
 };
