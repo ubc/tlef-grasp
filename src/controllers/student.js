@@ -155,8 +155,9 @@ const getQuizQuestionsHandler = async (req, res) => {
       });
     }
 
-    // Get questions, but only approved ones (for students)
-    const questions = await quizService.getQuizQuestions(quizId, true); // approvedOnly = true
+    // Get personalized questions for the student
+    const userId = req.user._id || req.user.id;
+    const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
 
     if (!questions || questions.length === 0) {
       return res.json({
@@ -199,6 +200,10 @@ const getQuizQuestionsHandler = async (req, res) => {
         question: questionText || "Question text not available",
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
+        // Keep metadata for performance tracking
+        learningObjectiveId: q.learningObjectiveId,
+        granularObjectiveId: q.granularObjectiveId,
+        bloom: q.bloom
       };
     });
 
@@ -214,14 +219,9 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    const shuffledQuestions = shuffleArray(transformedQuestions);
-    const randomizedQuestions = shuffledQuestions.map(q => shuffleQuestionOptions(q));
-
-    // Apply question limit if set
-    let finalQuestions = randomizedQuestions;
-    if (quiz.questionLimit && quiz.questionLimit > 0) {
-      finalQuestions = randomizedQuestions.slice(0, quiz.questionLimit);
-    }
+    // Questions are already selected and ordered by service logic (LO distribution, etc.)
+    // We just need to shuffle options for each question
+    const randomizedQuestions = transformedQuestions.map(q => shuffleQuestionOptions(q));
 
     res.json({
       success: true,
@@ -230,7 +230,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0,
-        questions: finalQuestions,
+        questions: randomizedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
@@ -267,8 +267,12 @@ const submitQuizHandler = async (req, res) => {
     }
 
     // Validation
-    const questions = await quizService.getQuizQuestions(quizId, true);
-    const totalQuestions = questions ? questions.length : 0;
+    // We need to fetch questions and enrich them to ensure learningObjectiveId is available
+    const rawQuestions = await quizService.getQuizQuestions(quizId, true);
+    // Enrich with parent LO to ensure performance tracking can link questions to LOs properly
+    const questions = rawQuestions ? await quizService.enrichQuestionsWithLO(rawQuestions) : [];
+    
+    const totalQuestions = questions.length;
 
     if (totalQuestions === 0) {
       return res.status(400).json({
@@ -280,7 +284,7 @@ const submitQuizHandler = async (req, res) => {
     const score = Number(clientScore);
     const correctAnswers = Number(clientCorrectAnswers) || 0;
 
-    // Award achievements
+    // Record performance and Award achievements
     let newAchievements = [];
     try {
       const userId = req.user._id || req.user.id;
@@ -288,6 +292,25 @@ const submitQuizHandler = async (req, res) => {
       const quizName = quiz.name || "Quiz";
 
       if (userId && courseId) {
+        // Record performance for each question
+        for (const q of questions) {
+            const questionId = q._id.toString();
+            const selectedOption = answers[questionId];
+            if (selectedOption) {
+                const isCorrect = selectedOption === q.correctAnswer;
+                await quizService.saveStudentPerformance({
+                    userId: userId.toString(),
+                    quizId,
+                    questionId,
+                    learningObjectiveId: q.learningObjectiveId,
+                    granularObjectiveId: q.granularObjectiveId,
+                    bloom: q.bloom,
+                    isCorrect
+                });
+            }
+        }
+
+        // Award achievements
         newAchievements = await achievementService.awardQuizAchievements(
           userId.toString(),
           courseId.toString(),
@@ -296,8 +319,8 @@ const submitQuizHandler = async (req, res) => {
           score
         );
       }
-    } catch (achievementError) {
-      console.error("Error awarding achievements:", achievementError);
+    } catch (performanceError) {
+      console.error("Error recording performance or awarding achievements:", performanceError);
     }
 
     res.json({

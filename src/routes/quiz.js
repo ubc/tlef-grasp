@@ -45,5 +45,11 @@ router.post("/:quizId/questions", express.json(), quizController.addQuizQuestion
  */
 router.get("/:quizId/questions", quizController.getQuizQuestionsHandler);
 
+/**
+ * POST /api/quiz/:quizId/performance
+ * Record student performance for a quiz question
+ */
+router.post("/:quizId/performance", express.json(), quizController.recordPerformanceHandler);
+
 module.exports = router;
 

@@ -308,6 +308,288 @@ const getQuizQuestions = async (quizId, approvedOnly = false) => {
     }
 };
 
+/**
+ * Enrich questions with their parent Learning Objective ID
+ * @param {Array} questions - Array of questions
+ * @returns {Promise<Array>} Enriched questions
+ */
+const enrichQuestionsWithLO = async (questions) => {
+    try {
+        const db = await databaseService.connect();
+        const objectiveCollection = db.collection("grasp_objective");
+        
+        // Get all unique granular objective IDs from questions
+        const granularIds = [...new Set(
+            questions
+                .map(q => q.granularObjectiveId)
+                .filter(id => id != null)
+        )];
+        
+        if (granularIds.length === 0) return questions;
+
+        const granularObjectives = await objectiveCollection.find({ 
+            _id: { $in: granularIds.map(id => new ObjectId(id)) } 
+        }).toArray();
+
+        const granularToParentMap = new Map();
+        granularObjectives.forEach(granular => {
+            granularToParentMap.set(granular._id.toString(), granular.parent);
+        });
+
+        return questions.map(question => {
+            const granularId = question.granularObjectiveId;
+            let parentObjectiveId = null;
+            
+            if (granularId) {
+                parentObjectiveId = granularToParentMap.get(granularId.toString());
+            }
+            
+            return {
+                ...question,
+                learningObjectiveId: parentObjectiveId,
+            };
+        });
+    } catch (error) {
+        console.error("Error enriching questions with LO:", error);
+        return questions;
+    }
+};
+
+const BLOOM_ORDER = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
+
+/**
+ * Get personalized quiz questions for a student
+ * @param {string} quizId - The quiz ID
+ * @param {string} userId - The user ID
+ * @returns {Promise<Array>} Array of selected questions
+ */
+const getQuizQuestionsForStudent = async (quizId, userId) => {
+    try {
+        const db = await databaseService.connect();
+        const quiz = await getQuizById(quizId);
+        if (!quiz) throw new Error("Quiz not found");
+
+        const questionLimit = quiz.questionLimit || 10;
+        
+        // Get all approved questions
+        const allQuestions = await getQuizQuestions(quizId, true);
+        if (allQuestions.length === 0) return [];
+
+        // Enrich questions with LO ID
+        const enrichedQuestions = await enrichQuestionsWithLO(allQuestions);
+
+        // Fetch student performance
+        const performanceCollection = db.collection("grasp_student_performance");
+        const userPerformance = await performanceCollection.find({ 
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId 
+        }).sort({ createdAt: -1 }).toArray();
+
+        // Group questions by LO
+        const loGroups = {};
+        enrichedQuestions.forEach(q => {
+            const loId = q.learningObjectiveId?.toString() || "unassigned";
+            if (!loGroups[loId]) loGroups[loId] = [];
+            loGroups[loId].push(q);
+        });
+
+        const loIds = Object.keys(loGroups);
+        if (loIds.length === 0) return [];
+
+        // Determine target Bloom level for each LO based on performance
+        const loTargetBloom = {};
+        
+        // Group LOs by their performance criteria
+        const groups = { 
+            step3: [], // 3 correct in last 3
+            step2: [], // 2 correct in last 2
+            step1: []  // 1 correct in last 1
+        };
+
+        loIds.forEach(loId => {
+            const loPerf = userPerformance.filter(p => p.learningObjectiveId?.toString() === loId);
+            const lastThree = loPerf.slice(0, 3);
+            const lastTwo = loPerf.slice(0, 2);
+            const lastOne = loPerf.slice(0, 1);
+            
+            if (lastThree.length === 3 && lastThree.every(p => p.isCorrect)) {
+                groups.step3.push(loId);
+            } else if (lastTwo.length === 2 && lastTwo.every(p => p.isCorrect)) {
+                groups.step2.push(loId);
+            } else if (lastOne.length === 1 && lastOne.every(p => p.isCorrect)) {
+                groups.step1.push(loId);
+            }
+            
+            // Default target bloom (max achieved)
+            const correctBlooms = loPerf.filter(p => p.isCorrect).map(p => p.bloom);
+            let currentBloomIndex = 0;
+            if (correctBlooms.length > 0) {
+                currentBloomIndex = BLOOM_ORDER.reduce((acc, b, idx) => {
+                    if (correctBlooms.includes(b)) return Math.max(acc, idx);
+                    return acc;
+                }, 0);
+            }
+            loTargetBloom[loId] = { index: currentBloomIndex, stepUp: false };
+        });
+
+        // Apply step-up probabilities to groups
+        // 10% of 3-correct group
+        groups.step3.filter(() => Math.random() < 0.10).forEach(id => loTargetBloom[id].stepUp = true);
+        // 20% of 2-correct group
+        groups.step2.filter(() => Math.random() < 0.20).forEach(id => loTargetBloom[id].stepUp = true);
+        // 50% of 1-correct group
+        groups.step1.filter(() => Math.random() < 0.50).forEach(id => loTargetBloom[id].stepUp = true);
+
+        // Finalize target bloom strings
+        loIds.forEach(loId => {
+            const { index, stepUp } = loTargetBloom[loId];
+            if (stepUp && index < BLOOM_ORDER.length - 1) {
+                loTargetBloom[loId] = BLOOM_ORDER[index + 1];
+            } else {
+                loTargetBloom[loId] = BLOOM_ORDER[index];
+            }
+        });
+
+        // Identify questions from the most recent session
+        // (A session is defined as all attempts sharing the same latest 'quizId' and 'createdAt' timestamp for this user)
+        const lastSessionQuestionIds = new Set();
+        if (userPerformance.length > 0) {
+            const latestAttempt = userPerformance[0];
+            // Questions taken in the same quiz session likely have the same or very close createdAt
+            // For robustness, we'll take all questionIds from the very last attempt group
+            const latestQuizId = latestAttempt.quizId.toString();
+            const latestTime = latestAttempt.createdAt.getTime();
+            
+            // Allow 5 minutes window for a single session
+            userPerformance.forEach(p => {
+                const diff = Math.abs(p.createdAt.getTime() - latestTime);
+                if (p.quizId.toString() === latestQuizId && diff < 5 * 60 * 1000) {
+                    lastSessionQuestionIds.add(p.questionId.toString());
+                }
+            });
+        }
+
+        // Map most recent result for each combination of (LO + Bloom)
+        const latestOutcomeByLoBloom = {};
+        userPerformance.forEach(p => {
+            if (!p.learningObjectiveId) return;
+            const key = `${p.learningObjectiveId.toString()}_${p.bloom}`;
+            if (latestOutcomeByLoBloom[key] === undefined) {
+                latestOutcomeByLoBloom[key] = p.isCorrect;
+            }
+        });
+
+        // Pick questions
+        let selectedQuestions = [];
+        const seenQuestionIds = new Set(userPerformance.map(p => p.questionId.toString()));
+
+        loIds.forEach(loId => {
+            // 1. Shuffle first to ensure random tie-breaking
+            let candidates = [...loGroups[loId]].sort(() => Math.random() - 0.5);
+            
+            // 2. Sort candidates into 5 tiers based on the USER'S SPECIFIC REQUEST:
+            // "previously wrong meaning the question in same learning objective and same bloom taxonomy was wrong in last quiz"
+            // 1) Target Bloom + Never Seen (Unseen)
+            // 2) Target Bloom + Previous (LO+Bloom) Wrong + Unseen (not in last session)
+            // 3) Target Bloom + Previous (LO+Bloom) Wrong + Seen (in last session)
+            // 4) Target Bloom + Previous (LO+Bloom) Correct + Unseen (not in last session)
+            // 5) Target Bloom + Previous (LO+Bloom) Correct + Seen (in last session)
+            candidates.sort((a, b) => {
+                const aTarget = a.bloom === loTargetBloom[loId];
+                const bTarget = b.bloom === loTargetBloom[loId];
+                const aId = a._id.toString();
+                const bId = b._id.toString();
+                const aSeenEver = seenQuestionIds.has(aId);
+                const bSeenEver = seenQuestionIds.has(bId);
+                const aSeenLast = lastSessionQuestionIds.has(aId);
+                const bSeenLast = lastSessionQuestionIds.has(bId);
+                
+                // Get the latest outcome for this question's specific LO + Bloom combination
+                const aOutcomeKey = `${loId}_${a.bloom}`;
+                const bOutcomeKey = `${loId}_${b.bloom}`;
+                const aLatestCorrect = latestOutcomeByLoBloom[aOutcomeKey];
+                const bLatestCorrect = latestOutcomeByLoBloom[bOutcomeKey];
+
+                // Helper to get priority weight (lower is better, 0-4 for Target, 10-14 for Other)
+                const getWeight = (isTarget, seenEver, lastCorrect, seenLast) => {
+                    let base = isTarget ? 0 : 10;
+                    if (!seenEver) return base + 0;                      // Tier 1: Never Seen
+                    if (lastCorrect === false) return base + (seenLast ? 2 : 1); // Tier 2/3: Wrong
+                    return base + (seenLast ? 4 : 3);                   // Tier 4/5: Correct
+                };
+
+                const aWeight = getWeight(aTarget, aSeenEver, aLatestCorrect, aSeenLast);
+                const bWeight = getWeight(bTarget, bSeenEver, bLatestCorrect, bSeenLast);
+
+                if (aWeight !== bWeight) return aWeight - bWeight;
+
+                // Tie-breaker: Bloom distance
+                const aIdx = BLOOM_ORDER.indexOf(a.bloom);
+                const bIdx = BLOOM_ORDER.indexOf(b.bloom);
+                const targetIdx = BLOOM_ORDER.indexOf(loTargetBloom[loId]);
+                return Math.abs(aIdx - targetIdx) - Math.abs(bIdx - targetIdx);
+            });
+
+            // Tag each question with its LO for equal distribution logic below
+            candidates.forEach(q => q.tempLoId = loId);
+            selectedQuestions.push(...candidates);
+        });
+
+        // Equal distribution logic: round-robin through LOs until limit reached
+        const finalSelection = [];
+        const loQueues = loIds.map(id => selectedQuestions.filter(q => q.tempLoId === id));
+        
+        let loIdx = 0;
+        while (finalSelection.length < questionLimit) {
+            let found = false;
+            // Try to find one from each LO in turn
+            for (let i = 0; i < loIds.length; i++) {
+                const currentLoQueue = loQueues[(loIdx + i) % loIds.length];
+                if (currentLoQueue.length > 0) {
+                    finalSelection.push(currentLoQueue.shift());
+                    found = true;
+                    if (finalSelection.length >= questionLimit) break;
+                }
+            }
+            if (!found) break; // No more questions available
+            loIdx = (loIdx + 1) % loIds.length;
+        }
+
+        return finalSelection;
+    } catch (error) {
+        console.error("Error in getQuizQuestionsForStudent:", error);
+        throw error;
+    }
+};
+
+/**
+ * Save student performance for a quiz question
+ * @param {Object} performanceData - { userId, quizId, questionId, learningObjectiveId, granularObjectiveId, bloom, isCorrect }
+ * @returns {Promise<Object>} The insert result
+ */
+const saveStudentPerformance = async (performanceData) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_student_performance");
+        
+        const data = {
+            userId: ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId,
+            quizId: ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId,
+            questionId: ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId,
+            learningObjectiveId: ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId,
+            granularObjectiveId: ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId,
+            bloom: performanceData.bloom,
+            isCorrect: !!performanceData.isCorrect,
+            createdAt: new Date()
+        };
+        
+        const result = await collection.insertOne(data);
+        return result;
+    } catch (error) {
+        console.error("Error saving student performance:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createQuiz,
     getQuizzesByCourse,
@@ -316,5 +598,7 @@ module.exports = {
     deleteQuiz,
     addQuestionsToQuiz,
     getQuizQuestions,
+    getQuizQuestionsForStudent,
+    saveStudentPerformance,
 };
 

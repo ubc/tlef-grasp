@@ -30,6 +30,30 @@
     color: #7f8c8d;
 }
 
+.quiz-section {
+  margin-bottom: 40px;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.quiz-subgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.quiz-date.due {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
 .quiz-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -340,16 +364,7 @@
 }
 
 .question-content p {
-    font-size: 18px;
-    line-height: 1.8;
-    color: #34495e;
-}
-
-/* Answer Options */
-.answer-options {
-    display: grid;
-    gap: 15px;
-    margin-bottom: 30px;
+    margin-bottom: 15px;
 }
 
 .answer-option {

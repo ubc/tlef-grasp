@@ -213,12 +213,49 @@ const getQuizQuestionsHandler = async (req, res) => {
     const { quizId } = req.params;
     const { approvedOnly } = req.query;
     const approvedOnlyBool = approvedOnly === 'true' || approvedOnly === true;
-    const questions = await quizService.getQuizQuestions(quizId, approvedOnlyBool);
+    
+    // Always use personalized selection logic, treating everyone as a student.
+    // There is no 'full bank view' for taking or previewing quizzes.
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+    
     res.json({ success: true, questions });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);
     res.status(500).json({ success: false, error: error.message });
   }
+};
+
+/**
+ * Record student performance for a quiz question
+ */
+const recordPerformanceHandler = async (req, res) => {
+    try {
+        const { quizId } = req.params;
+        const { questionId, learningObjectiveId, granularObjectiveId, bloom, isCorrect } = req.body;
+        
+        if (!questionId || !bloom || isCorrect === undefined) {
+            return res.status(400).json({
+                success: false,
+                error: "questionId, bloom, and isCorrect are required",
+            });
+        }
+        
+        const result = await quizService.saveStudentPerformance({
+            userId: req.user._id,
+            quizId,
+            questionId,
+            learningObjectiveId,
+            granularObjectiveId,
+            bloom,
+            isCorrect
+        });
+        
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error("Error recording student performance:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 };
 
 module.exports = {
@@ -228,5 +265,6 @@ module.exports = {
   updateQuizHandler,
   deleteQuizHandler,
   addQuizQuestionsHandler,
-  getQuizQuestionsHandler
+  getQuizQuestionsHandler,
+  recordPerformanceHandler
 };

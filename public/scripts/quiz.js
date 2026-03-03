@@ -154,12 +154,38 @@ function renderQuizList() {
   const quizGrid = document.getElementById("quizGrid");
   quizGrid.innerHTML = "";
 
-  quizState.quizzes.forEach(quiz => {
-    const quizCard = createQuizCard(quiz);
-    quizGrid.appendChild(quizCard);
-  });
+  const pendingQuizzes = quizState.quizzes.filter(q => !q.achievements.some(a => a.type === 'quiz_completed'));
+  const completedQuizzes = quizState.quizzes.filter(q => q.achievements.some(a => a.type === 'quiz_completed'));
 
-  document.getElementById("quizGrid").style.display = "grid";
+  if (pendingQuizzes.length > 0) {
+    const section = document.createElement("div");
+    section.className = "quiz-section";
+    section.innerHTML = `
+      <h2 class="section-title">Pending Quizzes</h2>
+      <div class="quiz-subgrid"></div>
+    `;
+    const subgrid = section.querySelector(".quiz-subgrid");
+    pendingQuizzes.forEach(quiz => {
+      subgrid.appendChild(createQuizCard(quiz));
+    });
+    quizGrid.appendChild(section);
+  }
+
+  if (completedQuizzes.length > 0) {
+    const section = document.createElement("div");
+    section.className = "quiz-section";
+    section.innerHTML = `
+      <h2 class="section-title">Completed Quizzes</h2>
+      <div class="quiz-subgrid"></div>
+    `;
+    const subgrid = section.querySelector(".quiz-subgrid");
+    completedQuizzes.forEach(quiz => {
+      subgrid.appendChild(createQuizCard(quiz));
+    });
+    quizGrid.appendChild(section);
+  }
+
+  document.getElementById("quizGrid").style.display = "block";
   document.getElementById("emptyState").style.display = "none";
 }
 
@@ -202,9 +228,15 @@ function createQuizCard(quiz) {
       <p class="quiz-description">${escapeHtml(quiz.description || "No description available")}</p>
       <div class="quiz-card-meta">
         <span class="quiz-date">
-          <i class="fas fa-calendar"></i>
-          Created: ${quiz.createdAt ? new Date(quiz.createdAt).toLocaleDateString() : "Unknown"}
+          <i class="fas fa-calendar-alt"></i>
+          Released: ${quiz.releaseDate ? new Date(quiz.releaseDate).toLocaleDateString() : "Not set"}
         </span>
+        ${quiz.expireDate ? `
+        <span class="quiz-date due">
+          <i class="fas fa-clock"></i>
+          Due: ${new Date(quiz.expireDate).toLocaleDateString()}
+        </span>
+        ` : ''}
         <span class="quiz-question-count">
           <i class="fas fa-question-circle"></i>
           ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) !== 1 ? 's' : ''}
@@ -431,6 +463,12 @@ function showQuestion(questionIndex) {
   const questionTextElement = document.getElementById("questionText");
   questionTextElement.innerHTML = escapeHtml(question.question || "Question text not available");
   document.getElementById("currentQuestion").textContent = questionIndex + 1;
+  
+  // Show question ID for debugging
+  const idDisplay = document.getElementById("questionIdDisplay");
+  if (idDisplay) {
+    idDisplay.textContent = `ID: ${question.id || 'N/A'}`;
+  }
 
   // Update progress bar
   const progress = ((questionIndex + 1) / quizState.quizData.questions.length) * 100;
