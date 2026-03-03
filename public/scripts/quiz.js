@@ -321,13 +321,24 @@ async function startQuiz(quizId) {
       }
     }
 
-    // Load quiz questions
-    const response = await fetch(`/api/student/quizzes/${quizId}/questions`);
-    const data = await response.json();
+    // Fetch quiz metadata and questions concurrently
+    const [quizResponse, questionsResponse] = await Promise.all([
+      fetch(`/api/quiz/${quizId}`),
+      fetch(`/api/quiz/${quizId}/questions?approvedOnly=true`)
+    ]);
+    
+    const quizData = await quizResponse.json();
+    const questionsData = await questionsResponse.json();
 
-    if (data.success && data.data) {
+    if (quizData.success && questionsData.success) {
       quizState.currentQuiz = quizId;
-      quizState.quizData = data.data;
+      quizState.quizData = {
+        quizId: quizId,
+        title: quizData.quiz ? quizData.quiz.name : "Quiz",
+        course: "Course", // Could fetch course name if needed, but placeholder is fine for UI
+        duration: quizData.quiz ? quizData.quiz.duration || 0 : 0,
+        questions: questionsData.questions
+      };
       quizState.currentQuestionIndex = 0;
       quizState.answers = {};
       quizState.feedback = {};
@@ -347,7 +358,7 @@ async function startQuiz(quizId) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } else {
-      throw new Error(data.message || "Failed to load quiz");
+      throw new Error(questionsData.message || quizData.message || "Failed to load quiz");
     }
   } catch (error) {
     console.error("Error starting quiz:", error);
