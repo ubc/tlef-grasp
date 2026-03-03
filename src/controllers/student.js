@@ -3,6 +3,30 @@ const quizService = require('../services/quiz');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 
+const isQuizAccessible = (quiz) => {
+  if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
+  if (!quiz.published) return { success: false, status: 403, message: "This quiz is not available. Only published quizzes can be accessed." };
+
+  const now = new Date();
+  if (quiz.releaseDate && new Date(quiz.releaseDate) > now) {
+    return { 
+      success: false, 
+      status: 403, 
+      message: `This quiz is not yet available. It will be released on ${new Date(quiz.releaseDate).toLocaleString()}.` 
+    };
+  }
+
+  if (quiz.expireDate && new Date(quiz.expireDate) < now) {
+    return { 
+      success: false, 
+      status: 403, 
+      message: "This quiz has expired and is no longer available." 
+    };
+  }
+
+  return { success: true };
+};
+
 const getStudentCoursesHandler = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
@@ -35,17 +59,11 @@ const startQuizHandler = async (req, res) => {
 
     const quiz = await quizService.getQuizById(quizId);
 
-    if (!quiz) {
-      return res.status(404).json({
+    const accessibility = isQuizAccessible(quiz);
+    if (!accessibility.success) {
+      return res.status(accessibility.status).json({
         success: false,
-        message: "Quiz not found",
-      });
-    }
-
-    if (!quiz.published) {
-      return res.status(403).json({
-        success: false,
-        message: "This quiz is not available. Only published quizzes can be accessed.",
+        message: accessibility.message,
       });
     }
 
@@ -129,17 +147,11 @@ const getQuizQuestionsHandler = async (req, res) => {
 
     // First, verify the quiz exists and is published
     const quiz = await quizService.getQuizById(quizId);
-    if (!quiz) {
-      return res.status(404).json({
+    const accessibility = isQuizAccessible(quiz);
+    if (!accessibility.success) {
+      return res.status(accessibility.status).json({
         success: false,
-        message: "Quiz not found",
-      });
-    }
-
-    if (!quiz.published) {
-      return res.status(403).json({
-        success: false,
-        message: "This quiz is not available. Only published quizzes can be accessed.",
+        message: accessibility.message,
       });
     }
 
@@ -205,6 +217,12 @@ const getQuizQuestionsHandler = async (req, res) => {
     const shuffledQuestions = shuffleArray(transformedQuestions);
     const randomizedQuestions = shuffledQuestions.map(q => shuffleQuestionOptions(q));
 
+    // Apply question limit if set
+    let finalQuestions = randomizedQuestions;
+    if (quiz.questionLimit && quiz.questionLimit > 0) {
+      finalQuestions = randomizedQuestions.slice(0, quiz.questionLimit);
+    }
+
     res.json({
       success: true,
       data: {
@@ -212,7 +230,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0,
-        questions: randomizedQuestions,
+        questions: finalQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
@@ -240,17 +258,11 @@ const submitQuizHandler = async (req, res) => {
 
     const quiz = await quizService.getQuizById(quizId);
 
-    if (!quiz) {
-      return res.status(404).json({
+    const accessibility = isQuizAccessible(quiz);
+    if (!accessibility.success) {
+      return res.status(accessibility.status).json({
         success: false,
-        message: "Quiz not found",
-      });
-    }
-
-    if (!quiz.published) {
-      return res.status(403).json({
-        success: false,
-        message: "This quiz is not available.",
+        message: accessibility.message,
       });
     }
 

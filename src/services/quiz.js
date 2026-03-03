@@ -26,6 +26,9 @@ const createQuiz = async (courseId, quizData) => {
             name: quizData.name.trim(),
             description: quizData.description || "",
             published: false, // Default to unpublished
+            releaseDate: quizData.releaseDate ? new Date(quizData.releaseDate) : null,
+            expireDate: quizData.expireDate ? new Date(quizData.expireDate) : null,
+            questionLimit: quizData.questionLimit ? parseInt(quizData.questionLimit) : 0,
             createdAt: new Date(),
             updatedAt: new Date(),
         });
@@ -124,6 +127,18 @@ const updateQuiz = async (quizId, quizData) => {
         
         if (quizData.published !== undefined) {
             updateData.published = quizData.published;
+        }
+
+        if (quizData.releaseDate !== undefined) {
+            updateData.releaseDate = quizData.releaseDate ? new Date(quizData.releaseDate) : null;
+        }
+
+        if (quizData.expireDate !== undefined) {
+            updateData.expireDate = quizData.expireDate ? new Date(quizData.expireDate) : null;
+        }
+
+        if (quizData.questionLimit !== undefined) {
+            updateData.questionLimit = quizData.questionLimit ? parseInt(quizData.questionLimit) : 0;
         }
         
         const result = await collection.updateOne(

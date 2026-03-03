@@ -377,7 +377,18 @@ class StudentDashboardManager {
       if (quizzesResponse.ok) {
         const quizzesData = await quizzesResponse.json();
         if (quizzesData.success && quizzesData.quizzes) {
-          const publishedQuizzes = quizzesData.quizzes.filter(q => q.published === true);
+          const now = new Date();
+          const publishedQuizzes = quizzesData.quizzes.filter(q => {
+            if (q.published !== true) return false;
+            
+            // Check release date
+            if (q.releaseDate && new Date(q.releaseDate) > now) return false;
+            
+            // Check expiry date
+            if (q.expireDate && new Date(q.expireDate) < now) return false;
+            
+            return true;
+          });
           quizCount = publishedQuizzes.length;
         }
       }

@@ -86,8 +86,14 @@ async function loadQuizList() {
     }
 
     if (quizzesData.success && quizzesData.quizzes) {
-      // Filter to only show published quizzes
-      const publishedQuizzes = quizzesData.quizzes.filter(quiz => quiz.published === true);
+      // Filter to only show published quizzes and check dates
+      const now = new Date();
+      const publishedQuizzes = quizzesData.quizzes.filter(quiz => {
+        if (quiz.published !== true) return false;
+        if (quiz.releaseDate && new Date(quiz.releaseDate) > now) return false;
+        if (quiz.expireDate && new Date(quiz.expireDate) < now) return false;
+        return true;
+      });
 
       if (publishedQuizzes.length === 0) {
         showEmptyState("No published quizzes available for this course.");

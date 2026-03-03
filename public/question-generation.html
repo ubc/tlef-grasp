@@ -403,18 +403,37 @@
                                         id="quiz-name-input" 
                                         class="text-input" 
                                         placeholder="Enter quiz name..."
-                                        style="width: 100%; padding: 12px; margin-bottom: 16px;"
+                                        style="width: 100%; padding: 12px; margin-bottom: 16px; box-sizing: border-box;"
                                     >
-                                    <label for="quiz-description-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
-                                        Description (optional)
-                                    </label>
                                     <textarea 
                                         id="quiz-description-input" 
                                         class="text-input" 
                                         placeholder="Enter quiz description..."
                                         rows="3"
-                                        style="width: 100%; padding: 12px; margin-bottom: 20px; resize: vertical;"
+                                        style="width: 100%; padding: 12px; margin-bottom: 20px; resize: vertical; box-sizing: border-box;"
                                     ></textarea>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                        <div>
+                                            <label for="quiz-release-date" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                                                Release Date
+                                            </label>
+                                            <input type="datetime-local" id="quiz-release-date" class="text-input" style="width: 100%; padding: 10px; box-sizing: border-box;">
+                                        </div>
+                                        <div>
+                                            <label for="quiz-expire-date" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                                                Expire Date
+                                            </label>
+                                            <input type="datetime-local" id="quiz-expire-date" class="text-input" style="width: 100%; padding: 10px; box-sizing: border-box;">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label for="quiz-question-limit" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                                            Number of Questions
+                                        </label>
+                                        <input type="number" id="quiz-question-limit" class="text-input" placeholder="0 for all questions" min="0" style="width: 100%; padding: 12px; margin-bottom: 20px; box-sizing: border-box;">
+                                    </div>
                                 </div>
                             </div>
                         </div>

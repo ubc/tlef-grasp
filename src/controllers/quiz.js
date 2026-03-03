@@ -40,7 +40,7 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description } = req.body;
+    const { courseId, name, description, releaseDate, expireDate, questionLimit } = req.body;
     
     if (!courseId || !name) {
       return res.status(400).json({
@@ -49,7 +49,13 @@ const createQuizHandler = async (req, res) => {
       });
     }
     
-    const quiz = await quizService.createQuiz(courseId, { name, description });
+    const quiz = await quizService.createQuiz(courseId, { 
+      name, 
+      description,
+      releaseDate,
+      expireDate,
+      questionLimit 
+    });
     res.status(201).json({ success: true, quiz });
   } catch (error) {
     console.error("Error creating quiz:", error);
@@ -63,17 +69,45 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published } = req.body;
+    const { name, description, published, releaseDate, expireDate, questionLimit } = req.body;
     
-    // Check if user is trying to publish/unpublish - only faculty can do this
-    if (published !== undefined && !(await isFaculty(req.user))) {
-      return res.status(403).json({ 
-        success: false, 
-        error: "Only faculty can publish or unpublish quizzes" 
-      });
+    // Get existing quiz to check current values
+    const existingQuiz = await quizService.getQuizById(quizId);
+    if (!existingQuiz) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
     }
+
+    // Validation for publishing: a quiz must have a release date and a question limit > 0
+    const finalPublished = published !== undefined ? published : existingQuiz.published;
     
-    const result = await quizService.updateQuiz(quizId, { name, description, published });
+    if (finalPublished === true) {
+      // Check final state of releaseDate and questionLimit
+      const finalReleaseDate = releaseDate !== undefined ? releaseDate : existingQuiz.releaseDate;
+      const finalQuestionLimit = questionLimit !== undefined ? questionLimit : existingQuiz.questionLimit;
+
+      if (!finalReleaseDate) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "A published quiz must have a release date." 
+        });
+      }
+
+      if (!finalQuestionLimit || parseInt(finalQuestionLimit) <= 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "A published quiz must have a question limit greater than 0." 
+        });
+      }
+    }
+
+    const result = await quizService.updateQuiz(quizId, { 
+      name, 
+      description, 
+      published,
+      releaseDate,
+      expireDate,
+      questionLimit
+    });
     
     if (result.matchedCount === 0) {
       return res.status(404).json({ success: false, error: "Quiz not found" });

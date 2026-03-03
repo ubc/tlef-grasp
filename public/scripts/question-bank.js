@@ -186,6 +186,9 @@ class QuestionBankPage {
                   week: null,
                   lecture: null,
                   published: quiz.published || false,
+                  releaseDate: quiz.releaseDate || null,
+                  expireDate: quiz.expireDate || null,
+                  questionLimit: quiz.questionLimit || 0,
                   createdAt: quiz.createdAt || new Date(),
                   releases: [
                     {
@@ -864,6 +867,34 @@ class QuestionBankPage {
             <div class="progress-text">${progressPercent}% Approved</div>
           </div>
         </div>
+        
+        <div class="quiz-settings-section" style="padding: 12px 20px; border-bottom: 1px solid #f3f4f6; background: #fafafa;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end;">
+            <div>
+              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Release Date</label>
+              <input type="datetime-local" class="quiz-settings-input release-date" 
+                     value="${quiz.releaseDate ? new Date(quiz.releaseDate).toISOString().slice(0, 16) : ''}"
+                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
+                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
+            </div>
+            <div>
+              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Expire Date</label>
+              <input type="datetime-local" class="quiz-settings-input expire-date" 
+                     value="${quiz.expireDate ? new Date(quiz.expireDate).toISOString().slice(0, 16) : ''}"
+                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
+                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
+            </div>
+            <div>
+              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Question Limit</label>
+              <input type="number" class="quiz-settings-input question-limit" 
+                     value="${quiz.questionLimit || 0}" min="0"
+                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
+                     placeholder="0 for all"
+                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
+            </div>
+          </div>
+        </div>
+
         <div class="quiz-card-actions">
           <button class="review-btn" 
                   onclick="event.stopPropagation(); window.questionBankPage.navigateToReview('${quizIdEscaped}')">
@@ -1977,6 +2008,19 @@ class QuestionBankPage {
     }
 
     const newPublishedStatus = !quiz.published;
+
+    // Validation for publishing: a quiz must have a release date and a question limit > 0
+    if (newPublishedStatus) {
+      if (!quiz.releaseDate) {
+        this.showNotification("A quiz cannot be published without a release date.", "error");
+        return;
+      }
+      if (!quiz.questionLimit || quiz.questionLimit <= 0) {
+        this.showNotification("A quiz cannot be published with a question limit of 0.", "error");
+        return;
+      }
+    }
+
     const action = newPublishedStatus ? "publish" : "unpublish";
     const quizTitle = quiz.title || "this quiz";
 
@@ -2011,6 +2055,65 @@ class QuestionBankPage {
     } catch (error) {
       console.error(`Error ${action}ing quiz:`, error);
       this.showNotification(error.message || `Failed to ${action} quiz`, 'error');
+    }
+  }
+
+  // Save quiz settings (dates and limit)
+  async saveQuizSettings(quizId) {
+    if (!this.requireFaculty("update quiz settings")) return;
+
+    const quizCard = document.querySelector(`.quiz-card[data-quiz-id="${quizId}"]`);
+    if (!quizCard) return;
+
+    const releaseDate = quizCard.querySelector('.release-date').value || null;
+    const expireDate = quizCard.querySelector('.expire-date').value || null;
+    const questionLimit = parseInt(quizCard.querySelector('.question-limit').value) || 0;
+
+    // Check if values actually changed to avoid redundant saves
+    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
+    if (quiz) {
+      const currentRelease = quiz.releaseDate ? new Date(quiz.releaseDate).toISOString().slice(0, 16) : null;
+      const currentExpire = quiz.expireDate ? new Date(quiz.expireDate).toISOString().slice(0, 16) : null;
+      
+      const inputRelease = releaseDate ? new Date(releaseDate).toISOString().slice(0, 16) : null;
+      const inputExpire = expireDate ? new Date(expireDate).toISOString().slice(0, 16) : null;
+
+      if (currentRelease === inputRelease && 
+          currentExpire === inputExpire && 
+          quiz.questionLimit === questionLimit) {
+        return; // No change
+      }
+    }
+
+    try {
+      const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          releaseDate: releaseDate,
+          expireDate: expireDate,
+          questionLimit: questionLimit
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update quiz settings');
+      }
+
+      // Update local state
+      if (quiz) {
+        quiz.releaseDate = releaseDate;
+        quiz.expireDate = expireDate;
+        quiz.questionLimit = questionLimit;
+      }
+
+      this.showNotification("Settings saved", "success");
+    } catch (error) {
+      console.error(`Error saving settings for quiz ${quizId}:`, error);
+      this.showNotification(error.message || "Failed to save settings", "error");
     }
   }
 

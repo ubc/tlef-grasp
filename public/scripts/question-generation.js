@@ -3664,6 +3664,9 @@ async function handleSaveToQuiz() {
     if (isCreatingNewQuiz) {
       const nameInput = document.getElementById("quiz-name-input");
       const descriptionInput = document.getElementById("quiz-description-input");
+      const releaseDateInput = document.getElementById("quiz-release-date");
+      const expireDateInput = document.getElementById("quiz-expire-date");
+      const questionLimitInput = document.getElementById("quiz-question-limit");
 
       if (!nameInput || !nameInput.value.trim()) {
         showToast("Please enter a quiz name", "error");
@@ -3681,6 +3684,9 @@ async function handleSaveToQuiz() {
           courseId: courseId,
           name: nameInput.value.trim(),
           description: descriptionInput.value.trim() || '',
+          releaseDate: releaseDateInput ? releaseDateInput.value : null,
+          expireDate: expireDateInput ? expireDateInput.value : null,
+          questionLimit: questionLimitInput ? parseInt(questionLimitInput.value) || 0 : 0
         }),
       });
 
@@ -3690,7 +3696,10 @@ async function handleSaveToQuiz() {
       }
 
       const data = await response.json();
-      quizId = data.quiz.insertedId.toString();
+      quizId = data.quiz._id || data.quiz.insertedId;
+      if (typeof quizId === 'object' && quizId.toString) {
+        quizId = quizId.toString();
+      }
     }
 
     if (!quizId) {
