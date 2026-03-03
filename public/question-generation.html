@@ -99,9 +99,6 @@
                                         <button type="button" class="dropdown-custom__btn" id="generate-ai-btn">
                                             <i class="fas fa-magic"></i> Generate with AI...
                                         </button>
-                                        <button type="button" class="dropdown-custom__btn" id="create-custom-btn">
-                                            <i class="fas fa-plus"></i> Create custom objective...
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -117,18 +114,18 @@
                                 <p>Start by adding your first learning objective to organize your course content.</p>
                             </div>
 
-                            <!-- Create New Learning Objective Modal -->
+
+
+                            <!-- Learning Objective Settings Modal (Materials Only) -->
                             <div class="modal" id="custom-objective-modal" style="display: none;">
                                 <div class="modal__content" style="max-width: 700px;">
                                     <div class="modal__header">
-                                        <h3 id="custom-modal-title">Create New Learning Objective</h3>
+                                        <h3 id="custom-modal-title">Learning Objective Settings</h3>
                                         <button type="button" class="modal__close" id="custom-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
                                     <div class="modal__body">
-
-
                                         <div style="margin-bottom: 20px;">
                                             <label style="margin-bottom: 12px; display: block; font-weight: 600;">Attach Materials <span style="color: #e74c3c;">*</span></label>
                                             <div id="materials-selection-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
@@ -145,11 +142,9 @@
                                         </div>
                                     </div>
                                     <div class="modal__footer">
-                                        <button type="button" class="btn btn--secondary"
-                                            id="custom-modal-cancel">Cancel</button>
-                                        <button type="button" class="btn btn--primary"
-                                            id="custom-modal-save">Create</button>
-                                        <input type="hidden" id="custom-modal-mode" value="create">
+                                        <button type="button" class="btn btn--secondary" id="custom-modal-cancel">Cancel</button>
+                                        <button type="button" class="btn btn--primary" id="custom-modal-save">Save Changes</button>
+                                        <input type="hidden" id="custom-modal-mode" value="edit">
                                         <input type="hidden" id="custom-modal-objective-id" value="">
                                     </div>
                                 </div>
@@ -170,26 +165,41 @@
                                                 Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives.
                                             </p>
                                             
-                                            <div style="margin-bottom: 16px; padding: 12px; background: #f9fafb; border-radius: 8px;">
-                                                <label for="ai-objectives-count" style="display: block; margin-bottom: 8px; font-weight: 600;">Number of Learning Objectives:</label>
-                                                <div style="display: flex; align-items: center; gap: 8px;">
-                                                    <input 
-                                                        type="number" 
-                                                        id="ai-objectives-count" 
-                                                        min="1" 
-                                                        max="10" 
-                                                        value="5" 
-                                                        class="text-input"
-                                                        style="width: 80px; padding: 8px 12px;"
-                                                        required
-                                                    >
-                                                    <span style="color: #6b7280; font-size: 14px;">(1-10 objectives)</span>
+                                            <div style="margin-bottom: 20px; padding: 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;">
+                                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                                    <div>
+                                                        <label style="display: block; font-weight: 600; color: #3730a3; margin-bottom: 4px;">
+                                                            Custom Learning Objectives (Optional)
+                                                        </label>
+                                                        <p style="color: #4338ca; font-size: 13px; margin: 0;">
+                                                            Add your own main objectives. AI will generate granular sub-objectives for each.
+                                                        </p>
+                                                    </div>
+                                                    <div style="display: flex; gap: 8px;">
+                                                        <button type="button" id="ai-bulk-add-btn" class="btn btn--secondary btn--sm" style="font-size: 12px; padding: 4px 8px;">
+                                                            <i class="fas fa-paste"></i> Bulk Add
+                                                        </button>
+                                                        <button type="button" id="ai-add-objective-row-btn" class="btn btn--primary btn--sm" style="font-size: 12px; padding: 4px 8px;">
+                                                            <i class="fas fa-plus"></i> Add Objective
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <p style="margin-top: 8px; margin-bottom: 0; color: #6b7280; font-size: 12px;">
-                                                    The AI will generate approximately this many learning objectives based on the selected materials.
-                                                </p>
+
+                                                <div id="ai-bulk-paste-container" style="display: none; margin-bottom: 16px; padding: 12px; background: #ffffff; border: 1px solid #c7d2fe; border-radius: 6px;">
+                                                    <label style="display: block; font-size: 12px; font-weight: 600; color: #3730a3; margin-bottom: 8px;">Paste objectives (one per line):</label>
+                                                    <textarea id="ai-bulk-paste-input" class="text-input" rows="4" style="width: 100%; box-sizing: border-box; margin-bottom: 8px; font-size: 13px;"></textarea>
+                                                    <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                                                        <button type="button" id="ai-cancel-bulk-btn" class="btn btn--secondary btn--sm" style="font-size: 11px;">Cancel</button>
+                                                        <button type="button" id="ai-apply-bulk-btn" class="btn btn--primary btn--sm" style="font-size: 11px;">Apply</button>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Dynamic List of Objectives -->
+                                                <div id="ai-custom-objectives-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto;">
+                                                    <!-- Objective rows will be added here -->
+                                                </div>
                                             </div>
-                                            
+
                                             <label style="margin-bottom: 12px; display: block; font-weight: 600;">Select Materials:</label>
                                             <div id="ai-materials-selection-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
                                                 <div id="ai-materials-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">

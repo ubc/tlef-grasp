@@ -388,12 +388,15 @@ const deleteDocumentHandler = async (req, res) => {
 
 const generateLearningObjectivesHandler = async (req, res) => {
   try {
-    const { courseId, materialIds, courseName, objectivesCount = 5 } = req.body;
+    const { courseId, materialIds, courseName, userObjectives } = req.body;
 
     console.log("=== GENERATE LEARNING OBJECTIVES REQUEST ===");
     console.log("Course ID:", courseId);
     console.log("Material IDs:", materialIds);
     console.log("Course Name:", courseName);
+    if (userObjectives && userObjectives.length > 0) {
+      console.log("User Provided Objectives:", userObjectives);
+    }
 
     // Validate input
     if (!courseId) {
@@ -452,7 +455,21 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     // Create prompt for generating learning objectives
+    let objectiveInstructions = "";
+    if (userObjectives && userObjectives.length > 0) {
+      objectiveInstructions = `
+2. Use the following specific learning objectives provided by the user as the MAIN objectives:
+${userObjectives.map((obj, i) => `   - ${obj}`).join('\n')}
+3. For EACH of the user-provided main objectives above, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes based ON THE COURSE MATERIALS CONTENT provided below.`;
+    } else {
+      objectiveInstructions = `
+2. Determine an appropriate number of main learning objectives that comprehensively cover the major themes in the provided materials
+3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes`;
+    }
+
     const prompt = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
+    
+    ${userObjectives && userObjectives.length > 0 ? "The user has provided specific main objectives. Your task is to generate granular sub-objectives for them." : "Determine the most appropriate number of main learning objectives based on the depth and breadth of the provided content."}
 
 COURSE: ${courseName || "Course"}
 
@@ -460,9 +477,7 @@ COURSE MATERIALS CONTENT:
 ${ragContext.substring(0, 8000)}${ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""}
 
 INSTRUCTIONS:
-1. Analyze the course materials and identify key topics, concepts, and learning outcomes
-2. Generate exactly ${objectivesCount} main learning objectives that cover the major themes in the materials
-3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes
+1. Analyze the course materials and identify key topics, concepts, and learning outcomes${objectiveInstructions}
 4. For each granular objective, identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create)
 5. Use clear, action-oriented language (e.g., "Students will be able to...")
 6. Ensure objectives are specific to the content provided, not generic

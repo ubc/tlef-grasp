@@ -41,6 +41,7 @@ function getCourseId() {
 
 let questionGenerator = null;
 let contentGenerator = null;
+let currentEditGroupId = null; // Used for identifying which group to delete
 
 // Main state object
 const selectedCourseData = getSelectedCourse();
@@ -417,12 +418,7 @@ function initializeObjectives() {
     });
   }
 
-  const createCustomBtn = document.getElementById("create-custom-btn");
-  if (createCustomBtn) {
-    createCustomBtn.addEventListener("click", (e) => {
-      window.showCustomObjectiveModalFromButton(e);
-    });
-  }
+
 
   // Initialize dropdown functionality
   initializeAddObjectivesDropdown();
@@ -543,8 +539,8 @@ async function initializeAddObjectivesDropdown() {
     // Store reference to avoid adding multiple listeners
     if (!window._dropdownClickHandler) {
       window._dropdownClickHandler = (e) => {
-        // Don't close if clicking on the create custom button or AI generate button (handled by inline onclick)
-        if (e.target.closest("#create-custom-btn") || e.target.closest("#generate-ai-btn")) {
+        // Don't close if clicking on the AI generate button (handled by inline onclick)
+        if (e.target.closest("#generate-ai-btn")) {
           return;
         }
 
@@ -636,17 +632,7 @@ function hideAddObjectivesDropdown() {
 }
 
 // Global function for inline onclick handler
-window.showCustomObjectiveModalFromButton = function (event) {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  hideAddObjectivesDropdown();
-  setTimeout(() => {
-    showCustomObjectiveModal();
-  }, 100);
-  return false;
-};
+
 
 // Global function for AI generation modal
 window.showAIGenerateObjectiveModal = function (event) {
@@ -661,7 +647,13 @@ window.showAIGenerateObjectiveModal = function (event) {
   return false;
 };
 
-async function showCustomObjectiveModal(mode = "create", editData = null) {
+
+
+// AI Generation Modal Functions
+let generatedObjectives = [];
+
+
+async function showCustomObjectiveModal(mode = "edit", editData = null) {
   const modal = document.getElementById("custom-objective-modal");
   const modalTitle = document.getElementById("custom-modal-title");
   const modalSaveButton = document.getElementById("custom-modal-save");
@@ -680,19 +672,16 @@ async function showCustomObjectiveModal(mode = "create", editData = null) {
 
   // Update modal title and button text
   if (modalTitle) {
-    modalTitle.textContent = mode === "edit" ? "Learning Objective Settings" : "Create New Learning Objective";
+    modalTitle.textContent = "Learning Objective Settings";
   }
   if (modalSaveButton) {
-    modalSaveButton.textContent = mode === "edit" ? "Save Changes" : "Create";
+    modalSaveButton.textContent = "Save Changes";
   }
 
-  // Clear or populate form based on mode
-  if (mode === "edit" && editData) {
-    // Load materials with pre-selection for edit mode
+  // Load materials with pre-selection
+  if (editData?.objectiveId) {
     await loadMaterialsForModal(editData.objectiveId);
   } else {
-    // Create mode
-    // Load materials (no pre-selection)
     loadMaterialsForModal();
   }
 
@@ -810,40 +799,16 @@ function displayMaterialsInModal(materials, attachedMaterialIds = new Set()) {
   });
 }
 
-function addGranularObjectiveInput(text = "", granularId = null, bloomTaxonomies = null) {
-  const container = document.getElementById("granular-objectives-container");
-  if (!container) return;
-
-  const granularDiv = document.createElement("div");
-  granularDiv.className = "granular-objective-item";
-  granularDiv.setAttribute("data-granular-id", granularId || `new-${Date.now()}-${Math.random()}`);
-  if (bloomTaxonomies) {
-    granularDiv.setAttribute("data-bloom-taxonomies", JSON.stringify(bloomTaxonomies));
-  }
-  granularDiv.style.cssText = "margin: 0; padding: 0;";
-  // Trim the text value to remove any leading/trailing whitespace
-  const trimmedText = text.trim();
-  granularDiv.innerHTML = `<div style="display: flex; gap: 8px; align-items: flex-start;"><input type="text" class="text-input granular-objective-input" placeholder="Enter granular objective..." value="${trimmedText.replace(/"/g, '&quot;')}" style="flex: 1; padding: 10px;" /><button type="button" class="btn btn--danger btn--small remove-granular-btn" style="padding: 10px 12px;" title="Remove"><i class="fas fa-times"></i></button></div>`;
-
-  container.appendChild(granularDiv);
-
-  // Add remove button handler
-  const removeBtn = granularDiv.querySelector(".remove-granular-btn");
-  if (removeBtn) {
-    removeBtn.addEventListener("click", () => {
-      granularDiv.remove();
-    });
-  }
-}
-
 async function handleCustomObjectiveSubmission() {
   const modal = document.getElementById("custom-objective-modal");
   const saveButton = document.getElementById("custom-modal-save");
-  const modeInput = document.getElementById("custom-modal-mode");
   const objectiveIdInput = document.getElementById("custom-modal-objective-id");
-
-  const mode = modeInput ? modeInput.value : "create";
   const objectiveId = objectiveIdInput ? objectiveIdInput.value : null;
+
+  if (!objectiveId) {
+    showToast("Invalid objective ID", "error");
+    return;
+  }
 
   // Collect selected materials
   const materialCheckboxes = document.querySelectorAll(".material-checkbox:checked");
@@ -854,224 +819,53 @@ async function handleCustomObjectiveSubmission() {
     return;
   }
 
-  // Disable button to prevent double submission
-  const originalButtonText = saveButton ? saveButton.innerHTML : (mode === "edit" ? "Save Changes" : "Create");
+  // Disable button
   if (saveButton) {
     saveButton.disabled = true;
-    saveButton.innerHTML = mode === "edit" ? "Saving..." : "Creating...";
+    saveButton.innerHTML = "Saving...";
   }
-
-  // Safety timeout to re-enable button if something hangs (30 seconds)
-  const timeoutId = setTimeout(() => {
-    console.error("Timeout: Button re-enabled after 30 seconds");
-    if (saveButton) {
-      saveButton.disabled = false;
-      saveButton.innerHTML = originalButtonText;
-    }
-  }, 30000);
 
   try {
     const courseId = getCourseId();
-
-    let requestBody;
+    const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
     
-    if (mode === 'edit') {
-      const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
-      requestBody = {
-        name: group.title,
-        granularObjectives: group.items.map(i => ({
-          id: i.granularId,
-          text: i.text,
-          bloomTaxonomies: i.bloom || []
-        })),
-        materialIds: selectedMaterials,
-        courseId: courseId,
-      };
-    } else {
-      // Create mode generates default templates that the user can inline edit later
-      requestBody = {
-        name: "New Learning Objective",
-        granularObjectives: [],
-        materialIds: selectedMaterials,
-        courseId: courseId,
-      };
-    }
+    const requestBody = {
+      name: group.title,
+      granularObjectives: group.items.map(i => ({
+        id: i.granularId,
+        text: i.text,
+        bloomTaxonomies: i.bloom || []
+      })),
+      materialIds: selectedMaterials,
+      courseId: courseId,
+    };
 
-    // Create a timeout promise
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Request timeout after 25 seconds")), 25000);
-    });
-
-    // Save to database with timeout - use PUT for edit, POST for create
-    const url = mode === 'edit' && objectiveId
-      ? `${API_ENDPOINTS.objective}/${objectiveId}`
-      : API_ENDPOINTS.objective;
-    const method = mode === 'edit' ? 'PUT' : 'POST';
-
-    const fetchPromise = fetch(url, {
-      method: method,
+    const response = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}`, {
+      method: "PUT",
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    }).catch((fetchError) => {
-      throw new Error(`Network error: ${fetchError.message}`);
     });
 
-    let response;
-    try {
-      response = await Promise.race([fetchPromise, timeoutPromise]);
-    } catch (raceError) {
-      throw raceError;
-    }
-
-    // Parse response once - handle both success and error cases
-    let data;
-    try {
-      const responseText = await response.text();
-      data = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      throw new Error('Invalid response from server');
-    }
+    const data = await response.json();
 
     if (!response.ok || !data.success) {
-      const errorMessage = data.error || `Failed to ${mode === 'edit' ? 'update' : 'create'} learning objective: ${response.status}`;
-      throw new Error(errorMessage);
+      throw new Error(data.error || "Failed to update learning objective");
     }
 
-    const objectiveName = requestBody.name;
-
-    if (mode === "edit" && currentEditGroupId) {
-      // Update existing group in UI
-      const group = state.objectiveGroups.find((g) => g.id === currentEditGroupId);
-      if (group) {
-        // Update the group title
-        const groupNumber = state.objectiveGroups.findIndex((g) => g.id === currentEditGroupId) + 1;
-        group.title = objectiveName;
-
-        // Update granular objectives in the group
-        if (data.granularObjectives && Array.isArray(data.granularObjectives)) {
-          group.items = data.granularObjectives.map((granular, index) => ({
-            id: parseFloat(`${groupNumber}.${index + 1}`),
-            granularId: granular._id ? granular._id.toString() : null,
-            text: granular.name || granular.text || "",
-            bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
-            minQuestions: 2,
-            count: 2,
-            mode: "manual",
-            level: 1,
-            selected: false,
-          }));
-        }
-      }
-
-      renderObjectiveGroups();
-      hideModal(modal);
-      showToast("Learning objective updated successfully", "success");
-      announceToScreenReader(`Updated learning objective: ${objectiveName}`);
-      currentEditGroupId = null;
-    } else {
-      // Create new group
-      // Validate response data
-      if (!data.objective) {
-        throw new Error("Invalid response: objective data missing");
-      }
-
-      if (!data.objective._id) {
-        throw new Error("Invalid response: objective ID missing");
-      }
-
-      if (!data.granularObjectives || !Array.isArray(data.granularObjectives)) {
-        console.warn("No granular objectives in response, using empty array");
-        data.granularObjectives = [];
-      }
-
-      // Add to UI
-      const newGroupId = Date.now() + Math.random();
-      const newGroupNumber = state.objectiveGroups.length + 1;
-
-      const newGroup = {
-        id: newGroupId,
-        objectiveId: data.objective._id.toString(),
-        metaId: `db-${data.objective._id}`,
-        title: objectiveName,
-        isOpen: true,
-        selected: false,
-        items: data.granularObjectives.map((granular, index) => ({
-          id: parseFloat(`${newGroupNumber}.${index + 1}`),
-          granularId: granular._id ? granular._id.toString() : null,
-          text: granular.name || granular.text || "",
-          bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
-          minQuestions: 2,
-          count: 2,
-          mode: "manual",
-          level: 1,
-          selected: false,
-        })),
-      };
-
-      // Append to the end of the groups array
-      state.objectiveGroups.push(newGroup);
-
-      // Renumber all groups
-      renumberObjectiveGroups();
-
-      renderObjectiveGroups();
-
-      // Scroll into view and focus the first granular row
-      setTimeout(() => {
-        const groupElement = document.querySelector(
-          `[data-group-id="${newGroupId}"]`
-        );
-        if (groupElement) {
-          groupElement.scrollIntoView({ behavior: "smooth", block: "center" });
-
-          // Focus the first granular objective row
-          const firstItemElement = groupElement.querySelector(
-            ".objective-item__text"
-          );
-          if (firstItemElement) {
-            firstItemElement.focus();
-          }
-        }
-      }, 100);
-
-      showToast("Learning objective created successfully", "success");
-      announceToScreenReader(
-        `Added learning objective: ${objectiveName} with ${requestBody.granularObjectives.length} granular objective${requestBody.granularObjectives.length !== 1 ? 's' : ''}.`
-      );
-
-      // Refresh dropdown to include new objective
-      try {
-        await initializeAddObjectivesDropdown();
-      } catch (dropdownError) {
-        console.error("Error refreshing dropdown:", dropdownError);
-        // Don't throw - this is not critical
-      }
-    }
-
-
-    // Clear material selections
-    const materialCheckboxes = document.querySelectorAll(".material-checkbox");
-    materialCheckboxes.forEach(cb => cb.checked = false);
-
+    showToast("Learning objective settings updated", "success");
     hideModal(modal);
   } catch (error) {
-    console.error(`Error ${mode === "edit" ? "updating" : "creating"} learning objective:`, error);
-    showToast(error.message || `Failed to ${mode === "edit" ? "update" : "create"} learning objective`, "error");
+    console.error("Error updating learning objective:", error);
+    showToast(error.message || "Failed to update learning objective", "error");
   } finally {
-    // Clear timeout
-    clearTimeout(timeoutId);
-    // Re-enable button
     if (saveButton) {
       saveButton.disabled = false;
-      saveButton.innerHTML = originalButtonText;
+      saveButton.innerHTML = "Save Changes";
     }
   }
 }
-
-// AI Generation Modal Functions
-let generatedObjectives = [];
 
 function showAIGenerateObjectiveModalInternal() {
   const modal = document.getElementById("ai-generate-objective-modal");
@@ -1080,11 +874,7 @@ function showAIGenerateObjectiveModalInternal() {
     return;
   }
 
-  // Close any other open modals first
-  const customModal = document.getElementById("custom-objective-modal");
-  if (customModal && customModal.style.display !== "none" && customModal.style.display !== "") {
-    hideModal(customModal);
-  }
+
 
   // Reset state
   generatedObjectives = [];
@@ -1094,12 +884,6 @@ function showAIGenerateObjectiveModalInternal() {
   const statusDiv = document.getElementById("ai-generation-status");
   const generatedContainer = document.getElementById("ai-generated-objectives-container");
   const generatedList = document.getElementById("ai-generated-objectives-list");
-  const objectivesCountInput = document.getElementById("ai-objectives-count");
-
-  // Reset objectives count input
-  if (objectivesCountInput) {
-    objectivesCountInput.value = "5";
-  }
 
   if (generateBtn) {
     generateBtn.disabled = true;
@@ -1121,11 +905,126 @@ function showAIGenerateObjectiveModalInternal() {
     generatedList.innerHTML = "";
   }
 
+  // Reset custom objectives list and bulk paste
+  const customObjectivesList = document.getElementById("ai-custom-objectives-list");
+  if (customObjectivesList) {
+    customObjectivesList.innerHTML = "";
+  }
+  
+  const bulkPasteContainer = document.getElementById("ai-bulk-paste-container");
+  if (bulkPasteContainer) {
+    bulkPasteContainer.style.display = "none";
+  }
+  
+  const bulkPasteInput = document.getElementById("ai-bulk-paste-input");
+  if (bulkPasteInput) {
+    bulkPasteInput.value = "";
+  }
+
+  // Set up event listeners for the new buttons (if not already set)
+  setupAICustomObjectiveEventListeners();
+
   // Show modal first (like custom modal does)
   modal.style.display = "flex";
 
   // Load materials after showing modal (non-blocking, like custom modal)
   loadAIMaterialsForModal();
+}
+
+/**
+ * Sets up event listeners for custom objective UI controls
+ */
+function setupAICustomObjectiveEventListeners() {
+  const addBtn = document.getElementById("ai-add-objective-row-btn");
+  const bulkBtn = document.getElementById("ai-bulk-add-btn");
+  const applyBulkBtn = document.getElementById("ai-apply-bulk-btn");
+  const cancelBulkBtn = document.getElementById("ai-cancel-bulk-btn");
+
+  if (addBtn && !addBtn.dataset.listenerSet) {
+    addBtn.addEventListener("click", () => addCustomObjectiveRow());
+    addBtn.dataset.listenerSet = "true";
+  }
+
+  if (bulkBtn && !bulkBtn.dataset.listenerSet) {
+    bulkBtn.addEventListener("click", () => {
+      const container = document.getElementById("ai-bulk-paste-container");
+      if (container) container.style.display = "block";
+    });
+    bulkBtn.dataset.listenerSet = "true";
+  }
+
+  if (applyBulkBtn && !applyBulkBtn.dataset.listenerSet) {
+    applyBulkBtn.addEventListener("click", applyBulkPaste);
+    applyBulkBtn.dataset.listenerSet = "true";
+  }
+
+  if (cancelBulkBtn && !cancelBulkBtn.dataset.listenerSet) {
+    cancelBulkBtn.addEventListener("click", () => {
+      const container = document.getElementById("ai-bulk-paste-container");
+      if (container) container.style.display = "none";
+    });
+    cancelBulkBtn.dataset.listenerSet = "true";
+  }
+}
+
+/**
+ * Adds a new editable row to the custom objectives list
+ */
+function addCustomObjectiveRow(text = "") {
+  const list = document.getElementById("ai-custom-objectives-list");
+  if (!list) return;
+
+  const row = document.createElement("div");
+  row.className = "ai-custom-objective-row";
+  row.style.cssText = "display: flex; gap: 8px; align-items: center;";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "text-input ai-custom-objective-input";
+  input.value = text;
+  input.placeholder = "Enter a learning objective...";
+  input.style.cssText = "flex: 1; padding: 8px 12px; font-size: 14px;";
+  
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn btn--icon";
+  deleteBtn.innerHTML = '<i class="fas fa-trash-alt" style="color: #ef4444;"></i>';
+  deleteBtn.style.cssText = "padding: 8px; border: none; background: transparent; cursor: pointer;";
+  deleteBtn.title = "Remove objective";
+  deleteBtn.addEventListener("click", () => {
+    row.remove();
+  });
+
+  row.appendChild(input);
+  row.appendChild(deleteBtn);
+  list.appendChild(row);
+  
+  // Focus the new input
+  input.focus();
+}
+
+/**
+ * Applies objectives from the bulk paste textarea
+ */
+function applyBulkPaste() {
+  const bulkInput = document.getElementById("ai-bulk-paste-input");
+  if (!bulkInput || !bulkInput.value.trim()) {
+    const container = document.getElementById("ai-bulk-paste-container");
+    if (container) container.style.display = "none";
+    return;
+  }
+
+  const lines = bulkInput.value
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  lines.forEach(line => addCustomObjectiveRow(line));
+
+  // Clear and hide
+  bulkInput.value = "";
+  const container = document.getElementById("ai-bulk-paste-container");
+  if (container) container.style.display = "none";
 }
 
 async function loadAIMaterialsForModal() {
@@ -1251,18 +1150,14 @@ async function handleAIGenerateObjectives() {
     return;
   }
 
-  // Get number of objectives to generate
-  const objectivesCountInput = document.getElementById("ai-objectives-count");
-  let objectivesCount = 5; // Default
-  if (objectivesCountInput) {
-    const count = parseInt(objectivesCountInput.value, 10);
-    if (count >= 1 && count <= 10) {
-      objectivesCount = count;
-    } else {
-      showToast('Please enter a number between 1 and 10', 'warning');
-      return;
+  // Get custom objectives if provided
+  const objectiveInputs = document.querySelectorAll(".ai-custom-objective-input");
+  let userObjectives = [];
+  objectiveInputs.forEach(input => {
+    if (input.value.trim()) {
+      userObjectives.push(input.value.trim());
     }
-  }
+  });
 
   // Get course info
   const selectedCourse = getSelectedCourse();
@@ -1306,7 +1201,7 @@ async function handleAIGenerateObjectives() {
         courseId: selectedCourse.id,
         courseName: selectedCourse.name,
         materialIds: selectedMaterials,
-        objectivesCount: objectivesCount,
+        userObjectives: userObjectives
       }),
     });
 
@@ -1577,11 +1472,6 @@ function hideModal(modal) {
   if (modal) {
     modal.style.display = "none";
 
-    // Clear material selections if it's the custom objective modal
-    if (modal.id === "custom-objective-modal") {
-      const materialCheckboxes = document.querySelectorAll(".material-checkbox");
-      materialCheckboxes.forEach(cb => cb.checked = false);
-    }
 
     // Reset AI generation modal if it's the AI modal
     if (modal.id === "ai-generate-objective-modal") {
@@ -2488,8 +2378,7 @@ function decrementCount(groupId, itemId) {
   }
 }
 
-// Store current editing state
-let currentEditGroupId = null;
+
 
 async function editMetaObjective(groupId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
@@ -2699,12 +2588,11 @@ function addNewGranularObjective(groupId) {
 
 
 function initializeModals() {
-  // Custom objective modal
+  // Custom objective modal (Settings only)
   const customModal = document.getElementById("custom-objective-modal");
   const customModalClose = document.getElementById("custom-modal-close");
   const customModalCancel = document.getElementById("custom-modal-cancel");
   const customModalSave = document.getElementById("custom-modal-save");
-  const addGranularBtn = document.getElementById("add-granular-btn");
 
   if (customModalClose) {
     customModalClose.addEventListener("click", () => hideModal(customModal));
@@ -2717,13 +2605,6 @@ function initializeModals() {
       e.preventDefault();
       e.stopPropagation();
       handleCustomObjectiveSubmission();
-    });
-  }
-  if (addGranularBtn) {
-    addGranularBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      addGranularObjectiveInput();
     });
   }
 
