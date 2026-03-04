@@ -416,8 +416,9 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         const loIds = Object.keys(loGroups);
         if (loIds.length === 0) return [];
 
-        // Phase 1 (New Material): Select exactly 1 question per LO, anchored at bottom Bloom
-        const finalSelection = [];
+        // --- Phase 1: New Material ---
+        // Select exactly 1 question per LO mapped directly to this quiz, anchored at bottom Bloom
+        const phase1Selection = [];
 
         loIds.forEach(loId => {
             const candidates = [...loGroups[loId]];
@@ -439,9 +440,130 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
             });
 
             if (candidates.length > 0) {
-                finalSelection.push(candidates[0]);
+                phase1Selection.push(candidates[0]);
             }
         });
+
+        // --- Phase 2: Review Incorrect ---
+        // "Review of anything that they've gotten incorrect on the first attempt of any quiz 
+        // submitted since the last quiz was generated."
+        const phase2Selection = [];
+        
+        // Find all unique LOs they got wrong on their FIRST attempt.
+        // We do this by grouping performance by LO, then ordering by Date (Oldest to Newest)
+        // If the VERY FIRST entry for that LO is marked isCorrect: false, it was failed on the first attempt.
+        const failedLOs = new Map(); // Map of LO ID -> The specific Bloom level they failed at
+
+        // Fetch release dates for all quizzes attempted by this student to determine chronological progression
+        const attemptedQuizIds = [...new Set(userPerformance.map(p => p.quizId.toString()))];
+        const historicalQuizzes = await db.collection("grasp_quiz").find({ 
+            _id: { $in: attemptedQuizIds.map(id => new ObjectId(id)) } 
+        }).toArray();
+        
+        const quizReleaseMap = {};
+        historicalQuizzes.forEach(q => {
+            quizReleaseMap[q._id.toString()] = q.releaseDate ? new Date(q.releaseDate).getTime() : 0;
+        });
+
+        const currentQuizReleaseDate = quiz.releaseDate ? new Date(quiz.releaseDate).getTime() : 0;
+
+        // Re-sort performance chronologically oldest first to find the "first attempt"
+        const chronologicalPerf = [...userPerformance].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+        const firstAttemptsSeen = new Set(); // Track "QuizID_LOID" to identify first attempts per quiz
+        
+        chronologicalPerf.forEach(p => {
+            const loIdStr = p.learningObjectiveId?.toString() || p.granularObjectiveId?.toString();
+            const pQuizIdStr = p.quizId?.toString();
+            if (!loIdStr || !pQuizIdStr) return;
+
+            const quizLOKey = `${pQuizIdStr}_${loIdStr}`;
+            
+            // Process every record. If they missed ANY question for this LO in this quiz
+            // on its first attempt, they need to review the concept.
+            const pReleaseDate = quizReleaseMap[pQuizIdStr] || 0;
+            
+            // Only consider mistakes from quizzes that were released STRICTLY BEFORE this one
+            if (pReleaseDate < currentQuizReleaseDate) {
+                if (!p.isCorrect) {
+                    // A failure on ANY question for this LO in a previous quiz 
+                    // stays/enters the review bucket.
+                    failedLOs.set(loIdStr, p.bloom);
+                } else if (!failedLOs.has(loIdStr)) {
+                    // This is only relevant for the FIRST encounter across all time,
+                    // but we will keep the "delete" logic separate to ensure a pass in a 
+                    // LATER quiz cleans a fail from an EARLIER quiz.
+                }
+
+                // Optimization: If they pass the FIRST encounter of an LO in a LATER quiz,
+                // it should remediate the failure from an EARLIER quiz.
+                // We track if we have seen this LO in THIS quiz yet to identify "the quiz result".
+                if (!firstAttemptsSeen.has(quizLOKey)) {
+                    firstAttemptsSeen.add(quizLOKey);
+                    if (p.isCorrect) {
+                        // If the first thing they did with this LO in a LATER quiz was correct,
+                        // consider it remediated (unless another question in the SAME quiz is wrong).
+                        // Wait, the professor said "everything that was incorrect". 
+                        // Let's stick to: Any failure in a quiz counts as a "failed quiz session" for that LO.
+                        // And a successful "first attempt" of a LATER quiz cleans it.
+                        failedLOs.delete(loIdStr);
+                    }
+                } else {
+                    // We have seen this LO in this quiz before.
+                    if (!p.isCorrect) {
+                        // If any subsequent first-attempt in the SAME quiz is wrong,
+                        // it "re-fails" it for this quiz session.
+                        failedLOs.set(loIdStr, p.bloom);
+                    }
+                }
+            }
+        });
+
+        // 2. We need to query the database again because `allQuestions` only contains questions
+        // mapped directly to *this* quiz's assigned LOs. Phase 2 pulls from *past* LOs!
+        const failedLoIdStrings = Array.from(failedLOs.keys());
+        
+        if (failedLoIdStrings.length > 0) {
+            const extraQuestionsCollection = db.collection("grasp_question");
+            const historicalQuestions = await extraQuestionsCollection.find({
+                status: "Approved"
+            }).toArray();
+            
+            const enrichedHistorical = await enrichQuestionsWithLO(historicalQuestions);
+
+            failedLoIdStrings.forEach(failedLoId => {
+                 const targetBloom = failedLOs.get(failedLoId);
+                 
+                 // Find candidates matching the failed meta-LO
+                 const phase1QuestionIds = new Set(phase1Selection.map(q => q._id.toString()));
+
+                 const candidates = enrichedHistorical.filter(q => 
+                      (q.learningObjectiveId?.toString() === failedLoId || q.granularObjectiveId?.toString() === failedLoId) &&
+                      !phase1QuestionIds.has(q._id.toString())
+                 );
+                 
+                 candidates.sort((a, b) => {
+                      // Primary: Match the exact Bloom taxonomy level they failed at
+                      const aTarget = a.bloom === targetBloom;
+                      const bTarget = b.bloom === targetBloom;
+                      if (aTarget !== bTarget) return aTarget ? -1 : 1;
+                      
+                      // Secondary: Prioritize questions they've never seen
+                      const aSeen = seenQuestionIds.has(a._id.toString());
+                      const bSeen = seenQuestionIds.has(b._id.toString());
+                      if (aSeen !== bSeen) return aSeen ? 1 : -1;
+                      
+                      return Math.random() - 0.5;
+                 });
+                 
+                 if (candidates.length > 0) {
+                      phase2Selection.push(candidates[0]);
+                 }
+            });
+        }
+
+        // Combine Phase 1 and Phase 2
+        const finalSelection = [...phase1Selection, ...phase2Selection];
 
         // Inject dynamic student performance metadata for the UI
         finalSelection.forEach(q => {
