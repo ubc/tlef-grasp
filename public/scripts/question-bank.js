@@ -884,14 +884,6 @@ class QuestionBankPage {
                      style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
                      onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
             </div>
-            <div>
-              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Question Limit</label>
-              <input type="number" class="quiz-settings-input question-limit" 
-                     value="${quiz.questionLimit || 0}" min="0"
-                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
-                     placeholder="0 for all"
-                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
-            </div>
           </div>
         </div>
 
@@ -2009,14 +2001,9 @@ class QuestionBankPage {
 
     const newPublishedStatus = !quiz.published;
 
-    // Validation for publishing: a quiz must have a release date and a question limit > 0
     if (newPublishedStatus) {
       if (!quiz.releaseDate) {
         this.showNotification("A quiz cannot be published without a release date.", "error");
-        return;
-      }
-      if (!quiz.questionLimit || quiz.questionLimit <= 0) {
-        this.showNotification("A quiz cannot be published with a question limit of 0.", "error");
         return;
       }
     }
@@ -2067,7 +2054,6 @@ class QuestionBankPage {
 
     const releaseDate = quizCard.querySelector('.release-date').value || null;
     const expireDate = quizCard.querySelector('.expire-date').value || null;
-    const questionLimit = parseInt(quizCard.querySelector('.question-limit').value) || 0;
 
     // Check if values actually changed to avoid redundant saves
     const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
@@ -2079,8 +2065,7 @@ class QuestionBankPage {
       const inputExpire = expireDate ? new Date(expireDate).toISOString().slice(0, 16) : null;
 
       if (currentRelease === inputRelease && 
-          currentExpire === inputExpire && 
-          quiz.questionLimit === questionLimit) {
+          currentExpire === inputExpire) {
         return; // No change
       }
     }
@@ -2093,8 +2078,7 @@ class QuestionBankPage {
         },
         body: JSON.stringify({
           releaseDate: releaseDate,
-          expireDate: expireDate,
-          questionLimit: questionLimit
+          expireDate: expireDate
         }),
       });
 
@@ -2107,7 +2091,6 @@ class QuestionBankPage {
       if (quiz) {
         quiz.releaseDate = releaseDate;
         quiz.expireDate = expireDate;
-        quiz.questionLimit = questionLimit;
       }
 
       this.showNotification("Settings saved", "success");

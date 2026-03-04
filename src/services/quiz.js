@@ -28,7 +28,6 @@ const createQuiz = async (courseId, quizData) => {
             published: false, // Default to unpublished
             releaseDate: quizData.releaseDate ? new Date(quizData.releaseDate) : null,
             expireDate: quizData.expireDate ? new Date(quizData.expireDate) : null,
-            questionLimit: quizData.questionLimit ? parseInt(quizData.questionLimit) : 0,
             createdAt: new Date(),
             updatedAt: new Date(),
         });
@@ -135,10 +134,6 @@ const updateQuiz = async (quizId, quizData) => {
 
         if (quizData.expireDate !== undefined) {
             updateData.expireDate = quizData.expireDate ? new Date(quizData.expireDate) : null;
-        }
-
-        if (quizData.questionLimit !== undefined) {
-            updateData.questionLimit = quizData.questionLimit ? parseInt(quizData.questionLimit) : 0;
         }
         
         const result = await collection.updateOne(
@@ -389,20 +384,12 @@ const enrichQuestionsWithLO = async (questions) => {
 
 const BLOOM_ORDER = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
-/**
- * Get personalized quiz questions for a student
- * @param {string} quizId - The quiz ID
- * @param {string} userId - The user ID
- * @returns {Promise<Array>} Array of selected questions
- */
 const getQuizQuestionsForStudent = async (quizId, userId) => {
     try {
         const db = await databaseService.connect();
         const quiz = await getQuizById(quizId);
         if (!quiz) throw new Error("Quiz not found");
 
-        const questionLimit = quiz.questionLimit || 10;
-        
         // Get all approved questions
         const allQuestions = await getQuizQuestions(quizId, true);
         if (allQuestions.length === 0) return [];
@@ -410,11 +397,13 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         // Enrich questions with LO ID
         const enrichedQuestions = await enrichQuestionsWithLO(allQuestions);
 
-        // Fetch student performance
+        // Fetch student performance to know which questions are unseen
         const performanceCollection = db.collection("grasp_student_performance");
         const userPerformance = await performanceCollection.find({ 
             userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId 
         }).sort({ createdAt: -1 }).toArray();
+        
+        const seenQuestionIds = new Set(userPerformance.map(p => p.questionId.toString()));
 
         // Group questions by LO
         const loGroups = {};
@@ -427,187 +416,32 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         const loIds = Object.keys(loGroups);
         if (loIds.length === 0) return [];
 
-        // Determine target Bloom level for each LO based on performance
-        const loTargetBloom = {};
-        
-        // Group LOs by their performance criteria
-        const groups = { 
-            step3: [], // 3 correct in last 3
-            step2: [], // 2 correct in last 2
-            step1: [], // 1 correct in last 1
-            stepDown: [] // 2 wrong in last 2 AT SAME BLOOM LEVEL
-        };
+        // Phase 1 (New Material): Select exactly 1 question per LO, anchored at bottom Bloom
+        const finalSelection = [];
 
         loIds.forEach(loId => {
-            const loPerf = userPerformance.filter(p => p.learningObjectiveId?.toString() === loId);
-            const lastThree = loPerf.slice(0, 3);
-            const lastTwo = loPerf.slice(0, 2);
-            const lastOne = loPerf.slice(0, 1);
+            const candidates = [...loGroups[loId]];
             
-            if (lastThree.length === 3 && lastThree.every(p => p.isCorrect)) {
-                groups.step3.push(loId);
-            } else if (lastTwo.length === 2 && lastTwo.every(p => p.isCorrect)) {
-                groups.step2.push(loId);
-            } else if (lastOne.length === 1 && lastOne.every(p => p.isCorrect)) {
-                groups.step1.push(loId);
-            } else if (
-                lastTwo.length === 2 && 
-                lastTwo.every(p => !p.isCorrect) && 
-                lastTwo[0].bloom === lastTwo[1].bloom
-            ) {
-                // If the last 2 attempts were both incorrect at the exact SAME taxonomy level, step down
-                groups.stepDown.push(loId);
-            }
-            
-            // Default target bloom anchors to their most recent attempt's level 
-            // (allows continuous fluid movement up or down rather than getting stuck at an all-time high)
-            let currentBloomIndex = 0;
-            if (loPerf.length > 0) {
-                const latestBloomIndex = BLOOM_ORDER.indexOf(loPerf[0].bloom);
-                if (latestBloomIndex !== -1) {
-                    currentBloomIndex = latestBloomIndex;
-                }
-            }
-            loTargetBloom[loId] = { index: currentBloomIndex, stepUp: false, stepDown: false };
-        });
-
-        // Apply step-up probabilities to groups
-        // 10% of 3-correct group
-        groups.step3.filter(() => Math.random() < 0.10).forEach(id => loTargetBloom[id].stepUp = true);
-        // 20% of 2-correct group
-        groups.step2.filter(() => Math.random() < 0.20).forEach(id => loTargetBloom[id].stepUp = true);
-        // 50% of 1-correct group
-        groups.step1.filter(() => Math.random() < 0.50).forEach(id => loTargetBloom[id].stepUp = true);
-
-        // Apply 100% step-down for 2-wrong group
-        groups.stepDown.forEach(id => loTargetBloom[id].stepDown = true);
-
-        // Finalize target bloom strings
-        loIds.forEach(loId => {
-            const { index, stepUp, stepDown } = loTargetBloom[loId];
-            if (stepUp && index < BLOOM_ORDER.length - 1) {
-                loTargetBloom[loId] = BLOOM_ORDER[index + 1];
-            } else if (stepDown && index > 0) {
-                loTargetBloom[loId] = BLOOM_ORDER[index - 1];
-            } else {
-                loTargetBloom[loId] = BLOOM_ORDER[index];
-            }
-        });
-
-        // Identify questions from the most recent session
-        // (A session is defined as all attempts sharing the same latest 'quizId' and 'createdAt' timestamp for this user)
-        const lastSessionQuestionIds = new Set();
-        if (userPerformance.length > 0) {
-            const latestAttempt = userPerformance[0];
-            // Questions taken in the same quiz session likely have the same or very close createdAt
-            // For robustness, we'll take all questionIds from the very last attempt group
-            const latestQuizId = latestAttempt.quizId.toString();
-            const latestTime = latestAttempt.createdAt.getTime();
-            
-            // Allow 5 minutes window for a single session
-            userPerformance.forEach(p => {
-                const diff = Math.abs(p.createdAt.getTime() - latestTime);
-                if (p.quizId.toString() === latestQuizId && diff < 5 * 60 * 1000) {
-                    lastSessionQuestionIds.add(p.questionId.toString());
-                }
-            });
-        }
-
-        // Map most recent result for each combination of (LO + Bloom)
-        const latestOutcomeByLoBloom = {};
-        userPerformance.forEach(p => {
-            if (!p.learningObjectiveId) return;
-            const key = `${p.learningObjectiveId.toString()}_${p.bloom}`;
-            if (latestOutcomeByLoBloom[key] === undefined) {
-                latestOutcomeByLoBloom[key] = p.isCorrect;
-            }
-        });
-
-        // Pick questions
-        let selectedQuestions = [];
-        const seenQuestionIds = new Set(userPerformance.map(p => p.questionId.toString()));
-
-        loIds.forEach(loId => {
-            // 1. Shuffle first to ensure random tie-breaking
-            let candidates = [...loGroups[loId]].sort(() => Math.random() - 0.5);
-            
-            // 2. Sort candidates into 5 tiers based on the USER'S SPECIFIC REQUEST:
-            // "previously wrong meaning the question in same learning objective and same bloom taxonomy was wrong in last quiz"
-            // 1) Target Bloom + Never Seen (Unseen)
-            // 2) Target Bloom + Previous (LO+Bloom) Wrong + Unseen (not in last session)
-            // 3) Target Bloom + Previous (LO+Bloom) Wrong + Seen (in last session)
-            // 4) Target Bloom + Previous (LO+Bloom) Correct + Unseen (not in last session)
-            // 5) Target Bloom + Previous (LO+Bloom) Correct + Seen (in last session)
+            // Sort to find the lowest available Bloom level that is preferably unseen
             candidates.sort((a, b) => {
-                const aTarget = a.bloom === loTargetBloom[loId];
-                const bTarget = b.bloom === loTargetBloom[loId];
-                const aId = a._id.toString();
-                const bId = b._id.toString();
-                const aSeenEver = seenQuestionIds.has(aId);
-                const bSeenEver = seenQuestionIds.has(bId);
-                const aSeenLast = lastSessionQuestionIds.has(aId);
-                const bSeenLast = lastSessionQuestionIds.has(bId);
-                
-                // Get the latest outcome for this question's specific LO + Bloom combination
-                const aOutcomeKey = `${loId}_${a.bloom}`;
-                const bOutcomeKey = `${loId}_${b.bloom}`;
-                const aLatestCorrect = latestOutcomeByLoBloom[aOutcomeKey];
-                const bLatestCorrect = latestOutcomeByLoBloom[bOutcomeKey];
-
-                // Helper to get priority weight (lower is better, 0-4 for Target, 10-14 for Other)
-                const getWeight = (isTarget, seenEver, lastCorrect, seenLast) => {
-                    let base = isTarget ? 0 : 10;
-                    if (!seenEver) return base + 0;                      // Tier 1: Never Seen
-                    if (lastCorrect === false) return base + (seenLast ? 2 : 1); // Tier 2/3: Wrong
-                    return base + (seenLast ? 4 : 3);                   // Tier 4/5: Correct
-                };
-
-                const aWeight = getWeight(aTarget, aSeenEver, aLatestCorrect, aSeenLast);
-                const bWeight = getWeight(bTarget, bSeenEver, bLatestCorrect, bSeenLast);
-
-                if (aWeight !== bWeight) return aWeight - bWeight;
-
-                // Tie-breaker: Bloom distance
+                // Primary: Lowest Bloom taxonomy index
                 const aIdx = BLOOM_ORDER.indexOf(a.bloom);
                 const bIdx = BLOOM_ORDER.indexOf(b.bloom);
-                const targetIdx = BLOOM_ORDER.indexOf(loTargetBloom[loId]);
-                return Math.abs(aIdx - targetIdx) - Math.abs(bIdx - targetIdx);
+                if (aIdx !== bIdx) return aIdx - bIdx;
+
+                // Secondary: Prioritize questions the student has never seen
+                const aSeen = seenQuestionIds.has(a._id.toString());
+                const bSeen = seenQuestionIds.has(b._id.toString());
+                if (aSeen !== bSeen) return aSeen ? 1 : -1;
+                
+                // Tertiary: Randomize selection amongst remaining identical weights
+                return Math.random() - 0.5;
             });
 
-            // STRICT RETAKE Blacklist: Try to completely remove any question seen in the exact last session
-            // so the student gets a truly fresh test permutation. Only fallback to including them if we
-            // don't have enough unseen questions left in the bank for this LO.
-            const unseenCandidates = candidates.filter(c => !lastSessionQuestionIds.has(c._id.toString()));
-            // We want to try to guarantee at least 1 question per LO for equal distribution
-            if (unseenCandidates.length > 0) {
-                // We have enough unseen questions, use strict list!
-                candidates = unseenCandidates;
+            if (candidates.length > 0) {
+                finalSelection.push(candidates[0]);
             }
-
-            // Tag each question with its LO for equal distribution logic below
-            candidates.forEach(q => q.tempLoId = loId);
-            selectedQuestions.push(...candidates);
         });
-
-        // Equal distribution logic: round-robin through LOs until limit reached
-        const finalSelection = [];
-        const loQueues = loIds.map(id => selectedQuestions.filter(q => q.tempLoId === id));
-        
-        let loIdx = 0;
-        while (finalSelection.length < questionLimit) {
-            let found = false;
-            // Try to find one from each LO in turn
-            for (let i = 0; i < loIds.length; i++) {
-                const currentLoQueue = loQueues[(loIdx + i) % loIds.length];
-                if (currentLoQueue.length > 0) {
-                    finalSelection.push(currentLoQueue.shift());
-                    found = true;
-                    if (finalSelection.length >= questionLimit) break;
-                }
-            }
-            if (!found) break; // No more questions available
-            loIdx = (loIdx + 1) % loIds.length;
-        }
 
         // Inject dynamic student performance metadata for the UI
         finalSelection.forEach(q => {

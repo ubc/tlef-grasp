@@ -40,7 +40,7 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description, releaseDate, expireDate, questionLimit } = req.body;
+    const { courseId, name, description, releaseDate, expireDate } = req.body;
     
     if (!courseId || !name) {
       return res.status(400).json({
@@ -53,8 +53,7 @@ const createQuizHandler = async (req, res) => {
       name, 
       description,
       releaseDate,
-      expireDate,
-      questionLimit 
+      expireDate
     });
     res.status(201).json({ success: true, quiz });
   } catch (error) {
@@ -69,7 +68,7 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, releaseDate, expireDate, questionLimit } = req.body;
+    const { name, description, published, releaseDate, expireDate } = req.body;
     
     // Get existing quiz to check current values
     const existingQuiz = await quizService.getQuizById(quizId);
@@ -77,25 +76,17 @@ const updateQuizHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
 
-    // Validation for publishing: a quiz must have a release date and a question limit > 0
+    // Validation for publishing: a quiz must have a release date
     const finalPublished = published !== undefined ? published : existingQuiz.published;
     
     if (finalPublished === true) {
-      // Check final state of releaseDate and questionLimit
+      // Check final state of releaseDate
       const finalReleaseDate = releaseDate !== undefined ? releaseDate : existingQuiz.releaseDate;
-      const finalQuestionLimit = questionLimit !== undefined ? questionLimit : existingQuiz.questionLimit;
 
       if (!finalReleaseDate) {
         return res.status(400).json({ 
           success: false, 
           error: "A published quiz must have a release date." 
-        });
-      }
-
-      if (!finalQuestionLimit || parseInt(finalQuestionLimit) <= 0) {
-        return res.status(400).json({ 
-          success: false, 
-          error: "A published quiz must have a question limit greater than 0." 
         });
       }
     }
@@ -105,8 +96,7 @@ const updateQuizHandler = async (req, res) => {
       description, 
       published,
       releaseDate,
-      expireDate,
-      questionLimit
+      expireDate
     });
     
     if (result.matchedCount === 0) {

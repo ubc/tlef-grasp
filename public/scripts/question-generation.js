@@ -2771,28 +2771,7 @@ function initializeQuizSelection() {
   // Switch to select tab by default
   switchQuizTab('select');
 
-  // Default question limit to the number of questions generated but no more than 10
-  const questionLimitInput = document.getElementById("quiz-question-limit");
-  if (questionLimitInput) {
-    let totalQuestions = 0;
-    if (state.questionGroups && state.questionGroups.length > 0) {
-      state.questionGroups.forEach(group => {
-        if (group.los && group.los.length > 0) {
-          group.los.forEach(lo => {
-            if (lo.questions && lo.questions.length > 0) {
-              totalQuestions += lo.questions.length;
-            }
-          });
-        }
-      });
-    }
-    
-    if (totalQuestions > 0) {
-      questionLimitInput.value = Math.min(totalQuestions, 10);
-    } else {
-      questionLimitInput.value = "";
-    }
-  }
+  // Default question limit logic removed as quizzes are now dynamically sized
 }
 
 function setupQuizSelectionListeners() {
@@ -3689,7 +3668,6 @@ async function handleSaveToQuiz() {
       const descriptionInput = document.getElementById("quiz-description-input");
       const releaseDateInput = document.getElementById("quiz-release-date");
       const expireDateInput = document.getElementById("quiz-expire-date");
-      const questionLimitInput = document.getElementById("quiz-question-limit");
 
       if (!nameInput || !nameInput.value.trim()) {
         showToast("Please enter a quiz name", "error");
@@ -3708,8 +3686,7 @@ async function handleSaveToQuiz() {
           name: nameInput.value.trim(),
           description: descriptionInput.value.trim() || '',
           releaseDate: releaseDateInput ? releaseDateInput.value : null,
-          expireDate: expireDateInput ? expireDateInput.value : null,
-          questionLimit: questionLimitInput ? parseInt(questionLimitInput.value) || 0 : 0
+          expireDate: expireDateInput ? expireDateInput.value : null
         }),
       });
 
