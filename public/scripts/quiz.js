@@ -470,9 +470,26 @@ function showQuestion(questionIndex) {
 
   // Update question number and text
   document.getElementById("questionNumber").textContent = `Question ${questionIndex + 1}`;
+  
   // Use innerHTML for question text to support LaTeX rendering
-  const questionTextElement = document.getElementById("questionText");
-  questionTextElement.innerHTML = escapeHtml(question.question || "Question text not available");
+  const questionTitleElement = document.getElementById("questionText");
+  const questionStemElement = document.getElementById("questionStem"); // Assumes this element might exist or we just append
+  
+  let completeHTML = `
+    <div class="question-title" style="margin-bottom: ${question.stem ? '10px' : '0'};">
+      ${escapeHtml(question.question || question.title || "Question text not available")}
+    </div>
+  `;
+  
+  if (question.stem) {
+    completeHTML += `
+      <div class="question-stem" style="font-size: 1.1em; font-weight: 500; color: #34495e;">
+        ${escapeHtml(question.stem)}
+      </div>
+    `;
+  }
+  
+  questionTitleElement.innerHTML = completeHTML;
   document.getElementById("currentQuestion").textContent = questionIndex + 1;
   
   // Show question ID for debugging
@@ -520,42 +537,56 @@ function renderAnswerOptions(question, questionIndex) {
   const answerOptions = document.getElementById("answerOptions");
   answerOptions.innerHTML = "";
 
-  const optionKeys = ['A', 'B', 'C', 'D'];
+  // The secure backend now passes an array of indices [3, 0, 1, 2]
+  const optionOrderIndices = question.optionOrder || [0, 1, 2, 3];
   const questionId = question.id;
-  const selectedAnswer = quizState.answers[questionId];
+  
+  // The backend still physically keys the options DB dictionary as A, B, C, D
+  const databaseKeys = ['A', 'B', 'C', 'D'];
+  const selectedIndex = quizState.answers[questionId];
 
-  optionKeys.forEach(optionKey => {
-    const optionText = question.options[optionKey] || "";
+  optionOrderIndices.forEach((mappedIndex, uiLoopCount) => {
+    const rawDBKey = databaseKeys[mappedIndex]; // e.g. 'C'
+    const optionRaw = question.options[rawDBKey];
+    
+    // Safely extract the string text from the dictionary object 
+    const optionText = typeof optionRaw === 'object' && optionRaw !== null ? (optionRaw.text || "") : (optionRaw || "");
     if (!optionText) return; // Skip empty options
 
     const optionDiv = document.createElement("div");
     optionDiv.className = "answer-option";
-    optionDiv.dataset.option = optionKey;
+    // We bind the dataset to the underlying index number so the backend can look it up securely
+    optionDiv.dataset.index = mappedIndex;
 
-    // Add selected class if this option was selected
-    if (selectedAnswer === optionKey) {
+    // Add selected class if this exact mappedIndex was selected previously
+    if (selectedIndex === mappedIndex) {
       optionDiv.classList.add("selected");
     }
 
     // Add correct/incorrect classes if feedback exists (check by question ID)
     if (quizState.feedback[questionId]) {
-      if (optionKey === question.correctAnswer) {
+      const feedbackData = quizState.feedback[questionId];
+      // Note: check against the parsed `rawDBKey` (e.g. 'C') because feedbackData.correctAnswer returns letters
+      if (rawDBKey === feedbackData.correctAnswer) {
         optionDiv.classList.add("correct");
-      } else if (selectedAnswer === optionKey && selectedAnswer !== question.correctAnswer) {
+      } else if (selectedIndex === mappedIndex && !feedbackData.isCorrect) {
         optionDiv.classList.add("incorrect");
       }
     }
 
+    // Visually, the UI should always render A -> B -> C -> D regardless of the mapping
+    const visualOrderLetter = databaseKeys[uiLoopCount];
+
     // Escape HTML and use innerHTML to support LaTeX rendering
     const escapedOptionText = escapeHtml(optionText);
     optionDiv.innerHTML = `
-      <div class="option-letter">${optionKey}</div>
+      <div class="option-letter">${visualOrderLetter}</div>
       <div class="option-text">${escapedOptionText}</div>
     `;
 
     // Only allow selection if not already answered
     if (!quizState.feedback[questionId]) {
-      optionDiv.addEventListener("click", () => selectAnswer(optionKey, questionIndex, questionId, question.correctAnswer));
+      optionDiv.addEventListener("click", () => selectAnswer(mappedIndex, rawDBKey, questionIndex, questionId));
     }
 
     answerOptions.appendChild(optionDiv);
@@ -565,77 +596,116 @@ function renderAnswerOptions(question, questionIndex) {
   renderKatex();
 }
 
-function selectAnswer(selectedOption, questionIndex, questionId, correctAnswer) {
-  // Store answer by question ID (not index) to handle shuffled questions
-  quizState.answers[questionId] = selectedOption;
-
-  // Enable next button now that an answer is selected
-  document.getElementById("nextButton").disabled = false;
-
-  // Show immediate feedback
-  showFeedback(questionIndex, questionId, selectedOption, correctAnswer);
-
-  // Update highlighting immediately on all options
+async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) {
+  // Disable all options immediately to prevent double-clicks during transit
   const options = document.querySelectorAll(".answer-option");
   options.forEach(option => {
-    const optionKey = option.dataset.option;
-
-    // Remove existing classes
-    option.classList.remove("selected", "correct", "incorrect");
-
-    // Add correct class to the correct answer
-    if (optionKey === correctAnswer) {
-      option.classList.add("correct");
-    }
-
-    // Add incorrect class to the selected wrong answer
-    if (optionKey === selectedOption && selectedOption !== correctAnswer) {
-      option.classList.add("incorrect");
-    }
-
-    // Disable pointer events
     option.style.pointerEvents = "none";
   });
 
-  // Update question indicators
-  updateQuestionIndicators();
+  try {
+    // Validate answer securely on the server using its true index
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selectedIndex })
+    });
+    
+    if (!response.ok) throw new Error("Failed to check answer");
+    
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+
+    // Store the selected mapped index
+    quizState.answers[questionId] = selectedIndex;
+    
+    // Store exact server-authoritative feedback payload
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      selectedAnswer: selectedIndex,
+      correctAnswer: result.correctAnswer, // This will be the raw DB 'A', 'B' string
+      feedbackText: result.feedback,
+      correctOptionText: result.correctOptionText
+    };
+
+    // Enable next button now that an answer is selected
+    document.getElementById("nextButton").disabled = false;
+
+    // Show immediate feedback
+    showFeedback(questionIndex, questionId, selectedIndex, result.correctAnswer);
+
+    // Update highlighting immediately on all options
+    options.forEach(option => {
+      // Parse the embedded mapped index from the dataset (e.g. 0-3)
+      const mappedIndex = parseInt(option.dataset.index, 10);
+      
+      // We must reconstruct the raw backend key ('A', 'B', 'C', 'D') for this mapped index
+      // because the API evaluation result.correctAnswer returns the correct string key
+      const databaseKeys = ['A', 'B', 'C', 'D'];
+      const optionKey = databaseKeys[mappedIndex]; 
+
+      option.classList.remove("selected", "correct", "incorrect");
+
+      // Add correct class to the correct answer (only if it was returned)
+      if (result.correctAnswer && optionKey === result.correctAnswer) {
+        option.classList.add("correct");
+      }
+
+      // Add incorrect class to the selected wrong answer
+      if (mappedIndex === selectedIndex && !result.isCorrect) {
+        option.classList.add("incorrect");
+      }
+    });
+
+    // Update question indicators
+    updateQuestionIndicators();
+
+  } catch (error) {
+    console.error("Error evaluating answer:", error);
+    // Re-enable clicks so student can try again if the connection failed
+    options.forEach(option => {
+      option.style.pointerEvents = "auto";
+    });
+  }
 }
 
-function showFeedback(questionIndex, questionId, selectedAnswer, correctAnswer) {
+function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
   const feedbackSection = document.getElementById("feedbackSection");
   const feedbackMessage = document.getElementById("feedbackMessage");
   const correctAnswerDisplay = document.getElementById("correctAnswerDisplay");
   const correctAnswerText = document.getElementById("correctAnswerText");
 
-  const isCorrect = selectedAnswer === correctAnswer;
+  // Retrieve perfectly mapped server feedback
+  const feedbackData = quizState.feedback[questionId];
+  if (!feedbackData) return;
+  
+  const isCorrect = feedbackData.isCorrect;
+  const feedbackString = feedbackData.feedbackText || "";
 
-  // Store feedback by question ID
-  quizState.feedback[questionId] = {
-    isCorrect: isCorrect,
-    selectedAnswer: selectedAnswer,
-    correctAnswer: correctAnswer
-  };
+  const formattedFeedbackHTML = feedbackString 
+    ? `<div style="margin-top: 10px; font-weight: normal; font-size: 0.9em; color: #555;">${escapeHtml(feedbackString)}</div>` 
+    : "";
 
   // Show feedback message only for correct answers
   if (isCorrect) {
     feedbackMessage.className = "feedback-message feedback-correct";
-    feedbackMessage.innerHTML = '<i class="fas fa-check-circle"></i> Correct!';
+    feedbackMessage.innerHTML = `<i class="fas fa-check-circle"></i> Correct!${formattedFeedbackHTML}`;
     feedbackMessage.style.display = "block";
     correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
   } else {
-    // For incorrect answers, hide the feedback message and just show the correct answer
-    feedbackMessage.style.display = "none";
+    // For incorrect answers, show both the incorrect badge AND optionally the correct answer
+    feedbackMessage.className = "feedback-message feedback-incorrect";
+    feedbackMessage.innerHTML = `<i class="fas fa-times-circle"></i> Incorrect.${formattedFeedbackHTML}`;
+    feedbackMessage.style.display = "block";
 
-    // Show correct answer (with LaTeX support)
-    const correctOptionText = quizState.quizData.questions[questionIndex].options[correctAnswer] || correctAnswer;
-    correctAnswerText.innerHTML = `${correctAnswer}: ${escapeHtml(correctOptionText)}`;
-    correctAnswerDisplay.style.display = "block";
+    // Stop displaying the correct answer to the student if they got it wrong
+    correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
-
-    // Render LaTeX in the feedback section
-    renderKatex();
   }
+  
+  // Render LaTeX in the feedback section
+  renderKatex();
 }
 
 function hideFeedback() {

@@ -2674,10 +2674,22 @@ class QuestionBankPage {
         return;
       }
 
-      // Convert options array back to object format {A: "...", B: "...", C: "...", D: "..."}
+      // Find the original question to preserve its nested option properties (like feedback)
+      const originalQuestion = this.questions.find(q => toStringId(q.id) === toStringId(this.currentEditingQuestion.id)) || {};
+      const originalOptions = originalQuestion.options || {};
+
+      // Convert options array back to object format {A: {text: "..."}, B: {text: "..."}}
+      // Merging with the original option object to preserve 'feedback' and other metadata
       const optionsObject = {};
       options.forEach(opt => {
-        optionsObject[opt.id] = opt.text;
+        const oldOption = originalOptions[opt.id];
+        if (typeof oldOption === 'object' && oldOption !== null) {
+          optionsObject[opt.id] = { ...oldOption, text: opt.text };
+        } else {
+          // If the old option was just a string, save this as a string too, or as a new object
+          // Since the backend supports both, we'll keep the object structure to be safe and future-proof
+          optionsObject[opt.id] = { text: opt.text };
+        }
       });
 
       // Ensure correctAnswer is a letter (A, B, C, D)
