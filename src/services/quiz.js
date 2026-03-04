@@ -309,7 +309,7 @@ const getQuizQuestions = async (quizId, approvedOnly = false) => {
 };
 
 /**
- * Enrich questions with their parent Learning Objective ID
+ * Enrich questions with their parent Learning Objective ID and names
  * @param {Array} questions - Array of questions
  * @returns {Promise<Array>} Enriched questions
  */
@@ -331,22 +331,54 @@ const enrichQuestionsWithLO = async (questions) => {
             _id: { $in: granularIds.map(id => new ObjectId(id)) } 
         }).toArray();
 
-        const granularToParentMap = new Map();
+        // Also fetch all parent objectives needed
+        const parentIds = [...new Set(
+            granularObjectives
+                .map(g => g.parent)
+                .filter(id => id != null && id !== 0)
+        )];
+
+        const parentObjectives = await objectiveCollection.find({
+            _id: { $in: parentIds.map(id => new ObjectId(id)) }
+        }).toArray();
+
+        const parentMap = new Map();
+        parentObjectives.forEach(parent => {
+            parentMap.set(parent._id.toString(), parent);
+        });
+
+        const granularToDataMap = new Map();
         granularObjectives.forEach(granular => {
-            granularToParentMap.set(granular._id.toString(), granular.parent);
+            const parentIdStr = granular.parent?.toString();
+            const parentData = parentIdStr ? parentMap.get(parentIdStr) : null;
+            
+            granularToDataMap.set(granular._id.toString(), {
+                parentId: granular.parent,
+                granularName: granular.name,
+                parentName: parentData ? parentData.name : null
+            });
         });
 
         return questions.map(question => {
             const granularId = question.granularObjectiveId;
             let parentObjectiveId = null;
+            let learningObjectiveName = null;
+            let granularObjectiveName = null;
             
             if (granularId) {
-                parentObjectiveId = granularToParentMap.get(granularId.toString());
+                const loData = granularToDataMap.get(granularId.toString());
+                if (loData) {
+                    parentObjectiveId = loData.parentId;
+                    learningObjectiveName = loData.parentName;
+                    granularObjectiveName = loData.granularName;
+                }
             }
             
             return {
                 ...question,
                 learningObjectiveId: parentObjectiveId,
+                learningObjectiveName: learningObjectiveName,
+                granularObjectiveName: granularObjectiveName
             };
         });
     } catch (error) {
@@ -554,6 +586,31 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
             loIdx = (loIdx + 1) % loIds.length;
         }
 
+        // Inject dynamic student performance metadata for the UI
+        finalSelection.forEach(q => {
+            const currentLoId = q.learningObjectiveId?.toString();
+            const currentBloom = q.bloom;
+            
+            if (!currentLoId) {
+                q.userLevel = "No Prior History";
+                return;
+            }
+            
+            // Find performance records for this exact LO + Bloom
+            const perfRecords = userPerformance.filter(p => 
+                p.learningObjectiveId?.toString() === currentLoId && p.bloom === currentBloom
+            );
+            
+            if (perfRecords.length === 0) {
+                q.userLevel = "No Prior History";
+            } else {
+                const correctCount = perfRecords.filter(p => p.isCorrect).length;
+                const totalCount = perfRecords.length;
+                const accuracy = Math.round((correctCount / totalCount) * 100);
+                q.userLevel = `${correctCount}/${totalCount} Correct (${accuracy}%)`;
+            }
+        });
+
         return finalSelection;
     } catch (error) {
         console.error("Error in getQuizQuestionsForStudent:", error);
@@ -600,5 +657,6 @@ module.exports = {
     getQuizQuestions,
     getQuizQuestionsForStudent,
     saveStudentPerformance,
+    enrichQuestionsWithLO,
 };
 

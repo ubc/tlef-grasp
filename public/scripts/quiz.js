@@ -475,7 +475,22 @@ function showQuestion(questionIndex) {
   const questionTitleElement = document.getElementById("questionText");
   const questionStemElement = document.getElementById("questionStem"); // Assumes this element might exist or we just append
   
-  let completeHTML = `
+  // Retrieve diagnostic metadata attached by getQuizQuestionsForStudent
+  const loName = question.learningObjectiveName || question.granularObjectiveName || "General Topic";
+  const bloomName = question.bloom || "Unspecified Category";
+  const userLevel = question.userLevel || "No Prior History";
+  const questionIdStr = question.id || "N/A";
+
+  const diagnosticHTML = `
+    <div class="diagnostic-metadata" style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db; font-size: 0.9em; color: #495057; display: flex; flex-direction: column; gap: 6px;">
+      <div><strong><i class="fas fa-bullseye" style="width: 16px; text-align: center; color: #3498db;"></i> Objective:</strong> ${escapeHtml(loName)}</div>
+      <div><strong><i class="fas fa-brain" style="width: 16px; text-align: center; color: #9b59b6;"></i> Taxonomy:</strong> ${escapeHtml(bloomName)}</div>
+      <div><strong><i class="fas fa-chart-line" style="width: 16px; text-align: center; color: #2ecc71;"></i> User Level:</strong> ${escapeHtml(userLevel)}</div>
+      <div><strong><i class="fas fa-hashtag" style="width: 16px; text-align: center; color: #95a5a6;"></i> ID:</strong> <span style="font-family: Courier, monospace; font-size: 0.9em; background: #e9ecef; padding: 2px 4px; border-radius: 4px;">${escapeHtml(questionIdStr)}</span></div>
+    </div>
+  `;
+
+  let completeHTML = diagnosticHTML + `
     <div class="question-title" style="margin-bottom: ${question.stem ? '10px' : '0'};">
       ${escapeHtml(question.question || question.title || "Question text not available")}
     </div>
@@ -743,13 +758,13 @@ async function showCompletion() {
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
 
-  // Calculate stats using question IDs
-  let correctCount = 0;
+  // Calculate stats using the exact server feedback 
   const totalQuestions = quizState.quizData.questions.length;
+  let correctCount = 0;
 
-  quizState.quizData.questions.forEach((question) => {
-    const questionId = question.id;
-    if (quizState.feedback[questionId] && quizState.feedback[questionId].isCorrect) {
+  // quizState.feedback contains { isCorrect, ... } for every questionId answered
+  Object.values(quizState.feedback).forEach(feedbackResult => {
+    if (feedbackResult && feedbackResult.isCorrect) {
       correctCount++;
     }
   });
@@ -785,6 +800,7 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
       },
       body: JSON.stringify({
         answers: quizState.answers,
+        feedback: quizState.feedback,
         score: score,
         correctAnswers: correctAnswers,
         totalQuestions: totalQuestions,

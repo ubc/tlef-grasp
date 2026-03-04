@@ -290,22 +290,29 @@ const submitQuizHandler = async (req, res) => {
       const userId = req.user._id || req.user.id;
       const courseId = quiz.courseId;
       const quizName = quiz.name || "Quiz";
+      
+      // Accept feedback results from the client (which were securely verified server-side per click)
+      const { feedback } = req.body;
 
-      if (userId && courseId) {
-        // Record performance for each question
-        for (const q of questions) {
-            const questionId = q._id.toString();
-            const selectedOption = answers[questionId];
-            if (selectedOption) {
-                const isCorrect = selectedOption === q.correctAnswer;
+      if (userId && courseId && feedback) {
+        // Build a fast lookup map for questions to extract LOs and Blooms
+        const questionLookup = {};
+        questions.forEach(q => questionLookup[q._id.toString()] = q);
+
+        // Record performance for each question answered in this session
+        for (const questionId of Object.keys(feedback)) {
+            const questionData = questionLookup[questionId];
+            const feedbackResult = feedback[questionId];
+            
+            if (questionData && feedbackResult) {
                 await quizService.saveStudentPerformance({
                     userId: userId.toString(),
                     quizId,
                     questionId,
-                    learningObjectiveId: q.learningObjectiveId,
-                    granularObjectiveId: q.granularObjectiveId,
-                    bloom: q.bloom,
-                    isCorrect
+                    learningObjectiveId: questionData.learningObjectiveId,
+                    granularObjectiveId: questionData.granularObjectiveId,
+                    bloom: questionData.bloom,
+                    isCorrect: !!feedbackResult.isCorrect
                 });
             }
         }
