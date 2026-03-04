@@ -434,7 +434,8 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         const groups = { 
             step3: [], // 3 correct in last 3
             step2: [], // 2 correct in last 2
-            step1: []  // 1 correct in last 1
+            step1: [], // 1 correct in last 1
+            stepDown: [] // 2 wrong in last 2 AT SAME BLOOM LEVEL
         };
 
         loIds.forEach(loId => {
@@ -449,18 +450,25 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
                 groups.step2.push(loId);
             } else if (lastOne.length === 1 && lastOne.every(p => p.isCorrect)) {
                 groups.step1.push(loId);
+            } else if (
+                lastTwo.length === 2 && 
+                lastTwo.every(p => !p.isCorrect) && 
+                lastTwo[0].bloom === lastTwo[1].bloom
+            ) {
+                // If the last 2 attempts were both incorrect at the exact SAME taxonomy level, step down
+                groups.stepDown.push(loId);
             }
             
-            // Default target bloom (max achieved)
-            const correctBlooms = loPerf.filter(p => p.isCorrect).map(p => p.bloom);
+            // Default target bloom anchors to their most recent attempt's level 
+            // (allows continuous fluid movement up or down rather than getting stuck at an all-time high)
             let currentBloomIndex = 0;
-            if (correctBlooms.length > 0) {
-                currentBloomIndex = BLOOM_ORDER.reduce((acc, b, idx) => {
-                    if (correctBlooms.includes(b)) return Math.max(acc, idx);
-                    return acc;
-                }, 0);
+            if (loPerf.length > 0) {
+                const latestBloomIndex = BLOOM_ORDER.indexOf(loPerf[0].bloom);
+                if (latestBloomIndex !== -1) {
+                    currentBloomIndex = latestBloomIndex;
+                }
             }
-            loTargetBloom[loId] = { index: currentBloomIndex, stepUp: false };
+            loTargetBloom[loId] = { index: currentBloomIndex, stepUp: false, stepDown: false };
         });
 
         // Apply step-up probabilities to groups
@@ -471,11 +479,16 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         // 50% of 1-correct group
         groups.step1.filter(() => Math.random() < 0.50).forEach(id => loTargetBloom[id].stepUp = true);
 
+        // Apply 100% step-down for 2-wrong group
+        groups.stepDown.forEach(id => loTargetBloom[id].stepDown = true);
+
         // Finalize target bloom strings
         loIds.forEach(loId => {
-            const { index, stepUp } = loTargetBloom[loId];
+            const { index, stepUp, stepDown } = loTargetBloom[loId];
             if (stepUp && index < BLOOM_ORDER.length - 1) {
                 loTargetBloom[loId] = BLOOM_ORDER[index + 1];
+            } else if (stepDown && index > 0) {
+                loTargetBloom[loId] = BLOOM_ORDER[index - 1];
             } else {
                 loTargetBloom[loId] = BLOOM_ORDER[index];
             }
@@ -560,6 +573,16 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
                 const targetIdx = BLOOM_ORDER.indexOf(loTargetBloom[loId]);
                 return Math.abs(aIdx - targetIdx) - Math.abs(bIdx - targetIdx);
             });
+
+            // STRICT RETAKE Blacklist: Try to completely remove any question seen in the exact last session
+            // so the student gets a truly fresh test permutation. Only fallback to including them if we
+            // don't have enough unseen questions left in the bank for this LO.
+            const unseenCandidates = candidates.filter(c => !lastSessionQuestionIds.has(c._id.toString()));
+            // We want to try to guarantee at least 1 question per LO for equal distribution
+            if (unseenCandidates.length > 0) {
+                // We have enough unseen questions, use strict list!
+                candidates = unseenCandidates;
+            }
 
             // Tag each question with its LO for equal distribution logic below
             candidates.forEach(q => q.tempLoId = loId);

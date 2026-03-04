@@ -324,7 +324,12 @@ async function startQuiz(quizId) {
     // Fetch quiz metadata and questions concurrently
     const [quizResponse, questionsResponse] = await Promise.all([
       fetch(`/api/quiz/${quizId}`),
-      fetch(`/api/quiz/${quizId}/questions?approvedOnly=true`)
+      fetch(`/api/quiz/${quizId}/questions?approvedOnly=true&_t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      })
     ]);
     
     const quizData = await quizResponse.json();
@@ -417,23 +422,56 @@ function resetQuizState() {
 }
 
 function restartQuiz() {
-  if (!quizState.currentQuiz || !quizState.quizData) {
+  if (!quizState.currentQuiz) {
     console.error("Cannot restart: No quiz loaded");
     return;
   }
 
-  // Reset quiz state but keep the quiz data
-  quizState.currentQuestionIndex = 0;
-  quizState.answers = {};
-  quizState.feedback = {};
-
-  // Hide completion section and show quiz content
+  // Hide completion section and show loading state
   document.getElementById("completionSection").style.display = "none";
   document.querySelector(".quiz-content").style.display = "block";
   document.querySelector(".quiz-navigation").style.display = "flex";
+  
+  const questionTitleElement = document.getElementById("questionText");
+  if (questionTitleElement) {
+    questionTitleElement.innerHTML = `<div style="text-align: center; color: #7f8c8d; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Generating personalized questions...</div>`;
+  }
 
-  // Show first question
-  showQuestion(0);
+  // Re-fetch questions to compute new personalized Bloom levels and User Level metadata
+  // Explicitly bust browser cache to ensure we get a freshly generated set of questions from the backend
+  fetch(`/api/quiz/${quizState.currentQuiz}/questions?approvedOnly=true&_t=${Date.now()}`, {
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success && data.questions) {
+        // Reset quiz state with fresh data, mapping it into the expected quizData schema
+        quizState.quizData = {
+          quizId: quizState.currentQuiz,
+          title: quizState.quizData.title || "Quiz",
+          course: quizState.quizData.course || "Course",
+          duration: quizState.quizData.duration || 0,
+          questions: data.questions
+        };
+
+        quizState.currentQuestionIndex = 0;
+        quizState.answers = {};
+        quizState.feedback = {};
+      
+        // Render updated quiz
+        renderQuiz();
+      } else {
+        console.error("Failed to load questions for retake");
+        alert("Could not start quiz retake. Please try again.");
+      }
+    })
+    .catch(error => {
+      console.error("Error fetching quiz questions for retake:", error);
+      alert("Error starting quiz retake. Please check your connection.");
+    });
 }
 
 function renderQuiz() {
@@ -444,6 +482,9 @@ function renderQuiz() {
 
   // Generate question indicators
   generateQuestionIndicators();
+  
+  // Actually render the first question payload into the DOM to overwrite the loading spinner
+  showQuestion(0);
 }
 
 function generateQuestionIndicators() {
