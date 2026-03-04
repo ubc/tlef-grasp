@@ -51,5 +51,11 @@ router.get("/:quizId/questions", quizController.getQuizQuestionsHandler);
  */
 router.post("/:quizId/performance", express.json(), quizController.recordPerformanceHandler);
 
+/**
+ * POST /api/quiz/:quizId/question/:questionId/check
+ * Check if a selected answer is correct (secure server-side validation)
+ */
+router.post("/:quizId/question/:questionId/check", express.json(), quizController.checkQuestionAnswerHandler);
+
 module.exports = router;
 

@@ -214,38 +214,16 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Helper function to shuffle question options and update correct answer
+// Helper function to generate a shuffled order of option indices
 function shuffleQuestionOptions(question) {
-  const optionKeys = ['A', 'B', 'C', 'D'];
-  const originalCorrectAnswer = question.correctAnswer;
-  // If options are objects {A: "text", ...}
-  const correctOptionText = question.options[originalCorrectAnswer];
-
-  // Create array of option entries and shuffle
-  const optionEntries = optionKeys.map(key => ({
-    key,
-    text: question.options[key]
-  }));
-  const shuffledEntries = shuffleArray(optionEntries);
-
-  // Rebuild options object with shuffled order
-  const newOptions = {};
-  let newCorrectAnswer = 'A';
-
-  shuffledEntries.forEach((entry, index) => {
-    const newKey = optionKeys[index];
-    newOptions[newKey] = entry.text;
-
-    // Track where the correct answer moved to
-    if (entry.text === correctOptionText) {
-      newCorrectAnswer = newKey;
-    }
-  });
+  const optionIndices = [0, 1, 2, 3];
+  const shuffledIndices = shuffleArray(optionIndices);
 
   return {
     ...question,
-    options: newOptions,
-    correctAnswer: newCorrectAnswer
+    optionOrder: shuffledIndices
+    // We intentionally leave correctAnswer and options alone here
+    // as they will be cleansed before sending to the client.
   };
 }
 
@@ -274,19 +252,28 @@ const getQuizQuestionsHandler = async (req, res) => {
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
           optionsObj = {
-            A: (q.options.A?.text || q.options.A || "").toString(),
-            B: (q.options.B?.text || q.options.B || "").toString(),
-            C: (q.options.C?.text || q.options.C || "").toString(),
-            D: (q.options.D?.text || q.options.D || "").toString()
+            A: { ...(q.options.A || { text: "" }), index: 0 },
+            B: { ...(q.options.B || { text: "" }), index: 1 },
+            C: { ...(q.options.C || { text: "" }), index: 2 },
+            D: { ...(q.options.D || { text: "" }), index: 3 }
           };
         } else {
           optionsObj = {
-            A: (q.options[0]?.text || q.options[0] || "").toString(),
-            B: (q.options[1]?.text || q.options[1] || "").toString(),
-            C: (q.options[2]?.text || q.options[2] || "").toString(),
-            D: (q.options[3]?.text || q.options[3] || "").toString()
+            A: { ...(q.options[0] || { text: "" }), index: 0 },
+            B: { ...(q.options[1] || { text: "" }), index: 1 },
+            C: { ...(q.options[2] || { text: "" }), index: 2 },
+            D: { ...(q.options[3] || { text: "" }), index: 3 }
           };
         }
+      }
+      // If approvedOnlyBool is true, this is the student view. We MUST strip secure answers.
+      if (approvedOnlyBool) {
+        ['A', 'B', 'C', 'D'].forEach(key => {
+          if (optionsObj[key] && typeof optionsObj[key] === 'object') {
+            // Strip out feedback before sending to the client browser
+            delete optionsObj[key].feedback;
+          }
+        });
       }
 
       const questionText = (q.title || q.stem || "").trim();
@@ -299,10 +286,17 @@ const getQuizQuestionsHandler = async (req, res) => {
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
       };
       
-      // Shuffle options for students but keep original order for instructors
-      return approvedOnlyBool ? shuffleQuestionOptions(formattedQuestion) : formattedQuestion;
+      // Shuffle options for students
+      let finalQuestion = approvedOnlyBool ? shuffleQuestionOptions(formattedQuestion) : formattedQuestion;
+      
+      // Completely strip out the correct answer if this is for the student
+      if (approvedOnlyBool) {
+        delete finalQuestion.correctAnswer;
+      }
+      
+      return finalQuestion;
     });
-    
+
     res.json({ success: true, questions: transformedQuestions });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);
@@ -342,6 +336,68 @@ const recordPerformanceHandler = async (req, res) => {
     }
 };
 
+/**
+ * Check if a selected answer is correct and return the feedback securely
+ */
+const checkQuestionAnswerHandler = async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const { selectedIndex } = req.body;
+
+    if (selectedIndex === undefined || selectedIndex === null) {
+      return res.status(400).json({ success: false, error: "selectedIndex is required" });
+    }
+
+    const { getQuestion } = require('../services/question');
+    const question = await getQuestion(questionId);
+    
+    if (!question) {
+      return res.status(404).json({ success: false, error: "Question not found" });
+    }
+    
+    // Convert the numeric index sent by the frontend back to the original DB key mapping
+    const optionKeys = ['A', 'B', 'C', 'D'];
+    const selectedKey = optionKeys[selectedIndex];
+
+    if (!selectedKey) {
+        return res.status(400).json({ success: false, error: "Invalid selectedIndex provided" });
+    }
+
+    // Normalize correct answer identifier from DB
+    let correctAnswerLetter = question.correctAnswer || 'A';
+    if (typeof correctAnswerLetter === 'number') {
+      correctAnswerLetter = optionKeys[correctAnswerLetter] || 'A';
+    } else if (typeof correctAnswerLetter === 'string') {
+      correctAnswerLetter = correctAnswerLetter.toUpperCase();
+    }
+    
+    const isCorrect = selectedKey === correctAnswerLetter;
+
+    // Retrieve feedback specific to the selected option
+    const selectedOptionObj = question.options[selectedKey];
+    const feedback = typeof selectedOptionObj === 'object' && selectedOptionObj !== null 
+      ? (selectedOptionObj.feedback || "")
+      : "";
+
+    // Safely retrieve the text of the actual correct option to send back
+    const correctOptionObj = question.options[correctAnswerLetter];
+    const correctOptionText = typeof correctOptionObj === 'object' && correctOptionObj !== null 
+      ? (correctOptionObj.text || "")
+      : (correctOptionObj || "");
+
+    res.json({
+      success: true,
+      isCorrect,
+      feedback,
+      correctAnswer: isCorrect ? correctAnswerLetter : null,
+      correctOptionText: isCorrect ? correctOptionText : null
+    });
+  } catch (error) {
+    console.error("Error checking question answer:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
   getQuizByIdHandler,
@@ -350,5 +406,6 @@ module.exports = {
   deleteQuizHandler,
   addQuizQuestionsHandler,
   getQuizQuestionsHandler,
-  recordPerformanceHandler
+  recordPerformanceHandler,
+  checkQuestionAnswerHandler
 };

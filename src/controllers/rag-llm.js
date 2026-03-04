@@ -176,12 +176,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // Get LLM instance from service
       const llmModule = await llmService.getLLMInstance();
 
-      // Randomly determine which position will contain the correct answer (server-side)
-      const correctPosition = Math.floor(Math.random() * 4); // 0, 1, 2, or 3
-      const correctAnswerLetter = ['A', 'B', 'C', 'D'][correctPosition];
-      
-      console.log(`🎲 Randomly selected position: ${correctAnswerLetter} (index ${correctPosition})`);
-
       // Create prompt with RAG context
       const createPrompt = () => `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
 
@@ -193,8 +187,8 @@ Task: Create a multiple-choice question based on the provided content that effec
 
 PROCEDURE:
 1. Create the question content
-2. Generate 4 plausible answer options, placing the CORRECT answer text in position ${correctAnswerLetter}
-3. Set correctAnswer to "${correctAnswerLetter}" (this is mandatory - do not use any other letter)
+2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
+3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
 4. Write the explanation
 
 The response format must be a valid JSON with the exact structure as follows:
@@ -206,7 +200,7 @@ The response format must be a valid JSON with the exact structure as follows:
     "C": "Third option text", // The third option
     "D": "Fourth option text", // The fourth option
   },
-  "correctAnswer": "${correctAnswerLetter}", // The letter of the correct answer
+  "correctAnswer": "C", // The letter of the correct answer
   "explanation": "Why this answer is correct based on the content" // The explanation of why the correct answer is correct
 }
 
@@ -315,18 +309,12 @@ CONTENT: ${ragContext}`;
         throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
       }
 
-      // Override correctAnswer with the server-selected position to ensure proper distribution
-      // We told the LLM which position to use, but we enforce it here to be safe
-      if (questionData.correctAnswer !== correctAnswerLetter) {
-        console.log(`⚠️ LLM returned correctAnswer="${questionData.correctAnswer}", but we're overriding it to "${correctAnswerLetter}" (server-selected position)`);
-      }
-      questionData.correctAnswer = correctAnswerLetter;
-      
-      // Verify that the correct answer text exists in the selected position
-      if (questionData.options && questionData.options[correctAnswerLetter]) {
-        console.log(`✅ Correct answer is in position ${correctAnswerLetter}: "${questionData.options[correctAnswerLetter].substring(0, 50)}..."`);
+      // Verify that the correct answer text exists organically in the selected position
+      const correctOptionLetter = questionData.correctAnswer;
+      if (questionData.options && questionData.options[correctOptionLetter]) {
+        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${questionData.options[correctOptionLetter].substring(0, 50)}..."`);
       } else {
-        console.warn(`⚠️ Warning: No option found at position ${correctAnswerLetter}, but continuing anyway`);
+        console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
       }
 
       res.json({
