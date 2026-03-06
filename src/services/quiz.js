@@ -397,13 +397,32 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         // Enrich questions with LO ID
         const enrichedQuestions = await enrichQuestionsWithLO(allQuestions);
 
-        // Fetch student performance to know which questions are unseen
+        // Fetch student mastery records for selection logic
         const performanceCollection = db.collection("grasp_student_performance");
-        const userPerformance = await performanceCollection.find({ 
-            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId 
-        }).sort({ createdAt: -1 }).toArray();
+        const masteryRecords = await performanceCollection.find({ 
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+            courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
+        }).toArray();
         
-        const seenQuestionIds = new Set(userPerformance.map(p => p.questionId.toString()));
+        // Fetch all attempts to identify seen questions (for diversity)
+        const attemptCollection = db.collection("grasp_student_attempt");
+        const userAttempts = await attemptCollection.find({
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId
+        }).project({ questionId: 1 }).toArray();
+
+        const seenQuestionIds = new Set(userAttempts.map(p => p.questionId.toString()));
+
+        // --- Prep for Phase 3: Course History ---
+        // Get all quizzes in the course sorted by releaseDate to calculate "sessions ago"
+        const courseQuizzes = await db.collection("grasp_quiz").find({
+            courseId: ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId
+        }).sort({ releaseDate: 1 }).toArray();
+
+        const currentQuizIdx = courseQuizzes.findIndex(q => q._id.toString() === quizId);
+        const quizIndexMap = {};
+        courseQuizzes.forEach((q, idx) => {
+            quizIndexMap[q._id.toString()] = idx;
+        });
 
         // Group questions by LO
         const loGroups = {};
@@ -445,148 +464,161 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
         });
 
         // --- Phase 2: Review Incorrect ---
-        // "Review of anything that they've gotten incorrect on the first attempt of any quiz 
-        // submitted since the last quiz was generated."
+        // Simplified: Pull from the Mastery table for any LO flagged as 'needsRemediation'
         const phase2Selection = [];
+        const remediationLOs = masteryRecords.filter(m => m.needsRemediation);
         
-        // Find all unique LOs they got wrong on their FIRST attempt.
-        // We do this by grouping performance by LO, then ordering by Date (Oldest to Newest)
-        // If the VERY FIRST entry for that LO is marked isCorrect: false, it was failed on the first attempt.
-        const failedLOs = new Map(); // Map of LO ID -> The specific Bloom level they failed at
-
-        // Fetch release dates for all quizzes attempted by this student to determine chronological progression
-        const attemptedQuizIds = [...new Set(userPerformance.map(p => p.quizId.toString()))];
-        const historicalQuizzes = await db.collection("grasp_quiz").find({ 
-            _id: { $in: attemptedQuizIds.map(id => new ObjectId(id)) } 
-        }).toArray();
-        
-        const quizReleaseMap = {};
-        historicalQuizzes.forEach(q => {
-            quizReleaseMap[q._id.toString()] = q.releaseDate ? new Date(q.releaseDate).getTime() : 0;
-        });
-
-        const currentQuizReleaseDate = quiz.releaseDate ? new Date(quiz.releaseDate).getTime() : 0;
-
-        // Re-sort performance chronologically oldest first to find the "first attempt"
-        const chronologicalPerf = [...userPerformance].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-
-        const firstAttemptsSeen = new Set(); // Track "QuizID_LOID" to identify first attempts per quiz
-        
-        chronologicalPerf.forEach(p => {
-            const loIdStr = p.learningObjectiveId?.toString() || p.granularObjectiveId?.toString();
-            const pQuizIdStr = p.quizId?.toString();
-            if (!loIdStr || !pQuizIdStr) return;
-
-            const quizLOKey = `${pQuizIdStr}_${loIdStr}`;
-            
-            // Process every record. If they missed ANY question for this LO in this quiz
-            // on its first attempt, they need to review the concept.
-            const pReleaseDate = quizReleaseMap[pQuizIdStr] || 0;
-            
-            // Only consider mistakes from quizzes that were released STRICTLY BEFORE this one
-            if (pReleaseDate < currentQuizReleaseDate) {
-                if (!p.isCorrect) {
-                    // A failure on ANY question for this LO in a previous quiz 
-                    // stays/enters the review bucket.
-                    failedLOs.set(loIdStr, p.bloom);
-                } else if (!failedLOs.has(loIdStr)) {
-                    // This is only relevant for the FIRST encounter across all time,
-                    // but we will keep the "delete" logic separate to ensure a pass in a 
-                    // LATER quiz cleans a fail from an EARLIER quiz.
-                }
-
-                // Optimization: If they pass the FIRST encounter of an LO in a LATER quiz,
-                // it should remediate the failure from an EARLIER quiz.
-                // We track if we have seen this LO in THIS quiz yet to identify "the quiz result".
-                if (!firstAttemptsSeen.has(quizLOKey)) {
-                    firstAttemptsSeen.add(quizLOKey);
-                    if (p.isCorrect) {
-                        // If the first thing they did with this LO in a LATER quiz was correct,
-                        // consider it remediated (unless another question in the SAME quiz is wrong).
-                        // Wait, the professor said "everything that was incorrect". 
-                        // Let's stick to: Any failure in a quiz counts as a "failed quiz session" for that LO.
-                        // And a successful "first attempt" of a LATER quiz cleans it.
-                        failedLOs.delete(loIdStr);
-                    }
-                } else {
-                    // We have seen this LO in this quiz before.
-                    if (!p.isCorrect) {
-                        // If any subsequent first-attempt in the SAME quiz is wrong,
-                        // it "re-fails" it for this quiz session.
-                        failedLOs.set(loIdStr, p.bloom);
-                    }
-                }
-            }
-        });
-
-        // 2. We need to query the database again because `allQuestions` only contains questions
-        // mapped directly to *this* quiz's assigned LOs. Phase 2 pulls from *past* LOs!
-        const failedLoIdStrings = Array.from(failedLOs.keys());
-        
-        if (failedLoIdStrings.length > 0) {
+        if (remediationLOs.length > 0) {
+            // We need to fetch questions from the database because Phase 2 pulls from *past* LOs
+            // not necessarily assigned to this specific quiz.
             const extraQuestionsCollection = db.collection("grasp_question");
             const historicalQuestions = await extraQuestionsCollection.find({
                 status: "Approved"
             }).toArray();
             
             const enrichedHistorical = await enrichQuestionsWithLO(historicalQuestions);
+            const phase1QuestionIds = new Set(phase1Selection.map(q => q._id.toString()));
 
-            failedLoIdStrings.forEach(failedLoId => {
-                 const targetBloom = failedLOs.get(failedLoId);
-                 
-                 // Find candidates matching the failed meta-LO
-                 const phase1QuestionIds = new Set(phase1Selection.map(q => q._id.toString()));
+            remediationLOs.forEach(mastery => {
+                const loId = mastery.learningObjectiveId?.toString() || mastery.granularObjectiveId?.toString();
+                if (!loId) return;
 
-                 const candidates = enrichedHistorical.filter(q => 
-                      (q.learningObjectiveId?.toString() === failedLoId || q.granularObjectiveId?.toString() === failedLoId) &&
-                      !phase1QuestionIds.has(q._id.toString())
-                 );
-                 
-                 candidates.sort((a, b) => {
-                      // Primary: Match the exact Bloom taxonomy level they failed at
-                      const aTarget = a.bloom === targetBloom;
-                      const bTarget = b.bloom === targetBloom;
-                      if (aTarget !== bTarget) return aTarget ? -1 : 1;
-                      
-                      // Secondary: Prioritize questions they've never seen
-                      const aSeen = seenQuestionIds.has(a._id.toString());
-                      const bSeen = seenQuestionIds.has(b._id.toString());
-                      if (aSeen !== bSeen) return aSeen ? 1 : -1;
-                      
-                      return Math.random() - 0.5;
-                 });
-                 
-                 if (candidates.length > 0) {
-                      phase2Selection.push(candidates[0]);
-                 }
+                const targetBloom = mastery.remediationBloomLevel || "Remember";
+
+                const candidates = enrichedHistorical.filter(q => 
+                    (q.learningObjectiveId?.toString() === loId || q.granularObjectiveId?.toString() === loId) &&
+                    !phase1QuestionIds.has(q._id.toString())
+                );
+
+                if (candidates.length > 0) {
+                    // Sort candidates
+                    candidates.sort((a, b) => {
+                        // Priority 1: Match the remediation Bloom level
+                        const aTarget = a.bloom === targetBloom;
+                        const bTarget = b.bloom === targetBloom;
+                        if (aTarget !== bTarget) return aTarget ? -1 : 1;
+
+                        // Priority 2: Prioritize questions they've never seen
+                        const aSeen = seenQuestionIds.has(a._id.toString());
+                        const bSeen = seenQuestionIds.has(b._id.toString());
+                        if (aSeen !== bSeen) return aSeen ? 1 : -1;
+                        
+                        return Math.random() - 0.5;
+                    });
+
+                    phase2Selection.push(candidates[0]);
+                }
             });
         }
 
-        // Combine Phase 1 and Phase 2
-        const finalSelection = [...phase1Selection, ...phase2Selection];
+        // --- Phase 3: Spaced Review (A/B/C) ---
+        // 1. Identify "Successfully Mastered" LOs (not in Phase 1 or Phase 2)
+        const phase3Selection = [];
+        const excludedLOIDs = new Set([
+            ...phase1Selection.map(q => q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString()),
+            ...remediationLOs.map(m => m.learningObjectiveId?.toString() || m.granularObjectiveId?.toString())
+        ]);
 
-        // Inject dynamic student performance metadata for the UI
+        const poolA = []; // 1 session ago
+        const poolB = []; // 2-3 sessions ago
+        const poolC = []; // 4+ sessions ago
+
+        masteryRecords.forEach(mastery => {
+            const loId = mastery.learningObjectiveId?.toString() || mastery.granularObjectiveId?.toString();
+            if (!loId || excludedLOIDs.has(loId) || mastery.needsRemediation) return;
+
+            const lastIdx = quizIndexMap[mastery.lastQuizIdSeen?.toString()];
+            if (lastIdx === undefined) return;
+
+            const distance = currentQuizIdx - lastIdx;
+            if (distance === 1) poolA.push(mastery);
+            else if (distance >= 2 && distance <= 3) poolB.push(mastery);
+            else if (distance >= 4) poolC.push(mastery);
+        });
+
+        // 2. Deterministic Selection (50% / 20% / 10%)
+        const selectCountA = Math.ceil(poolA.length * 0.5);
+        const selectCountB = Math.ceil(poolB.length * 0.2);
+        const selectCountC = Math.ceil(poolC.length * 0.1);
+
+        const selectionConfig = [
+            { pool: poolA, count: selectCountA },
+            { pool: poolB, count: selectCountB },
+            { pool: poolC, count: selectCountC }
+        ];
+
+        // 3. Select questions for each chosen Mastery record
+        const extraQuestionsCollection = db.collection("grasp_question");
+        const historicalQuestions = await extraQuestionsCollection.find({
+            status: "Approved"
+        }).toArray();
+        const enrichedHistorical = await enrichQuestionsWithLO(historicalQuestions);
+
+        const activeQuestionIds = new Set([
+            ...phase1Selection.map(q => q._id.toString()),
+            ...phase2Selection.map(q => q._id.toString())
+        ]);
+
+        for (const config of selectionConfig) {
+            // Sort pool items randomly for deterministic choice of *which* 50/20/10% we take
+            const selectedMasteries = config.pool
+                .sort(() => Math.random() - 0.5)
+                .slice(0, config.count);
+
+            selectedMasteries.forEach(mastery => {
+                const loId = mastery.learningObjectiveId?.toString() || mastery.granularObjectiveId?.toString();
+                
+                // Bloom Step-Up logic: Target the next level after highestBloomPassed
+                const currentBloomIdx = BLOOM_ORDER.indexOf(mastery.highestBloomPassed || "Remember");
+                const targetBloomIdx = Math.min(currentBloomIdx + 1, BLOOM_ORDER.length - 1);
+                const targetBloom = BLOOM_ORDER[targetBloomIdx];
+
+                const candidates = enrichedHistorical.filter(q => 
+                    (q.learningObjectiveId?.toString() === loId || q.granularObjectiveId?.toString() === loId) &&
+                    !activeQuestionIds.has(q._id.toString())
+                );
+
+                if (candidates.length > 0) {
+                    candidates.sort((a, b) => {
+                        // Priority 1: Match the target (higher) Bloom level
+                        const aTarget = a.bloom === targetBloom;
+                        const bTarget = b.bloom === targetBloom;
+                        if (aTarget !== bTarget) return aTarget ? -1 : 1;
+
+                        // Priority 2: Prefer unseen questions for variety
+                        const aSeen = seenQuestionIds.has(a._id.toString());
+                        const bSeen = seenQuestionIds.has(b._id.toString());
+                        if (aSeen !== bSeen) return aSeen ? 1 : -1;
+
+                        return Math.random() - 0.5;
+                    });
+                    
+                    phase3Selection.push(candidates[0]);
+                }
+            });
+        }
+
+        // Combine Phase 1, Phase 2, and Phase 3
+        const finalSelection = [...phase1Selection, ...phase2Selection, ...phase3Selection];
+
+        // Inject dynamic student performance metadata for the UI using Mastery and Audit Log
         finalSelection.forEach(q => {
-            const currentLoId = q.learningObjectiveId?.toString();
-            const currentBloom = q.bloom;
+            const currentLoId = q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString();
             
             if (!currentLoId) {
                 q.userLevel = "No Prior History";
                 return;
             }
             
-            // Find performance records for this exact LO + Bloom
-            const perfRecords = userPerformance.filter(p => 
-                p.learningObjectiveId?.toString() === currentLoId && p.bloom === currentBloom
+            // Find mastery record
+            const mastery = masteryRecords.find(m => 
+                m.learningObjectiveId?.toString() === currentLoId || m.granularObjectiveId?.toString() === currentLoId
             );
-            
-            if (perfRecords.length === 0) {
+
+            if (!mastery) {
                 q.userLevel = "No Prior History";
             } else {
-                const correctCount = perfRecords.filter(p => p.isCorrect).length;
-                const totalCount = perfRecords.length;
-                const accuracy = Math.round((correctCount / totalCount) * 100);
-                q.userLevel = `${correctCount}/${totalCount} Correct (${accuracy}%)`;
+                q.userLevel = mastery.needsRemediation ? "⚠️ Needs Remediation" : "✅ Mastery: " + (mastery.highestBloomPassed || "Remember");
             }
         });
 
@@ -602,24 +634,102 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
  * @param {Object} performanceData - { userId, quizId, questionId, learningObjectiveId, granularObjectiveId, bloom, isCorrect }
  * @returns {Promise<Object>} The insert result
  */
+/**
+ * Save student performance for a quiz question
+ * Implements a dual-table architecture: 
+ * 1. grasp_student_attempt (Audit) - Every single answer log
+ * 2. grasp_student_performance (Mastery) - High-level student state per LO
+ * 
+ * @param {Object} performanceData - { userId, quizId, questionId, learningObjectiveId, granularObjectiveId, bloom, isCorrect }
+ * @returns {Promise<Object>} The attempt log result
+ */
 const saveStudentPerformance = async (performanceData) => {
     try {
         const db = await databaseService.connect();
-        const collection = db.collection("grasp_student_performance");
+        const loIdentifier = performanceData.learningObjectiveId?.toString() || performanceData.granularObjectiveId?.toString();
         
-        const data = {
+        if (!loIdentifier) {
+            console.warn("[Quiz Service] Attempt saved without LO identifier. Phase 2/3 will not track this.");
+        }
+
+        // Fetch quiz to get courseId (not passed from frontend)
+        const quiz = await getQuizById(performanceData.quizId);
+        const courseId = quiz ? quiz.courseId : null;
+
+        // 1. Log the raw attempt to the Audit Table
+        const attemptCollection = db.collection("grasp_student_attempt");
+        const attemptData = {
             userId: ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId,
+            courseId: courseId ? (ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId) : null,
             quizId: ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId,
             questionId: ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId,
-            learningObjectiveId: ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId,
-            granularObjectiveId: ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId,
+            learningObjectiveId: performanceData.learningObjectiveId ? (ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId) : null,
+            granularObjectiveId: performanceData.granularObjectiveId ? (ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId) : null,
             bloom: performanceData.bloom,
             isCorrect: !!performanceData.isCorrect,
             createdAt: new Date()
         };
-        
-        const result = await collection.insertOne(data);
-        return result;
+        const attemptResult = await attemptCollection.insertOne(attemptData);
+
+        // 2. Update the Mastery Table (grasp_student_performance)
+        if (loIdentifier && courseId) {
+            const performanceCollection = db.collection("grasp_student_performance");
+            const userIdObj = ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId;
+            
+            // Define the query to find the unique Mastery record for this Student + LO
+            const query = { 
+                userId: userIdObj,
+                courseId: ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId,
+                learningObjectiveId: performanceData.learningObjectiveId ? (ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId) : null,
+                // Only use granular index if it was the primary identifier provided
+                ...(performanceData.granularObjectiveId && !performanceData.learningObjectiveId ? {
+                    granularObjectiveId: ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId
+                } : {})
+            };
+
+            const existingMastery = await performanceCollection.findOne(query);
+            const quizIdStr = performanceData.quizId.toString();
+            const isFirstAttemptInSession = !existingMastery || existingMastery.lastQuizIdSeen?.toString() !== quizIdStr;
+
+            const updateFields = {
+                $set: { 
+                    lastQuizIdSeen: new ObjectId(quizIdStr),
+                    updatedAt: new Date()
+                }
+            };
+
+            // Rule 1: Remediation Status
+            // Based strictly on the "First Attempt" of the LATEST quiz session.
+            if (isFirstAttemptInSession) {
+                // If this is the first encounter in a NEW quiz, set remediation state.
+                updateFields.$set.needsRemediation = !performanceData.isCorrect;
+                if (!performanceData.isCorrect) {
+                  updateFields.$set.remediationBloomLevel = performanceData.bloom;
+                }
+            } else {
+                // If it's a subsequent attempt in the SAME quiz, a failure "re-fails" them,
+                // but a success doesn't necessarily clear it (stays failed if ANY question was missed).
+                if (!performanceData.isCorrect) {
+                  updateFields.$set.needsRemediation = true;
+                  updateFields.$set.remediationBloomLevel = performanceData.bloom;
+                }
+            }
+
+            // Rule 2: Bloom Mastery Progress
+            // Only update highestBloomPassed if they GOT IT CORRECT.
+            if (performanceData.isCorrect) {
+                const currentBloomIdx = BLOOM_ORDER.indexOf(performanceData.bloom);
+                const storedBloomIdx = existingMastery ? BLOOM_ORDER.indexOf(existingMastery.highestBloomPassed) : -1;
+                
+                if (currentBloomIdx > storedBloomIdx) {
+                    updateFields.$set.highestBloomPassed = performanceData.bloom;
+                }
+            }
+
+            await performanceCollection.updateOne(query, updateFields, { upsert: true });
+        }
+
+        return attemptResult;
     } catch (error) {
         console.error("Error saving student performance:", error);
         throw error;

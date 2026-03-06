@@ -73,11 +73,19 @@ class DatabaseService {
       await this.db.collection("grasp_achievement").createIndex({ userId: 1 });
       await this.db.collection("grasp_achievement").createIndex({ courseId: 1 });
       await this.db.collection("grasp_achievement").createIndex({ type: 1 });
-      await this.db.collection("grasp_student_performance").createIndex({ userId: 1 });
-      await this.db.collection("grasp_student_performance").createIndex({ quizId: 1 });
-      await this.db.collection("grasp_student_performance").createIndex({ questionId: 1 });
-      await this.db.collection("grasp_student_performance").createIndex({ learningObjectiveId: 1 });
-      await this.db.collection("grasp_student_performance").createIndex({ userId: 1, questionId: 1 });
+      // --- Student Performance & Attempt Tracking ---
+      
+      // 1. Audit Log: Tracks every individual attempt
+      await this.db.collection("grasp_student_attempt").createIndex({ userId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ quizId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ questionId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ learningObjectiveId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ userId: 1, learningObjectiveId: 1 });
+
+      // 2. Mastery State: Tracks current level/status per LO (One record per student per LO)
+      await this.db.collection("grasp_student_performance").createIndex({ userId: 1, courseId: 1, learningObjectiveId: 1 }, { unique: true });
+      await this.db.collection("grasp_student_performance").createIndex({ userId: 1, courseId: 1, granularObjectiveId: 1 });
+      await this.db.collection("grasp_student_performance").createIndex({ needsRemediation: 1 });
     
       console.log("✅ MongoDB collections initialized");
     } catch (error) {
