@@ -2,6 +2,8 @@ const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
+const { ObjectId } = require('mongodb');
+const databaseService = require('../services/database');
 
 const isQuizAccessible = (quiz) => {
   if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
@@ -267,17 +269,12 @@ const submitQuizHandler = async (req, res) => {
     }
 
     // Validation
-    // We need to fetch questions and enrich them to ensure learningObjectiveId is available
-    const rawQuestions = await quizService.getQuizQuestions(quizId, true);
-    // Enrich with parent LO to ensure performance tracking can link questions to LOs properly
-    const questions = rawQuestions ? await quizService.enrichQuestionsWithLO(rawQuestions) : [];
-    
-    const totalQuestions = questions.length;
+    const totalQuestions = Number(clientTotalQuestions) || (req.body.feedback ? Object.keys(req.body.feedback).length : 0);
 
     if (totalQuestions === 0) {
       return res.status(400).json({
         success: false,
-        message: "This quiz has no approved questions.",
+        message: "This quiz submission has no questions.",
       });
     }
 
@@ -295,9 +292,19 @@ const submitQuizHandler = async (req, res) => {
       const { feedback } = req.body;
 
       if (userId && courseId && feedback) {
+        const submittedQuestionIds = Object.keys(feedback).map(id => {
+            return ObjectId.isValid(id) ? new ObjectId(id) : id;
+        });
+
+        const db = await databaseService.connect();
+        const rawSubmittedQuestions = await db.collection("grasp_question").find({
+            _id: { $in: submittedQuestionIds }
+        }).toArray();
+        const enrichedSubmittedQuestions = await quizService.enrichQuestionsWithLO(rawSubmittedQuestions);
+
         // Build a fast lookup map for questions to extract LOs and Blooms
         const questionLookup = {};
-        questions.forEach(q => questionLookup[q._id.toString()] = q);
+        enrichedSubmittedQuestions.forEach(q => questionLookup[q._id.toString()] = q);
 
         // Record performance for each question answered in this session
         for (const questionId of Object.keys(feedback)) {
