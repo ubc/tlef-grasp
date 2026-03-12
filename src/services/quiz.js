@@ -688,16 +688,9 @@ const saveStudentPerformance = async (performanceData) => {
                   if (!updateFields.$inc) updateFields.$inc = {};
                   updateFields.$inc.timesCorrect = 1; // Increment frequency on FIRST pass
                 }
-            } else {
-                // If it's a subsequent attempt in the SAME quiz, a failure "re-fails" them,
-                // but a success doesn't necessarily clear it (stays failed if ANY question was missed).
-                if (!performanceData.isCorrect) {
-                  updateFields.$set.needsRemediation = true;
-                  updateFields.$set.remediationBloomLevel = performanceData.bloom;
-                  updateFields.$set.timesCorrect = 0; // Reset frequency on failure
-                }
-                // We intentionally do NOT increment timesCorrect here to prevent inflation on re-takes
             }
+            // If it is NOT the first attempt, we intentionally do NOT update the performance metrics 
+            // array to ensure Phase 2 and Phase 3 Spaced Repetition correctly reflects initial learning states.
 
             // Rule 2: Bloom Mastery Progress
             // Only update highestBloomPassed if they GOT IT CORRECT.
