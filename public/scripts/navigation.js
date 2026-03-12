@@ -290,10 +290,10 @@ class GRASPNavigation {
             <span>Dashboard</span>
           </a>
         </li>
-        <li class="nav-item" data-page="question-bank">
-          <a href="/question-bank" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-book"></i>
-            <span>Question Bank</span>
+        <li class="nav-item" data-page="course-materials">
+          <a href="/course-materials" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-folder"></i>
+            <span>Course Materials</span>
           </a>
         </li>
         <li class="nav-item" data-page="question-generation">
@@ -302,10 +302,10 @@ class GRASPNavigation {
             <span>Question Generation</span>
           </a>
         </li>
-        <li class="nav-item" data-page="course-materials">
-          <a href="/course-materials" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-folder"></i>
-            <span>Course Materials</span>
+        <li class="nav-item" data-page="question-bank">
+          <a href="/question-bank" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-book"></i>
+            <span>Question Bank</span>
           </a>
         </li>
     `;
