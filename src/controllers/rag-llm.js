@@ -65,9 +65,10 @@ function safeJsonParse(jsonInput) {
 
 const addDocumentToRagHandler = async (req, res) => {
   try {
-    const { content, metadata } = req.body;
+    const { content, metadata, courseId } = req.body;
+    const cid = courseId || metadata?.courseId || null;
 
-    const chunkIds = await ragService.addDocumentToRAG(content, metadata);
+    const chunkIds = await ragService.addDocumentToRAG(content, metadata, cid);
 
     res.json({
       success: true,
@@ -85,14 +86,15 @@ const addDocumentToRagHandler = async (req, res) => {
 
 const searchRagHandler = async (req, res) => {
   try {
-    const { query, limit = 5 } = req.body;
+    const { query, limit = 5, courseId } = req.body;
 
     console.log("=== RAG SEARCH REQUEST ===");
     console.log("Query:", query);
     console.log("Limit:", limit);
+    console.log("Course ID:", courseId);
 
-    // Get RAG instance
-    const ragInstance = ragService.getRAGInstance();
+    // Get RAG instance for specific course
+    const ragInstance = await ragService.getOrCreateInstance(courseId);
 
     if (!ragInstance) {
       console.error("❌ Failed to get RAG instance");
@@ -125,9 +127,10 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
+    console.log("Course ID:", courseId);
     console.log("Course Name:", courseName);
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
@@ -164,7 +167,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     // Use objective text as the query for RAG search
     const ragContext = await ragService.getLearningObjectiveRagContent(
       learningObjectiveId,
-      `Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}`
+      `Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}`,
+      courseId
     );
 
     console.log("RAG Context:", ragContext);
@@ -358,7 +362,7 @@ const deleteDocumentHandler = async (req, res) => {
       });
     }
 
-    await ragService.deleteDocumentFromRAG(sourceId);
+    await ragService.deleteDocumentFromRAG(sourceId, courseId);
 
     res.json({
       success: true,
@@ -409,12 +413,12 @@ const generateLearningObjectivesHandler = async (req, res) => {
       });
     }
 
-    // Get RAG instance
-    const ragInstance = ragService.getRAGInstance();
+    // Get RAG instance for the course
+    const ragInstance = await ragService.getOrCreateInstance(courseId);
     if (!ragInstance) {
       return res.status(500).json({
         success: false,
-        error: "RAG instance is not initialized",
+        error: "RAG instance is not initialized for this course",
       });
     }
 
@@ -432,7 +436,8 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       `course content learning objectives topics concepts from course: ${courseName}`,
-      100
+      100,
+      courseId
     );
 
     if (!ragContext || ragContext.trim().length === 0) {

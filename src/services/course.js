@@ -29,6 +29,18 @@ async function createCourse(courseData) {
             createdAt: courseData.createdAt || new Date(),
             updatedAt: courseData.updatedAt || new Date(),
         });
+
+        // Create specialized Qdrant collection for this course
+        try {
+            const ragService = require('./rag');
+            await ragService.getOrCreateInstance(course.insertedId);
+            console.log(`Initialized Qdrant collection for course ${course.insertedId}`);
+        } catch (ragError) {
+            console.error("Failed to initialize Qdrant collection for course:", ragError);
+            // We don't throw here to avoid failing course creation if Qdrant is down,
+            // but the user should be aware.
+        }
+
         return course;
     } catch (error) {
         console.error("Error creating course:", error);

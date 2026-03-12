@@ -35,6 +35,13 @@ const deleteMaterialHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
 
+        // Delete from RAG first
+        try {
+            await ragService.deleteDocumentFromRAG(sourceId, courseId);
+        } catch (ragError) {
+            console.error("Error deleting from RAG during material deletion:", ragError);
+        }
+
         await deleteMaterial(sourceId);
         res.json({ success: true, message: "Material deleted successfully" });
     } catch (error) {
@@ -249,7 +256,7 @@ const updateMaterialHandler = async (req, res) => {
         // Step 1: Delete from vector database (RAG) - skip for PDFs (only updating title)
         if (documentType !== 'pdf') {
             try {
-                await ragService.deleteDocumentFromRAG(sourceId);
+                await ragService.deleteDocumentFromRAG(sourceId, materialCourseId);
                 console.log("✅ Deleted from vector database");
             } catch (ragError) {
                 console.error("Error deleting from vector database:", ragError);
@@ -280,7 +287,7 @@ const updateMaterialHandler = async (req, res) => {
                     course: courseName,
                     sourceId: sourceId,
                     documentTitle: updatedDocumentTitle,
-                });
+                }, materialCourseId);
                 console.log("✅ Re-saved to vector database");
             } catch (ragAddError) {
                 console.error("Error saving to vector database:", ragAddError);
@@ -342,7 +349,7 @@ const refetchMaterialHandler = async (req, res) => {
 
         // Step 1: Delete from vector database (RAG)
         try {
-            await ragService.deleteDocumentFromRAG(sourceId);
+            await ragService.deleteDocumentFromRAG(sourceId, materialCourseId);
             console.log("✅ Deleted from vector database");
         } catch (ragError) {
             console.error("Error deleting from vector database:", ragError);
@@ -373,7 +380,7 @@ const refetchMaterialHandler = async (req, res) => {
                 course: courseName,
                 sourceId: sourceId,
                 documentTitle: existingMaterial.documentTitle || "",
-            });
+            }, materialCourseId);
             console.log("✅ Re-saved to vector database");
         } catch (ragAddError) {
             console.error("Error saving to vector database:", ragAddError);

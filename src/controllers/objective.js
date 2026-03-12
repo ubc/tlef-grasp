@@ -84,7 +84,6 @@ const createObjectiveHandler = async (req, res) => {
     const result = await createObjective({
       name: name.trim(),
       granularObjectives: granularObjectives || [],
-      materialIds: materialIds || [],
       courseId: courseId,
     });
 
@@ -178,9 +177,6 @@ const updateObjectiveHandler = async (req, res) => {
     }
     if (granularObjectives !== undefined) {
       updateData.granularObjectives = granularObjectives;
-    }
-    if (materialIds !== undefined) {
-      updateData.materialIds = materialIds;
     }
     if (courseId !== undefined) {
       updateData.courseId = courseId;

@@ -39,6 +39,7 @@ class QuestionGenerator {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
+                courseId: courseId,
                 courseName: courseName,
                 learningObjectiveId: learningObjectiveId,
                 learningObjectiveText: learningObjectiveText,
@@ -112,7 +113,8 @@ class QuestionGenerator {
             const objectiveQuestions = await this.generateQuestionsForObjective(
               course.name || '',
               learningObjective,
-              granularLearningObjective
+              granularLearningObjective,
+              course.id || course._id
             );
   
             console.log(
@@ -164,7 +166,7 @@ class QuestionGenerator {
   }
 
   // Generate questions for specific objectives using enhanced content analysis
-  async generateQuestionsForObjective(courseName, learningObjective, granularLearningObjective) {
+  async generateQuestionsForObjective(courseName, learningObjective, granularLearningObjective, courseId) {
     console.log(
       `=== GENERATING QUESTIONS FOR OBJECTIVE: ${granularLearningObjective.text} ===`
     );
@@ -191,15 +193,16 @@ class QuestionGenerator {
       // Retry logic for individual question generation
       while (retryCount < maxRetries && !question) {
         try {
-          question = await this.createContextualQuestion(
-            courseName,
-            learningObjective.objectiveId,
-            learningObjective.title,
-            granularLearningObjective.granularId,
-            granularLearningObjective.text,
-            bloomLevel,
-            i + 1
-          );
+            question = await this.createContextualQuestion(
+              courseId,
+              courseName,
+              learningObjective.objectiveId,
+              learningObjective.title,
+              granularLearningObjective.granularId,
+              granularLearningObjective.text,
+              bloomLevel,
+              i + 1
+            );
 
           console.log(`✅ Created question ${i + 1}:`, question.text);
           questions.push(question);
@@ -259,6 +262,7 @@ class QuestionGenerator {
 
   // Create a contextual question based on content and Bloom's taxonomy
   async createContextualQuestion(
+    courseId,
     courseName,
     learningObjectiveId,
     learningObjectiveText,
@@ -275,6 +279,7 @@ class QuestionGenerator {
         const llmResponse = await fetch('/api/rag-llm/generate-questions-with-rag', {
           method: 'POST',
           body: JSON.stringify({
+            courseId: courseId,
             courseName: courseName,
             learningObjectiveId: learningObjectiveId,
             learningObjectiveText: learningObjectiveText,

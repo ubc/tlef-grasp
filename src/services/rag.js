@@ -9,50 +9,40 @@ class RAGService {
     }
 
     // Import UBC GenAI Toolkit (server-side)
-    this.RAGInstance = null;
+    // Map of collectionName -> RAGInstance
+    this.instances = new Map();
     this.RAGModule = null;
-    // Initialize on first instantiation
-    this.initializationPromise = this.initializeRAG();
+    this.ConsoleLogger = null;
+    
+    // Config templates
+    this.baseConfig = null;
+    
+    // Global initialization (loading modules)
+    this.initializationPromise = this.initializeBase();
 
     RAGService.instance = this;
   }
 
-  async initializeRAG() {
+  async initializeBase() {
     try {
-      console.log("Initializing UBC GenAI Toolkit on server...");
-
-      // Import modules
+      console.log("Loading UBC GenAI Toolkit modules...");
       const ragModule = await import("ubc-genai-toolkit-rag");
       const coreModule = await import("ubc-genai-toolkit-core");
 
-      // Extract RAGModule from the imported module
-      this.RAGModule =
-        ragModule.RAGModule || ragModule.default?.RAGModule || ragModule.default;
+      this.RAGModule = ragModule.RAGModule || ragModule.default?.RAGModule || ragModule.default;
+      this.ConsoleLogger = coreModule.ConsoleLogger || coreModule.default?.ConsoleLogger || coreModule.default;
 
-      // Extract ConsoleLogger
-      const ConsoleLogger =
-        coreModule.ConsoleLogger ||
-        coreModule.default?.ConsoleLogger ||
-        coreModule.default;
-
-      if (!this.RAGModule) {
-        throw new Error("RAGModule not found in ubc-genai-toolkit-rag");
+      if (!this.RAGModule || !this.ConsoleLogger) {
+        throw new Error("Failed to load RAGModule or ConsoleLogger");
       }
 
-      if (!ConsoleLogger) {
-        throw new Error("ConsoleLogger not found in ubc-genai-toolkit-core");
-      }
-
-      // Initialize global RAG instance
-      console.log("Initializing global RAG instance...");
-
-      const ragConfig = {
+      this.baseConfig = {
         provider: "qdrant",
         qdrantConfig: {
           url: process.env.QDRANT_URL || "http://localhost:6333",
-          collectionName: process.env.QDRANT_COLLECTION_NAME || "question-generation-collection",
           vectorSize: parseInt(process.env.QDRANT_VECTOR_SIZE) || 768,
           distanceMetric: 'Cosine',
+          apiKey: process.env.QDRANT_API_KEY
         },
         embeddingsConfig: {
           providerType: process.env.EMBEDDING_PROVIDER,
@@ -60,83 +50,76 @@ class RAGService {
           llmConfig: {
             provider: process.env.LLM_PROVIDER,
             defaultModel: process.env.OPENAI_MODEL,
+            apiKey: process.env.OPENAI_API_KEY
           },
-        },
-        logger: new ConsoleLogger('RAG'),
-      };
-
-      if (process.env.QDRANT_API_KEY) {
-        ragConfig.qdrantConfig.apiKey = process.env.QDRANT_API_KEY;
-        ragConfig.embeddingsConfig.llmConfig.apiKey = process.env.OPENAI_API_KEY;
-      }
-
-      try {
-        this.RAGInstance = await this.RAGModule.create(ragConfig);
-        console.log("✅ Successfully initialized RAG instance");
-      } catch (ragError) {
-        console.error("❌ Failed to initialize RAG instance:", ragError);
-        throw new Error(`RAG initialization error: ${ragError.message}`);
-      }
-
-      // Testing Qdrant connection
-      if (ragConfig.qdrantConfig.url) {
-        try {
-          console.log(`Attempting to connect to remote Qdrant at ${ragConfig.qdrantConfig.url}...`);
-          const qdrantTestResponse = await fetch(`${ragConfig.qdrantConfig.url}/collections`, {
-            method: "GET",
-            headers: ragConfig.qdrantConfig.apiKey ? { "api-key": ragConfig.qdrantConfig.apiKey } : {},
-            signal: AbortSignal.timeout(5000), // 5 second timeout
-          });
-          if (qdrantTestResponse.ok) {
-            console.log("✅ Qdrant is reachable");
-          } else {
-            throw new Error(
-              `Remote Qdrant returned status ${qdrantTestResponse.status}`
-            );
-          }
-        } catch (remoteError) {
-          console.error(
-            `❌ Remote Qdrant also failed: ${remoteError.message}`
-          );
-          throw new Error(
-            `Both local and remote Qdrant connections failed. Last error: ${remoteError.message}`
-          );
         }
-      } else {
-        throw new Error("QDRANT_URL is not set");
-      }
-
-      console.log(
-        `Initializing RAG with Qdrant at ${ragConfig.qdrantConfig.url}...`
-      );
-
-      console.log(
-        `✅ Global RAG instance initialized successfully with Qdrant`
-      );
-    } catch (ragError) {
-      console.error(
-        "❌ Failed to initialize global RAG instance:",
-        ragError.message
-      );
-      console.error("Error details:", {
-        message: ragError.message,
-        cause: ragError.cause?.message || ragError.cause?.code,
-      });
-      console.log(
-        "⚠️  Server will continue without RAG functionality. Question generation will work but without vector search capabilities."
-      );
-      this.RAGInstance = null;
+      };
+      
+      console.log("✅ RAG Base initialized");
+    } catch (err) {
+      console.error("❌ Failed to initialize RAG Base:", err);
+      throw err;
     }
   }
 
-  getRAGInstance() {
-    return this.RAGInstance;
+  /**
+   * Standardize collection name for a course
+   */
+  getCollectionName(courseId) {
+    if (!courseId) return process.env.QDRANT_COLLECTION_NAME || "question-generation-collection";
+    // Normalize string ID
+    const cid = typeof courseId === 'string' ? courseId : courseId.toString();
+    return `grasp_course_${cid}`;
   }
 
-  async addDocumentToRAG(content, metadata = {}) {
+  async getOrCreateInstance(courseId) {
+    await this.initializationPromise;
+    
+    const collectionName = this.getCollectionName(courseId);
+    
+    if (this.instances.has(collectionName)) {
+      return this.instances.get(collectionName);
+    }
 
-    if (!this.RAGInstance) {
-      throw new Error("RAG instance is not initialized");
+    console.log(`Creating RAG instance for collection: ${collectionName}`);
+    
+    const ragConfig = {
+      ...this.baseConfig,
+      qdrantConfig: {
+        ...this.baseConfig.qdrantConfig,
+        collectionName: collectionName
+      },
+      logger: new this.ConsoleLogger(`RAG-${collectionName}`)
+    };
+
+    try {
+      const instance = await this.RAGModule.create(ragConfig);
+      this.instances.set(collectionName, instance);
+      console.log(`✅ initialized RAG instance for ${collectionName}`);
+      return instance;
+    } catch (err) {
+      console.error(`❌ Failed to create RAG instance for ${collectionName}:`, err);
+      // If course-specific fails, we might still want to return null and let the caller handle it
+      return null;
+    }
+  }
+
+  // Compatibility getter for existing code that expects a single instance
+  getRAGInstance() {
+    // Return the default collection's instance if it exists, or create it
+    const defaultCollection = process.env.QDRANT_COLLECTION_NAME || "question-generation-collection";
+    if (this.instances.has(defaultCollection)) {
+      return this.instances.get(defaultCollection);
+    }
+    // Note: this is async-ish because of initializationPromise, but if called early it might be null
+    // Ideally we should move away from this getter
+    return this.instances.values().next().value || null;
+  }
+
+  async addDocumentToRAG(content, metadata = {}, courseId = null) {
+    const instance = await this.getOrCreateInstance(courseId);
+    if (!instance) {
+      throw new Error("RAG instance is not initialized for this course");
     }
 
     console.log("=== ADDING DOCUMENT TO SERVER-SIDE RAG ===");
@@ -153,7 +136,7 @@ class RAGService {
     const sanitizedContent = sanitizeText(content);
 
     // Add content to RAG
-    const chunkIds = await this.RAGInstance.addDocument(sanitizedContent, {
+    const chunkIds = await instance.addDocument(sanitizedContent, {
       ...metadata,
       timestamp: new Date().toISOString(),
     });
@@ -162,26 +145,27 @@ class RAGService {
     return chunkIds;
   }
 
-  async deleteDocumentFromRAG(sourceId) {
-
-    if (!this.RAGInstance) {
-      throw new Error("RAG instance is not initialized");
+  async deleteDocumentFromRAG(sourceId, courseId = null) {
+    const instance = await this.getOrCreateInstance(courseId);
+    if (!instance) {
+      throw new Error("RAG instance is not initialized for this course");
     }
 
     console.log("=== DELETING DOCUMENT FROM SERVER-SIDE RAG ===");
     console.log("Source ID:", sourceId);
 
     // Delete documents matching the sourceId in metadata
-    await this.RAGInstance.deleteDocumentsByMetadata({
+    await instance.deleteDocumentsByMetadata({
       sourceId: sourceId,
     });
 
     console.log(`✅ Document with sourceId ${sourceId} deleted successfully`);
   }
 
-  async getLearningObjectiveRagContent(objectiveId, query) {
-    if (!this.RAGInstance) {
-      throw new Error("RAG instance is not initialized");
+  async getLearningObjectiveRagContent(objectiveId, query, courseId = null) {
+    const instance = await this.getOrCreateInstance(courseId);
+    if (!instance) {
+      throw new Error("RAG instance is not initialized for this course");
     }
 
     if (!query) {
@@ -189,17 +173,19 @@ class RAGService {
     }
 
     const objective = await getObjectiveWithMaterials(objectiveId);
+    console.log("Objective:", objective);
     if (!objective) {
       throw new Error(`Objective with ID ${objectiveId} not found`);
     }
 
     // Use provided query for RAG search
-    let ragChunks = await this.RAGInstance.retrieveContext(query, {
+    let ragChunks = await instance.retrieveContext(query, {
       limit: 50,
     });
 
     // Get materials source IDs, filter out chunks that are not in the materials
     const materialsSourceIds = objective.materials.map((material) => material.sourceId);
+    console.log("Materials source IDs:", materialsSourceIds);
     ragChunks = ragChunks.filter((chunk) => materialsSourceIds.includes(chunk.metadata.sourceId));
 
     console.log("RAG context:", ragChunks);
@@ -225,9 +211,10 @@ class RAGService {
    * @param {number} limit - Maximum number of chunks to retrieve (default: 100)
    * @returns {Promise<string>} Combined RAG context from all materials
    */
-  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 100) {
-    if (!this.RAGInstance) {
-      throw new Error("RAG instance is not initialized");
+  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 100, courseId = null) {
+    const instance = await this.getOrCreateInstance(courseId);
+    if (!instance) {
+      throw new Error("RAG instance is not initialized for this course");
     }
 
     if (!sourceIds || sourceIds.length === 0) {
@@ -235,7 +222,7 @@ class RAGService {
     }
 
     // Use provided query for RAG search
-    let ragChunks = await this.RAGInstance.retrieveContext(query, {
+    let ragChunks = await instance.retrieveContext(query, {
       limit: limit,
     });
 

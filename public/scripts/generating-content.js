@@ -77,6 +77,7 @@ class ContentGenerator {
         body: JSON.stringify({
           content: content,
           metadata: metadata,
+          courseId: metadata.courseId || null,
         }),
       });
 
@@ -109,7 +110,7 @@ class ContentGenerator {
     }
   }
 
-  async searchKnowledgeBase(query, limit = 5) {
+  async searchKnowledgeBase(query, limit = 5, courseId = null) {
     // Use server-side RAG search
     try {
       console.log("=== SEARCHING SERVER-SIDE RAG ===");
@@ -124,6 +125,7 @@ class ContentGenerator {
         body: JSON.stringify({
           query: query,
           limit: limit,
+          courseId: courseId,
         }),
       });
 
@@ -174,6 +176,7 @@ class ContentGenerator {
             source: file.name,
             type: "file",
             course: course.name,
+            courseId: course.id || course._id,
           });
         } else {
           console.log(`Skipping file (no content): ${file.name}`);
@@ -187,6 +190,7 @@ class ContentGenerator {
           source: url.url,
           type: "url",
           course: course.name,
+          courseId: course.id || course._id,
         });
       }
 
@@ -214,7 +218,7 @@ class ContentGenerator {
         const summaryQuery = `Summarize the main topics and key concepts covered in the uploaded materials for ${course}`;
         console.log("Summary query:", summaryQuery);
 
-        const relevantChunks = await this.searchKnowledgeBase(summaryQuery, 10);
+        const relevantChunks = await this.searchKnowledgeBase(summaryQuery, 10, course.id || course._id);
         console.log("Relevant chunks found:", relevantChunks.length);
 
         if (relevantChunks.length > 0) {
@@ -334,9 +338,8 @@ class ContentGenerator {
 
       if (content) {
         return await this.addDocumentToKnowledgeBase(content, {
-          source: file.name,
-          type: "file",
           course: course.name,
+          courseId: course.id || course._id,
           sourceId: sourceId,
         });
       }
@@ -387,6 +390,7 @@ class ContentGenerator {
         source: url,
         type: "url",
         course: course.name,
+        courseId: course.id || course._id,
         sourceId: sourceId,
         documentTitle: documentTitle || "",
       });
@@ -404,6 +408,7 @@ class ContentGenerator {
         source: "",
         type: "text",
         course: course.name,
+        courseId: course.id || course._id,
         sourceId: sourceId,
         documentTitle: documentTitle || "",
       });

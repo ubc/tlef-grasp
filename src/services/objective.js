@@ -102,13 +102,8 @@ const createObjective = async (objectiveData) => {
       }
     }
     
-    // Create relationships with materials if provided
-    if (objectiveData.materialIds && objectiveData.materialIds.length > 0) {
-      await objectiveMaterialService.createObjectiveMaterialRelations(
-        parentId.toString(),
-        objectiveData.materialIds
-      );
-    }
+    // Return the created parent objective with its granular objectives
+    // Note: Materials are now handled separately
     
     // Return the created parent objective with its granular objectives
     const createdParent = await collection.findOne({ _id: parentId });
@@ -295,15 +290,8 @@ const updateObjective = async (objectiveId, updateData) => {
       }
     }
     
-    // Handle materials update if provided
-    if (updateData.materialIds !== undefined) {
-      await objectiveMaterialService.updateObjectiveMaterialRelations(
-        id.toString(),
-        updateData.materialIds || []
-      );
-    }
-    
-    // Return the updated objective with its granular objectives
+    // Fetch and return the updated objective with its granular objectives
+    // Note: Materials are now handled separately
     const updatedObjective = await collection.findOne({ _id: id });
     const updatedGranular = await collection.find({ parent: id }).toArray();
     

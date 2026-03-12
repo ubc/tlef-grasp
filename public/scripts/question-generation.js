@@ -836,10 +836,10 @@ async function handleCustomObjectiveSubmission() {
         text: i.text,
         bloomTaxonomies: i.bloom || []
       })),
-      materialIds: selectedMaterials,
       courseId: courseId,
     };
 
+    // Update objective core data
     const response = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}`, {
       method: "PUT",
       headers: {
@@ -853,6 +853,23 @@ async function handleCustomObjectiveSubmission() {
     if (!response.ok || !data.success) {
       throw new Error(data.error || "Failed to update learning objective");
     }
+
+    // Update material relationships separately
+    const materialsResponse = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`, {
+      method: "PUT",
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ materialIds: selectedMaterials }),
+    });
+
+    const materialsData = await materialsResponse.json();
+    if (!materialsResponse.ok || !materialsData.success) {
+      throw new Error(materialsData.error || "Failed to update material relationships");
+    }
+
+    // Update state
+    group.materialIds = selectedMaterials;
 
     showToast("Learning objective settings updated", "success");
     hideModal(modal);
@@ -1384,10 +1401,10 @@ async function handleAISaveObjectives() {
       const requestBody = {
         name: objective.name,
         granularObjectives: objective.granularObjectives.map(go => typeof go === 'string' ? { text: go } : { text: go.text, bloomTaxonomies: go.bloomTaxonomies }),
-        materialIds: selectedMaterials,
         courseId: selectedCourse.id,
       };
 
+      // Create objective
       const response = await fetch(API_ENDPOINTS.objective, {
         method: 'POST',
         headers: {
@@ -1402,10 +1419,29 @@ async function handleAISaveObjectives() {
         throw new Error(data.error || `Failed to save objective: ${objective.name}`);
       }
 
+      const objectiveId = data.objective._id || data.objective.id;
+
+      // Associate materials separately
+      if (selectedMaterials.length > 0) {
+        const materialsResponse = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ materialIds: selectedMaterials }),
+        });
+
+        if (!materialsResponse.ok) {
+          const materialsData = await materialsResponse.json();
+          console.warn(`Failed to associate materials for objective ${objectiveId}:`, materialsData.error);
+        }
+      }
+
       if (data.success && data.objective) {
         savedObjectives.push({
           parent: data.objective,
           granular: data.granularObjectives || [],
+          materialIds: selectedMaterials,
         });
       }
     }
@@ -1426,6 +1462,7 @@ async function handleAISaveObjectives() {
         title: objectiveName,
         isOpen: true,
         selected: false,
+        materialIds: saved.materialIds || [],
         items: saved.granular.map((granular, index) => ({
           id: parseFloat(`${newGroupNumber}.${index + 1}`),
           granularId: granular._id ? granular._id.toString() : null,
@@ -1565,15 +1602,25 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
 
     announceToScreenReader(`Objective revealed: ${objectiveName}`);
   } else {
-    // Fetch granular objectives from API
+    // Fetch granular objectives and material relationships from API
     try {
       const courseId = getCourseId();
-      const response = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`);
-      const data = await response.json();
+      const [granularResponse, materialsResponse] = await Promise.all([
+        fetch(`${API_ENDPOINTS.objective}/${objectiveId}/granular?courseId=${encodeURIComponent(courseId)}`),
+        fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`)
+      ]);
+
+      const granularData = await granularResponse.json();
+      const materialsData = await materialsResponse.json();
 
       let granularObjectives = [];
-      if (data.success && data.objectives) {
-        granularObjectives = data.objectives;
+      if (granularData.success && granularData.objectives) {
+        granularObjectives = granularData.objectives;
+      }
+
+      let materialIds = [];
+      if (materialsData.success && materialsData.materials) {
+        materialIds = materialsData.materials.map(m => m.sourceId || m._id);
       }
 
       // Create new learning objective group
@@ -1587,6 +1634,7 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
         title: objectiveName,
         isOpen: true,
         selected: false,
+        materialIds: materialIds,
         items: granularObjectives.map((granular, index) => ({
           id: parseFloat(`${newGroupNumber}.${index + 1}`),
           granularId: granular._id ? granular._id.toString() : null,
@@ -1749,7 +1797,6 @@ async function deleteGranularObjective(groupId, itemId) {
       const requestBody = {
         name: group.title, // Group title is already cleaned from prefix
         courseId: courseId,
-        materialIds: group.materialIds || [],
         granularObjectives: group.items.map(i => ({
           id: i.granularId,
           text: i.text,
@@ -2317,7 +2364,6 @@ async function updateGranularObjectiveBloom(groupId) {
     const requestBody = {
       name: currentName,
       courseId: courseId,
-      materialIds: group.materialIds || [],
       // Re-map the granular objectives, implicitly including our bloom update via state
       granularObjectives: group.items.map(i => ({
         id: i.granularId,
@@ -2428,8 +2474,7 @@ async function updateMetaObjectiveTitle(groupId, newTitle) {
     const requestBody = {
       name: trimmedNewTitle,
       courseId: courseId,
-      // Pass existing materials and granular objectives unchanged
-      materialIds: group.materialIds || [],
+      // Pass existing granular objectives unchanged
       granularObjectives: (group.items || []).map(item => ({
         id: item.granularId, // Maps back to existing ID
         text: item.text,
@@ -2503,7 +2548,6 @@ async function updateGranularObjectiveText(groupId, itemId, newText) {
     const requestBody = {
       name: currentName,
       courseId: courseId,
-      materialIds: group.materialIds || [],
       // Re-map the granular objectives, implicitly including our text update via state
       granularObjectives: group.items.map(i => ({
         id: i.granularId,

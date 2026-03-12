@@ -55,9 +55,11 @@ const getMaterialsForObjective = async (objectiveId) => {
     
     // Convert objectiveId to ObjectId
     const objectiveIdObj = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
+    console.log(`[getMaterialsForObjective] Fetching for objectiveId: ${objectiveId} (as ObjId: ${objectiveIdObj})`);
     
     // Find all relationships for this objective
     const relationships = await relationshipCollection.find({ objectiveId: objectiveIdObj }).toArray();
+    console.log(`[getMaterialsForObjective] Found ${relationships.length} relationships`);
     
     if (relationships.length === 0) {
       return [];
