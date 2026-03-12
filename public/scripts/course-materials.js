@@ -133,6 +133,11 @@ async function initializeCourseMaterials() {
   await loadCourseMaterials();
   loadMaterials();
   initializeFilters();
+
+  // If no materials, show the upload section by default
+  if (materials.length === 0 && window.CourseMaterialsUpload) {
+    window.CourseMaterialsUpload.showUploadSection();
+  }
 }
 
 async function loadCourseMaterials() {

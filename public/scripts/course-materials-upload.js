@@ -53,6 +53,19 @@ function initializeUploadUI() {
   }
 }
 
+function showUploadSection() {
+  const uploadSection = document.getElementById("upload-section");
+  const uploadBtn = document.getElementById("upload-materials-btn");
+
+  if (uploadSection) {
+    uploadSection.style.display = "block";
+  }
+
+  if (uploadBtn) {
+    uploadBtn.innerHTML = '<i class="fas fa-times"></i><span>Hide Upload</span>';
+  }
+}
+
 function hideUploadSection() {
   const uploadSection = document.getElementById("upload-section");
   const uploadBtn = document.getElementById("upload-materials-btn");
@@ -79,9 +92,8 @@ function initializeFileUpload() {
     dropArea.addEventListener('drop', handleDrop);
 
     if (chooseFileBtn) {
-      chooseFileBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      chooseFileBtn.addEventListener('click', () => {
+        console.log('??');
         if (fileInput) {
           fileInput.click();
         }
@@ -587,3 +599,8 @@ function showNotification(message, type = 'info') {
   }
 }
 
+// Export functions for potential use by other scripts
+window.CourseMaterialsUpload = {
+  showUploadSection,
+  hideUploadSection
+};
