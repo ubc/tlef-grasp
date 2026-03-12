@@ -93,7 +93,6 @@ function initializeFileUpload() {
 
     if (chooseFileBtn) {
       chooseFileBtn.addEventListener('click', () => {
-        console.log('??');
         if (fileInput) {
           fileInput.click();
         }
