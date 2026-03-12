@@ -22,7 +22,7 @@
                 <div class="header-section">
                     <div class="header-tabs">
                         <button class="tab-button" data-tab="overview">Overview</button>
-                        <button class="tab-button" data-tab="review">Review</button>
+                        <button class="tab-button" data-tab="review">Quizzes</button>
                         <button class="tab-button" data-tab="approved-history">Approved History</button>
                     </div>
                 </div>
@@ -88,6 +88,10 @@
                             <i class="fas fa-check"></i>
                             Approve
                         </button>
+                        <button class="btn btn-secondary" id="cross-unapprove-btn">
+                            <i class="fas fa-times"></i>
+                            Unapprove
+                        </button>
                         <button class="btn btn-secondary" id="cross-flag-btn">
                             <i class="fas fa-flag"></i>
                             Flag
@@ -110,6 +114,14 @@
                                 <span id="selection-count">0 questions selected</span>
                             </div>
                             <div class="action-buttons">
+                                <button class="action-btn" id="approve-btn" disabled>
+                                    <i class="fas fa-check"></i>
+                                    Approve
+                                </button>
+                                <button class="action-btn" id="unapprove-btn" disabled>
+                                    <i class="fas fa-times"></i>
+                                    Unapprove
+                                </button>
                                 <button class="action-btn" id="flag-btn" disabled>
                                     <i class="fas fa-flag"></i>
                                     Flag

@@ -17,11 +17,14 @@ const SELECTORS = {
   selectAll: 'select-all',
   selectionCount: 'selection-count',
   actionBar: 'action-bar',
+  approveBtn: 'approve-btn',
+  unapproveBtn: 'unapprove-btn',
   flagBtn: 'flag-btn',
   deleteBtn: 'delete-btn',
   crossQuizActions: 'cross-quiz-actions',
   crossQuizCount: 'cross-quiz-count',
   crossApproveBtn: 'cross-approve-btn',
+  crossUnapproveBtn: 'cross-unapprove-btn',
   crossFlagBtn: 'cross-flag-btn',
   crossDeleteBtn: 'cross-delete-btn',
   confirmModal: 'confirm-modal',
@@ -575,9 +578,13 @@ class QuestionBankPage {
   }
 
   initializeActionButtons() {
+    const approveBtn = document.getElementById("approve-btn");
+    const unapproveBtn = document.getElementById("unapprove-btn");
     const flagBtn = document.getElementById("flag-btn");
     const deleteBtn = document.getElementById("delete-btn");
 
+    if (approveBtn) approveBtn.addEventListener("click", () => this.handleBulkApprove());
+    if (unapproveBtn) unapproveBtn.addEventListener("click", () => this.handleBulkUnapprove());
     if (flagBtn) flagBtn.addEventListener("click", () => this.handleFlag());
     if (deleteBtn)
       deleteBtn.addEventListener("click", () => this.handleDelete());
@@ -593,12 +600,18 @@ class QuestionBankPage {
 
   initializeCrossQuizActions() {
     const crossApproveBtn = document.getElementById("cross-approve-btn");
+    const crossUnapproveBtn = document.getElementById("cross-unapprove-btn");
     const crossFlagBtn = document.getElementById("cross-flag-btn");
     const crossDeleteBtn = document.getElementById("cross-delete-btn");
 
     if (crossApproveBtn) {
       crossApproveBtn.addEventListener("click", () =>
         this.handleCrossQuizAction("approve")
+      );
+    }
+    if (crossUnapproveBtn) {
+      crossUnapproveBtn.addEventListener("click", () =>
+        this.handleCrossQuizAction("unapprove")
       );
     }
     if (crossFlagBtn) {
@@ -721,6 +734,8 @@ class QuestionBankPage {
     // Elements to hide for non-faculty
     const elementsToHide = [
       { id: "action-bar", description: "action bar" },
+      { id: "approve-btn", description: "approve button" },
+      { id: "unapprove-btn", description: "unapprove button" },
       { id: "flag-btn", description: "flag button" },
       { id: "delete-btn", description: "delete button" },
       { id: "cross-flag-btn", description: "cross-quiz flag button" },
@@ -774,7 +789,7 @@ class QuestionBankPage {
     // Update page title and render appropriate content
     const tabTitles = {
       [TAB_NAMES.overview]: 'Overview',
-      [TAB_NAMES.review]: 'Review',
+      [TAB_NAMES.review]: 'Quizzes',
       [TAB_NAMES.approvedHistory]: 'Approved History',
     };
     document.title = `${tabTitles[tabName] || 'Question Bank'} - Question Bank - GRASP`;
@@ -836,7 +851,7 @@ class QuestionBankPage {
     if (filteredQuizzes.length === 0) {
       quizzesContainer.innerHTML = `
         <div class="empty-state">
-          <h3>No quizzes to review</h3>
+          <h3>No quizzes found</h3>
           <p>You haven't saved any quizzes from question generation yet.</p>
           <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first quiz.</p>
         </div>
@@ -926,9 +941,11 @@ class QuestionBankPage {
           <div class="quiz-bulk-actions ${quiz.selection.size > 0 ? "visible" : ""
             }">
             ${this.isFaculty
-              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
-              }, 'approve')">
+              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'approve')">
                 Approve selected
+              </button>
+              <button class="unapprove-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'unapprove')">
+                Unapprove selected
               </button>`
               : ''
             }
@@ -1202,6 +1219,17 @@ class QuestionBankPage {
           "success"
         );
         break;
+      case "unapprove":
+        if (!this.requireFaculty("unapprove questions")) return;
+        selectedQuestions.forEach((q) => {
+          q.approved = false;
+          q.status = "Draft";
+        });
+        this.showNotification(
+          `Unapproved ${selectedQuestions.length} questions`,
+          "success"
+        );
+        break;
       case "flag":
         if (!this.requireFaculty("bulk flag questions")) return;
         selectedQuestions.forEach((q) => {
@@ -1261,14 +1289,23 @@ class QuestionBankPage {
       crossQuizCount.textContent = `${totalSelected} question${totalSelected !== 1 ? "s" : ""
         } selected`;
 
-      // Show/hide approve button based on user role
+      // Show/hide approve/unapprove buttons based on user role
       const crossApproveBtn = document.getElementById("cross-approve-btn");
+      const crossUnapproveBtn = document.getElementById("cross-unapprove-btn");
       if (crossApproveBtn) {
         if (this.isFaculty) {
           crossApproveBtn.style.display = "inline-flex";
           crossApproveBtn.disabled = false;
         } else {
           crossApproveBtn.style.display = "none";
+        }
+      }
+      if (crossUnapproveBtn) {
+        if (this.isFaculty) {
+          crossUnapproveBtn.style.display = "inline-flex";
+          crossUnapproveBtn.disabled = false;
+        } else {
+          crossUnapproveBtn.style.display = "none";
         }
       }
 
@@ -1305,6 +1342,7 @@ class QuestionBankPage {
       // Disable cross-quiz action buttons
       const crossButtons = [
         "cross-approve-btn",
+        "cross-unapprove-btn",
         "cross-flag-btn",
         "cross-delete-btn",
       ];
@@ -1414,6 +1452,124 @@ class QuestionBankPage {
     }
   }
 
+  async handleBulkApprove() {
+    if (!this.requireFaculty("bulk approve questions")) return;
+
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
+
+    // Disable button during operation
+    const approveBtn = document.getElementById("approve-btn");
+    if (approveBtn) approveBtn.disabled = true;
+
+    try {
+      // Update all selected questions to Approved status
+      const updatePromises = selectedQuestions.map(async (id) => {
+        const question = this.questions.find((q) => toStringId(q.id) === toStringId(id));
+        if (!question) return { success: false, id };
+
+        try {
+          const response = await fetch(`${API_ENDPOINTS.question}/${id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              status: QUESTION_STATUS.approved,
+            }),
+          });
+
+          if (response.ok) {
+            question.status = QUESTION_STATUS.approved;
+            question.approved = true;
+            return { success: true, id };
+          }
+          return { success: false, id };
+        } catch {
+          return { success: false, id };
+        }
+      });
+
+      const results = await Promise.all(updatePromises);
+      const successCount = results.filter(r => r.success).length;
+
+      if (successCount > 0) {
+        this.renderQuestionsTable();
+        this.showNotification(
+          `Approved ${successCount} question(s)`,
+          "success"
+        );
+      } else {
+        this.showNotification("Failed to approve questions", "error");
+      }
+    } catch (error) {
+      console.error("Error approving questions:", error);
+      this.showNotification("Error approving questions", "error");
+    } finally {
+      // Re-enable button
+      if (approveBtn) approveBtn.disabled = false;
+    }
+  }
+
+  async handleBulkUnapprove() {
+    if (!this.requireFaculty("bulk unapprove questions")) return;
+
+    const selectedQuestions = Array.from(this.state.selectedQuestionIds);
+    if (selectedQuestions.length === 0) return;
+
+    // Disable button during operation
+    const unapproveBtn = document.getElementById("unapprove-btn");
+    if (unapproveBtn) unapproveBtn.disabled = true;
+
+    try {
+      // Update all selected questions to Draft status
+      const updatePromises = selectedQuestions.map(async (id) => {
+        const question = this.questions.find((q) => toStringId(q.id) === toStringId(id));
+        if (!question) return { success: false, id };
+
+        try {
+          const response = await fetch(`${API_ENDPOINTS.question}/${id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              status: QUESTION_STATUS.draft,
+            }),
+          });
+
+          if (response.ok) {
+            question.status = QUESTION_STATUS.draft;
+            question.approved = false;
+            return { success: true, id };
+          }
+          return { success: false, id };
+        } catch {
+          return { success: false, id };
+        }
+      });
+
+      const results = await Promise.all(updatePromises);
+      const successCount = results.filter(r => r.success).length;
+
+      if (successCount > 0) {
+        this.renderQuestionsTable();
+        this.showNotification(
+          `Unapproved ${successCount} question(s)`,
+          "success"
+        );
+      } else {
+        this.showNotification("Failed to unapprove questions", "error");
+      }
+    } catch (error) {
+      console.error("Error unapproving questions:", error);
+      this.showNotification("Error unapproving questions", "error");
+    } finally {
+      // Re-enable button
+      if (unapproveBtn) unapproveBtn.disabled = false;
+    }
+  }
+
   async handleDelete() {
     if (!this.requireFaculty("delete questions")) return;
 
@@ -1503,6 +1659,22 @@ class QuestionBankPage {
         });
         this.showNotification(
           `Approved ${totalSelected} questions across ${affectedQuizzes.length
+          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
+          "success"
+        );
+        break;
+      case "unapprove":
+        if (!this.requireFaculty("unapprove questions")) return;
+        affectedQuizzes.forEach((quiz) => {
+          quiz.questions.forEach((q) => {
+            if (quiz.selection.has(q.id)) {
+              q.approved = false;
+              q.status = "Draft";
+            }
+          });
+        });
+        this.showNotification(
+          `Unapproved ${totalSelected} questions across ${affectedQuizzes.length
           } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
           "success"
         );
@@ -1825,10 +1997,20 @@ class QuestionBankPage {
 
   updateActionButtons() {
     const hasSelection = this.state.selectedQuestionIds.size > 0;
+    const approveBtn = document.getElementById("approve-btn");
+    const unapproveBtn = document.getElementById("unapprove-btn");
     const flagBtn = document.getElementById("flag-btn");
     const deleteBtn = document.getElementById("delete-btn");
 
     // Buttons are already hidden/shown in initializePermissionBasedUI for non-faculty
+    if (approveBtn && this.isFaculty) {
+      approveBtn.disabled = !hasSelection;
+    }
+
+    if (unapproveBtn && this.isFaculty) {
+      unapproveBtn.disabled = !hasSelection;
+    }
+
     if (flagBtn && this.isFaculty) {
       flagBtn.disabled = !hasSelection;
     }
