@@ -11,7 +11,7 @@ const llmService = require('../services/llm');
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
-const { DEFAULT_PROMPTS } = require('../services/settings');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS } = require('../constants/app-constants');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -462,7 +462,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
       }
 
       // Clean and validate objectives
-      const validBloomLevels = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
+      const validBloomLevels = BLOOM_LEVELS;
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
         .map((obj) => ({

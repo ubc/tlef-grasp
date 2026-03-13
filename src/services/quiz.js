@@ -1,5 +1,6 @@
 const { ObjectId } = require("mongodb");
 const databaseService = require("./database");
+const { BLOOM_LEVELS } = require("../constants/app-constants");
 
 /**
  * Create a new quiz
@@ -205,7 +206,7 @@ const getQuizQuestions = async (quizId, approvedOnly = false) => {
     }
 };
 
-const BLOOM_ORDER = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
+const BLOOM_ORDER = BLOOM_LEVELS;
 
 /**
  * Helper: Enriches an array of questions with their parent Meta Learning Objective IDs
