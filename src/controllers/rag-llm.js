@@ -168,7 +168,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("=== USING getLearningObjectiveRagContent ===");
     // Use objective text as the query for RAG search
       // Fetch settings for prompt
-      const settings = await settingsService.getSettings();
+      const settings = await settingsService.getSettings(courseId);
       const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
 
       // Prepare RAG search query
@@ -392,7 +392,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
 
     // Get RAG content from selected materials
     // Fetch settings for prompt
-    const settings = await settingsService.getSettings();
+    const settings = await settingsService.getSettings(courseId);
 
     // Prepare RAG search query
     const searchQuery = `course content learning objectives topics concepts from course: ${courseName || ''}`;

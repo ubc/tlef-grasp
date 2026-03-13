@@ -10,15 +10,16 @@ const KEY_MAP = {
 };
 
 /**
- * Get application settings
+ * Get application settings for a specific course
+ * @param {string} courseId - The course ID to get settings for
  */
-const getSettings = async () => {
+const getSettings = async (courseId) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection('grasp_settings');
         
-        // Find all settings
-        const results = await collection.find({}).toArray();
+        // Find all settings for this course
+        const results = await collection.find({ courseId }).toArray();
         const settingsMap = results.reduce((map, item) => {
             map[item.name] = item.value;
             return map;
@@ -38,15 +39,15 @@ const getSettings = async () => {
             settings.prompts[promptKey] = (dbKey ? settingsMap[dbKey] : null) ?? DEFAULT_PROMPTS[promptKey];
         }
 
-        // Proactively save defaults if they don't exist (only for mapped keys)
+        // Proactively save defaults if they don't exist (only for mapped keys) for this course
         for (const path in KEY_MAP) {
             const dbKey = KEY_MAP[path];
             if (!(dbKey in settingsMap)) {
                 const [category, item] = path.split('.');
                 const value = category === 'general' ? DEFAULT_GENERAL[item] : DEFAULT_PROMPTS[item];
                 await collection.updateOne(
-                    { name: dbKey },
-                    { $set: { name: dbKey, value: value, updatedAt: new Date() } },
+                    { name: dbKey, courseId: courseId },
+                    { $set: { name: dbKey, value: value, courseId: courseId, updatedAt: new Date() } },
                     { upsert: true }
                 );
             }
@@ -54,16 +55,17 @@ const getSettings = async () => {
         
         return settings;
     } catch (error) {
-        console.error('Error getting settings:', error);
+        console.error(`Error getting settings for course ${courseId}:`, error);
         throw error;
     }
 };
 
 /**
- * Update application settings
+ * Update application settings for a specific course
+ * @param {string} courseId - The course ID
  * @param {Object} updateData - Data to update (hierarchical structure)
  */
-const updateSettings = async (updateData) => {
+const updateSettings = async (courseId, updateData) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection('grasp_settings');
@@ -81,8 +83,8 @@ const updateSettings = async (updateData) => {
                     if (dbKey) {
                         operations.push({
                             updateOne: {
-                                filter: { name: dbKey },
-                                update: { $set: { name: dbKey, value: obj[key], updatedAt: new Date() } },
+                                filter: { name: dbKey, courseId: courseId },
+                                update: { $set: { name: dbKey, value: obj[key], courseId: courseId, updatedAt: new Date() } },
                                 upsert: true
                             }
                         });
@@ -99,7 +101,7 @@ const updateSettings = async (updateData) => {
         
         return { success: true };
     } catch (error) {
-        console.error('Error updating settings:', error);
+        console.error(`Error updating settings for course ${courseId}:`, error);
         throw error;
     }
 };

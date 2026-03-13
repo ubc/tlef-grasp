@@ -49,7 +49,15 @@ async function initializeSettings() {
 
 async function loadSettings() {
     try {
-        const response = await fetch('/api/settings');
+        const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+        const courseId = selectedCourse.id;
+        
+        if (!courseId) {
+            showToast("No course selected. Please select a course first.", "warning");
+            return;
+        }
+
+        const response = await fetch(`/api/courses/${courseId}/settings`);
         const data = await response.json();
 
         if (data.success && data.settings) {
@@ -78,6 +86,14 @@ async function saveSettings() {
     const originalText = saveBtn.innerHTML;
     
     try {
+        const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+        const courseId = selectedCourse.id;
+
+        if (!courseId) {
+            showToast("No course selected. Please select a course first.", "error");
+            return;
+        }
+
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
@@ -92,7 +108,7 @@ async function saveSettings() {
             }
         };
 
-        const response = await fetch('/api/settings', {
+        const response = await fetch(`/api/courses/${courseId}/settings`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json'

@@ -5,7 +5,11 @@ const settingsService = require('../services/settings');
  */
 const getSettingsHandler = async (req, res) => {
     try {
-        const settings = await settingsService.getSettings();
+        const { courseId } = req.params;
+        if (!courseId) {
+            return res.status(400).json({ success: false, error: 'Course ID is required' });
+        }
+        const settings = await settingsService.getSettings(courseId);
         res.json({
             success: true,
             settings
@@ -24,8 +28,12 @@ const getSettingsHandler = async (req, res) => {
  */
 const updateSettingsHandler = async (req, res) => {
     try {
+        const { courseId } = req.params;
+        if (!courseId) {
+            return res.status(400).json({ success: false, error: 'Course ID is required' });
+        }
         const updateData = req.body;
-        const result = await settingsService.updateSettings(updateData);
+        const result = await settingsService.updateSettings(courseId, updateData);
         res.json({
             success: true,
             settings: result
