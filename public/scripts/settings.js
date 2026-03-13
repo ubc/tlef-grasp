@@ -63,11 +63,6 @@ async function loadSettings() {
         if (data.success && data.settings) {
             const settings = data.settings;
             
-            // Populate General Tab
-            if (settings.general) {
-                document.getElementById('app-name').value = settings.general.appName || '';
-            }
-
             // Populate Prompt Tab
             if (settings.prompts) {
                 document.getElementById('prompt-question-generation').value = settings.prompts.questionGeneration || '';
@@ -98,9 +93,6 @@ async function saveSettings() {
         saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
 
         const settingsData = {
-            general: {
-                appName: document.getElementById('app-name').value
-            },
             prompts: {
                 questionGeneration: document.getElementById('prompt-question-generation').value,
                 objectiveGenerationAuto: document.getElementById('prompt-objective-auto').value,

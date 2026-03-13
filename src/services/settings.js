@@ -3,7 +3,6 @@ const { DEFAULT_PROMPTS, DEFAULT_GENERAL } = require('../constants/app-constants
 
 // Mapping between hierarchical object structure and DB flat keys
 const KEY_MAP = {
-    'general.appName': 'application_name',
     'prompts.questionGeneration': 'prompt_question_generation',
     'prompts.objectiveGenerationAuto': 'prompt_objective_generation_auto',
     'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual'
@@ -27,9 +26,6 @@ const getSettings = async (courseId) => {
 
         // Reconstruct the hierarchical settings object
         const settings = {
-            general: {
-                appName: settingsMap[KEY_MAP['general.appName']] || DEFAULT_GENERAL.appName
-            },
             prompts: {}
         };
 
@@ -43,8 +39,8 @@ const getSettings = async (courseId) => {
         for (const path in KEY_MAP) {
             const dbKey = KEY_MAP[path];
             if (!(dbKey in settingsMap)) {
-                const [category, item] = path.split('.');
-                const value = category === 'general' ? DEFAULT_GENERAL[item] : DEFAULT_PROMPTS[item];
+                const item = path.split('.')[1];
+                const value = DEFAULT_PROMPTS[item];
                 await collection.updateOne(
                     { name: dbKey, courseId: courseId },
                     { $set: { name: dbKey, value: value, courseId: courseId, updatedAt: new Date() } },
