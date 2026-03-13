@@ -18,6 +18,7 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
+const settingsRoutes = require("./routes/settings");
 
 const { getUserRole, ROLES } = require("./utils/auth");
 const { ensureAuthenticated } = require('passport-ubcshib');
@@ -166,6 +167,9 @@ app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), 
 
 // Users management - faculty only
 app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), userRoutes);
+
+// Settings management - faculty only
+app.use("/api/settings", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), settingsRoutes);
 
 // Current user endpoint - all authenticated users
 app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), async (req, res) => {

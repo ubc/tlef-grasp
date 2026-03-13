@@ -10,6 +10,8 @@ const llmService = require('../services/llm');
 // Import services
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
+const settingsService = require('../services/settings');
+const { DEFAULT_PROMPTS } = require('../services/settings');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -165,78 +167,34 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     // Try to use RAG for content retrieval
     console.log("=== USING getLearningObjectiveRagContent ===");
     // Use objective text as the query for RAG search
-    const ragContext = await ragService.getLearningObjectiveRagContent(
-      learningObjectiveId,
-      `Get relevant content about learning objective: ${learningObjectiveText}, Granular Learning Objective: ${granularLearningObjectiveText} for course: ${courseName}`,
-      courseId
-    );
+      // Fetch settings for prompt
+      const settings = await settingsService.getSettings();
+      const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
 
-    console.log("RAG Context:", ragContext);
+      // Prepare RAG search query
+      const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
 
-    // Use LLM service for generation
-    console.log("=== USING LLM SERVICE FOR GENERATION ===");
+      const ragContext = await ragService.getLearningObjectiveRagContent(
+        learningObjectiveId,
+        searchQuery,
+        courseId
+      );
 
-    try {
-      // Get LLM instance from service
-      const llmModule = await llmService.getLLMInstance();
+      console.log("RAG Context:", ragContext);
+
+      // Use LLM service for generation
+      console.log("=== USING LLM SERVICE FOR GENERATION ===");
+
+      try {
+        // Get LLM instance from service
+        const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context
-      const createPrompt = () => `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
-
-Learning Objective: ${learningObjectiveText}
-Granular Learning Objective: ${granularLearningObjectiveText}
-Bloom's Taxonomy Level(s): ${bloomLevel}
-
-Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
-
-PROCEDURE:
-1. Create the question content
-2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
-4. Write the explanation
-
-The response format must be a valid JSON with the exact structure as follows:
-{
-  "question": "Your specific question here",
-  "options": {
-    "A": "First option text", // The first option
-    "B": "Second option text", // The second option
-    "C": "Third option text", // The third option
-    "D": "Fourth option text", // The fourth option
-  },
-  "correctAnswer": "C", // The letter of the correct answer
-  "explanation": "Why this answer is correct based on the content" // The explanation of why the correct answer is correct
-}
-
-CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON. Do NOT wrap the JSON in markdown code blocks (do not use triple backticks with json or triple backticks alone).
-- Do NOT include any text before or after the JSON object.
-- The response must start with { and end with }.
-- Return pure JSON that can be directly parsed with JSON.parse().
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string. In JSON, backslashes must be escaped as \\\\ (double backslash). For example:
-  * LaTeX \\( should be written as \\\\( in JSON
-  * LaTeX \\[ should be written as \\\\[ in JSON
-  * LaTeX \\text should be written as \\\\text in JSON
-  * LaTeX \\mathbb should be written as \\\\mathbb in JSON
-  * Any other LaTeX command with a backslash must be escaped: \\command becomes \\\\command
-  * Regular quotes must be escaped as \\"
-  * The JSON must be valid and parseable - test that all backslashes are properly escaped.
-
-The distractors (incorrect answers) should be plausible but subtly flawed, to effectively test students' understanding.
-
-IMPORTANT: 
-- CRITICAL: Always wrap any mathematical expressions in LaTeX delimiters that the Katex library can parse. My Katex config is:
-      renderMathInElement(document.body, {
-        delimiters: [
-          { left: "\\\(", right: "\\\)", display: false },
-          { left: "\\\\[", right: "\\\\]", display: true }
-        ],
-        throwOnError: false // prevents crashing on bad LaTeX
-      });
-  When including LaTeX in your JSON response, remember to escape backslashes: use \\\\( and \\\\) for inline math, and \\\\[ and \\\\] for display math.
-- CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options array should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".
-
-CONTENT: ${ragContext}`;
+      const createPrompt = () => promptTemplate
+        .replace('{learningObjectiveText}', learningObjectiveText || '')
+        .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
+        .replace('{bloomLevel}', bloomLevel || '')
+        .replace('{ragContext}', ragContext || '');
 
       // Retry logic: regenerate until we get valid JSON
       const maxRetries = 5;
@@ -247,6 +205,7 @@ CONTENT: ${ragContext}`;
         try {
           console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
           const response = await llmModule.sendMessage(createPrompt());
+          console.log("Full Prompt: ", createPrompt());
 
           console.log("✅ LLM service response received");
           console.log(
@@ -432,10 +391,16 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     // Get RAG content from selected materials
+    // Fetch settings for prompt
+    const settings = await settingsService.getSettings();
+
+    // Prepare RAG search query
+    const searchQuery = `course content learning objectives topics concepts from course: ${courseName || ''}`;
+
     console.log("Retrieving RAG content from selected materials...");
     const ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
-      `course content learning objectives topics concepts from course: ${courseName}`,
+      searchQuery,
       100,
       courseId
     );
@@ -447,54 +412,27 @@ const generateLearningObjectivesHandler = async (req, res) => {
       });
     }
 
-    // Create prompt for generating learning objectives
-    let objectiveInstructions = "";
+    // Determine which prompt to use (Auto vs Manual)
+    let promptTemplate;
+    let fullPrompt;
+
     if (userObjectives && userObjectives.length > 0) {
-      objectiveInstructions = `
-2. Use the following specific learning objectives provided by the user as the MAIN objectives:
-${userObjectives.map((obj, i) => `   - ${obj}`).join('\n')}
-3. For EACH of the user-provided main objectives above, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes based ON THE COURSE MATERIALS CONTENT provided below.`;
+      promptTemplate = settings?.prompts?.objectiveGenerationManual || DEFAULT_PROMPTS.objectiveGenerationManual;
+      const userList = userObjectives.map((obj) => `   - ${obj}`).join('\n');
+      fullPrompt = promptTemplate
+        .replace('{courseName}', courseName || "Course")
+        .replace('{userObjectivesList}', userList)
+        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
     } else {
-      objectiveInstructions = `
-2. Determine an appropriate number of main learning objectives that comprehensively cover the major themes in the provided materials
-3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes`;
+      promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
+      fullPrompt = promptTemplate
+        .replace('{courseName}', courseName || "Course")
+        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
     }
-
-    const prompt = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
-    
-    ${userObjectives && userObjectives.length > 0 ? "The user has provided specific main objectives. Your task is to generate granular sub-objectives for them." : "Determine the most appropriate number of main learning objectives based on the depth and breadth of the provided content."}
-
-COURSE: ${courseName || "Course"}
-
-COURSE MATERIALS CONTENT:
-${ragContext.substring(0, 8000)}${ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""}
-
-INSTRUCTIONS:
-1. Analyze the course materials and identify key topics, concepts, and learning outcomes${objectiveInstructions}
-4. For each granular objective, identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create)
-5. Use clear, action-oriented language (e.g., "Students will be able to...")
-6. Ensure objectives are specific to the content provided, not generic
-7. Format your response as JSON with this structure:
-{
-  "objectives": [
-    {
-      "name": "Main learning objective title",
-      "granularObjectives": [
-        { "text": "Granular objective 1", "bloomTaxonomies": ["Understand", "Apply"] },
-        { "text": "Granular objective 2", "bloomTaxonomies": ["Analyze"] }
-      ]
-    }
-  ]
-}
-
-IMPORTANT:
-- Base objectives on the actual content in the materials
-- Make objectives specific and measurable
-- Ensure granular objectives support their parent objective
-- Return ONLY valid JSON, no additional text or markdown formatting`;
 
     console.log("Sending prompt to LLM service...");
-    const response = await llmModule.sendMessage(prompt);
+    const response = await llmModule.sendMessage(fullPrompt);
+    console.log("Full Prompt: ", fullPrompt);
 
     console.log("✅ LLM service response received");
 
