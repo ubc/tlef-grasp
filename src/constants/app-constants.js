@@ -93,7 +93,7 @@ Generation Constraints (The "Gap-Fill" Rule):
 Syntax & Language:
 1. Action-Oriented: All granular objectives (user or AI) must start with the exact phrase: "Students will be able to..." followed by an active verb.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create).
-3. Alignment: All content must be derived strictly from the {ragContext}.
+3. Alignment: All content must be derived strictly from the provided course content.
 
 Response Format (JSON Only):
 JSON
