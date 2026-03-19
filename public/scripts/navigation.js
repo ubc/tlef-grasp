@@ -889,8 +889,8 @@ class GRASPNavigation {
     // Clear selected course from sessionStorage
     sessionStorage.removeItem("grasp-selected-course");
 
-    // Redirect to onboarding page
-    window.location.href = "/onboarding";
+    // Redirect to auth logout route
+    window.location.href = "/auth/logout";
   }
 
   switchRole() {

@@ -84,11 +84,12 @@ app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRou
 
 // Page routes
 app.get("/", (req, res) => {
-  // Redirect to onboarding or login
+  // If authenticated, redirect to appropriate page
   if (req.isAuthenticated()) {
     res.redirect('/onboarding');
   } else {
-    res.redirect('/auth/login');
+    // Show welcome page
+    res.sendFile(path.join(__dirname, "../public/index.html"));
   }
 });
 
