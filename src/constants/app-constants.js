@@ -72,40 +72,46 @@ IMPORTANT:
 - Ensure granular objectives support their parent objective.
 - Return ONLY valid JSON, no additional text or markdown formatting.`;
 
-const OBJECTIVE_GENERATION_MANUAL_PROMPT = `You are an expert educational content designer. Based on the following course materials and specific user-provided goals, generate granular learning objectives that are clear, measurable, and aligned with educational best practices.
+const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom's Taxonomy.
 
-COURSE: {courseName}
+Task: Reorganize the provided learning objectives into a structured JSON hierarchy of Meta Objectives (broad) and Granular Objectives (specific).
 
-USER-PROVIDED MAIN OBJECTIVES:
-{userObjectivesList}
+Input Data:
+Course Name: {courseName}
+User-Provided Objectives: {userObjectivesList}
+Course Materials Content: {ragContext}
 
-COURSE MATERIALS CONTENT:
-{ragContext}
+Strict Processing Rules:
+1. Classification: Categorize every user-provided objective as either META (overarching/broad) or GRANULAR (specific/measurable).
+2. Hierarchy Mapping: * Map all user-provided Granular objectives to the most relevant user-provided Meta objective.
+3. Orphan Policy: If a user-provided Granular objective does not fit any existing Meta objective, only then should you create a new Meta objective to house it.
 
-INSTRUCTIONS:
-1. Use the specific learning objectives provided above as the MAIN objectives.
-2. For EACH of the user-provided main objectives, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes based ON THE COURSE MATERIALS CONTENT.
-3. Identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-4. Use clear, action-oriented language (e.g., "Students will be able to...").
-5. Ensure objectives are specific to the content provided, not generic.
+Generation Constraints (The "Gap-Fill" Rule):
+1. DO NOT generate new granular objectives for any Meta objective that already contains user-provided granular objectives.
+2. ONLY generate 2-4 granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
 
-RESPONSE FORMAT (JSON):
+Syntax & Language:
+1. Action-Oriented: All granular objectives (user or AI) must start with the exact phrase: "Students will be able to..." followed by an active verb.
+2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create).
+3. Alignment: All content must be derived strictly from the {ragContext}.
+
+Response Format (JSON Only):
+JSON
 {
   "objectives": [
     {
-      "name": "User-provided Objective name",
+      "name": "Meta Objective Name",
       "granularObjectives": [
-        { "text": "Granular objective 1", "bloomTaxonomies": ["Understand", "Apply"] },
-        { "text": "Granular objective 2", "bloomTaxonomies": ["Analyze"] }
+        {
+          "text": "Students will be able to [action verb] [specific skill]...",
+          "bloomTaxonomies": ["Apply", "Analyze"],
+        }
       ]
     }
   ]
 }
 
-IMPORTANT:
-- Align sub-objectives strictly with the user's provided main goals.
-- Base content strictly on the material provided.
-- Return ONLY valid JSON, no additional text or markdown formatting.`;
+Final Warning: Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks. Ensure no user intent is lost.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
