@@ -714,6 +714,42 @@ const saveStudentPerformance = async (performanceData) => {
     }
 };
 
+/**
+ * Save quiz score for a student (First attempt only)
+ * 
+ * @param {Object} scoreData - { userId, quizId, courseId, score, correctAnswers, totalQuestions, timeSpent }
+ * @returns {Promise<Object|null>} The insertion result or null if it was not the first attempt
+ */
+const saveQuizScore = async (scoreData) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_quiz_score");
+        
+        const doc = {
+            userId: ObjectId.isValid(scoreData.userId) ? new ObjectId(scoreData.userId) : scoreData.userId,
+            quizId: ObjectId.isValid(scoreData.quizId) ? new ObjectId(scoreData.quizId) : scoreData.quizId,
+            courseId: scoreData.courseId ? (ObjectId.isValid(scoreData.courseId) ? new ObjectId(scoreData.courseId) : scoreData.courseId) : null,
+            score: Number(scoreData.score),
+            correctAnswers: Number(scoreData.correctAnswers),
+            totalQuestions: Number(scoreData.totalQuestions),
+            timeSpent: scoreData.timeSpent,
+            completedAt: new Date(),
+            createdAt: new Date()
+        };
+        
+        const result = await collection.insertOne(doc);
+        return result;
+    } catch (error) {
+        // Handle duplicate key error (11000) - indicates a subsequent attempt
+        if (error.code === 11000) {
+            console.log(`[Quiz Service] Score for user ${scoreData.userId} on quiz ${scoreData.quizId} already exists. Skipping first-attempt-only record.`);
+            return null;
+        }
+        console.error("Error saving quiz score:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createQuiz,
     getQuizzesByCourse,
@@ -724,6 +760,7 @@ module.exports = {
     getQuizQuestions,
     getQuizQuestionsForStudent,
     saveStudentPerformance,
+    saveQuizScore,
     enrichQuestionsWithLO,
     getPhase1Questions,
     getPhase2Questions,

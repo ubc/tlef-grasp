@@ -333,6 +333,19 @@ const submitQuizHandler = async (req, res) => {
           score
         );
       }
+
+      // Record overall quiz score (Service handles first-attempt-only logic via DB unique index)
+      if (userId && quizId) {
+        await quizService.saveQuizScore({
+            userId: userId.toString(),
+            quizId,
+            courseId: courseId ? courseId.toString() : null,
+            score,
+            correctAnswers,
+            totalQuestions,
+            timeSpent
+        });
+      }
     } catch (performanceError) {
       console.error("Error recording performance or awarding achievements:", performanceError);
     }
