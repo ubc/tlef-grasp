@@ -125,41 +125,50 @@ IMPORTANT:
   }
 
   createFillInTheBlankQuestionPrompt(objective, bloomLevel) {
-    return `You are an expert educational content creator. Generate a high-quality fill-in-the-blank question based on the provided content.
+    return `You are an expert educational content creator. Generate a high-quality fill-in-the-blank item based on the provided content.
 
 OBJECTIVE: ${objective}
 BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
 
-INSTRUCTIONS:
-1. Create one specific fill-in-the-blank question based on the provided content.
-2. The blank should test an important term, number, phrase, formula component, or concept from the materials.
-3. Use actual details from the content - do not make the question generic.
-4. The sentence should remain clear and meaningful with exactly one blank.
-5. Do not make the blank trivial unless the learning goal is simple recall.
-6. Provide the correct answer.
-7. Provide a short explanation based on the content.
-8. Format your response as JSON with this structure:
+FORMAT FOR THE "question" FIELD (mandatory):
+- It MUST be one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
+- FORBIDDEN: do not start with or use "What is...", "What are...", "Which...", "Who...", "How...", "Why...", "Define...", or any question mark at the end.
+- The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________
+- Do not use "____", "___", "[blank]", or other placeholders—only _________
+- The part that belongs in the blank is what the student should recall (term, formula, number, etc.); write the sentence so it reads naturally if the blank were filled in.
+
+Example (geometry):
 {
   "type": "fill-in-the-blank",
-  "question": "Your sentence with one blank, written like this: The capital of France is ____.",
-  "correctAnswer": "Paris",
-  "acceptableAnswers": ["Paris"],
-  "explanation": "Why this answer is correct based on the content"
+  "question": "The formula for the volume of a cone is _________.",
+  "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
+  "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
+  "explanation": "Brief justification from the materials."
 }
 
+Example (non-math):
+{
+  "type": "fill-in-the-blank",
+  "question": "The capital of France is _________.",
+  "correctAnswer": "Paris",
+  "acceptableAnswers": ["Paris"],
+  "explanation": "Brief justification from the materials."
+}
+
+INSTRUCTIONS:
+1. Follow the unfinished-sentence + _________ format above.
+2. Target an important term, phrase, formula, or concept from the materials.
+3. Provide correctAnswer as the best canonical form; use LaTeX in correctAnswer when the answer is mathematical: wrap with \\( ... \\) in the JSON string (escape backslashes for JSON).
+4. acceptableAnswers must include the canonical answer plus close equivalents (alternate LaTeX, plain-text math, synonyms).
+
 CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
-- Do NOT include any text before or after the JSON object.
-- The response must start with { and end with }.
-- Return pure JSON that can be directly parsed with JSON.parse().
+- Return ONLY valid JSON. No markdown fences. First character "{", last "}".
+- Return pure JSON that can be parsed with JSON.parse().
 
 IMPORTANT:
-- Base the question on specific details, examples, formulas, or concepts from the provided content.
-- Use exactly one blank written as ____.
-- The correctAnswer must be the best canonical answer.
-- acceptableAnswers should include reasonable equivalent answers when appropriate.
-- If mathematical expressions are used, always wrap them in LaTeX delimiters using \\( ... \\) for inline math and \\[ ... \\] for display math.`;
+- Exactly one _________ in "question".
+- correctAnswer must be what fills the blank, not a full sentence.
+- If mathematical expressions are used, also use \\( ... \\) for inline math inside the "question" string where needed (properly escaped in JSON).`;
   }
 
   isAvailable() {

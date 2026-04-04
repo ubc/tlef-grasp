@@ -318,7 +318,7 @@ function safeJsonParse(jsonInput) {
 
 function jsonOnlyRetrySuffix(attempt, questionType) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
-  const fibSchema = `For fill-in-the-blank, required keys: "type":"fill-in-the-blank", "question", "correctAnswer" (short text), "acceptableAnswers" (array of strings), "explanation". Do not use "options".`;
+  const fibSchema = `For fill-in-the-blank: "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank written as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers" array, "explanation". No "options".`;
   const schema = questionType === "multiple-choice" ? mcSchema : fibSchema;
   return `
 
