@@ -96,6 +96,14 @@ function formatQuestionTypeLabel(raw) {
   return "Multiple choice";
 }
 
+/** Escape text placed inside <textarea>...</textarea> body */
+function escapeForTextareaContent(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 class QuestionBankPage {
   constructor() {
     // Get course from sessionStorage
@@ -2595,49 +2603,73 @@ class QuestionBankPage {
       // Check if user can edit this question
       const canEdit = this.canEditQuestion(questionId);
 
-      // Options are always objects with keys A, B, C, D - convert to array for display
-      const optionKeys = ['A', 'B', 'C', 'D'];
-      let normalizedOptions = [];
-      if (question.options && typeof question.options === 'object') {
-        normalizedOptions = optionKeys.map((key) => {
-          const opt = question.options[key];
-          if (typeof opt === 'string') {
-            return { id: key, text: opt };
-          } else if (opt && typeof opt === 'object') {
-            return { id: opt.id || key, text: opt.text || opt };
-          } else {
-            return { id: key, text: String(opt || '') };
-          }
-        });
-      }
+      const qType = normalizeQuestionTypeKey(question.questionType || question.type);
 
-      // Ensure we have at least 4 options
-      while (normalizedOptions.length < 4) {
-        normalizedOptions.push({
-          id: String.fromCharCode(65 + normalizedOptions.length),
-          text: ''
-        });
-      }
-
-      // Store original question for comparison
-      // Convert correctAnswer to letter format (A, B, C, D) if it's a number
-      let correctAnswerLetter = question.correctAnswer;
-      if (typeof question.correctAnswer === 'number') {
-        correctAnswerLetter = ['A', 'B', 'C', 'D'][question.correctAnswer] || 'A';
-      } else if (typeof question.correctAnswer === 'string') {
-        correctAnswerLetter = question.correctAnswer.toUpperCase();
+      if (qType === "fill-in-the-blank") {
+        const canonical =
+          question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
+        let acceptable = Array.isArray(question.acceptableAnswers)
+          ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+          : [];
+        if (acceptable.length === 0 && canonical) {
+          acceptable = [canonical];
+        }
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || question.stem || "",
+          stem: question.stem || question.title || "",
+          questionType: "fill-in-the-blank",
+          correctAnswer: canonical,
+          acceptableAnswers: acceptable,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
       } else {
-        correctAnswerLetter = 'A';
-      }
+        // Multiple-choice: options are objects with keys A, B, C, D - convert to array for display
+        const optionKeys = ["A", "B", "C", "D"];
+        let normalizedOptions = [];
+        if (question.options && typeof question.options === "object") {
+          normalizedOptions = optionKeys.map((key) => {
+            const opt = question.options[key];
+            if (typeof opt === "string") {
+              return { id: key, text: opt };
+            } else if (opt && typeof opt === "object") {
+              return { id: opt.id || key, text: opt.text || opt };
+            } else {
+              return { id: key, text: String(opt || "") };
+            }
+          });
+        }
 
-      this.currentEditingQuestion = {
-        id: questionId,
-        title: question.title || question.stem || "",
-        stem: question.stem || question.title || "",
-        options: normalizedOptions,
-        correctAnswer: correctAnswerLetter,
-        canEdit: canEdit,
-      };
+        while (normalizedOptions.length < 4) {
+          normalizedOptions.push({
+            id: String.fromCharCode(65 + normalizedOptions.length),
+            text: "",
+          });
+        }
+
+        let correctAnswerLetter = question.correctAnswer;
+        if (typeof question.correctAnswer === "number") {
+          correctAnswerLetter = ["A", "B", "C", "D"][question.correctAnswer] || "A";
+        } else if (typeof question.correctAnswer === "string") {
+          correctAnswerLetter = question.correctAnswer.toUpperCase();
+        } else {
+          correctAnswerLetter = "A";
+        }
+
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || question.stem || "",
+          stem: question.stem || question.title || "",
+          questionType: "multiple-choice",
+          options: normalizedOptions,
+          correctAnswer: correctAnswerLetter,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
+      }
 
       // Render question in modal (uses this.currentEditingQuestion)
       this.renderQuestionInModal();
@@ -2658,7 +2690,6 @@ class QuestionBankPage {
   }
 
   renderQuestionInModal() {
-    // Use currentEditingQuestion which has normalized data (correctAnswer as letter, options as array)
     if (!this.currentEditingQuestion) {
       console.error("currentEditingQuestion not set");
       return;
@@ -2667,17 +2698,91 @@ class QuestionBankPage {
     const question = this.currentEditingQuestion;
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
+    const modalTitleEl = document.getElementById("question-modal-title");
 
     if (!modalBody) return;
 
-    // Get canEdit from currentEditingQuestion
     const canEdit = question.canEdit !== undefined ? question.canEdit : this.canEditQuestion(question.id);
 
-    // Get objective name if available
-    const objectiveName = question.learningObjectiveId
-      ? (this.objectivesMap.get(question.learningObjectiveId.toString()) || "Unknown Objective")
-      : (question.granularObjectiveId ? "Granular Objective" : "No Objective");
+    if (modalTitleEl) {
+      modalTitleEl.textContent = canEdit ? "Edit question" : "View question";
+    }
 
+    const isFib = question.questionType === "fill-in-the-blank";
+
+    if (isFib) {
+      const isReadOnly = !canEdit;
+      const readonlyAttr = isReadOnly ? "readonly" : "";
+      const readonlyClass = isReadOnly ? "readonly" : "";
+      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
+
+      const warningHtml = isReadOnly
+        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
+        : "";
+
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || question.title || "");
+      const acceptableContent = escapeForTextareaContent(
+        (question.acceptableAnswers || []).join("\n")
+      );
+      const escapedCorrectAttr = (question.correctAnswer || "")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip question-type-chip--fill-in-the-blank" style="margin-bottom:12px;display:inline-block;">Fill-in-the-blank</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Question title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="Short title or label..."
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="5"
+                    placeholder="Question text with ____ for the blank..."
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-fib-correct">Correct answer</label>
+          <input type="text"
+                 id="question-modal-fib-correct"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedCorrectAttr}"
+                 placeholder="Canonical correct answer"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-fib-acceptable">Acceptable answers <span style="font-weight:400;color:#6c757d;">(one per line; optional)</span></label>
+          <textarea id="question-modal-fib-acceptable"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="4"
+                    placeholder="Other accepted spellings or synonyms, one per line"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${acceptableContent}</textarea>
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
+
+    // --- Multiple-choice layout ---
     // Options are already normalized to array format in currentEditingQuestion
     let optionsArray = question.options || [];
     if (!Array.isArray(optionsArray) || optionsArray.length === 0) {
@@ -2844,10 +2949,72 @@ class QuestionBankPage {
     try {
       const titleInput = document.getElementById("question-modal-title-input");
       const stemInput = document.getElementById("question-modal-stem-input");
-      const optionInputs = document.querySelectorAll(".question-modal-option-input");
 
       const title = titleInput ? titleInput.value.trim() : "";
       const stem = stemInput ? stemInput.value.trim() : "";
+
+      if (this.currentEditingQuestion.questionType === "fill-in-the-blank") {
+        if (!title && !stem) {
+          this.showNotification("Question title or question text is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        const correctInput = document.getElementById("question-modal-fib-correct");
+        const acceptableInput = document.getElementById("question-modal-fib-acceptable");
+        const correct = correctInput ? correctInput.value.trim() : "";
+        if (!correct) {
+          this.showNotification("Correct answer is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        let acceptable = [];
+        if (acceptableInput && acceptableInput.value.trim()) {
+          acceptable = acceptableInput.value
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        }
+        if (acceptable.length === 0) {
+          acceptable = [correct];
+        }
+
+        const updateData = {
+          title: title || stem,
+          stem: stem || title,
+          questionType: "fill-in-the-blank",
+          correctAnswer: correct,
+          acceptableAnswers: acceptable,
+          options: {},
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = "fill-in-the-blank";
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        return;
+      }
+
+      const optionInputs = document.querySelectorAll(".question-modal-option-input");
+
       const options = Array.from(optionInputs).map((input, index) => {
         const optionId = String.fromCharCode(65 + parseInt(input.dataset.optionIndex || index));
         return {
@@ -2899,6 +3066,7 @@ class QuestionBankPage {
       const updateData = {
         title: title || stem,
         stem: stem || title,
+        questionType: "multiple-choice",
         options: optionsObject,
         correctAnswer: correctAnswerLetter,
       };
