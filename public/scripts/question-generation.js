@@ -3208,6 +3208,20 @@ function toggleMetaLoGroup(groupId) {
 // Make function available globally for onclick handlers
 window.toggleMetaLoGroup = toggleMetaLoGroup;
 
+function escapeQuestionHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeQuestionAttr(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderGranularLoSection(lo, group) {
   return `
         <div class="granular-lo-section">
@@ -3236,44 +3250,73 @@ function renderGranularLoSection(lo, group) {
 
 function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
+  const isFib =
+    (question.questionType || question.type) === "fill-in-the-blank";
 
-  return `
-        <div class="question-card" data-question-id="${question.id}">
-            <div class="question-card__header">
-                <div class="question-card__content">
-                    ${isEditing
-      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onchange="updateQuestionTitle('${question.id}', this.value)">`
-      : `<h5 class="question-card__title">${question.title}</h5>`
-    }
+  const titleEditingHtml =
+    isFib && isEditing
+      ? `<div class="question-card__title-slot question-card__title-slot--fib"><span class="question-card__fib-card-heading">Fill-in-the-blank question</span></div>`
+      : isEditing
+        ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
+        : `<h5 class="question-card__title">${escapeQuestionHtml(question.title)}</h5>`;
+
+  const chipsHtml = `
                     <div class="question-card__chips">
-                        <span class="question-card__chip question-card__chip--meta">${question.metaCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--lo">${question.loCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom
-    }</span>
+                        ${isFib ? `<span class="question-card__chip question-card__chip--fib">Fill-in-the-blank</span>` : ""}
+                        <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
+                        <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
+                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
+                    </div>`;
+
+  let bodyHtml;
+  if (isFib) {
+    const acc = Array.isArray(question.acceptableAnswers)
+      ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+      : [];
+    const canonical = String(question.correctAnswer ?? "").trim();
+    const altAccepted = acc.filter(
+      (a) => a.toLowerCase() !== canonical.toLowerCase()
+    );
+    if (isEditing) {
+      const accTextarea = acc.length ? acc.join("\n") : canonical;
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="fib-q-${question.id}">Question</label>
+                    <textarea id="fib-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="Enter the question with ____ for the blank..." onblur="updateQuestionTitle('${question.id}', this.value)">${escapeQuestionHtml(question.title || "")}</textarea>
+                    <label class="question-card__fib-label" for="fib-c-${question.id}">Correct answer</label>
+                    <input type="text" id="fib-c-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.correctAnswer)}" placeholder="Canonical correct answer" onblur="updateQuestionFibCorrectAnswer('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="fib-a-${question.id}">Acceptable answers <span class="question-card__fib-hint">(optional, one per line)</span></label>
+                    <textarea id="fib-a-${question.id}" class="question-card__stem--editing" rows="3" placeholder="Synonyms or alternate spellings, one per line" onblur="updateQuestionFibAcceptableAnswers('${question.id}', this.value)">${escapeQuestionHtml(accTextarea)}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Correct answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.correctAnswer ?? "")}</p>
                     </div>
-                </div>
-                <div class="question-card__metadata">
-                    <div class="question-card__status">
-                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status
-    }</span>
-                    </div>
-                    <div>Last Edited: ${question.lastEdited}</div>
-                    <div>By: ${question.by}</div>
-                </div>
-            </div>
-            <div class="question-card__body">
+                    ${altAccepted.length
+        ? `<div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Also accepted</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(altAccepted.join(", "))}</p>
+                    </div>`
+        : ""
+      }
+                </div>`;
+    }
+  } else {
+    bodyHtml = `
                 ${isEditing
-      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
+      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>`
       : `<p class="question-card__stem">${question.stem}</p>`
     }
                 <div class="question-card__options">
-                    ${Object.values(question.options).map(
+                    ${Object.values(question.options || {}).map(
       (option, index) => {
-        // correctAnswer is now a letter (A, B, C, D), compare with option.id
-        const isCorrect = option.id === question.correctAnswer ||
-          (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
+        const isCorrect =
+          option.id === question.correctAnswer ||
+          (typeof question.correctAnswer === "number" &&
+            index === question.correctAnswer);
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3281,7 +3324,7 @@ function renderQuestionCard(question, group) {
           }" value="${option.id}" ${isCorrect ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${(option.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            ? `<input type="text" value="${(option.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
@@ -3290,7 +3333,26 @@ function renderQuestionCard(question, group) {
       }
     )
       .join("")}
+                </div>`;
+  }
+
+  return `
+        <div class="question-card" data-question-id="${question.id}">
+            <div class="question-card__header">
+                <div class="question-card__content">
+                    ${titleEditingHtml}
+                    ${chipsHtml}
                 </div>
+                <div class="question-card__metadata">
+                    <div class="question-card__status">
+                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status}</span>
+                    </div>
+                    <div>Last Edited: ${question.lastEdited}</div>
+                    <div>By: ${question.by}</div>
+                </div>
+            </div>
+            <div class="question-card__body">
+                ${bodyHtml}
             </div>
             <div class="question-card__footer">
                 <div class="question-card__actions">
@@ -3415,11 +3477,53 @@ function updateQuestionStem(questionId, newStem) {
   }
 }
 
+function updateQuestionFibCorrectAnswer(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.correctAnswer = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionFibAcceptableAnswers(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  const lines = String(value ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const canonical = String(question.correctAnswer ?? "").trim();
+  if (lines.length === 0 && canonical) {
+    question.acceptableAnswers = [canonical];
+  } else {
+    question.acceptableAnswers = lines;
+  }
+}
+
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
   if (!question) {
     showToast("Question not found", "error");
     return;
+  }
+
+  const isFib =
+    (question.questionType || question.type) === "fill-in-the-blank";
+  if (isFib) {
+    if (!String(question.title || "").trim()) {
+      showToast("Question text is required", "error");
+      return;
+    }
+    if (!String(question.correctAnswer ?? "").trim()) {
+      showToast("Correct answer is required", "error");
+      return;
+    }
+    const ca = String(question.correctAnswer).trim();
+    if (
+      !Array.isArray(question.acceptableAnswers) ||
+      question.acceptableAnswers.length === 0
+    ) {
+      question.acceptableAnswers = [ca];
+    }
   }
 
   // Simply update state - mark as not editing and update timestamp
@@ -3898,6 +4002,8 @@ window.saveQuestionEdit = saveQuestionEdit;
 window.saveOptionEdit = saveOptionEdit;
 window.updateQuestionStem = updateQuestionStem;
 window.updateQuestionTitle = updateQuestionTitle;
+window.updateQuestionFibCorrectAnswer = updateQuestionFibCorrectAnswer;
+window.updateQuestionFibAcceptableAnswers = updateQuestionFibAcceptableAnswers;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;
