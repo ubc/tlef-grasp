@@ -204,6 +204,14 @@ function shuffleArray(array) {
   return shuffled;
 }
 
+function resolveQuestionType(q) {
+  const t = q.questionType || q.type;
+  if (t === "fill-in-the-blank") {
+    return "fill-in-the-blank";
+  }
+  return "multiple-choice";
+}
+
 // Helper function to generate a shuffled order of option indices
 function shuffleQuestionOptions(question) {
   const optionIndices = [0, 1, 2, 3];
@@ -238,6 +246,25 @@ const getQuizQuestionsHandler = async (req, res) => {
     }
     
     const transformedQuestions = questions.map((q, index) => {
+      const questionType = resolveQuestionType(q);
+      const questionText = (q.title || q.stem || "").trim();
+
+      if (questionType === "fill-in-the-blank") {
+        const formattedQuestion = {
+          ...q,
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: questionText || "Question text not available",
+          questionType: "fill-in-the-blank",
+          options: {},
+        };
+        let finalQuestion = formattedQuestion;
+        if (approvedOnlyBool) {
+          delete finalQuestion.correctAnswer;
+          delete finalQuestion.acceptableAnswers;
+        }
+        return finalQuestion;
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -256,34 +283,29 @@ const getQuizQuestionsHandler = async (req, res) => {
           };
         }
       }
-      // If approvedOnlyBool is true, this is the student view. We MUST strip secure answers.
       if (approvedOnlyBool) {
         ['A', 'B', 'C', 'D'].forEach(key => {
           if (optionsObj[key] && typeof optionsObj[key] === 'object') {
-            // Strip out feedback before sending to the client browser
             delete optionsObj[key].feedback;
           }
         });
       }
 
-      const questionText = (q.title || q.stem || "").trim();
-
       const formattedQuestion = {
         ...q,
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
+        questionType: "multiple-choice",
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
       };
-      
-      // Shuffle options for students
+
       let finalQuestion = approvedOnlyBool ? shuffleQuestionOptions(formattedQuestion) : formattedQuestion;
-      
-      // Completely strip out the correct answer if this is for the student
+
       if (approvedOnlyBool) {
         delete finalQuestion.correctAnswer;
       }
-      
+
       return finalQuestion;
     });
 
@@ -332,11 +354,7 @@ const recordPerformanceHandler = async (req, res) => {
 const checkQuestionAnswerHandler = async (req, res) => {
   try {
     const { questionId } = req.params;
-    const { selectedIndex } = req.body;
-
-    if (selectedIndex === undefined || selectedIndex === null) {
-      return res.status(400).json({ success: false, error: "selectedIndex is required" });
-    }
+    const { selectedIndex, answerText } = req.body;
 
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
@@ -344,8 +362,41 @@ const checkQuestionAnswerHandler = async (req, res) => {
     if (!question) {
       return res.status(404).json({ success: false, error: "Question not found" });
     }
-    
-    // Convert the numeric index sent by the frontend back to the original DB key mapping
+
+    const questionType = resolveQuestionType(question);
+
+    if (questionType === "fill-in-the-blank") {
+      if (answerText === undefined || answerText === null) {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for fill-in-the-blank questions",
+        });
+      }
+      const normalize = (s) => String(s).trim().toLowerCase();
+      const given = normalize(answerText);
+      const acceptableRaw =
+        Array.isArray(question.acceptableAnswers) && question.acceptableAnswers.length > 0
+          ? question.acceptableAnswers
+          : [question.correctAnswer];
+      const normalizedAcceptable = acceptableRaw
+        .map((a) => normalize(a))
+        .filter(Boolean);
+      const isCorrect = normalizedAcceptable.some((a) => a === given);
+      const canonical = String(question.correctAnswer || "").trim();
+      res.json({
+        success: true,
+        isCorrect,
+        feedback: isCorrect ? "Correct." : "Incorrect.",
+        correctAnswer: isCorrect ? canonical : null,
+        correctOptionText: isCorrect ? canonical : null,
+      });
+      return;
+    }
+
+    if (selectedIndex === undefined || selectedIndex === null) {
+      return res.status(400).json({ success: false, error: "selectedIndex is required" });
+    }
+
     const optionKeys = ['A', 'B', 'C', 'D'];
     const selectedKey = optionKeys[selectedIndex];
 
@@ -353,7 +404,6 @@ const checkQuestionAnswerHandler = async (req, res) => {
         return res.status(400).json({ success: false, error: "Invalid selectedIndex provided" });
     }
 
-    // Normalize correct answer identifier from DB
     let correctAnswerLetter = question.correctAnswer || 'A';
     if (typeof correctAnswerLetter === 'number') {
       correctAnswerLetter = optionKeys[correctAnswerLetter] || 'A';
@@ -363,13 +413,11 @@ const checkQuestionAnswerHandler = async (req, res) => {
     
     const isCorrect = selectedKey === correctAnswerLetter;
 
-    // Retrieve feedback specific to the selected option
     const selectedOptionObj = question.options[selectedKey];
     const feedback = typeof selectedOptionObj === 'object' && selectedOptionObj !== null 
       ? (selectedOptionObj.feedback || "")
       : "";
 
-    // Safely retrieve the text of the actual correct option to send back
     const correctOptionObj = question.options[correctAnswerLetter];
     const correctOptionText = typeof correctOptionObj === 'object' && correctOptionObj !== null 
       ? (correctOptionObj.text || "")

@@ -18,12 +18,21 @@ const saveQuestion = async (courseId, questionData) => {
                 : questionData.granularObjectiveId;
         }
         
+        const questionType =
+            questionData.questionType ||
+            questionData.type ||
+            "multiple-choice";
+
         // Save the full question data including granularObjectiveId
         const question = await collection.insertOne({
             title: questionData.title,
             stem: questionData.stem,
             options: questionData.options,
             correctAnswer: questionData.correctAnswer,
+            questionType,
+            acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
+                ? questionData.acceptableAnswers
+                : [],
             bloom: questionData.bloom,
             difficulty: questionData.difficulty,
             courseId: courseIdObj,
@@ -149,6 +158,15 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.difficulty !== undefined) update.difficulty = updateData.difficulty;
         if (updateData.status !== undefined) update.status = updateData.status;
         if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
+        if (updateData.questionType !== undefined) update.questionType = updateData.questionType;
+        if (updateData.type !== undefined && updateData.questionType === undefined) {
+            update.questionType = updateData.type;
+        }
+        if (updateData.acceptableAnswers !== undefined) {
+            update.acceptableAnswers = Array.isArray(updateData.acceptableAnswers)
+                ? updateData.acceptableAnswers
+                : [];
+        }
         if (updateData.granularObjectiveId !== undefined) {
             // Convert granularObjectiveId to ObjectId if it's a string
             update.granularObjectiveId = updateData.granularObjectiveId 

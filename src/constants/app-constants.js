@@ -2,22 +2,30 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+const QUESTION_GENERATION_PROMPT = `You behave like a strict JSON API, not a chat assistant.
+
+MANDATORY OUTPUT (read first):
+- Output EXACTLY one JSON object and NOTHING else: no preamble, no "##" headings, no bullet lists, no step-by-step reasoning, no "To address this", no summaries of the source, no "The final answer", no markdown code fences.
+- The first character of your entire reply MUST be "{" and the last MUST be "}".
+- Put all question text, options, and explanations INSIDE the JSON string fields only.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
+Question Type: {questionType}
 
-Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+Task: Use ONLY the schema that matches Question Type. Base the question on the CONTENT section below (do not summarize or discuss the content in plain text).
 
+--- If Question Type is "multiple-choice" ---
 PROCEDURE:
-1. Create the question content
+1. Create the question content.
 2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
-4. Write the explanation
+3.  Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
+4. Write a brief explanation.
 
 The response format must be a valid JSON with the exact structure as follows:
 {
+  "type": "multiple-choice",
   "question": "Your specific question here",
   "options": {
     "A": "First option text",
@@ -28,14 +36,32 @@ The response format must be a valid JSON with the exact structure as follows:
   "correctAnswer": "C",
   "explanation": "Why this answer is correct based on the content"
 }
+Rules: Four non-empty options; correctAnswer is only "A", "B", "C", or "D"; randomize which letter is correct; option text must NOT start with "A)" or "A." style prefixes.
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
+--- If Question Type is "fill-in-the-blank" ---
+PROCEDURE:
+1. Create one sentence with exactly one blank, written as ____.
+2. correctAnswer must be the best canonical short answer (a word, phrase, or number as appropriate).
+3. acceptableAnswers must be an array of strings including the canonical answer and close synonyms or equivalent forms (e.g. spacing, common abbreviations) when reasonable.
+4. Do NOT include an "options" object for this type.
+
+Return valid JSON exactly in this shape (include the "type" field):
+{
+  "type": "fill-in-the-blank",
+  "question": "One sentence with exactly one blank as ____.",
+  "correctAnswer": "canonical answer",
+  "acceptableAnswers": ["canonical answer", "optional synonym"],
+  "explanation": "Why this answer is correct based on the content"
+}
+Rules: No "options" key. Use ____ for the blank. acceptableAnswers must include correctAnswer.
+
+CRITICAL FORMATTING REQUIREMENTS (both types):
+- Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string as \\\\\\\\ (double backslash).
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
-
+- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
+- For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
+FORMATTING INSIDE JSON STRINGS:
+- Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
 CONTENT: {ragContext}`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.

@@ -3013,53 +3013,90 @@ function convertQuestionsToGroups(questions) {
         id: index + 1,
         title: metaCode,
         isOpen: true, // Open all panels by default when generating for multiple learning objectives
-        los: groupQuestions.map((question, itemIndex) => ({
-          id: `lo-${index + 1}-${itemIndex + 1}`,
-          code: `LO ${index + 1}.${itemIndex + 1}`,
-          generated: question.count || 1,
-          min: 1,
-          badges: [],
-          questions: [
-            {
-              id: question.id,
-              title: question.text,
-              stem: "Select the best answer:",
-              options: {
-                A: {
-                  id: "A",
-                  text: question.options?.A || "Option A",
-                  feedback: `${question.correctAnswer === 'A' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                B: {
-                  id: "B",
-                  text: question.options?.B || "Option B",
-                  feedback: `${question.correctAnswer === 'B' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                C: {
-                  id: "C",
-                  text: question.options?.C || "Option C",
-                  feedback: `${question.correctAnswer === 'C' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                D: {
-                  id: "D",
-                  text: question.options?.D || "Option D",
-                  feedback: `${question.correctAnswer === 'D' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
+        los: groupQuestions.map((question, itemIndex) => {
+          const qType =
+            question.type || question.questionType || "multiple-choice";
+          const isFib = qType === "fill-in-the-blank";
+          const acceptable =
+            isFib &&
+            Array.isArray(question.acceptableAnswers) &&
+            question.acceptableAnswers.length
+              ? question.acceptableAnswers
+              : isFib && question.correctAnswer != null
+                ? [String(question.correctAnswer)]
+                : [];
+
+          const mcCard = {
+            id: question.id,
+            title: question.text,
+            stem: "Select the best answer:",
+            questionType: "multiple-choice",
+            options: {
+              A: {
+                id: "A",
+                text: question.options?.A || "Option A",
+                feedback: `${question.correctAnswer === "A" ? "Correct" : "Incorrect"} - ${question.explanation}`,
               },
-              correctAnswer: question.correctAnswer,
-              bloom: question.bloomLevel || "Understand",
-              difficulty: question.difficulty || "Medium",
-              status: "Draft",
-              lastEdited:
-                question.lastEdited ||
-                new Date().toISOString().slice(0, 16).replace("T", " "),
-              by: question.by || "System",
-              metaCode: question.metaCode || metaCode,
-              loCode: question.loCode || question.text,
-              granularObjectiveId: question.granularObjectiveId,
+              B: {
+                id: "B",
+                text: question.options?.B || "Option B",
+                feedback: `${question.correctAnswer === "B" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
+              C: {
+                id: "C",
+                text: question.options?.C || "Option C",
+                feedback: `${question.correctAnswer === "C" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
+              D: {
+                id: "D",
+                text: question.options?.D || "Option D",
+                feedback: `${question.correctAnswer === "D" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
             },
-          ],
-        })),
+            correctAnswer: question.correctAnswer,
+            acceptableAnswers: [],
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+          };
+
+          const fibCard = {
+            id: question.id,
+            title: question.text,
+            stem: "Fill in the blank:",
+            questionType: "fill-in-the-blank",
+            options: {},
+            correctAnswer: question.correctAnswer,
+            acceptableAnswers: acceptable,
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
+          return {
+            id: `lo-${index + 1}-${itemIndex + 1}`,
+            code: `LO ${index + 1}.${itemIndex + 1}`,
+            generated: question.count || 1,
+            min: 1,
+            badges: [],
+            questions: [isFib ? fibCard : mcCard],
+          };
+        }),
       };
 
       groups.push(group);
@@ -3761,7 +3798,12 @@ async function handleSaveToQuiz() {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
             options: question.options || [],
-            correctAnswer: question.correctAnswer || 0,
+            correctAnswer: question.correctAnswer ?? "",
+            questionType:
+              question.questionType || question.type || "multiple-choice",
+            acceptableAnswers: Array.isArray(question.acceptableAnswers)
+              ? question.acceptableAnswers
+              : [],
             bloom: question.bloom || question.bloomLevel || "Understand",
             difficulty: question.difficulty || "medium",
             granularObjectiveId: question.granularObjectiveId || null,

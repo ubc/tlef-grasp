@@ -108,6 +108,14 @@ function shuffleArray(array) {
   return shuffled;
 }
 
+function resolveQuestionType(q) {
+  const t = q.questionType || q.type;
+  if (t === "fill-in-the-blank") {
+    return "fill-in-the-blank";
+  }
+  return "multiple-choice";
+}
+
 // Helper function to shuffle question options and update correct answer
 function shuffleQuestionOptions(question) {
   const optionKeys = ['A', 'B', 'C', 'D'];
@@ -176,6 +184,21 @@ const getQuizQuestionsHandler = async (req, res) => {
     }
 
     const transformedQuestions = questions.map((q, index) => {
+      const questionType = resolveQuestionType(q);
+      const questionText = (q.title || q.stem || "").trim();
+
+      if (questionType === "fill-in-the-blank") {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: questionText || "Question text not available",
+          questionType: "fill-in-the-blank",
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -195,14 +218,12 @@ const getQuizQuestionsHandler = async (req, res) => {
         }
       }
 
-      const questionText = (q.title || q.stem || "").trim();
-
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
+        questionType: "multiple-choice",
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
-        // Keep metadata for performance tracking
         learningObjectiveId: q.learningObjectiveId,
         granularObjectiveId: q.granularObjectiveId,
         bloom: q.bloom
@@ -221,9 +242,10 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    // Questions are already selected and ordered by service logic (LO distribution, etc.)
-    // We just need to shuffle options for each question
-    const randomizedQuestions = transformedQuestions.map(q => shuffleQuestionOptions(q));
+    // Shuffle MC options only; fill-in-the-blank has no options to shuffle
+    const randomizedQuestions = transformedQuestions.map((q) =>
+      q.questionType === "fill-in-the-blank" ? q : shuffleQuestionOptions(q)
+    );
 
     res.json({
       success: true,
