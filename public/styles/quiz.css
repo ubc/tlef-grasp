@@ -680,6 +680,74 @@
     background: #229954;
 }
 
+/* Fill-in-the-blank (student quiz) */
+.fill-in-blank-answer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 560px;
+    margin-top: 8px;
+}
+
+.fill-in-blank-label {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.95rem;
+}
+
+.fill-in-blank-input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 1rem;
+    border: 2px solid #dfe6e9;
+    border-radius: 8px;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.fill-in-blank-input:focus:not(:disabled) {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.fill-in-blank-input:disabled {
+    background: #f8f9fa;
+    color: #2c3e50;
+}
+
+.fill-in-blank-submit {
+    align-self: flex-start;
+    padding: 12px 22px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.fill-in-blank-submit:hover:not(:disabled) {
+    background: #2980b9;
+}
+
+.fill-in-blank-submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+
+.fill-in-blank-answer--correct .fill-in-blank-input {
+    border-color: #27ae60;
+    background: #eafaf1;
+}
+
+.fill-in-blank-answer--incorrect .fill-in-blank-input {
+    border-color: #e74c3c;
+    background: #fdedec;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .quiz-grid {

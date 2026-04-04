@@ -372,17 +372,30 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: "answerText is required for fill-in-the-blank questions",
         });
       }
-      const normalize = (s) => String(s).trim().toLowerCase();
-      const given = normalize(answerText);
-      const acceptableRaw =
-        Array.isArray(question.acceptableAnswers) && question.acceptableAnswers.length > 0
-          ? question.acceptableAnswers
-          : [question.correctAnswer];
-      const normalizedAcceptable = acceptableRaw
-        .map((a) => normalize(a))
-        .filter(Boolean);
-      const isCorrect = normalizedAcceptable.some((a) => a === given);
-      const canonical = String(question.correctAnswer || "").trim();
+      // Always grade against canonical correctAnswer plus any acceptableAnswers.
+      // Previously, a non-empty acceptableAnswers array replaced correctAnswer entirely,
+      // so typing the canonical answer could incorrectly mark wrong.
+      const normalizeFib = (s) =>
+        String(s)
+          .normalize("NFKC")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+      const given = normalizeFib(answerText);
+      const trimmedCanonical =
+        question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
+      const variants = new Set();
+      if (trimmedCanonical) variants.add(trimmedCanonical);
+      if (Array.isArray(question.acceptableAnswers)) {
+        for (const a of question.acceptableAnswers) {
+          if (a == null) continue;
+          const t = String(a).trim();
+          if (t) variants.add(t);
+        }
+      }
+      const normalizedAcceptable = [...variants].map((a) => normalizeFib(a)).filter(Boolean);
+      const isCorrect = normalizedAcceptable.length > 0 && normalizedAcceptable.some((a) => a === given);
+      const canonical = trimmedCanonical;
       res.json({
         success: true,
         isCorrect,

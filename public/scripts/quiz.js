@@ -542,7 +542,11 @@ function showQuestion(questionIndex) {
       completeHTML = diagnosticHTML + completeHTML;
   }
   
-  if (question.stem) {
+  const rawStem = (question.stem || "").trim();
+  const isGenericFibStem =
+    question.questionType === "fill-in-the-blank" &&
+    /^fill\s+in\s+the\s+blank:?\s*$/i.test(rawStem);
+  if (question.stem && !isGenericFibStem) {
     completeHTML += `
       <div class="question-stem" style="font-size: 1.1em; font-weight: 500; color: #34495e;">
         ${escapeHtml(question.stem)}
@@ -594,9 +598,134 @@ function showQuestion(questionIndex) {
   updateQuestionIndicators();
 }
 
+function isFillInTheBlankQuestion(question) {
+  return question.questionType === "fill-in-the-blank";
+}
+
+function renderFillInTheBlankAnswerUI(question, questionIndex) {
+  const answerOptions = document.getElementById("answerOptions");
+  answerOptions.innerHTML = "";
+
+  const questionId = question.id;
+  const hasFeedback = !!quizState.feedback[questionId];
+  const saved = quizState.answers[questionId];
+  const fd = quizState.feedback[questionId];
+
+  const wrap = document.createElement("div");
+  wrap.className = "fill-in-blank-answer";
+  if (hasFeedback && fd) {
+    wrap.classList.add(fd.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+  }
+
+  const label = document.createElement("label");
+  label.className = "fill-in-blank-label";
+  label.htmlFor = `fib-input-${questionId}`;
+  label.textContent = "Your answer";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = `fib-input-${questionId}`;
+  input.className = "fill-in-blank-input";
+  input.placeholder = "Type your answer, then click Submit";
+  input.autocomplete = "off";
+  if (typeof saved === "string") {
+    input.value = saved;
+  }
+  if (hasFeedback) {
+    input.disabled = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = `fib-submit-${questionId}`;
+  btn.className = "fill-in-blank-submit";
+  btn.textContent = "Submit answer";
+  if (hasFeedback) {
+    btn.disabled = true;
+  }
+
+  if (!hasFeedback) {
+    btn.addEventListener("click", () => submitFillInBlankAnswer(questionId, questionIndex));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitFillInBlankAnswer(questionId, questionIndex);
+      }
+    });
+  }
+
+  wrap.appendChild(label);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  answerOptions.appendChild(wrap);
+  renderKatex();
+}
+
+async function submitFillInBlankAnswer(questionId, questionIndex) {
+  const input = document.getElementById(`fib-input-${questionId}`);
+  const btn = document.getElementById(`fib-submit-${questionId}`);
+  if (!input || !btn || input.disabled) return;
+
+  const answerText = input.value.trim();
+  if (!answerText) {
+    alert("Please type an answer before submitting.");
+    return;
+  }
+
+  const prevLabel = btn.textContent;
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+
+  try {
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answerText })
+    });
+    if (!response.ok) throw new Error("Failed to check answer");
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || "Invalid response");
+
+    quizState.answers[questionId] = answerText;
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      selectedAnswer: answerText,
+      correctAnswer: result.correctAnswer,
+      feedbackText: result.feedback,
+      correctOptionText: result.correctOptionText,
+      questionType: "fill-in-the-blank"
+    };
+
+    btn.textContent = prevLabel;
+    btn.disabled = true;
+
+    const wrap = input.closest(".fill-in-blank-answer");
+    if (wrap) {
+      wrap.classList.remove("fill-in-blank-answer--correct", "fill-in-blank-answer--incorrect");
+      wrap.classList.add(result.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+    }
+
+    document.getElementById("nextButton").disabled = false;
+    showFeedback(questionIndex, questionId, answerText, result.correctAnswer);
+    updateQuestionIndicators();
+  } catch (error) {
+    console.error("Error evaluating answer:", error);
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    alert("Could not check your answer. Please try again.");
+  }
+}
+
 function renderAnswerOptions(question, questionIndex) {
   const answerOptions = document.getElementById("answerOptions");
   answerOptions.innerHTML = "";
+
+  if (isFillInTheBlankQuestion(question)) {
+    renderFillInTheBlankAnswerUI(question, questionIndex);
+    return;
+  }
 
   // The secure backend now passes an array of indices [3, 0, 1, 2]
   const optionOrderIndices = question.optionOrder || [0, 1, 2, 3];
