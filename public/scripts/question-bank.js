@@ -83,6 +83,19 @@ function getObjectId(obj) {
   return toStringId(obj._id || obj.id);
 }
 
+/** Normalize API questionType / type for display (legacy rows default to multiple-choice). */
+function normalizeQuestionTypeKey(raw) {
+  const t = (raw || "multiple-choice").toString().trim().toLowerCase().replace(/_/g, "-");
+  if (t === "fill-in-the-blank") return "fill-in-the-blank";
+  return "multiple-choice";
+}
+
+function formatQuestionTypeLabel(raw) {
+  const key = normalizeQuestionTypeKey(raw);
+  if (key === "fill-in-the-blank") return "Fill-in-the-blank";
+  return "Multiple choice";
+}
+
 class QuestionBankPage {
   constructor() {
     // Get course from sessionStorage
@@ -378,6 +391,9 @@ class QuestionBankPage {
             objectiveId: objectiveId, // Store the objective ID
             glo: objectiveId || "", // Will be replaced with name after loading objectives
             bloom: question.bloom || question.bloomLevel || "Understand",
+            questionType: normalizeQuestionTypeKey(
+              question.questionType || question.type
+            ),
             flagged: question.flagStatus || false,
             published: question.published || false,
             status: question.status || "Draft",
@@ -1788,9 +1804,10 @@ class QuestionBankPage {
     const sortedQuestions = this.sortQuestions(filteredQuestions);
 
     if (sortedQuestions.length === 0) {
+      const emptyColspan = this.isFaculty ? 6 : 5;
       tableBody.innerHTML = `
         <tr>
-          <td colspan="5" class="empty-state">
+          <td colspan="${emptyColspan}" class="empty-state">
             <p>No questions available.</p>
             <p>You haven't saved any questions from question generation yet.</p>
             <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first questions.</p>
@@ -1855,6 +1872,9 @@ class QuestionBankPage {
         <td class="bloom-cell">
           <span class="bloom-chip">${question.bloom || "N/A"}</span>
         </td>
+        <td class="question-type-cell">
+          <span class="question-type-chip question-type-chip--${question.questionType || "multiple-choice"}">${formatQuestionTypeLabel(question.questionType)}</span>
+        </td>
         <td class="status-cell">
           <span class="status-pill status-pill--${(question.status || "Draft").toLowerCase()}">${question.status || "Draft"}</span>
         </td>
@@ -1912,7 +1932,9 @@ class QuestionBankPage {
           const titleMatch = q.title && q.title.toLowerCase().includes(searchTerm);
           const stemMatch = q.stem && q.stem.toLowerCase().includes(searchTerm);
           const gloMatch = q.glo && q.glo.toLowerCase().includes(searchTerm);
-          return titleMatch || stemMatch || gloMatch;
+          const typeLabel = formatQuestionTypeLabel(q.questionType).toLowerCase();
+          const typeMatch = typeLabel.includes(searchTerm);
+          return titleMatch || stemMatch || gloMatch || typeMatch;
         }
       );
     }
@@ -1928,20 +1950,28 @@ class QuestionBankPage {
 
       switch (key) {
         case "title":
-          aValue = a.title.toLowerCase();
-          bValue = b.title.toLowerCase();
+          aValue = (a.title || "").toLowerCase();
+          bValue = (b.title || "").toLowerCase();
           break;
         case "glo":
-          aValue = a.glo.toLowerCase();
-          bValue = b.glo.toLowerCase();
+          aValue = (a.glo || "").toLowerCase();
+          bValue = (b.glo || "").toLowerCase();
           break;
         case "bloom":
-          aValue = a.bloom.toLowerCase();
-          bValue = b.bloom.toLowerCase();
+          aValue = (a.bloom || "").toLowerCase();
+          bValue = (b.bloom || "").toLowerCase();
+          break;
+        case "questionType":
+          aValue = (a.questionType || "multiple-choice").toLowerCase();
+          bValue = (b.questionType || "multiple-choice").toLowerCase();
+          break;
+        case "status":
+          aValue = (a.status || "Draft").toLowerCase();
+          bValue = (b.status || "Draft").toLowerCase();
           break;
         default:
-          aValue = a.title.toLowerCase();
-          bValue = b.title.toLowerCase();
+          aValue = (a.title || "").toLowerCase();
+          bValue = (b.title || "").toLowerCase();
       }
 
       if (dir === "asc") {
