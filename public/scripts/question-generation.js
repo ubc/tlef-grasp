@@ -3069,8 +3069,16 @@ function convertQuestionsToGroups(questions) {
 
           const fibCard = {
             id: question.id,
-            title: question.text,
-            stem: "Fill in the blank:",
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const before = String(question.text || "")
+                  .split("_________")[0]
+                  .trim();
+                const words = before.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+              })(),
+            stem: question.text,
             questionType: "fill-in-the-blank",
             options: {},
             correctAnswer: question.correctAnswer,
@@ -3255,7 +3263,7 @@ function renderQuestionCard(question, group) {
 
   const titleEditingHtml =
     isFib && isEditing
-      ? `<div class="question-card__title-slot question-card__title-slot--fib"><span class="question-card__fib-card-heading">Fill-in-the-blank question</span></div>`
+      ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
       : isEditing
         ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
         : `<h5 class="question-card__title">${escapeQuestionHtml(question.title)}</h5>`;
@@ -3281,8 +3289,8 @@ function renderQuestionCard(question, group) {
       const accTextarea = acc.length ? acc.join("\n") : canonical;
       bodyHtml = `
                 <div class="question-card__fib-edit">
-                    <label class="question-card__fib-label" for="fib-q-${question.id}">Question</label>
-                    <textarea id="fib-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="Enter the question with ____ for the blank..." onblur="updateQuestionTitle('${question.id}', this.value)">${escapeQuestionHtml(question.title || "")}</textarea>
+                    <label class="question-card__fib-label" for="fib-q-${question.id}">Question stem</label>
+                    <textarea id="fib-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="One declarative sentence with exactly _________ (nine underscores) for the blank" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
                     <label class="question-card__fib-label" for="fib-c-${question.id}">Correct answer</label>
                     <input type="text" id="fib-c-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.correctAnswer)}" placeholder="Canonical correct answer" onblur="updateQuestionFibCorrectAnswer('${question.id}', this.value)">
                     <label class="question-card__fib-label" for="fib-a-${question.id}">Acceptable answers <span class="question-card__fib-hint">(optional, one per line)</span></label>
@@ -3291,6 +3299,10 @@ function renderQuestionCard(question, group) {
     } else {
       bodyHtml = `
                 <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Question stem</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
                     <div class="question-card__fib-block">
                         <span class="question-card__fib-label">Correct answer</span>
                         <p class="question-card__fib-value">${escapeQuestionHtml(question.correctAnswer ?? "")}</p>
@@ -3510,7 +3522,15 @@ function saveQuestionEdit(questionId) {
     (question.questionType || question.type) === "fill-in-the-blank";
   if (isFib) {
     if (!String(question.title || "").trim()) {
-      showToast("Question text is required", "error");
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question stem is required", "error");
+      return;
+    }
+    if (!String(question.stem).includes("_________")) {
+      showToast('Stem must include exactly one blank written as _________ (nine underscores)', "error");
       return;
     }
     if (!String(question.correctAnswer ?? "").trim()) {
@@ -3633,12 +3653,15 @@ function getFilteredGroups() {
     const query = state.filters.q.toLowerCase();
     filteredGroups = filteredGroups.filter((group) => {
       return group.los.some((lo) =>
-        lo.questions.some(
-          (q) =>
-            q.title.toLowerCase().includes(query) ||
+        lo.questions.some((q) => {
+          const stem = (q.stem || "").toLowerCase();
+          return (
+            (q.title || "").toLowerCase().includes(query) ||
+            stem.includes(query) ||
             q.loCode.toLowerCase().includes(query) ||
             q.metaCode.toLowerCase().includes(query)
-        )
+          );
+        })
       );
     });
   }

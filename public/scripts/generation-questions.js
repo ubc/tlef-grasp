@@ -364,10 +364,31 @@ class QuestionGenerator {
               : []
           : [];
 
+      const fibStem = String(questionData.question || "").trim();
+      const rawTopic =
+        resolvedType === "fill-in-the-blank"
+          ? String(
+              questionData.topicTitle ||
+                questionData.topic ||
+                questionData.shortTitle ||
+                ""
+            ).trim()
+          : "";
+      const topicTitleFib =
+        resolvedType === "fill-in-the-blank"
+          ? rawTopic ||
+            (() => {
+              const before = fibStem.split("_________")[0].trim();
+              const words = before.split(/\s+/).filter(Boolean);
+              return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+            })()
+          : "";
+
       return {
         id: `${granularLearningObjectiveId}-${questionNumber}`,
         granularObjectiveId: `${granularLearningObjectiveId}`,
         text: questionData.question,
+        topicTitle: resolvedType === "fill-in-the-blank" ? topicTitleFib : undefined,
         type: resolvedType,
         questionType: resolvedType,
         options: questionData.options || null,
@@ -456,7 +477,8 @@ class QuestionGenerator {
             : q.correctAnswer != null
               ? String(q.correctAnswer)
               : "";
-        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(q.text)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        const fibQ = q.text || q.stem || "";
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(fibQ)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
         return;
       }
       const optA = q.options?.A || "";
@@ -503,7 +525,7 @@ class QuestionGenerator {
       </itemmetadata>
       <presentation>
         <material>
-          <mattext>${this.escapeXml(q.text)}</mattext>
+          <mattext>${this.escapeXml(q.text || q.stem || "")}</mattext>
         </material>
         <response_str ident="response1">
           <render_fib fibtype="String" columns="40" rows="1">

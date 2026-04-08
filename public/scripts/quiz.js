@@ -872,24 +872,35 @@ function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
   const isCorrect = feedbackData.isCorrect;
   const feedbackString = feedbackData.feedbackText || "";
 
-  const formattedFeedbackHTML = feedbackString 
-    ? `<div style="margin-top: 10px; font-weight: normal; font-size: 0.9em; color: #555;">${escapeHtml(feedbackString)}</div>` 
+  const bodyFromString = feedbackString
+    ? `<div class="feedback-message__body">${escapeHtml(feedbackString)}</div>`
     : "";
 
   // Show feedback message only for correct answers
   if (isCorrect) {
     feedbackMessage.className = "feedback-message feedback-correct";
-    feedbackMessage.innerHTML = `<i class="fas fa-check-circle"></i> Correct!${formattedFeedbackHTML}`;
+    feedbackMessage.innerHTML = `
+      <div class="feedback-message__title"><i class="fas fa-check-circle"></i> Correct!</div>
+      ${bodyFromString}`;
     feedbackMessage.style.display = "block";
     correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
   } else {
-    // For incorrect answers, show both the incorrect badge AND optionally the correct answer
     feedbackMessage.className = "feedback-message feedback-incorrect";
-    feedbackMessage.innerHTML = `<i class="fas fa-times-circle"></i> Incorrect.${formattedFeedbackHTML}`;
+    const isFib = feedbackData.questionType === "fill-in-the-blank";
+    const fibReveal =
+      isFib && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
+    const titleHtml = `<div class="feedback-message__title"><i class="fas fa-times-circle"></i> Incorrect.</div>`;
+    const bodies = [];
+    if (fibReveal) {
+      const ans = escapeHtml(String(feedbackData.correctOptionText).trim());
+      bodies.push(`<div class="feedback-message__body">The correct answer is ${ans}.</div>`);
+    }
+    if (feedbackString) {
+      bodies.push(`<div class="feedback-message__body">${escapeHtml(feedbackString)}</div>`);
+    }
+    feedbackMessage.innerHTML = titleHtml + bodies.join("");
     feedbackMessage.style.display = "block";
-
-    // Stop displaying the correct answer to the student if they got it wrong
     correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
   }

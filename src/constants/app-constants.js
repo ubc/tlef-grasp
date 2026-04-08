@@ -40,22 +40,24 @@ Rules: Four non-empty options; correctAnswer is only "A", "B", "C", or "D"; rand
 
 --- If Question Type is "fill-in-the-blank" ---
 PROCEDURE:
-1. The "question" string MUST be one unfinished DECLARATIVE sentence (a statement with a gap), NOT a WH-question. FORBIDDEN: "What is...", "Which...", "How...", "Define...", ending with "?".
-2. The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________ (not ____, not [blank]).
-3. correctAnswer is what fills the blank (canonical form; use LaTeX \\( ... \\) inside JSON strings for math, with backslashes escaped for JSON).
-4. acceptableAnswers must include correctAnswer and reasonable equivalents (alternate LaTeX, plain-text math, synonyms).
-5. Do NOT include an "options" object.
+1. "topicTitle" is REQUIRED: a very short label (about 3–10 words) that names the topic or skill being tested. It must be a neutral phrase or title (not a question, no "?"). It must NOT reveal the answer, must NOT repeat the wording of correctAnswer or acceptableAnswers, and must NOT be instructions like "Fill in the blank" or "Complete the sentence".
+2. The "question" string is ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT a WH-question. FORBIDDEN in "question": "What is...", "Which...", "How...", "Define...", ending with "?".
+3. The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________ (not ____, not [blank]).
+4. correctAnswer is what fills the blank (canonical form; use LaTeX \\( ... \\) inside JSON strings for math, with backslashes escaped for JSON).
+5. acceptableAnswers must include correctAnswer and reasonable equivalents (alternate LaTeX, plain-text math, synonyms).
+6. Do NOT include an "options" object.
 
 Example:
 {
   "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
   "question": "The formula for the volume of a cone is _________.",
   "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
   "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
   "explanation": "Why this answer is correct based on the content"
 }
 
-Return valid JSON in this shape. Rules: No "options" key; exactly one _________ in "question".
+Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; exactly one _________ in "question".
 
 CRITICAL FORMATTING REQUIREMENTS (both types):
 - Return ONLY valid JSON. Do NOT wrap in markdown code blocks.

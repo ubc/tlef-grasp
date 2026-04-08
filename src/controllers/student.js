@@ -186,11 +186,15 @@ const getQuizQuestionsHandler = async (req, res) => {
     const transformedQuestions = questions.map((q, index) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
+      const fibMainText =
+        questionType === "fill-in-the-blank"
+          ? (q.stem || q.title || "").trim()
+          : questionText;
 
       if (questionType === "fill-in-the-blank") {
         return {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-          question: questionText || "Question text not available",
+          question: fibMainText || questionText || "Question text not available",
           questionType: "fill-in-the-blank",
           options: {},
           learningObjectiveId: q.learningObjectiveId,

@@ -250,10 +250,11 @@ const getQuizQuestionsHandler = async (req, res) => {
       const questionText = (q.title || q.stem || "").trim();
 
       if (questionType === "fill-in-the-blank") {
+        const fibMainText = (q.stem || q.title || "").trim();
         const formattedQuestion = {
           ...q,
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-          question: questionText || "Question text not available",
+          question: fibMainText || questionText || "Question text not available",
           questionType: "fill-in-the-blank",
           options: {},
         };
@@ -261,6 +262,8 @@ const getQuizQuestionsHandler = async (req, res) => {
         if (approvedOnlyBool) {
           delete finalQuestion.correctAnswer;
           delete finalQuestion.acceptableAnswers;
+          // Avoid duplicating the same stem under `question` and `stem` in the student UI
+          delete finalQuestion.stem;
         }
         return finalQuestion;
       }
@@ -399,9 +402,10 @@ const checkQuestionAnswerHandler = async (req, res) => {
       res.json({
         success: true,
         isCorrect,
-        feedback: isCorrect ? "Correct." : "Incorrect.",
+        feedback: isCorrect ? "Correct." : "",
         correctAnswer: isCorrect ? canonical : null,
-        correctOptionText: isCorrect ? canonical : null,
+        // Reveal canonical text when wrong so the client can show "The correct answer is …"
+        correctOptionText: canonical || null,
       });
       return;
     }

@@ -2736,21 +2736,21 @@ class QuestionBankPage {
           <span class="question-type-chip question-type-chip--fill-in-the-blank" style="margin-bottom:12px;display:inline-block;">Fill-in-the-blank</span>
         </div>
         <div class="question-modal-field">
-          <label for="question-modal-title-input">Question title</label>
+          <label for="question-modal-title-input">Topic title</label>
           <input type="text"
                  id="question-modal-title-input"
                  class="question-modal-input ${readonlyClass}"
                  value="${escapedTitle}"
-                 placeholder="Short title or label..."
+                 placeholder="Short topic label (do not reveal the answer)"
                  ${readonlyAttr}
                  style="${readonlyStyle}">
         </div>
         <div class="question-modal-field">
-          <label for="question-modal-stem-input">Question</label>
+          <label for="question-modal-stem-input">Question stem</label>
           <textarea id="question-modal-stem-input"
                     class="question-modal-textarea ${readonlyClass}"
                     rows="5"
-                    placeholder="Question text with ____ for the blank..."
+                    placeholder="Declarative sentence with exactly _________ (nine underscores) for the blank"
                     ${readonlyAttr}
                     style="${readonlyStyle}">${stemContent}</textarea>
         </div>
@@ -2954,8 +2954,18 @@ class QuestionBankPage {
       const stem = stemInput ? stemInput.value.trim() : "";
 
       if (this.currentEditingQuestion.questionType === "fill-in-the-blank") {
-        if (!title && !stem) {
-          this.showNotification("Question title or question text is required", "error");
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question stem is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem.includes("_________")) {
+          this.showNotification('Stem must include exactly one blank: _________ (nine underscores)', "error");
           if (saveBtn) saveBtn.disabled = false;
           return;
         }
@@ -2981,8 +2991,8 @@ class QuestionBankPage {
         }
 
         const updateData = {
-          title: title || stem,
-          stem: stem || title,
+          title,
+          stem,
           questionType: "fill-in-the-blank",
           correctAnswer: correct,
           acceptableAnswers: acceptable,

@@ -161,10 +161,20 @@ function validateAndNormalizeQuestionData(data, requestedType) {
         acceptable = [canonical];
       }
     }
+    const qText = merged.question.trim();
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const beforeBlank = qText.split("_________")[0].trim();
+      const words = beforeBlank.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+    }
     return {
       type: "fill-in-the-blank",
       questionType: "fill-in-the-blank",
-      question: merged.question.trim(),
+      topicTitle,
+      question: qText,
       correctAnswer: canonical,
       acceptableAnswers: acceptable,
       explanation: merged.explanation != null ? String(merged.explanation) : "",
@@ -318,7 +328,7 @@ function safeJsonParse(jsonInput) {
 
 function jsonOnlyRetrySuffix(attempt, questionType) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
-  const fibSchema = `For fill-in-the-blank: "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank written as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers" array, "explanation". No "options".`;
+  const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
   const schema = questionType === "multiple-choice" ? mcSchema : fibSchema;
   return `
 

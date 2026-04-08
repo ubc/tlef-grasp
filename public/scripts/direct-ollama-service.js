@@ -130,16 +130,30 @@ IMPORTANT:
 OBJECTIVE: ${objective}
 BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
 
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3–10 words) naming the topic or skill. Use a neutral phrase or title, NOT a question (no "?", no "What is…").
+- Must NOT reveal the correct answer or paraphrase acceptableAnswers.
+- Must NOT be filler such as "Fill in the blank", "Complete the sentence", or "Question".
+
 FORMAT FOR THE "question" FIELD (mandatory):
-- It MUST be one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
+- ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
 - FORBIDDEN: do not start with or use "What is...", "What are...", "Which...", "Who...", "How...", "Why...", "Define...", or any question mark at the end.
 - The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________
 - Do not use "____", "___", "[blank]", or other placeholders—only _________
 - The part that belongs in the blank is what the student should recall (term, formula, number, etc.); write the sentence so it reads naturally if the blank were filled in.
 
+INSTRUCTIONS:
+1. Create one specific fill-in-the-blank item based on the provided content.
+2. Set "topicTitle" as described above, separate from the stem in "question".
+3. The blank should test an important term, number, phrase, formula component, or concept from the materials.
+4. Use actual details from the content - do not make the question generic.
+5. Provide the correct answer and acceptableAnswers.
+6. Provide a short explanation based on the content.
+7. Format your response as JSON with these examples:
 Example (geometry):
 {
   "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
   "question": "The formula for the volume of a cone is _________.",
   "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
   "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
@@ -149,23 +163,19 @@ Example (geometry):
 Example (non-math):
 {
   "type": "fill-in-the-blank",
+  "topicTitle": "European capitals",
   "question": "The capital of France is _________.",
   "correctAnswer": "Paris",
   "acceptableAnswers": ["Paris"],
   "explanation": "Brief justification from the materials."
 }
 
-INSTRUCTIONS:
-1. Follow the unfinished-sentence + _________ format above.
-2. Target an important term, phrase, formula, or concept from the materials.
-3. Provide correctAnswer as the best canonical form; use LaTeX in correctAnswer when the answer is mathematical: wrap with \\( ... \\) in the JSON string (escape backslashes for JSON).
-4. acceptableAnswers must include the canonical answer plus close equivalents (alternate LaTeX, plain-text math, synonyms).
-
 CRITICAL FORMATTING REQUIREMENTS:
 - Return ONLY valid JSON. No markdown fences. First character "{", last "}".
 - Return pure JSON that can be parsed with JSON.parse().
 
 IMPORTANT:
+- Include "topicTitle" in every response (separate from "question").
 - Exactly one _________ in "question".
 - correctAnswer must be what fills the blank, not a full sentence.
 - If mathematical expressions are used, also use \\( ... \\) for inline math inside the "question" string where needed (properly escaped in JSON).`;

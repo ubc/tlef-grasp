@@ -132,8 +132,13 @@ IMPORTANT:
 OBJECTIVE: ${objective}
 BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
 
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3–10 words) naming the topic or skill. Neutral phrase or title only—NOT a question (no "?"), NOT "What is…".
+- Must NOT reveal the answer or duplicate correctAnswer / acceptableAnswers wording.
+- Must NOT be "Fill in the blank", "Complete the sentence", or similar instructions.
+
 FORMAT FOR THE "question" FIELD (mandatory):
-- It MUST be one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
+- ONLY the stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
 - FORBIDDEN: do not start with or use "What is...", "What are...", "Which...", "Who...", "How...", "Why...", "Define...", or any question mark at the end.
 - The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________
 - Do not use "____", "___", "[blank]", or other placeholders—only _________
@@ -142,6 +147,7 @@ FORMAT FOR THE "question" FIELD (mandatory):
 Example (geometry):
 {
   "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
   "question": "The formula for the volume of a cone is _________.",
   "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
   "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
@@ -151,6 +157,7 @@ Example (geometry):
 Example (non-math):
 {
   "type": "fill-in-the-blank",
+  "topicTitle": "European capitals",
   "question": "The capital of France is _________.",
   "correctAnswer": "Paris",
   "acceptableAnswers": ["Paris"],
@@ -158,16 +165,18 @@ Example (non-math):
 }
 
 INSTRUCTIONS:
-1. Follow the unfinished-sentence + _________ format above.
-2. Target an important term, phrase, formula, or concept from the materials.
-3. correctAnswer: canonical form; use LaTeX \\( ... \\) inside the JSON string for math answers (escape backslashes for JSON).
-4. acceptableAnswers: include canonical answer plus equivalents (alternate LaTeX, plain-text math, synonyms).
+1. Include "topicTitle" separate from the stem in "question".
+2. Follow the unfinished-sentence + _________ format above.
+3. Target an important term, phrase, formula, or concept from the materials.
+4. correctAnswer: canonical form; use LaTeX \\( ... \\) inside the JSON string for math answers (escape backslashes for JSON).
+5. acceptableAnswers: include canonical answer plus equivalents (alternate LaTeX, plain-text math, synonyms).
 
 CRITICAL FORMATTING REQUIREMENTS:
 - Return ONLY valid JSON. No markdown fences. First character "{", last "}".
 - Return pure JSON that can be parsed with JSON.parse().
 
 IMPORTANT:
+- Include "topicTitle" in every response.
 - Exactly one _________ in "question".
 - correctAnswer must be what fills the blank, not a full sentence.
 - Use \\( ... \\) for inline math inside "question" when needed (properly escaped in JSON).`;
