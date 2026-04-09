@@ -3017,6 +3017,7 @@ function convertQuestionsToGroups(questions) {
           const qType =
             question.type || question.questionType || "multiple-choice";
           const isFib = qType === "fill-in-the-blank";
+          const isCalc = qType === "calculation";
           const acceptable =
             isFib &&
             Array.isArray(question.acceptableAnswers) &&
@@ -3096,13 +3097,53 @@ function convertQuestionsToGroups(questions) {
             explanation: question.explanation,
           };
 
+          const stemCalc = String(question.text || question.stem || "").trim();
+          const calcCard = {
+            id: question.id,
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const before = stemCalc.split("{{")[0].trim();
+                const words = before.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Calculation";
+              })(),
+            stem: stemCalc,
+            questionType: "calculation",
+            options: {},
+            correctAnswer: "",
+            acceptableAnswers: [],
+            calculationFormula: question.calculationFormula || "",
+            calculationVariables: Array.isArray(question.calculationVariables)
+              ? question.calculationVariables
+              : [],
+            calculationAnswerDecimals:
+              question.calculationAnswerDecimals != null
+                ? question.calculationAnswerDecimals
+                : 2,
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
+          let card = mcCard;
+          if (isFib) card = fibCard;
+          else if (isCalc) card = calcCard;
+
           return {
             id: `lo-${index + 1}-${itemIndex + 1}`,
             code: `LO ${index + 1}.${itemIndex + 1}`,
             generated: question.count || 1,
             min: 1,
             badges: [],
-            questions: [isFib ? fibCard : mcCard],
+            questions: [card],
           };
         }),
       };
@@ -3260,9 +3301,11 @@ function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
   const isFib =
     (question.questionType || question.type) === "fill-in-the-blank";
+  const isCalc =
+    (question.questionType || question.type) === "calculation";
 
   const titleEditingHtml =
-    isFib && isEditing
+    (isFib || isCalc) && isEditing
       ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
       : isEditing
         ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
@@ -3271,6 +3314,7 @@ function renderQuestionCard(question, group) {
   const chipsHtml = `
                     <div class="question-card__chips">
                         ${isFib ? `<span class="question-card__chip question-card__chip--fib">Fill-in-the-blank</span>` : ""}
+                        ${isCalc ? `<span class="question-card__chip question-card__chip--fib">Calculation</span>` : ""}
                         <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
                         <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
                         <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
@@ -3314,6 +3358,60 @@ function renderQuestionCard(question, group) {
                     </div>`
         : ""
       }
+                </div>`;
+    }
+  } else if (isCalc) {
+    const vars = Array.isArray(question.calculationVariables)
+      ? question.calculationVariables
+      : [];
+    const varsJson = JSON.stringify(vars, null, 2);
+    const dec =
+      question.calculationAnswerDecimals != null
+        ? question.calculationAnswerDecimals
+        : 2;
+    const varsSummary = vars
+      .map((v) => {
+        if (!v || typeof v !== "object") return "";
+        const n = escapeQuestionHtml(String(v.name ?? ""));
+        const range = `${escapeQuestionHtml(String(v.min))}–${escapeQuestionHtml(String(v.max))}`;
+        const mode = v.integerOnly
+          ? " (integers)"
+          : ` (decimals: ${escapeQuestionHtml(String(v.decimals ?? 0))})`;
+        return `<li><strong>${n}</strong>: ${range}${mode}</li>`;
+      })
+      .filter(Boolean)
+      .join("");
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="calc-q-${question.id}">Question template</label>
+                    <textarea id="calc-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="4" placeholder="Use {{variableName}} placeholders matching the formula" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="calc-f-${question.id}">Formula</label>
+                    <input type="text" id="calc-f-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.calculationFormula || "")}" placeholder="e.g. V / R" onblur="updateQuestionCalcFormula('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="calc-v-${question.id}">Variables (JSON array)</label>
+                    <textarea id="calc-v-${question.id}" class="question-card__stem--editing" rows="6" placeholder='[{"name":"x","min":1,"max":10,"integerOnly":true}]' onblur="updateQuestionCalcVariablesJson('${question.id}', this.value)">${escapeQuestionHtml(varsJson)}</textarea>
+                    <label class="question-card__fib-label" for="calc-d-${question.id}">Answer decimal places (0–12)</label>
+                    <input type="number" id="calc-d-${question.id}" class="question-card__fib-input" min="0" max="12" step="1" value="${escapeQuestionAttr(String(dec))}" onblur="updateQuestionCalcDecimals('${question.id}', this.value)">
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Template</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Formula</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.calculationFormula || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Variables</span>
+                        ${varsSummary ? `<ul class="question-card__fib-value">${varsSummary}</ul>` : `<p class="question-card__fib-value">—</p>`}
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Answer decimal places</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(String(dec))}</p>
+                    </div>
                 </div>`;
     }
   } else {
@@ -3511,6 +3609,34 @@ function updateQuestionFibAcceptableAnswers(questionId, value) {
   }
 }
 
+function updateQuestionCalcFormula(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.calculationFormula = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionCalcVariablesJson(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  try {
+    const parsed = JSON.parse(String(value ?? "").trim() || "[]");
+    if (Array.isArray(parsed)) {
+      question.calculationVariables = parsed;
+    }
+  } catch {
+    /* keep previous variables until Save validates */
+  }
+}
+
+function updateQuestionCalcDecimals(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  let d = parseInt(value, 10);
+  if (!Number.isFinite(d)) d = 2;
+  question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+}
+
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
   if (!question) {
@@ -3544,6 +3670,44 @@ function saveQuestionEdit(questionId) {
     ) {
       question.acceptableAnswers = [ca];
     }
+  }
+
+  const isCalc =
+    (question.questionType || question.type) === "calculation";
+  if (isCalc) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question template is required", "error");
+      return;
+    }
+    if (!String(question.calculationFormula || "").trim()) {
+      showToast("Formula is required", "error");
+      return;
+    }
+    const vars = question.calculationVariables;
+    if (!Array.isArray(vars) || vars.length === 0) {
+      showToast("At least one variable is required (JSON array)", "error");
+      return;
+    }
+    for (let i = 0; i < vars.length; i++) {
+      const v = vars[i];
+      if (!v || typeof v !== "object" || !String(v.name || "").trim()) {
+        showToast(`Variable ${i + 1}: each entry needs a name`, "error");
+        return;
+      }
+      const min = Number(v.min);
+      const max = Number(v.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+        showToast(`Variable "${v.name}": invalid min/max`, "error");
+        return;
+      }
+    }
+    let d = parseInt(question.calculationAnswerDecimals, 10);
+    if (!Number.isFinite(d)) d = 2;
+    question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
   }
 
   // Simply update state - mark as not editing and update timestamp
@@ -3920,14 +4084,14 @@ async function handleSaveToQuiz() {
     for (const group of state.questionGroups) {
       for (const lo of group.los) {
         for (const question of lo.questions) {
-          // Transform question to match the expected format
-          questions.push({
+          const qt =
+            question.questionType || question.type || "multiple-choice";
+          const payload = {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
             options: question.options || [],
             correctAnswer: question.correctAnswer ?? "",
-            questionType:
-              question.questionType || question.type || "multiple-choice",
+            questionType: qt,
             acceptableAnswers: Array.isArray(question.acceptableAnswers)
               ? question.acceptableAnswers
               : [],
@@ -3937,7 +4101,20 @@ async function handleSaveToQuiz() {
             by: question.createdBy || "system",
             status: question.status || "Draft",
             flagStatus: question.flagStatus || false,
-          });
+          };
+          if (qt === "calculation") {
+            payload.options = {};
+            payload.calculationFormula = question.calculationFormula || "";
+            payload.calculationVariables = Array.isArray(
+              question.calculationVariables
+            )
+              ? question.calculationVariables
+              : [];
+            let d = parseInt(question.calculationAnswerDecimals, 10);
+            if (!Number.isFinite(d)) d = 2;
+            payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+          }
+          questions.push(payload);
         }
       }
     }
@@ -4027,6 +4204,9 @@ window.updateQuestionStem = updateQuestionStem;
 window.updateQuestionTitle = updateQuestionTitle;
 window.updateQuestionFibCorrectAnswer = updateQuestionFibCorrectAnswer;
 window.updateQuestionFibAcceptableAnswers = updateQuestionFibAcceptableAnswers;
+window.updateQuestionCalcFormula = updateQuestionCalcFormula;
+window.updateQuestionCalcVariablesJson = updateQuestionCalcVariablesJson;
+window.updateQuestionCalcDecimals = updateQuestionCalcDecimals;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;

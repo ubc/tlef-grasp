@@ -72,6 +72,8 @@ class LLMService {
     switch (questionType) {
       case "fill-in-the-blank":
         return await this.generateFillInTheBlankQuestion(objective, ragContent, bloomLevel);
+      case "calculation":
+        return await this.generateCalculationQuestion(objective, ragContent, bloomLevel);
       case "multiple-choice":
       default:
         return await this.generateMultipleChoiceQuestion(objective, ragContent, bloomLevel);
@@ -85,6 +87,11 @@ class LLMService {
 
   async generateFillInTheBlankQuestion(objective, ragContent, bloomLevel) {
     const prompt = this.createFillInTheBlankQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateCalculationQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createCalculationQuestionPrompt(objective, bloomLevel);
     return await this.generateQuestionWithRAG(prompt, ragContent);
   }
 
@@ -180,6 +187,62 @@ IMPORTANT:
 - Exactly one _________ in "question".
 - correctAnswer must be what fills the blank, not a full sentence.
 - Use \\( ... \\) for inline math inside "question" when needed (properly escaped in JSON).`;
+  }
+
+  createCalculationQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate a high-quality numeric calculation question based on the provided content. The quiz system randomizes variable values each attempt and grades answers by rounding to a configured number of decimal places.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3-10 words) naming the topic or skill. Neutral phrase or title—do not embed the numeric answer or final computed result.
+- Must NOT be generic filler alone (e.g. only "Calculation question"); tie the label to the content.
+
+FORMAT FOR THE "stem" FIELD (mandatory):
+- Question template for students. Use double-brace placeholders only: {{a}}, {{b}}, etc.
+- Example: "If a = {{a}} and b = {{b}}, what is a multiplied by b?"
+- Every variable in "calculationFormula" must appear in "stem" as {{name}} with the same "name" as in "calculationVariables".
+
+FORMAT FOR "calculationFormula":
+- One expression using variable names and + - * / ^ and parentheses. Prefer plain ASCII (e.g. "a * b", "(a + b) / 2"). Do NOT use ∫, ∑, or other symbols the calculator cannot parse. Avoid LaTeX in this field; use LaTeX only in "stem" if needed. (Simple \\frac or \\times may be normalized server-side, but ASCII is strongly preferred.)
+
+FORMAT FOR "calculationVariables":
+- Array of objects: "name", "min", "max", "decimals" (0-8), optional "integerOnly": true. Use min === max for a fixed constant.
+
+FORMAT FOR "calculationAnswerDecimals":
+- Integer 0–12 for grading precision (student answer rounded to this many decimal places).
+
+Example:
+{
+  "type": "calculation",
+  "topicTitle": "Product of two quantities",
+  "stem": "If a = {{a}} and b = {{b}}, what is a multiplied by b?",
+  "calculationFormula": "a * b",
+  "calculationVariables": [
+    { "name": "a", "min": 1, "max": 5, "decimals": 1 },
+    { "name": "b", "min": 1, "max": 20, "decimals": 0, "integerOnly": true }
+  ],
+  "calculationAnswerDecimals": 1,
+  "explanation": "Apply multiplication; values are drawn from the configured ranges."
+}
+
+INSTRUCTIONS:
+1. Create one calculation item grounded in the provided materials.
+2. Include "type": "calculation", "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation".
+3. Prefer 2-4 variables unless a single variable clearly suffices for the objective.
+4. Ensure the formula stays finite for all sampled values in range (e.g. no division by zero).
+5. Do NOT include "options", multiple-choice letters, or a static numeric correct answer field—the server grades using the formula and sampled variables.
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. No markdown code fences. First character "{", last "}".
+- Return pure JSON that can be parsed with JSON.parse().
+- Do NOT include any text before or after the JSON object.
+
+IMPORTANT:
+- Include "topicTitle" in every response (separate from "stem").
+- Keep "calculationFormula" as plain math; use LaTeX \\( ... \\) only inside "stem" when needed, with backslashes escaped for JSON.
+- Placeholders in "stem" must match variable names in "calculationVariables" and "calculationFormula" exactly.`;
   }
 
   isAvailable() {

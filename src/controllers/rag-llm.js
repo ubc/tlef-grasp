@@ -11,6 +11,7 @@ const llmService = require('../services/llm');
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
+const calculationQuestionService = require('../services/calculation-question');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS } = require('../constants/app-constants');
 
 // Simple error response function
@@ -32,7 +33,7 @@ function returnErrorResponse(res, error, details = null) {
  */
 function resolveQuestionTypeFromPayload(data, requestedType) {
   const t = data?.type || data?.questionType;
-  if (t === "fill-in-the-blank" || t === "multiple-choice") {
+  if (t === "fill-in-the-blank" || t === "multiple-choice" || t === "calculation") {
     return t;
   }
   return requestedType;
@@ -123,15 +124,90 @@ function validateAndNormalizeQuestionData(data, requestedType) {
   if (!data || typeof data !== "object") {
     throw new Error("Invalid question payload");
   }
-  if (!data.question || typeof data.question !== "string" || !data.question.trim()) {
-    throw new Error("Missing required field: question");
-  }
 
   const resolvedType = resolveQuestionTypeFromPayload(data, requestedType);
   if (resolvedType !== requestedType) {
     throw new Error(
       `Response type "${resolvedType}" does not match requested questionType "${requestedType}"`
     );
+  }
+
+  if (resolvedType === "calculation") {
+    const merged = { ...data };
+    const stemText = String(merged.stem || merged.question || "").trim();
+    if (!stemText) {
+      throw new Error(
+        "Missing required field: stem (or question template) for calculation"
+      );
+    }
+    const formula = String(merged.calculationFormula || "").trim();
+    if (!formula) {
+      throw new Error("Missing required field: calculationFormula");
+    }
+    const vars = merged.calculationVariables;
+    if (!Array.isArray(vars) || vars.length === 0) {
+      throw new Error("calculationVariables must be a non-empty array");
+    }
+    const normalizedVars = vars.map((v, i) => {
+      if (!v || typeof v !== "object") {
+        throw new Error(`calculationVariables[${i}] must be an object`);
+      }
+      const name = String(v.name || "")
+        .trim()
+        .replace(/[^a-zA-Z0-9_]/g, "");
+      if (!name) {
+        throw new Error(`calculationVariables[${i}] needs a valid "name"`);
+      }
+      const min = Number(v.min);
+      const max = Number(v.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+        throw new Error(`Invalid min/max for variable "${name}"`);
+      }
+      const out = { name, min, max };
+      if (v.integerOnly === true) {
+        out.integerOnly = true;
+      } else {
+        const d = parseInt(v.decimals, 10);
+        out.decimals = Number.isFinite(d) ? Math.max(0, Math.min(8, d)) : 0;
+      }
+      return out;
+    });
+    let answerDec = parseInt(merged.calculationAnswerDecimals, 10);
+    if (!Number.isFinite(answerDec)) answerDec = 2;
+    answerDec = Math.max(0, Math.min(12, answerDec));
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const before = stemText.split("{{")[0].trim();
+      const words = before.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Calculation";
+    }
+    calculationQuestionService.validateFormulaAgainstVariableSpecs(
+      formula,
+      normalizedVars
+    );
+    const formulaCanonical =
+      calculationQuestionService.prepareCalculationFormula(
+        formula,
+        normalizedVars
+      );
+    return {
+      type: "calculation",
+      questionType: "calculation",
+      topicTitle,
+      question: stemText,
+      stem: stemText,
+      calculationFormula: formulaCanonical,
+      calculationVariables: normalizedVars,
+      calculationAnswerDecimals: answerDec,
+      explanation: merged.explanation != null ? String(merged.explanation) : "",
+      options: null,
+    };
+  }
+
+  if (!data.question || typeof data.question !== "string" || !data.question.trim()) {
+    throw new Error("Missing required field: question");
   }
 
   if (resolvedType === "fill-in-the-blank") {
@@ -329,7 +405,12 @@ function safeJsonParse(jsonInput) {
 function jsonOnlyRetrySuffix(attempt, questionType) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
   const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
-  const schema = questionType === "multiple-choice" ? mcSchema : fibSchema;
+  const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template with {{var}} placeholders), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". No "options" or MC correctAnswer.`;
+  let schema;
+  if (questionType === "multiple-choice") schema = mcSchema;
+  else if (questionType === "fill-in-the-blank") schema = fibSchema;
+  else if (questionType === "calculation") schema = calcSchema;
+  else schema = mcSchema;
   return `
 
 ---
@@ -423,7 +504,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     }
 
     // Validate question types
-    const ALLOWED_QUESTION_TYPES = ["multiple-choice", "fill-in-the-blank"];
+    const ALLOWED_QUESTION_TYPES = ["multiple-choice", "fill-in-the-blank", "calculation"];
     if (!questionType || !ALLOWED_QUESTION_TYPES.includes(questionType)) {
       return res.status(400).json({
         error: "Invalid or missing questionType",
@@ -587,6 +668,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             `⚠️ Warning: No option text at position ${correctOptionLetter}, but continuing anyway`
           );
         }
+      } else if (questionData.questionType === "calculation") {
+        console.log(
+          `✅ Calculation question: formula "${String(questionData.calculationFormula || "").substring(0, 60)}..."`
+        );
       }
 
       res.json({

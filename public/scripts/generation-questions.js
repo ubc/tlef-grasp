@@ -53,11 +53,32 @@ class QuestionGenerator {
             questionType: "fill-in-the-blank",
           });
         },
+
+        generateCalculationQuestion: async ({
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "calculation",
+          });
+        },
   
         generateQuestionByType: async (questionType, params) => {
           switch (questionType) {
             case "fill-in-the-blank":
               return await this.llmService.generateFillInTheBlankQuestion(params);
+            case "calculation":
+              return await this.llmService.generateCalculationQuestion(params);
             case "multiple-choice":
             default:
               return await this.llmService.generateMultipleChoiceQuestion(params);
@@ -198,7 +219,7 @@ class QuestionGenerator {
       Understand: ["multiple-choice", "fill-in-the-blank"],
       Apply: ["multiple-choice", "fill-in-the-blank"],
       Analyze: ["multiple-choice", "fill-in-the-blank"],
-      Evaluate: ["multiple-choice", "fill-in-the-blank"],
+      Evaluate: ["calculation"],
       Create: ["multiple-choice", "fill-in-the-blank"],
     };
   }
@@ -355,6 +376,50 @@ class QuestionGenerator {
       );
   
       const resolvedType = questionData.type || questionData.questionType || questionType;
+
+      if (resolvedType === "calculation") {
+        const stemText = String(
+          questionData.stem || questionData.question || ""
+        ).trim();
+        let topicTitleCalc = String(
+          questionData.topicTitle ||
+            questionData.topic ||
+            questionData.shortTitle ||
+            ""
+        )
+          .trim()
+          .replace(/\?+$/, "");
+        if (!topicTitleCalc) {
+          const before = stemText.split("{{")[0].trim();
+          const words = before.split(/\s+/).filter(Boolean);
+          topicTitleCalc = words.slice(0, 10).join(" ") || "Calculation";
+        }
+        let answerDec = parseInt(questionData.calculationAnswerDecimals, 10);
+        if (!Number.isFinite(answerDec)) answerDec = 2;
+        answerDec = Math.max(0, Math.min(12, answerDec));
+        return {
+          id: `${granularLearningObjectiveId}-${questionNumber}`,
+          granularObjectiveId: `${granularLearningObjectiveId}`,
+          text: stemText,
+          topicTitle: topicTitleCalc,
+          type: "calculation",
+          questionType: "calculation",
+          options: null,
+          correctAnswer: "",
+          acceptableAnswers: [],
+          calculationFormula: questionData.calculationFormula,
+          calculationVariables: questionData.calculationVariables,
+          calculationAnswerDecimals: answerDec,
+          bloomLevel: bloomLevel,
+          difficulty: this.determineDifficulty(bloomLevel),
+          metaCode: learningObjectiveText,
+          loCode: granularLearningObjectiveText,
+          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+          by: "LLM + RAG System",
+          explanation: questionData.explanation,
+        };
+      }
+
       const acceptable =
         resolvedType === "fill-in-the-blank"
           ? Array.isArray(questionData.acceptableAnswers) && questionData.acceptableAnswers.length
@@ -470,6 +535,13 @@ class QuestionGenerator {
       "Question Type,Question,Option A,Option B,Option C,Option D,Correct Answer,Acceptable Answers,Bloom Level,Difficulty\n";
     questions.forEach((q) => {
       const qt = q.type || q.questionType || "multiple-choice";
+      if (qt === "calculation") {
+        const stem = q.text || q.stem || "";
+        const formula = q.calculationFormula || "";
+        const varsJson = JSON.stringify(q.calculationVariables || []);
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(formula)},${this.escapeCsvField(varsJson)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        return;
+      }
       if (qt === "fill-in-the-blank") {
         const acc =
           Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length
@@ -502,6 +574,39 @@ class QuestionGenerator {
       .map((q, index) => {
         const qt = q.type || q.questionType || "multiple-choice";
         const ident = `q${index + 1}`;
+        if (qt === "calculation") {
+          const stem = q.text || q.stem || "";
+          const note = `[Formula: ${q.calculationFormula || ""}; variables JSON: ${JSON.stringify(q.calculationVariables || [])}; answerDecimals: ${q.calculationAnswerDecimals != null ? q.calculationAnswerDecimals : 2}]`;
+          return `
+    <item ident="${ident}">
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>qmd_itemtype</fieldlabel>
+            <fieldentry>Calculation</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext>${this.escapeXml(stem)}</mattext>
+        </material>
+        <material>
+          <mattext>${this.escapeXml(note)}</mattext>
+        </material>
+        <response_str ident="response1">
+          <render_fib fibtype="String" columns="40" rows="1">
+            <response_label ident="fib"/>
+          </render_fib>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar varname="SCORE" vartype="Decimal" defaultval="0"/>
+        </outcomes>
+      </resprocessing>
+    </item>`;
+        }
         if (qt === "fill-in-the-blank") {
           const acceptable =
             Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length

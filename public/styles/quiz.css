@@ -763,6 +763,12 @@
     background: #fdedec;
 }
 
+.calc-load-error {
+    color: #721c24;
+    font-size: 15px;
+    margin: 0;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .quiz-grid {

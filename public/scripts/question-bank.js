@@ -87,12 +87,14 @@ function getObjectId(obj) {
 function normalizeQuestionTypeKey(raw) {
   const t = (raw || "multiple-choice").toString().trim().toLowerCase().replace(/_/g, "-");
   if (t === "fill-in-the-blank") return "fill-in-the-blank";
+  if (t === "calculation") return "calculation";
   return "multiple-choice";
 }
 
 function formatQuestionTypeLabel(raw) {
   const key = normalizeQuestionTypeKey(raw);
   if (key === "fill-in-the-blank") return "Fill-in-the-blank";
+  if (key === "calculation") return "Calculation";
   return "Multiple choice";
 }
 
@@ -1940,9 +1942,12 @@ class QuestionBankPage {
           const titleMatch = q.title && q.title.toLowerCase().includes(searchTerm);
           const stemMatch = q.stem && q.stem.toLowerCase().includes(searchTerm);
           const gloMatch = q.glo && q.glo.toLowerCase().includes(searchTerm);
+          const formulaMatch =
+            q.calculationFormula &&
+            String(q.calculationFormula).toLowerCase().includes(searchTerm);
           const typeLabel = formatQuestionTypeLabel(q.questionType).toLowerCase();
           const typeMatch = typeLabel.includes(searchTerm);
-          return titleMatch || stemMatch || gloMatch || typeMatch;
+          return titleMatch || stemMatch || gloMatch || typeMatch || formulaMatch;
         }
       );
     }
@@ -2625,6 +2630,24 @@ class QuestionBankPage {
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
         };
+      } else if (qType === "calculation") {
+        const vars = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
+        const dec =
+          question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
+            ? parseInt(question.calculationAnswerDecimals, 10)
+            : 2;
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || "",
+          stem: question.stem || "",
+          questionType: "calculation",
+          calculationFormula: (question.calculationFormula || "").trim(),
+          calculationVariables: vars,
+          calculationAnswerDecimals: Number.isFinite(dec) ? dec : 2,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
       } else {
         // Multiple-choice: options are objects with keys A, B, C, D - convert to array for display
         const optionKeys = ["A", "B", "C", "D"];
@@ -2708,7 +2731,90 @@ class QuestionBankPage {
       modalTitleEl.textContent = canEdit ? "Edit question" : "View question";
     }
 
+    const isCalc = question.questionType === "calculation";
     const isFib = question.questionType === "fill-in-the-blank";
+
+    if (isCalc) {
+      const isReadOnly = !canEdit;
+      const readonlyAttr = isReadOnly ? "readonly" : "";
+      const readonlyClass = isReadOnly ? "readonly" : "";
+      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
+
+      const warningHtml = isReadOnly
+        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
+        : "";
+
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || "");
+      const formulaContent = escapeForTextareaContent(question.calculationFormula || "");
+      const varsJson = escapeForTextareaContent(
+        JSON.stringify(question.calculationVariables || [], null, 2)
+      );
+      const decVal =
+        question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
+          ? String(question.calculationAnswerDecimals)
+          : "2";
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip" style="margin-bottom:12px;display:inline-block;background:#e8f4fc;color:#0c5460;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;">Calculation</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Topic title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="e.g. Multiplication with two variables"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question template</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="4"
+                    placeholder="If a = {{a}} and b = {{b}}, what is a multiplied by b?"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+          <p style="font-size:12px;color:#6c757d;margin:6px 0 0 0;">Use <code>{{variableName}}</code> placeholders matching the variables JSON below.</p>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-formula">Formula (expr-eval syntax)</label>
+          <textarea id="question-modal-calc-formula"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="2"
+                    placeholder="a * b"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${formulaContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-vars">Variables (JSON array)</label>
+          <textarea id="question-modal-calc-vars"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="8"
+                    placeholder='[{"name":"a","min":1,"max":5,"decimals":1},{"name":"b","min":1,"max":20,"decimals":0,"integerOnly":true}]'
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${varsJson}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-decimals">Answer decimal places</label>
+          <input type="number" id="question-modal-calc-decimals" min="0" max="12" step="1"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${decVal.replace(/"/g, "&quot;")}"
+                 ${readonlyAttr}
+                 style="${readonlyStyle};max-width:120px;">
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
 
     if (isFib) {
       const isReadOnly = !canEdit;
@@ -2952,6 +3058,93 @@ class QuestionBankPage {
 
       const title = titleInput ? titleInput.value.trim() : "";
       const stem = stemInput ? stemInput.value.trim() : "";
+
+      if (this.currentEditingQuestion.questionType === "calculation") {
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question template is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        const formulaEl = document.getElementById("question-modal-calc-formula");
+        const varsEl = document.getElementById("question-modal-calc-vars");
+        const decEl = document.getElementById("question-modal-calc-decimals");
+        const formula = formulaEl ? formulaEl.value.trim() : "";
+        if (!formula) {
+          this.showNotification("Formula is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        let variables;
+        try {
+          variables = JSON.parse(varsEl && varsEl.value.trim() ? varsEl.value.trim() : "[]");
+        } catch {
+          this.showNotification("Variables must be valid JSON", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!Array.isArray(variables) || variables.length === 0) {
+          this.showNotification("Add at least one variable in the JSON array", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        for (const v of variables) {
+          if (!v || typeof v.name !== "string" || !v.name.trim()) {
+            this.showNotification('Each variable needs a "name" string', "error");
+            if (saveBtn) saveBtn.disabled = false;
+            return;
+          }
+          const mn = Number(v.min);
+          const mx = Number(v.max);
+          if (!Number.isFinite(mn) || !Number.isFinite(mx) || mn > mx) {
+            this.showNotification(`Invalid min/max for variable "${v.name}"`, "error");
+            if (saveBtn) saveBtn.disabled = false;
+            return;
+          }
+        }
+        let dec = parseInt(decEl ? decEl.value : "2", 10);
+        if (!Number.isFinite(dec)) dec = 2;
+        dec = Math.max(0, Math.min(12, dec));
+
+        const updateData = {
+          title,
+          stem,
+          questionType: "calculation",
+          calculationFormula: formula,
+          calculationVariables: variables,
+          calculationAnswerDecimals: dec,
+          options: {},
+          acceptableAnswers: [],
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = "calculation";
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
 
       if (this.currentEditingQuestion.questionType === "fill-in-the-blank") {
         if (!title) {

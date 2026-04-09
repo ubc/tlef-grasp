@@ -1,5 +1,6 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
+const calculationQuestion = require('../services/calculation-question');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
@@ -109,9 +110,14 @@ function shuffleArray(array) {
 }
 
 function resolveQuestionType(q) {
-  const t = q.questionType || q.type;
+  const t = String(q.questionType || q.type || "")
+    .trim()
+    .toLowerCase();
   if (t === "fill-in-the-blank") {
     return "fill-in-the-blank";
+  }
+  if (t === "calculation") {
+    return "calculation";
   }
   return "multiple-choice";
 }
@@ -203,6 +209,60 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
+      if (questionType === "calculation") {
+        const vars = q.calculationVariables;
+        const template = calculationQuestion.resolveCalculationDisplayTemplate(
+          q.stem,
+          q.title,
+          vars
+        );
+        const formula = (q.calculationFormula || "").trim();
+        const answerDec =
+          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
+            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
+            : 2;
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+        const built = calculationQuestion.buildStudentCalculationInstance({
+          template,
+          formula,
+          variableSpecs: vars,
+          qid,
+          answerDec,
+        });
+        if (built.ok) {
+          return {
+            id: qid,
+            question: built.rendered,
+            questionType: "calculation",
+            calculationToken: built.token,
+            answerDecimalPlaces: built.answerDecimalPlaces,
+            options: {},
+            learningObjectiveId: q.learningObjectiveId,
+            granularObjectiveId: q.granularObjectiveId,
+            bloom: q.bloom,
+          };
+        }
+        console.error(
+          "Calculation question instance failed:",
+          qid,
+          built.error && built.error.message
+        );
+        return {
+          id: qid,
+          question:
+            template ||
+            "This calculation question could not be loaded. Please contact your instructor.",
+          questionType: "calculation",
+          calculationToken: null,
+          answerDecimalPlaces: answerDec,
+          calculationLoadError: true,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -246,9 +306,9 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    // Shuffle MC options only; fill-in-the-blank has no options to shuffle
+    // Shuffle MC options only; other types have no options to shuffle
     const randomizedQuestions = transformedQuestions.map((q) =>
-      q.questionType === "fill-in-the-blank" ? q : shuffleQuestionOptions(q)
+      q.questionType === "multiple-choice" ? shuffleQuestionOptions(q) : q
     );
 
     res.json({

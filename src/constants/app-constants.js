@@ -40,7 +40,7 @@ Rules: Four non-empty options; correctAnswer is only "A", "B", "C", or "D"; rand
 
 --- If Question Type is "fill-in-the-blank" ---
 PROCEDURE:
-1. "topicTitle" is REQUIRED: a very short label (about 3–10 words) that names the topic or skill being tested. It must be a neutral phrase or title (not a question, no "?"). It must NOT reveal the answer, must NOT repeat the wording of correctAnswer or acceptableAnswers, and must NOT be instructions like "Fill in the blank" or "Complete the sentence".
+1. "topicTitle" is REQUIRED: a very short label (about 3-10 words) that names the topic or skill being tested. It must be a neutral phrase or title (not a question, no "?"). It must NOT reveal the answer, must NOT repeat the wording of correctAnswer or acceptableAnswers, and must NOT be instructions like "Fill in the blank" or "Complete the sentence".
 2. The "question" string is ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT a WH-question. FORBIDDEN in "question": "What is...", "Which...", "How...", "Define...", ending with "?".
 3. The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________ (not ____, not [blank]).
 4. correctAnswer is what fills the blank (canonical form; use LaTeX \\( ... \\) inside JSON strings for math, with backslashes escaped for JSON).
@@ -59,11 +59,34 @@ Example:
 
 Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; exactly one _________ in "question".
 
-CRITICAL FORMATTING REQUIREMENTS (both types):
+--- If Question Type is "calculation" ---
+PROCEDURE:
+1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question, must not reveal numeric answers.
+2. "stem" is the question text with placeholders for variables only as {{variableName}} (double braces). Every variable in "calculationFormula" must appear in "stem" as {{name}} matching "calculationVariables[].name".
+3. "calculationFormula" MUST be one expression the calculator can evaluate: use variable names and + - * / ^ ( ). Prefer plain ASCII (e.g. "a*b", "(x+1)/y"). Do NOT use ∫, ∑, matrices, or LaTeX environments in the formula. Put math display only in "stem" (LaTeX allowed there). If you use LaTeX-style operators in the formula, keep them minimal (e.g. \\frac{a}{b} or \\times)—the server may normalize them, but simple ASCII is best.
+4. "calculationVariables" is a non-empty array of objects: { "name", "min", "max", optional "decimals" (0–8) or "integerOnly": true }.
+5. "calculationAnswerDecimals" is how many decimal places the correct numeric answer should be rounded to (integer 0–12).
+
+Example:
+{
+  "type": "calculation",
+  "topicTitle": "Ohm's law application",
+  "stem": "Given voltage {{V}} V and resistance {{R}} Ω, the current is _____ A.",
+  "calculationFormula": "V / R",
+  "calculationVariables": [
+    { "name": "V", "min": 10, "max": 120, "integerOnly": true },
+    { "name": "R", "min": 5, "max": 50, "decimals": 1 }
+  ],
+  "calculationAnswerDecimals": 2,
+  "explanation": "Why this applies to the content"
+}
+
+CRITICAL FORMATTING REQUIREMENTS (all matching types):
 - Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
 - CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
 - For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
+- For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template with {{var}} placeholders. The formula field must stay machine-evaluable (no integral sign ∫ or similar).
 FORMATTING INSIDE JSON STRINGS:
 - Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
 CONTENT: {ragContext}`;

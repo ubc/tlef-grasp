@@ -553,6 +553,12 @@ function showQuestion(questionIndex) {
       </div>
     `;
   }
+
+  if (question.questionType === "calculation" && !question.calculationLoadError) {
+    const p = Number(question.answerDecimalPlaces);
+    const dec = Number.isFinite(p) ? Math.max(0, Math.min(12, Math.round(p))) : 2;
+    completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Round your answer to <strong>${dec}</strong> decimal place${dec === 1 ? "" : "s"}.</div>`;
+  }
   
   questionTitleElement.innerHTML = completeHTML;
   document.getElementById("currentQuestion").textContent = questionIndex + 1;
@@ -592,7 +598,9 @@ function showQuestion(questionIndex) {
 
   // Disable next button if current question hasn't been answered
   const hasAnswer = quizState.answers[questionId] !== undefined;
-  document.getElementById("nextButton").disabled = !hasAnswer;
+  const calcBroken =
+    question.questionType === "calculation" && question.calculationLoadError;
+  document.getElementById("nextButton").disabled = !hasAnswer && !calcBroken;
 
   // Update question indicators
   updateQuestionIndicators();
@@ -600,6 +608,10 @@ function showQuestion(questionIndex) {
 
 function isFillInTheBlankQuestion(question) {
   return question.questionType === "fill-in-the-blank";
+}
+
+function isCalculationQuestion(question) {
+  return question.questionType === "calculation";
 }
 
 function renderFillInTheBlankAnswerUI(question, questionIndex) {
@@ -661,6 +673,149 @@ function renderFillInTheBlankAnswerUI(question, questionIndex) {
   renderKatex();
 }
 
+function renderCalculationAnswerUI(question, questionIndex) {
+  const answerOptions = document.getElementById("answerOptions");
+  answerOptions.innerHTML = "";
+
+  const questionId = question.id;
+  const hasFeedback = !!quizState.feedback[questionId];
+  const saved = quizState.answers[questionId];
+  const fd = quizState.feedback[questionId];
+  const loadError = question.calculationLoadError || !question.calculationToken;
+
+  const wrap = document.createElement("div");
+  wrap.className = "fill-in-blank-answer calculation-answer";
+  if (hasFeedback && fd) {
+    wrap.classList.add(fd.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+  }
+
+  if (loadError) {
+    wrap.innerHTML =
+      '<p class="calc-load-error">This question could not be loaded. Try refreshing the page or contact your instructor.</p>';
+    answerOptions.appendChild(wrap);
+    return;
+  }
+
+  const label = document.createElement("label");
+  label.className = "fill-in-blank-label";
+  label.htmlFor = `calc-input-${questionId}`;
+  label.textContent = "Your answer";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = `calc-input-${questionId}`;
+  input.className = "fill-in-blank-input";
+  input.placeholder = "Enter a numeric answer";
+  input.inputMode = "decimal";
+  input.autocomplete = "off";
+  if (typeof saved === "string") {
+    input.value = saved;
+  }
+  if (hasFeedback) {
+    input.disabled = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = `calc-submit-${questionId}`;
+  btn.className = "fill-in-blank-submit";
+  btn.textContent = "Submit answer";
+  if (hasFeedback) {
+    btn.disabled = true;
+  }
+
+  if (!hasFeedback) {
+    btn.addEventListener("click", () => submitCalculationAnswer(questionId, questionIndex));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitCalculationAnswer(questionId, questionIndex);
+      }
+    });
+  }
+
+  wrap.appendChild(label);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  answerOptions.appendChild(wrap);
+  renderKatex();
+}
+
+async function submitCalculationAnswer(questionId, questionIndex) {
+  const question = quizState.quizData.questions[questionIndex];
+  const input = document.getElementById(`calc-input-${questionId}`);
+  const btn = document.getElementById(`calc-submit-${questionId}`);
+  if (!input || !btn || input.disabled) return;
+  if (!question || !question.calculationToken) {
+    alert("Missing calculation data. Please reload the quiz.");
+    return;
+  }
+
+  const answerText = input.value.trim();
+  if (!answerText) {
+    alert("Please enter a numeric answer before submitting.");
+    return;
+  }
+
+  const prevLabel = btn.textContent;
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+
+  try {
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        answerText,
+        calculationToken: question.calculationToken,
+      }),
+    });
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
+
+    quizState.answers[questionId] = answerText;
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      selectedAnswer: answerText,
+      correctAnswer: result.correctAnswer,
+      feedbackText: result.feedback,
+      correctOptionText: result.correctOptionText,
+      questionType: "calculation",
+    };
+
+    btn.textContent = prevLabel;
+    btn.disabled = true;
+
+    const wrap = input.closest(".calculation-answer");
+    if (wrap) {
+      wrap.classList.remove("fill-in-blank-answer--correct", "fill-in-blank-answer--incorrect");
+      wrap.classList.add(result.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+    }
+
+    document.getElementById("nextButton").disabled = false;
+    showFeedback(questionIndex, questionId, answerText, result.correctAnswer);
+    updateQuestionIndicators();
+  } catch (error) {
+    console.error("Error evaluating answer:", error);
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    alert(error.message || "Could not check your answer. Please try again.");
+  }
+}
+
 async function submitFillInBlankAnswer(questionId, questionIndex) {
   const input = document.getElementById(`fib-input-${questionId}`);
   const btn = document.getElementById(`fib-submit-${questionId}`);
@@ -681,11 +836,21 @@ async function submitFillInBlankAnswer(questionId, questionIndex) {
     const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ answerText })
     });
-    if (!response.ok) throw new Error("Failed to check answer");
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error || "Invalid response");
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
 
     quizState.answers[questionId] = answerText;
     quizState.feedback[questionId] = {
@@ -714,7 +879,7 @@ async function submitFillInBlankAnswer(questionId, questionIndex) {
     input.disabled = false;
     btn.disabled = false;
     btn.textContent = prevLabel;
-    alert("Could not check your answer. Please try again.");
+    alert(error.message || "Could not check your answer. Please try again.");
   }
 }
 
@@ -724,6 +889,11 @@ function renderAnswerOptions(question, questionIndex) {
 
   if (isFillInTheBlankQuestion(question)) {
     renderFillInTheBlankAnswerUI(question, questionIndex);
+    return;
+  }
+
+  if (isCalculationQuestion(question)) {
+    renderCalculationAnswerUI(question, questionIndex);
     return;
   }
 
@@ -798,13 +968,22 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
     const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ selectedIndex })
     });
-    
-    if (!response.ok) throw new Error("Failed to check answer");
-    
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error);
+
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
 
     // Store the selected mapped index
     quizState.answers[questionId] = selectedIndex;
@@ -888,11 +1067,14 @@ function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
   } else {
     feedbackMessage.className = "feedback-message feedback-incorrect";
     const isFib = feedbackData.questionType === "fill-in-the-blank";
+    const isCalc = feedbackData.questionType === "calculation";
     const fibReveal =
       isFib && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
+    const calcReveal =
+      isCalc && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
     const titleHtml = `<div class="feedback-message__title"><i class="fas fa-times-circle"></i> Incorrect.</div>`;
     const bodies = [];
-    if (fibReveal) {
+    if (fibReveal || calcReveal) {
       const ans = escapeHtml(String(feedbackData.correctOptionText).trim());
       bodies.push(`<div class="feedback-message__body">The correct answer is ${ans}.</div>`);
     }

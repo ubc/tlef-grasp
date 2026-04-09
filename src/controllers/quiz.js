@@ -1,5 +1,6 @@
 const quizService = require("../services/quiz");
 const questionService = require("../services/question");
+const calculationQuestion = require("../services/calculation-question");
 const { isFaculty } = require("../utils/auth");
 
 /**
@@ -205,9 +206,14 @@ function shuffleArray(array) {
 }
 
 function resolveQuestionType(q) {
-  const t = q.questionType || q.type;
+  const t = String(q.questionType || q.type || "")
+    .trim()
+    .toLowerCase();
   if (t === "fill-in-the-blank") {
     return "fill-in-the-blank";
+  }
+  if (t === "calculation") {
+    return "calculation";
   }
   return "multiple-choice";
 }
@@ -266,6 +272,74 @@ const getQuizQuestionsHandler = async (req, res) => {
           delete finalQuestion.stem;
         }
         return finalQuestion;
+      }
+
+      if (questionType === "calculation") {
+        const vars = q.calculationVariables;
+        const template = calculationQuestion.resolveCalculationDisplayTemplate(
+          q.stem,
+          q.title,
+          vars
+        );
+        const formula = (q.calculationFormula || "").trim();
+        const answerDec =
+          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
+            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
+            : 2;
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+
+        if (approvedOnlyBool) {
+          const built = calculationQuestion.buildStudentCalculationInstance({
+            template,
+            formula,
+            variableSpecs: vars,
+            qid,
+            answerDec,
+          });
+          if (built.ok) {
+            return {
+              id: qid,
+              question: built.rendered,
+              questionType: "calculation",
+              calculationToken: built.token,
+              answerDecimalPlaces: built.answerDecimalPlaces,
+              options: {},
+              learningObjectiveId: q.learningObjectiveId,
+              granularObjectiveId: q.granularObjectiveId,
+              bloom: q.bloom,
+            };
+          }
+          console.error(
+            "Calculation question instance failed:",
+            qid,
+            built.error && built.error.message
+          );
+          return {
+            id: qid,
+            question:
+              template ||
+              "This calculation question could not be loaded. Please contact your instructor.",
+            questionType: "calculation",
+            calculationToken: null,
+            answerDecimalPlaces: answerDec,
+            calculationLoadError: true,
+            options: {},
+            learningObjectiveId: q.learningObjectiveId,
+            granularObjectiveId: q.granularObjectiveId,
+            bloom: q.bloom,
+          };
+        }
+
+        return {
+          ...q,
+          id: qid,
+          question: template || "Question text not available",
+          questionType: "calculation",
+          options: {},
+          calculationFormula: formula,
+          calculationVariables: vars,
+          calculationAnswerDecimals: answerDec,
+        };
       }
 
       let optionsObj = {};
@@ -367,6 +441,77 @@ const checkQuestionAnswerHandler = async (req, res) => {
     }
 
     const questionType = resolveQuestionType(question);
+    const calculationToken =
+      req.body.calculationToken && typeof req.body.calculationToken === "string"
+        ? req.body.calculationToken
+        : null;
+    const hasCalculationFormula =
+      typeof question.calculationFormula === "string" &&
+      question.calculationFormula.trim().length > 0;
+
+    const treatAsCalculation =
+      questionType === "calculation" ||
+      (calculationToken && hasCalculationFormula);
+
+    if (treatAsCalculation) {
+      const { answerText } = req.body;
+      if (!calculationToken) {
+        return res.status(400).json({
+          success: false,
+          error: "calculationToken is required for calculation questions",
+        });
+      }
+      if (answerText === undefined || answerText === null || String(answerText).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for calculation questions",
+        });
+      }
+      const verified = calculationQuestion.verifyCalculationToken(calculationToken);
+      if (!verified || String(verified.questionId) !== String(questionId)) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid or expired calculation token — try reloading the quiz",
+        });
+      }
+      const formula = (question.calculationFormula || "").trim();
+      const vars = question.calculationVariables;
+      const answerDec =
+        question.calculationAnswerDecimals !== undefined &&
+        question.calculationAnswerDecimals !== null
+          ? Math.max(0, Math.min(12, parseInt(question.calculationAnswerDecimals, 10) || 2))
+          : 2;
+      let expected;
+      try {
+        expected = calculationQuestion.evaluateCalculationFormula(formula, verified.values);
+      } catch (e) {
+        console.error("Calculation check evaluate failed:", e);
+        const msg = e && e.message ? String(e.message) : "";
+        const clientError =
+          msg.startsWith("Formula ") ||
+          msg.startsWith("Invalid formula") ||
+          msg.includes("plain ASCII") ||
+          msg.includes("unsupported characters") ||
+          msg.includes("Reload the quiz") ||
+          msg.includes("calculationVariables") ||
+          msg.includes("this attempt's values");
+        return res.status(clientError ? 400 : 500).json({
+          success: false,
+          error: clientError ? msg : "Could not grade this calculation question",
+        });
+      }
+      const studentNum = calculationQuestion.parseStudentNumericAnswer(answerText);
+      const isCorrect = calculationQuestion.numericAnswersMatch(studentNum, expected, answerDec);
+      const displayCorrect = calculationQuestion.formatAnswerForDisplay(expected, answerDec);
+      res.json({
+        success: true,
+        isCorrect,
+        feedback: isCorrect ? "Correct." : "",
+        correctAnswer: isCorrect ? displayCorrect : null,
+        correctOptionText: displayCorrect,
+      });
+      return;
+    }
 
     if (questionType === "fill-in-the-blank") {
       if (answerText === undefined || answerText === null) {
