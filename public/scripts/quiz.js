@@ -542,12 +542,26 @@ function showQuestion(questionIndex) {
       completeHTML = diagnosticHTML + completeHTML;
   }
   
-  if (question.stem) {
+  const rawStem = (question.stem || "").trim();
+  const isGenericFibStem =
+    question.questionType === "fill-in-the-blank" &&
+    /^fill\s+in\s+the\s+blank:?\s*$/i.test(rawStem);
+  if (question.stem && !isGenericFibStem) {
     completeHTML += `
       <div class="question-stem" style="font-size: 1.1em; font-weight: 500; color: #34495e;">
         ${escapeHtml(question.stem)}
       </div>
     `;
+  }
+
+  if (question.questionType === "calculation" && !question.calculationLoadError) {
+    const p = Number(question.answerDecimalPlaces);
+    const dec = Number.isFinite(p) ? Math.max(0, Math.min(12, Math.round(p))) : 2;
+    completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Round your answer to <strong>${dec}</strong> decimal place${dec === 1 ? "" : "s"}.</div>`;
+  }
+
+  if (question.questionType === "open-ended") {
+    completeHTML += `<div class="open-ended-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">This question is <strong>not auto-graded</strong>. After you submit, you will see a <strong>sample answer</strong> and the <strong>grading criteria</strong> for self-checking.</div>`;
   }
   
   questionTitleElement.innerHTML = completeHTML;
@@ -588,15 +602,448 @@ function showQuestion(questionIndex) {
 
   // Disable next button if current question hasn't been answered
   const hasAnswer = quizState.answers[questionId] !== undefined;
-  document.getElementById("nextButton").disabled = !hasAnswer;
+  const calcBroken =
+    question.questionType === "calculation" && question.calculationLoadError;
+  document.getElementById("nextButton").disabled = !hasAnswer && !calcBroken;
 
   // Update question indicators
   updateQuestionIndicators();
 }
 
+function isFillInTheBlankQuestion(question) {
+  return question.questionType === "fill-in-the-blank";
+}
+
+function isCalculationQuestion(question) {
+  return question.questionType === "calculation";
+}
+
+function isOpenEndedQuestion(question) {
+  return question.questionType === "open-ended";
+}
+
+function renderFillInTheBlankAnswerUI(question, questionIndex) {
+  const answerOptions = document.getElementById("answerOptions");
+  answerOptions.innerHTML = "";
+
+  const questionId = question.id;
+  const hasFeedback = !!quizState.feedback[questionId];
+  const saved = quizState.answers[questionId];
+  const fd = quizState.feedback[questionId];
+
+  const wrap = document.createElement("div");
+  wrap.className = "fill-in-blank-answer";
+  if (hasFeedback && fd) {
+    wrap.classList.add(fd.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+  }
+
+  const label = document.createElement("label");
+  label.className = "fill-in-blank-label";
+  label.htmlFor = `fib-input-${questionId}`;
+  label.textContent = "Your answer";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = `fib-input-${questionId}`;
+  input.className = "fill-in-blank-input";
+  input.placeholder = "Type your answer, then click Submit";
+  input.autocomplete = "off";
+  if (typeof saved === "string") {
+    input.value = saved;
+  }
+  if (hasFeedback) {
+    input.disabled = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = `fib-submit-${questionId}`;
+  btn.className = "fill-in-blank-submit";
+  btn.textContent = "Submit answer";
+  if (hasFeedback) {
+    btn.disabled = true;
+  }
+
+  if (!hasFeedback) {
+    btn.addEventListener("click", () => submitFillInBlankAnswer(questionId, questionIndex));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitFillInBlankAnswer(questionId, questionIndex);
+      }
+    });
+  }
+
+  wrap.appendChild(label);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  answerOptions.appendChild(wrap);
+  renderKatex();
+}
+
+function renderCalculationAnswerUI(question, questionIndex) {
+  const answerOptions = document.getElementById("answerOptions");
+  answerOptions.innerHTML = "";
+
+  const questionId = question.id;
+  const hasFeedback = !!quizState.feedback[questionId];
+  const saved = quizState.answers[questionId];
+  const fd = quizState.feedback[questionId];
+  const loadError = question.calculationLoadError || !question.calculationToken;
+
+  const wrap = document.createElement("div");
+  wrap.className = "fill-in-blank-answer calculation-answer";
+  if (hasFeedback && fd) {
+    wrap.classList.add(fd.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+  }
+
+  if (loadError) {
+    wrap.innerHTML =
+      '<p class="calc-load-error">This question could not be loaded. Try refreshing the page or contact your instructor.</p>';
+    answerOptions.appendChild(wrap);
+    return;
+  }
+
+  const label = document.createElement("label");
+  label.className = "fill-in-blank-label";
+  label.htmlFor = `calc-input-${questionId}`;
+  label.textContent = "Your answer";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = `calc-input-${questionId}`;
+  input.className = "fill-in-blank-input";
+  input.placeholder = "Enter a numeric answer";
+  input.inputMode = "decimal";
+  input.autocomplete = "off";
+  if (typeof saved === "string") {
+    input.value = saved;
+  }
+  if (hasFeedback) {
+    input.disabled = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = `calc-submit-${questionId}`;
+  btn.className = "fill-in-blank-submit";
+  btn.textContent = "Submit answer";
+  if (hasFeedback) {
+    btn.disabled = true;
+  }
+
+  if (!hasFeedback) {
+    btn.addEventListener("click", () => submitCalculationAnswer(questionId, questionIndex));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitCalculationAnswer(questionId, questionIndex);
+      }
+    });
+  }
+
+  wrap.appendChild(label);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  answerOptions.appendChild(wrap);
+  renderKatex();
+}
+
+function renderOpenEndedAnswerUI(question, questionIndex) {
+  const answerOptions = document.getElementById("answerOptions");
+  answerOptions.innerHTML = "";
+
+  const questionId = question.id;
+  const hasFeedback = !!quizState.feedback[questionId];
+  const saved = quizState.answers[questionId];
+  const fd = quizState.feedback[questionId];
+
+  const wrap = document.createElement("div");
+  wrap.className = "fill-in-blank-answer open-ended-answer";
+  if (hasFeedback && fd) {
+    if (fd.openEnded || fd.isCorrect === null) {
+      wrap.classList.add("open-ended-answer--submitted");
+    } else {
+      wrap.classList.add(fd.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+    }
+  }
+
+  const label = document.createElement("label");
+  label.className = "fill-in-blank-label";
+  label.htmlFor = `open-input-${questionId}`;
+  label.textContent = "Your response";
+
+  const input = document.createElement("textarea");
+  input.id = `open-input-${questionId}`;
+  input.className = "open-ended-textarea";
+  input.rows = 6;
+  input.placeholder = "Write your answer, then click Submit";
+  input.autocomplete = "off";
+  if (typeof saved === "string") {
+    input.value = saved;
+  }
+  if (hasFeedback) {
+    input.disabled = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = `open-submit-${questionId}`;
+  btn.className = "fill-in-blank-submit";
+  btn.textContent = "Submit answer";
+  if (hasFeedback) {
+    btn.disabled = true;
+  }
+
+  if (!hasFeedback) {
+    btn.addEventListener("click", () => submitOpenEndedAnswer(questionId, questionIndex));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submitOpenEndedAnswer(questionId, questionIndex);
+      }
+    });
+  }
+
+  wrap.appendChild(label);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  answerOptions.appendChild(wrap);
+  renderKatex();
+}
+
+async function submitOpenEndedAnswer(questionId, questionIndex) {
+  const input = document.getElementById(`open-input-${questionId}`);
+  const btn = document.getElementById(`open-submit-${questionId}`);
+  if (!input || !btn || input.disabled) return;
+
+  const answerText = input.value.trim();
+  if (!answerText) {
+    alert("Please write an answer before submitting.");
+    return;
+  }
+
+  const prevLabel = btn.textContent;
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+
+  try {
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ answerText }),
+    });
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not submit your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not submit your answer.");
+    }
+
+    quizState.answers[questionId] = answerText;
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      openEnded: true,
+      selectedAnswer: answerText,
+      sampleAnswer: result.sampleAnswer,
+      gradingCriteria: result.gradingCriteria,
+      feedbackText: result.feedback,
+      questionType: "open-ended",
+    };
+
+    btn.textContent = prevLabel;
+    btn.disabled = true;
+
+    const wrap = input.closest(".open-ended-answer");
+    if (wrap) {
+      wrap.classList.remove(
+        "fill-in-blank-answer--correct",
+        "fill-in-blank-answer--incorrect",
+        "open-ended-answer--submitted"
+      );
+      wrap.classList.add("open-ended-answer--submitted");
+    }
+
+    document.getElementById("nextButton").disabled = false;
+    showFeedback(questionIndex, questionId, answerText, null);
+    updateQuestionIndicators();
+  } catch (error) {
+    console.error("Error submitting open-ended answer:", error);
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    alert(error.message || "Could not submit your answer. Please try again.");
+  }
+}
+
+async function submitCalculationAnswer(questionId, questionIndex) {
+  const question = quizState.quizData.questions[questionIndex];
+  const input = document.getElementById(`calc-input-${questionId}`);
+  const btn = document.getElementById(`calc-submit-${questionId}`);
+  if (!input || !btn || input.disabled) return;
+  if (!question || !question.calculationToken) {
+    alert("Missing calculation data. Please reload the quiz.");
+    return;
+  }
+
+  const answerText = input.value.trim();
+  if (!answerText) {
+    alert("Please enter a numeric answer before submitting.");
+    return;
+  }
+
+  const prevLabel = btn.textContent;
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+
+  try {
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        answerText,
+        calculationToken: question.calculationToken,
+      }),
+    });
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
+
+    quizState.answers[questionId] = answerText;
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      selectedAnswer: answerText,
+      correctAnswer: result.correctAnswer,
+      feedbackText: result.feedback,
+      correctOptionText: result.correctOptionText,
+      questionType: "calculation",
+    };
+
+    btn.textContent = prevLabel;
+    btn.disabled = true;
+
+    const wrap = input.closest(".calculation-answer");
+    if (wrap) {
+      wrap.classList.remove("fill-in-blank-answer--correct", "fill-in-blank-answer--incorrect");
+      wrap.classList.add(result.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+    }
+
+    document.getElementById("nextButton").disabled = false;
+    showFeedback(questionIndex, questionId, answerText, result.correctAnswer);
+    updateQuestionIndicators();
+  } catch (error) {
+    console.error("Error evaluating answer:", error);
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    alert(error.message || "Could not check your answer. Please try again.");
+  }
+}
+
+async function submitFillInBlankAnswer(questionId, questionIndex) {
+  const input = document.getElementById(`fib-input-${questionId}`);
+  const btn = document.getElementById(`fib-submit-${questionId}`);
+  if (!input || !btn || input.disabled) return;
+
+  const answerText = input.value.trim();
+  if (!answerText) {
+    alert("Please type an answer before submitting.");
+    return;
+  }
+
+  const prevLabel = btn.textContent;
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+
+  try {
+    const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ answerText })
+    });
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
+
+    quizState.answers[questionId] = answerText;
+    quizState.feedback[questionId] = {
+      isCorrect: result.isCorrect,
+      selectedAnswer: answerText,
+      correctAnswer: result.correctAnswer,
+      feedbackText: result.feedback,
+      correctOptionText: result.correctOptionText,
+      questionType: "fill-in-the-blank"
+    };
+
+    btn.textContent = prevLabel;
+    btn.disabled = true;
+
+    const wrap = input.closest(".fill-in-blank-answer");
+    if (wrap) {
+      wrap.classList.remove("fill-in-blank-answer--correct", "fill-in-blank-answer--incorrect");
+      wrap.classList.add(result.isCorrect ? "fill-in-blank-answer--correct" : "fill-in-blank-answer--incorrect");
+    }
+
+    document.getElementById("nextButton").disabled = false;
+    showFeedback(questionIndex, questionId, answerText, result.correctAnswer);
+    updateQuestionIndicators();
+  } catch (error) {
+    console.error("Error evaluating answer:", error);
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+    alert(error.message || "Could not check your answer. Please try again.");
+  }
+}
+
 function renderAnswerOptions(question, questionIndex) {
   const answerOptions = document.getElementById("answerOptions");
   answerOptions.innerHTML = "";
+
+  if (isFillInTheBlankQuestion(question)) {
+    renderFillInTheBlankAnswerUI(question, questionIndex);
+    return;
+  }
+
+  if (isCalculationQuestion(question)) {
+    renderCalculationAnswerUI(question, questionIndex);
+    return;
+  }
+
+  if (isOpenEndedQuestion(question)) {
+    renderOpenEndedAnswerUI(question, questionIndex);
+    return;
+  }
 
   // The secure backend now passes an array of indices [3, 0, 1, 2]
   const optionOrderIndices = question.optionOrder || [0, 1, 2, 3];
@@ -669,13 +1116,22 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
     const response = await fetch(`/api/quiz/${quizState.currentQuiz}/question/${questionId}/check`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ selectedIndex })
     });
-    
-    if (!response.ok) throw new Error("Failed to check answer");
-    
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error);
+
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("The server returned an invalid response. Please try again.");
+    }
+    if (!response.ok) {
+      throw new Error(result.error || `Could not check your answer (${response.status}).`);
+    }
+    if (!result.success) {
+      throw new Error(result.error || "Could not check your answer.");
+    }
 
     // Store the selected mapped index
     quizState.answers[questionId] = selectedIndex;
@@ -743,24 +1199,62 @@ function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
   const isCorrect = feedbackData.isCorrect;
   const feedbackString = feedbackData.feedbackText || "";
 
-  const formattedFeedbackHTML = feedbackString 
-    ? `<div style="margin-top: 10px; font-weight: normal; font-size: 0.9em; color: #555;">${escapeHtml(feedbackString)}</div>` 
+  const bodyFromString = feedbackString
+    ? `<div class="feedback-message__body">${escapeHtml(feedbackString)}</div>`
     : "";
+
+  // Open-ended: no right/wrong; show sample answer and criteria after submit
+  if (feedbackData.openEnded || (feedbackData.questionType === "open-ended" && feedbackData.isCorrect === null)) {
+    feedbackMessage.className = "feedback-message feedback-open-ended";
+    const sample = feedbackData.sampleAnswer != null ? String(feedbackData.sampleAnswer).trim() : "";
+    const crit =
+      feedbackData.gradingCriteria != null ? String(feedbackData.gradingCriteria).trim() : "";
+    const sampleBlock = sample
+      ? `<div class="feedback-message__section"><div class="feedback-message__subtitle">Sample answer</div><div class="feedback-message__body feedback-message__pre">${escapeHtml(sample)}</div></div>`
+      : "";
+    const critBlock = crit
+      ? `<div class="feedback-message__section"><div class="feedback-message__subtitle">Grading criteria</div><div class="feedback-message__body feedback-message__pre">${escapeHtml(crit)}</div></div>`
+      : "";
+    feedbackMessage.innerHTML = `
+      <div class="feedback-message__title"><i class="fas fa-clipboard-check"></i> Response submitted</div>
+      <div class="feedback-message__body">Your answer was not auto-graded. Compare your response to the sample answer and criteria below.</div>
+      ${sampleBlock}
+      ${critBlock}`;
+    feedbackMessage.style.display = "block";
+    correctAnswerDisplay.style.display = "none";
+    feedbackSection.style.display = "block";
+    renderKatex();
+    return;
+  }
 
   // Show feedback message only for correct answers
   if (isCorrect) {
     feedbackMessage.className = "feedback-message feedback-correct";
-    feedbackMessage.innerHTML = `<i class="fas fa-check-circle"></i> Correct!${formattedFeedbackHTML}`;
+    feedbackMessage.innerHTML = `
+      <div class="feedback-message__title"><i class="fas fa-check-circle"></i> Correct!</div>
+      ${bodyFromString}`;
     feedbackMessage.style.display = "block";
     correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
   } else {
-    // For incorrect answers, show both the incorrect badge AND optionally the correct answer
     feedbackMessage.className = "feedback-message feedback-incorrect";
-    feedbackMessage.innerHTML = `<i class="fas fa-times-circle"></i> Incorrect.${formattedFeedbackHTML}`;
+    const isFib = feedbackData.questionType === "fill-in-the-blank";
+    const isCalc = feedbackData.questionType === "calculation";
+    const fibReveal =
+      isFib && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
+    const calcReveal =
+      isCalc && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
+    const titleHtml = `<div class="feedback-message__title"><i class="fas fa-times-circle"></i> Incorrect.</div>`;
+    const bodies = [];
+    if (fibReveal || calcReveal) {
+      const ans = escapeHtml(String(feedbackData.correctOptionText).trim());
+      bodies.push(`<div class="feedback-message__body">The correct answer is ${ans}.</div>`);
+    }
+    if (feedbackString) {
+      bodies.push(`<div class="feedback-message__body">${escapeHtml(feedbackString)}</div>`);
+    }
+    feedbackMessage.innerHTML = titleHtml + bodies.join("");
     feedbackMessage.style.display = "block";
-
-    // Stop displaying the correct answer to the student if they got it wrong
     correctAnswerDisplay.style.display = "none";
     feedbackSection.style.display = "block";
   }
@@ -776,7 +1270,7 @@ function hideFeedback() {
 function updateQuestionIndicators() {
   const indicators = document.querySelectorAll(".question-indicator");
   indicators.forEach((indicator, index) => {
-    indicator.classList.remove("current", "answered", "correct", "incorrect");
+    indicator.classList.remove("current", "answered", "correct", "incorrect", "submitted");
 
     if (index === quizState.currentQuestionIndex) {
       indicator.classList.add("current");
@@ -789,7 +1283,10 @@ function updateQuestionIndicators() {
     if (questionId && quizState.answers[questionId]) {
       indicator.classList.add("answered");
       if (quizState.feedback[questionId]) {
-        if (quizState.feedback[questionId].isCorrect) {
+        const fd = quizState.feedback[questionId];
+        if (fd.openEnded || (fd.questionType === "open-ended" && fd.isCorrect === null)) {
+          indicator.classList.add("submitted");
+        } else if (fd.isCorrect) {
           indicator.classList.add("correct");
         } else {
           indicator.classList.add("incorrect");
@@ -804,29 +1301,43 @@ async function showCompletion() {
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
 
-  // Calculate stats using the exact server feedback 
-  const totalQuestions = quizState.quizData.questions.length;
+  // Score only auto-graded items; open-ended questions are excluded from the percentage
+  const gradedQuestions = quizState.quizData.questions.filter((q) => q.questionType !== "open-ended");
+  const totalGraded = gradedQuestions.length;
   let correctCount = 0;
-
-  // quizState.feedback contains { isCorrect, ... } for every questionId answered
-  Object.values(quizState.feedback).forEach(feedbackResult => {
-    if (feedbackResult && feedbackResult.isCorrect) {
+  gradedQuestions.forEach((q) => {
+    const qid = q.id;
+    const feedbackResult = qid ? quizState.feedback[qid] : null;
+    if (feedbackResult && feedbackResult.isCorrect === true) {
       correctCount++;
     }
   });
 
-  const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+  const score =
+    totalGraded > 0 ? Math.round((correctCount / totalGraded) * 100) : null;
+  const openEndedCount = quizState.quizData.questions.length - totalGraded;
 
   // Update completion section
   document.getElementById("correctCount").textContent = correctCount;
-  document.getElementById("totalCount").textContent = totalQuestions;
-  document.getElementById("scorePercentage").textContent = `${score}%`;
+  document.getElementById("totalCount").textContent = totalGraded;
+  const scoreEl = document.getElementById("scorePercentage");
+  if (scoreEl) {
+    if (score === null) {
+      scoreEl.textContent = openEndedCount > 0 ? "—" : "0%";
+    } else {
+      scoreEl.textContent = `${score}%`;
+    }
+  }
 
   // Submit quiz to backend and get achievements
-  const newAchievements = await submitQuizToBackend(score, correctCount, totalQuestions);
+  const newAchievements = await submitQuizToBackend(
+    score ?? 0,
+    correctCount,
+    totalGraded
+  );
 
-  // Show achievements
-  displayNewAchievements(newAchievements, score === 100);
+  // Show achievements (perfect score only when there was at least one graded question and score is 100%)
+  displayNewAchievements(newAchievements, score !== null && score === 100);
 
   // Show completion section
   document.getElementById("completionSection").style.display = "block";

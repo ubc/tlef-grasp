@@ -1265,6 +1265,35 @@
     text-align: center;
 }
 
+.question-type-cell {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.question-type-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.question-type-chip--multiple-choice {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.question-type-chip--fill-in-the-blank {
+    background: #e0f2f1;
+    color: #00796b;
+}
+
+.question-type-chip--open-ended {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
 
 /* Edit Mode */
 .question-title-input {

@@ -58,12 +58,41 @@ class DirectOpenAIService {
     }
   }
 
+  async generateQuestionByType(questionType, objective, ragContent, bloomLevel) {
+    switch (questionType) {
+      case "fill-in-the-blank":
+        return await this.generateFillInTheBlankQuestion(objective, ragContent, bloomLevel);
+      case "calculation":
+        return await this.generateCalculationQuestion(objective, ragContent, bloomLevel);
+      case "open-ended":
+        return await this.generateOpenEndedQuestion(objective, ragContent, bloomLevel);
+      case "multiple-choice":
+      default:
+        return await this.generateMultipleChoiceQuestion(objective, ragContent, bloomLevel);
+    }
+  }
+
   async generateMultipleChoiceQuestion(objective, ragContent, bloomLevel) {
-    const prompt = this.createQuestionPrompt(objective, bloomLevel);
+    const prompt = this.createMultipleChoiceQuestionPrompt(objective, bloomLevel);
     return await this.generateQuestionWithRAG(prompt, ragContent);
   }
 
-  createQuestionPrompt(objective, bloomLevel) {
+  async generateFillInTheBlankQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createFillInTheBlankQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateCalculationQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createCalculationQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateOpenEndedQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createOpenEndedQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  createMultipleChoiceQuestionPrompt(objective, bloomLevel) {
     return `You are an expert educational content creator. Generate a high-quality multiple-choice question based on the provided content.
 
 OBJECTIVE: ${objective}
@@ -78,6 +107,7 @@ INSTRUCTIONS:
 6. Focus on the specific concepts, examples, or details mentioned in the content
 7. Format your response as JSON with this structure:
 {
+  "type": "multiple-choice",
   "question": "Your specific question here",
   "options": {
     "A": "First option text",
@@ -106,6 +136,141 @@ IMPORTANT:
   * Do NOT use $ ... $ delimiters - only use \( ... \) for inline math and \[ ... \] for display math
   * The backslash before the parenthesis is REQUIRED - \( not just (
 - CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options object values should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".`;
+  }
+
+  createFillInTheBlankQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate a high-quality fill-in-the-blank item based on the provided content.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3–10 words) naming the topic or skill. Use a neutral phrase or title, NOT a question (no "?", no "What is…").
+- Must NOT reveal the correct answer or paraphrase acceptableAnswers.
+- Must NOT be filler such as "Fill in the blank", "Complete the sentence", or "Question".
+
+FORMAT FOR THE "question" FIELD (mandatory):
+- ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
+- FORBIDDEN: do not start with or use "What is...", "What are...", "Which...", "Who...", "How...", "Why...", "Define...", or any question mark at the end.
+- The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________
+- Do not use "____", "___", "[blank]", or other placeholders—only _________
+- The part that belongs in the blank is what the student should recall (term, formula, number, etc.); write the sentence so it reads naturally if the blank were filled in.
+
+INSTRUCTIONS:
+1. Create one specific fill-in-the-blank item based on the provided content.
+2. Set "topicTitle" as described above, separate from the stem in "question".
+3. The blank should test an important term, number, phrase, formula component, or concept from the materials.
+4. Use actual details from the content - do not make the question generic.
+5. Provide the correct answer and acceptableAnswers.
+6. Provide a short explanation based on the content.
+7. Format your response as JSON with these examples:
+Example (geometry):
+{
+  "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
+  "question": "The formula for the volume of a cone is _________.",
+  "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
+  "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
+  "explanation": "Brief justification from the materials."
+}
+
+Example (non-math):
+{
+  "type": "fill-in-the-blank",
+  "topicTitle": "European capitals",
+  "question": "The capital of France is _________.",
+  "correctAnswer": "Paris",
+  "acceptableAnswers": ["Paris"],
+  "explanation": "Brief justification from the materials."
+}
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. No markdown fences. First character "{", last "}".
+- Return pure JSON that can be parsed with JSON.parse().
+
+IMPORTANT:
+- Include "topicTitle" in every response (separate from "question").
+- Exactly one _________ in "question".
+- correctAnswer must be what fills the blank, not a full sentence.
+- If mathematical expressions are used, also use \\( ... \\) for inline math inside the "question" string where needed (properly escaped in JSON).`;
+  }
+
+  createCalculationQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate a high-quality numeric calculation question based on the provided content. The quiz system will randomize variable values per attempt and grade answers using decimal rounding.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3-10 words) naming the topic or skill. Use a neutral phrase or title; do not embed the numeric answer or final computed result.
+- Must NOT be filler such as "Calculation question" or "Math problem" alone—make it specific to the content.
+
+FORMAT FOR THE "stem" FIELD (mandatory):
+- A question template string shown to students. Embed each random variable using double-brace placeholders only, e.g. {{a}}, {{b}}.
+- Example pattern: "If a = {{a}} and b = {{b}}, what is a multiplied by b?"
+- Every variable used in "calculationFormula" must appear as {{name}} in "stem" (names must match "calculationVariables[].name" exactly).
+
+FORMAT FOR "calculationFormula":
+- A single expression using ONLY those variable names and safe arithmetic: + - * / ^ (power), parentheses. Prefer plain ASCII (examples: "a * b", "(a + b) / 2", "a^2 + 3 * b"). Do NOT use ∫, ∑, or LaTeX environments here—the engine cannot evaluate them. Put display math in "stem" only. (Basic \\frac{a}{b} or \\times may be auto-converted, but prefer "a/b" and "*".)
+
+FORMAT FOR "calculationVariables":
+- A JSON array of objects, one per variable: "name" (string), "min" and "max" (numbers; equal min and max fixes a constant), "decimals" (0–8 for sampled value rounding), optional "integerOnly": true.
+
+FORMAT FOR "calculationAnswerDecimals":
+- Integer 0-12: how many decimal places the student's submitted answer is rounded to for grading.
+
+Example (base yours on the provided materials):
+{
+  "type": "calculation",
+  "topicTitle": "Product of two quantities",
+  "stem": "If a = {{a}} and b = {{b}}, what is a multiplied by b?",
+  "calculationFormula": "a * b",
+  "calculationVariables": [
+    { "name": "a", "min": 1, "max": 5, "decimals": 1 },
+    { "name": "b", "min": 1, "max": 20, "decimals": 0, "integerOnly": true }
+  ],
+  "calculationAnswerDecimals": 1,
+  "explanation": "Students apply multiplication using values sampled from the stated ranges."
+}
+
+INSTRUCTIONS:
+1. Create one specific calculation item tied to the provided content—not a generic drill unrelated to the materials.
+2. Set "type" to "calculation" and include "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation".
+3. Use about 2-4 variables unless the objective clearly needs only one.
+4. Ensure the formula always evaluates to a finite real number for every value in the given ranges (no division by zero; no invalid operations).
+5. Do NOT include "options", a lettered multiple-choice "correctAnswer", or a static numeric "correctAnswer"—the platform computes the correct value from the formula and sampled variables.
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. Do NOT wrap the JSON in markdown code blocks.
+- Do NOT include any text before or after the JSON object.
+- The first character of your entire reply MUST be "{" and the last MUST be "}".
+- Return pure JSON that can be parsed with JSON.parse().
+- Escape backslashes inside JSON strings as required for JSON.parse().
+
+IMPORTANT:
+- Include "topicTitle" in every response (separate from "stem").
+- Keep "calculationFormula" in plain expr-eval-style math only; if "stem" needs math notation, use LaTeX \\( ... \\) inside the JSON string (properly escaped for JSON).
+- Placeholders in "stem" must use exactly the form {{variableName}} matching "calculationVariables".`;
+
+  }
+
+  createOpenEndedQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate one open-ended question from the content. The quiz does not auto-grade text; students see a sample answer and grading criteria after submit.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+Return JSON only:
+{
+  "type": "open-ended",
+  "topicTitle": "short neutral label",
+  "question": "the prompt (or use stem instead)",
+  "openEndedSampleAnswer": "model response",
+  "openEndedGradingCriteria": "rubric or criteria in one string",
+  "explanation": "brief instructor note"
+}
+
+Rules: No markdown fences. First "{" last "}". No options or MC fields.`;
   }
 
   isAvailable() {

@@ -2,22 +2,30 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+const QUESTION_GENERATION_PROMPT = `You behave like a strict JSON API, not a chat assistant.
+
+MANDATORY OUTPUT (read first):
+- Output EXACTLY one JSON object and NOTHING else: no preamble, no "##" headings, no bullet lists, no step-by-step reasoning, no "To address this", no summaries of the source, no "The final answer", no markdown code fences.
+- The first character of your entire reply MUST be "{" and the last MUST be "}".
+- Put all question text, options, and explanations INSIDE the JSON string fields only.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
+Question Type: {questionType}
 
-Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+Task: Use ONLY the schema that matches Question Type. Base the question on the CONTENT section below (do not summarize or discuss the content in plain text).
 
+--- If Question Type is "multiple-choice" ---
 PROCEDURE:
-1. Create the question content
+1. Create the question content.
 2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
-4. Write the explanation
+3.  Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
+4. Write a brief explanation.
 
 The response format must be a valid JSON with the exact structure as follows:
 {
+  "type": "multiple-choice",
   "question": "Your specific question here",
   "options": {
     "A": "First option text",
@@ -28,14 +36,78 @@ The response format must be a valid JSON with the exact structure as follows:
   "correctAnswer": "C",
   "explanation": "Why this answer is correct based on the content"
 }
+Rules: Four non-empty options; correctAnswer is only "A", "B", "C", or "D"; randomize which letter is correct; option text must NOT start with "A)" or "A." style prefixes.
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
+--- If Question Type is "fill-in-the-blank" ---
+PROCEDURE:
+1. "topicTitle" is REQUIRED: a very short label (about 3-10 words) that names the topic or skill being tested. It must be a neutral phrase or title (not a question, no "?"). It must NOT reveal the answer, must NOT repeat the wording of correctAnswer or acceptableAnswers, and must NOT be instructions like "Fill in the blank" or "Complete the sentence".
+2. The "question" string is ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT a WH-question. FORBIDDEN in "question": "What is...", "Which...", "How...", "Define...", ending with "?".
+3. The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________ (not ____, not [blank]).
+4. correctAnswer is what fills the blank (canonical form; use LaTeX \\( ... \\) inside JSON strings for math, with backslashes escaped for JSON).
+5. acceptableAnswers must include correctAnswer and reasonable equivalents (alternate LaTeX, plain-text math, synonyms).
+6. Do NOT include an "options" object.
+
+Example:
+{
+  "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
+  "question": "The formula for the volume of a cone is _________.",
+  "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
+  "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
+  "explanation": "Why this answer is correct based on the content"
+}
+
+Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; exactly one _________ in "question".
+
+--- If Question Type is "calculation" ---
+PROCEDURE:
+1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question, must not reveal numeric answers.
+2. "stem" is the question text with placeholders for variables only as {{variableName}} (double braces). Every variable in "calculationFormula" must appear in "stem" as {{name}} matching "calculationVariables[].name".
+3. "calculationFormula" MUST be one expression the calculator can evaluate: use variable names and + - * / ^ ( ). Prefer plain ASCII (e.g. "a*b", "(x+1)/y"). Do NOT use ∫, ∑, matrices, or LaTeX environments in the formula. Put math display only in "stem" (LaTeX allowed there). If you use LaTeX-style operators in the formula, keep them minimal (e.g. \\frac{a}{b} or \\times)—the server may normalize them, but simple ASCII is best.
+4. "calculationVariables" is a non-empty array of objects: { "name", "min", "max", optional "decimals" (0–8) or "integerOnly": true }.
+5. "calculationAnswerDecimals" is how many decimal places the correct numeric answer should be rounded to (integer 0–12).
+
+Example:
+{
+  "type": "calculation",
+  "topicTitle": "Ohm's law application",
+  "stem": "Given voltage {{V}} V and resistance {{R}} Ω, the current is _____ A.",
+  "calculationFormula": "V / R",
+  "calculationVariables": [
+    { "name": "V", "min": 10, "max": 120, "integerOnly": true },
+    { "name": "R", "min": 5, "max": 50, "decimals": 1 }
+  ],
+  "calculationAnswerDecimals": 2,
+  "explanation": "Why this applies to the content"
+}
+
+--- If Question Type is "open-ended" ---
+PROCEDURE:
+1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question.
+2. Use "question" OR "stem" for the prompt students respond to (paragraph-length is fine). Do NOT use nine underscores; this is not fill-in-the-blank.
+3. "openEndedSampleAnswer" is REQUIRED: a strong example response. Students see it only after they submit; it is not used for auto-grading.
+4. "openEndedGradingCriteria" is REQUIRED: clear criteria or a short rubric (bullet-style in a string is fine) so students can self-check.
+5. Do NOT include "options", "correctAnswer", or calculation fields.
+
+Example:
+{
+  "type": "open-ended",
+  "topicTitle": "Design trade-offs",
+  "question": "Explain two trade-offs between caching and freshness in a web application.",
+  "openEndedSampleAnswer": "Caching improves latency and reduces load, but stale data can confuse users unless TTLs or invalidation are chosen carefully...",
+  "openEndedGradingCriteria": "Full credit: names two distinct trade-offs with reasoning. Partial: one trade-off or vague reasoning. No credit: off-topic.",
+  "explanation": "Why this aligns with the materials"
+}
+
+CRITICAL FORMATTING REQUIREMENTS (all matching types):
+- Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string as \\\\\\\\ (double backslash).
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
-
+- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
+- For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
+- For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template with {{var}} placeholders. The formula field must stay machine-evaluable (no integral sign ∫ or similar).
+- For open-ended: Include "openEndedSampleAnswer" and "openEndedGradingCriteria"; the platform does not auto-grade text responses.
+FORMATTING INSIDE JSON STRINGS:
+- Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
 CONTENT: {ragContext}`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.

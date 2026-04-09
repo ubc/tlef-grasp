@@ -11,6 +11,7 @@ const llmService = require('../services/llm');
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
+const calculationQuestionService = require('../services/calculation-question');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS } = require('../constants/app-constants');
 
 // Simple error response function
@@ -30,6 +31,388 @@ function returnErrorResponse(res, error, details = null) {
  * @param {string|Object} jsonInput - The JSON string to parse, or already parsed object
  * @returns {Object} Parsed JSON object
  */
+function resolveQuestionTypeFromPayload(data, requestedType) {
+  const t = data?.type || data?.questionType;
+  if (
+    t === "fill-in-the-blank" ||
+    t === "multiple-choice" ||
+    t === "calculation" ||
+    t === "open-ended"
+  ) {
+    return t;
+  }
+  return requestedType;
+}
+
+/** Map array shapes and letter-only `answer` to MC fields when possible. */
+function normalizeMultipleChoiceAliases(data) {
+  const d = { ...data };
+  if (Array.isArray(d.choices) && d.choices.length >= 4) {
+    d.options = {
+      A: String(d.choices[0]),
+      B: String(d.choices[1]),
+      C: String(d.choices[2]),
+      D: String(d.choices[3]),
+    };
+  }
+  if (Array.isArray(d.options) && d.options.length >= 4) {
+    d.options = {
+      A: String(d.options[0]),
+      B: String(d.options[1]),
+      C: String(d.options[2]),
+      D: String(d.options[3]),
+    };
+  }
+  if (
+    (d.correctAnswer == null || String(d.correctAnswer).trim() === "") &&
+    typeof d.answer === "string" &&
+    /^[ABCD]$/i.test(d.answer.trim())
+  ) {
+    d.correctAnswer = d.answer.trim().toUpperCase();
+  }
+  return d;
+}
+
+/**
+ * Models often return { question, answer, explanation } for MC. If `answer` is the correct
+ * option text (not A–D), synthesize A–D options and a matching correctAnswer letter.
+ */
+function repairLooseMultipleChoiceShape(data) {
+  let d = normalizeMultipleChoiceAliases(data);
+  const hasFullOptions =
+    d.options &&
+    typeof d.options === "object" &&
+    !Array.isArray(d.options) &&
+    ["A", "B", "C", "D"].every(
+      (k) => d.options[k] != null && String(d.options[k]).trim()
+    );
+  if (hasFullOptions) {
+    return d;
+  }
+  if (typeof d.answer !== "string" || !d.answer.trim()) {
+    return d;
+  }
+  const correctText = d.answer.trim();
+  if (/^[ABCD]$/i.test(correctText)) {
+    return d;
+  }
+  const distractors = [
+    "Divergent.",
+    "Convergent only if extra conditions hold that are not stated.",
+    "The usual convergence test does not apply to this series.",
+    "The partial sums do not approach a finite limit.",
+  ]
+    .filter((x) => x.toLowerCase() !== correctText.toLowerCase())
+    .slice(0, 3);
+  while (distractors.length < 3) {
+    distractors.push(`Incorrect alternative ${distractors.length + 1}.`);
+  }
+  const letters = ["A", "B", "C", "D"];
+  const correctIdx = Math.floor(Math.random() * 4);
+  const options = {};
+  let u = 0;
+  for (let i = 0; i < 4; i++) {
+    options[letters[i]] = i === correctIdx ? correctText : distractors[u++];
+  }
+  return {
+    ...d,
+    type: d.type || "multiple-choice",
+    options,
+    correctAnswer: letters[correctIdx],
+  };
+}
+
+/**
+ * Validate LLM JSON for the requested question type and return a normalized object for the API.
+ */
+function validateAndNormalizeQuestionData(data, requestedType) {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid question payload");
+  }
+
+  const resolvedType = resolveQuestionTypeFromPayload(data, requestedType);
+  if (resolvedType !== requestedType) {
+    throw new Error(
+      `Response type "${resolvedType}" does not match requested questionType "${requestedType}"`
+    );
+  }
+
+  if (resolvedType === "calculation") {
+    const merged = { ...data };
+    const stemText = String(merged.stem || merged.question || "").trim();
+    if (!stemText) {
+      throw new Error(
+        "Missing required field: stem (or question template) for calculation"
+      );
+    }
+    const formula = String(merged.calculationFormula || "").trim();
+    if (!formula) {
+      throw new Error("Missing required field: calculationFormula");
+    }
+    const vars = merged.calculationVariables;
+    if (!Array.isArray(vars) || vars.length === 0) {
+      throw new Error("calculationVariables must be a non-empty array");
+    }
+    const normalizedVars = vars.map((v, i) => {
+      if (!v || typeof v !== "object") {
+        throw new Error(`calculationVariables[${i}] must be an object`);
+      }
+      const name = String(v.name || "")
+        .trim()
+        .replace(/[^a-zA-Z0-9_]/g, "");
+      if (!name) {
+        throw new Error(`calculationVariables[${i}] needs a valid "name"`);
+      }
+      const min = Number(v.min);
+      const max = Number(v.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+        throw new Error(`Invalid min/max for variable "${name}"`);
+      }
+      const out = { name, min, max };
+      if (v.integerOnly === true) {
+        out.integerOnly = true;
+      } else {
+        const d = parseInt(v.decimals, 10);
+        out.decimals = Number.isFinite(d) ? Math.max(0, Math.min(8, d)) : 0;
+      }
+      return out;
+    });
+    let answerDec = parseInt(merged.calculationAnswerDecimals, 10);
+    if (!Number.isFinite(answerDec)) answerDec = 2;
+    answerDec = Math.max(0, Math.min(12, answerDec));
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const before = stemText.split("{{")[0].trim();
+      const words = before.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Calculation";
+    }
+    calculationQuestionService.validateFormulaAgainstVariableSpecs(
+      formula,
+      normalizedVars
+    );
+    const formulaCanonical =
+      calculationQuestionService.prepareCalculationFormula(
+        formula,
+        normalizedVars
+      );
+    return {
+      type: "calculation",
+      questionType: "calculation",
+      topicTitle,
+      question: stemText,
+      stem: stemText,
+      calculationFormula: formulaCanonical,
+      calculationVariables: normalizedVars,
+      calculationAnswerDecimals: answerDec,
+      explanation: merged.explanation != null ? String(merged.explanation) : "",
+      options: null,
+    };
+  }
+
+  if (resolvedType === "open-ended") {
+    const merged = { ...data };
+    const stemText = String(merged.stem || merged.question || "").trim();
+    if (!stemText) {
+      throw new Error(
+        "Missing required field: stem or question for open-ended"
+      );
+    }
+    const sample = String(
+      merged.openEndedSampleAnswer || merged.sampleAnswer || ""
+    ).trim();
+    if (!sample) {
+      throw new Error("Missing required field: openEndedSampleAnswer");
+    }
+    const criteria = String(
+      merged.openEndedGradingCriteria || merged.gradingCriteria || ""
+    ).trim();
+    if (!criteria) {
+      throw new Error("Missing required field: openEndedGradingCriteria");
+    }
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const words = stemText.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Open-ended";
+    }
+    return {
+      type: "open-ended",
+      questionType: "open-ended",
+      topicTitle,
+      question: stemText,
+      stem: stemText,
+      openEndedSampleAnswer: sample,
+      openEndedGradingCriteria: criteria,
+      explanation: merged.explanation != null ? String(merged.explanation) : "",
+      options: null,
+    };
+  }
+
+  if (!data.question || typeof data.question !== "string" || !data.question.trim()) {
+    throw new Error("Missing required field: question");
+  }
+
+  if (resolvedType === "fill-in-the-blank") {
+    const merged = { ...data };
+    if (
+      (merged.correctAnswer == null || String(merged.correctAnswer).trim() === "") &&
+      typeof merged.answer === "string" &&
+      merged.answer.trim()
+    ) {
+      merged.correctAnswer = merged.answer.trim();
+    }
+    const ca = merged.correctAnswer;
+    if (ca === undefined || ca === null || String(ca).trim() === "") {
+      throw new Error(
+        "Missing required field: correctAnswer (expected short answer text for fill-in-the-blank)"
+      );
+    }
+    const canonical = typeof ca === "string" ? ca.trim() : String(ca);
+    let acceptable = merged.acceptableAnswers;
+    if (!Array.isArray(acceptable) || acceptable.length === 0) {
+      acceptable = [canonical];
+    } else {
+      acceptable = acceptable
+        .map((a) => (typeof a === "string" ? a.trim() : String(a)))
+        .filter(Boolean);
+      if (acceptable.length === 0) {
+        acceptable = [canonical];
+      }
+    }
+    const qText = merged.question.trim();
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const beforeBlank = qText.split("_________")[0].trim();
+      const words = beforeBlank.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+    }
+    return {
+      type: "fill-in-the-blank",
+      questionType: "fill-in-the-blank",
+      topicTitle,
+      question: qText,
+      correctAnswer: canonical,
+      acceptableAnswers: acceptable,
+      explanation: merged.explanation != null ? String(merged.explanation) : "",
+      options: null,
+    };
+  }
+
+  const mcData = repairLooseMultipleChoiceShape(data);
+
+  if (!mcData.options || typeof mcData.options !== "object" || Array.isArray(mcData.options)) {
+    throw new Error(
+      'Missing required field: options (object with keys A, B, C, D). For multiple-choice do not use a single "answer" string instead of four options and correctAnswer A–D.'
+    );
+  }
+  for (const key of ["A", "B", "C", "D"]) {
+    const opt = mcData.options[key];
+    if (opt === undefined || opt === null || String(opt).trim() === "") {
+      throw new Error(`Missing or empty option ${key}`);
+    }
+  }
+  let letter = mcData.correctAnswer;
+  if (typeof letter === "number") {
+    letter = ["A", "B", "C", "D"][letter];
+  }
+  if (typeof letter !== "string" || !/^[ABCD]$/i.test(letter.trim())) {
+    throw new Error("correctAnswer must be A, B, C, or D for multiple-choice");
+  }
+  letter = letter.trim().toUpperCase();
+  return {
+    type: "multiple-choice",
+    questionType: "multiple-choice",
+    question: mcData.question.trim(),
+    options: {
+      A: String(mcData.options.A).trim(),
+      B: String(mcData.options.B).trim(),
+      C: String(mcData.options.C).trim(),
+      D: String(mcData.options.D).trim(),
+    },
+    correctAnswer: letter,
+    explanation: mcData.explanation != null ? String(mcData.explanation) : "",
+  };
+}
+
+/**
+ * Balanced {...} from str[start] where str[start] === "{" (respects JSON strings).
+ */
+function extractBalancedFrom(str, start) {
+  if (str[start] !== "{") {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < str.length; i++) {
+    const c = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") {
+        escape = true;
+        continue;
+      }
+      if (c === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0) {
+        return str.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Try each `{` position: parse balanced span; accept first object with a non-empty "question" string.
+ * Skips spurious `{` from LaTeX (e.g. \\boxed{0}) that are not full question JSON.
+ */
+function tryParseQuestionJsonFromLaxText(jsonString) {
+  let pos = 0;
+  while (pos < jsonString.length) {
+    const start = jsonString.indexOf("{", pos);
+    if (start === -1) {
+      break;
+    }
+    const balanced = extractBalancedFrom(jsonString, start);
+    if (balanced) {
+      try {
+        const obj = JSON.parse(balanced);
+        if (
+          obj &&
+          typeof obj === "object" &&
+          typeof obj.question === "string" &&
+          obj.question.trim()
+        ) {
+          return obj;
+        }
+      } catch (_) {
+        /* try next { */
+      }
+    }
+    pos = start + 1;
+  }
+  return null;
+}
+
 function safeJsonParse(jsonInput) {
   // If it's already an object, return it
   if (typeof jsonInput === 'object' && jsonInput !== null && !Array.isArray(jsonInput)) {
@@ -49,11 +432,10 @@ function safeJsonParse(jsonInput) {
       if (codeBlockMatch) {
         return JSON.parse(codeBlockMatch[1]);
       }
-      
-      // Try to extract JSON object from the string
-      const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+
+      const fromLax = tryParseQuestionJsonFromLaxText(jsonString);
+      if (fromLax) {
+        return fromLax;
       }
       
       throw error;
@@ -63,6 +445,26 @@ function safeJsonParse(jsonInput) {
       throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${error.message}`);
     }
   }
+}
+
+function jsonOnlyRetrySuffix(attempt, questionType) {
+  const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
+  const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
+  const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template with {{var}} placeholders), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". No "options" or MC correctAnswer.`;
+  const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
+  let schema;
+  if (questionType === "multiple-choice") schema = mcSchema;
+  else if (questionType === "fill-in-the-blank") schema = fibSchema;
+  else if (questionType === "calculation") schema = calcSchema;
+  else if (questionType === "open-ended") schema = openSchema;
+  else schema = mcSchema;
+  return `
+
+---
+REGENERATION (attempt ${attempt}): Previous output was invalid JSON or the wrong shape.
+${schema}
+Reply with ONE raw JSON object only. Forbidden: markdown, headings, lists, prose outside JSON, code fences.
+Your entire message must start with { and end with }.`;
 }
 
 const addDocumentToRagHandler = async (req, res) => {
@@ -129,7 +531,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, questionType } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -138,12 +540,27 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
     console.log("Bloom Level:", bloomLevel);
+    console.log("Question Type:", questionType);
 
     // Validate required parameters
     if (!courseName || !learningObjectiveId || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
       return res.status(400).json({
         error: "Missing required parameters",
         details: "courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
+      });
+    }
+
+    // Validate question types
+    const ALLOWED_QUESTION_TYPES = [
+      "multiple-choice",
+      "fill-in-the-blank",
+      "calculation",
+      "open-ended",
+    ];
+    if (!questionType || !ALLOWED_QUESTION_TYPES.includes(questionType)) {
+      return res.status(400).json({
+        error: "Invalid or missing questionType",
+        details: `questionType must be one of: ${ALLOWED_QUESTION_TYPES.join(", ")}`,
       });
     }
 
@@ -189,12 +606,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         // Get LLM instance from service
         const llmModule = await llmService.getLLMInstance();
 
-      // Create prompt with RAG context
-      const createPrompt = () => promptTemplate
-        .replace('{learningObjectiveText}', learningObjectiveText || '')
-        .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
-        .replace('{bloomLevel}', bloomLevel || '')
-        .replace('{ragContext}', ragContext || '');
+      // Create prompt with RAG context (optional retry suffix nudges small/local models toward JSON-only)
+      const buildBasePrompt = () =>
+        promptTemplate
+          .replace('{learningObjectiveText}', learningObjectiveText || '')
+          .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
+          .replace('{bloomLevel}', bloomLevel || '')
+          .replace('{questionType}', questionType || '')
+          .replace('{ragContext}', ragContext || '');
+
+      const createPrompt = (attempt) =>
+        attempt > 1 ? buildBasePrompt() + jsonOnlyRetrySuffix(attempt, questionType) : buildBasePrompt();
 
       // Retry logic: regenerate until we get valid JSON
       const maxRetries = 5;
@@ -204,8 +626,9 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
-          const response = await llmModule.sendMessage(createPrompt());
-          console.log("Full Prompt: ", createPrompt());
+          const promptForAttempt = createPrompt(attempt);
+          const response = await llmModule.sendMessage(promptForAttempt);
+          console.log("Full Prompt: ", promptForAttempt);
 
           console.log("✅ LLM service response received");
           console.log(
@@ -213,6 +636,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             typeof response,
             response ? Object.keys(response) : "null"
           );
+          console.log("[RAG-LLM] Raw LLM response object (first pass, before JSON extract):", response);
 
           // Extract content from response
           // sendMessage returns { content, model, usage, metadata }
@@ -224,7 +648,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             responseContent = response;
           }
 
-          console.log("Response content:", responseContent);
+          const contentStr =
+            typeof responseContent === "string"
+              ? responseContent
+              : String(responseContent ?? "");
+          console.log(
+            "[RAG-LLM] Extracted text length:",
+            contentStr.length,
+            "| starts with:",
+            JSON.stringify(contentStr.slice(0, 120))
+          );
+          console.log("[RAG-LLM] Extracted text (full, for JSON debug):\n", contentStr);
 
           if (!responseContent) {
             throw new Error("Empty response from LLM");
@@ -233,12 +667,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           // Try to parse JSON response
           try {
             // Use safe JSON parser that handles LaTeX and other edge cases
-            questionData = safeJsonParse(responseContent);
-
-            // Validate that we have the required fields
-            if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
-              throw new Error("Missing required fields in JSON response");
-            }
+            const parsed = safeJsonParse(responseContent);
+            questionData = validateAndNormalizeQuestionData(parsed, questionType);
 
             // If we got here, parsing was successful
             console.log(`✅ Successfully parsed JSON on attempt ${attempt}`);
@@ -247,6 +677,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           } catch (parseError) {
             lastError = parseError;
             console.warn(`❌ JSON parsing failed on attempt ${attempt}:`, parseError.message);
+            console.warn(
+              "[RAG-LLM] Parse failed — content length:",
+              contentStr.length,
+              "| snippet (0-400):",
+              JSON.stringify(contentStr.slice(0, 400))
+            );
             if (attempt < maxRetries) {
               console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
               continue;
@@ -272,12 +708,24 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
       }
 
-      // Verify that the correct answer text exists organically in the selected position
-      const correctOptionLetter = questionData.correctAnswer;
-      if (questionData.options && questionData.options[correctOptionLetter]) {
-        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${questionData.options[correctOptionLetter].substring(0, 50)}..."`);
-      } else {
-        console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
+      if (questionData.questionType === "multiple-choice") {
+        const correctOptionLetter = questionData.correctAnswer;
+        const optText = questionData.options?.[correctOptionLetter];
+        if (optText) {
+          console.log(
+            `✅ Correct answer at position ${correctOptionLetter}: "${String(optText).substring(0, 50)}..."`
+          );
+        } else {
+          console.warn(
+            `⚠️ Warning: No option text at position ${correctOptionLetter}, but continuing anyway`
+          );
+        }
+      } else if (questionData.questionType === "calculation") {
+        console.log(
+          `✅ Calculation question: formula "${String(questionData.calculationFormula || "").substring(0, 60)}..."`
+        );
+      } else if (questionData.questionType === "open-ended") {
+        console.log("✅ Open-ended question with sample answer and grading criteria");
       }
 
       res.json({

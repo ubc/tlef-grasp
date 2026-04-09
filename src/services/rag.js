@@ -2,6 +2,12 @@
 // Handles all RAG initialization and provides helper functions
 const { getObjectiveWithMaterials } = require('./objective');
 
+/** Qdrant collection vector size; must match the embedding model output. */
+function resolveQdrantVectorSize() {
+  const n = parseInt(process.env.QDRANT_VECTOR_SIZE, 10);
+  return Number.isFinite(n) && n > 0 ? n : 768;
+}
+
 class RAGService {
   constructor() {
     if (RAGService.instance) {
@@ -36,22 +42,35 @@ class RAGService {
         throw new Error("Failed to load RAGModule or ConsoleLogger");
       }
 
+      const llmProvider = process.env.LLM_PROVIDER || 'ollama';
+      const embeddingLlmConfig =
+        llmProvider === 'openai'
+          ? {
+              provider: 'openai',
+              defaultModel:
+                process.env.LLM_EMBEDDING_MODEL || process.env.OPENAI_MODEL,
+              apiKey: process.env.OPENAI_API_KEY,
+            }
+          : {
+              provider: 'ollama',
+              endpoint:
+                process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
+              defaultModel:
+                process.env.LLM_EMBEDDING_MODEL || process.env.OLLAMA_MODEL,
+            };
+
       this.baseConfig = {
         provider: "qdrant",
         qdrantConfig: {
           url: process.env.QDRANT_URL || "http://localhost:6333",
-          vectorSize: parseInt(process.env.QDRANT_VECTOR_SIZE) || 768,
+          vectorSize: resolveQdrantVectorSize(),
           distanceMetric: 'Cosine',
           apiKey: process.env.QDRANT_API_KEY
         },
         embeddingsConfig: {
           providerType: process.env.EMBEDDING_PROVIDER,
           model: process.env.LLM_EMBEDDING_MODEL,
-          llmConfig: {
-            provider: process.env.LLM_PROVIDER,
-            defaultModel: process.env.OPENAI_MODEL,
-            apiKey: process.env.OPENAI_API_KEY
-          },
+          llmConfig: embeddingLlmConfig,
         }
       };
       
@@ -63,13 +82,16 @@ class RAGService {
   }
 
   /**
-   * Standardize collection name for a course
+   * Standardize collection name for a course.
+   * Includes vector size so changing QDRANT_VECTOR_SIZE uses a new Qdrant collection
+   * (Qdrant cannot alter vector dimension on an existing collection).
    */
   getCollectionName(courseId) {
     if (!courseId) return process.env.QDRANT_COLLECTION_NAME || "question-generation-collection";
     // Normalize string ID
     const cid = typeof courseId === 'string' ? courseId : courseId.toString();
-    return `grasp_course_${cid}`;
+    const dim = resolveQdrantVectorSize();
+    return `grasp_course_${cid}_v${dim}`;
   }
 
   async getOrCreateInstance(courseId) {

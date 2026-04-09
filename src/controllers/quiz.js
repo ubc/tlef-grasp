@@ -1,5 +1,6 @@
 const quizService = require("../services/quiz");
 const questionService = require("../services/question");
+const calculationQuestion = require("../services/calculation-question");
 const { isFaculty } = require("../utils/auth");
 
 /**
@@ -204,6 +205,22 @@ function shuffleArray(array) {
   return shuffled;
 }
 
+function resolveQuestionType(q) {
+  const t = String(q.questionType || q.type || "")
+    .trim()
+    .toLowerCase();
+  if (t === "fill-in-the-blank") {
+    return "fill-in-the-blank";
+  }
+  if (t === "calculation") {
+    return "calculation";
+  }
+  if (t === "open-ended") {
+    return "open-ended";
+  }
+  return "multiple-choice";
+}
+
 // Helper function to generate a shuffled order of option indices
 function shuffleQuestionOptions(question) {
   const optionIndices = [0, 1, 2, 3];
@@ -238,6 +255,117 @@ const getQuizQuestionsHandler = async (req, res) => {
     }
     
     const transformedQuestions = questions.map((q, index) => {
+      const questionType = resolveQuestionType(q);
+      const questionText = (q.title || q.stem || "").trim();
+
+      if (questionType === "fill-in-the-blank") {
+        const fibMainText = (q.stem || q.title || "").trim();
+        const formattedQuestion = {
+          ...q,
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: "fill-in-the-blank",
+          options: {},
+        };
+        let finalQuestion = formattedQuestion;
+        if (approvedOnlyBool) {
+          delete finalQuestion.correctAnswer;
+          delete finalQuestion.acceptableAnswers;
+          // Avoid duplicating the same stem under `question` and `stem` in the student UI
+          delete finalQuestion.stem;
+        }
+        return finalQuestion;
+      }
+
+      if (questionType === "open-ended") {
+        const fibMainText = (q.stem || q.title || "").trim();
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+        const formattedQuestion = {
+          ...q,
+          id: qid,
+          question: fibMainText || questionText || "Question text not available",
+          questionType: "open-ended",
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+        if (approvedOnlyBool) {
+          delete formattedQuestion.openEndedSampleAnswer;
+          delete formattedQuestion.openEndedGradingCriteria;
+          delete formattedQuestion.stem;
+        }
+        return formattedQuestion;
+      }
+
+      if (questionType === "calculation") {
+        const vars = q.calculationVariables;
+        const template = calculationQuestion.resolveCalculationDisplayTemplate(
+          q.stem,
+          q.title,
+          vars
+        );
+        const formula = (q.calculationFormula || "").trim();
+        const answerDec =
+          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
+            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
+            : 2;
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+
+        if (approvedOnlyBool) {
+          const built = calculationQuestion.buildStudentCalculationInstance({
+            template,
+            formula,
+            variableSpecs: vars,
+            qid,
+            answerDec,
+          });
+          if (built.ok) {
+            return {
+              id: qid,
+              question: built.rendered,
+              questionType: "calculation",
+              calculationToken: built.token,
+              answerDecimalPlaces: built.answerDecimalPlaces,
+              options: {},
+              learningObjectiveId: q.learningObjectiveId,
+              granularObjectiveId: q.granularObjectiveId,
+              bloom: q.bloom,
+            };
+          }
+          console.error(
+            "Calculation question instance failed:",
+            qid,
+            built.error && built.error.message
+          );
+          return {
+            id: qid,
+            question:
+              template ||
+              "This calculation question could not be loaded. Please contact your instructor.",
+            questionType: "calculation",
+            calculationToken: null,
+            answerDecimalPlaces: answerDec,
+            calculationLoadError: true,
+            options: {},
+            learningObjectiveId: q.learningObjectiveId,
+            granularObjectiveId: q.granularObjectiveId,
+            bloom: q.bloom,
+          };
+        }
+
+        return {
+          ...q,
+          id: qid,
+          question: template || "Question text not available",
+          questionType: "calculation",
+          options: {},
+          calculationFormula: formula,
+          calculationVariables: vars,
+          calculationAnswerDecimals: answerDec,
+        };
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -256,34 +384,29 @@ const getQuizQuestionsHandler = async (req, res) => {
           };
         }
       }
-      // If approvedOnlyBool is true, this is the student view. We MUST strip secure answers.
       if (approvedOnlyBool) {
         ['A', 'B', 'C', 'D'].forEach(key => {
           if (optionsObj[key] && typeof optionsObj[key] === 'object') {
-            // Strip out feedback before sending to the client browser
             delete optionsObj[key].feedback;
           }
         });
       }
 
-      const questionText = (q.title || q.stem || "").trim();
-
       const formattedQuestion = {
         ...q,
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
+        questionType: "multiple-choice",
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
       };
-      
-      // Shuffle options for students
+
       let finalQuestion = approvedOnlyBool ? shuffleQuestionOptions(formattedQuestion) : formattedQuestion;
-      
-      // Completely strip out the correct answer if this is for the student
+
       if (approvedOnlyBool) {
         delete finalQuestion.correctAnswer;
       }
-      
+
       return finalQuestion;
     });
 
@@ -332,11 +455,7 @@ const recordPerformanceHandler = async (req, res) => {
 const checkQuestionAnswerHandler = async (req, res) => {
   try {
     const { questionId } = req.params;
-    const { selectedIndex } = req.body;
-
-    if (selectedIndex === undefined || selectedIndex === null) {
-      return res.status(400).json({ success: false, error: "selectedIndex is required" });
-    }
+    const { selectedIndex, answerText } = req.body;
 
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
@@ -344,8 +463,155 @@ const checkQuestionAnswerHandler = async (req, res) => {
     if (!question) {
       return res.status(404).json({ success: false, error: "Question not found" });
     }
-    
-    // Convert the numeric index sent by the frontend back to the original DB key mapping
+
+    const questionType = resolveQuestionType(question);
+    const calculationToken =
+      req.body.calculationToken && typeof req.body.calculationToken === "string"
+        ? req.body.calculationToken
+        : null;
+    const hasCalculationFormula =
+      typeof question.calculationFormula === "string" &&
+      question.calculationFormula.trim().length > 0;
+
+    const treatAsCalculation =
+      questionType === "calculation" ||
+      (calculationToken && hasCalculationFormula);
+
+    if (treatAsCalculation) {
+      const { answerText } = req.body;
+      if (!calculationToken) {
+        return res.status(400).json({
+          success: false,
+          error: "calculationToken is required for calculation questions",
+        });
+      }
+      if (answerText === undefined || answerText === null || String(answerText).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for calculation questions",
+        });
+      }
+      const verified = calculationQuestion.verifyCalculationToken(calculationToken);
+      if (!verified || String(verified.questionId) !== String(questionId)) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid or expired calculation token — try reloading the quiz",
+        });
+      }
+      const formula = (question.calculationFormula || "").trim();
+      const vars = question.calculationVariables;
+      const answerDec =
+        question.calculationAnswerDecimals !== undefined &&
+        question.calculationAnswerDecimals !== null
+          ? Math.max(0, Math.min(12, parseInt(question.calculationAnswerDecimals, 10) || 2))
+          : 2;
+      let expected;
+      try {
+        expected = calculationQuestion.evaluateCalculationFormula(formula, verified.values);
+      } catch (e) {
+        console.error("Calculation check evaluate failed:", e);
+        const msg = e && e.message ? String(e.message) : "";
+        const clientError =
+          msg.startsWith("Formula ") ||
+          msg.startsWith("Invalid formula") ||
+          msg.includes("plain ASCII") ||
+          msg.includes("unsupported characters") ||
+          msg.includes("Reload the quiz") ||
+          msg.includes("calculationVariables") ||
+          msg.includes("this attempt's values");
+        return res.status(clientError ? 400 : 500).json({
+          success: false,
+          error: clientError ? msg : "Could not grade this calculation question",
+        });
+      }
+      const studentNum = calculationQuestion.parseStudentNumericAnswer(answerText);
+      const isCorrect = calculationQuestion.numericAnswersMatch(studentNum, expected, answerDec);
+      const displayCorrect = calculationQuestion.formatAnswerForDisplay(expected, answerDec);
+      res.json({
+        success: true,
+        isCorrect,
+        feedback: isCorrect ? "Correct." : "",
+        correctAnswer: isCorrect ? displayCorrect : null,
+        correctOptionText: displayCorrect,
+      });
+      return;
+    }
+
+    if (questionType === "open-ended") {
+      if (answerText === undefined || answerText === null || String(answerText).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for open-ended questions",
+        });
+      }
+      const sample = String(question.openEndedSampleAnswer || "").trim();
+      const criteria = String(question.openEndedGradingCriteria || "").trim();
+      if (!sample) {
+        return res.status(500).json({
+          success: false,
+          error: "This open-ended question is missing a sample answer. Ask your instructor to fix it in the question bank.",
+        });
+      }
+      res.json({
+        success: true,
+        isCorrect: null,
+        autoGraded: false,
+        feedback: "",
+        openEnded: true,
+        sampleAnswer: sample,
+        gradingCriteria: criteria || null,
+        correctAnswer: null,
+        correctOptionText: null,
+      });
+      return;
+    }
+
+    if (questionType === "fill-in-the-blank") {
+      if (answerText === undefined || answerText === null) {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for fill-in-the-blank questions",
+        });
+      }
+      // Always grade against canonical correctAnswer plus any acceptableAnswers.
+      // Previously, a non-empty acceptableAnswers array replaced correctAnswer entirely,
+      // so typing the canonical answer could incorrectly mark wrong.
+      const normalizeFib = (s) =>
+        String(s)
+          .normalize("NFKC")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+      const given = normalizeFib(answerText);
+      const trimmedCanonical =
+        question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
+      const variants = new Set();
+      if (trimmedCanonical) variants.add(trimmedCanonical);
+      if (Array.isArray(question.acceptableAnswers)) {
+        for (const a of question.acceptableAnswers) {
+          if (a == null) continue;
+          const t = String(a).trim();
+          if (t) variants.add(t);
+        }
+      }
+      const normalizedAcceptable = [...variants].map((a) => normalizeFib(a)).filter(Boolean);
+      const isCorrect = normalizedAcceptable.length > 0 && normalizedAcceptable.some((a) => a === given);
+      const canonical = trimmedCanonical;
+      res.json({
+        success: true,
+        isCorrect,
+        feedback: isCorrect ? "Correct." : "",
+        correctAnswer: isCorrect ? canonical : null,
+        // Reveal canonical text when wrong so the client can show "The correct answer is …"
+        correctOptionText: canonical || null,
+      });
+      return;
+    }
+
+    if (selectedIndex === undefined || selectedIndex === null) {
+      return res.status(400).json({ success: false, error: "selectedIndex is required" });
+    }
+
     const optionKeys = ['A', 'B', 'C', 'D'];
     const selectedKey = optionKeys[selectedIndex];
 
@@ -353,7 +619,6 @@ const checkQuestionAnswerHandler = async (req, res) => {
         return res.status(400).json({ success: false, error: "Invalid selectedIndex provided" });
     }
 
-    // Normalize correct answer identifier from DB
     let correctAnswerLetter = question.correctAnswer || 'A';
     if (typeof correctAnswerLetter === 'number') {
       correctAnswerLetter = optionKeys[correctAnswerLetter] || 'A';
@@ -363,13 +628,11 @@ const checkQuestionAnswerHandler = async (req, res) => {
     
     const isCorrect = selectedKey === correctAnswerLetter;
 
-    // Retrieve feedback specific to the selected option
     const selectedOptionObj = question.options[selectedKey];
     const feedback = typeof selectedOptionObj === 'object' && selectedOptionObj !== null 
       ? (selectedOptionObj.feedback || "")
       : "";
 
-    // Safely retrieve the text of the actual correct option to send back
     const correctOptionObj = question.options[correctAnswerLetter];
     const correctOptionText = typeof correctOptionObj === 'object' && correctOptionObj !== null 
       ? (correctOptionObj.text || "")

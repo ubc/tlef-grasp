@@ -1,4 +1,5 @@
 const databaseService = require('./database');
+const calculationQuestion = require('./calculation-question');
 const { ObjectId } = require('mongodb');
 
 const saveQuestion = async (courseId, questionData) => {
@@ -18,12 +19,64 @@ const saveQuestion = async (courseId, questionData) => {
                 : questionData.granularObjectiveId;
         }
         
+        const questionType =
+            questionData.questionType ||
+            questionData.type ||
+            "multiple-choice";
+
+        if (String(questionType).toLowerCase() === "calculation") {
+            calculationQuestion.validateFormulaAgainstVariableSpecs(
+                typeof questionData.calculationFormula === "string"
+                    ? questionData.calculationFormula
+                    : "",
+                Array.isArray(questionData.calculationVariables)
+                    ? questionData.calculationVariables
+                    : []
+            );
+        }
+
         // Save the full question data including granularObjectiveId
+        const answerDecRaw = questionData.calculationAnswerDecimals;
+        const calculationAnswerDecimals =
+            answerDecRaw !== undefined && answerDecRaw !== null && answerDecRaw !== ""
+                ? Math.max(0, Math.min(12, parseInt(answerDecRaw, 10) || 2))
+                : 2;
+
+        const calcVarsForStore = Array.isArray(questionData.calculationVariables)
+            ? questionData.calculationVariables
+            : [];
+        const calcFormulaRaw =
+            typeof questionData.calculationFormula === "string"
+                ? questionData.calculationFormula
+                : "";
+
+        const qtLower = String(questionType).toLowerCase();
         const question = await collection.insertOne({
             title: questionData.title,
             stem: questionData.stem,
             options: questionData.options,
             correctAnswer: questionData.correctAnswer,
+            questionType,
+            acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
+                ? questionData.acceptableAnswers
+                : [],
+            openEndedSampleAnswer:
+                qtLower === "open-ended"
+                    ? String(questionData.openEndedSampleAnswer || "").trim()
+                    : "",
+            openEndedGradingCriteria:
+                qtLower === "open-ended"
+                    ? String(questionData.openEndedGradingCriteria || "").trim()
+                    : "",
+            calculationFormula:
+                qtLower === "calculation"
+                    ? calculationQuestion.prepareCalculationFormula(
+                          calcFormulaRaw,
+                          calcVarsForStore
+                      )
+                    : calcFormulaRaw,
+            calculationVariables: calcVarsForStore,
+            calculationAnswerDecimals,
             bloom: questionData.bloom,
             difficulty: questionData.difficulty,
             courseId: courseIdObj,
@@ -149,6 +202,40 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.difficulty !== undefined) update.difficulty = updateData.difficulty;
         if (updateData.status !== undefined) update.status = updateData.status;
         if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
+        if (updateData.questionType !== undefined) update.questionType = updateData.questionType;
+        if (updateData.type !== undefined && updateData.questionType === undefined) {
+            update.questionType = updateData.type;
+        }
+        if (updateData.acceptableAnswers !== undefined) {
+            update.acceptableAnswers = Array.isArray(updateData.acceptableAnswers)
+                ? updateData.acceptableAnswers
+                : [];
+        }
+        if (updateData.calculationFormula !== undefined) {
+            update.calculationFormula =
+                typeof updateData.calculationFormula === "string" ? updateData.calculationFormula : "";
+        }
+        if (updateData.calculationVariables !== undefined) {
+            update.calculationVariables = Array.isArray(updateData.calculationVariables)
+                ? updateData.calculationVariables
+                : [];
+        }
+        if (updateData.calculationAnswerDecimals !== undefined) {
+            const d = parseInt(updateData.calculationAnswerDecimals, 10);
+            update.calculationAnswerDecimals = Math.max(0, Math.min(12, Number.isFinite(d) ? d : 2));
+        }
+        if (updateData.openEndedSampleAnswer !== undefined) {
+            update.openEndedSampleAnswer =
+                typeof updateData.openEndedSampleAnswer === "string"
+                    ? updateData.openEndedSampleAnswer.trim()
+                    : "";
+        }
+        if (updateData.openEndedGradingCriteria !== undefined) {
+            update.openEndedGradingCriteria =
+                typeof updateData.openEndedGradingCriteria === "string"
+                    ? updateData.openEndedGradingCriteria.trim()
+                    : "";
+        }
         if (updateData.granularObjectiveId !== undefined) {
             // Convert granularObjectiveId to ObjectId if it's a string
             update.granularObjectiveId = updateData.granularObjectiveId 
@@ -156,6 +243,38 @@ const updateQuestion = async (questionId, updateData) => {
                     ? new ObjectId(updateData.granularObjectiveId) 
                     : updateData.granularObjectiveId)
                 : null;
+        }
+
+        const touchesCalculation =
+            update.calculationFormula !== undefined ||
+            update.calculationVariables !== undefined ||
+            update.questionType !== undefined;
+        if (touchesCalculation) {
+            const existing = await collection.findOne({ _id: id });
+            if (existing) {
+                const merged = { ...existing, ...update };
+                const qt = String(merged.questionType || merged.type || "")
+                    .trim()
+                    .toLowerCase();
+                if (qt === "calculation") {
+                    const mergedFormula =
+                        typeof merged.calculationFormula === "string"
+                            ? merged.calculationFormula
+                            : "";
+                    const mergedVars = Array.isArray(merged.calculationVariables)
+                        ? merged.calculationVariables
+                        : [];
+                    calculationQuestion.validateFormulaAgainstVariableSpecs(
+                        mergedFormula,
+                        mergedVars
+                    );
+                    update.calculationFormula =
+                        calculationQuestion.prepareCalculationFormula(
+                            mergedFormula,
+                            mergedVars
+                        );
+                }
+            }
         }
         
         const result = await collection.updateOne(

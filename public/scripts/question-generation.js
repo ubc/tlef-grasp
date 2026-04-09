@@ -3013,53 +3013,174 @@ function convertQuestionsToGroups(questions) {
         id: index + 1,
         title: metaCode,
         isOpen: true, // Open all panels by default when generating for multiple learning objectives
-        los: groupQuestions.map((question, itemIndex) => ({
-          id: `lo-${index + 1}-${itemIndex + 1}`,
-          code: `LO ${index + 1}.${itemIndex + 1}`,
-          generated: question.count || 1,
-          min: 1,
-          badges: [],
-          questions: [
-            {
-              id: question.id,
-              title: question.text,
-              stem: "Select the best answer:",
-              options: {
-                A: {
-                  id: "A",
-                  text: question.options?.A || "Option A",
-                  feedback: `${question.correctAnswer === 'A' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                B: {
-                  id: "B",
-                  text: question.options?.B || "Option B",
-                  feedback: `${question.correctAnswer === 'B' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                C: {
-                  id: "C",
-                  text: question.options?.C || "Option C",
-                  feedback: `${question.correctAnswer === 'C' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                D: {
-                  id: "D",
-                  text: question.options?.D || "Option D",
-                  feedback: `${question.correctAnswer === 'D' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
+        los: groupQuestions.map((question, itemIndex) => {
+          const qType =
+            question.type || question.questionType || "multiple-choice";
+          const isFib = qType === "fill-in-the-blank";
+          const isCalc = qType === "calculation";
+          const isOpen = qType === "open-ended";
+          const acceptable =
+            isFib &&
+            Array.isArray(question.acceptableAnswers) &&
+            question.acceptableAnswers.length
+              ? question.acceptableAnswers
+              : isFib && question.correctAnswer != null
+                ? [String(question.correctAnswer)]
+                : [];
+
+          const mcCard = {
+            id: question.id,
+            title: question.text,
+            stem: "Select the best answer:",
+            questionType: "multiple-choice",
+            options: {
+              A: {
+                id: "A",
+                text: question.options?.A || "Option A",
+                feedback: `${question.correctAnswer === "A" ? "Correct" : "Incorrect"} - ${question.explanation}`,
               },
-              correctAnswer: question.correctAnswer,
-              bloom: question.bloomLevel || "Understand",
-              difficulty: question.difficulty || "Medium",
-              status: "Draft",
-              lastEdited:
-                question.lastEdited ||
-                new Date().toISOString().slice(0, 16).replace("T", " "),
-              by: question.by || "System",
-              metaCode: question.metaCode || metaCode,
-              loCode: question.loCode || question.text,
-              granularObjectiveId: question.granularObjectiveId,
+              B: {
+                id: "B",
+                text: question.options?.B || "Option B",
+                feedback: `${question.correctAnswer === "B" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
+              C: {
+                id: "C",
+                text: question.options?.C || "Option C",
+                feedback: `${question.correctAnswer === "C" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
+              D: {
+                id: "D",
+                text: question.options?.D || "Option D",
+                feedback: `${question.correctAnswer === "D" ? "Correct" : "Incorrect"} - ${question.explanation}`,
+              },
             },
-          ],
-        })),
+            correctAnswer: question.correctAnswer,
+            acceptableAnswers: [],
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+          };
+
+          const fibCard = {
+            id: question.id,
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const before = String(question.text || "")
+                  .split("_________")[0]
+                  .trim();
+                const words = before.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+              })(),
+            stem: question.text,
+            questionType: "fill-in-the-blank",
+            options: {},
+            correctAnswer: question.correctAnswer,
+            acceptableAnswers: acceptable,
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
+          const stemCalc = String(question.text || question.stem || "").trim();
+          const calcCard = {
+            id: question.id,
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const before = stemCalc.split("{{")[0].trim();
+                const words = before.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Calculation";
+              })(),
+            stem: stemCalc,
+            questionType: "calculation",
+            options: {},
+            correctAnswer: "",
+            acceptableAnswers: [],
+            calculationFormula: question.calculationFormula || "",
+            calculationVariables: Array.isArray(question.calculationVariables)
+              ? question.calculationVariables
+              : [],
+            calculationAnswerDecimals:
+              question.calculationAnswerDecimals != null
+                ? question.calculationAnswerDecimals
+                : 2,
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
+          const stemOpen = String(question.text || question.stem || "").trim();
+          const openCard = {
+            id: question.id,
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const words = stemOpen.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Open-ended";
+              })(),
+            stem: stemOpen,
+            questionType: "open-ended",
+            options: {},
+            correctAnswer: "",
+            acceptableAnswers: [],
+            openEndedSampleAnswer: String(
+              question.openEndedSampleAnswer || ""
+            ).trim(),
+            openEndedGradingCriteria: String(
+              question.openEndedGradingCriteria || ""
+            ).trim(),
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
+          let card = mcCard;
+          if (isFib) card = fibCard;
+          else if (isCalc) card = calcCard;
+          else if (isOpen) card = openCard;
+
+          return {
+            id: `lo-${index + 1}-${itemIndex + 1}`,
+            code: `LO ${index + 1}.${itemIndex + 1}`,
+            generated: question.count || 1,
+            min: 1,
+            badges: [],
+            questions: [card],
+          };
+        }),
       };
 
       groups.push(group);
@@ -3171,6 +3292,20 @@ function toggleMetaLoGroup(groupId) {
 // Make function available globally for onclick handlers
 window.toggleMetaLoGroup = toggleMetaLoGroup;
 
+function escapeQuestionHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeQuestionAttr(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderGranularLoSection(lo, group) {
   return `
         <div class="granular-lo-section">
@@ -3199,44 +3334,165 @@ function renderGranularLoSection(lo, group) {
 
 function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
+  const isFib =
+    (question.questionType || question.type) === "fill-in-the-blank";
+  const isCalc =
+    (question.questionType || question.type) === "calculation";
+  const isOpen =
+    (question.questionType || question.type) === "open-ended";
 
-  return `
-        <div class="question-card" data-question-id="${question.id}">
-            <div class="question-card__header">
-                <div class="question-card__content">
-                    ${isEditing
-      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onchange="updateQuestionTitle('${question.id}', this.value)">`
-      : `<h5 class="question-card__title">${question.title}</h5>`
-    }
+  const titleEditingHtml =
+    (isFib || isCalc || isOpen) && isEditing
+      ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
+      : isEditing
+        ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
+        : `<h5 class="question-card__title">${escapeQuestionHtml(question.title)}</h5>`;
+
+  const chipsHtml = `
                     <div class="question-card__chips">
-                        <span class="question-card__chip question-card__chip--meta">${question.metaCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--lo">${question.loCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom
-    }</span>
+                        ${isFib ? `<span class="question-card__chip question-card__chip--fib">Fill-in-the-blank</span>` : ""}
+                        ${isCalc ? `<span class="question-card__chip question-card__chip--fib">Calculation</span>` : ""}
+                        ${isOpen ? `<span class="question-card__chip question-card__chip--fib">Open-ended</span>` : ""}
+                        <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
+                        <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
+                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
+                    </div>`;
+
+  let bodyHtml;
+  if (isFib) {
+    const acc = Array.isArray(question.acceptableAnswers)
+      ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+      : [];
+    const canonical = String(question.correctAnswer ?? "").trim();
+    const altAccepted = acc.filter(
+      (a) => a.toLowerCase() !== canonical.toLowerCase()
+    );
+    if (isEditing) {
+      const accTextarea = acc.length ? acc.join("\n") : canonical;
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="fib-q-${question.id}">Question stem</label>
+                    <textarea id="fib-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="One declarative sentence with exactly _________ (nine underscores) for the blank" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="fib-c-${question.id}">Correct answer</label>
+                    <input type="text" id="fib-c-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.correctAnswer)}" placeholder="Canonical correct answer" onblur="updateQuestionFibCorrectAnswer('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="fib-a-${question.id}">Acceptable answers <span class="question-card__fib-hint">(optional, one per line)</span></label>
+                    <textarea id="fib-a-${question.id}" class="question-card__stem--editing" rows="3" placeholder="Synonyms or alternate spellings, one per line" onblur="updateQuestionFibAcceptableAnswers('${question.id}', this.value)">${escapeQuestionHtml(accTextarea)}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Question stem</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
                     </div>
-                </div>
-                <div class="question-card__metadata">
-                    <div class="question-card__status">
-                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status
-    }</span>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Correct answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.correctAnswer ?? "")}</p>
                     </div>
-                    <div>Last Edited: ${question.lastEdited}</div>
-                    <div>By: ${question.by}</div>
-                </div>
-            </div>
-            <div class="question-card__body">
+                    ${altAccepted.length
+        ? `<div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Also accepted</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(altAccepted.join(", "))}</p>
+                    </div>`
+        : ""
+      }
+                </div>`;
+    }
+  } else if (isCalc) {
+    const vars = Array.isArray(question.calculationVariables)
+      ? question.calculationVariables
+      : [];
+    const varsJson = JSON.stringify(vars, null, 2);
+    const dec =
+      question.calculationAnswerDecimals != null
+        ? question.calculationAnswerDecimals
+        : 2;
+    const varsSummary = vars
+      .map((v) => {
+        if (!v || typeof v !== "object") return "";
+        const n = escapeQuestionHtml(String(v.name ?? ""));
+        const range = `${escapeQuestionHtml(String(v.min))}–${escapeQuestionHtml(String(v.max))}`;
+        const mode = v.integerOnly
+          ? " (integers)"
+          : ` (decimals: ${escapeQuestionHtml(String(v.decimals ?? 0))})`;
+        return `<li><strong>${n}</strong>: ${range}${mode}</li>`;
+      })
+      .filter(Boolean)
+      .join("");
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="calc-q-${question.id}">Question template</label>
+                    <textarea id="calc-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="4" placeholder="Use {{variableName}} placeholders matching the formula" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="calc-f-${question.id}">Formula</label>
+                    <input type="text" id="calc-f-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.calculationFormula || "")}" placeholder="e.g. V / R" onblur="updateQuestionCalcFormula('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="calc-v-${question.id}">Variables (JSON array)</label>
+                    <textarea id="calc-v-${question.id}" class="question-card__stem--editing" rows="6" placeholder='[{"name":"x","min":1,"max":10,"integerOnly":true}]' onblur="updateQuestionCalcVariablesJson('${question.id}', this.value)">${escapeQuestionHtml(varsJson)}</textarea>
+                    <label class="question-card__fib-label" for="calc-d-${question.id}">Answer decimal places (0–12)</label>
+                    <input type="number" id="calc-d-${question.id}" class="question-card__fib-input" min="0" max="12" step="1" value="${escapeQuestionAttr(String(dec))}" onblur="updateQuestionCalcDecimals('${question.id}', this.value)">
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Template</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Formula</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.calculationFormula || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Variables</span>
+                        ${varsSummary ? `<ul class="question-card__fib-value">${varsSummary}</ul>` : `<p class="question-card__fib-value">—</p>`}
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Answer decimal places</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(String(dec))}</p>
+                    </div>
+                </div>`;
+    }
+  } else if (isOpen) {
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="open-q-${question.id}">Question prompt</label>
+                    <textarea id="open-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="Open-ended task for students" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-s-${question.id}">Sample answer <span class="question-card__fib-hint">(shown after submit)</span></label>
+                    <textarea id="open-s-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Model answer" onblur="updateQuestionOpenSample('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-c-${question.id}">Grading criteria</label>
+                    <textarea id="open-c-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Rubric or bullet criteria" onblur="updateQuestionOpenCriteria('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Prompt</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Sample answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Grading criteria</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</p>
+                    </div>
+                </div>`;
+    }
+  } else {
+    bodyHtml = `
                 ${isEditing
-      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
+      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>`
       : `<p class="question-card__stem">${question.stem}</p>`
     }
                 <div class="question-card__options">
-                    ${Object.values(question.options).map(
+                    ${Object.values(question.options || {}).map(
       (option, index) => {
-        // correctAnswer is now a letter (A, B, C, D), compare with option.id
-        const isCorrect = option.id === question.correctAnswer ||
-          (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
+        const isCorrect =
+          option.id === question.correctAnswer ||
+          (typeof question.correctAnswer === "number" &&
+            index === question.correctAnswer);
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3244,7 +3500,7 @@ function renderQuestionCard(question, group) {
           }" value="${option.id}" ${isCorrect ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${(option.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            ? `<input type="text" value="${(option.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
@@ -3253,7 +3509,26 @@ function renderQuestionCard(question, group) {
       }
     )
       .join("")}
+                </div>`;
+  }
+
+  return `
+        <div class="question-card" data-question-id="${question.id}">
+            <div class="question-card__header">
+                <div class="question-card__content">
+                    ${titleEditingHtml}
+                    ${chipsHtml}
                 </div>
+                <div class="question-card__metadata">
+                    <div class="question-card__status">
+                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status}</span>
+                    </div>
+                    <div>Last Edited: ${question.lastEdited}</div>
+                    <div>By: ${question.by}</div>
+                </div>
+            </div>
+            <div class="question-card__body">
+                ${bodyHtml}
             </div>
             <div class="question-card__footer">
                 <div class="question-card__actions">
@@ -3378,11 +3653,162 @@ function updateQuestionStem(questionId, newStem) {
   }
 }
 
+function updateQuestionFibCorrectAnswer(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.correctAnswer = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionFibAcceptableAnswers(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  const lines = String(value ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const canonical = String(question.correctAnswer ?? "").trim();
+  if (lines.length === 0 && canonical) {
+    question.acceptableAnswers = [canonical];
+  } else {
+    question.acceptableAnswers = lines;
+  }
+}
+
+function updateQuestionCalcFormula(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.calculationFormula = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionCalcVariablesJson(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  try {
+    const parsed = JSON.parse(String(value ?? "").trim() || "[]");
+    if (Array.isArray(parsed)) {
+      question.calculationVariables = parsed;
+    }
+  } catch {
+    /* keep previous variables until Save validates */
+  }
+}
+
+function updateQuestionCalcDecimals(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  let d = parseInt(value, 10);
+  if (!Number.isFinite(d)) d = 2;
+  question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+}
+
+function updateQuestionOpenSample(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.openEndedSampleAnswer = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionOpenCriteria(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.openEndedGradingCriteria = String(value ?? "").trim();
+  }
+}
+
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
   if (!question) {
     showToast("Question not found", "error");
     return;
+  }
+
+  const isFib =
+    (question.questionType || question.type) === "fill-in-the-blank";
+  if (isFib) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question stem is required", "error");
+      return;
+    }
+    if (!String(question.stem).includes("_________")) {
+      showToast('Stem must include exactly one blank written as _________ (nine underscores)', "error");
+      return;
+    }
+    if (!String(question.correctAnswer ?? "").trim()) {
+      showToast("Correct answer is required", "error");
+      return;
+    }
+    const ca = String(question.correctAnswer).trim();
+    if (
+      !Array.isArray(question.acceptableAnswers) ||
+      question.acceptableAnswers.length === 0
+    ) {
+      question.acceptableAnswers = [ca];
+    }
+  }
+
+  const isCalc =
+    (question.questionType || question.type) === "calculation";
+  if (isCalc) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question template is required", "error");
+      return;
+    }
+    if (!String(question.calculationFormula || "").trim()) {
+      showToast("Formula is required", "error");
+      return;
+    }
+    const vars = question.calculationVariables;
+    if (!Array.isArray(vars) || vars.length === 0) {
+      showToast("At least one variable is required (JSON array)", "error");
+      return;
+    }
+    for (let i = 0; i < vars.length; i++) {
+      const v = vars[i];
+      if (!v || typeof v !== "object" || !String(v.name || "").trim()) {
+        showToast(`Variable ${i + 1}: each entry needs a name`, "error");
+        return;
+      }
+      const min = Number(v.min);
+      const max = Number(v.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+        showToast(`Variable "${v.name}": invalid min/max`, "error");
+        return;
+      }
+    }
+    let d = parseInt(question.calculationAnswerDecimals, 10);
+    if (!Number.isFinite(d)) d = 2;
+    question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+  }
+
+  const isOpen =
+    (question.questionType || question.type) === "open-ended";
+  if (isOpen) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question prompt is required", "error");
+      return;
+    }
+    if (!String(question.openEndedSampleAnswer || "").trim()) {
+      showToast("Sample answer is required", "error");
+      return;
+    }
+    if (!String(question.openEndedGradingCriteria || "").trim()) {
+      showToast("Grading criteria are required", "error");
+      return;
+    }
   }
 
   // Simply update state - mark as not editing and update timestamp
@@ -3492,12 +3918,15 @@ function getFilteredGroups() {
     const query = state.filters.q.toLowerCase();
     filteredGroups = filteredGroups.filter((group) => {
       return group.los.some((lo) =>
-        lo.questions.some(
-          (q) =>
-            q.title.toLowerCase().includes(query) ||
+        lo.questions.some((q) => {
+          const stem = (q.stem || "").toLowerCase();
+          return (
+            (q.title || "").toLowerCase().includes(query) ||
+            stem.includes(query) ||
             q.loCode.toLowerCase().includes(query) ||
             q.metaCode.toLowerCase().includes(query)
-        )
+          );
+        })
       );
     });
   }
@@ -3756,19 +4185,46 @@ async function handleSaveToQuiz() {
     for (const group of state.questionGroups) {
       for (const lo of group.los) {
         for (const question of lo.questions) {
-          // Transform question to match the expected format
-          questions.push({
+          const qt =
+            question.questionType || question.type || "multiple-choice";
+          const payload = {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
             options: question.options || [],
-            correctAnswer: question.correctAnswer || 0,
+            correctAnswer: question.correctAnswer ?? "",
+            questionType: qt,
+            acceptableAnswers: Array.isArray(question.acceptableAnswers)
+              ? question.acceptableAnswers
+              : [],
             bloom: question.bloom || question.bloomLevel || "Understand",
             difficulty: question.difficulty || "medium",
             granularObjectiveId: question.granularObjectiveId || null,
             by: question.createdBy || "system",
             status: question.status || "Draft",
             flagStatus: question.flagStatus || false,
-          });
+          };
+          if (qt === "calculation") {
+            payload.options = {};
+            payload.calculationFormula = question.calculationFormula || "";
+            payload.calculationVariables = Array.isArray(
+              question.calculationVariables
+            )
+              ? question.calculationVariables
+              : [];
+            let d = parseInt(question.calculationAnswerDecimals, 10);
+            if (!Number.isFinite(d)) d = 2;
+            payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+          }
+          if (qt === "open-ended") {
+            payload.options = {};
+            payload.openEndedSampleAnswer = String(
+              question.openEndedSampleAnswer || ""
+            ).trim();
+            payload.openEndedGradingCriteria = String(
+              question.openEndedGradingCriteria || ""
+            ).trim();
+          }
+          questions.push(payload);
         }
       }
     }
@@ -3856,6 +4312,13 @@ window.saveQuestionEdit = saveQuestionEdit;
 window.saveOptionEdit = saveOptionEdit;
 window.updateQuestionStem = updateQuestionStem;
 window.updateQuestionTitle = updateQuestionTitle;
+window.updateQuestionFibCorrectAnswer = updateQuestionFibCorrectAnswer;
+window.updateQuestionFibAcceptableAnswers = updateQuestionFibAcceptableAnswers;
+window.updateQuestionCalcFormula = updateQuestionCalcFormula;
+window.updateQuestionCalcVariablesJson = updateQuestionCalcVariablesJson;
+window.updateQuestionCalcDecimals = updateQuestionCalcDecimals;
+window.updateQuestionOpenSample = updateQuestionOpenSample;
+window.updateQuestionOpenCriteria = updateQuestionOpenCriteria;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;

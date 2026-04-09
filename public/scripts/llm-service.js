@@ -68,25 +68,55 @@ class LLMService {
     }
   }
 
+  async generateQuestionByType(questionType, objective, ragContent, bloomLevel) {
+    switch (questionType) {
+      case "fill-in-the-blank":
+        return await this.generateFillInTheBlankQuestion(objective, ragContent, bloomLevel);
+      case "calculation":
+        return await this.generateCalculationQuestion(objective, ragContent, bloomLevel);
+      case "open-ended":
+        return await this.generateOpenEndedQuestion(objective, ragContent, bloomLevel);
+      case "multiple-choice":
+      default:
+        return await this.generateMultipleChoiceQuestion(objective, ragContent, bloomLevel);
+    }
+  }
+
   async generateMultipleChoiceQuestion(objective, ragContent, bloomLevel) {
-    const prompt = this.createQuestionPrompt(objective, bloomLevel);
+    const prompt = this.createMultipleChoiceQuestionPrompt(objective, bloomLevel);
     return await this.generateQuestionWithRAG(prompt, ragContent);
   }
 
-  createQuestionPrompt(objective, bloomLevel) {
+  async generateFillInTheBlankQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createFillInTheBlankQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateCalculationQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createCalculationQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateOpenEndedQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createOpenEndedQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  createMultipleChoiceQuestionPrompt(objective, bloomLevel) {
     return `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students’ understanding of the course learning objective.
 
 OBJECTIVE: ${objective}
 BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
 
 Task: 
-Create a multiple-choice question on based on the provided content that effectively test students’ understanding of the learning objective.
+Create a multiple-choice question on based on the provided content that effectively test students' understanding of the learning objective.
 Use actual content from the materials - don't be generic
 
 Format:
 Each question must have four answer choices, with only one correct answer. Label each answer choice (A, B, C, D)
 the response format must be a valid JSON with the exact structure as follows:
 {
+  "type": "multiple-choice",
   "question": "Your specific question here",
   "options": {
     "A": "First option text", // The first option
@@ -108,6 +138,144 @@ IMPORTANT:
   * Do NOT use $ ... $ delimiters - only use \( ... \) for inline math and \[ ... \] for display math
   * The backslash before the parenthesis is REQUIRED - \( not just (
 - CRITICAL: Do NOT include letter prefixes (A), B), C), D) or A., B., C., D. or A , B , C , D ) in the option text. The options object values should contain only the option text itself, without any letter labels, prefixes, or formatting. For example, use "The correct answer" NOT "A) The correct answer" or "A. The correct answer".`;
+  }
+
+  createFillInTheBlankQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate a high-quality fill-in-the-blank item based on the provided content.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3–10 words) naming the topic or skill. Neutral phrase or title only—NOT a question (no "?"), NOT "What is…".
+- Must NOT reveal the answer or duplicate correctAnswer / acceptableAnswers wording.
+- Must NOT be "Fill in the blank", "Complete the sentence", or similar instructions.
+
+FORMAT FOR THE "question" FIELD (mandatory):
+- ONLY the stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT an interrogative.
+- FORBIDDEN: do not start with or use "What is...", "What are...", "Which...", "Who...", "How...", "Why...", "Define...", or any question mark at the end.
+- The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________
+- Do not use "____", "___", "[blank]", or other placeholders—only _________
+- The part that belongs in the blank is what the student should recall (term, formula, number, etc.).
+
+Example (geometry):
+{
+  "type": "fill-in-the-blank",
+  "topicTitle": "Volume of a cone",
+  "question": "The formula for the volume of a cone is _________.",
+  "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
+  "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
+  "explanation": "Brief justification from the materials."
+}
+
+Example (non-math):
+{
+  "type": "fill-in-the-blank",
+  "topicTitle": "European capitals",
+  "question": "The capital of France is _________.",
+  "correctAnswer": "Paris",
+  "acceptableAnswers": ["Paris"],
+  "explanation": "Brief justification from the materials."
+}
+
+INSTRUCTIONS:
+1. Include "topicTitle" separate from the stem in "question".
+2. Follow the unfinished-sentence + _________ format above.
+3. Target an important term, phrase, formula, or concept from the materials.
+4. correctAnswer: canonical form; use LaTeX \\( ... \\) inside the JSON string for math answers (escape backslashes for JSON).
+5. acceptableAnswers: include canonical answer plus equivalents (alternate LaTeX, plain-text math, synonyms).
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. No markdown fences. First character "{", last "}".
+- Return pure JSON that can be parsed with JSON.parse().
+
+IMPORTANT:
+- Include "topicTitle" in every response.
+- Exactly one _________ in "question".
+- correctAnswer must be what fills the blank, not a full sentence.
+- Use \\( ... \\) for inline math inside "question" when needed (properly escaped in JSON).`;
+  }
+
+  createCalculationQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate a high-quality numeric calculation question based on the provided content. The quiz system randomizes variable values each attempt and grades answers by rounding to a configured number of decimal places.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED "topicTitle" FIELD:
+- A very short label (about 3-10 words) naming the topic or skill. Neutral phrase or title—do not embed the numeric answer or final computed result.
+- Must NOT be generic filler alone (e.g. only "Calculation question"); tie the label to the content.
+
+FORMAT FOR THE "stem" FIELD (mandatory):
+- Question template for students. Use double-brace placeholders only: {{a}}, {{b}}, etc.
+- Example: "If a = {{a}} and b = {{b}}, what is a multiplied by b?"
+- Every variable in "calculationFormula" must appear in "stem" as {{name}} with the same "name" as in "calculationVariables".
+
+FORMAT FOR "calculationFormula":
+- One expression using variable names and + - * / ^ and parentheses. Prefer plain ASCII (e.g. "a * b", "(a + b) / 2"). Do NOT use ∫, ∑, or other symbols the calculator cannot parse. Avoid LaTeX in this field; use LaTeX only in "stem" if needed. (Simple \\frac or \\times may be normalized server-side, but ASCII is strongly preferred.)
+
+FORMAT FOR "calculationVariables":
+- Array of objects: "name", "min", "max", "decimals" (0-8), optional "integerOnly": true. Use min === max for a fixed constant.
+
+FORMAT FOR "calculationAnswerDecimals":
+- Integer 0–12 for grading precision (student answer rounded to this many decimal places).
+
+Example:
+{
+  "type": "calculation",
+  "topicTitle": "Product of two quantities",
+  "stem": "If a = {{a}} and b = {{b}}, what is a multiplied by b?",
+  "calculationFormula": "a * b",
+  "calculationVariables": [
+    { "name": "a", "min": 1, "max": 5, "decimals": 1 },
+    { "name": "b", "min": 1, "max": 20, "decimals": 0, "integerOnly": true }
+  ],
+  "calculationAnswerDecimals": 1,
+  "explanation": "Apply multiplication; values are drawn from the configured ranges."
+}
+
+INSTRUCTIONS:
+1. Create one calculation item grounded in the provided materials.
+2. Include "type": "calculation", "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation".
+3. Prefer 2-4 variables unless a single variable clearly suffices for the objective.
+4. Ensure the formula stays finite for all sampled values in range (e.g. no division by zero).
+5. Do NOT include "options", multiple-choice letters, or a static numeric correct answer field—the server grades using the formula and sampled variables.
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON. No markdown code fences. First character "{", last "}".
+- Return pure JSON that can be parsed with JSON.parse().
+- Do NOT include any text before or after the JSON object.
+
+IMPORTANT:
+- Include "topicTitle" in every response (separate from "stem").
+- Keep "calculationFormula" as plain math; use LaTeX \\( ... \\) only inside "stem" when needed, with backslashes escaped for JSON.
+- Placeholders in "stem" must match variable names in "calculationVariables" and "calculationFormula" exactly.`;
+  }
+
+  createOpenEndedQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate one open-ended question based on the provided content. The platform does NOT auto-grade text; students see a sample answer and grading criteria only after they submit.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED FIELDS:
+- "topicTitle": short neutral label (3–10 words), not a question.
+- "question" OR "stem": the prompt (paragraph OK).
+- "openEndedSampleAnswer": a strong model response.
+- "openEndedGradingCriteria": clear rubric or bullet-style criteria in one string.
+- "explanation": brief note for instructors.
+
+Example:
+{
+  "type": "open-ended",
+  "topicTitle": "Conceptual comparison",
+  "question": "Compare two approaches described in the materials and explain when each is preferable.",
+  "openEndedSampleAnswer": "Approach A emphasizes ... whereas B focuses on ... A is preferable when ...",
+  "openEndedGradingCriteria": "Full credit: contrasts both approaches with a justified use case. Partial: one approach or vague comparison.",
+  "explanation": "Aligned with the reading."
+}
+
+CRITICAL: Return ONLY valid JSON. First character "{", last "}". No markdown fences. No "options" or "correctAnswer".`;
   }
 
   isAvailable() {

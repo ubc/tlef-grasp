@@ -19,6 +19,7 @@
     "cheerio": "^1.1.2",
     "cors": "^2.8.6",
     "dotenv": "^17.0.1",
+    "expr-eval": "^2.0.2",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "fastembed": "^2.0.0",

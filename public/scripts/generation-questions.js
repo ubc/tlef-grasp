@@ -12,76 +12,160 @@ class QuestionGenerator {
   async initializeLLMService() {
     try {
       console.log("=== QUESTION GENERATOR LLM INITIALIZATION ===");
-
-      // Use server-side RAG + LLM endpoint
+  
       this.llmService = {
         isAvailable: () => true,
-        generateMultipleChoiceQuestion: async (
+  
+        generateMultipleChoiceQuestion: async ({
+          courseId,
           courseName,
           learningObjectiveId,
           learningObjectiveText,
           granularLearningObjectiveText,
-          bloomLevel
-        ) => {
-          console.log('Generating multiple choice question...', {
-            courseName: courseName,
-            learningObjectiveId: learningObjectiveId,
-            learningObjectiveText: learningObjectiveText,
-            granularLearningObjectiveText: granularLearningObjectiveText,
-            bloomLevel: bloomLevel,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "multiple-choice",
           });
-          console.log("=== CALLING SERVER-SIDE RAG + LLM ===");
+        },
+  
+        generateFillInTheBlankQuestion: async ({
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "fill-in-the-blank",
+          });
+        },
 
-          try {
-            const response = await fetch("/api/rag-llm/generate-questions-with-rag", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                courseId: courseId,
-                courseName: courseName,
-                learningObjectiveId: learningObjectiveId,
-                learningObjectiveText: learningObjectiveText,
-                granularLearningObjectiveText: granularLearningObjectiveText,
-                bloomLevel: bloomLevel,
-              }),
-            });
+        generateCalculationQuestion: async ({
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "calculation",
+          });
+        },
 
-            if (!response.ok) {
-              const errorText = await response
-                .text()
-                .catch(() => "Unknown error");
-              console.error(`Server error ${response.status}:`, errorText);
-              throw new Error(
-                `Server error: ${response.status} - ${errorText}`
-              );
-            }
-
-            const data = await response.json();
-            console.log("✅ Server-side RAG + LLM response:", data);
-
-            if (data.success) {
-              return JSON.stringify(data.questions);
-            } else {
-              throw new Error(
-                data.error ||
-                  "Question generation service is currently unavailable"
-              );
-            }
-          } catch (error) {
-            console.error("❌ Server-side RAG + LLM failed:", error);
-            throw error;
+        generateOpenEndedQuestion: async ({
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "open-ended",
+          });
+        },
+  
+        generateQuestionByType: async (questionType, params) => {
+          switch (questionType) {
+            case "fill-in-the-blank":
+              return await this.llmService.generateFillInTheBlankQuestion(params);
+            case "calculation":
+              return await this.llmService.generateCalculationQuestion(params);
+            case "open-ended":
+              return await this.llmService.generateOpenEndedQuestion(params);
+            case "multiple-choice":
+            default:
+              return await this.llmService.generateMultipleChoiceQuestion(params);
           }
         },
       };
-
+  
       console.log("✅ Server-side RAG + LLM service initialized");
     } catch (error) {
       console.error("❌ Failed to initialize LLM service:", error);
       this.llmService = null;
     }
   }
+
+  async callQuestionGenerationApi({
+    courseId,
+    courseName,
+    learningObjectiveId,
+    learningObjectiveText,
+    granularLearningObjectiveText,
+    bloomLevel,
+    questionType,
+  }) {
+    console.log(`Generating ${questionType} question...`, {
+      courseId,
+      courseName,
+      learningObjectiveId,
+      learningObjectiveText,
+      granularLearningObjectiveText,
+      bloomLevel,
+      questionType,
+    });
+  
+    const response = await fetch("/api/rag-llm/generate-questions-with-rag", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        courseId,
+        courseName,
+        learningObjectiveId,
+        learningObjectiveText,
+        granularLearningObjectiveText,
+        bloomLevel,
+        questionType,
+      }),
+    });
+  
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error(`Server error ${response.status}:`, errorText);
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
+    }
+  
+    const data = await response.json();
+    console.log("✅ Server-side RAG + LLM response:", data);
+  
+    if (!data.success || !data.question) {
+      throw new Error(
+        data.error || "Question generation service is currently unavailable"
+      );
+    }
+  
+    return data.question;
+  }  
 
   async generateQuestions(course, objectiveGroups) {
     try {
@@ -150,6 +234,22 @@ class QuestionGenerator {
     }
   }
 
+  getBloomTypePreferences() {
+    return {
+      Remember: ["fill-in-the-blank", "multiple-choice"],
+      Understand: ["multiple-choice", "fill-in-the-blank"],
+      Apply: ["multiple-choice", "fill-in-the-blank"],
+      Analyze: ["multiple-choice", "fill-in-the-blank"],
+      Evaluate: ["calculation"],
+      Create: ["open-ended"],
+    };
+  }
+  
+  determineQuestionType(bloomLevel) {
+    const preferences = this.getBloomTypePreferences();
+    return preferences[bloomLevel]?.[0] || "multiple-choice";
+  }
+
   prepareContentForQuestions(summary, objectiveGroups) {
     let content = `Summary: ${summary}\n\n`;
     content += `Objectives:\n`;
@@ -180,10 +280,11 @@ class QuestionGenerator {
 
     for (let i = 0; i < granularLearningObjective.count; i++) {
       const bloomLevel = bloomLevels[i % bloomLevels.length];
+      const questionType = this.determineQuestionType(bloomLevel);
       console.log(
         `Creating question ${i + 1}/${
           granularLearningObjective.count
-        } with Bloom level: ${bloomLevel}`
+        } with Bloom level: ${bloomLevel} and question type: ${questionType}`
       );
 
       let question = null;
@@ -201,7 +302,8 @@ class QuestionGenerator {
               granularLearningObjective.granularId,
               granularLearningObjective.text,
               bloomLevel,
-              i + 1
+              i + 1,
+              questionType
             );
 
           console.log(`✅ Created question ${i + 1}:`, question.text);
@@ -231,6 +333,7 @@ class QuestionGenerator {
             failedQuestions.push({
               questionNumber: i + 1,
               bloomLevel: bloomLevel,
+              questionType: questionType,
               error: error.message
             });
             // Continue with next question instead of stopping
@@ -269,55 +372,65 @@ class QuestionGenerator {
     granularLearningObjectiveId,
     granularLearningObjectiveText,
     bloomLevel,
-    questionNumber
+    questionNumber,
+    questionType
   ) {
-    // Use LLM service
-    if (this.llmService && this.llmService.isAvailable()) {
-      console.log(`Generating LLM question for objective: ${learningObjectiveText}`);
-      
-      try {
-        const llmResponse = await fetch('/api/rag-llm/generate-questions-with-rag', {
-          method: 'POST',
-          body: JSON.stringify({
-            courseId: courseId,
-            courseName: courseName,
-            learningObjectiveId: learningObjectiveId,
-            learningObjectiveText: learningObjectiveText,
-            granularLearningObjectiveText: granularLearningObjectiveText,
-            bloomLevel: bloomLevel,
-          }),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!llmResponse.ok) {
-          const errorText = await llmResponse.text().catch(() => 'Unknown error');
-          console.error(`Server error ${llmResponse.status}:`, errorText);
-          throw new Error(`Server error: ${llmResponse.status} - ${errorText}`);
+    if (!this.llmService || !this.llmService.isAvailable()) {
+      throw new Error("Question generation service is currently unavailable");
+    }
+  
+    console.log(
+      `Generating ${questionType} question for objective: ${learningObjectiveText}`
+    );
+  
+    try {
+      const questionData = await this.llmService.generateQuestionByType(
+        questionType,
+        {
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
         }
-        
-        const response = await llmResponse.json();
-        
-        if (!response.success) {
-          throw new Error(
-            response.error || "Question generation service is currently unavailable"
-          );
-        }
-        
-        if (!response.question) {
-          throw new Error("Invalid response: question data missing");
-        }
-        
-        const questionData = response.question;
+      );
+  
+      const resolvedType = questionData.type || questionData.questionType || questionType;
 
+      if (resolvedType === "calculation") {
+        const stemText = String(
+          questionData.stem || questionData.question || ""
+        ).trim();
+        let topicTitleCalc = String(
+          questionData.topicTitle ||
+            questionData.topic ||
+            questionData.shortTitle ||
+            ""
+        )
+          .trim()
+          .replace(/\?+$/, "");
+        if (!topicTitleCalc) {
+          const before = stemText.split("{{")[0].trim();
+          const words = before.split(/\s+/).filter(Boolean);
+          topicTitleCalc = words.slice(0, 10).join(" ") || "Calculation";
+        }
+        let answerDec = parseInt(questionData.calculationAnswerDecimals, 10);
+        if (!Number.isFinite(answerDec)) answerDec = 2;
+        answerDec = Math.max(0, Math.min(12, answerDec));
         return {
           id: `${granularLearningObjectiveId}-${questionNumber}`,
           granularObjectiveId: `${granularLearningObjectiveId}`,
-          text: questionData.question,
-          type: "multiple-choice",
-          options: questionData.options,
-          correctAnswer: questionData.correctAnswer,
+          text: stemText,
+          topicTitle: topicTitleCalc,
+          type: "calculation",
+          questionType: "calculation",
+          options: null,
+          correctAnswer: "",
+          acceptableAnswers: [],
+          calculationFormula: questionData.calculationFormula,
+          calculationVariables: questionData.calculationVariables,
+          calculationAnswerDecimals: answerDec,
           bloomLevel: bloomLevel,
           difficulty: this.determineDifficulty(bloomLevel),
           metaCode: learningObjectiveText,
@@ -326,12 +439,101 @@ class QuestionGenerator {
           by: "LLM + RAG System",
           explanation: questionData.explanation,
         };
-      } catch (error) {
-        console.error(`Error generating question ${questionNumber}:`, error);
-        throw error;
       }
-    } else {
-      throw new Error("Question generation service is currently unavailable");
+
+      if (resolvedType === "open-ended") {
+        const stemText = String(
+          questionData.stem || questionData.question || ""
+        ).trim();
+        let topicTitleOpen = String(
+          questionData.topicTitle ||
+            questionData.topic ||
+            questionData.shortTitle ||
+            ""
+        )
+          .trim()
+          .replace(/\?+$/, "");
+        if (!topicTitleOpen) {
+          const words = stemText.split(/\s+/).filter(Boolean);
+          topicTitleOpen = words.slice(0, 10).join(" ") || "Open-ended";
+        }
+        return {
+          id: `${granularLearningObjectiveId}-${questionNumber}`,
+          granularObjectiveId: `${granularLearningObjectiveId}`,
+          text: stemText,
+          stem: stemText,
+          topicTitle: topicTitleOpen,
+          type: "open-ended",
+          questionType: "open-ended",
+          options: null,
+          correctAnswer: "",
+          acceptableAnswers: [],
+          openEndedSampleAnswer: String(
+            questionData.openEndedSampleAnswer || ""
+          ).trim(),
+          openEndedGradingCriteria: String(
+            questionData.openEndedGradingCriteria || ""
+          ).trim(),
+          bloomLevel: bloomLevel,
+          difficulty: this.determineDifficulty(bloomLevel),
+          metaCode: learningObjectiveText,
+          loCode: granularLearningObjectiveText,
+          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+          by: "LLM + RAG System",
+          explanation: questionData.explanation,
+        };
+      }
+
+      const acceptable =
+        resolvedType === "fill-in-the-blank"
+          ? Array.isArray(questionData.acceptableAnswers) && questionData.acceptableAnswers.length
+            ? questionData.acceptableAnswers
+            : questionData.correctAnswer != null
+              ? [String(questionData.correctAnswer)]
+              : []
+          : [];
+
+      const fibStem = String(questionData.question || "").trim();
+      const rawTopic =
+        resolvedType === "fill-in-the-blank"
+          ? String(
+              questionData.topicTitle ||
+                questionData.topic ||
+                questionData.shortTitle ||
+                ""
+            ).trim()
+          : "";
+      const topicTitleFib =
+        resolvedType === "fill-in-the-blank"
+          ? rawTopic ||
+            (() => {
+              const before = fibStem.split("_________")[0].trim();
+              const words = before.split(/\s+/).filter(Boolean);
+              return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
+            })()
+          : "";
+
+      return {
+        id: `${granularLearningObjectiveId}-${questionNumber}`,
+        granularObjectiveId: `${granularLearningObjectiveId}`,
+        text: questionData.question,
+        topicTitle: resolvedType === "fill-in-the-blank" ? topicTitleFib : undefined,
+        type: resolvedType,
+        questionType: resolvedType,
+        options: questionData.options || null,
+        correctAnswer: questionData.correctAnswer,
+        acceptableAnswers: acceptable,
+        bloomLevel: bloomLevel,
+        difficulty: this.determineDifficulty(bloomLevel),
+        metaCode: learningObjectiveText,
+        loCode: granularLearningObjectiveText,
+        lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+        by: "LLM + RAG System",
+        explanation: questionData.explanation,
+      };
+    } catch (error) {
+      console.error(`Error generating question ${questionNumber}:`, error);
+      throw error;
     }
   }
 
@@ -379,41 +581,162 @@ class QuestionGenerator {
     }
   }
 
+  escapeCsvField(value) {
+    if (value == null) return '""';
+    return `"${String(value).replace(/"/g, '""')}"`;
+  }
+
+  escapeXml(str) {
+    return String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   formatAsCSV(questions) {
     let csv =
-      "Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n";
+      "Question Type,Question,Option A,Option B,Option C,Option D,Correct Answer,Acceptable Answers,Bloom Level,Difficulty\n";
     questions.forEach((q) => {
-      // Options are always objects with keys A, B, C, D
-      const optA = q.options?.A || '';
-      const optB = q.options?.B || '';
-      const optC = q.options?.C || '';
-      const optD = q.options?.D || '';
-      // correctAnswer is always a letter (A, B, C, D)
-      const correctAnswerLetter = typeof q.correctAnswer === 'string' 
-        ? q.correctAnswer.toUpperCase() 
-        : (typeof q.correctAnswer === 'number' ? ['A', 'B', 'C', 'D'][q.correctAnswer] : 'A');
-      const correctOpt = q.options?.[correctAnswerLetter] || '';
-      csv += `"${q.text}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel}","${
-        q.difficulty
-      }"\n`;
+      const qt = q.type || q.questionType || "multiple-choice";
+      if (qt === "calculation") {
+        const stem = q.text || q.stem || "";
+        const formula = q.calculationFormula || "";
+        const varsJson = JSON.stringify(q.calculationVariables || []);
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(formula)},${this.escapeCsvField(varsJson)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        return;
+      }
+      if (qt === "fill-in-the-blank") {
+        const acc =
+          Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length
+            ? q.acceptableAnswers.join("; ")
+            : q.correctAnswer != null
+              ? String(q.correctAnswer)
+              : "";
+        const fibQ = q.text || q.stem || "";
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(fibQ)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        return;
+      }
+      if (qt === "open-ended") {
+        const stem = q.text || q.stem || "";
+        const sample = q.openEndedSampleAnswer || "";
+        const crit = q.openEndedGradingCriteria || "";
+        const combined = `Sample: ${sample} | Criteria: ${crit}`;
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(combined)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        return;
+      }
+      const optA = q.options?.A || "";
+      const optB = q.options?.B || "";
+      const optC = q.options?.C || "";
+      const optD = q.options?.D || "";
+      const correctAnswerLetter =
+        typeof q.correctAnswer === "string"
+          ? q.correctAnswer.toUpperCase()
+          : typeof q.correctAnswer === "number"
+            ? ["A", "B", "C", "D"][q.correctAnswer]
+            : "A";
+      const correctOpt = q.options?.[correctAnswerLetter] || "";
+      csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(q.text)},${this.escapeCsvField(optA)},${this.escapeCsvField(optB)},${this.escapeCsvField(optC)},${this.escapeCsvField(optD)},${this.escapeCsvField(correctOpt)},${this.escapeCsvField("")},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
     });
     return csv;
   }
 
   formatAsQTI(questions) {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
-  <assessment ident="GRASP_QUESTIONS" title="Generated Questions">
-    <qtimetadata>
-      <qtimetadatafield>
-        <fieldlabel>qmd_timelimit</fieldlabel>
-        <fieldentry>PT30M</fieldentry>
-      </qtimetadatafield>
-    </qtimetadata>
-    ${questions
-      .map(
-        (q, index) => `
-    <item ident="q${index + 1}">
+    const itemsXml = questions
+      .map((q, index) => {
+        const qt = q.type || q.questionType || "multiple-choice";
+        const ident = `q${index + 1}`;
+        if (qt === "calculation") {
+          const stem = q.text || q.stem || "";
+          const note = `[Formula: ${q.calculationFormula || ""}; variables JSON: ${JSON.stringify(q.calculationVariables || [])}; answerDecimals: ${q.calculationAnswerDecimals != null ? q.calculationAnswerDecimals : 2}]`;
+          return `
+    <item ident="${ident}">
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>qmd_itemtype</fieldlabel>
+            <fieldentry>Calculation</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext>${this.escapeXml(stem)}</mattext>
+        </material>
+        <material>
+          <mattext>${this.escapeXml(note)}</mattext>
+        </material>
+        <response_str ident="response1">
+          <render_fib fibtype="String" columns="40" rows="1">
+            <response_label ident="fib"/>
+          </render_fib>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar varname="SCORE" vartype="Decimal" defaultval="0"/>
+        </outcomes>
+      </resprocessing>
+    </item>`;
+        }
+        if (qt === "fill-in-the-blank") {
+          const acceptable =
+            Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length
+              ? q.acceptableAnswers
+              : q.correctAnswer != null
+                ? [String(q.correctAnswer)]
+                : [];
+          const conditions =
+            acceptable.length <= 1
+              ? `<varequal respident="response1">${this.escapeXml(acceptable[0] || "")}</varequal>`
+              : `<or>${acceptable.map((a) => `<varequal respident="response1">${this.escapeXml(a)}</varequal>`).join("")}</or>`;
+          return `
+    <item ident="${ident}">
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>qmd_itemtype</fieldlabel>
+            <fieldentry>Fill In The Blank</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext>${this.escapeXml(q.text || q.stem || "")}</mattext>
+        </material>
+        <response_str ident="response1">
+          <render_fib fibtype="String" columns="40" rows="1">
+            <response_label ident="fib"/>
+          </render_fib>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar varname="SCORE" vartype="Decimal" defaultval="0"/>
+        </outcomes>
+        <respcondition continue="No">
+          <conditionvar>
+            ${conditions}
+          </conditionvar>
+          <setvar action="Set">1</setvar>
+        </respcondition>
+      </resprocessing>
+    </item>`;
+        }
+        const choiceIndex = (() => {
+          if (typeof q.correctAnswer === "string") {
+            const letter = q.correctAnswer.toUpperCase();
+            if (letter === "A") return 0;
+            if (letter === "B") return 1;
+            if (letter === "C") return 2;
+            if (letter === "D") return 3;
+          } else if (typeof q.correctAnswer === "number") {
+            return q.correctAnswer;
+          }
+          return 0;
+        })();
+        return `
+    <item ident="${ident}">
       <itemmetadata>
         <qtimetadata>
           <qtimetadatafield>
@@ -424,17 +747,21 @@ class QuestionGenerator {
       </itemmetadata>
       <presentation>
         <material>
-          <mattext>${q.text}</mattext>
+          <mattext>${this.escapeXml(q.text)}</mattext>
         </material>
         <response_lid ident="response1">
           <render_choice>
-            ${['A', 'B', 'C', 'D'].map((key, optIndex) => `
+            ${["A", "B", "C", "D"]
+              .map(
+                (key, optIndex) => `
             <response_label ident="choice${optIndex}">
               <material>
-                <mattext>${q.options?.[key] || ''}</mattext>
+                <mattext>${this.escapeXml(q.options?.[key] || "")}</mattext>
               </material>
             </response_label>
-            `).join("")}
+            `
+              )
+              .join("")}
           </render_choice>
         </response_lid>
       </presentation>
@@ -444,27 +771,25 @@ class QuestionGenerator {
         </outcomes>
         <respcondition continue="No">
           <conditionvar>
-            <varequal respident="response1">choice${(() => {
-              // Convert letter to index (0-3) for QTI format
-              if (typeof q.correctAnswer === 'string') {
-                const letter = q.correctAnswer.toUpperCase();
-                if (letter === 'A') return 0;
-                if (letter === 'B') return 1;
-                if (letter === 'C') return 2;
-                if (letter === 'D') return 3;
-              } else if (typeof q.correctAnswer === 'number') {
-                return q.correctAnswer;
-              }
-              return 0;
-            })()}</varequal>
+            <varequal respident="response1">choice${choiceIndex}</varequal>
           </conditionvar>
           <setvar action="Set">1</setvar>
         </respcondition>
       </resprocessing>
-    </item>
-    `
-      )
-      .join("")}
+    </item>`;
+      })
+      .join("");
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="GRASP_QUESTIONS" title="Generated Questions">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>qmd_timelimit</fieldlabel>
+        <fieldentry>PT30M</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    ${itemsXml}
   </assessment>
 </questestinterop>`;
   }
