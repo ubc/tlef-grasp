@@ -119,6 +119,9 @@ function resolveQuestionType(q) {
   if (t === "calculation") {
     return "calculation";
   }
+  if (t === "open-ended") {
+    return "open-ended";
+  }
   return "multiple-choice";
 }
 
@@ -202,6 +205,18 @@ const getQuizQuestionsHandler = async (req, res) => {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
           questionType: "fill-in-the-blank",
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
+      if (questionType === "open-ended") {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: "open-ended",
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,

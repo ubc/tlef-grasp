@@ -215,6 +215,9 @@ function resolveQuestionType(q) {
   if (t === "calculation") {
     return "calculation";
   }
+  if (t === "open-ended") {
+    return "open-ended";
+  }
   return "multiple-choice";
 }
 
@@ -272,6 +275,27 @@ const getQuizQuestionsHandler = async (req, res) => {
           delete finalQuestion.stem;
         }
         return finalQuestion;
+      }
+
+      if (questionType === "open-ended") {
+        const fibMainText = (q.stem || q.title || "").trim();
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+        const formattedQuestion = {
+          ...q,
+          id: qid,
+          question: fibMainText || questionText || "Question text not available",
+          questionType: "open-ended",
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+        if (approvedOnlyBool) {
+          delete formattedQuestion.openEndedSampleAnswer;
+          delete formattedQuestion.openEndedGradingCriteria;
+          delete formattedQuestion.stem;
+        }
+        return formattedQuestion;
       }
 
       if (questionType === "calculation") {
@@ -509,6 +533,35 @@ const checkQuestionAnswerHandler = async (req, res) => {
         feedback: isCorrect ? "Correct." : "",
         correctAnswer: isCorrect ? displayCorrect : null,
         correctOptionText: displayCorrect,
+      });
+      return;
+    }
+
+    if (questionType === "open-ended") {
+      if (answerText === undefined || answerText === null || String(answerText).trim() === "") {
+        return res.status(400).json({
+          success: false,
+          error: "answerText is required for open-ended questions",
+        });
+      }
+      const sample = String(question.openEndedSampleAnswer || "").trim();
+      const criteria = String(question.openEndedGradingCriteria || "").trim();
+      if (!sample) {
+        return res.status(500).json({
+          success: false,
+          error: "This open-ended question is missing a sample answer. Ask your instructor to fix it in the question bank.",
+        });
+      }
+      res.json({
+        success: true,
+        isCorrect: null,
+        autoGraded: false,
+        feedback: "",
+        openEnded: true,
+        sampleAnswer: sample,
+        gradingCriteria: criteria || null,
+        correctAnswer: null,
+        correctOptionText: null,
       });
       return;
     }

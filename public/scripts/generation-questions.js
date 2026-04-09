@@ -72,6 +72,25 @@ class QuestionGenerator {
             questionType: "calculation",
           });
         },
+
+        generateOpenEndedQuestion: async ({
+          courseId,
+          courseName,
+          learningObjectiveId,
+          learningObjectiveText,
+          granularLearningObjectiveText,
+          bloomLevel,
+        }) => {
+          return await this.callQuestionGenerationApi({
+            courseId,
+            courseName,
+            learningObjectiveId,
+            learningObjectiveText,
+            granularLearningObjectiveText,
+            bloomLevel,
+            questionType: "open-ended",
+          });
+        },
   
         generateQuestionByType: async (questionType, params) => {
           switch (questionType) {
@@ -79,6 +98,8 @@ class QuestionGenerator {
               return await this.llmService.generateFillInTheBlankQuestion(params);
             case "calculation":
               return await this.llmService.generateCalculationQuestion(params);
+            case "open-ended":
+              return await this.llmService.generateOpenEndedQuestion(params);
             case "multiple-choice":
             default:
               return await this.llmService.generateMultipleChoiceQuestion(params);
@@ -220,7 +241,7 @@ class QuestionGenerator {
       Apply: ["multiple-choice", "fill-in-the-blank"],
       Analyze: ["multiple-choice", "fill-in-the-blank"],
       Evaluate: ["calculation"],
-      Create: ["multiple-choice", "fill-in-the-blank"],
+      Create: ["open-ended"],
     };
   }
   
@@ -420,6 +441,49 @@ class QuestionGenerator {
         };
       }
 
+      if (resolvedType === "open-ended") {
+        const stemText = String(
+          questionData.stem || questionData.question || ""
+        ).trim();
+        let topicTitleOpen = String(
+          questionData.topicTitle ||
+            questionData.topic ||
+            questionData.shortTitle ||
+            ""
+        )
+          .trim()
+          .replace(/\?+$/, "");
+        if (!topicTitleOpen) {
+          const words = stemText.split(/\s+/).filter(Boolean);
+          topicTitleOpen = words.slice(0, 10).join(" ") || "Open-ended";
+        }
+        return {
+          id: `${granularLearningObjectiveId}-${questionNumber}`,
+          granularObjectiveId: `${granularLearningObjectiveId}`,
+          text: stemText,
+          stem: stemText,
+          topicTitle: topicTitleOpen,
+          type: "open-ended",
+          questionType: "open-ended",
+          options: null,
+          correctAnswer: "",
+          acceptableAnswers: [],
+          openEndedSampleAnswer: String(
+            questionData.openEndedSampleAnswer || ""
+          ).trim(),
+          openEndedGradingCriteria: String(
+            questionData.openEndedGradingCriteria || ""
+          ).trim(),
+          bloomLevel: bloomLevel,
+          difficulty: this.determineDifficulty(bloomLevel),
+          metaCode: learningObjectiveText,
+          loCode: granularLearningObjectiveText,
+          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+          by: "LLM + RAG System",
+          explanation: questionData.explanation,
+        };
+      }
+
       const acceptable =
         resolvedType === "fill-in-the-blank"
           ? Array.isArray(questionData.acceptableAnswers) && questionData.acceptableAnswers.length
@@ -551,6 +615,14 @@ class QuestionGenerator {
               : "";
         const fibQ = q.text || q.stem || "";
         csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(fibQ)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        return;
+      }
+      if (qt === "open-ended") {
+        const stem = q.text || q.stem || "";
+        const sample = q.openEndedSampleAnswer || "";
+        const crit = q.openEndedGradingCriteria || "";
+        const combined = `Sample: ${sample} | Criteria: ${crit}`;
+        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(combined)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
         return;
       }
       const optA = q.options?.A || "";

@@ -3018,6 +3018,7 @@ function convertQuestionsToGroups(questions) {
             question.type || question.questionType || "multiple-choice";
           const isFib = qType === "fill-in-the-blank";
           const isCalc = qType === "calculation";
+          const isOpen = qType === "open-ended";
           const acceptable =
             isFib &&
             Array.isArray(question.acceptableAnswers) &&
@@ -3133,9 +3134,43 @@ function convertQuestionsToGroups(questions) {
             explanation: question.explanation,
           };
 
+          const stemOpen = String(question.text || question.stem || "").trim();
+          const openCard = {
+            id: question.id,
+            title:
+              (question.topicTitle && String(question.topicTitle).trim()) ||
+              (() => {
+                const words = stemOpen.split(/\s+/).filter(Boolean);
+                return words.slice(0, 10).join(" ") || "Open-ended";
+              })(),
+            stem: stemOpen,
+            questionType: "open-ended",
+            options: {},
+            correctAnswer: "",
+            acceptableAnswers: [],
+            openEndedSampleAnswer: String(
+              question.openEndedSampleAnswer || ""
+            ).trim(),
+            openEndedGradingCriteria: String(
+              question.openEndedGradingCriteria || ""
+            ).trim(),
+            bloom: question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "Medium",
+            status: "Draft",
+            lastEdited:
+              question.lastEdited ||
+              new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: question.by || "System",
+            metaCode: question.metaCode || metaCode,
+            loCode: question.loCode || question.text,
+            granularObjectiveId: question.granularObjectiveId,
+            explanation: question.explanation,
+          };
+
           let card = mcCard;
           if (isFib) card = fibCard;
           else if (isCalc) card = calcCard;
+          else if (isOpen) card = openCard;
 
           return {
             id: `lo-${index + 1}-${itemIndex + 1}`,
@@ -3303,9 +3338,11 @@ function renderQuestionCard(question, group) {
     (question.questionType || question.type) === "fill-in-the-blank";
   const isCalc =
     (question.questionType || question.type) === "calculation";
+  const isOpen =
+    (question.questionType || question.type) === "open-ended";
 
   const titleEditingHtml =
-    (isFib || isCalc) && isEditing
+    (isFib || isCalc || isOpen) && isEditing
       ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
       : isEditing
         ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
@@ -3315,6 +3352,7 @@ function renderQuestionCard(question, group) {
                     <div class="question-card__chips">
                         ${isFib ? `<span class="question-card__chip question-card__chip--fib">Fill-in-the-blank</span>` : ""}
                         ${isCalc ? `<span class="question-card__chip question-card__chip--fib">Calculation</span>` : ""}
+                        ${isOpen ? `<span class="question-card__chip question-card__chip--fib">Open-ended</span>` : ""}
                         <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
                         <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
                         <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
@@ -3411,6 +3449,34 @@ function renderQuestionCard(question, group) {
                     <div class="question-card__fib-block">
                         <span class="question-card__fib-label">Answer decimal places</span>
                         <p class="question-card__fib-value">${escapeQuestionHtml(String(dec))}</p>
+                    </div>
+                </div>`;
+    }
+  } else if (isOpen) {
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="open-q-${question.id}">Question prompt</label>
+                    <textarea id="open-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="Open-ended task for students" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-s-${question.id}">Sample answer <span class="question-card__fib-hint">(shown after submit)</span></label>
+                    <textarea id="open-s-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Model answer" onblur="updateQuestionOpenSample('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-c-${question.id}">Grading criteria</label>
+                    <textarea id="open-c-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Rubric or bullet criteria" onblur="updateQuestionOpenCriteria('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Prompt</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Sample answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Grading criteria</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</p>
                     </div>
                 </div>`;
     }
@@ -3637,6 +3703,20 @@ function updateQuestionCalcDecimals(questionId, value) {
   question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
 }
 
+function updateQuestionOpenSample(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.openEndedSampleAnswer = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionOpenCriteria(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.openEndedGradingCriteria = String(value ?? "").trim();
+  }
+}
+
 function saveQuestionEdit(questionId) {
   const question = findQuestionById(questionId);
   if (!question) {
@@ -3708,6 +3788,27 @@ function saveQuestionEdit(questionId) {
     let d = parseInt(question.calculationAnswerDecimals, 10);
     if (!Number.isFinite(d)) d = 2;
     question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+  }
+
+  const isOpen =
+    (question.questionType || question.type) === "open-ended";
+  if (isOpen) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question prompt is required", "error");
+      return;
+    }
+    if (!String(question.openEndedSampleAnswer || "").trim()) {
+      showToast("Sample answer is required", "error");
+      return;
+    }
+    if (!String(question.openEndedGradingCriteria || "").trim()) {
+      showToast("Grading criteria are required", "error");
+      return;
+    }
   }
 
   // Simply update state - mark as not editing and update timestamp
@@ -4114,6 +4215,15 @@ async function handleSaveToQuiz() {
             if (!Number.isFinite(d)) d = 2;
             payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
           }
+          if (qt === "open-ended") {
+            payload.options = {};
+            payload.openEndedSampleAnswer = String(
+              question.openEndedSampleAnswer || ""
+            ).trim();
+            payload.openEndedGradingCriteria = String(
+              question.openEndedGradingCriteria || ""
+            ).trim();
+          }
           questions.push(payload);
         }
       }
@@ -4207,6 +4317,8 @@ window.updateQuestionFibAcceptableAnswers = updateQuestionFibAcceptableAnswers;
 window.updateQuestionCalcFormula = updateQuestionCalcFormula;
 window.updateQuestionCalcVariablesJson = updateQuestionCalcVariablesJson;
 window.updateQuestionCalcDecimals = updateQuestionCalcDecimals;
+window.updateQuestionOpenSample = updateQuestionOpenSample;
+window.updateQuestionOpenCriteria = updateQuestionOpenCriteria;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;

@@ -81,12 +81,31 @@ Example:
   "explanation": "Why this applies to the content"
 }
 
+--- If Question Type is "open-ended" ---
+PROCEDURE:
+1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question.
+2. Use "question" OR "stem" for the prompt students respond to (paragraph-length is fine). Do NOT use nine underscores; this is not fill-in-the-blank.
+3. "openEndedSampleAnswer" is REQUIRED: a strong example response. Students see it only after they submit; it is not used for auto-grading.
+4. "openEndedGradingCriteria" is REQUIRED: clear criteria or a short rubric (bullet-style in a string is fine) so students can self-check.
+5. Do NOT include "options", "correctAnswer", or calculation fields.
+
+Example:
+{
+  "type": "open-ended",
+  "topicTitle": "Design trade-offs",
+  "question": "Explain two trade-offs between caching and freshness in a web application.",
+  "openEndedSampleAnswer": "Caching improves latency and reduces load, but stale data can confuse users unless TTLs or invalidation are chosen carefully...",
+  "openEndedGradingCriteria": "Full credit: names two distinct trade-offs with reasoning. Partial: one trade-off or vague reasoning. No credit: off-topic.",
+  "explanation": "Why this aligns with the materials"
+}
+
 CRITICAL FORMATTING REQUIREMENTS (all matching types):
 - Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
 - CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
 - For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
 - For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template with {{var}} placeholders. The formula field must stay machine-evaluable (no integral sign ∫ or similar).
+- For open-ended: Include "openEndedSampleAnswer" and "openEndedGradingCriteria"; the platform does not auto-grade text responses.
 FORMATTING INSIDE JSON STRINGS:
 - Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
 CONTENT: {ragContext}`;

@@ -88,6 +88,7 @@ function normalizeQuestionTypeKey(raw) {
   const t = (raw || "multiple-choice").toString().trim().toLowerCase().replace(/_/g, "-");
   if (t === "fill-in-the-blank") return "fill-in-the-blank";
   if (t === "calculation") return "calculation";
+  if (t === "open-ended") return "open-ended";
   return "multiple-choice";
 }
 
@@ -95,6 +96,7 @@ function formatQuestionTypeLabel(raw) {
   const key = normalizeQuestionTypeKey(raw);
   if (key === "fill-in-the-blank") return "Fill-in-the-blank";
   if (key === "calculation") return "Calculation";
+  if (key === "open-ended") return "Open-ended";
   return "Multiple choice";
 }
 
@@ -2648,6 +2650,18 @@ class QuestionBankPage {
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
         };
+      } else if (qType === "open-ended") {
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || "",
+          stem: question.stem || question.title || "",
+          questionType: "open-ended",
+          openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
+          openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
       } else {
         // Multiple-choice: options are objects with keys A, B, C, D - convert to array for display
         const optionKeys = ["A", "B", "C", "D"];
@@ -2733,6 +2747,74 @@ class QuestionBankPage {
 
     const isCalc = question.questionType === "calculation";
     const isFib = question.questionType === "fill-in-the-blank";
+    const isOpen = question.questionType === "open-ended";
+
+    if (isOpen) {
+      const isReadOnly = !canEdit;
+      const readonlyAttr = isReadOnly ? "readonly" : "";
+      const readonlyClass = isReadOnly ? "readonly" : "";
+      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
+
+      const warningHtml = isReadOnly
+        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
+        : "";
+
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || "");
+      const sampleContent = escapeForTextareaContent(question.openEndedSampleAnswer || "");
+      const criteriaContent = escapeForTextareaContent(question.openEndedGradingCriteria || "");
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip question-type-chip--open-ended" style="margin-bottom:12px;display:inline-block;">Open-ended</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Topic title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="Short topic label"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question prompt</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="The open-ended task for students"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-open-sample">Sample answer <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="question-modal-open-sample"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="A strong example answer students see after they submit"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${sampleContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-open-criteria">Grading criteria <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="question-modal-open-criteria"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="What instructors look for; e.g. bullet points or a short rubric"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${criteriaContent}</textarea>
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
 
     if (isCalc) {
       const isReadOnly = !canEdit;
@@ -3137,6 +3219,68 @@ class QuestionBankPage {
           q.title = updateData.title;
           q.stem = updateData.stem;
           q.questionType = "calculation";
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
+
+      if (this.currentEditingQuestion.questionType === "open-ended") {
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question prompt is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        const sampleEl = document.getElementById("question-modal-open-sample");
+        const critEl = document.getElementById("question-modal-open-criteria");
+        const openEndedSampleAnswer = sampleEl ? sampleEl.value.trim() : "";
+        const openEndedGradingCriteria = critEl ? critEl.value.trim() : "";
+        if (!openEndedSampleAnswer) {
+          this.showNotification("Sample answer is required for open-ended questions", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!openEndedGradingCriteria) {
+          this.showNotification("Grading criteria are required for open-ended questions", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        const updateData = {
+          title,
+          stem,
+          questionType: "open-ended",
+          openEndedSampleAnswer,
+          openEndedGradingCriteria,
+          options: {},
+          acceptableAnswers: [],
+          correctAnswer: "",
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = "open-ended";
         }
 
         this.closeQuestionModal();

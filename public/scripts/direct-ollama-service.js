@@ -64,6 +64,8 @@ class DirectOpenAIService {
         return await this.generateFillInTheBlankQuestion(objective, ragContent, bloomLevel);
       case "calculation":
         return await this.generateCalculationQuestion(objective, ragContent, bloomLevel);
+      case "open-ended":
+        return await this.generateOpenEndedQuestion(objective, ragContent, bloomLevel);
       case "multiple-choice":
       default:
         return await this.generateMultipleChoiceQuestion(objective, ragContent, bloomLevel);
@@ -82,6 +84,11 @@ class DirectOpenAIService {
 
   async generateCalculationQuestion(objective, ragContent, bloomLevel) {
     const prompt = this.createCalculationQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateOpenEndedQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createOpenEndedQuestionPrompt(objective, bloomLevel);
     return await this.generateQuestionWithRAG(prompt, ragContent);
   }
 
@@ -245,6 +252,25 @@ IMPORTANT:
 - Keep "calculationFormula" in plain expr-eval-style math only; if "stem" needs math notation, use LaTeX \\( ... \\) inside the JSON string (properly escaped for JSON).
 - Placeholders in "stem" must use exactly the form {{variableName}} matching "calculationVariables".`;
 
+  }
+
+  createOpenEndedQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate one open-ended question from the content. The quiz does not auto-grade text; students see a sample answer and grading criteria after submit.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+Return JSON only:
+{
+  "type": "open-ended",
+  "topicTitle": "short neutral label",
+  "question": "the prompt (or use stem instead)",
+  "openEndedSampleAnswer": "model response",
+  "openEndedGradingCriteria": "rubric or criteria in one string",
+  "explanation": "brief instructor note"
+}
+
+Rules: No markdown fences. First "{" last "}". No options or MC fields.`;
   }
 
   isAvailable() {

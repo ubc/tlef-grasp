@@ -74,6 +74,8 @@ class LLMService {
         return await this.generateFillInTheBlankQuestion(objective, ragContent, bloomLevel);
       case "calculation":
         return await this.generateCalculationQuestion(objective, ragContent, bloomLevel);
+      case "open-ended":
+        return await this.generateOpenEndedQuestion(objective, ragContent, bloomLevel);
       case "multiple-choice":
       default:
         return await this.generateMultipleChoiceQuestion(objective, ragContent, bloomLevel);
@@ -92,6 +94,11 @@ class LLMService {
 
   async generateCalculationQuestion(objective, ragContent, bloomLevel) {
     const prompt = this.createCalculationQuestionPrompt(objective, bloomLevel);
+    return await this.generateQuestionWithRAG(prompt, ragContent);
+  }
+
+  async generateOpenEndedQuestion(objective, ragContent, bloomLevel) {
+    const prompt = this.createOpenEndedQuestionPrompt(objective, bloomLevel);
     return await this.generateQuestionWithRAG(prompt, ragContent);
   }
 
@@ -243,6 +250,32 @@ IMPORTANT:
 - Include "topicTitle" in every response (separate from "stem").
 - Keep "calculationFormula" as plain math; use LaTeX \\( ... \\) only inside "stem" when needed, with backslashes escaped for JSON.
 - Placeholders in "stem" must match variable names in "calculationVariables" and "calculationFormula" exactly.`;
+  }
+
+  createOpenEndedQuestionPrompt(objective, bloomLevel) {
+    return `You are an expert educational content creator. Generate one open-ended question based on the provided content. The platform does NOT auto-grade text; students see a sample answer and grading criteria only after they submit.
+
+OBJECTIVE: ${objective}
+BLOOM'S TAXONOMY LEVEL: ${bloomLevel}
+
+REQUIRED FIELDS:
+- "topicTitle": short neutral label (3–10 words), not a question.
+- "question" OR "stem": the prompt (paragraph OK).
+- "openEndedSampleAnswer": a strong model response.
+- "openEndedGradingCriteria": clear rubric or bullet-style criteria in one string.
+- "explanation": brief note for instructors.
+
+Example:
+{
+  "type": "open-ended",
+  "topicTitle": "Conceptual comparison",
+  "question": "Compare two approaches described in the materials and explain when each is preferable.",
+  "openEndedSampleAnswer": "Approach A emphasizes ... whereas B focuses on ... A is preferable when ...",
+  "openEndedGradingCriteria": "Full credit: contrasts both approaches with a justified use case. Partial: one approach or vague comparison.",
+  "explanation": "Aligned with the reading."
+}
+
+CRITICAL: Return ONLY valid JSON. First character "{", last "}". No markdown fences. No "options" or "correctAnswer".`;
   }
 
   isAvailable() {

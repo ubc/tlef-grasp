@@ -50,6 +50,7 @@ const saveQuestion = async (courseId, questionData) => {
                 ? questionData.calculationFormula
                 : "";
 
+        const qtLower = String(questionType).toLowerCase();
         const question = await collection.insertOne({
             title: questionData.title,
             stem: questionData.stem,
@@ -59,8 +60,16 @@ const saveQuestion = async (courseId, questionData) => {
             acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
                 ? questionData.acceptableAnswers
                 : [],
+            openEndedSampleAnswer:
+                qtLower === "open-ended"
+                    ? String(questionData.openEndedSampleAnswer || "").trim()
+                    : "",
+            openEndedGradingCriteria:
+                qtLower === "open-ended"
+                    ? String(questionData.openEndedGradingCriteria || "").trim()
+                    : "",
             calculationFormula:
-                String(questionType).toLowerCase() === "calculation"
+                qtLower === "calculation"
                     ? calculationQuestion.prepareCalculationFormula(
                           calcFormulaRaw,
                           calcVarsForStore
@@ -214,6 +223,18 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.calculationAnswerDecimals !== undefined) {
             const d = parseInt(updateData.calculationAnswerDecimals, 10);
             update.calculationAnswerDecimals = Math.max(0, Math.min(12, Number.isFinite(d) ? d : 2));
+        }
+        if (updateData.openEndedSampleAnswer !== undefined) {
+            update.openEndedSampleAnswer =
+                typeof updateData.openEndedSampleAnswer === "string"
+                    ? updateData.openEndedSampleAnswer.trim()
+                    : "";
+        }
+        if (updateData.openEndedGradingCriteria !== undefined) {
+            update.openEndedGradingCriteria =
+                typeof updateData.openEndedGradingCriteria === "string"
+                    ? updateData.openEndedGradingCriteria.trim()
+                    : "";
         }
         if (updateData.granularObjectiveId !== undefined) {
             // Convert granularObjectiveId to ObjectId if it's a string

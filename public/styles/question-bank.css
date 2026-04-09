@@ -1289,6 +1289,11 @@
     color: #00796b;
 }
 
+.question-type-chip--open-ended {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
 
 /* Edit Mode */
 .question-title-input {

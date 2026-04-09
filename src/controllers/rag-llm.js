@@ -33,7 +33,12 @@ function returnErrorResponse(res, error, details = null) {
  */
 function resolveQuestionTypeFromPayload(data, requestedType) {
   const t = data?.type || data?.questionType;
-  if (t === "fill-in-the-blank" || t === "multiple-choice" || t === "calculation") {
+  if (
+    t === "fill-in-the-blank" ||
+    t === "multiple-choice" ||
+    t === "calculation" ||
+    t === "open-ended"
+  ) {
     return t;
   }
   return requestedType;
@@ -201,6 +206,46 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       calculationFormula: formulaCanonical,
       calculationVariables: normalizedVars,
       calculationAnswerDecimals: answerDec,
+      explanation: merged.explanation != null ? String(merged.explanation) : "",
+      options: null,
+    };
+  }
+
+  if (resolvedType === "open-ended") {
+    const merged = { ...data };
+    const stemText = String(merged.stem || merged.question || "").trim();
+    if (!stemText) {
+      throw new Error(
+        "Missing required field: stem or question for open-ended"
+      );
+    }
+    const sample = String(
+      merged.openEndedSampleAnswer || merged.sampleAnswer || ""
+    ).trim();
+    if (!sample) {
+      throw new Error("Missing required field: openEndedSampleAnswer");
+    }
+    const criteria = String(
+      merged.openEndedGradingCriteria || merged.gradingCriteria || ""
+    ).trim();
+    if (!criteria) {
+      throw new Error("Missing required field: openEndedGradingCriteria");
+    }
+    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
+      .trim()
+      .replace(/\?+$/, "");
+    if (!topicTitle) {
+      const words = stemText.split(/\s+/).filter(Boolean);
+      topicTitle = words.slice(0, 10).join(" ") || "Open-ended";
+    }
+    return {
+      type: "open-ended",
+      questionType: "open-ended",
+      topicTitle,
+      question: stemText,
+      stem: stemText,
+      openEndedSampleAnswer: sample,
+      openEndedGradingCriteria: criteria,
       explanation: merged.explanation != null ? String(merged.explanation) : "",
       options: null,
     };
@@ -406,10 +451,12 @@ function jsonOnlyRetrySuffix(attempt, questionType) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
   const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
   const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template with {{var}} placeholders), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". No "options" or MC correctAnswer.`;
+  const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
   let schema;
   if (questionType === "multiple-choice") schema = mcSchema;
   else if (questionType === "fill-in-the-blank") schema = fibSchema;
   else if (questionType === "calculation") schema = calcSchema;
+  else if (questionType === "open-ended") schema = openSchema;
   else schema = mcSchema;
   return `
 
@@ -504,7 +551,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     }
 
     // Validate question types
-    const ALLOWED_QUESTION_TYPES = ["multiple-choice", "fill-in-the-blank", "calculation"];
+    const ALLOWED_QUESTION_TYPES = [
+      "multiple-choice",
+      "fill-in-the-blank",
+      "calculation",
+      "open-ended",
+    ];
     if (!questionType || !ALLOWED_QUESTION_TYPES.includes(questionType)) {
       return res.status(400).json({
         error: "Invalid or missing questionType",
@@ -672,6 +724,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         console.log(
           `✅ Calculation question: formula "${String(questionData.calculationFormula || "").substring(0, 60)}..."`
         );
+      } else if (questionData.questionType === "open-ended") {
+        console.log("✅ Open-ended question with sample answer and grading criteria");
       }
 
       res.json({
