@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRASP - Quiz Scores</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:ital,wdth,wght@0,75..100,300..800;1,75..100,300..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/quiz-scores.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div style="padding: 30px;">
+                <div class="scores-header-section">
+                    <h2>Student Quiz Scores</h2>
+                </div>
+
+                <div class="controls-container">
+                    <div class="control-group" style="flex: 2;">
+                        <label for="quiz-selector">Select Quiz</label>
+                        <select id="quiz-selector" class="quiz-select">
+                            <option value="">Loading quizzes...</option>
+                        </select>
+                    </div>
+                    <div class="control-group" style="flex: 1;">
+                        <label for="student-search">Search Students</label>
+                        <input type="text" id="student-search" class="search-input" placeholder="Search name or email...">
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="scores-table">
+                        <thead>
+                            <tr>
+                                <th>Student Name</th>
+                                <th>Email</th>
+                                <th>Score</th>
+                                <th>Correct / Total</th>
+                                <th>Time Spent</th>
+                                <th>Date Completed</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scores-table-body">
+                            <!-- Rows will be injected here via javascript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination controls -->
+                <div class="pagination-container" id="pagination-container" style="display: none;">
+                    <div class="pagination-info" id="pagination-info">
+                        Showing 1 to 10 of 0 entries
+                    </div>
+                    <div class="pagination-controls" id="pagination-controls">
+                        <!-- Pagination buttons injected here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/quiz-scores.js"></script>
+</body>
+</html>

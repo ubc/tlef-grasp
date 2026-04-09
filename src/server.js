@@ -119,6 +119,10 @@ app.get("/question-review", ensureAuthenticated(), requirePageRole(ROLES.STAFF),
   res.sendFile(path.join(__dirname, "../public/question-review.html"));
 });
 
+app.get("/quiz-scores", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quiz-scores.html"));
+});
+
 // Users page - faculty only
 app.get("/users", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/users.html"));

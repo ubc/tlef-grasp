@@ -21,6 +21,7 @@ class GRASPNavigation {
 
   detectCurrentPage() {
     const path = window.location.pathname;
+    if (path.includes("quiz-scores")) return "quiz-scores";
     if (path.includes("quiz-summary")) return "quiz-summary";
     if (path.includes("student-dashboard")) return "student-dashboard";
     if (path.includes("quiz")) return "my-quizzes";
@@ -306,6 +307,12 @@ class GRASPNavigation {
           <a href="/question-bank" style="text-decoration: none; color: inherit;">
             <i class="fas fa-book"></i>
             <span>Question Bank</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="quiz-scores">
+          <a href="/quiz-scores" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-chart-bar"></i>
+            <span>Quiz Scores</span>
           </a>
         </li>
     `;

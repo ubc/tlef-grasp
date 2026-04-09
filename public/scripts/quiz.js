@@ -11,10 +11,11 @@ let quizState = {
   currentQuestionIndex: 0,
   answers: {},
   feedback: {}, // Store feedback for each question
-  quizData: null,
   userId: null,
   userRole: null,
-  courseId: null
+  courseId: null,
+  startTime: null,
+  timerInterval: null
 };
 
 async function initializeQuiz() {
@@ -349,6 +350,9 @@ async function startQuiz(quizId) {
       quizState.currentQuestionIndex = 0;
       quizState.answers = {};
       quizState.feedback = {};
+      quizState.startTime = Date.now();
+      
+      startTimer();
 
       // Hide loading overlay
       const loadingOverlay = document.getElementById("quizLoadingOverlay");
@@ -405,6 +409,9 @@ function resetQuizState() {
   quizState.answers = {};
   quizState.feedback = {};
   quizState.quizData = null;
+  quizState.startTime = null;
+  
+  stopTimer();
 
   // Also hide completion section if it's visible
   const completionSection = document.getElementById("completionSection");
@@ -462,6 +469,9 @@ function restartQuiz() {
         quizState.currentQuestionIndex = 0;
         quizState.answers = {};
         quizState.feedback = {};
+        quizState.startTime = Date.now();
+        
+        startTimer();
       
         // Render updated quiz
         renderQuiz();
@@ -799,7 +809,39 @@ function updateQuestionIndicators() {
   });
 }
 
+function startTimer() {
+  stopTimer();
+  updateTimerDisplay(); // Initial update
+  quizState.timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (quizState.timerInterval) {
+    clearInterval(quizState.timerInterval);
+    quizState.timerInterval = null;
+  }
+}
+
+function updateTimerDisplay() {
+  if (!quizState.startTime) return;
+  
+  const timerDisplay = document.getElementById("quizTimerDisplay");
+  if (!timerDisplay) return;
+
+  const elapsedMs = Date.now() - quizState.startTime;
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  timerDisplay.textContent = formattedTime;
+}
+
 async function showCompletion() {
+  // Stop the timer
+  stopTimer();
+
   // Hide quiz content
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
@@ -838,6 +880,8 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
     return [];
   }
 
+  const timeSpent = quizState.startTime ? (Date.now() - quizState.startTime) : 0;
+
   try {
     const response = await fetch(`/api/student/quizzes/${quizState.currentQuiz}/submit`, {
       method: "POST",
@@ -850,7 +894,7 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
         score: score,
         correctAnswers: correctAnswers,
         totalQuestions: totalQuestions,
-        timeSpent: 0,
+        timeSpent: timeSpent,
         sessionId: Date.now().toString()
       })
     });

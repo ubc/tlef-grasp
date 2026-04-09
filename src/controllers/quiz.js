@@ -388,6 +388,25 @@ const checkQuestionAnswerHandler = async (req, res) => {
   }
 };
 
+/**
+ * Get scores for a quiz with student data (Instructors only)
+ */
+const getQuizScoresHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const scores = await quizService.getQuizScores(quizId);
+    
+    if (!scores) {
+      return res.status(404).json({ success: false, error: "Scores not found" });
+    }
+    
+    res.json({ success: true, data: scores });
+  } catch (error) {
+    console.error("Error fetching quiz scores:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
   getQuizByIdHandler,
@@ -397,5 +416,6 @@ module.exports = {
   addQuizQuestionsHandler,
   getQuizQuestionsHandler,
   recordPerformanceHandler,
-  checkQuestionAnswerHandler
+  checkQuestionAnswerHandler,
+  getQuizScoresHandler
 };

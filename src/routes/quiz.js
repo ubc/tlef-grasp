@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const quizController = require("../controllers/quiz");
+const { requireRole } = require("../middleware/auth");
+const { ROLES } = require("../utils/auth");
 
 /**
  * GET /api/quiz/course/:courseId
@@ -56,6 +58,12 @@ router.post("/:quizId/performance", express.json(), quizController.recordPerform
  * Check if a selected answer is correct (secure server-side validation)
  */
 router.post("/:quizId/question/:questionId/check", express.json(), quizController.checkQuestionAnswerHandler);
+
+/**
+ * GET /api/quiz/:quizId/scores
+ * Get scores for a quiz with student data (Instructors only)
+ */
+router.get("/:quizId/scores", requireRole(ROLES.STAFF), quizController.getQuizScoresHandler);
 
 module.exports = router;
 

@@ -750,6 +750,79 @@ const saveQuizScore = async (scoreData) => {
     }
 };
 
+/**
+ * Get all scores for a quiz with student info (Instructors only)
+ * 
+ * @param {string} quizId - The ID of the quiz
+ * @returns {Promise<Array>} Array of score objects with student details attached
+ */
+const getQuizScores = async (quizId) => {
+    try {
+        const db = await databaseService.connect();
+        
+        // 1. Get the quiz to find the course
+        const quiz = await getQuizById(quizId);
+        if (!quiz) return [];
+        
+        // 2. Get all users in the course
+        const { getCourseUsers } = require('./user-course');
+        const courseUsers = await getCourseUsers(quiz.courseId);
+        
+        // Filter out instructors/staff to get only students
+        const studentsInCourse = courseUsers.filter(userCourse => {
+            if (!userCourse.affiliation) return false;
+            
+            const affiliations = Array.isArray(userCourse.affiliation)
+                ? userCourse.affiliation
+                : String(userCourse.affiliation).split(',').map(a => a.trim());
+            
+            const hasStudent = affiliations.includes('student') || affiliations.includes('affiliate');
+            const hasStaff = affiliations.includes('staff');
+            const hasFaculty = affiliations.includes('faculty');
+            
+            return hasStudent && !hasStaff && !hasFaculty;
+        });
+        
+        // 3. Get all quiz scores for this quiz
+        const scores = await db.collection("grasp_quiz_score").find({
+            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
+        }).toArray();
+        
+        // 4. Map students to their scores
+        const result = studentsInCourse.map(student => {
+            const userStrId = student.userId.toString();
+            const scoreRecord = scores.find(s => s.userId.toString() === userStrId);
+            
+            return {
+                _id: scoreRecord ? scoreRecord._id : null,
+                userId: student.userId,
+                score: scoreRecord ? scoreRecord.score : null,
+                correctAnswers: scoreRecord ? scoreRecord.correctAnswers : null,
+                totalQuestions: scoreRecord ? scoreRecord.totalQuestions : null,
+                timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
+                completedAt: scoreRecord ? scoreRecord.completedAt : null,
+                studentName: student.displayName || student.username || 'Unknown Student',
+                studentEmail: student.email || '-'
+            };
+        });
+        
+        // Sort: completed scores first (descending), then not taken, alphabetized by name
+        result.sort((a, b) => {
+            if (a.completedAt && !b.completedAt) return -1;
+            if (!a.completedAt && b.completedAt) return 1;
+            if (a.completedAt && b.completedAt) {
+                return new Date(b.completedAt) - new Date(a.completedAt);
+            }
+            return a.studentName.localeCompare(b.studentName);
+        });
+        
+        return result;
+    } catch (error) {
+        console.error("Error fetching quiz scores:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createQuiz,
     getQuizzesByCourse,
@@ -764,5 +837,6 @@ module.exports = {
     enrichQuestionsWithLO,
     getPhase1Questions,
     getPhase2Questions,
-    getPhase3Questions
+    getPhase3Questions,
+    getQuizScores
 };
