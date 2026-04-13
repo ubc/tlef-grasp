@@ -12,8 +12,8 @@ Task: Create a multiple-choice question based on the provided content that effec
 
 PROCEDURE:
 1. Create the question content
-2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
+2. Generate 4 plausible answer options.
+3. Place the correct answer in one of the positions (A, B, C, or D).
 4. Write the explanation
 
 The response format must be a valid JSON with the exact structure as follows:
@@ -33,7 +33,8 @@ CRITICAL FORMATTING REQUIREMENTS:
 - Return ONLY valid JSON.
 - Do NOT wrap the JSON in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string as \\\\\\\\ (double backslash).
+- CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\( and \\) for inline math (e.g., \\( x^2 \\) or \\( H_2O \\)). Do NOT use parentheses () or $ for math delimiters.
+- CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.
 - CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
 
 CONTENT: {ragContext}`;
