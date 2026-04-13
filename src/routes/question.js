@@ -9,18 +9,18 @@ router.get("/", questionController.getQuestionsHandler);
 router.get("/:questionId", questionController.getQuestionByIdHandler);
 
 // Save questions to question bank
-router.post("/save", express.json(), questionController.saveQuestionHandler);
+router.post("/save", questionController.saveQuestionHandler);
 
 // Update question
-router.put("/:questionId", express.json(), questionController.updateQuestionHandler);
+router.put("/:questionId", questionController.updateQuestionHandler);
 
 // Update question status
-router.put("/:questionId/status", express.json(), questionController.updateQuestionStatusHandler);
+router.put("/:questionId/status", questionController.updateQuestionStatusHandler);
 
 // Delete question
 router.delete("/:questionId", questionController.deleteQuestionHandler);
 
 // Export questions in various formats
-router.post("/export", express.json(), questionController.exportQuestionsHandler);
+router.post("/export", questionController.exportQuestionsHandler);
 
 module.exports = router;
