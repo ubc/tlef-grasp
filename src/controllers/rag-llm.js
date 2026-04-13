@@ -280,6 +280,33 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
       }
 
+      // Programmatically scramble the generated options to guarantee uniform true randomness 
+      // and defeat the LLM's inherent statistical bias toward picking B or C before sending it 
+      // back to the UI for preview.
+      if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
+        const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+        const optionValues = optionKeys.map(k => questionData.options[k]);
+        
+        for (let i = optionValues.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [optionValues[i], optionValues[j]] = [optionValues[j], optionValues[i]];
+        }
+        
+        const originalCorrectValue = questionData.options[questionData.correctAnswer];
+        let newCorrectKey = questionData.correctAnswer;
+        
+        for (let i = 0; i < optionKeys.length; i++) {
+          const key = optionKeys[i];
+          questionData.options[key] = optionValues[i];
+          if (optionValues[i] === originalCorrectValue) {
+            newCorrectKey = key;
+          }
+        }
+        
+        questionData.correctAnswer = newCorrectKey;
+        console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey} to perfectly bypass LLM model bias`);
+      }
+
       res.json({
         success: true,
         question: questionData,
