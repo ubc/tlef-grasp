@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     optionsHtml += `
                         <div class="${classes}">
                             <div class="review-option-letter">${key}</div>
-                            <div class="review-option-text">${escapeHtml(optionText)}</div>
+                            <div class="review-option-text">${window.parseSmilesTags ? window.parseSmilesTags(escapeHtml(optionText)) : escapeHtml(optionText)}</div>
                         </div>
                     `;
                 });
@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <span>Question ${index + 1}</span>
                         ${statusBadge}
                     </div>
-                    <div class="review-question-title">${escapeHtml(attempt.questionText)}</div>
+                    <div class="review-question-title">${window.parseSmilesTags ? window.parseSmilesTags(escapeHtml(attempt.questionText)) : escapeHtml(attempt.questionText)}</div>
                     <div class="review-options">
                         ${optionsHtml}
                     </div>
@@ -278,6 +278,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Try to render math if katex is available globally on this page
             if (typeof renderKatex === 'function') {
                 renderKatex();
+            }
+            if (typeof renderSmiles === 'function') {
+                renderSmiles();
             }
         } catch(e) {
             console.error("Error fetching review:", e);

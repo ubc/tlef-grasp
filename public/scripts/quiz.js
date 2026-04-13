@@ -536,7 +536,7 @@ function showQuestion(questionIndex) {
 
   let completeHTML = `
     <div class="question-title" style="margin-bottom: ${question.stem ? '10px' : '0'};">
-      ${escapeHtml(question.question || question.title || "Question text not available")}
+      ${parseSmilesTags(escapeHtml(question.question || question.title || "Question text not available"))}
     </div>
   `;
 
@@ -555,7 +555,7 @@ function showQuestion(questionIndex) {
   if (question.stem) {
     completeHTML += `
       <div class="question-stem" style="font-size: 1.1em; font-weight: 500; color: #34495e;">
-        ${escapeHtml(question.stem)}
+        ${parseSmilesTags(escapeHtml(question.stem))}
       </div>
     `;
   }
@@ -588,6 +588,7 @@ function showQuestion(questionIndex) {
 
   // Render LaTeX after content is updated
   renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 
   // Update navigation buttons
   document.getElementById("prevButton").disabled = questionIndex === 0;
@@ -640,13 +641,12 @@ function renderAnswerOptions(question, questionIndex) {
     }
 
     // Escape HTML and use innerHTML to support LaTeX rendering
-    const escapedOptionText = escapeHtml(optionText);
     optionDiv.innerHTML = `
       <div class="option-letter">${rawDBKey}</div>
-      <div class="option-text">${escapedOptionText}</div>
+      <div class="option-text">${parseSmilesTags(escapeHtml(optionText))}</div>
     `;
 
-    // Only allow selection if not already answered
+    // Only allow clicking if no feedback is shown for this DB question yet
     if (!quizState.feedback[questionId]) {
       optionDiv.addEventListener("click", () => selectAnswer(index, rawDBKey, questionIndex, questionId));
     }

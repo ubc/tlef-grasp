@@ -3109,6 +3109,7 @@ function setupStep2EventListeners() {
 function renderStep2() {
   renderQuestionGroups();
   renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 }
 
 function renderQuestionGroups() {
@@ -3153,8 +3154,9 @@ function renderQuestionGroups() {
   // Set up question card event listeners
   setupQuestionCardListeners();
 
-  // Re-render LaTeX after rendering questions
-  renderKatex();
+  // Re-render LaTeX and SMILES after the DOM is updated
+  if (typeof renderKatex === "function") renderKatex();
+  if (typeof renderSmiles === "function") renderSmiles();
 }
 
 // Toggle meta learning objective group expand/collapse
@@ -3229,7 +3231,7 @@ function renderQuestionCard(question, group) {
             <div class="question-card__body">
                 ${isEditing
       ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
-      : `<p class="question-card__stem">${question.stem}</p>`
+      : `<p class="question-card__stem">${parseSmilesTags(question.stem)}</p>`
     }
                 <div class="question-card__options">
                     ${Object.values(question.options).map(
@@ -3245,7 +3247,7 @@ function renderQuestionCard(question, group) {
           } disabled>
                             ${isEditing
             ? `<input type="text" value="${(option.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
-            : `<label>${option.id}. ${option.text}</label>`
+            : `<label>${option.id}. ${parseSmilesTags(option.text)}</label>`
           }
                         </div>
                         <div class="question-card__feedback">${isCorrect ? "Correct" : "Incorrect"}</div>

@@ -53,7 +53,7 @@ app.use(
           "https://cdn.jsdelivr.net",
         ],
         imgSrc: ["'self'", "data:", "blob:"],
-        connectSrc: ["'self'", "https://api.openai.com"],
+        connectSrc: ["'self'", "https://api.openai.com", "https://cdn.jsdelivr.net"],
         workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
       },
     },

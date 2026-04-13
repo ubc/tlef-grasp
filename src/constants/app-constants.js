@@ -34,6 +34,7 @@ CRITICAL FORMATTING REQUIREMENTS:
 - Do NOT wrap the JSON in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
 - CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\( and \\) for inline math (e.g., \\( x^2 \\) or \\( H_2O \\)). Do NOT use parentheses () or $ for math delimiters.
+- CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]). Do NOT use chemical formulas like H2O or NaCl inside these tags; use proper SMILES notation (e.g., [SMILES]O[/SMILES] or [SMILES][Na+].[Cl-][/SMILES]).
 - CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.
 - CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
 
