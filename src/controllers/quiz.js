@@ -426,8 +426,29 @@ const getStudentQuizAttemptHandler = async (req, res) => {
   }
 };
 
+/**
+ * Get all completed quiz IDs for the current student in a course
+ */
+const getMyScoresHandler = async (req, res) => {
+  try {
+    const { courseId } = req.query;
+    const userId = req.user._id || req.user.id;
+
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: "courseId is required" });
+    }
+
+    const completedQuizIds = await quizService.getUserScoresForCourse(userId, courseId);
+    res.json({ success: true, completedQuizIds });
+  } catch (error) {
+    console.error("Error fetching my scores:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
+  getMyScoresHandler,
   getQuizByIdHandler,
   createQuizHandler,
   updateQuizHandler,

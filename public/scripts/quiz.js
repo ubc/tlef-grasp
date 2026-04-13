@@ -14,6 +14,7 @@ let quizState = {
   userId: null,
   userRole: null,
   courseId: null,
+  completedQuizIds: [], // Added to track completions based on scores
   startTime: null,
   timerInterval: null
 };
@@ -72,10 +73,11 @@ async function loadQuizList() {
     // Update course name display
     document.getElementById("courseNameDisplay").textContent = selectedCourse.name || "Unknown Course";
 
-    // Fetch quizzes and achievements in parallel
-    const [quizzesResponse, achievementsResponse] = await Promise.all([
+    // Fetch quizzes, achievements, and completion scores in parallel
+    const [quizzesResponse, achievementsResponse, scoresResponse] = await Promise.all([
       fetch(`/api/quiz/course/${quizState.courseId}`),
-      fetch(`/api/achievement/my?courseId=${quizState.courseId}`)
+      fetch(`/api/achievement/my?courseId=${quizState.courseId}`),
+      fetch(`/api/quiz/my-scores?courseId=${quizState.courseId}`)
     ]);
 
     const quizzesData = await quizzesResponse.json();
@@ -87,7 +89,12 @@ async function loadQuizList() {
         userAchievements = achievementsData.data;
       }
     }
-
+    if (scoresResponse.ok) {
+      const scoresData = await scoresResponse.json();
+      if (scoresData.success && scoresData.completedQuizIds) {
+        quizState.completedQuizIds = scoresData.completedQuizIds;
+      }
+    }
     if (quizzesData.success && quizzesData.quizzes) {
       // Filter to only show published quizzes and check dates
       const now = new Date();
@@ -106,6 +113,9 @@ async function loadQuizList() {
           publishedQuizzes.map(async (quiz) => {
             const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
             let questionCount = 0;
+            let phase1Count = 0;
+            let phase2Count = 0;
+            let phase3Count = 0;
 
             try {
               // Get approved questions count (for students)
@@ -114,6 +124,12 @@ async function loadQuizList() {
                 const questionsData = await questionsResponse.json();
                 if (questionsData.success && questionsData.questions) {
                   questionCount = questionsData.questions.length;
+                  
+                  // Calculate breakdown
+                  const questions = questionsData.questions;
+                  phase1Count = questions.filter(q => q.phase === 1).length;
+                  phase2Count = questions.filter(q => q.phase === 2).length;
+                  phase3Count = questions.filter(q => q.phase === 3).length;
                 }
               }
             } catch (error) {
@@ -129,6 +145,9 @@ async function loadQuizList() {
             return {
               ...quiz,
               questionCount: questionCount,
+              phase1Count: phase1Count || 0,
+              phase2Count: phase2Count || 0,
+              phase3Count: phase3Count || 0,
               achievements: quizAchievements
             };
           })
@@ -200,7 +219,8 @@ function createQuizCard(quiz) {
 
   // Check for achievements
   const achievements = quiz.achievements || [];
-  const hasCompleted = achievements.some(a => a.type === 'quiz_completed');
+  // NEW: Check completion based on scores table, not achievements
+  const hasCompleted = quizState.completedQuizIds.includes(quizId);
   const hasPerfect = achievements.some(a => a.type === 'quiz_perfect');
 
   // Build achievement badges HTML
@@ -240,10 +260,20 @@ function createQuizCard(quiz) {
           Due: ${new Date(quiz.expireDate).toLocaleDateString()}
         </span>
         ` : ''}
-        <span class="quiz-question-count">
-          <i class="fas fa-question-circle"></i>
-          ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) !== 1 ? 's' : ''}
-        </span>
+        <div class="quiz-count-breakdown">
+          <span class="quiz-count-item quiz" title="New Quiz Questions">
+            <i class="fas fa-book"></i>
+            ${quiz.phase1Count || 0} Quiz
+          </span>
+          <span class="quiz-count-item remediation" title="Remediation Questions">
+            <i class="fas fa-fire-alt"></i>
+            ${quiz.phase2Count || 0} Remediation
+          </span>
+          <span class="quiz-count-item review" title="Spaced Learning Questions">
+            <i class="fas fa-history"></i>
+            ${quiz.phase3Count || 0} Review
+          </span>
+        </div>
       </div>
       ${achievements.length > 0 ? `
         <div class="quiz-card-achievements-detail">

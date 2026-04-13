@@ -9,6 +9,7 @@ const { ROLES } = require("../utils/auth");
  * Get all quizzes for a course
  */
 router.get("/course/:courseId", quizController.getQuizzesByCourseHandler);
+router.get("/my-scores", quizController.getMyScoresHandler);
 
 /**
  * GET /api/quiz/:quizId
