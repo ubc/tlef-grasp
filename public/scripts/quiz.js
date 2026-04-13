@@ -263,7 +263,7 @@ function createQuizCard(quiz) {
         <div class="quiz-count-breakdown">
           <span class="quiz-count-item quiz" title="New Quiz Questions">
             <i class="fas fa-book"></i>
-            ${quiz.phase1Count || 0} Quiz
+            ${quiz.phase1Count || 0} New
           </span>
           <span class="quiz-count-item remediation" title="Remediation Questions">
             <i class="fas fa-fire-alt"></i>
