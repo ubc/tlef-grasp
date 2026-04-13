@@ -72,7 +72,8 @@ class LLMService {
         defaultModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         defaultOptions: {
           temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.2,
-          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000
+          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+          responseFormat: parseInt(process.env.LLM_RESPONSE_FORMAT) || 'json'
         },
         logger: new ConsoleLogger('LLM'),
       };
