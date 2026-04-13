@@ -81,6 +81,10 @@ class DatabaseService {
       await this.db.collection("grasp_student_attempt").createIndex({ questionId: 1 });
       await this.db.collection("grasp_student_attempt").createIndex({ learningObjectiveId: 1 });
       await this.db.collection("grasp_student_attempt").createIndex({ userId: 1, learningObjectiveId: 1 });
+      // New compound indexes for efficient lookups at scale
+      await this.db.collection("grasp_student_attempt").createIndex({ userId: 1, courseId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ userId: 1, quizId: 1 });
+      await this.db.collection("grasp_student_attempt").createIndex({ isFirstAttempt: 1 });
 
       // 2. Mastery State: Tracks current level/status per LO (One record per student per LO)
       await this.db.collection("grasp_student_performance").createIndex({ userId: 1, courseId: 1, learningObjectiveId: 1 }, { unique: true });

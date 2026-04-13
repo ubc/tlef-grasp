@@ -407,6 +407,25 @@ const getQuizScoresHandler = async (req, res) => {
   }
 };
 
+/**
+ * Get detailed student attempt answers for a specific quiz (Instructors only)
+ */
+const getStudentQuizAttemptHandler = async (req, res) => {
+  try {
+    const { quizId, userId } = req.params;
+    const attempts = await quizService.getStudentQuizAttempt(quizId, userId);
+    
+    if (!attempts) {
+      return res.status(404).json({ success: false, error: "Attempts not found" });
+    }
+    
+    res.json({ success: true, data: attempts });
+  } catch (error) {
+    console.error("Error fetching student quiz attempts:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
   getQuizByIdHandler,
@@ -417,5 +436,6 @@ module.exports = {
   getQuizQuestionsHandler,
   recordPerformanceHandler,
   checkQuestionAnswerHandler,
-  getQuizScoresHandler
+  getQuizScoresHandler,
+  getStudentQuizAttemptHandler
 };

@@ -649,6 +649,9 @@ const saveStudentPerformance = async (performanceData) => {
             granularObjectiveId: performanceData.granularObjectiveId ? (ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId) : null,
             bloom: performanceData.bloom,
             isCorrect: !!performanceData.isCorrect,
+            selectedAnswer: performanceData.selectedAnswer || null,
+            correctAnswer: performanceData.correctAnswer || null,
+            isFirstAttempt: performanceData.isFirstAttempt !== undefined ? performanceData.isFirstAttempt : true,
             createdAt: new Date()
         };
         const attemptResult = await attemptCollection.insertOne(attemptData);
@@ -823,6 +826,61 @@ const getQuizScores = async (quizId) => {
     }
 };
 
+/**
+ * Get detailed student attempt for a review interface
+ * @param {string} quizId 
+ * @param {string} userId 
+ * @returns {Promise<Array>} Array of detailed question responses
+ */
+const getStudentQuizAttempt = async (quizId, userId) => {
+    try {
+        const db = await databaseService.connect();
+        
+        const attemptCollection = db.collection("grasp_student_attempt");
+        const query = {
+            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId,
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+            isFirstAttempt: { $ne: false } // Catch older records before this field existed
+        };
+        
+        const attempts = await attemptCollection.find(query).toArray();
+        if (!attempts || attempts.length === 0) return [];
+
+        const questionIds = attempts.map(a => a.questionId);
+        const questionsCollection = db.collection("grasp_question");
+        const questions = await questionsCollection.find({
+            _id: { $in: questionIds }
+        }).toArray();
+
+        // Create map for easy lookup
+        const questionMap = {};
+        questions.forEach(q => {
+            questionMap[q._id.toString()] = q;
+        });
+
+        // Combine
+        return attempts.map(attempt => {
+            const questionData = questionMap[attempt.questionId.toString()];
+            if (!questionData) return null;
+
+            return {
+                attemptId: attempt._id,
+                questionId: questionData._id,
+                questionText: questionData.title || questionData.stem || "Unknown Question",
+                options: questionData.options || {},
+                selectedAnswer: attempt.selectedAnswer,
+                correctAnswer: attempt.correctAnswer || questionData.correctAnswer,
+                isCorrect: attempt.isCorrect,
+                bloom: attempt.bloom,
+                createdAt: attempt.createdAt
+            };
+        }).filter(a => a !== null);
+    } catch (error) {
+        console.error("Error fetching student quiz attempt:", error);
+        throw error;
+    }
+};
+
 module.exports = {
     createQuiz,
     getQuizzesByCourse,
@@ -838,5 +896,6 @@ module.exports = {
     getPhase1Questions,
     getPhase2Questions,
     getPhase3Questions,
-    getQuizScores
+    getQuizScores,
+    getStudentQuizAttempt
 };

@@ -10,6 +10,10 @@
     <link rel="stylesheet" href="styles/navigation.css">
     <link rel="stylesheet" href="styles/quiz-scores.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -58,6 +62,24 @@
                     </div>
                     <div class="pagination-controls" id="pagination-controls">
                         <!-- Pagination buttons injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Student Review Modal -->
+            <div id="student-review-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-content quiz-review-modal">
+                    <div class="modal-header">
+                        <h2 id="review-student-name">Student Review</h2>
+                        <button class="close-modal-btn" id="close-review-btn">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="review-summary" id="review-summary">
+                            <p>Loading attempt data...</p>
+                        </div>
+                        <div class="review-questions-container" id="review-questions-container">
+                            <!-- Detailed questions injected here -->
+                        </div>
                     </div>
                 </div>
             </div>

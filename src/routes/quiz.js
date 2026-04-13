@@ -65,5 +65,11 @@ router.post("/:quizId/question/:questionId/check", express.json(), quizControlle
  */
 router.get("/:quizId/scores", requireRole(ROLES.STAFF), quizController.getQuizScoresHandler);
 
+/**
+ * GET /api/quiz/:quizId/student/:userId/attempts
+ * Get detailed student attempt answers for a specific quiz (Instructors only)
+ */
+router.get("/:quizId/student/:userId/attempts", requireRole(ROLES.STAFF), quizController.getStudentQuizAttemptHandler);
+
 module.exports = router;
 

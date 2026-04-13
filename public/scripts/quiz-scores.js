@@ -138,9 +138,151 @@ document.addEventListener('DOMContentLoaded', async () => {
             tr.appendChild(ratioTd);
             tr.appendChild(timeTd);
             tr.appendChild(dateTd);
+            
+            if (item.score !== undefined && item.score !== null) {
+                tr.classList.add('student-row');
+                tr.title = "Click to review student answers";
+                tr.addEventListener('click', () => {
+                    const quizId = document.getElementById('quiz-selector').value;
+                    fetchAndRenderStudentReview(quizId, item.userId, item.studentName || 'Unknown Student', item.score);
+                });
+            }
 
             tableBody.appendChild(tr);
         });
+    };
+
+    // Modal UI Logic
+    const reviewModal = document.getElementById("student-review-modal");
+    const closeReviewBtn = document.getElementById("close-review-btn");
+    const reviewSummary = document.getElementById("review-summary");
+    const reviewQuestionsContainer = document.getElementById("review-questions-container");
+    const reviewStudentName = document.getElementById("review-student-name");
+    
+    closeReviewBtn.addEventListener("click", () => {
+        reviewModal.style.display = "none";
+    });
+
+    window.addEventListener("click", (e) => {
+        if (e.target === reviewModal) {
+            reviewModal.style.display = "none";
+        }
+    });
+
+    const escapeHtml = (unsafe) => {
+        return (unsafe || "").toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    };
+
+    const renderKatex = () => {
+        if (typeof renderMathInElement !== 'undefined') {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false},
+                    {left: '\\[', right: '\\]', display: true}
+                ],
+                throwOnError: false
+            });
+        }
+    };
+
+    const fetchAndRenderStudentReview = async (quizId, userId, studentName, score) => {
+        reviewStudentName.textContent = `Review: ${studentName}`;
+        reviewSummary.innerHTML = `<p>Loading attempt data...</p>`;
+        reviewQuestionsContainer.innerHTML = '';
+        reviewModal.style.display = "flex";
+
+        try {
+            const response = await fetch(`/api/quiz/${quizId}/student/${userId}/attempts`);
+            const data = await response.json();
+
+            if (!data.success || !data.data) {
+                throw new Error("Could not fetch attempt data.");
+            }
+
+            const attempts = data.data;
+            if (attempts.length === 0) {
+                reviewSummary.innerHTML = `<p>No recorded questions found for this attempt.</p>`;
+                return;
+            }
+
+            const correctCount = attempts.filter(a => a.isCorrect).length;
+            const totalCount = attempts.length;
+            
+            reviewSummary.innerHTML = `
+                <div style="font-size: 16px; color: #2c3e50;">
+                    <strong>Score:</strong> <span class="score-badge ${getScoreClass(score)}" style="margin-right: 15px;">${Number(score).toFixed(1)}%</span>
+                    <strong>Questions Answered:</strong> ${correctCount} / ${totalCount} Correct
+                </div>
+            `;
+
+            attempts.forEach((attempt, index) => {
+                const qDiv = document.createElement("div");
+                qDiv.className = "review-question";
+                
+                const dbKeys = ['A', 'B', 'C', 'D'];
+                let optionsHtml = '';
+
+                dbKeys.forEach(key => {
+                    const optionRaw = attempt.options[key];
+                    const optionText = typeof optionRaw === 'object' && optionRaw !== null ? (optionRaw.text || "") : (optionRaw || "");
+                    if (!optionText) return;
+
+                    let classes = "review-option";
+                    if (key === attempt.correctAnswer) {
+                        classes += " correct";
+                    } else if (key === attempt.selectedAnswer && !attempt.isCorrect) {
+                        classes += " incorrect";
+                    }
+
+                    // For older attempts without selectedAnswer logged, don't show incorrect highlights since it's unknown
+                    if (!attempt.selectedAnswer && !attempt.isCorrect && key !== attempt.correctAnswer) {
+                        classes = "review-option"; // Can't know which one they picked
+                    }
+
+                    optionsHtml += `
+                        <div class="${classes}">
+                            <div class="review-option-letter">${key}</div>
+                            <div class="review-option-text">${escapeHtml(optionText)}</div>
+                        </div>
+                    `;
+                });
+
+                let statusBadge = attempt.isCorrect 
+                    ? `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>` 
+                    : `<span style="color: #e74c3c;"><i class="fas fa-times-circle"></i> Incorrect</span>`;
+                
+                if (!attempt.selectedAnswer) {
+                    statusBadge += ` <span style="color: #95a5a6; font-size: 0.8em; font-weight: normal; margin-left: 10px;">(Exact answer wasn't logged)</span>`;
+                }
+
+                qDiv.innerHTML = `
+                    <div class="review-question-header">
+                        <span>Question ${index + 1}</span>
+                        ${statusBadge}
+                    </div>
+                    <div class="review-question-title">${escapeHtml(attempt.questionText)}</div>
+                    <div class="review-options">
+                        ${optionsHtml}
+                    </div>
+                `;
+                reviewQuestionsContainer.appendChild(qDiv);
+            });
+            
+            // Try to render math if katex is available globally on this page
+            if (typeof renderKatex === 'function') {
+                renderKatex();
+            }
+        } catch(e) {
+            console.error("Error fetching review:", e);
+            reviewSummary.innerHTML = `<p style="color: red;">Failed to load attempt data.</p>`;
+        }
     };
 
     const renderPaginationControls = (totalPages) => {

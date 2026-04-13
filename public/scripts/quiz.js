@@ -607,17 +607,13 @@ function showQuestion(questionIndex) {
 function renderAnswerOptions(question, questionIndex) {
   const answerOptions = document.getElementById("answerOptions");
   answerOptions.innerHTML = "";
-
-  // The secure backend now passes an array of indices [3, 0, 1, 2]
-  const optionOrderIndices = question.optionOrder || [0, 1, 2, 3];
   const questionId = question.id;
   
-  // The backend still physically keys the options DB dictionary as A, B, C, D
+  // The backend physically keys the options DB dictionary as A, B, C, D
   const databaseKeys = ['A', 'B', 'C', 'D'];
-  const selectedIndex = quizState.answers[questionId];
+  const selectedIndex = quizState.answers[questionId]; // 0, 1, 2, or 3
 
-  optionOrderIndices.forEach((mappedIndex, uiLoopCount) => {
-    const rawDBKey = databaseKeys[mappedIndex]; // e.g. 'C'
+  databaseKeys.forEach((rawDBKey, index) => {
     const optionRaw = question.options[rawDBKey];
     
     // Safely extract the string text from the dictionary object 
@@ -626,38 +622,33 @@ function renderAnswerOptions(question, questionIndex) {
 
     const optionDiv = document.createElement("div");
     optionDiv.className = "answer-option";
-    // We bind the dataset to the underlying index number so the backend can look it up securely
-    optionDiv.dataset.index = mappedIndex;
+    optionDiv.dataset.index = index;
 
-    // Add selected class if this exact mappedIndex was selected previously
-    if (selectedIndex === mappedIndex) {
+    // Add selected class if this exact index was selected previously
+    if (selectedIndex === index) {
       optionDiv.classList.add("selected");
     }
 
     // Add correct/incorrect classes if feedback exists (check by question ID)
     if (quizState.feedback[questionId]) {
       const feedbackData = quizState.feedback[questionId];
-      // Note: check against the parsed `rawDBKey` (e.g. 'C') because feedbackData.correctAnswer returns letters
       if (rawDBKey === feedbackData.correctAnswer) {
         optionDiv.classList.add("correct");
-      } else if (selectedIndex === mappedIndex && !feedbackData.isCorrect) {
+      } else if (selectedIndex === index && !feedbackData.isCorrect) {
         optionDiv.classList.add("incorrect");
       }
     }
 
-    // Visually, the UI should always render A -> B -> C -> D regardless of the mapping
-    const visualOrderLetter = databaseKeys[uiLoopCount];
-
     // Escape HTML and use innerHTML to support LaTeX rendering
     const escapedOptionText = escapeHtml(optionText);
     optionDiv.innerHTML = `
-      <div class="option-letter">${visualOrderLetter}</div>
+      <div class="option-letter">${rawDBKey}</div>
       <div class="option-text">${escapedOptionText}</div>
     `;
 
     // Only allow selection if not already answered
     if (!quizState.feedback[questionId]) {
-      optionDiv.addEventListener("click", () => selectAnswer(mappedIndex, rawDBKey, questionIndex, questionId));
+      optionDiv.addEventListener("click", () => selectAnswer(index, rawDBKey, questionIndex, questionId));
     }
 
     answerOptions.appendChild(optionDiv);
@@ -687,13 +678,13 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
     const result = await response.json();
     if (!result.success) throw new Error(result.error);
 
-    // Store the selected mapped index
     quizState.answers[questionId] = selectedIndex;
     
     // Store exact server-authoritative feedback payload
     quizState.feedback[questionId] = {
       isCorrect: result.isCorrect,
       selectedAnswer: selectedIndex,
+      selectedKey: rawDBKey, // Store the raw A/B/C/D key for tracking
       correctAnswer: result.correctAnswer, // This will be the raw DB 'A', 'B' string
       feedbackText: result.feedback,
       correctOptionText: result.correctOptionText
@@ -707,13 +698,10 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
 
     // Update highlighting immediately on all options
     options.forEach(option => {
-      // Parse the embedded mapped index from the dataset (e.g. 0-3)
-      const mappedIndex = parseInt(option.dataset.index, 10);
-      
-      // We must reconstruct the raw backend key ('A', 'B', 'C', 'D') for this mapped index
-      // because the API evaluation result.correctAnswer returns the correct string key
+      // Parse the embedded index from the dataset (e.g. 0-3)
+      const index = parseInt(option.dataset.index, 10);
       const databaseKeys = ['A', 'B', 'C', 'D'];
-      const optionKey = databaseKeys[mappedIndex]; 
+      const optionKey = databaseKeys[index]; 
 
       option.classList.remove("selected", "correct", "incorrect");
 
@@ -723,7 +711,7 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
       }
 
       // Add incorrect class to the selected wrong answer
-      if (mappedIndex === selectedIndex && !result.isCorrect) {
+      if (index === selectedIndex && !result.isCorrect) {
         option.classList.add("incorrect");
       }
     });

@@ -98,50 +98,7 @@ const startQuizHandler = async (req, res) => {
   }
 };
 
-// Helper function to shuffle an array (Fisher-Yates algorithm)
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
 
-// Helper function to shuffle question options and update correct answer
-function shuffleQuestionOptions(question) {
-  const optionKeys = ['A', 'B', 'C', 'D'];
-  const originalCorrectAnswer = question.correctAnswer;
-  // If options are objects {A: "text", ...}
-  const correctOptionText = question.options[originalCorrectAnswer];
-
-  // Create array of option entries and shuffle
-  const optionEntries = optionKeys.map(key => ({
-    key,
-    text: question.options[key]
-  }));
-  const shuffledEntries = shuffleArray(optionEntries);
-
-  // Rebuild options object with shuffled order
-  const newOptions = {};
-  let newCorrectAnswer = 'A';
-
-  shuffledEntries.forEach((entry, index) => {
-    const newKey = optionKeys[index];
-    newOptions[newKey] = entry.text;
-
-    // Track where the correct answer moved to
-    if (entry.text === correctOptionText) {
-      newCorrectAnswer = newKey;
-    }
-  });
-
-  return {
-    ...question,
-    options: newOptions,
-    correctAnswer: newCorrectAnswer
-  };
-}
 
 const getQuizQuestionsHandler = async (req, res) => {
   try {
@@ -221,18 +178,14 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    // Questions are already selected and ordered by service logic (LO distribution, etc.)
-    // We just need to shuffle options for each question
-    const randomizedQuestions = transformedQuestions.map(q => shuffleQuestionOptions(q));
-
-    res.json({
+        res.json({
       success: true,
       data: {
         quizId: quizId,
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0,
-        questions: randomizedQuestions,
+        questions: transformedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
@@ -297,6 +250,14 @@ const submitQuizHandler = async (req, res) => {
         });
 
         const db = await databaseService.connect();
+        
+        // Determine if this is the student's very first formally submitted attempt for this quiz
+        const existingScore = await db.collection("grasp_quiz_score").findOne({
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
+        });
+        const isFirstAttempt = !existingScore;
+
         const rawSubmittedQuestions = await db.collection("grasp_question").find({
             _id: { $in: submittedQuestionIds }
         }).toArray();
@@ -319,7 +280,10 @@ const submitQuizHandler = async (req, res) => {
                     learningObjectiveId: questionData.learningObjectiveId,
                     granularObjectiveId: questionData.granularObjectiveId,
                     bloom: questionData.bloom,
-                    isCorrect: !!feedbackResult.isCorrect
+                    isCorrect: !!feedbackResult.isCorrect,
+                    isFirstAttempt: isFirstAttempt,
+                    selectedAnswer: feedbackResult.selectedKey,
+                    correctAnswer: feedbackResult.correctAnswer
                 });
             }
         }
