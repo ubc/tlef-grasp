@@ -35,9 +35,28 @@
                 </div>                 <!-- Tab Content: Course Settings -->
                 <div id="general" class="tab-content active">
                     <div class="settings-section">
+                        <h2>Student enrollment code</h2>
+                        <p class="section-intro">Share this code with students so they can join this course from <strong>Onboarding → Join a course</strong> without you adding each person manually.</p>
+                        <div class="settings-form enrollment-code-block">
+                            <div class="form-group">
+                                <label for="enrollment-code-display">Current enrollment code</label>
+                                <div class="enrollment-code-row">
+                                    <input type="text" id="enrollment-code-display" class="enrollment-code-input" readonly placeholder="Loading…" autocomplete="off">
+                                    <button type="button" id="copy-enrollment-code" class="secondary-btn" title="Copy code">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" id="regenerate-enrollment-code" class="secondary-btn danger-outline">
+                                <i class="fas fa-sync-alt"></i> Regenerate code
+                            </button>
+                            <p class="help-text enrollment-warning"><i class="fas fa-exclamation-triangle"></i> Regenerating invalidates the previous code. Students who still have the old code will need the new one.</p>
+                        </div>
+                    </div>
+                    <div class="settings-section">
                         <h2>Course Configuration</h2>
                         <div class="settings-form">
-                            <p><em>General settings for this course can be added here in the future.</em></p>
+                            <p><em>Additional general settings for this course can be added here in the future.</em></p>
                         </div>
                     </div>
                 </div>

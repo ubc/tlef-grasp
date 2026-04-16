@@ -32,6 +32,16 @@
     gap: 30px;
 }
 
+.no-course-content a {
+    color: #4f46e5;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+.no-course-content a:hover {
+    color: #4338ca;
+}
+
 /* Section Styles */
 section {
     background-color: white;
