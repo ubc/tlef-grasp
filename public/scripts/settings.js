@@ -34,6 +34,7 @@ async function initializeSettings() {
 
         // Load Settings
         await loadSettings();
+        await loadEnrollmentCode();
 
         // Save Settings Event
         const saveBtn = document.getElementById('save-all-settings');
@@ -41,9 +42,97 @@ async function initializeSettings() {
             saveBtn.addEventListener('click', saveSettings);
         }
 
+        const copyBtn = document.getElementById('copy-enrollment-code');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', copyEnrollmentCode);
+        }
+        const regenBtn = document.getElementById('regenerate-enrollment-code');
+        if (regenBtn) {
+            regenBtn.addEventListener('click', regenerateEnrollmentCode);
+        }
+
     } catch (error) {
         console.error("Error initializing settings:", error);
         showToast("Error initializing settings", "error");
+    }
+}
+
+async function loadEnrollmentCode() {
+    const input = document.getElementById('enrollment-code-display');
+    if (!input) return;
+
+    try {
+        const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+        const courseId = selectedCourse.id;
+        if (!courseId) {
+            input.placeholder = 'No course selected';
+            return;
+        }
+
+        const response = await fetch(`/api/courses/${courseId}/enrollment-code`);
+        const data = await response.json();
+
+        if (response.ok && data.success && data.enrollmentCode) {
+            input.value = data.enrollmentCode;
+        } else {
+            throw new Error(data.error || 'Failed to load enrollment code');
+        }
+    } catch (error) {
+        console.error('Error loading enrollment code:', error);
+        input.placeholder = 'Could not load code';
+        showToast(error.message || 'Could not load enrollment code', 'error');
+    }
+}
+
+function copyEnrollmentCode() {
+    const input = document.getElementById('enrollment-code-display');
+    if (!input || !input.value) {
+        showToast('No code to copy', 'warning');
+        return;
+    }
+    navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Code copied to clipboard', 'success');
+    }).catch(() => {
+        input.select();
+        document.execCommand('copy');
+        showToast('Code copied', 'success');
+    });
+}
+
+async function regenerateEnrollmentCode() {
+    const btn = document.getElementById('regenerate-enrollment-code');
+    const input = document.getElementById('enrollment-code-display');
+    if (!btn || !confirm('Regenerate the enrollment code? The old code will stop working for new enrollments.')) {
+        return;
+    }
+
+    try {
+        const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+        const courseId = selectedCourse.id;
+        if (!courseId) {
+            showToast('No course selected', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        const response = await fetch(`/api/courses/${courseId}/regenerate-enrollment-code`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success && data.enrollmentCode) {
+            if (input) input.value = data.enrollmentCode;
+            showToast(data.message || 'Enrollment code regenerated', 'success');
+        } else {
+            throw new Error(data.error || 'Failed to regenerate');
+        }
+    } catch (error) {
+        console.error('Regenerate enrollment code:', error);
+        showToast(error.message || 'Failed to regenerate code', 'error');
+    } finally {
+        btn.disabled = false;
     }
 }
 

@@ -134,6 +134,10 @@ app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDE
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
 });
 
+app.get("/student-settings", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/student-settings.html"));
+});
+
 app.get("/quiz", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/quiz.html"));
 });

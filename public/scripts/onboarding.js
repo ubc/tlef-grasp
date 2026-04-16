@@ -4,6 +4,7 @@
 const SELECTORS = {
   loginTab: 'login-tab',
   setupTab: 'setup-tab',
+  joinTab: 'join-tab',
   tabButton: '.tab-button',
   stepContent: '.step-content',
   progressStep: '.progress-step',
@@ -22,12 +23,14 @@ const SELECTORS = {
 const TAB_NAMES = {
   login: 'login',
   setup: 'setup',
+  join: 'join',
 };
 
 const API_ENDPOINTS = {
   currentUser: '/api/current-user',
   myCourses: '/api/courses/my',
   newCourse: '/api/courses/new',
+  joinByEnrollmentCode: '/api/courses/join-by-code',
 };
 
 const STORAGE_KEYS = {
@@ -49,6 +52,7 @@ class TabManager {
     this.elements = {
       loginTab: document.getElementById(SELECTORS.loginTab),
       setupTab: document.getElementById(SELECTORS.setupTab),
+      joinTab: document.getElementById(SELECTORS.joinTab),
       tabButtons: document.querySelectorAll(SELECTORS.tabButton),
     };
     this.onTabChange = onTabChange;
@@ -80,7 +84,7 @@ class TabManager {
   switchTo(tabName) {
     if (this.currentTab === tabName) return;
 
-    const { loginTab, setupTab, tabButtons } = this.elements;
+    const { loginTab, setupTab, joinTab, tabButtons } = this.elements;
 
     // Update button states
     tabButtons.forEach((btn) => {
@@ -88,12 +92,16 @@ class TabManager {
     });
 
     // Update tab visibility
+    this.hideTab(loginTab);
+    this.hideTab(setupTab);
+    this.hideTab(joinTab);
+
     if (tabName === TAB_NAMES.login) {
-      this.hideTab(setupTab);
       this.showTab(loginTab);
-    } else {
-      this.hideTab(loginTab);
+    } else if (tabName === TAB_NAMES.setup) {
       this.showTab(setupTab);
+    } else if (tabName === TAB_NAMES.join) {
+      this.showTab(joinTab);
     }
 
     this.currentTab = tabName;
@@ -156,7 +164,7 @@ class OnboardingManager {
     this.courseData = {};
     this.courses = null;
     this.isFaculty = false;
-
+    this.isStudent = false;
     this.cacheElements();
     this.tabManager = new TabManager((tab) => this.handleTabChange(tab));
     this.init();
@@ -176,6 +184,8 @@ class OnboardingManager {
       customCourseGroup: document.getElementById(SELECTORS.customCourseGroup),
       customCourseNameGroup: document.getElementById(SELECTORS.customCourseNameGroup),
       selectedCourseDisplay: document.getElementById(SELECTORS.selectedCourseDisplay),
+      joinEnrollmentCode: document.getElementById('join-enrollment-code'),
+      joinSubmitCode: document.getElementById('join-submit-code'),
     };
   }
 
@@ -197,6 +207,9 @@ class OnboardingManager {
     if (tab === TAB_NAMES.setup && !this.isFaculty) {
       return false;
     }
+    if (tab === TAB_NAMES.join && !this.isStudent) {
+      return false;
+    }
     return true;
   }
 
@@ -207,8 +220,11 @@ class OnboardingManager {
   handleTabChange(tab) {
     if (tab === TAB_NAMES.login) {
       this.loadExistingCourses(this.courses);
-    } else {
+    } else if (tab === TAB_NAMES.setup) {
       this.tabManager.activateStep1();
+    } else if (tab === TAB_NAMES.join) {
+      this.resetJoinSelection();
+      this.elements.joinEnrollmentCode?.focus();
     }
   }
 
@@ -222,12 +238,11 @@ class OnboardingManager {
           this.isFaculty = data.user.isFaculty || false;
           this.isStaff = data.user.isStaff || false;
           this.isStudent = data.user.isStudent || false;
-
-          // Students go directly to student dashboard
-          if (this.isStudent) {
-            window.location.href = '/student-dashboard';
-            return;
-          }
+          console.log('[onboarding] Current user role:', this.userRole, {
+            isFaculty: this.isFaculty,
+            isStaff: this.isStaff,
+            isStudent: this.isStudent,
+          });
         }
       }
     } catch (error) {
@@ -236,13 +251,23 @@ class OnboardingManager {
   }
 
   updateUIForUserRole() {
-    // Faculty has full access
-    if (this.isFaculty) return;
+    const joinTabButton = document.getElementById('join-tab-button');
 
-    // Hide setup tab button for staff
-    this.tabManager.hideTabButton(TAB_NAMES.setup);
+    if (this.isFaculty) {
+      if (joinTabButton) joinTabButton.style.display = 'none';
+      return;
+    }
 
-    // Hide custom course input groups for staff
+    if (this.isStudent) {
+      this.tabManager.hideTabButton(TAB_NAMES.setup);
+      if (joinTabButton) joinTabButton.style.display = '';
+    } else {
+      // Staff (non-faculty)
+      this.tabManager.hideTabButton(TAB_NAMES.setup);
+      if (joinTabButton) joinTabButton.style.display = 'none';
+    }
+
+    // Hide custom course input groups for non-faculty
     const { customCourseGroup, customCourseNameGroup, noCoursesMessage } = this.elements;
 
     if (customCourseGroup) {
@@ -253,7 +278,7 @@ class OnboardingManager {
     }
 
     // Update no-courses message for staff
-    if (noCoursesMessage) {
+    if (noCoursesMessage && !this.isStudent) {
       const createButton = noCoursesMessage.querySelector('button');
       if (createButton) {
         createButton.style.display = 'none';
@@ -290,6 +315,19 @@ class OnboardingManager {
         }
       });
     }
+
+    const { joinEnrollmentCode, joinSubmitCode } = this.elements;
+    if (joinEnrollmentCode) {
+      joinEnrollmentCode.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.submitJoinCourse();
+        }
+      });
+    }
+    if (joinSubmitCode) {
+      joinSubmitCode.addEventListener('click', () => this.submitJoinCourse());
+    }
   }
 
   async determineInitialTab() {
@@ -305,24 +343,42 @@ class OnboardingManager {
       // Store courses in state to avoid duplicate API calls
       this.courses = data.success && data.courses ? data.courses : [];
 
-      // Staff users or faculty with courses -> login tab
-      // Faculty without courses -> setup tab
-      const shouldShowLoginTab = !this.isFaculty || hasCourses;
-      const initialTab = shouldShowLoginTab ? TAB_NAMES.login : TAB_NAMES.setup;
+      let initialTab;
+
+      if (this.isStudent) {
+        initialTab = hasCourses ? TAB_NAMES.login : TAB_NAMES.join;
+      } else if (this.isFaculty) {
+        initialTab = hasCourses ? TAB_NAMES.login : TAB_NAMES.setup;
+      } else {
+        // Staff
+        initialTab = TAB_NAMES.login;
+      }
 
       this.tabManager.switchTo(initialTab);
 
       if (initialTab === TAB_NAMES.setup) {
         this.tabManager.activateStep1();
+      } else if (initialTab === TAB_NAMES.login) {
+        this.loadExistingCourses(this.courses);
+      } else if (initialTab === TAB_NAMES.join) {
+        this.resetJoinSelection();
       }
     } catch (error) {
       console.error('Error checking for existing courses:', error);
-      // Default to login tab for staff, setup for faculty
-      const fallbackTab = this.isFaculty ? TAB_NAMES.setup : TAB_NAMES.login;
+      let fallbackTab;
+      if (this.isStudent) {
+        fallbackTab = TAB_NAMES.join;
+      } else if (this.isFaculty) {
+        fallbackTab = TAB_NAMES.setup;
+      } else {
+        fallbackTab = TAB_NAMES.login;
+      }
       this.tabManager.switchTo(fallbackTab);
 
       if (fallbackTab === TAB_NAMES.login) {
         this.loadExistingCourses(null);
+      } else if (fallbackTab === TAB_NAMES.join) {
+        this.resetJoinSelection();
       }
     }
   }
@@ -448,10 +504,78 @@ class OnboardingManager {
         JSON.stringify({ id: courseId, name: courseName })
       );
 
-      window.location.href = '/dashboard';
+      window.location.href = this.isStudent ? '/student-dashboard' : '/dashboard';
     } catch (error) {
       console.error('Error accessing course dashboard:', error);
       this.showError('Failed to access dashboard. Please try again.');
+    }
+  }
+
+  resetJoinSelection() {
+    const { joinEnrollmentCode } = this.elements;
+    if (joinEnrollmentCode) joinEnrollmentCode.value = '';
+  }
+
+  showJoinError(message) {
+    const wrap = document.querySelector('.join-course-content');
+    if (!wrap) return;
+    const existing = wrap.querySelector('.error-message');
+    if (existing) existing.remove();
+    const errorElement = document.createElement('div');
+    errorElement.className = 'error-message';
+    errorElement.textContent = message;
+    const first = wrap.querySelector('h2');
+    if (first && first.nextSibling) {
+      wrap.insertBefore(errorElement, first.nextSibling);
+    } else {
+      wrap.prepend(errorElement);
+    }
+    setTimeout(() => errorElement.remove(), 6000);
+  }
+
+  async submitJoinCourse() {
+    const { joinEnrollmentCode, joinSubmitCode } = this.elements;
+    const code = joinEnrollmentCode?.value?.trim();
+    if (!code) {
+      this.showJoinError('Enter the enrollment code from your instructor.');
+      return;
+    }
+
+    const original = joinSubmitCode?.innerHTML;
+    if (joinSubmitCode) {
+      joinSubmitCode.disabled = true;
+      joinSubmitCode.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Joining...';
+    }
+
+    try {
+      const response = await fetch(API_ENDPOINTS.joinByEnrollmentCode, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enrollmentCode: code }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not join course');
+      }
+
+      sessionStorage.setItem(
+        STORAGE_KEYS.selectedCourse,
+        JSON.stringify({
+          id: data.course._id,
+          name: data.course.courseName,
+        })
+      );
+
+      window.location.href = '/student-dashboard';
+    } catch (error) {
+      console.error('Join course error:', error);
+      this.showJoinError(error.message || 'Could not join course.');
+    } finally {
+      if (joinSubmitCode) {
+        joinSubmitCode.disabled = false;
+        joinSubmitCode.innerHTML = original || '<i class="fas fa-check"></i> Join course';
+      }
     }
   }
 

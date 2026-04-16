@@ -16,6 +16,7 @@
         <div class="tab-navigation">
             <button class="tab-button active" data-tab="setup">New Course Setup</button>
             <button class="tab-button" data-tab="login">Login to Existing Dashboard</button>
+            <button class="tab-button" data-tab="join" id="join-tab-button" style="display: none;">Join a course</button>
         </div>
 
         <!-- Login Tab Content -->
@@ -48,6 +49,28 @@
                             Create New Course
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Join a course (students) -->
+        <div class="onboarding-card join-tab" id="join-tab" style="display: none;">
+            <div class="step-content join-course-content">
+                <div class="step-icon">
+                    <i class="fas fa-key"></i>
+                </div>
+                <h2>Join a course</h2>
+                <p class="step-subtitle">Enter the enrollment code your instructor shared with you.</p>
+
+                <div class="form-group join-code-only-wrap">
+                    <label for="join-enrollment-code">Enrollment code</label>
+                    <input type="text" id="join-enrollment-code" class="join-enrollment-code-input" placeholder="Paste or type your code" autocomplete="off" spellcheck="false">
+                </div>
+
+                <div class="form-buttons join-code-actions join-code-actions--single">
+                    <button type="button" class="continue-btn" id="join-submit-code">
+                        <i class="fas fa-check"></i> Join course
+                    </button>
                 </div>
             </div>
         </div>

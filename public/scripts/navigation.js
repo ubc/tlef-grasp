@@ -22,6 +22,7 @@ class GRASPNavigation {
   detectCurrentPage() {
     const path = window.location.pathname;
     if (path.includes("quiz-summary")) return "quiz-summary";
+    if (path.includes("student-settings")) return "student-settings";
     if (path.includes("student-dashboard")) return "student-dashboard";
     if (path.includes("quiz")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
@@ -966,6 +967,9 @@ class GRASPNavigation {
         case "settings":
           document.title = "Settings - GRASP";
           break;
+        case "student-settings":
+          document.title = "Settings - GRASP";
+          break;
         default:
           document.title = "GRASP";
       }
@@ -982,7 +986,10 @@ class GRASPNavigation {
   }
 
   openSettings() {
-    // Navigate to settings page
+    if (this.isStudent) {
+      window.location.href = '/student-settings';
+      return;
+    }
     window.location.href = '/settings';
   }
 
