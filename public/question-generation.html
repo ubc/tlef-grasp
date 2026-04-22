@@ -81,24 +81,24 @@
 
 
                             <div id="add-objectives-container">
-                                <button type="button" class="btn btn--primary" id="add-objectives-btn">
-                                    <i class="fas fa-plus"></i> Add learning objectives
+                                <button type="button" class="btn btn--secondary" id="generate-ai-btn">
+                                    <i class="fas fa-magic"></i> Create Learning Objectives
+                                </button>
+                                <div class="add-existing-wrapper" style="position: relative;">
+                                    <button type="button" class="btn btn--primary" id="add-objectives-btn">
+                                        <i class="fas fa-plus"></i> Add Existing Learning Objectives
+                                    </button>
 
-                                </button> <!-- Add Objectives Dropdown -->
-                                <div class="add-objectives-dropdown" id="add-objectives-dropdown"
-                                    style="display: none;">
-                                    <div class="dropdown-search">
-                                        <input type="text" id="objective-search" placeholder="Search objectives..."
-                                            class="dropdown-search__input">
-                                    </div>
-                                    <div class="dropdown-options" id="dropdown-options">
-                                        <!-- Pre-defined objectives will be listed here -->
-                                    </div>
-                                    <div class="dropdown-separator"></div>
-                                    <div class="dropdown-custom">
-                                        <button type="button" class="dropdown-custom__btn" id="generate-ai-btn">
-                                            <i class="fas fa-magic"></i> Generate with AI...
-                                        </button>
+                                    <!-- Add Objectives Dropdown -->
+                                    <div class="add-objectives-dropdown" id="add-objectives-dropdown"
+                                        style="display: none;">
+                                        <div class="dropdown-search">
+                                            <input type="text" id="objective-search" placeholder="Search objectives..."
+                                                class="dropdown-search__input">
+                                        </div>
+                                        <div class="dropdown-options" id="dropdown-options">
+                                            <!-- Pre-defined objectives will be listed here -->
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -154,7 +154,7 @@
                             <div class="modal" id="ai-generate-objective-modal" style="display: none;">
                                 <div class="modal__content" style="max-width: 800px;">
                                     <div class="modal__header">
-                                        <h3>Generate Learning Objectives with AI</h3>
+                                        <h3>Generate Learning Objectives</h3>
                                         <button type="button" class="modal__close" id="ai-generate-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
@@ -162,7 +162,7 @@
                                     <div class="modal__body">
                                         <div style="margin-bottom: 24px;">
                                             <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
-                                                Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives.
+                                                Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives. If you provide your own learning objectives, the AI will reorganize them into a proper hierarchy rather than generating new ones (optional).
                                             </p>
                                             
                                             <div style="margin-bottom: 20px; padding: 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;">
@@ -195,7 +195,7 @@
                                                 </div>
 
                                                 <!-- Dynamic List of Objectives -->
-                                                <div id="ai-custom-objectives-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto;">
+                                                <div id="ai-custom-objectives-list" style="display: flex; flex-direction: column; gap: 8px;">
                                                     <!-- Objective rows will be added here -->
                                                 </div>
                                             </div>

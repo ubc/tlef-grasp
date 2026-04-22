@@ -1092,7 +1092,13 @@ function displayAIMaterialsInModal(materials) {
     const materialItem = document.createElement("div");
     materialItem.className = "material-selection-item";
     materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
-    materialItem.addEventListener("click", () => {
+    materialItem.addEventListener("click", (e) => {
+      // If the user clicked the checkbox or label directly, the browser
+      // handles the toggle automatically. We only need to manual toggle
+      // if they clicked the container's padding/empty space.
+      if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
+        return;
+      }
       checkbox.checked = !checkbox.checked;
       updateAIGenerateButtonState();
     });
