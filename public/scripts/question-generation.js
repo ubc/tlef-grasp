@@ -1093,18 +1093,18 @@ function displayAIMaterialsInModal(materials) {
     materialItem.className = "material-selection-item";
     materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
     materialItem.addEventListener("click", (e) => {
-      // If the user clicked the checkbox or label directly, the browser
-      // handles the toggle automatically. We only need to manual toggle
-      // if they clicked the container's padding/empty space.
-      if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
+      // If the user clicked the radio button or label directly, the browser
+      // handles the selection automatically.
+      if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
         return;
       }
-      checkbox.checked = !checkbox.checked;
+      checkbox.checked = true; // Select the radio
       updateAIGenerateButtonState();
     });
 
     const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
+    checkbox.type = "radio";
+    checkbox.name = "ai-material-selection";
     checkbox.value = material.sourceId;
     checkbox.id = `ai-material-${material.sourceId}`;
     checkbox.className = "ai-material-checkbox";

@@ -48,7 +48,7 @@ COURSE MATERIALS CONTENT:
 INSTRUCTIONS:
 1. Analyze the course materials and identify key topics, concepts, and learning outcomes.
 2. Determine an appropriate number of main learning objectives that comprehensively cover the major themes in the provided materials.
-3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes.
+3. For each main learning objective, generate granular (sub) objectives that break it down into specific, measurable learning outcomes.
 4. Identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
 5. Use clear, action-oriented language (e.g., "Students will be able to...").
 6. Ensure objectives are specific to the content provided, not generic.
@@ -88,7 +88,7 @@ Strict Processing Rules:
 
 Generation Constraints (The "Gap-Fill" Rule):
 1. DO NOT generate new granular objectives for any Meta objective that already contains user-provided granular objectives.
-2. ONLY generate 2-4 granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
+2. ONLY generate granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
 
 Syntax & Language:
 1. Action-Oriented: All granular objectives (user or AI) must start with the exact phrase: "Students will be able to..." followed by an active verb.

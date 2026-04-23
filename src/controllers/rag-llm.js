@@ -401,7 +401,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       searchQuery,
-      100,
+      200,
       courseId
     );
 
@@ -422,12 +422,12 @@ const generateLearningObjectivesHandler = async (req, res) => {
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
         .replace('{userObjectivesList}', userList)
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     }
 
     console.log("Sending prompt to LLM service...");
