@@ -2818,8 +2818,8 @@ function initializeQuizSelection() {
   // Set up event listeners
   setupQuizSelectionListeners();
 
-  // Switch to select tab by default
-  switchQuizTab('select');
+  // Switch to create tab by default
+  switchQuizTab('create');
 
   // Default question limit logic removed as quizzes are now dynamically sized
 }
