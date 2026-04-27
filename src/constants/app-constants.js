@@ -2,39 +2,43 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality multiple-choice question that tests students' understanding of the provided learning objective.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
 
-Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+INSTRUCTIONS:
+1. Write a question aligned to the learning objective and Bloom's level.
+2. Generate 4 answer options (A–D), one of which is correct.
+3. Set correctAnswer to the letter of the correct option.
+4. For each incorrect option, write feedback explaining only why that specific option is wrong — do not reference, imply, or lead toward the correct answer.
 
-PROCEDURE:
-1. Create the question content
-2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3. Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
-4. Write the explanation
+FEEDBACK RULES (strictly enforced):
+- Set feedback to "" for the correct option only.
+- Each distractor's feedback must be written in ISOLATION — as if no other options exist.
+- Never reference, group, or compare multiple options (e.g. "Options A, B, and D...").
+- Never write a shared or combined feedback block across options.
+- Never summarize the question or draw a conclusion that implies the correct answer.
+- Focus solely on the scientific or logical flaw in that specific distractor.
 
-The response format must be a valid JSON with the exact structure as follows:
+OUTPUT: Return only valid JSON — no markdown, no extra text.
+
 {
-  "question": "Your specific question here",
+  "question": "Question text here",
   "options": {
-    "A": "First option text",
-    "B": "Second option text",
-    "C": "Third option text",
-    "D": "Fourth option text"
+    "A": { "text": "Option text", "feedback": "Why this distractor is wrong" },
+    "B": { "text": "Option text", "feedback": "Why this distractor is wrong" },
+    "C": { "text": "Correct option text", "feedback": "" },
+    "D": { "text": "Option text", "feedback": "Why this distractor is wrong" }
   },
-  "correctAnswer": "C",
-  "explanation": "Why this answer is correct based on the content"
+  "correctAnswer": "C"
 }
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
-- Do NOT include any text before or after the JSON object.
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in the JSON string as \\\\\\\\ (double backslash).
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
+FORMATTING:
+- Valid JSON only — no markdown code blocks, no surrounding text.
+- Do NOT include letter prefixes (A), B), etc.) inside option text values.
+- Escape all LaTeX backslashes as \\\\ within JSON strings.
 
 CONTENT: {ragContext}`;
 

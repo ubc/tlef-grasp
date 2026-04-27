@@ -274,8 +274,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
       // Verify that the correct answer text exists organically in the selected position
       const correctOptionLetter = questionData.correctAnswer;
-      if (questionData.options && questionData.options[correctOptionLetter]) {
-        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${questionData.options[correctOptionLetter].substring(0, 50)}..."`);
+      const correctOption = questionData.options ? questionData.options[correctOptionLetter] : null;
+      if (correctOption) {
+        const textToLog = typeof correctOption === 'string' ? correctOption : (correctOption.text || "");
+        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${textToLog.substring(0, 50)}..."`);
       } else {
         console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
       }

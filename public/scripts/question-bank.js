@@ -2565,18 +2565,32 @@ class QuestionBankPage {
       // Check if user can edit this question
       const canEdit = this.canEditQuestion(questionId);
 
+      const sanitizeFeedback = (fb) => {
+        if (!fb) return "";
+        return fb
+          .replace(/Therefore,?\s+option\s+[A-D]\s+(?:is\s+)?(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
+          .replace(/Option\s+[A-D]\s+(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
+          .trim();
+      };
+
       // Options are always objects with keys A, B, C, D - convert to array for display
       const optionKeys = ['A', 'B', 'C', 'D'];
+      const correctAnswer = question.correctAnswer;
       let normalizedOptions = [];
       if (question.options && typeof question.options === 'object') {
         normalizedOptions = optionKeys.map((key) => {
           const opt = question.options[key];
+          const isCorrect = (typeof correctAnswer === 'number' && ['A','B','C','D'][correctAnswer] === key) || 
+                            (typeof correctAnswer === 'string' && correctAnswer.toUpperCase() === key);
+          
           if (typeof opt === 'string') {
-            return { id: key, text: opt };
+            return { id: key, text: opt, feedback: "" };
           } else if (opt && typeof opt === 'object') {
-            return { id: opt.id || key, text: opt.text || opt };
+            let fb = opt.feedback || "";
+            if (!isCorrect) fb = sanitizeFeedback(fb);
+            return { id: opt.id || key, text: opt.text || opt, feedback: fb };
           } else {
-            return { id: key, text: String(opt || '') };
+            return { id: key, text: String(opt || ''), feedback: "" };
           }
         });
       }
@@ -2686,8 +2700,10 @@ class QuestionBankPage {
     const optionsHtml = optionsArray.map((option, index) => {
       const optionId = option.id || String.fromCharCode(65 + index); // A, B, C, D
       const optionText = option.text || '';
+      const optionFeedback = option.feedback || "";
       const isCorrect = optionId === correctAnswerLetter;
       const escapedText = (optionText || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      const escapedFeedback = (optionFeedback || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
       return `
         <div class="question-modal-option">
@@ -2703,13 +2719,22 @@ class QuestionBankPage {
               <span class="option-letter">${optionId}</span>
             </label>
           </div>
-          <input type="text" 
-                 class="question-modal-option-input ${readonlyClass}" 
-                 value="${escapedText}"
-                 data-option-index="${index}"
-                 placeholder="Enter option text..."
-                 ${readonlyAttr}
-                 style="${readonlyStyle}">
+          <div class="question-modal-option-fields">
+            <input type="text" 
+                   class="question-modal-option-input ${readonlyClass}" 
+                   value="${escapedText}"
+                   data-option-index="${index}"
+                   placeholder="Enter option text..."
+                   ${readonlyAttr}
+                   style="${readonlyStyle}">
+            <input type="text" 
+                   class="question-modal-feedback-input ${readonlyClass}" 
+                   value="${escapedFeedback}"
+                   data-option-index="${index}"
+                   placeholder="Feedback for this option..."
+                   ${readonlyAttr}
+                   style="${readonlyStyle}; margin-top: 5px; font-size: 0.9em; font-style: italic; background-color: #f9fafb;">
+          </div>
         </div>
       `;
     }).join("");
@@ -2818,11 +2843,21 @@ class QuestionBankPage {
 
       const title = titleInput ? titleInput.value.trim() : "";
       const stem = stemInput ? stemInput.value.trim() : "";
+      
+      const feedbackInputs = document.querySelectorAll(".question-modal-feedback-input");
+      const feedbackMap = new Map();
+      feedbackInputs.forEach(input => {
+        const index = input.dataset.optionIndex;
+        const optionId = String.fromCharCode(65 + parseInt(index));
+        feedbackMap.set(optionId, input.value.trim());
+      });
+
       const options = Array.from(optionInputs).map((input, index) => {
         const optionId = String.fromCharCode(65 + parseInt(input.dataset.optionIndex || index));
         return {
           id: optionId,
-          text: input.value.trim()
+          text: input.value.trim(),
+          feedback: feedbackMap.get(optionId) || ""
         };
       });
 
@@ -2849,11 +2884,10 @@ class QuestionBankPage {
       options.forEach(opt => {
         const oldOption = originalOptions[opt.id];
         if (typeof oldOption === 'object' && oldOption !== null) {
-          optionsObject[opt.id] = { ...oldOption, text: opt.text };
+          optionsObject[opt.id] = { ...oldOption, text: opt.text, feedback: opt.feedback };
         } else {
-          // If the old option was just a string, save this as a string too, or as a new object
           // Since the backend supports both, we'll keep the object structure to be safe and future-proof
-          optionsObject[opt.id] = { text: opt.text };
+          optionsObject[opt.id] = { text: opt.text, feedback: opt.feedback };
         }
       });
 

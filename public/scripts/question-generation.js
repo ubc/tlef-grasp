@@ -3019,53 +3019,77 @@ function convertQuestionsToGroups(questions) {
         id: index + 1,
         title: metaCode,
         isOpen: true, // Open all panels by default when generating for multiple learning objectives
-        los: groupQuestions.map((question, itemIndex) => ({
-          id: `lo-${index + 1}-${itemIndex + 1}`,
-          code: `LO ${index + 1}.${itemIndex + 1}`,
-          generated: question.count || 1,
-          min: 1,
-          badges: [],
-          questions: [
-            {
-              id: question.id,
-              title: question.text,
-              stem: "Select the best answer:",
-              options: {
-                A: {
-                  id: "A",
-                  text: question.options?.A || "Option A",
-                  feedback: `${question.correctAnswer === 'A' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                B: {
-                  id: "B",
-                  text: question.options?.B || "Option B",
-                  feedback: `${question.correctAnswer === 'B' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                C: {
-                  id: "C",
-                  text: question.options?.C || "Option C",
-                  feedback: `${question.correctAnswer === 'C' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
-                D: {
-                  id: "D",
-                  text: question.options?.D || "Option D",
-                  feedback: `${question.correctAnswer === 'D' ? "Correct" : "Incorrect"} - ${question.explanation}`,
-                },
+        los: groupQuestions.map((question, itemIndex) => {
+          // Normalize options - the LLM now returns { text, feedback } for each option
+          const normalizedOptions = {};
+          const optionKeys = ['A', 'B', 'C', 'D'];
+          
+          const sanitizeFeedback = (fb) => {
+            if (!fb) return "";
+            // Remove common concluding phrases that reveal the correct answer
+            return fb
+              .replace(/Therefore,?\s+option\s+[A-D]\s+(?:is\s+)?(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
+              .replace(/Option\s+[A-D]\s+(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
+              .trim();
+          };
+          
+          optionKeys.forEach(key => {
+            const opt = question.options?.[key];
+            if (typeof opt === 'string') {
+              // Legacy or fallback: simple string
+              normalizedOptions[key] = {
+                id: key,
+                text: opt,
+                feedback: question.correctAnswer === key ? "" : sanitizeFeedback(question.explanation || "Incorrect")
+              };
+            } else if (opt && typeof opt === 'object') {
+              // New format: { text, feedback }
+              normalizedOptions[key] = {
+                id: key,
+                text: opt.text || "",
+                feedback: opt.feedback || (question.correctAnswer === key ? "" : "Incorrect")
+              };
+              // Sanitize specifically for distractors
+              if (question.correctAnswer !== key) {
+                normalizedOptions[key].feedback = sanitizeFeedback(normalizedOptions[key].feedback);
+              }
+            } else {
+              // Empty option fallback
+              normalizedOptions[key] = {
+                id: key,
+                text: `Option ${key}`,
+                feedback: question.correctAnswer === key ? "" : "Incorrect"
+              };
+            }
+          });
+
+          return {
+            id: `lo-${index + 1}-${itemIndex + 1}`,
+            code: `LO ${index + 1}.${itemIndex + 1}`,
+            generated: question.count || 1,
+            min: 1,
+            badges: [],
+            questions: [
+              {
+                id: question.id,
+                title: question.text,
+                stem: "Select the best answer:",
+                options: normalizedOptions,
+                correctAnswer: question.correctAnswer,
+                bloom: question.bloomLevel || "Understand",
+                difficulty: question.difficulty || "Medium",
+                status: "Draft",
+                lastEdited:
+                  question.lastEdited ||
+                  new Date().toISOString().slice(0, 16).replace("T", " "),
+                by: question.by || "System",
+                metaCode: question.metaCode || metaCode,
+                loCode: question.loCode || question.text,
+                granularObjectiveId: question.granularObjectiveId,
               },
-              correctAnswer: question.correctAnswer,
-              bloom: question.bloomLevel || "Understand",
-              difficulty: question.difficulty || "Medium",
-              status: "Draft",
-              lastEdited:
-                question.lastEdited ||
-                new Date().toISOString().slice(0, 16).replace("T", " "),
-              by: question.by || "System",
-              metaCode: question.metaCode || metaCode,
-              loCode: question.loCode || question.text,
-              granularObjectiveId: question.granularObjectiveId,
-            },
-          ],
-        })),
+            ],
+          };
+        }),
       };
 
       groups.push(group);
@@ -3241,8 +3265,9 @@ function renderQuestionCard(question, group) {
                     ${Object.values(question.options).map(
       (option, index) => {
         // correctAnswer is now a letter (A, B, C, D), compare with option.id
-        const isCorrect = option.id === question.correctAnswer ||
-          (typeof question.correctAnswer === 'number' && index === question.correctAnswer);
+        const isCorrect = option.id === question.correctAnswer;
+        const feedback = option.feedback || (isCorrect ? "" : "Incorrect");
+        
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3254,7 +3279,15 @@ function renderQuestionCard(question, group) {
             : `<label>${option.id}. ${option.text}</label>`
           }
                         </div>
-                        <div class="question-card__feedback">${isCorrect ? "Correct" : "Incorrect"}</div>
+                        <div class="question-card__feedback">
+                          ${isEditing 
+                            ? `<div class="feedback-edit-wrapper">
+                                 <span class="feedback-label">Feedback:</span>
+                                 <input type="text" class="question-card__feedback--editing" value="${feedback.replace(/"/g, '&quot;')}" onblur="updateQuestionFeedback('${question.id}', '${option.id}', this.value)">
+                               </div>`
+                            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
+                          }
+                        </div>
                     `;
       }
     )
@@ -3381,6 +3414,13 @@ function updateQuestionStem(questionId, newStem) {
   const question = findQuestionById(questionId);
   if (question) {
     question.stem = newStem.trim();
+  }
+}
+
+function updateQuestionFeedback(questionId, optionId, newFeedback) {
+  const question = findQuestionById(questionId);
+  if (question && question.options[optionId]) {
+    question.options[optionId].feedback = newFeedback.trim();
   }
 }
 
