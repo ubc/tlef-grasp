@@ -48,10 +48,10 @@ const STORAGE_KEYS = {
 const TAB_NAMES = {
   overview: 'overview',
   review: 'review',
-  approvedHistory: 'approved-history',
+
 };
 
-const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review, TAB_NAMES.approvedHistory];
+const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review];
 
 const QUESTION_STATUS = {
   approved: 'Approved',
@@ -790,7 +790,6 @@ class QuestionBankPage {
     const tabTitles = {
       [TAB_NAMES.overview]: 'Overview',
       [TAB_NAMES.review]: 'Quizzes',
-      [TAB_NAMES.approvedHistory]: 'Approved History',
     };
     document.title = `${tabTitles[tabName] || 'Question Bank'} - Question Bank - GRASP`;
 
@@ -798,8 +797,6 @@ class QuestionBankPage {
       await this.renderOverview();
     } else if (tabName === TAB_NAMES.review) {
       await this.renderReview();
-    } else if (tabName === TAB_NAMES.approvedHistory) {
-      this.renderApprovedHistory();
     }
   }
 
@@ -808,8 +805,6 @@ class QuestionBankPage {
       await this.renderOverview();
     } else if (this.state.currentTab === TAB_NAMES.review) {
       this.renderReview();
-    } else if (this.state.currentTab === TAB_NAMES.approvedHistory) {
-      this.renderApprovedHistory();
     }
   }
 
@@ -827,20 +822,7 @@ class QuestionBankPage {
     this.updateCrossQuizActions();
   }
 
-  renderApprovedHistory() {
-    // Placeholder for approved history content
-    const approvedHistoryPanel = document.getElementById(
-      "approved-history-panel"
-    );
-    if (approvedHistoryPanel) {
-      approvedHistoryPanel.innerHTML = `
-        <div class="empty-state">
-          <h3>Approved History</h3>
-          <p>This tab will show the approved history content.</p>
-        </div>
-      `;
-    }
-  }
+
 
   renderQuizzes() {
     const quizzesContainer = document.getElementById("quizzes-container");
