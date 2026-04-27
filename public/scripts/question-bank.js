@@ -2565,30 +2565,16 @@ class QuestionBankPage {
       // Check if user can edit this question
       const canEdit = this.canEditQuestion(questionId);
 
-      const sanitizeFeedback = (fb) => {
-        if (!fb) return "";
-        return fb
-          .replace(/Therefore,?\s+option\s+[A-D]\s+(?:is\s+)?(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
-          .replace(/Option\s+[A-D]\s+(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
-          .trim();
-      };
-
       // Options are always objects with keys A, B, C, D - convert to array for display
       const optionKeys = ['A', 'B', 'C', 'D'];
-      const correctAnswer = question.correctAnswer;
       let normalizedOptions = [];
       if (question.options && typeof question.options === 'object') {
         normalizedOptions = optionKeys.map((key) => {
           const opt = question.options[key];
-          const isCorrect = (typeof correctAnswer === 'number' && ['A','B','C','D'][correctAnswer] === key) || 
-                            (typeof correctAnswer === 'string' && correctAnswer.toUpperCase() === key);
-          
           if (typeof opt === 'string') {
             return { id: key, text: opt, feedback: "" };
           } else if (opt && typeof opt === 'object') {
-            let fb = opt.feedback || "";
-            if (!isCorrect) fb = sanitizeFeedback(fb);
-            return { id: opt.id || key, text: opt.text || opt, feedback: fb };
+            return { id: opt.id || key, text: opt.text || opt, feedback: opt.feedback || "" };
           } else {
             return { id: key, text: String(opt || ''), feedback: "" };
           }

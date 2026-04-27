@@ -3024,15 +3024,6 @@ function convertQuestionsToGroups(questions) {
           const normalizedOptions = {};
           const optionKeys = ['A', 'B', 'C', 'D'];
           
-          const sanitizeFeedback = (fb) => {
-            if (!fb) return "";
-            // Remove common concluding phrases that reveal the correct answer
-            return fb
-              .replace(/Therefore,?\s+option\s+[A-D]\s+(?:is\s+)?(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
-              .replace(/Option\s+[A-D]\s+(?:correctly\s+)?(?:matches|combines|is\s+the\s+correct|is\s+the\s+right).*?\.?$/gi, "")
-              .trim();
-          };
-          
           optionKeys.forEach(key => {
             const opt = question.options?.[key];
             if (typeof opt === 'string') {
@@ -3040,7 +3031,7 @@ function convertQuestionsToGroups(questions) {
               normalizedOptions[key] = {
                 id: key,
                 text: opt,
-                feedback: question.correctAnswer === key ? "" : sanitizeFeedback(question.explanation || "Incorrect")
+                feedback: question.correctAnswer === key ? "" : (question.explanation || "Incorrect")
               };
             } else if (opt && typeof opt === 'object') {
               // New format: { text, feedback }
@@ -3049,10 +3040,6 @@ function convertQuestionsToGroups(questions) {
                 text: opt.text || "",
                 feedback: opt.feedback || (question.correctAnswer === key ? "" : "Incorrect")
               };
-              // Sanitize specifically for distractors
-              if (question.correctAnswer !== key) {
-                normalizedOptions[key].feedback = sanitizeFeedback(normalizedOptions[key].feedback);
-              }
             } else {
               // Empty option fallback
               normalizedOptions[key] = {

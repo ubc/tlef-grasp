@@ -293,13 +293,13 @@ class GRASPNavigation {
         </li>
         <li class="nav-item" data-page="course-materials">
           <a href="/course-materials" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-folder"></i>
+            <i class="fas fa-upload"></i>
             <span>Course Materials</span>
           </a>
         </li>
         <li class="nav-item" data-page="question-generation">
           <a href="/question-generation" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-puzzle-piece"></i>
+            <i class="fas fa-wand-magic-sparkles"></i>
             <span>Question Generation</span>
           </a>
         </li>
