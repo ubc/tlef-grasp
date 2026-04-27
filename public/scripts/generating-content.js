@@ -3,7 +3,6 @@
 
 // RAG Module Integration
 let ragModule = null;
-let clientRAG = null;
 const RAG_CONFIG = {
   provider: "qdrant",
   qdrantConfig: {
@@ -25,7 +24,6 @@ class ContentGenerator {
     this.isInitialized = false;
     this.pdfService = new PDFParsingService();
     this.initializeRAG();
-    this.initializeClientRAG();
   }
 
   async initializeRAG() {
@@ -49,18 +47,7 @@ class ContentGenerator {
     }
   }
 
-  initializeClientRAG() {
-    try {
-      if (window.ClientRAG) {
-        clientRAG = new window.ClientRAG();
-        console.log("Client RAG initialized successfully");
-      } else {
-        console.warn("ClientRAG class not available");
-      }
-    } catch (error) {
-      console.error("Failed to initialize client RAG:", error);
-    }
-  }
+
 
   async addDocumentToKnowledgeBase(content, metadata = {}) {
     // Use server-side RAG processing
@@ -90,20 +77,6 @@ class ContentGenerator {
       return data;
     } catch (error) {
       console.error("❌ Failed to add document to server-side RAG:", error);
-
-      // Fallback to client RAG
-      if (clientRAG) {
-        try {
-          const chunkIds = await clientRAG.addDocument(content, metadata);
-          console.log(
-            `Document added to client RAG with ${chunkIds.length} chunks`
-          );
-          return chunkIds;
-        } catch (clientError) {
-          console.error("Failed to add document to client RAG:", clientError);
-          throw clientError;
-        }
-      }
 
       console.warn("No RAG system available");
       return [];
@@ -141,18 +114,6 @@ class ContentGenerator {
       return data.results || [];
     } catch (error) {
       console.error("❌ Failed to search server-side RAG:", error);
-
-      // Fallback to client RAG
-      if (clientRAG) {
-        try {
-          const results = await clientRAG.retrieveContext(query, { limit });
-          console.log(`Client RAG search returned ${results.length} results`);
-          return results;
-        } catch (clientError) {
-          console.error("Failed to search client RAG:", clientError);
-          return [];
-        }
-      }
 
       console.warn("No RAG system available for search");
       return [];
@@ -441,11 +402,9 @@ class ContentGenerator {
   // The actual availability will be determined when making API calls
   isRAGAvailable() {
     // Server-side RAG is always considered available (will fail gracefully if not)
-    // Also check client-side RAG as fallback
     return (
       true || // Server-side RAG via API is available
-      (this.isInitialized && ragModule !== null) ||
-      (clientRAG && clientRAG.isRAGAvailable())
+      (this.isInitialized && ragModule !== null)
     );
   }
 
