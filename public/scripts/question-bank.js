@@ -2392,7 +2392,6 @@ class QuestionBankPage {
       options: q.options || {},
       correctAnswer: q.correctAnswer || "A",
       bloomLevel: q.bloom || q.bloomLevel || "Understand",
-      difficulty: q.difficulty || "Medium",
     }));
 
     try {

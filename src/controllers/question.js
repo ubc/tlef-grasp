@@ -277,7 +277,7 @@ const exportQuestionsHandler = async (req, res) => {
 };
 
 function createCSVExport(course, questions) {
-  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n';
+  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level\n';
   questions.forEach(q => {
     // Options are always objects with keys A, B, C, D
     const getOption = (key) => {
@@ -301,7 +301,7 @@ function createCSVExport(course, questions) {
     }
     const correctOpt = getOption(correctAnswerLetter);
     
-    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}","${q.difficulty || ''}"\n`;
+    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}"\n`;
   });
   return csv;
 }

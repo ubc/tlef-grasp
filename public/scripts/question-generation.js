@@ -3064,7 +3064,6 @@ function convertQuestionsToGroups(questions) {
                 options: normalizedOptions,
                 correctAnswer: question.correctAnswer,
                 bloom: question.bloomLevel || "Understand",
-                difficulty: question.difficulty || "Medium",
                 status: "Draft",
                 lastEdited:
                   question.lastEdited ||
@@ -3796,7 +3795,6 @@ async function handleSaveToQuiz() {
             options: question.options || [],
             correctAnswer: question.correctAnswer || 0,
             bloom: question.bloom || question.bloomLevel || "Understand",
-            difficulty: question.difficulty || "medium",
             granularObjectiveId: question.granularObjectiveId || null,
             by: question.createdBy || "system",
             status: question.status || "Draft",
