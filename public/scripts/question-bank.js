@@ -3382,10 +3382,10 @@ class QuestionBankPage {
       const checked = selectedIds.includes(id) ? 'checked' : '';
       const iconInfo = this.getMaterialIcon(material.fileType || '');
       return `
-        <label class="material-radio-item">
-          <input type="radio" name="objective-material" value="${id}" ${checked}>
+        <label class="material-checkbox-item">
+          <input type="checkbox" name="objective-material" value="${id}" ${checked}>
           <i class="${iconInfo.icon}" style="color: ${iconInfo.color}; width: 20px; text-align: center; font-size: 14px;"></i>
-          <span class="material-radio-label" title="${this.escapeHtml(material.source || material.filename || '')}">${this.escapeHtml(material.documentTitle || material.fileName || material.name || 'Unnamed')}</span>
+          <span class="material-checkbox-label" title="${this.escapeHtml(material.source || material.filename || '')}">${this.escapeHtml(material.documentTitle || material.fileName || material.name || 'Unnamed')}</span>
         </label>
       `;
     }).join('');
@@ -3400,8 +3400,8 @@ class QuestionBankPage {
       return;
     }
 
-    const materialRadio = document.querySelector('input[name="objective-material"]:checked');
-    const materialIds = materialRadio ? [materialRadio.value] : [];
+    const selectedCheckboxes = document.querySelectorAll('input[name="objective-material"]:checked');
+    const materialIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
     try {
       let result;

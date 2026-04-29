@@ -200,7 +200,13 @@
                                                 </div>
                                             </div>
 
-                                            <label style="margin-bottom: 12px; display: block; font-weight: 600;">Select Materials:</label>
+                                            <label style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
+                                                <span>Select Materials:</span>
+                                                <span id="ai-material-selection-count" style="font-weight: normal; color: #6b7280; font-size: 14px;">0/5 selected</span>
+                                            </label>
+                                            <p id="ai-materials-info" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; line-height: 1.4; font-weight: normal;">
+                                                <i class="fas fa-info-circle" style="color: #3498db;"></i> Selecting more than 5 materials may dilute the AI's focus. For the most specific and high-quality learning objectives, we recommend focusing on one module or topic at a time.
+                                            </p>
                                             <div id="ai-materials-selection-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
                                                 <div id="ai-materials-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">
                                                     <i class="fas fa-spinner fa-spin"></i> Loading materials...

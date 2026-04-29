@@ -1093,21 +1093,36 @@ function displayAIMaterialsInModal(materials) {
     materialItem.className = "material-selection-item";
     materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
     materialItem.addEventListener("click", (e) => {
-      // If the user clicked the radio button or label directly, the browser
+      // If the user clicked the checkbox or label directly, the browser
       // handles the selection automatically.
-      if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
+      if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
         return;
       }
-      checkbox.checked = true; // Select the radio
+      
+      const checkedCount = document.querySelectorAll(".ai-material-checkbox:checked").length;
+      if (!checkbox.checked && checkedCount >= 5) {
+        showToast("Maximum of 5 materials reached. Focus on fewer materials for better quality objectives.", "warning");
+        return;
+      }
+      
+      checkbox.checked = !checkbox.checked; // Toggle the checkbox
       updateAIGenerateButtonState();
     });
 
     const checkbox = document.createElement("input");
-    checkbox.type = "radio";
-    checkbox.name = "ai-material-selection";
+    checkbox.type = "checkbox";
     checkbox.value = material.sourceId;
     checkbox.id = `ai-material-${material.sourceId}`;
     checkbox.className = "ai-material-checkbox";
+    checkbox.addEventListener("click", (e) => {
+      const checkedCount = document.querySelectorAll(".ai-material-checkbox:checked").length;
+      // If it was already checked, the click will uncheck it (always allowed)
+      // If it was unchecked, and we are already at 5, prevent checking it
+      if (e.target.checked && checkedCount > 5) {
+        e.preventDefault();
+        showToast("Maximum of 5 materials reached. Focus on fewer materials for better quality objectives.", "warning");
+      }
+    });
     checkbox.addEventListener("change", updateAIGenerateButtonState);
 
     const label = document.createElement("label");
@@ -1152,6 +1167,20 @@ function displayAIMaterialsInModal(materials) {
 function updateAIGenerateButtonState() {
   const generateBtn = document.getElementById("ai-generate-btn");
   const checkboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  
+  // Update counter
+  const counter = document.getElementById("ai-material-selection-count");
+  if (counter) {
+    counter.textContent = `${checkboxes.length}/5 selected`;
+    if (checkboxes.length >= 5) {
+      counter.style.color = "#e67e22"; // Orange warning color
+      counter.style.fontWeight = "600";
+    } else {
+      counter.style.color = "#6b7280";
+      counter.style.fontWeight = "normal";
+    }
+  }
+
   if (generateBtn) {
     generateBtn.disabled = checkboxes.length === 0;
   }

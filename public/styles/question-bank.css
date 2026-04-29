@@ -2027,7 +2027,7 @@
     margin-top: 10px;
 }
 
-.material-radio-item {
+.material-checkbox-item {
     display: flex !important;
     align-items: center;
     gap: 6px;
@@ -2041,14 +2041,14 @@
     margin-bottom: 0 !important;
 }
 
-.material-radio-item:hover {
+.material-checkbox-item:hover {
     border-color: #3498db;
     background: #f0f9ff;
     transform: translateY(-1px);
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.material-radio-item input {
+.material-checkbox-item input {
     width: 18px;
     height: 18px;
     accent-color: #3498db;
@@ -2056,7 +2056,7 @@
     flex-shrink: 0;
 }
 
-.material-radio-label {
+.material-checkbox-label {
     font-size: 14px;
     color: #4a5568;
     flex: 1;
