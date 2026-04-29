@@ -12,6 +12,7 @@ const SELECTORS = {
   statusFilter: 'status-filter',
   flaggedFilter: 'flagged-filter',
   searchInput: 'search-input',
+  materialFilter: 'material-filter',
   questionsTableBody: 'questions-table-body',
   quizzesContainer: 'quizzes-container',
   selectAll: 'select-all',
@@ -48,10 +49,10 @@ const STORAGE_KEYS = {
 const TAB_NAMES = {
   overview: 'overview',
   review: 'review',
-
+  objectives: "objectives",
 };
 
-const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review];
+const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review, TAB_NAMES.objectives];
 
 const QUESTION_STATUS = {
   approved: 'Approved',
@@ -102,6 +103,9 @@ class QuestionBankPage {
     const flaggedFilterEnabled = flaggedParam === "true";
     this.flaggedFilterEnabled = flaggedFilterEnabled; // Store for use in initializeEventListeners
 
+    // Get material from URL search params
+    const materialParam = urlParams.get('material') || 'all';
+
     this.state = {
       filters: {
         quiz: "all",
@@ -109,7 +113,8 @@ class QuestionBankPage {
         bloom: "all",
         status: "all",
         flagged: flaggedFilterEnabled,
-        q: ""
+        q: "",
+        material: materialParam
       },
       sort: { key: "title", dir: "asc" },
       selectedQuestionIds: new Set(),
@@ -121,6 +126,8 @@ class QuestionBankPage {
     this.allQuizzes = []; // Store all quizzes for filter dropdown
     this.objectivesMap = new Map(); // Map objective ID to objective name
     this.isFaculty = false; // Cache faculty status
+    this.detailedObjectives = []; // Store detailed objectives
+    this.courseMaterials = []; // Store course materials
     this.init();
   }
 
@@ -242,6 +249,84 @@ class QuestionBankPage {
     this.updateLearningObjectivesFilter();
     this.updateBloomLevelsFilter();
     this.updateStatusFilter();
+    this.updateMaterialFilter();
+  }
+
+  updateMaterialFilter() {
+    const materialFilter = document.getElementById("material-filter");
+    if (!materialFilter) return;
+
+    const currentFilter = this.state.filters.material;
+
+    // Clear existing options except "All Materials"
+    materialFilter.innerHTML = '<option value="all">All Materials</option>';
+
+    // Add materials from courseMaterials
+    this.courseMaterials.forEach((material) => {
+      const id = material.sourceId;
+      const iconInfo = this.getMaterialIcon(material.fileType || '');
+      const name = material.documentTitle || material.fileName || material.name || "Unnamed Material";
+      
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = name;
+      option.setAttribute('data-icon', iconInfo.icon);
+      option.setAttribute('data-icon-color', iconInfo.color);
+      materialFilter.appendChild(option);
+    });
+
+    // Set selected value
+    materialFilter.value = currentFilter;
+
+    // Initialize/Re-initialize Select2
+    const self = this;
+    $(materialFilter).select2({
+      templateResult: formatMaterial,
+      templateSelection: formatMaterial,
+      escapeMarkup: function(m) { return m; },
+      width: '100%',
+      placeholder: "Search materials..."
+    }).on('select2:open', function() {
+      // Set placeholder for the search input in the dropdown
+      const searchField = document.querySelector('.select2-search__field');
+      if (searchField) {
+        searchField.placeholder = "Search materials...";
+      }
+    });
+
+    function formatMaterial(state) {
+      if (!state.id) return state.text;
+      
+      let icon = 'fas fa-list';
+      let color = '#3498db';
+      
+      if (state.id !== 'all') {
+        const element = state.element;
+        icon = $(element).data('icon') || 'fas fa-file-alt';
+        color = $(element).data('icon-color') || '#6c757d';
+      }
+      
+      return `<span><i class="${icon}" style="color: ${color}"></i>${state.text}</span>`;
+    }
+
+    // Handle Select2 change
+    $(materialFilter).on('change', async (e) => {
+      const newVal = e.target.value;
+      if (self.state.filters.material !== newVal) {
+        self.state.filters.material = newVal;
+        
+        // Update URL search params
+        const url = new URL(window.location);
+        if (newVal === 'all') {
+          url.searchParams.delete('material');
+        } else {
+          url.searchParams.set('material', newVal);
+        }
+        window.history.pushState({ material: newVal }, "", url);
+        
+        await self.renderObjectives();
+      }
+    });
   }
 
   updateQuizFilter() {
@@ -554,6 +639,9 @@ class QuestionBankPage {
       });
     }
 
+    // Material filter group is handled inside updateMaterialFilter because it's re-rendered
+
+
     // Sortable headers
     this.initializeSortableHeaders();
 
@@ -565,8 +653,8 @@ class QuestionBankPage {
 
     // Modal events
     this.initializeModalEvents();
+    this.initializeObjectiveEvents(); 
   }
-
   initializeSortableHeaders() {
     const sortableHeaders = document.querySelectorAll(".sortable-header");
     sortableHeaders.forEach((header) => {
@@ -788,8 +876,9 @@ class QuestionBankPage {
 
     // Update page title and render appropriate content
     const tabTitles = {
-      [TAB_NAMES.overview]: 'Overview',
+      [TAB_NAMES.overview]: 'Questions',
       [TAB_NAMES.review]: 'Quizzes',
+      [TAB_NAMES.objectives]: 'Learning Objectives',
     };
     document.title = `${tabTitles[tabName] || 'Question Bank'} - Question Bank - GRASP`;
 
@@ -797,6 +886,8 @@ class QuestionBankPage {
       await this.renderOverview();
     } else if (tabName === TAB_NAMES.review) {
       await this.renderReview();
+    } else if (tabName === TAB_NAMES.objectives) {
+      await this.renderObjectives();
     }
   }
 
@@ -804,7 +895,9 @@ class QuestionBankPage {
     if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
     } else if (this.state.currentTab === TAB_NAMES.review) {
-      this.renderReview();
+      await this.renderReview();
+    } else if (this.state.currentTab === TAB_NAMES.objectives) {
+      await this.renderObjectives();
     }
   }
 
@@ -2996,6 +3089,537 @@ class QuestionBankPage {
       console.error('Error toggling question approval:', error);
       this.showNotification(error.message || 'Failed to update question status', 'error');
     }
+  }
+
+  // ==================== Learning Objectives Tab Logic ====================
+
+  initializeObjectiveEvents() {
+    // Add button removed per user request
+    
+    const modalClose = document.getElementById('objective-modal-close');
+    const modalCancel = document.getElementById('objective-modal-cancel');
+    if (modalClose) modalClose.addEventListener('click', () => {
+      document.getElementById('objective-modal').style.display = 'none';
+    });
+    if (modalCancel) modalCancel.addEventListener('click', () => {
+      document.getElementById('objective-modal').style.display = 'none';
+    });
+
+    // Close modal on outside click
+    const modal = document.getElementById('objective-modal');
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.style.display = 'none';
+        }
+      });
+    }
+  }
+
+  async renderObjectives() {
+    const container = document.getElementById('objectives-container');
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading-spinner" style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p style="margin-top: 10px;">Loading learning objectives...</p></div>';
+
+    try {
+      // Load objectives and materials in parallel
+      await Promise.all([
+        this.loadDetailedObjectives(),
+        this.loadCourseMaterials()
+      ]);
+
+      if (this.detailedObjectives.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state" style="background: white; padding: 60px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;">
+            <i class="fas fa-bullseye fa-4x" style="color: #e2e8f0; margin-bottom: 20px; display: block;"></i>
+            <h3 style="font-size: 20px; color: #2d3748; margin-bottom: 10px;">No Learning Objectives Found</h3>
+            <p style="color: #718096; margin-bottom: 10px;">Learning objectives are usually imported from course materials.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Populate material filter dropdown
+      this.updateMaterialFilter();
+
+      // Apply material filter
+      let filteredObjectives = this.detailedObjectives;
+      if (this.state.filters.material !== 'all') {
+        filteredObjectives = this.detailedObjectives.filter(obj => 
+          obj.materialIds && obj.materialIds.includes(this.state.filters.material)
+        );
+      }
+
+      if (filteredObjectives.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state" style="background: white; padding: 60px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;">
+            <i class="fas fa-filter fa-4x" style="color: #e2e8f0; margin-bottom: 20px; display: block;"></i>
+            <h3 style="font-size: 20px; color: #2d3748; margin-bottom: 10px;">No matching objectives</h3>
+            <p style="color: #718096; margin-bottom: 10px;">Try adjusting your material filter.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+      filteredObjectives.forEach(objective => {
+        container.appendChild(this.createObjectiveCard(objective));
+      });
+
+    } catch (error) {
+      console.error('Error rendering objectives:', error);
+      container.innerHTML = '<div class="error-message" style="color: #e53e3e; text-align: center; padding: 40px; background: #fff5f5; border-radius: 12px; border: 1px solid #feb2b2;">Failed to load learning objectives. Please try again.</div>';
+    }
+  }
+
+  async loadDetailedObjectives() {
+    if (!this.courseId) return;
+
+    try {
+      const response = await fetch(`${API_ENDPOINTS.objective}?courseId=${this.courseId}`);
+      if (!response.ok) throw new Error('Failed to fetch objectives');
+      
+      const data = await response.json();
+      if (data.success && data.objectives) {
+        this.detailedObjectives = await Promise.all(data.objectives.map(async (obj) => {
+          const objId = getObjectId(obj);
+          
+          // Fetch granular objectives
+          const granularResp = await fetch(`${API_ENDPOINTS.objective}/${objId}/granular?courseId=${this.courseId}`);
+          const granularData = await granularResp.json();
+          
+          // Fetch associated materials
+          const materialsResp = await fetch(`${API_ENDPOINTS.objective}/${objId}/materials`);
+          const materialsData = await materialsResp.json();
+          
+          return {
+            id: objId,
+            name: obj.name,
+            granular: granularData.success ? granularData.objectives : [],
+            materialIds: materialsData.success ? materialsData.materials.map(m => m.sourceId) : []
+          };
+        }));
+
+        // Also update the map for other tabs
+        this.detailedObjectives.forEach(obj => {
+          this.objectivesMap.set(obj.id, obj.name);
+        });
+      }
+    } catch (error) {
+      console.error('Error loading detailed objectives:', error);
+      throw error;
+    }
+  }
+
+  async loadCourseMaterials() {
+    if (!this.courseId) return;
+    
+    try {
+      const response = await fetch(`/api/material/course/${this.courseId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          this.courseMaterials = data.materials || [];
+        }
+      }
+    } catch (error) {
+      console.error('Error loading course materials:', error);
+    }
+  }
+
+  createObjectiveCard(objective) {
+    const card = document.createElement('div');
+    card.className = 'objective-card';
+    card.setAttribute('data-id', objective.id);
+
+    const associatedMaterials = this.courseMaterials.filter(m => 
+      objective.materialIds.includes(m.sourceId)
+    );
+
+    card.innerHTML = `
+      <div class="objective-card-header">
+        <div class="objective-card-title-area">
+          <i class="fas fa-bullseye" style="color: #3498db; font-size: 20px;"></i>
+          <h3>${this.escapeHtml(objective.name)}</h3>
+        </div>
+        <div class="objective-card-actions">
+          <button class="btn-icon" onclick="questionBankPage.showEditObjectiveModal('${objective.id}')" title="Edit Objective">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn-icon btn-danger" onclick="questionBankPage.handleDeleteObjective('${objective.id}')" title="Delete Objective">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="objective-card-body">
+        <div class="granular-section">
+          <h4><i class="fas fa-level-down-alt"></i> Granular Objectives</h4>
+          <ul class="granular-list" id="granular-list-${objective.id}">
+            ${objective.granular.length > 0 ? 
+              objective.granular.map(g => this.createGranularItemHtml(objective.id, g)).join('') : 
+              '<li class="no-data-message" style="padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px dashed #e2e8f0; color: #a0aec0; font-size: 13px; list-style: none;">No granular objectives defined.</li>'
+            }
+          </ul>
+          <div class="add-granular-form">
+            <input type="text" id="new-granular-input-${objective.id}" placeholder="Enter granular objective..." class="form-control" style="padding: 8px 12px; font-size: 13px;">
+            <button class="btn btn-primary" style="padding: 8px 15px; white-space: nowrap;" onclick="questionBankPage.handleAddGranular('${objective.id}')">
+              <i class="fas fa-plus"></i> Add Granular Learning Objective
+            </button>
+          </div>
+        </div>
+        <div class="materials-section">
+          <h4>Associated Materials</h4>
+          <div class="materials-tags">
+            ${associatedMaterials.length > 0 ? 
+              associatedMaterials.map(m => {
+                const iconInfo = this.getMaterialIcon(m.fileType || '');
+                return `
+                  <span class="material-tag" title="${this.escapeHtml(m.source || m.filename || '')}">
+                    <i class="${iconInfo.icon}" style="color: ${iconInfo.color}; margin-right: 6px;"></i>
+                    ${this.escapeHtml(m.documentTitle || m.fileName || m.name || 'Unnamed')}
+                  </span>
+                `;
+              }).join('') : 
+              '<span class="no-materials-text">No materials linked.</span>'
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    return card;
+  }
+
+  createGranularItemHtml(objectiveId, granular) {
+    const gId = getObjectId(granular);
+    const text = granular.name || granular.text || '';
+    return `
+      <li class="granular-item" id="granular-item-${gId}">
+        <span class="granular-text" id="granular-text-${gId}">${this.escapeHtml(text)}</span>
+        <div class="granular-actions">
+          <button class="btn-icon btn-sm" onclick="questionBankPage.showEditGranular('${objectiveId}', '${gId}')" title="Edit">
+            <i class="fas fa-pencil-alt" style="font-size: 11px;"></i>
+          </button>
+          <button class="btn-icon btn-sm btn-danger" onclick="questionBankPage.handleDeleteGranular('${objectiveId}', '${gId}')" title="Delete">
+            <i class="fas fa-times" style="font-size: 11px;"></i>
+          </button>
+        </div>
+      </li>
+    `;
+  }
+
+  // ==================== Objective CRUD ====================
+
+  async showEditObjectiveModal(objectiveId) {
+    const objective = this.detailedObjectives.find(o => o.id === objectiveId);
+    if (!objective) return;
+
+    const modal = document.getElementById('objective-modal');
+    const title = document.getElementById('objective-modal-title');
+    const nameInput = document.getElementById('objective-name-input');
+    const saveBtn = document.getElementById('objective-modal-save');
+    
+    title.textContent = 'Edit Learning Objective';
+    nameInput.value = objective.name;
+    saveBtn.onclick = () => this.handleSaveObjective(objectiveId);
+    
+    this.renderMaterialsSelection(objective.materialIds);
+    modal.style.display = 'flex';
+  }
+
+  renderMaterialsSelection(selectedIds = []) {
+    const container = document.getElementById('objective-materials-list');
+    if (!container) return;
+
+    if (!this.courseMaterials || this.courseMaterials.length === 0) {
+      container.innerHTML = '<p class="no-data-message" style="grid-column: 1/-1; text-align: center; padding: 20px;">No course materials available.</p>';
+      return;
+    }
+
+    container.innerHTML = this.courseMaterials.map(material => {
+      const id = material.sourceId;
+      const checked = selectedIds.includes(id) ? 'checked' : '';
+      const iconInfo = this.getMaterialIcon(material.fileType || '');
+      return `
+        <label class="material-checkbox-item">
+          <input type="checkbox" name="objective-material" value="${id}" ${checked}>
+          <i class="${iconInfo.icon}" style="color: ${iconInfo.color}; width: 20px; text-align: center; font-size: 14px;"></i>
+          <span class="material-checkbox-label" title="${this.escapeHtml(material.source || material.filename || '')}">${this.escapeHtml(material.documentTitle || material.fileName || material.name || 'Unnamed')}</span>
+        </label>
+      `;
+    }).join('');
+  }
+
+  async handleSaveObjective(editingId = null) {
+    const nameInput = document.getElementById('objective-name-input');
+    const name = nameInput.value.trim();
+    
+    if (!name) {
+      this.showNotification('Please enter an objective name', 'error');
+      return;
+    }
+
+    const materialCheckboxes = document.querySelectorAll('input[name="objective-material"]:checked');
+    const materialIds = Array.from(materialCheckboxes).map(cb => cb.value);
+
+    try {
+      let result;
+      if (editingId) {
+        // Update existing
+        const response = await fetch(`${API_ENDPOINTS.objective}/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, courseId: this.courseId })
+        });
+        result = await response.json();
+        
+        if (result.success) {
+          // Update materials separately
+          await fetch(`${API_ENDPOINTS.objective}/${editingId}/materials`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ materialIds })
+          });
+        }
+      } else {
+        // Create new
+        const response = await fetch(API_ENDPOINTS.objective, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, courseId: this.courseId })
+        });
+        result = await response.json();
+        
+        if (result.success && materialIds.length > 0) {
+          const newId = getObjectId(result.objective);
+          await fetch(`${API_ENDPOINTS.objective}/${newId}/materials`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ materialIds })
+          });
+        }
+      }
+
+      if (result.success) {
+        document.getElementById('objective-modal').style.display = 'none';
+        this.showNotification(`Objective ${editingId ? 'updated' : 'created'} successfully`, 'success');
+        await this.renderObjectives();
+        await this.loadLearningObjectives(); // Refresh filter dropdowns
+        this.updateFilterOptions();
+      } else {
+        throw new Error(result.error || 'Failed to save objective');
+      }
+    } catch (error) {
+      console.error('Error saving objective:', error);
+      this.showNotification(error.message, 'error');
+    }
+  }
+
+  async handleDeleteObjective(objectiveId) {
+    if (!confirm('Are you sure you want to delete this learning objective? This will also delete all associated granular objectives.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        this.showNotification('Learning objective deleted', 'success');
+        await this.renderObjectives();
+        await this.loadLearningObjectives();
+        this.updateFilterOptions();
+      } else {
+        throw new Error(data.error || 'Failed to delete objective');
+      }
+    } catch (error) {
+      console.error('Error deleting objective:', error);
+      this.showNotification(error.message, 'error');
+    }
+  }
+
+  // ==================== Granular Objective CRUD ====================
+
+  async handleAddGranular(parentId) {
+    const input = document.getElementById(`new-granular-input-${parentId}`);
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    try {
+      // Get current objective to update its granular list
+      const objective = this.detailedObjectives.find(o => o.id === parentId);
+      const newGranular = { text: text }; // Use 'text' as expected by some API parts
+      const updatedGranularList = [...objective.granular, newGranular];
+
+      const response = await fetch(`${API_ENDPOINTS.objective}/${parentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          granularObjectives: updatedGranularList,
+          courseId: this.courseId 
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        input.value = '';
+        this.showNotification('Granular objective added', 'success');
+        await this.renderObjectives();
+      } else {
+        throw new Error(data.error || 'Failed to add granular objective');
+      }
+    } catch (error) {
+      console.error('Error adding granular objective:', error);
+      this.showNotification(error.message, 'error');
+    }
+  }
+
+  showEditGranular(parentId, granularId) {
+    const textSpan = document.getElementById(`granular-text-${granularId}`);
+    const currentText = textSpan.textContent;
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'granular-edit-input';
+    input.value = currentText;
+    
+    const container = textSpan.parentElement;
+    const actionsDiv = container.querySelector('.granular-actions');
+    
+    container.querySelector('.granular-text').style.display = 'none';
+    actionsDiv.style.display = 'none';
+    
+    const editForm = document.createElement('div');
+    editForm.className = 'granular-edit-form';
+    editForm.style.display = 'flex';
+    editForm.style.gap = '5px';
+    editForm.style.flex = '1';
+    
+    editForm.appendChild(input);
+    
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn-icon btn-sm btn-primary';
+    saveBtn.innerHTML = '<i class="fas fa-check"></i>';
+    saveBtn.onclick = () => this.handleUpdateGranular(parentId, granularId, input.value);
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-icon btn-sm';
+    cancelBtn.innerHTML = '<i class="fas fa-times"></i>';
+    cancelBtn.onclick = () => {
+      container.querySelector('.granular-text').style.display = 'inline';
+      actionsDiv.style.display = 'flex';
+      editForm.remove();
+    };
+    
+    editForm.appendChild(saveBtn);
+    editForm.appendChild(cancelBtn);
+    
+    container.insertBefore(editForm, actionsDiv);
+    input.focus();
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') saveBtn.click();
+      if (e.key === 'Escape') cancelBtn.click();
+    };
+  }
+
+  async handleUpdateGranular(parentId, granularId, newText) {
+    if (!newText.trim()) return;
+
+    try {
+      const objective = this.detailedObjectives.find(o => o.id === parentId);
+      const updatedGranularList = objective.granular.map(g => {
+        if (getObjectId(g) === granularId) {
+          return { ...g, text: newText.trim(), name: newText.trim() };
+        }
+        return g;
+      });
+
+      const response = await fetch(`${API_ENDPOINTS.objective}/${parentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          granularObjectives: updatedGranularList,
+          courseId: this.courseId 
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        this.showNotification('Granular objective updated', 'success');
+        await this.renderObjectives();
+      } else {
+        throw new Error(data.error || 'Failed to update granular objective');
+      }
+    } catch (error) {
+      console.error('Error updating granular objective:', error);
+      this.showNotification(error.message, 'error');
+    }
+  }
+
+  async handleDeleteGranular(parentId, granularId) {
+    if (!confirm('Are you sure you want to delete this granular objective?')) return;
+
+    try {
+      const objective = this.detailedObjectives.find(o => o.id === parentId);
+      const updatedGranularList = objective.granular.filter(g => getObjectId(g) !== granularId);
+
+      const response = await fetch(`${API_ENDPOINTS.objective}/${parentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          granularObjectives: updatedGranularList,
+          courseId: this.courseId 
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        this.showNotification('Granular objective deleted', 'success');
+        await this.renderObjectives();
+      } else {
+        throw new Error(data.error || 'Failed to delete granular objective');
+      }
+    } catch (error) {
+      console.error('Error deleting granular objective:', error);
+      this.showNotification(error.message, 'error');
+    }
+  }
+
+  // ==================== Helpers ====================
+
+  escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  getMaterialIcon(type) {
+    const info = { icon: "fas fa-file", color: "#718096" };
+    if (!type) return info;
+    
+    const t = type.toLowerCase();
+    if (t.includes("pdf")) {
+      info.icon = "fas fa-file-pdf";
+      info.color = "#e74c3c";
+    } else if (t.includes("text") || t.includes("plain")) {
+      info.icon = "fas fa-file-alt";
+      info.color = "#f39c12";
+    } else if (t.includes("word") || t.includes("officedocument")) {
+      info.icon = "fas fa-file-word";
+      info.color = "#3498db";
+    } else if (t.includes("link")) {
+      info.icon = "fas fa-link";
+      info.color = "#9b59b6";
+    } else if (t.includes("video")) {
+      info.icon = "fas fa-file-video";
+      info.color = "#27ae60";
+    }
+    return info;
   }
 }
 
