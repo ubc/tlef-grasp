@@ -108,12 +108,12 @@ class QuestionBankPage {
 
     this.state = {
       filters: {
-        quiz: "all",
-        objective: "all",
-        bloom: "all",
-        status: "all",
-        flagged: flaggedFilterEnabled,
-        q: "",
+        quiz: urlParams.get('quiz') || "all",
+        objective: urlParams.get('objective') || "all",
+        bloom: urlParams.get('bloom') || "all",
+        status: urlParams.get('status') || "all",
+        flagged: flaggedParam === "true",
+        q: urlParams.get('q') || "",
         material: materialParam
       },
       sort: { key: "title", dir: "asc" },
@@ -314,16 +314,7 @@ class QuestionBankPage {
       const newVal = e.target.value;
       if (self.state.filters.material !== newVal) {
         self.state.filters.material = newVal;
-        
-        // Update URL search params
-        const url = new URL(window.location);
-        if (newVal === 'all') {
-          url.searchParams.delete('material');
-        } else {
-          url.searchParams.set('material', newVal);
-        }
-        window.history.pushState({ material: newVal }, "", url);
-        
+        self.updateUrlParams();
         await self.renderObjectives();
       }
     });
@@ -343,6 +334,9 @@ class QuestionBankPage {
       option.textContent = quiz.name || "Unnamed Quiz";
       quizFilter.appendChild(option);
     });
+
+    // Set selected value from state
+    quizFilter.value = this.state.filters.quiz;
   }
 
   updateLearningObjectivesFilter() {
@@ -373,6 +367,9 @@ class QuestionBankPage {
         option.textContent = objective.name;
         objectiveFilter.appendChild(option);
       });
+
+    // Set selected value from state
+    objectiveFilter.value = this.state.filters.objective;
   }
 
   updateBloomLevelsFilter() {
@@ -399,6 +396,9 @@ class QuestionBankPage {
         option.textContent = bloom;
         bloomFilter.appendChild(option);
       });
+
+    // Set selected value from state
+    bloomFilter.value = this.state.filters.bloom;
   }
 
   updateStatusFilter() {
@@ -434,6 +434,9 @@ class QuestionBankPage {
         option.textContent = status;
         statusFilter.appendChild(option);
       });
+
+    // Set selected value from state
+    statusFilter.value = this.state.filters.status;
   }
 
   async loadQuestionsForOverview() {
@@ -569,10 +572,8 @@ class QuestionBankPage {
         button.classList.add("active");
         const tabName = button.getAttribute("data-tab");
 
-        // Update URL search params
-        const url = new URL(window.location);
-        url.searchParams.set("tab", tabName);
-        window.history.pushState({ tab: tabName }, "", url);
+        this.state.currentTab = tabName;
+        this.updateUrlParams();
 
         await this.switchTab(tabName);
       });
@@ -1812,11 +1813,50 @@ class QuestionBankPage {
     // Clear selections for rows no longer visible
     this.clearOutOfViewSelections();
 
+    // Update URL parameters
+    this.updateUrlParams();
+
     if (this.state.currentTab === TAB_NAMES.review) {
       this.renderQuizzes();
     } else if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
     }
+  }
+
+  /**
+   * Update URL parameters to reflect current filter and tab state
+   */
+  updateUrlParams() {
+    const url = new URL(window.location);
+    const filters = this.state.filters;
+
+    // Update tab
+    url.searchParams.set('tab', this.state.currentTab);
+
+    // Helper to update param or delete if default
+    const updateParam = (name, value, defaultValue = 'all') => {
+      if (value && value !== defaultValue && value !== '') {
+        url.searchParams.set(name, value);
+      } else {
+        url.searchParams.delete(name);
+      }
+    };
+
+    updateParam('quiz', filters.quiz);
+    updateParam('objective', filters.objective);
+    updateParam('bloom', filters.bloom);
+    updateParam('status', filters.status);
+    updateParam('q', filters.q, '');
+    updateParam('material', filters.material);
+    
+    // Flagged is a boolean
+    if (filters.flagged) {
+      url.searchParams.set('flagged', 'true');
+    } else {
+      url.searchParams.delete('flagged');
+    }
+
+    window.history.pushState({}, "", url);
   }
 
   // Sorting functionality
@@ -3342,10 +3382,10 @@ class QuestionBankPage {
       const checked = selectedIds.includes(id) ? 'checked' : '';
       const iconInfo = this.getMaterialIcon(material.fileType || '');
       return `
-        <label class="material-checkbox-item">
-          <input type="checkbox" name="objective-material" value="${id}" ${checked}>
+        <label class="material-radio-item">
+          <input type="radio" name="objective-material" value="${id}" ${checked}>
           <i class="${iconInfo.icon}" style="color: ${iconInfo.color}; width: 20px; text-align: center; font-size: 14px;"></i>
-          <span class="material-checkbox-label" title="${this.escapeHtml(material.source || material.filename || '')}">${this.escapeHtml(material.documentTitle || material.fileName || material.name || 'Unnamed')}</span>
+          <span class="material-radio-label" title="${this.escapeHtml(material.source || material.filename || '')}">${this.escapeHtml(material.documentTitle || material.fileName || material.name || 'Unnamed')}</span>
         </label>
       `;
     }).join('');
@@ -3360,8 +3400,8 @@ class QuestionBankPage {
       return;
     }
 
-    const materialCheckboxes = document.querySelectorAll('input[name="objective-material"]:checked');
-    const materialIds = Array.from(materialCheckboxes).map(cb => cb.value);
+    const materialRadio = document.querySelector('input[name="objective-material"]:checked');
+    const materialIds = materialRadio ? [materialRadio.value] : [];
 
     try {
       let result;
