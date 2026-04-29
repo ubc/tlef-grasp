@@ -62,7 +62,6 @@ RESPONSE FORMAT (JSON):
   "objectives": [
     {
       "name": "Main learning objective title",
-      "sourceIds": ["id1", "id2"],
       "granularObjectives": [
         { "text": "Granular objective 1", "bloomTaxonomies": ["Understand", "Apply"] },
         { "text": "Granular objective 2", "bloomTaxonomies": ["Analyze"] }
@@ -71,15 +70,9 @@ RESPONSE FORMAT (JSON):
   ]
 }
 
-AVAILABLE SOURCE IDS:
-{sourceIdsList}
-
 IMPORTANT RULES:
-1. Every learning objective MUST include a "sourceIds" array.
-2. Only include a Source ID in the "sourceIds" array if you found the actual evidence for that objective under the section "### MATERIAL: ... (SOURCE ID: {id})".
-3. Do NOT guess or hallucinate source associations. If an objective is only found in one material, only list that one ID.
-4. Base objectives strictly on the provided material content.
-5. Return ONLY valid JSON.`;
+1. Base objectives strictly on the provided material content.
+2. Return ONLY valid JSON.`;
 
 const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom's Taxonomy.
 
@@ -110,7 +103,6 @@ JSON
   "objectives": [
     {
       "name": "Meta Objective Name",
-      "sourceIds": ["id1", "id2"],
       "granularObjectives": [
         {
           "text": "Students will be able to [action verb] [specific skill]...",
@@ -121,14 +113,8 @@ JSON
   ]
 }
 
-AVAILABLE SOURCE IDS:
-{sourceIdsList}
-
 FINAL INSTRUCTIONS:
-1. Every meta objective MUST have a "sourceIds" array.
-2. Only include a Source ID in the "sourceIds" array if the objective (or parts of it) is explicitly present in the section marked "### MATERIAL: ... (SOURCE ID: {id})".
-3. Be extremely precise. Do not link a material if the content does not support the objective.
-4. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks. Ensure no user intent is lost.`;
+1. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
