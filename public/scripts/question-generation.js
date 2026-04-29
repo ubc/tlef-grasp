@@ -1092,38 +1092,24 @@ function displayAIMaterialsInModal(materials) {
     const materialItem = document.createElement("div");
     materialItem.className = "material-selection-item";
     materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "ai-material-selection";
+    radio.value = material.sourceId;
+    radio.id = `ai-material-${material.sourceId}`;
+    radio.className = "ai-material-radio";
+    radio.addEventListener("change", updateAIGenerateButtonState);
+
     materialItem.addEventListener("click", (e) => {
-      // If the user clicked the checkbox or label directly, the browser
+      // If the user clicked the radio or label directly, the browser
       // handles the selection automatically.
-      if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
+      if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
         return;
       }
       
-      const checkedCount = document.querySelectorAll(".ai-material-checkbox:checked").length;
-      if (!checkbox.checked && checkedCount >= 5) {
-        showToast("Maximum of 5 materials reached. Focus on fewer materials for better quality objectives.", "warning");
-        return;
-      }
-      
-      checkbox.checked = !checkbox.checked; // Toggle the checkbox
+      radio.checked = true;
       updateAIGenerateButtonState();
     });
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = material.sourceId;
-    checkbox.id = `ai-material-${material.sourceId}`;
-    checkbox.className = "ai-material-checkbox";
-    checkbox.addEventListener("click", (e) => {
-      const checkedCount = document.querySelectorAll(".ai-material-checkbox:checked").length;
-      // If it was already checked, the click will uncheck it (always allowed)
-      // If it was unchecked, and we are already at 5, prevent checking it
-      if (e.target.checked && checkedCount > 5) {
-        e.preventDefault();
-        showToast("Maximum of 5 materials reached. Focus on fewer materials for better quality objectives.", "warning");
-      }
-    });
-    checkbox.addEventListener("change", updateAIGenerateButtonState);
 
     const label = document.createElement("label");
     label.htmlFor = `ai-material-${material.sourceId}`;
@@ -1157,7 +1143,7 @@ function displayAIMaterialsInModal(materials) {
     label.appendChild(fileName);
     label.appendChild(details);
 
-    materialItem.appendChild(checkbox);
+    materialItem.appendChild(radio);
     materialItem.appendChild(label);
 
     materialsList.appendChild(materialItem);
@@ -1166,23 +1152,10 @@ function displayAIMaterialsInModal(materials) {
 
 function updateAIGenerateButtonState() {
   const generateBtn = document.getElementById("ai-generate-btn");
-  const checkboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
   
-  // Update counter
-  const counter = document.getElementById("ai-material-selection-count");
-  if (counter) {
-    counter.textContent = `${checkboxes.length}/5 selected`;
-    if (checkboxes.length >= 5) {
-      counter.style.color = "#e67e22"; // Orange warning color
-      counter.style.fontWeight = "600";
-    } else {
-      counter.style.color = "#6b7280";
-      counter.style.fontWeight = "normal";
-    }
-  }
-
   if (generateBtn) {
-    generateBtn.disabled = checkboxes.length === 0;
+    generateBtn.disabled = !selectedRadio;
   }
 }
 
@@ -1193,14 +1166,13 @@ async function handleAIGenerateObjectives() {
   const generatedContainer = document.getElementById("ai-generated-objectives-container");
   const generatedList = document.getElementById("ai-generated-objectives-list");
 
-  // Get selected materials
-  const materialCheckboxes = document.querySelectorAll(".ai-material-checkbox:checked");
-  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
-
-  if (selectedMaterials.length === 0) {
-    showToast("Please select at least one material", "warning");
+  // Get selected material
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
+  if (!selectedRadio) {
+    showToast("Please select a material", "warning");
     return;
   }
+  const selectedMaterials = [selectedRadio.value];
 
   // Get custom objectives if provided
   const objectiveInputs = document.querySelectorAll(".ai-custom-objective-input");
@@ -1253,6 +1225,13 @@ async function handleAIGenerateObjectives() {
         courseId: selectedCourse.id,
         courseName: selectedCourse.name,
         materialIds: selectedMaterials,
+        materialTitles: (() => {
+          const item = selectedRadio.closest('.material-selection-item');
+          const fileNameDiv = item?.querySelector('label div');
+          const titles = {};
+          if (fileNameDiv) titles[selectedRadio.value] = fileNameDiv.textContent.trim();
+          return titles;
+        })(),
         userObjectives: userObjectives
       }),
     });
@@ -1409,9 +1388,9 @@ async function handleAISaveObjectives() {
     return;
   }
 
-  // Get selected materials
-  const materialCheckboxes = document.querySelectorAll('.ai-material-checkbox:checked');
-  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+  // Get selected material
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
+  const selectedMaterials = selectedRadio ? [selectedRadio.value] : [];
 
   // Get course info
   const selectedCourse = getSelectedCourse();
@@ -1457,13 +1436,19 @@ async function handleAISaveObjectives() {
       const objectiveId = data.objective._id || data.objective.id;
 
       // Associate materials separately
-      if (selectedMaterials.length > 0) {
+      // Use sourceIds from AI if available, otherwise fall back to all selected materials
+      const materialIdsToAssociate = (objective.sourceIds && objective.sourceIds.length > 0) 
+        ? objective.sourceIds 
+        : selectedMaterials;
+
+      if (materialIdsToAssociate.length > 0) {
+        console.log(`Associating objective "${objective.name}" with materials:`, materialIdsToAssociate);
         const materialsResponse = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ materialIds: selectedMaterials }),
+          body: JSON.stringify({ materialIds: materialIdsToAssociate }),
         });
 
         if (!materialsResponse.ok) {

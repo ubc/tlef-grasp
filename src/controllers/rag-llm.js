@@ -397,7 +397,10 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const settings = await settingsService.getSettings(courseId);
 
     // Prepare RAG search query
-    const searchQuery = `course content learning objectives topics concepts from course: ${courseName || ''}`;
+    let searchQuery = `learning objectives, key topics, and educational concepts from course: ${courseName || ''}`;
+    if (userObjectives && userObjectives.length > 0) {
+      searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
+    }
 
     console.log("Retrieving RAG content from selected materials...");
     const ragContext = await ragService.getRagContentFromMaterials(
@@ -424,11 +427,13 @@ const generateLearningObjectivesHandler = async (req, res) => {
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
         .replace('{userObjectivesList}', userList)
+        .replace('{sourceIdsList}', materialIds.join(', '))
         .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
+        .replace('{sourceIdsList}', materialIds.join(', '))
         .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     }
 
@@ -467,20 +472,24 @@ const generateLearningObjectivesHandler = async (req, res) => {
       const validBloomLevels = BLOOM_LEVELS;
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
-        .map((obj) => ({
-          name: obj.name.trim(),
-          granularObjectives: obj.granularObjectives
-            .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
-            .map((go) => {
-              const text = typeof go === "string" ? go.trim() : go.text.trim();
-              let bloomTaxonomies = ["Understand"]; // default
-              if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
-                 const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
-                 if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
-              }
-              return { text, bloomTaxonomies };
-            }),
-        }))
+        .map((obj) => {
+          console.log(`Objective "${obj.name}" sourceIds:`, obj.sourceIds);
+          return {
+            name: obj.name.trim(),
+            sourceIds: Array.isArray(obj.sourceIds) ? obj.sourceIds : [],
+            granularObjectives: obj.granularObjectives
+              .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
+              .map((go) => {
+                const text = typeof go === "string" ? go.trim() : go.text.trim();
+                let bloomTaxonomies = ["Understand"]; // default
+                if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
+                   const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
+                   if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
+                }
+                return { text, bloomTaxonomies };
+              }),
+          };
+        })
         .filter((obj) => obj.granularObjectives.length > 0);
 
       if (cleanedObjectives.length === 0) {

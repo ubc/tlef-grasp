@@ -258,8 +258,25 @@ class RAGService {
     console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials`);
 
     if (ragChunks && ragChunks.length > 0) {
-      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
-      console.log("RAG context length:", ragContext.length);
+      // Group chunks by sourceId
+      const chunksBySource = {};
+      ragChunks.forEach(chunk => {
+        const sid = chunk.metadata?.sourceId || 'Unknown';
+        if (!chunksBySource[sid]) {
+          chunksBySource[sid] = {
+            title: chunk.metadata?.documentTitle || chunk.metadata?.fileName || 'Unknown Source',
+            contents: []
+          };
+        }
+        chunksBySource[sid].contents.push(chunk.content);
+      });
+
+      // Format context grouped by material
+      const ragContext = Object.entries(chunksBySource).map(([sid, data]) => {
+        return `### MATERIAL: ${data.title} (SOURCE ID: ${sid})\n${data.contents.join('\n\n')}`;
+      }).join("\n\n---\n\n");
+
+      console.log(`✅ Processed RAG context from ${Object.keys(chunksBySource).length} materials`);
       return ragContext;
     } else {
       console.log("⚠️ No relevant chunks found in RAG for selected materials");
