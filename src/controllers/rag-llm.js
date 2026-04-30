@@ -397,7 +397,9 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const settings = await settingsService.getSettings(courseId);
 
     // Prepare RAG search query
-    let searchQuery = `learning objectives, key topics, and educational concepts from course: ${courseName || ''}`;
+    let searchQuery = `Identify the core knowledge areas, skills, competencies, theories, methodologies, 
+and measurable learning outcomes that students are expected to master in ${courseName || ''}. 
+Include foundational concepts, practical applications, and assessment criteria.`;
     if (userObjectives && userObjectives.length > 0) {
       searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
     }
