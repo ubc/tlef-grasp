@@ -92,7 +92,7 @@ class RAGService {
       chunkingConfig: (content) => {
         const chunks = [];
         const chunkSize = 1000;
-        const overlap = 200;
+        const overlap = 150;
         
         let i = 0;
         while (i < content.length) {
