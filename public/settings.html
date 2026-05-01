@@ -70,7 +70,12 @@
                         
                         <div class="settings-form">
                             <div class="form-group">
-                                <label for="prompt-question-generation">Question Generation Prompt</label>
+                                <div class="label-row">
+                                    <label for="prompt-question-generation">Question Generation Prompt</label>
+                                    <button type="button" class="reset-btn" data-prompt="questionGeneration" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-question-generation" rows="15" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Handles the creation of multiple-choice questions based on selected objectives.</p>
@@ -85,7 +90,12 @@
                             </div>
                             
                             <div class="form-group">
-                                <label for="prompt-objective-auto">Learning Objective Generation Prompt - Auto Mode</label>
+                                <div class="label-row">
+                                    <label for="prompt-objective-auto">Learning Objective Generation Prompt - Auto Mode</label>
+                                    <button type="button" class="reset-btn" data-prompt="objectiveGenerationAuto" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-objective-auto" rows="12" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Used when the AI generates a set of course learning objectives from scratch based on processed materials.</p>
@@ -98,7 +108,12 @@
                             </div>
 
                             <div class="form-group">
-                                <label for="prompt-objective-manual">Learning Objective Generation Prompt - Manual Mode</label>
+                                <div class="label-row">
+                                    <label for="prompt-objective-manual">Learning Objective Generation Prompt - Manual Mode</label>
+                                    <button type="button" class="reset-btn" data-prompt="objectiveGenerationManual" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-objective-manual" rows="12" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Used when you provide specific main objectives and want the AI to generate detailed sub-objectives and taxonomy levels for them.</p>

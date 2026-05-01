@@ -1,4 +1,6 @@
 // GRASP Settings JavaScript
+let defaultPrompts = {};
+
 document.addEventListener("DOMContentLoaded", function () {
     initializeSettings();
 });
@@ -35,6 +37,24 @@ async function initializeSettings() {
         // Load Settings
         await loadSettings();
         await loadEnrollmentCode();
+        await loadDefaultPrompts();
+
+        // Reset Buttons Logic
+        const resetBtns = document.querySelectorAll('.reset-btn');
+        resetBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const promptKey = btn.getAttribute('data-prompt');
+                if (defaultPrompts[promptKey]) {
+                    const textarea = btn.closest('.form-group').querySelector('textarea');
+                    if (textarea) {
+                        if (confirm('Reset this prompt to the system default? unsaved changes to this prompt will be lost.')) {
+                            textarea.value = defaultPrompts[promptKey];
+                            showToast('Prompt reset to default', 'info');
+                        }
+                    }
+                }
+            });
+        });
 
         // Save Settings Event
         const saveBtn = document.getElementById('save-all-settings');
@@ -133,6 +153,18 @@ async function regenerateEnrollmentCode() {
         showToast(error.message || 'Failed to regenerate code', 'error');
     } finally {
         btn.disabled = false;
+    }
+}
+
+async function loadDefaultPrompts() {
+    try {
+        const response = await fetch('/api/courses/defaults/settings');
+        const data = await response.json();
+        if (data.success && data.defaults && data.defaults.prompts) {
+            defaultPrompts = data.defaults.prompts;
+        }
+    } catch (error) {
+        console.error('Error loading default prompts:', error);
     }
 }
 

@@ -24,6 +24,7 @@ router.post(
 router.get("/:courseId", coursesController.getCourseByIdHandler);
 
 // Course settings
+router.get("/defaults/settings", settingsController.getDefaultSettingsHandler);
 router.get("/:courseId/settings", settingsController.getSettingsHandler);
 router.put("/:courseId/settings", express.json(), settingsController.updateSettingsHandler);
 
