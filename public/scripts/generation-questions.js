@@ -33,7 +33,7 @@ class QuestionGenerator {
           try {
             // Generate questions for this specific objective using RAG
             const objectiveQuestions = await this.generateQuestionsForObjective(
-              course.name || '',
+              course.name || course.courseName || '',
               learningObjective,
               granularLearningObjective,
               course.id || course._id
@@ -107,7 +107,8 @@ class QuestionGenerator {
               granularLearningObjective.granularId,
               granularLearningObjective.text,
               bloomLevel,
-              i + 1
+              i + 1,
+              learningObjective.materialIds || []
             );
 
           console.log(`✅ Created question ${i + 1}:`, question.text);
@@ -175,7 +176,8 @@ class QuestionGenerator {
     granularLearningObjectiveId,
     granularLearningObjectiveText,
     bloomLevel,
-    questionNumber
+    questionNumber,
+    materialIds = []
   ) {
     console.log(`Generating LLM question for objective: ${learningObjectiveText}`);
 
@@ -189,6 +191,7 @@ class QuestionGenerator {
             learningObjectiveText: learningObjectiveText,
             granularLearningObjectiveText: granularLearningObjectiveText,
             bloomLevel: bloomLevel,
+            materialIds: materialIds,
           }),
           headers: {
             'Content-Type': 'application/json',

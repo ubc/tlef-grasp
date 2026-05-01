@@ -72,7 +72,8 @@ class LLMService {
         defaultModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         defaultOptions: {
           temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.2,
-          max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000
+          max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+          response_format: { type: 'json_object' }
         },
         logger: new ConsoleLogger('LLM'),
       };
@@ -84,7 +85,8 @@ class LLMService {
         defaultModel: process.env.OLLAMA_MODEL || 'llama3.1:8b',
         defaultOptions: {
           temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000
+          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+          format: 'json'
         },
         logger: new ConsoleLogger('LLM'),
       };

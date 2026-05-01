@@ -48,7 +48,7 @@ const selectedCourseData = getSelectedCourse();
 const state = {
   step: 1, // Step 1 is now Create Objectives (was step 3)
   course: selectedCourseData || '',
-  selectedCourse: selectedCourseData?.courseName || '', // Course name for display
+  selectedCourse: selectedCourseData?.courseName || selectedCourseData?.name || '', // Course name for display
   objectiveGroups: [], // Step 1: Create Objectives
   // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
@@ -1338,7 +1338,7 @@ function displayGeneratedObjectives(objectives) {
     // Main objective
     const mainObjective = document.createElement("div");
     mainObjective.style.cssText = "font-weight: 600; font-size: 16px; color: #1f2937; margin-bottom: 12px; cursor: pointer;";
-    mainObjective.textContent = `${index + 1}. ${objective.name}`;
+    mainObjective.innerHTML = `${index + 1}. ${typeof parseSmilesTags === 'function' ? parseSmilesTags(objective.name) : objective.name}`;
     mainObjective.addEventListener("click", () => {
       checkbox.checked = !checkbox.checked;
       checkbox.dispatchEvent(new Event("change"));
@@ -1352,13 +1352,13 @@ function displayGeneratedObjectives(objectives) {
       const granularText = typeof granular === 'string' ? granular : granular.text;
       const granularItem = document.createElement("li");
       granularItem.style.cssText = "padding: 8px 0 8px 24px; color: #4b5563; font-size: 14px; position: relative;";
-      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${granularText}`;
+      const processedText = typeof parseSmilesTags === 'function' ? parseSmilesTags(granularText) : granularText;
+      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${processedText}`;
       granularList.appendChild(granularItem);
     });
 
     contentWrapper.appendChild(mainObjective);
     contentWrapper.appendChild(granularList);
-
     objectiveCard.appendChild(checkbox);
     objectiveCard.appendChild(contentWrapper);
     generatedList.appendChild(objectiveCard);
@@ -1366,6 +1366,10 @@ function displayGeneratedObjectives(objectives) {
     // Set initial border color
     objectiveCard.style.borderColor = "#3b82f6";
   });
+
+  // Trigger LaTeX and SMILES rendering for the preview
+  if (typeof renderKatex === 'function') renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 
   // Update save button state
   updateAISaveButtonState();
@@ -1425,42 +1429,67 @@ async function handleAISaveObjectives() {
   }
 
   try {
-    // Add objectives to the page (session-only, no DB sync)
+    // Save each selected objective to the database
     for (const index of selectedIndices) {
       const objective = generatedObjectives[index];
       if (!objective) continue;
 
-      // Create new learning objective group for UI only
-      const newGroupId = Date.now() + Math.random();
-      const newGroupNumber = state.objectiveGroups.length + 1;
+      try {
+        const response = await fetch(API_ENDPOINTS.objective, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: objective.name,
+            courseId: selectedCourse.id,
+            materialIds: selectedMaterials,
+            granularObjectives: objective.granularObjectives.map(go => ({
+              text: typeof go === 'string' ? go : go.text,
+              bloomTaxonomies: typeof go === 'string' ? [] : (go.bloomTaxonomies || [])
+            }))
+          }),
+        });
 
-      const newGroup = {
-        id: newGroupId,
-        objectiveId: null, // Temporary session-only objective
-        metaId: `session-${newGroupId}`,
-        title: objective.name,
-        isOpen: true,
-        selected: false,
-        materialIds: selectedMaterials,
-        items: objective.granularObjectives.map((granular, gIdx) => {
-          const granularText = typeof granular === 'string' ? granular : granular.text;
-          const bloomTaxonomies = typeof granular === 'string' ? [] : (granular.bloomTaxonomies || []);
-          
-          return {
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || `Failed to save objective: ${objective.name}`);
+        }
+
+        const dbObjective = data.objective;
+        const dbGranulars = data.granularObjectives;
+
+        // Create group in local state using DB response
+        const newGroupId = Date.now() + Math.random();
+        const newGroupNumber = state.objectiveGroups.length + 1;
+
+        const newGroup = {
+          id: newGroupId,
+          objectiveId: dbObjective._id,
+          metaId: `db-${dbObjective._id}`,
+          title: dbObjective.name,
+          isOpen: true,
+          selected: false,
+          materialIds: selectedMaterials,
+          items: dbGranulars.map((granular, gIdx) => ({
             id: parseFloat(`${newGroupNumber}.${gIdx + 1}`),
-            granularId: null, // Temporary session-only granular objective
-            text: granularText,
-            bloom: bloomTaxonomies,
+            granularId: granular._id,
+            text: granular.name,
+            bloom: granular.bloomTaxonomies || [],
             minQuestions: 2,
             count: 2,
             mode: "manual",
             level: 1,
             selected: false,
-          };
-        }),
-      };
+          })),
+        };
 
-      state.objectiveGroups.push(newGroup);
+        state.objectiveGroups.push(newGroup);
+      } catch (saveError) {
+        console.error(`Error saving objective "${objective.name}":`, saveError);
+        showToast(`Failed to save "${objective.name}": ${saveError.message}`, "error");
+        // Continue with other objectives
+      }
     }
 
     // Renumber all groups

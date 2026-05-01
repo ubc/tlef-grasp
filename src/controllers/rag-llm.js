@@ -37,30 +37,67 @@ function safeJsonParse(jsonInput) {
   }
   
   // If it's not a string, convert it
-  const jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
+  let jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
   
-  try {
-    // Try direct parsing - the LLM should return valid JSON
-    return JSON.parse(jsonString);
-  } catch (error) {
-    // Fallback: try extracting JSON from markdown code blocks if present
+  /**
+   * Internal helper to extract JSON and attempt parsing
+   * @param {string} str 
+   */
+  const attemptParse = (str) => {
     try {
-      const codeBlockMatch = jsonString.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      return JSON.parse(str);
+    } catch (error) {
+      // Try extracting from markdown code blocks
+      const codeBlockMatch = str.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
       if (codeBlockMatch) {
-        return JSON.parse(codeBlockMatch[1]);
+        try {
+          return JSON.parse(codeBlockMatch[1]);
+        } catch (e) {
+          // If code block also fails, continue to other fixes
+        }
       }
       
-      // Try to extract JSON object from the string
-      const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
+      // Try to extract just the first object { ... }
+      const jsonMatch = str.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          // If extraction fails, continue
+        }
       }
       
       throw error;
-    } catch (fallbackError) {
-      // If parsing fails, the LLM response was invalid JSON
-      // This should not happen if the LLM follows the prompt instructions
-      throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${error.message}`);
+    }
+  };
+
+  try {
+    // 1. Try standard parse
+    return attemptParse(jsonString);
+  } catch (initialError) {
+    try {
+      // 2. Try fixing unescaped backslashes (very common with LaTeX)
+      // We look for backslashes that are NOT followed by valid JSON escape characters
+      // Valid: ", \, /, b, f, n, r, t, uXXXX
+      // Note: We skip escaping if it's already a double backslash
+      console.warn("Initial JSON parse failed. Attempting to fix unescaped backslashes...");
+      
+      // Fix: Escape backslashes that aren't valid JSON escapes
+      // This handles things like \( and \) which the LLM often fails to escape properly
+      const fixedBackslashes = jsonString.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+      
+      return attemptParse(fixedBackslashes);
+    } catch (secondError) {
+      // 3. Last resort: if it failed due to a specific character like \r or \n inside a string
+      // sometimes the LLM sends literal newlines inside strings
+      try {
+        console.warn("Second parse attempt failed. Attempting to fix literal newlines...");
+        const fixedNewlines = jsonString.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+        return attemptParse(fixedNewlines);
+      } catch (thirdError) {
+        // If all attempts fail, throw original error with a helpful message
+        throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${initialError.message}`);
+      }
     }
   }
 }
@@ -129,7 +166,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, materialIds } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -140,10 +177,18 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Bloom Level:", bloomLevel);
 
     // Validate required parameters
-    if (!courseName || !learningObjectiveId || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
+    if (!courseName || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
       return res.status(400).json({
         error: "Missing required parameters",
-        details: "courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
+        details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
+      });
+    }
+
+    // Ensure we have either an objective ID or material IDs for RAG context
+    if (!learningObjectiveId && (!materialIds || !Array.isArray(materialIds) || materialIds.length === 0)) {
+      return res.status(400).json({
+        error: "Missing learning context",
+        details: "Either learningObjectiveId or materialIds must be provided to retrieve relevant context for question generation",
       });
     }
 
@@ -174,11 +219,22 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // Prepare RAG search query
       const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
 
-      const ragContext = await ragService.getLearningObjectiveRagContent(
-        learningObjectiveId,
-        searchQuery,
-        courseId
-      );
+      let ragContext = '';
+      if (learningObjectiveId) {
+        ragContext = await ragService.getLearningObjectiveRagContent(
+          learningObjectiveId,
+          searchQuery,
+          courseId
+        );
+      } else if (materialIds && materialIds.length > 0) {
+        // Fallback to materials if objective is not yet in database
+        ragContext = await ragService.getRagContentFromMaterials(
+          materialIds,
+          searchQuery,
+          50, // limit
+          courseId
+        );
+      }
 
       console.log("RAG Context:", ragContext);
 

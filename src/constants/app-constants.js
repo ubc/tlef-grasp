@@ -35,7 +35,7 @@ CRITICAL FORMATTING REQUIREMENTS:
 - Return ONLY valid JSON.
 - Do NOT wrap the JSON in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\( and \\) for inline math (e.g., \\( x^2 \\) or \\( H_2O \\)). Do NOT use parentheses () or $ for math delimiters.
+- CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
 - CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]). Do NOT use chemical formulas like H2O or NaCl inside these tags; use proper SMILES notation (e.g., [SMILES]O[/SMILES] or [SMILES][Na+].[Cl-][/SMILES]).
 - CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.
 - CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
@@ -72,7 +72,10 @@ RESPONSE FORMAT (JSON):
 
 IMPORTANT RULES:
 1. Base objectives strictly on the provided material content.
-2. Return ONLY valid JSON.`;
+2. Return ONLY valid JSON.
+3. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+4. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
+5. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
 const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom's Taxonomy.
 
@@ -114,7 +117,10 @@ JSON
 }
 
 FINAL INSTRUCTIONS:
-1. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks.`;
+1. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks.
+2. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
+4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 

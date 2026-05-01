@@ -87,6 +87,11 @@ const createObjectiveHandler = async (req, res) => {
       courseId: courseId,
     });
 
+    // Persist material relationships if provided
+    if (materialIds && Array.isArray(materialIds) && materialIds.length > 0) {
+      await updateObjectiveMaterialRelations(result.parent._id.toString(), materialIds);
+    }
+
     res.json({
       success: true,
       objective: result.parent,
