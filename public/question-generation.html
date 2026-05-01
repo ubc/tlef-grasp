@@ -256,22 +256,18 @@
                             <div class="modal" id="delete-confirmation-modal">
                                 <div class="modal__content">
                                     <div class="modal__header">
-                                        <h3>Delete Learning Objective?</h3>
+                                        <h3>Remove Learning Objective?</h3>
                                         <button type="button" class="modal__close" id="delete-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
                                     <div class="modal__body">
-                                        <p>How would you like to handle this learning objective?</p>
+                                        <p>This will remove the learning objective from the current page. It will not be deleted from the database.</p>
                                     </div>
                                     <div class="modal__footer" style="flex-direction: column; gap: 12px; align-items: stretch;">
-                                        <button type="button" class="btn btn--secondary"
-                                            id="delete-modal-view-only" style="justify-content: center;">
-                                            <i class="fas fa-eye-slash"></i> Remove from current view only
-                                        </button>
                                         <button type="button" class="btn btn--danger"
-                                            id="delete-modal-db-complete" style="justify-content: center;">
-                                            <i class="fas fa-trash-alt"></i> Delete from database completely
+                                            id="delete-modal-view-only" style="justify-content: center;">
+                                            <i class="fas fa-trash-alt"></i> Remove from current view
                                         </button>
                                         <button type="button" class="btn btn--secondary"
                                             id="delete-modal-cancel" style="justify-content: center; margin-top: 8px; background: transparent; border: none; text-decoration: underline;">
