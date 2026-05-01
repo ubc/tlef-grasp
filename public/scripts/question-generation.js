@@ -200,6 +200,12 @@ function initializeEventListeners() {
 
   // Step 3: Quiz selection/creation
   initializeQuizSelection();
+
+  // Add to bank button (Step 2)
+  const addToBankBtn = document.getElementById("add-to-bank-btn");
+  if (addToBankBtn) {
+    addToBankBtn.addEventListener("click", handleAddAllToBank);
+  }
 }
 
 function goToNextStep() {
@@ -374,11 +380,19 @@ function updateNavigationButtons() {
 
   const backBtn = document.getElementById("back-btn");
   const continueBtn = document.getElementById("continue-btn");
+  const addToBankBtn = document.getElementById("add-to-bank-btn");
 
   if (backBtn) {
     backBtn.disabled = state.step === 1;
     backBtn.textContent = "Back";
     backBtn.className = "btn btn--secondary";
+    backBtn.style.display = "inline-flex";
+  }
+
+  if (addToBankBtn) {
+    addToBankBtn.style.display = state.step === 2 ? "inline-flex" : "none";
+    addToBankBtn.className = "btn btn--primary";
+    addToBankBtn.disabled = state.step !== 2;
   }
 
   if (continueBtn) {
@@ -391,6 +405,10 @@ function updateNavigationButtons() {
       continueBtn.disabled = state.objectiveGroups.length === 0;
       continueBtn.textContent = "Continue";
       continueBtn.className = continueBtn.disabled ? "btn btn--primary btn--disabled" : "btn btn--primary";
+    } else if (state.step === 2) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Add to Quiz";
+      continueBtn.className = "btn btn--primary";
     } else {
       continueBtn.disabled = false;
       continueBtn.textContent = "Continue";
@@ -2564,6 +2582,7 @@ function getStep2UIElements() {
     regenerateAllBtn: document.getElementById("regenerate-all-btn"),
     backBtn: document.getElementById("back-btn"),
     continueBtn: document.getElementById("continue-btn"),
+    addToBankBtn: document.getElementById("add-to-bank-btn"),
   };
 }
 
@@ -2586,6 +2605,7 @@ function setGenerationUI(showLoading) {
     // Disable navigation buttons during generation
     if (ui.backBtn) ui.backBtn.disabled = true;
     if (ui.continueBtn) ui.continueBtn.disabled = true;
+    if (ui.addToBankBtn) ui.addToBankBtn.disabled = true;
   } else {
     // Hide loading state
     if (ui.questionsLoading) ui.questionsLoading.style.display = "none";
@@ -3058,7 +3078,7 @@ async function handleAddQuestionToBank(question) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        question: question,
+        questions: question,
         courseId: getCourseId(),
       }),
     });
@@ -3591,3 +3611,73 @@ window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
+window.handleAddAllToBank = handleAddAllToBank;
+
+async function handleAddAllToBank() {
+  try {
+    const questions = [];
+    for (const group of state.questionGroups) {
+      for (const lo of group.los) {
+        for (const question of lo.questions) {
+          questions.push({
+            title: question.title || question.stem || "",
+            stem: question.stem || question.title || "",
+            options: question.options || [],
+            correctAnswer: question.correctAnswer || 0,
+            bloom: question.bloom || question.bloomLevel || "Understand",
+            granularObjectiveId: question.granularObjectiveId || null,
+            by: question.createdBy || "system",
+            status: question.status || "Draft",
+            flagStatus: question.flagStatus || false,
+          });
+        }
+      }
+    }
+
+    if (questions.length === 0) {
+      showToast("No questions to add", "warning");
+      return;
+    }
+
+    const addToBankBtn = document.getElementById('add-to-bank-btn');
+    if (addToBankBtn) {
+      addToBankBtn.disabled = true;
+      addToBankBtn.textContent = 'Saving...';
+    }
+
+    const courseId = getCourseId();
+    const response = await fetch(API_ENDPOINTS.questionSave, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        courseId: courseId,
+        questions: questions,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save questions to bank');
+    }
+
+    const data = await response.json();
+    const questionsCount = data.savedCount || questions.length;
+
+    showSuccessModal(
+      `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to the Question Bank!`,
+      questionsCount
+    );
+
+  } catch (error) {
+    console.error("Error saving to bank:", error);
+    showToast(error.message, "error");
+  } finally {
+    const addToBankBtn = document.getElementById('add-to-bank-btn');
+    if (addToBankBtn) {
+      addToBankBtn.disabled = false;
+      addToBankBtn.textContent = 'Add to Question Bank';
+    }
+  }
+}
