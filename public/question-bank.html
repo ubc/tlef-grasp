@@ -23,7 +23,6 @@
                 <div class="header-section">
                     <div class="header-tabs">
                         <button class="tab-button" data-tab="overview">Questions</button>
-                        <button class="tab-button" data-tab="review">Quizzes</button>
                         <button class="tab-button" data-tab="objectives">Learning Objectives</button>
                     </div>
                 </div>
@@ -37,6 +36,7 @@
                                 <option value="all">All Quizzes</option>
                             </select>
                         </div>
+
                         
                         <div class="filter-group">
                             <label for="objective-filter">Learning Objectives</label>
@@ -79,30 +79,7 @@
                     </div>
                 </div>
 
-                <!-- Cross-Quiz Action Bar -->
-                <div class="cross-quiz-actions" id="cross-quiz-actions" style="display: none;">
-                    <div class="cross-quiz-info">
-                        <span id="cross-quiz-count">0 questions selected</span>
-                    </div>
-                    <div class="cross-quiz-buttons">
-                        <button class="btn btn-secondary" id="cross-approve-btn">
-                            <i class="fas fa-check"></i>
-                            Approve
-                        </button>
-                        <button class="btn btn-secondary" id="cross-unapprove-btn">
-                            <i class="fas fa-times"></i>
-                            Unapprove
-                        </button>
-                        <button class="btn btn-secondary" id="cross-flag-btn">
-                            <i class="fas fa-flag"></i>
-                            Flag
-                        </button>
-                        <button class="btn btn-danger" id="cross-delete-btn">
-                            <i class="fas fa-trash"></i>
-                            Delete
-                        </button>
-                    </div>
-                </div>
+
 
                 <!-- Tab Content -->
                 <div class="tab-content">
@@ -167,12 +144,7 @@
                         </div>
                     </div>
 
-                    <!-- Review Tab -->
-                    <div class="tab-panel" id="review-panel" style="display: none;">
-                        <div class="quizzes-container" id="quizzes-container">
-                            <!-- Quiz cards will be populated by JavaScript -->
-                        </div>
-                    </div>
+
 
                     <!-- Learning Objectives Tab -->
                     <div class="tab-panel" id="objectives-panel" style="display: none;">
@@ -237,23 +209,7 @@
         </div>
     </div>
 
-    <!-- Export Summary Modal -->
-    <div class="export-summary-modal" id="export-summary-modal" style="display: none;">
-        <div class="export-summary-modal__content">
-            <div class="export-summary-modal__header">
-                <h3>Export Summary</h3>
-                <button type="button" class="export-summary-modal__close" id="export-summary-modal-close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="export-summary-modal__body" id="export-summary-modal-body">
-                <!-- Summary content will be populated here -->
-            </div>
-            <div class="export-summary-modal__footer">
-                <button type="button" class="btn btn--primary" id="export-summary-confirm">Close</button>
-            </div>
-        </div>
-    </div>
+
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>

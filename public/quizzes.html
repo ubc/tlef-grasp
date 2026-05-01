@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Quizzes - GRASP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:ital,wdth,wght@0,75..100,300..800;1,75..100,300..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/quizzes.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/smiles-drawer@2.0.1/dist/smiles-drawer.min.js"></script>
+    <script src="scripts/smiles-renderer.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Header Section -->
+                <div class="header-section">
+                    <div class="header-tabs">
+                        <button class="tab-button active" data-tab="manage-quizzes">Manage Quizzes</button>
+                        <button class="tab-button" data-tab="create-quiz">Create New Quiz</button>
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Manage Quizzes Tab -->
+                    <div class="tab-panel active" id="manage-quizzes-panel">
+                        <div class="quizzes-container" id="quizzes-container">
+                            <!-- Quiz cards will be populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Create Quiz Tab -->
+                    <div class="tab-panel" id="create-quiz-panel" style="display: none;">
+                        <div class="empty-state">
+                            <i class="fas fa-plus-circle" style="font-size: 48px; margin-bottom: 20px; color: #3498db;"></i>
+                            <h3>Create New Quiz</h3>
+                            <p>This feature is coming soon! You will be able to create custom quizzes by selecting specific questions or using AI-assisted selection.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirm-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Confirm Action</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Question Detail Modal -->
+    <div class="modal" id="question-detail-modal" style="display: none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="question-modal-title">Question Details</h3>
+                <button class="modal-close" id="question-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="question-modal-body">
+                <!-- Question content will be populated here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="question-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="question-modal-save" style="display: none;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Export Selection Modal -->
+    <div class="export-summary-modal" id="export-selection-modal" style="display: none;">
+        <div class="export-summary-modal__content" style="max-width: 600px;">
+            <div class="export-summary-modal__header">
+                <h3>Export Quiz</h3>
+                <button type="button" class="export-summary-modal__close" id="export-selection-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="export-summary-modal__body">
+                <div class="export-options">
+                    <div class="export-info" style="margin-bottom: 20px;">
+                        <h3 id="export-quiz-name-display" style="margin: 0 0 10px 0; font-size: 20px; color: #2c3e50;">Quiz Name</h3>
+                        <div class="export-note">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Select a format to download your quiz questions.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="export-format-section">
+                        <p class="export-format-title">Select Format</p>
+                        <div class="export-format-buttons">
+                            <button type="button" class="export-format-btn" data-format="qti">
+                                <i class="fas fa-file-archive"></i>
+                                <span>Canvas (QTI)</span>
+                                <small>ZIP format for LMS</small>
+                            </button>
+                            <button type="button" class="export-format-btn" data-format="csv">
+                                <i class="fas fa-file-csv"></i>
+                                <span>CSV</span>
+                                <small>Excel / Sheets</small>
+                            </button>
+                            <button type="button" class="export-format-btn" data-format="json">
+                                <i class="fas fa-file-code"></i>
+                                <span>JSON</span>
+                                <small>Raw Data</small>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="export-summary-modal__footer">
+                <button type="button" class="btn btn--secondary" id="export-selection-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/onboarding-check.js"></script>
+    <script src="scripts/quizzes.js"></script>
+</body>
+</html>

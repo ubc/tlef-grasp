@@ -25,6 +25,7 @@ class GRASPNavigation {
     if (path.includes("quiz-summary")) return "quiz-summary";
     if (path.includes("student-settings")) return "student-settings";
     if (path.includes("student-dashboard")) return "student-dashboard";
+    if (path.includes("quizzes")) return "quizzes";
     if (path.includes("quiz")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("achievements")) return "achievements";
@@ -308,6 +309,12 @@ class GRASPNavigation {
           <a href="/question-bank" style="text-decoration: none; color: inherit;">
             <i class="fas fa-book"></i>
             <span>Question Bank</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="quizzes">
+          <a href="/quizzes" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-clipboard-list"></i>
+            <span>Quizzes</span>
           </a>
         </li>
         <li class="nav-item" data-page="quiz-scores">

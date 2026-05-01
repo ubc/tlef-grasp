@@ -117,6 +117,10 @@ app.get("/question-bank", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (
   res.sendFile(path.join(__dirname, "../public/question-bank.html"));
 });
 
+app.get("/quizzes", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quizzes.html"));
+});
+
 app.get("/question-review", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/question-review.html"));
 });

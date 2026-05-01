@@ -1,5 +1,5 @@
 // Question Bank Page JavaScript
-// Handles interactions and functionality for the new 3-panel layout and Review tab
+// Handles interactions and functionality for the Question Bank layout
 
 // Constants
 const SELECTORS = {
@@ -14,7 +14,6 @@ const SELECTORS = {
   searchInput: 'search-input',
   materialFilter: 'material-filter',
   questionsTableBody: 'questions-table-body',
-  quizzesContainer: 'quizzes-container',
   selectAll: 'select-all',
   selectionCount: 'selection-count',
   actionBar: 'action-bar',
@@ -22,15 +21,7 @@ const SELECTORS = {
   unapproveBtn: 'unapprove-btn',
   flagBtn: 'flag-btn',
   deleteBtn: 'delete-btn',
-  crossQuizActions: 'cross-quiz-actions',
-  crossQuizCount: 'cross-quiz-count',
-  crossApproveBtn: 'cross-approve-btn',
-  crossUnapproveBtn: 'cross-unapprove-btn',
-  crossFlagBtn: 'cross-flag-btn',
-  crossDeleteBtn: 'cross-delete-btn',
   confirmModal: 'confirm-modal',
-  questionDetailModal: 'question-detail-modal',
-  exportSummaryModal: 'export-summary-modal',
 };
 
 const API_ENDPOINTS = {
@@ -48,11 +39,10 @@ const STORAGE_KEYS = {
 
 const TAB_NAMES = {
   overview: 'overview',
-  review: 'review',
   objectives: "objectives",
 };
 
-const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.review, TAB_NAMES.objectives];
+const VALID_TABS = [TAB_NAMES.overview, TAB_NAMES.objectives];
 
 const QUESTION_STATUS = {
   approved: 'Approved',
@@ -122,7 +112,6 @@ class QuestionBankPage {
     };
 
     this.questions = [];
-    this.quizzes = [];
     this.allQuizzes = []; // Store all quizzes for filter dropdown
     this.objectivesMap = new Map(); // Map objective ID to objective name
     this.isFaculty = false; // Cache faculty status
@@ -162,87 +151,7 @@ class QuestionBankPage {
     }
   }
 
-  async loadSavedQuestionSets() {
-    if (!this.courseId) {
-      this.quizzes = [];
-      return;
-    }
 
-    try {
-      // Load quizzes for the current course
-      const response = await fetch(`${API_ENDPOINTS.quizCourse}/${this.courseId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.quizzes && data.quizzes.length > 0) {
-        // Load questions for each quiz
-        const quizzesWithQuestions = await Promise.all(
-          data.quizzes.map(async (quiz) => {
-            try {
-              const questionsResponse = await fetch(`${API_ENDPOINTS.quiz}/${quiz._id}/questions`);
-              if (questionsResponse.ok) {
-                const questionsData = await questionsResponse.json();
-                const questions = questionsData.success && questionsData.questions
-                  ? questionsData.questions
-                  : [];
-
-                return {
-                  id: getObjectId(quiz),
-                  title: quiz.name || "Unnamed Quiz",
-                  course: this.courseName,
-                  week: null,
-                  lecture: null,
-                  published: quiz.published || false,
-                  releaseDate: quiz.releaseDate || null,
-                  expireDate: quiz.expireDate || null,
-                  questionLimit: quiz.questionLimit || 0,
-                  createdAt: quiz.createdAt || new Date(),
-                  releases: [
-                    {
-                      label: quiz.name || "Unnamed Quiz",
-                      date: quiz.createdAt ? new Date(quiz.createdAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-                    },
-                  ],
-                  questions: questions.map((q, qIndex) => {
-                    const qId = getObjectId(q) || `q_${qIndex}`;
-                    return {
-                      id: qId,
-                      title: q.title || q.stem || q.questionText || "",
-                      course: this.courseName,
-                      loCode: q.granularObjectiveId || q.learningObjective || "",
-                      bloom: q.bloom || q.bloomLevel || "Understand",
-                      status: q.status || "Draft",
-                      lastEdited: q.updatedAt || q.createdAt ? new Date(q.updatedAt || q.createdAt).toLocaleString() : new Date().toLocaleString(),
-                      approved: q.status === "Approved",
-                      flagged: q.flagStatus || q.flagged || false,
-                      published: q.published || false,
-                      isInPublishedQuiz: quiz.published || false,
-                    };
-                  }),
-                  isOpen: false,
-                  selection: new Set(),
-                };
-              }
-              return null;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        // Filter out null results
-        this.quizzes = quizzesWithQuestions.filter(quiz => quiz !== null);
-      } else {
-        this.quizzes = [];
-      }
-    } catch (error) {
-      console.error('Error loading saved question sets:', error);
-      this.quizzes = [];
-    }
-  }
 
   updateFilterOptions() {
     this.updateQuizFilter();
@@ -319,6 +228,8 @@ class QuestionBankPage {
       }
     });
   }
+
+
 
   updateQuizFilter() {
     const quizFilter = document.getElementById("quiz-filter");
@@ -515,6 +426,8 @@ class QuestionBankPage {
     }
   }
 
+
+
   async loadQuizRelationships() {
     if (!this.courseId) return;
 
@@ -556,9 +469,6 @@ class QuestionBankPage {
     // Load questions for Overview tab from database
     await this.loadQuestionsForOverview();
 
-    // Load saved question sets from backend (for Review tab)
-    await this.loadSavedQuestionSets();
-
     // Update filter options based on loaded data
     this.updateFilterOptions();
   }
@@ -589,10 +499,6 @@ class QuestionBankPage {
     // Filters (using the main filters section)
     const quizFilter = document.getElementById("quiz-filter");
     const objectiveFilter = document.getElementById("objective-filter");
-    const bloomFilter = document.getElementById("bloom-filter");
-    const statusFilter = document.getElementById("status-filter");
-    const flaggedFilter = document.getElementById("flagged-filter");
-    const searchInput = document.getElementById("search-input");
 
     if (quizFilter) {
       quizFilter.addEventListener("change", async (e) => {
@@ -600,6 +506,11 @@ class QuestionBankPage {
         await this.applyFilters();
       });
     }
+    const bloomFilter = document.getElementById("bloom-filter");
+    const statusFilter = document.getElementById("status-filter");
+    const flaggedFilter = document.getElementById("flagged-filter");
+    const searchInput = document.getElementById("search-input");
+
 
     if (objectiveFilter) {
       objectiveFilter.addEventListener("change", async (e) => {
@@ -649,8 +560,6 @@ class QuestionBankPage {
     // Action buttons
     this.initializeActionButtons();
 
-    // Cross-quiz action buttons
-    this.initializeCrossQuizActions();
 
     // Modal events
     this.initializeModalEvents();
@@ -687,33 +596,6 @@ class QuestionBankPage {
     }
   }
 
-  initializeCrossQuizActions() {
-    const crossApproveBtn = document.getElementById("cross-approve-btn");
-    const crossUnapproveBtn = document.getElementById("cross-unapprove-btn");
-    const crossFlagBtn = document.getElementById("cross-flag-btn");
-    const crossDeleteBtn = document.getElementById("cross-delete-btn");
-
-    if (crossApproveBtn) {
-      crossApproveBtn.addEventListener("click", () =>
-        this.handleCrossQuizAction("approve")
-      );
-    }
-    if (crossUnapproveBtn) {
-      crossUnapproveBtn.addEventListener("click", () =>
-        this.handleCrossQuizAction("unapprove")
-      );
-    }
-    if (crossFlagBtn) {
-      crossFlagBtn.addEventListener("click", () =>
-        this.handleCrossQuizAction("flag")
-      );
-    }
-    if (crossDeleteBtn) {
-      crossDeleteBtn.addEventListener("click", () =>
-        this.handleCrossQuizAction("delete")
-      );
-    }
-  }
 
   initializeModalEvents() {
     const modal = document.getElementById("confirm-modal");
@@ -757,26 +639,6 @@ class QuestionBankPage {
   }
 
   /**
-   * Check if a question belongs to a published quiz
-   * @param {string} questionId - The question ID
-   * @returns {boolean} True if question is in a published quiz
-   */
-  isQuestionInPublishedQuiz(questionId) {
-    const question = this.questions.find(q => String(q.id || "") === String(questionId));
-    if (!question) {
-      // Also check in quiz questions
-      for (const quiz of this.quizzes) {
-        const quizQuestion = quiz.questions.find(q => String(q.id) === String(questionId));
-        if (quizQuestion) {
-          return quiz.published || false;
-        }
-      }
-      return false;
-    }
-    return question.isInPublishedQuiz || false;
-  }
-
-  /**
    * Check if user can edit a question (faculty can always edit, staff cannot edit approved questions)
    * @param {string} questionId - The question ID
    * @returns {boolean} True if user can edit the question
@@ -791,14 +653,7 @@ class QuestionBankPage {
       return status.toLowerCase() !== "approved";
     }
 
-    // Also check in quiz questions
-    for (const quiz of this.quizzes) {
-      const quizQuestion = quiz.questions.find(q => String(q.id) === String(questionId));
-      if (quizQuestion) {
-        const status = quizQuestion.status || "Draft";
-        return status.toLowerCase() !== "approved";
-      }
-    }
+
 
     return true; // Default to allowing edit if question not found
   }
@@ -827,8 +682,6 @@ class QuestionBankPage {
       { id: "unapprove-btn", description: "unapprove button" },
       { id: "flag-btn", description: "flag button" },
       { id: "delete-btn", description: "delete button" },
-      { id: "cross-flag-btn", description: "cross-quiz flag button" },
-      { id: "cross-delete-btn", description: "cross-quiz delete button" },
     ];
 
     elementsToHide.forEach(({ id, description }) => {
@@ -885,8 +738,6 @@ class QuestionBankPage {
 
     if (tabName === TAB_NAMES.overview) {
       await this.renderOverview();
-    } else if (tabName === TAB_NAMES.review) {
-      await this.renderReview();
     } else if (tabName === TAB_NAMES.objectives) {
       await this.renderObjectives();
     }
@@ -895,541 +746,17 @@ class QuestionBankPage {
   async renderAll() {
     if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
-    } else if (this.state.currentTab === TAB_NAMES.review) {
-      await this.renderReview();
     } else if (this.state.currentTab === TAB_NAMES.objectives) {
       await this.renderObjectives();
     }
   }
 
   async renderOverview() {
-    // Reload questions from saved quiz data
     await this.loadQuestionsForOverview();
     this.renderQuestionsTable();
     this.updateActionButtons();
   }
 
-  async renderReview() {
-    // Reload quiz data to get updated question statuses
-    await this.loadSavedQuestionSets();
-    this.renderQuizzes();
-    this.updateCrossQuizActions();
-  }
-
-
-
-  renderQuizzes() {
-    const quizzesContainer = document.getElementById("quizzes-container");
-    if (!quizzesContainer) return;
-
-    const filteredQuizzes = this.getFilteredQuizzes();
-
-    if (filteredQuizzes.length === 0) {
-      quizzesContainer.innerHTML = `
-        <div class="empty-state">
-          <h3>No quizzes found</h3>
-          <p>You haven't saved any quizzes from question generation yet.</p>
-          <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first quiz.</p>
-        </div>
-      `;
-      return;
-    }
-
-    quizzesContainer.innerHTML = filteredQuizzes
-      .map(
-        (quiz) => {
-          const createdDate = quiz.createdAt
-            ? new Date(quiz.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-            : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-          const progressPercent = this.getQuizProgress(quiz);
-          const quizIdEscaped = String(quiz.id).replace(/'/g, "\\'");
-
-          return `
-      <div class="quiz-card" data-quiz-id="${quiz.id}">
-        <div class="quiz-card-header">
-          <h3 class="quiz-title">${quiz.title}</h3>
-          <div class="quiz-created-date">Created: ${createdDate}</div>
-        </div>
-        <div class="quiz-progress-section">
-          <div class="quiz-progress">
-            <div class="progress-bar">
-              <div class="progress-fill" style="width: ${progressPercent}%"></div>
-            </div>
-            <div class="progress-text">${progressPercent}% Approved</div>
-          </div>
-        </div>
-        
-        <div class="quiz-settings-section" style="padding: 12px 20px; border-bottom: 1px solid #f3f4f6; background: #fafafa;">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end;">
-            <div>
-              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Release Date</label>
-              <input type="datetime-local" class="quiz-settings-input release-date" 
-                     value="${quiz.releaseDate ? new Date(quiz.releaseDate).toISOString().slice(0, 16) : ''}"
-                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
-                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
-            </div>
-            <div>
-              <label style="display: block; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 4px;">Expire Date</label>
-              <input type="datetime-local" class="quiz-settings-input expire-date" 
-                     value="${quiz.expireDate ? new Date(quiz.expireDate).toISOString().slice(0, 16) : ''}"
-                     style="width: 100%; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; font-size: 13px; box-sizing: border-box;"
-                     onblur="window.questionBankPage.saveQuizSettings('${quizIdEscaped}')">
-            </div>
-          </div>
-        </div>
-
-        <div class="quiz-card-actions">
-          <button class="review-btn" 
-                  onclick="event.stopPropagation(); window.questionBankPage.navigateToReview('${quizIdEscaped}')">
-            Review
-          </button>
-          <button class="export-btn" 
-                  onclick="event.stopPropagation(); window.questionBankPage.exportQuiz('${quizIdEscaped}')">
-            Export
-          </button>
-          ${this.renderIfPermitted(`
-            <button class="publish-btn ${quiz.published ? 'published' : ''}" 
-                    onclick="event.stopPropagation(); window.questionBankPage.toggleQuizPublish('${quizIdEscaped}')">
-              ${quiz.published ? 'Unpublish' : 'Publish'}
-            </button>
-            <button class="delete-btn" 
-                    onclick="event.stopPropagation(); window.questionBankPage.deleteQuiz('${quizIdEscaped}')">
-              Delete
-            </button>
-          `, this.isFaculty)}
-        </div>
-        <div class="quiz-details ${quiz.isOpen ? "expanded" : ""}">
-          <div class="details-header">
-            <h4 class="details-title">Questions</h4>
-            ${this.renderIfPermitted(`
-              <div class="details-select-all">
-                <input type="checkbox" class="quiz-select-all" 
-                       onclick="event.stopPropagation()"
-                       onchange="window.questionBankPage.handleQuizSelectAll(${quiz.id
-            }, this.checked)">
-                <label>Select all</label>
-              </div>
-            `, this.isFaculty)}
-          </div>
-          <div class="quiz-questions">
-            ${this.renderQuizQuestions(quiz)}
-          </div>
-          <div class="quiz-bulk-actions ${quiz.selection.size > 0 ? "visible" : ""
-            }">
-            ${this.isFaculty
-              ? `<button class="approve-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'approve')">
-                Approve selected
-              </button>
-              <button class="unapprove-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id}, 'unapprove')">
-                Unapprove selected
-              </button>`
-              : ''
-            }
-            ${this.renderIfPermitted(`
-              <button class="flag-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
-              }, 'flag')">
-                Flag selected
-              </button>
-              <button class="delete-btn" onclick="event.stopPropagation(); window.questionBankPage.handleQuizBulkAction(${quiz.id
-              }, 'delete')">
-                Delete selected
-              </button>
-            `, this.isFaculty)}
-          </div>
-        </div>
-      </div>
-    `;
-        }
-      )
-      .join("");
-
-    // Re-attach event listeners
-
-    // Update filter options after rendering
-    this.updateFilterOptions();
-  }
-
-  renderQuizQuestions(quiz) {
-    const filteredQuestions = this.getFilteredQuizQuestions(quiz);
-
-    if (filteredQuestions.length === 0) {
-      return `
-        <div class="empty-state">
-          <p>No questions match the current filters.</p>
-        </div>
-      `;
-    }
-
-    return `
-      <table class="questions-table">
-        <thead>
-          <tr>
-            ${this.renderIfPermitted('<th style="width: 40px;"></th>', this.isFaculty)}
-            <th>Question Title</th>
-            <th>Associated GLO</th>
-            <th>Bloom</th>
-            <th>Status</th>
-            <th>Last Edited</th>
-            <th style="width: 200px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filteredQuestions
-        .map(
-          (question) => `
-            <tr data-question-id="${question.id}">
-              ${this.renderIfPermitted(`
-              <td>
-                <input type="checkbox" class="question-checkbox" 
-                       ${quiz.selection.has(question.id) ? "checked" : ""}
-                       onchange="window.questionBankPage.toggleQuizQuestionSelection(${quiz.id
-            }, ${question.id})">
-              </td>
-            `, this.isFaculty)}
-              <td class="question-title">${question.title}</td>
-              <td><span class="question-lo">${question.loCode}</span></td>
-              <td class="question-bloom">${question.bloom}</td>
-              <td>
-                <span class="question-status status-${question.status.toLowerCase()}">${question.status
-            }</span>
-              </td>
-              <td>${question.lastEdited}</td>
-              <td class="question-actions">
-                ${this.isFaculty
-              ? `<button class="question-action-btn approve" 
-                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
-              }, ${question.id}, 'approve')">
-                    ${question.approved ? "Unapprove" : "Approve"}
-                  </button>`
-              : ''
-            }
-                <button class="question-action-btn flag" 
-                        onclick="window.questionBankPage.handleQuestionAction(${quiz.id
-            }, ${question.id}, 'flag')">
-                  ${question.flagged ? "Unflag" : "Flag"}
-                </button>
-                ${this.canEditQuestion(question.id)
-              ? `<button class="question-action-btn edit" 
-                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
-              }, ${question.id}, 'edit')">
-                      Edit
-                    </button>`
-              : ''
-            }
-                ${this.isFaculty
-              ? `<button class="question-action-btn delete" 
-                            onclick="window.questionBankPage.handleQuestionAction(${quiz.id
-              }, ${question.id}, 'delete')">
-                    Delete
-                  </button>`
-              : ''
-            }
-              </td>
-            </tr>
-          `
-        )
-        .join("")}
-        </tbody>
-      </table>
-    `;
-  }
-
-  getFilteredQuizzes() {
-    // All quizzes are already filtered by course (loaded from sessionStorage)
-    return [...this.quizzes];
-  }
-
-  getFilteredQuizQuestions(quiz) {
-    let filtered = [...quiz.questions];
-
-    // Apply objective filter
-    if (this.state.filters.objective !== "all") {
-      filtered = filtered.filter((q) =>
-        q.loCode.includes(this.state.filters.objective)
-      );
-    }
-
-    // Apply bloom filter
-    if (this.state.filters.bloom !== "all") {
-      filtered = filtered.filter((q) => q.bloom === this.state.filters.bloom);
-    }
-
-    // Apply status filter
-    if (this.state.filters.status !== "all") {
-      filtered = filtered.filter((q) => q.status === this.state.filters.status);
-    }
-
-    // Apply search filter
-    if (this.state.filters.q) {
-      const searchTerm = this.state.filters.q.toLowerCase();
-      filtered = filtered.filter(
-        (q) =>
-          q.title.toLowerCase().includes(searchTerm) ||
-          q.loCode.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    return filtered;
-  }
-
-  getQuizProgress(quiz) {
-    const approvedCount = quiz.questions.filter((q) => q.approved).length;
-    const totalCount = quiz.questions.length;
-    return totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0;
-  }
-
-  toggleQuizDetails(quizId) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    if (quiz) {
-      quiz.isOpen = !quiz.isOpen;
-      this.renderQuizzes();
-    }
-  }
-
-  toggleQuizQuestionSelection(quizId, questionId) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    if (quiz) {
-      if (quiz.selection.has(questionId)) {
-        quiz.selection.delete(questionId);
-      } else {
-        quiz.selection.add(questionId);
-      }
-      this.updateCrossQuizActions();
-      this.renderQuizzes();
-    }
-  }
-
-  handleQuizSelectAll(quizId, checked) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    if (quiz) {
-      const filteredQuestions = this.getFilteredQuizQuestions(quiz);
-      if (checked) {
-        filteredQuestions.forEach((q) => quiz.selection.add(q.id));
-      } else {
-        filteredQuestions.forEach((q) => quiz.selection.delete(q.id));
-      }
-      this.updateCrossQuizActions();
-      this.renderQuizzes();
-    }
-  }
-
-  handleQuestionAction(quizId, questionId, action) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    const question = quiz.questions.find((q) => q.id === questionId);
-
-    if (!quiz || !question) return;
-
-    switch (action) {
-      case "approve":
-        if (!this.requireFaculty("approve questions")) return;
-        question.approved = !question.approved;
-        question.status = question.approved ? "Approved" : "Draft";
-        this.showNotification(
-          `Question ${question.approved ? "approved" : "unapproved"}`,
-          "success"
-        );
-        break;
-      case "flag":
-        question.flagged = !question.flagged;
-        question.status = question.flagged ? "Flagged" : "Draft";
-        this.showNotification(
-          `Question ${question.flagged ? "flagged" : "unflagged"}`,
-          "success"
-        );
-        break;
-      case "edit":
-        if (!this.canEditQuestion(questionId)) {
-          this.showNotification("You cannot edit questions in published quizzes", "error");
-          return;
-        }
-        this.handleQuestionEdit(quizId, questionId);
-        return;
-      case "delete":
-        if (!this.requireFaculty("delete questions")) return;
-        this.showModal(
-          "Delete Question",
-          `Are you sure you want to delete "${question.title}"?`,
-          () => {
-            const questionIndex = quiz.questions.findIndex(
-              (q) => q.id === questionId
-            );
-            if (questionIndex > -1) {
-              quiz.questions.splice(questionIndex, 1);
-              quiz.selection.delete(questionId);
-              this.showNotification("Question deleted", "success");
-              this.renderQuizzes();
-              this.updateCrossQuizActions();
-            }
-          }
-        );
-        return;
-    }
-
-    // Update progress and re-render
-    this.renderQuizzes();
-    this.updateCrossQuizActions();
-  }
-
-  handleQuestionEdit(quizId, questionId) {
-    // Open the question modal for editing
-    this.openQuestionModal(questionId);
-  }
-
-  handleQuizBulkAction(quizId, action) {
-    const quiz = this.quizzes.find((q) => q.id === quizId);
-    if (!quiz || quiz.selection.size === 0) return;
-
-    const selectedQuestions = quiz.questions.filter((q) =>
-      quiz.selection.has(q.id)
-    );
-
-    switch (action) {
-      case "approve":
-        if (!this.requireFaculty("approve questions")) return;
-        selectedQuestions.forEach((q) => {
-          q.approved = true;
-          q.status = "Approved";
-        });
-        this.showNotification(
-          `Approved ${selectedQuestions.length} questions`,
-          "success"
-        );
-        break;
-      case "unapprove":
-        if (!this.requireFaculty("unapprove questions")) return;
-        selectedQuestions.forEach((q) => {
-          q.approved = false;
-          q.status = "Draft";
-        });
-        this.showNotification(
-          `Unapproved ${selectedQuestions.length} questions`,
-          "success"
-        );
-        break;
-      case "flag":
-        if (!this.requireFaculty("bulk flag questions")) return;
-        selectedQuestions.forEach((q) => {
-          q.flagged = true;
-          q.status = "Flagged";
-        });
-        this.showNotification(
-          `Flagged ${selectedQuestions.length} questions`,
-          "success"
-        );
-        break;
-      case "delete":
-        if (!this.requireFaculty("delete questions")) return;
-        this.showModal(
-          "Delete Questions",
-          `Are you sure you want to delete ${selectedQuestions.length} question(s)?`,
-          () => {
-            selectedQuestions.forEach((q) => {
-              const questionIndex = quiz.questions.findIndex(
-                (question) => question.id === q.id
-              );
-              if (questionIndex > -1) {
-                quiz.questions.splice(questionIndex, 1);
-              }
-            });
-            quiz.selection.clear();
-            this.showNotification(
-              `Deleted ${selectedQuestions.length} questions`,
-              "success"
-            );
-            this.renderQuizzes();
-            this.updateCrossQuizActions();
-          }
-        );
-        return;
-    }
-
-    // Update progress and re-render
-    this.renderQuizzes();
-    this.updateCrossQuizActions();
-  }
-
-  updateCrossQuizActions() {
-    const crossQuizActions = document.getElementById("cross-quiz-actions");
-    const crossQuizCount = document.getElementById("cross-quiz-count");
-
-    if (!crossQuizActions || !crossQuizCount) return;
-
-    // Count total selected questions across all quizzes
-    let totalSelected = 0;
-    this.quizzes.forEach((quiz) => {
-      totalSelected += quiz.selection.size;
-    });
-
-    if (totalSelected > 0) {
-      crossQuizActions.style.display = "flex";
-      crossQuizCount.textContent = `${totalSelected} question${totalSelected !== 1 ? "s" : ""
-        } selected`;
-
-      // Show/hide approve/unapprove buttons based on user role
-      const crossApproveBtn = document.getElementById("cross-approve-btn");
-      const crossUnapproveBtn = document.getElementById("cross-unapprove-btn");
-      if (crossApproveBtn) {
-        if (this.isFaculty) {
-          crossApproveBtn.style.display = "inline-flex";
-          crossApproveBtn.disabled = false;
-        } else {
-          crossApproveBtn.style.display = "none";
-        }
-      }
-      if (crossUnapproveBtn) {
-        if (this.isFaculty) {
-          crossUnapproveBtn.style.display = "inline-flex";
-          crossUnapproveBtn.disabled = false;
-        } else {
-          crossUnapproveBtn.style.display = "none";
-        }
-      }
-
-      // Check if any selected questions are approved (for staff delete restriction)
-      let hasApprovedQuestions = false;
-      if (!this.isFaculty) {
-        this.quizzes.forEach((quiz) => {
-          if (quiz.selection.size > 0) {
-            quiz.questions.forEach((q) => {
-              if (quiz.selection.has(q.id) && q.status && q.status.toLowerCase() === 'approved') {
-                hasApprovedQuestions = true;
-              }
-            });
-          }
-        });
-      }
-
-      // Enable/disable cross-quiz action buttons
-      // Buttons are already hidden/shown in initializePermissionBasedUI for non-faculty
-      const crossFlagBtn = document.getElementById("cross-flag-btn");
-      const crossDeleteBtn = document.getElementById("cross-delete-btn");
-
-      if (crossFlagBtn && this.isFaculty) {
-        crossFlagBtn.disabled = false;
-      }
-
-      if (crossDeleteBtn && this.isFaculty) {
-        crossDeleteBtn.disabled = false;
-        crossDeleteBtn.title = "";
-      }
-    } else {
-      crossQuizActions.style.display = "none";
-
-      // Disable cross-quiz action buttons
-      const crossButtons = [
-        "cross-approve-btn",
-        "cross-unapprove-btn",
-        "cross-flag-btn",
-        "cross-delete-btn",
-      ];
-      crossButtons.forEach((btnId) => {
-        const btn = document.getElementById(btnId);
-        if (btn) {
-          btn.disabled = true;
-        }
-      });
-    }
-  }
 
   // Selection handlers
   handleSelectAll(checked) {
@@ -1708,118 +1035,16 @@ class QuestionBankPage {
     }
   }
 
-  handleCrossQuizAction(action) {
-    let totalSelected = 0;
-    let affectedQuizzes = [];
-
-    // Collect all selected questions across quizzes
-    this.quizzes.forEach((quiz) => {
-      if (quiz.selection.size > 0) {
-        totalSelected += quiz.selection.size;
-        affectedQuizzes.push(quiz);
-      }
-    });
-
-    if (totalSelected === 0) return;
-
-    switch (action) {
-      case "approve":
-        if (!this.requireFaculty("approve questions")) return;
-        affectedQuizzes.forEach((quiz) => {
-          quiz.questions.forEach((q) => {
-            if (quiz.selection.has(q.id)) {
-              q.approved = true;
-              q.status = "Approved";
-            }
-          });
-        });
-        this.showNotification(
-          `Approved ${totalSelected} questions across ${affectedQuizzes.length
-          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
-          "success"
-        );
-        break;
-      case "unapprove":
-        if (!this.requireFaculty("unapprove questions")) return;
-        affectedQuizzes.forEach((quiz) => {
-          quiz.questions.forEach((q) => {
-            if (quiz.selection.has(q.id)) {
-              q.approved = false;
-              q.status = "Draft";
-            }
-          });
-        });
-        this.showNotification(
-          `Unapproved ${totalSelected} questions across ${affectedQuizzes.length
-          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
-          "success"
-        );
-        break;
-      case "flag":
-        if (!this.requireFaculty("bulk flag questions")) return;
-        affectedQuizzes.forEach((quiz) => {
-          quiz.questions.forEach((q) => {
-            if (quiz.selection.has(q.id)) {
-              q.flagged = true;
-              q.status = "Flagged";
-            }
-          });
-        });
-        this.showNotification(
-          `Flagged ${totalSelected} questions across ${affectedQuizzes.length
-          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}`,
-          "success"
-        );
-        break;
-      case "delete":
-        if (!this.requireFaculty("delete questions")) return;
-        this.showModal(
-          "Delete Questions",
-          `Are you sure you want to delete ${totalSelected} question(s) across ${affectedQuizzes.length
-          } quiz${affectedQuizzes.length !== 1 ? "es" : ""}?`,
-          () => {
-            affectedQuizzes.forEach((quiz) => {
-              const questionsToRemove = quiz.questions.filter((q) =>
-                quiz.selection.has(q.id)
-              );
-              questionsToRemove.forEach((q) => {
-                const questionIndex = quiz.questions.findIndex(
-                  (question) => question.id === q.id
-                );
-                if (questionIndex > -1) {
-                  quiz.questions.splice(questionIndex, 1);
-                }
-              });
-              quiz.selection.clear();
-            });
-            this.showNotification(
-              `Deleted ${totalSelected} questions`,
-              "success"
-            );
-            this.renderQuizzes();
-            this.updateCrossQuizActions();
-          }
-        );
-        return;
-    }
-
-    // Clear all selections and re-render
-    this.quizzes.forEach((quiz) => quiz.selection.clear());
-    this.renderQuizzes();
-    this.updateCrossQuizActions();
-  }
-
   async applyFilters() {
-    // Clear selections for rows no longer visible
     this.clearOutOfViewSelections();
 
     // Update URL parameters
     this.updateUrlParams();
 
-    if (this.state.currentTab === TAB_NAMES.review) {
-      this.renderQuizzes();
-    } else if (this.state.currentTab === TAB_NAMES.overview) {
+    if (this.state.currentTab === TAB_NAMES.overview) {
       await this.renderOverview();
+    } else if (this.state.currentTab === TAB_NAMES.objectives) {
+      await this.renderObjectives();
     }
   }
 
@@ -2161,7 +1386,6 @@ class QuestionBankPage {
     const searchInput = document.getElementById("search-input");
 
     if (quizFilter) quizFilter.value = "all";
-    if (objectiveFilter) objectiveFilter.value = "all";
     if (bloomFilter) bloomFilter.value = "all";
     if (statusFilter) statusFilter.value = "all";
     if (flaggedFilter) flaggedFilter.checked = false;
@@ -2208,431 +1432,8 @@ class QuestionBankPage {
     this.hideModal();
   }
 
-  // Export quiz questions (only approved questions)
-  async exportQuiz(quizId) {
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (!quiz || !quiz.questions || quiz.questions.length === 0) {
-      this.showNotification("No questions to export", "error");
-      return;
-    }
 
-    // Filter to only approved questions
-    const approvedQuestions = quiz.questions.filter(q =>
-      q.approved === true || q.status === "Approved"
-    );
 
-    if (approvedQuestions.length === 0) {
-      this.showNotification("No approved questions to export", "error");
-      return;
-    }
-
-    // Show export modal with format selection
-    this.showExportModal(quiz, approvedQuestions);
-  }
-
-  // Delete quiz and all associated questions
-  async deleteQuiz(quizId) {
-    if (!this.requireFaculty("delete quizzes")) return;
-
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (!quiz) {
-      this.showNotification("Quiz not found", "error");
-      return;
-    }
-
-    const questionCount = quiz.questions ? quiz.questions.length : 0;
-    const quizTitle = quiz.title || "this quiz";
-
-    // Show confirmation modal
-    this.showModal(
-      'Delete Quiz',
-      `Are you sure you want to delete "${quizTitle}"? This will permanently delete the quiz and all ${questionCount} question(s) associated with it. This action cannot be undone.`,
-      async () => {
-        try {
-          const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
-            method: 'DELETE',
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to delete quiz');
-          }
-
-          // Remove quiz from local state
-          const quizIndex = this.quizzes.findIndex((q) => toStringId(q.id) === toStringId(quizId));
-          if (quizIndex > -1) {
-            this.quizzes.splice(quizIndex, 1);
-          }
-
-          // Also remove from allQuizzes if it exists there
-          const allQuizIndex = this.allQuizzes.findIndex((q) => getObjectId(q) === toStringId(quizId));
-          if (allQuizIndex > -1) {
-            this.allQuizzes.splice(allQuizIndex, 1);
-          }
-
-          // Remove questions from local state that were associated with this quiz
-          const questionIds = new Set(quiz.questions.map(q => toStringId(q.id)));
-          this.questions = this.questions.filter(q => !questionIds.has(toStringId(q.id)));
-
-          // Refresh the UI
-          this.renderQuizzes();
-          this.updateFilterOptions();
-          this.showNotification(`Quiz "${quizTitle}" and ${questionCount} question(s) deleted successfully`, 'success');
-        } catch (error) {
-          console.error('Error deleting quiz:', error);
-          this.showNotification(error.message || 'Failed to delete quiz', 'error');
-        }
-      }
-    );
-  }
-
-  // Toggle quiz published status
-  async toggleQuizPublish(quizId) {
-    if (!this.requireFaculty("publish or unpublish quizzes")) return;
-
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (!quiz) {
-      this.showNotification("Quiz not found", "error");
-      return;
-    }
-
-    const newPublishedStatus = !quiz.published;
-
-    if (newPublishedStatus) {
-      if (!quiz.releaseDate) {
-        this.showNotification("A quiz cannot be published without a release date.", "error");
-        return;
-      }
-    }
-
-    const action = newPublishedStatus ? "publish" : "unpublish";
-    const quizTitle = quiz.title || "this quiz";
-
-    try {
-      const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          published: newPublishedStatus,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || `Failed to ${action} quiz`);
-      }
-
-      // Update local state
-      quiz.published = newPublishedStatus;
-
-      // Also update in allQuizzes if it exists there
-      const allQuiz = this.allQuizzes.find((q) => getObjectId(q) === toStringId(quizId));
-      if (allQuiz) {
-        allQuiz.published = newPublishedStatus;
-      }
-
-      // Refresh the UI
-      this.renderQuizzes();
-      this.showNotification(`Quiz "${quizTitle}" ${newPublishedStatus ? 'published' : 'unpublished'} successfully`, 'success');
-    } catch (error) {
-      console.error(`Error ${action}ing quiz:`, error);
-      this.showNotification(error.message || `Failed to ${action} quiz`, 'error');
-    }
-  }
-
-  // Save quiz settings (dates and limit)
-  async saveQuizSettings(quizId) {
-    if (!this.requireFaculty("update quiz settings")) return;
-
-    const quizCard = document.querySelector(`.quiz-card[data-quiz-id="${quizId}"]`);
-    if (!quizCard) return;
-
-    const releaseDate = quizCard.querySelector('.release-date').value || null;
-    const expireDate = quizCard.querySelector('.expire-date').value || null;
-
-    // Check if values actually changed to avoid redundant saves
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (quiz) {
-      const currentRelease = quiz.releaseDate ? new Date(quiz.releaseDate).toISOString().slice(0, 16) : null;
-      const currentExpire = quiz.expireDate ? new Date(quiz.expireDate).toISOString().slice(0, 16) : null;
-      
-      const inputRelease = releaseDate ? new Date(releaseDate).toISOString().slice(0, 16) : null;
-      const inputExpire = expireDate ? new Date(expireDate).toISOString().slice(0, 16) : null;
-
-      if (currentRelease === inputRelease && 
-          currentExpire === inputExpire) {
-        return; // No change
-      }
-    }
-
-    try {
-      const response = await fetch(`${API_ENDPOINTS.quiz}/${quizId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          releaseDate: releaseDate,
-          expireDate: expireDate
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update quiz settings');
-      }
-
-      // Update local state
-      if (quiz) {
-        quiz.releaseDate = releaseDate;
-        quiz.expireDate = expireDate;
-      }
-
-      this.showNotification("Settings saved", "success");
-    } catch (error) {
-      console.error(`Error saving settings for quiz ${quizId}:`, error);
-      this.showNotification(error.message || "Failed to save settings", "error");
-    }
-  }
-
-  showExportModal(quiz, approvedQuestions) {
-    const modal = document.getElementById("export-summary-modal");
-    const modalBody = document.getElementById("export-summary-modal-body");
-
-    if (!modal || !modalBody) {
-      console.error("Export modal not found");
-      return;
-    }
-
-    // Helper function to escape HTML
-    const escapeHtml = (text) => {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    };
-
-    const quizName = escapeHtml(quiz.name || quiz.title || 'Untitled Quiz');
-    const quizId = String(quiz.id).replace(/'/g, "\\'");
-
-    // Generate export options HTML
-    const exportOptionsHTML = `
-      <div class="export-options">
-        <div class="export-info">
-          <h3>${quizName}</h3>
-          <div class="export-stats">
-            <div class="stat-item">
-              <span class="stat-label">Total Questions:</span>
-              <strong class="stat-value">${quiz.questions.length}</strong>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">Approved Questions:</span>
-              <strong class="stat-value approved">${approvedQuestions.length}</strong>
-            </div>
-          </div>
-          <p class="export-note">
-            <i class="fas fa-info-circle"></i>
-            Only approved questions will be exported.
-          </p>
-        </div>
-        
-        <h4 class="export-format-title">Select Export Format</h4>
-        <div class="export-format-buttons">
-          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('csv', '${quizId}')">
-            <i class="fas fa-file-csv"></i>
-            <span>CSV</span>
-          </button>
-          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('json', '${quizId}')">
-            <i class="fas fa-file-code"></i>
-            <span>JSON</span>
-          </button>
-          <button class="export-format-btn" onclick="window.questionBankPage.handleExportFormat('qti', '${quizId}')">
-            <i class="fas fa-file-code"></i>
-            <span>QTI</span>
-            <small>Canvas</small>
-          </button>
-        </div>
-      </div>
-    `;
-
-    modalBody.innerHTML = exportOptionsHTML;
-    modal.style.display = "flex";
-
-    // Setup close button
-    const closeBtn = document.getElementById("export-summary-modal-close");
-    const confirmBtn = document.getElementById("export-summary-confirm");
-
-    if (closeBtn) {
-      closeBtn.onclick = () => this.hideExportModal();
-    }
-    if (confirmBtn) {
-      confirmBtn.onclick = () => this.hideExportModal();
-    }
-  }
-
-  hideExportModal() {
-    const modal = document.getElementById("export-summary-modal");
-    if (modal) {
-      modal.style.display = "none";
-    }
-  }
-
-  async handleExportFormat(format, quizId) {
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (!quiz || !quiz.questions || quiz.questions.length === 0) {
-      this.showNotification("No questions to export", "error");
-      return;
-    }
-
-    // Filter to only approved questions
-    const approvedQuestions = quiz.questions.filter(q =>
-      q.approved === true || q.status === "Approved"
-    );
-
-    if (approvedQuestions.length === 0) {
-      this.showNotification("No approved questions to export", "error");
-      this.hideExportModal();
-      return;
-    }
-
-    // Get course information
-    const selectedCourse = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedCourse));
-    const courseName = selectedCourse?.courseName || 'Course';
-
-    // Fetch full question details for approved questions only
-    const questionPromises = approvedQuestions.map(async (q) => {
-      try {
-        const response = await fetch(`${API_ENDPOINTS.question}/${q.id}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.question) {
-            return data.question;
-          }
-        }
-        return q;
-      } catch {
-        return q;
-      }
-    });
-
-    const fullQuestions = await Promise.all(questionPromises);
-
-    // Convert questions to export format
-    const questions = fullQuestions.map(q => ({
-      text: q.title || q.stem || "",
-      stem: q.stem || q.title || "",
-      options: q.options || {},
-      correctAnswer: q.correctAnswer || "A",
-      bloomLevel: q.bloom || q.bloomLevel || "Understand",
-    }));
-
-    try {
-      const response = await fetch(`${API_ENDPOINTS.questionExport}?format=${format}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          course: courseName,
-          questions: questions,
-          quizName: quiz.title || quiz.name || 'Quiz',
-          quizDescription: quiz.description || '',
-        }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const filename = `${quiz.title || quiz.name || 'quiz'}-${format}.${this.getFileExtension(format)}`;
-        this.downloadFile(blob, filename);
-        this.showNotification(`Exported as ${format.toUpperCase()}`, 'success');
-        this.hideExportModal();
-      } else {
-        throw new Error('Export failed');
-      }
-    } catch (error) {
-      console.error('Export failed:', error);
-      this.showNotification('Export failed. Please try again.', 'error');
-    }
-  }
-
-  getFileExtension(format) {
-    switch (format) {
-      case "csv":
-        return "csv";
-      case "json":
-        return "json";
-      case "qti":
-        return "zip"; // Canvas requires QTI in ZIP format
-      default:
-        return "txt";
-    }
-  }
-
-  downloadFile(blob, filename) {
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  }
-
-  // Navigate to Overview tab with quiz and status filters set
-  async navigateToReview(quizId) {
-    // Find the quiz to get its name/ID for the filter
-    const quiz = this.quizzes.find((q) => String(q.id) === String(quizId));
-    if (!quiz) return;
-
-    // The quiz ID is already stored as a string in quiz.id
-    // But we need to match it with the filter which uses _id or id from allQuizzes
-    // Find the matching quiz in allQuizzes to get the correct ID format
-    const quizForFilter = this.allQuizzes.find((q) => {
-      const qId = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || "");
-      return qId === String(quizId);
-    });
-
-    // Use the ID from allQuizzes if found, otherwise use the quizId
-    const quizIdForFilter = quizForFilter
-      ? (quizForFilter._id ? (quizForFilter._id.toString ? quizForFilter._id.toString() : String(quizForFilter._id)) : String(quizForFilter.id || quizId))
-      : String(quizId);
-
-    // Set filters - RESET everything else
-    this.state.filters.quiz = quizIdForFilter;
-    this.state.filters.status = "Draft";
-    this.state.filters.objective = "all";
-    this.state.filters.bloom = "all";
-    this.state.filters.flagged = false;
-    this.state.filters.q = "";
-
-    // Update filter UI
-    const quizFilter = document.getElementById("quiz-filter");
-    const statusFilter = document.getElementById("status-filter");
-    const objectiveFilter = document.getElementById("objective-filter");
-    const bloomFilter = document.getElementById("bloom-filter");
-    const flaggedFilter = document.getElementById("flagged-filter");
-    const searchInput = document.getElementById("search-input");
-
-    if (quizFilter) quizFilter.value = quizIdForFilter;
-    if (statusFilter) statusFilter.value = "Draft";
-    if (objectiveFilter) objectiveFilter.value = "all";
-    if (bloomFilter) bloomFilter.value = "all";
-    if (flaggedFilter) flaggedFilter.checked = false;
-    if (searchInput) searchInput.value = "";
-
-    // Switch to Overview tab
-    await this.switchTab("overview");
-
-    // Update URL
-    const url = new URL(window.location);
-    url.searchParams.set("tab", "overview");
-    window.history.pushState({ tab: "overview" }, "", url);
-
-    // Apply filters to show the filtered questions
-    await this.applyFilters();
-  }
 
   // Notification System
   showNotification(message, type = 'info') {
@@ -2648,7 +1449,6 @@ class QuestionBankPage {
 
   // Question Detail Modal Functions
   async openQuestionModal(questionId) {
-    // Allow viewing, but editing will be disabled if question is in published quiz
     const modal = document.getElementById("question-detail-modal");
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
@@ -2926,12 +1726,6 @@ class QuestionBankPage {
   async saveQuestionChanges() {
     if (!this.currentEditingQuestion) return;
 
-    // Check if user can still edit this question (in case quiz was published while modal was open)
-    if (!this.canEditQuestion(this.currentEditingQuestion.id)) {
-      this.showNotification("You cannot edit questions in published quizzes", "error");
-      this.closeQuestionModal();
-      return;
-    }
 
     const saveBtn = document.getElementById("question-modal-save");
     if (saveBtn) saveBtn.disabled = true;
@@ -3075,13 +1869,7 @@ class QuestionBankPage {
 
       question.flagged = newFlagStatus;
 
-      // Also update in quiz questions if present
-      for (const quiz of this.quizzes) {
-        const quizQuestion = quiz.questions.find(q => toStringId(q.id) === toStringId(questionId));
-        if (quizQuestion) {
-          quizQuestion.flagged = newFlagStatus;
-        }
-      }
+
 
       this.renderQuestionsTable();
       this.showNotification(
