@@ -89,6 +89,20 @@ class RAGService {
         ...this.baseConfig.qdrantConfig,
         collectionName: collectionName
       },
+      chunkingConfig: (content) => {
+        const chunks = [];
+        const chunkSize = 1000;
+        const overlap = 150;
+        
+        let i = 0;
+        while (i < content.length) {
+          const end = Math.min(i + chunkSize, content.length);
+          chunks.push(content.substring(i, end));
+          if (end === content.length) break;
+          i += chunkSize - overlap;
+        }
+        return chunks;
+      },
       logger: new this.ConsoleLogger(`RAG-${collectionName}`)
     };
 
@@ -181,12 +195,17 @@ class RAGService {
     // Use provided query for RAG search
     let ragChunks = await instance.retrieveContext(query, {
       limit: 50,
+      filter: {
+        must: [
+          {
+            key: "sourceId",
+            match: {
+              any: objective.materials.map((material) => material.sourceId)
+            }
+          }
+        ]
+      }
     });
-
-    // Get materials source IDs, filter out chunks that are not in the materials
-    const materialsSourceIds = objective.materials.map((material) => material.sourceId);
-    console.log("Materials source IDs:", materialsSourceIds);
-    ragChunks = ragChunks.filter((chunk) => materialsSourceIds.includes(chunk.metadata.sourceId));
 
     console.log("RAG context:", ragChunks);
 
@@ -211,7 +230,7 @@ class RAGService {
    * @param {number} limit - Maximum number of chunks to retrieve (default: 100)
    * @returns {Promise<string>} Combined RAG context from all materials
    */
-  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 100, courseId = null) {
+  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 50, courseId = null) {
     const instance = await this.getOrCreateInstance(courseId);
     if (!instance) {
       throw new Error("RAG instance is not initialized for this course");
@@ -224,19 +243,40 @@ class RAGService {
     // Use provided query for RAG search
     let ragChunks = await instance.retrieveContext(query, {
       limit: limit,
-    });
-
-    // Filter chunks to only include those from the specified materials
-    ragChunks = ragChunks.filter((chunk) => {
-      const chunkSourceId = chunk.metadata?.sourceId;
-      return chunkSourceId && sourceIds.includes(chunkSourceId);
+      filter: {
+        must: [
+          {
+            key: "sourceId",
+            match: {
+              any: sourceIds
+            }
+          }
+        ]
+      }
     });
 
     console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials`);
 
     if (ragChunks && ragChunks.length > 0) {
-      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
-      console.log("RAG context length:", ragContext.length);
+      // Group chunks by sourceId
+      const chunksBySource = {};
+      ragChunks.forEach(chunk => {
+        const sid = chunk.metadata?.sourceId || 'Unknown';
+        if (!chunksBySource[sid]) {
+          chunksBySource[sid] = {
+            title: chunk.metadata?.documentTitle || chunk.metadata?.fileName || 'Unknown Source',
+            contents: []
+          };
+        }
+        chunksBySource[sid].contents.push(chunk.content);
+      });
+
+      // Format context grouped by material
+      const ragContext = Object.entries(chunksBySource).map(([sid, data]) => {
+        return `### MATERIAL: ${data.title} (SOURCE ID: ${sid})\n${data.contents.join('\n\n')}`;
+      }).join("\n\n---\n\n");
+
+      console.log(`✅ Processed RAG context from ${Object.keys(chunksBySource).length} materials`);
       return ragContext;
     } else {
       console.log("⚠️ No relevant chunks found in RAG for selected materials");

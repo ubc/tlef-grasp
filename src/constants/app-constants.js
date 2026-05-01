@@ -2,13 +2,17 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality multiple-choice question that tests students' understanding of the provided learning objective.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
 
-Task: Create a multiple-choice question based on the provided content that effectively test students' understanding of the course learning objective.
+INSTRUCTIONS:
+1. Write a question aligned to the learning objective and Bloom's level.
+2. Generate 4 answer options (A–D), one of which is correct.
+3. Set correctAnswer to the letter of the correct option.
+4. For each incorrect option, write feedback explaining only why that specific option is wrong — do not reference, imply, or lead toward the correct answer.
 
 PROCEDURE:
 1. Create the question content
@@ -16,17 +20,15 @@ PROCEDURE:
 3. Place the correct answer in one of the positions (A, B, C, or D).
 4. Write the explanation
 
-The response format must be a valid JSON with the exact structure as follows:
 {
-  "question": "Your specific question here",
+  "question": "Question text here",
   "options": {
-    "A": "First option text",
-    "B": "Second option text",
-    "C": "Third option text",
-    "D": "Fourth option text"
+    "A": { "text": "Option text", "feedback": "Why this distractor is wrong" },
+    "B": { "text": "Option text", "feedback": "Why this distractor is wrong" },
+    "C": { "text": "Correct option text", "feedback": "" },
+    "D": { "text": "Option text", "feedback": "Why this distractor is wrong" }
   },
-  "correctAnswer": "C",
-  "explanation": "Why this answer is correct based on the content"
+  "correctAnswer": "C"
 }
 
 CRITICAL FORMATTING REQUIREMENTS:
@@ -50,7 +52,7 @@ COURSE MATERIALS CONTENT:
 INSTRUCTIONS:
 1. Analyze the course materials and identify key topics, concepts, and learning outcomes.
 2. Determine an appropriate number of main learning objectives that comprehensively cover the major themes in the provided materials.
-3. For each main learning objective, generate 2-4 granular (sub) objectives that break it down into specific, measurable learning outcomes.
+3. For each main learning objective, generate granular (sub) objectives that break it down into specific, measurable learning outcomes.
 4. Identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
 5. Use clear, action-oriented language (e.g., "Students will be able to...").
 6. Ensure objectives are specific to the content provided, not generic.
@@ -68,11 +70,9 @@ RESPONSE FORMAT (JSON):
   ]
 }
 
-IMPORTANT:
-- Base objectives on the actual content in the materials.
-- Make objectives specific and measurable.
-- Ensure granular objectives support their parent objective.
-- Return ONLY valid JSON, no additional text or markdown formatting.`;
+IMPORTANT RULES:
+1. Base objectives strictly on the provided material content.
+2. Return ONLY valid JSON.`;
 
 const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom's Taxonomy.
 
@@ -90,12 +90,12 @@ Strict Processing Rules:
 
 Generation Constraints (The "Gap-Fill" Rule):
 1. DO NOT generate new granular objectives for any Meta objective that already contains user-provided granular objectives.
-2. ONLY generate 2-4 granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
+2. ONLY generate granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
 
 Syntax & Language:
 1. Action-Oriented: All granular objectives (user or AI) must start with the exact phrase: "Students will be able to..." followed by an active verb.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create).
-3. Alignment: All content must be derived strictly from the {ragContext}.
+3. Alignment: All content must be derived strictly from the provided course content.
 
 Response Format (JSON Only):
 JSON
@@ -106,14 +106,15 @@ JSON
       "granularObjectives": [
         {
           "text": "Students will be able to [action verb] [specific skill]...",
-          "bloomTaxonomies": ["Apply", "Analyze"],
+          "bloomTaxonomies": ["Apply", "Analyze"]
         }
       ]
     }
   ]
 }
 
-Final Warning: Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks. Ensure no user intent is lost.`;
+FINAL INSTRUCTIONS:
+1. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 

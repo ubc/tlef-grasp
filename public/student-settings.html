@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - GRASP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:ital,wdth,wght@0,75..100,300..800;1,75..100,300..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/student-dashboard.css">
+    <link rel="stylesheet" href="styles/student-settings.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <main class="main-content">
+            <div class="content-wrapper student-settings-wrapper">
+                <section class="student-settings-card" aria-label="Student settings">
+                    <div class="student-settings-card__head">
+                        <h1 class="student-settings-title">Settings</h1>
+                        <p class="student-settings-lead">
+                            Join a course by pasting the enrollment code your instructor shared. If you are already enrolled, you can add another course the same way.
+                        </p>
+                    </div>
+                    <div class="student-join-course">
+                        <label class="student-join-label" for="student-settings-join-code">Enrollment code</label>
+                        <div class="student-join-row">
+                            <input
+                                type="text"
+                                id="student-settings-join-code"
+                                class="student-join-input"
+                                placeholder="Paste or type your code"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
+                            <button type="button" id="student-settings-join-submit" class="student-join-btn">
+                                <i class="fas fa-right-to-bracket"></i>
+                                Join
+                            </button>
+                        </div>
+                        <div class="student-join-message" id="student-settings-join-message" aria-live="polite"></div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/student-settings.js"></script>
+</body>
+</html>

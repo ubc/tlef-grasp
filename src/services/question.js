@@ -25,7 +25,6 @@ const saveQuestion = async (courseId, questionData) => {
             options: questionData.options,
             correctAnswer: questionData.correctAnswer,
             bloom: questionData.bloom,
-            difficulty: questionData.difficulty,
             courseId: courseIdObj,
             granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
@@ -146,7 +145,7 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.options !== undefined) update.options = updateData.options;
         if (updateData.correctAnswer !== undefined) update.correctAnswer = updateData.correctAnswer;
         if (updateData.bloom !== undefined) update.bloom = updateData.bloom;
-        if (updateData.difficulty !== undefined) update.difficulty = updateData.difficulty;
+
         if (updateData.status !== undefined) update.status = updateData.status;
         if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
         if (updateData.granularObjectiveId !== undefined) {

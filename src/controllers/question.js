@@ -80,22 +80,42 @@ const getQuestionByIdHandler = async (req, res) => {
 // Save questions to question bank
 const saveQuestionHandler = async (req, res) => {
   try {
-    const { question, courseId } = req.body;
+    const { questions, courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({ error: "Course ID is required" });
+    }
 
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
-    if (!question) {
-      return res.status(400).json({ error: "No question provided to save" });
+    // Normalize to array
+    const questionsArray = Array.isArray(questions) ? questions : (questions ? [questions] : []);
+
+    if (questionsArray.length === 0) {
+      return res.status(400).json({ error: "No questions provided to save" });
     }
 
-    await saveQuestion(courseId, question);
+    const savedQuestionIds = [];
+    for (const questionData of questionsArray) {
+      try {
+        const questionResult = await saveQuestion(courseId, questionData);
+        savedQuestionIds.push(questionResult.insertedId.toString());
+      } catch (error) {
+        console.error("Error saving individual question:", error);
+      }
+    }
+
+    if (savedQuestionIds.length === 0) {
+      return res.status(500).json({ error: "Failed to save any questions" });
+    }
 
     res.json({
       success: true,
-      message: "Question saved successfully",
-      question: question,
+      message: `${savedQuestionIds.length} question(s) saved successfully`,
+      savedCount: savedQuestionIds.length,
+      questionIds: savedQuestionIds
     });
   } catch (error) {
     console.error("Error saving question:", error);
@@ -277,7 +297,7 @@ const exportQuestionsHandler = async (req, res) => {
 };
 
 function createCSVExport(course, questions) {
-  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level,Difficulty\n';
+  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level\n';
   questions.forEach(q => {
     // Options are always objects with keys A, B, C, D
     const getOption = (key) => {
@@ -301,7 +321,7 @@ function createCSVExport(course, questions) {
     }
     const correctOpt = getOption(correctAnswerLetter);
     
-    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}","${q.difficulty || ''}"\n`;
+    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}"\n`;
   });
   return csv;
 }

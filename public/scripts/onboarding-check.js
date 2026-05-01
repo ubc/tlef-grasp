@@ -1,7 +1,7 @@
 // Shared onboarding check script
 // This script should be included on all pages that require onboarding
 
-function checkOnboardingStatus() {
+async function checkOnboardingStatus() {
   const isOnboarded = null !== sessionStorage.getItem("grasp-selected-course");
   const currentPath = window.location.pathname;
 
@@ -12,9 +12,19 @@ function checkOnboardingStatus() {
 
   // Always allow access to onboarding page (users may want to select different course)
   if (currentPath === "/onboarding") {
-    // If onboarded and on onboarding page, redirect to dashboard
+    // If onboarded and on onboarding page, redirect to the right dashboard
     if (isOnboarded) {
-      window.location.href = "/dashboard";
+      try {
+        const r = await fetch("/api/current-user");
+        const data = await r.json();
+        if (data.success && data.user && data.user.isStudent) {
+          window.location.href = "/student-dashboard";
+        } else {
+          window.location.href = "/dashboard";
+        }
+      } catch {
+        window.location.href = "/dashboard";
+      }
     }
     return;
   }

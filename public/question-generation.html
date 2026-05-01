@@ -81,24 +81,24 @@
 
 
                             <div id="add-objectives-container">
-                                <button type="button" class="btn btn--primary" id="add-objectives-btn">
-                                    <i class="fas fa-plus"></i> Add learning objectives
+                                <button type="button" class="btn btn--secondary" id="generate-ai-btn">
+                                    <i class="fas fa-magic"></i> Create Learning Objectives
+                                </button>
+                                <div class="add-existing-wrapper" style="position: relative;">
+                                    <button type="button" class="btn btn--primary" id="add-objectives-btn">
+                                        <i class="fas fa-plus"></i> Add Existing Learning Objectives
+                                    </button>
 
-                                </button> <!-- Add Objectives Dropdown -->
-                                <div class="add-objectives-dropdown" id="add-objectives-dropdown"
-                                    style="display: none;">
-                                    <div class="dropdown-search">
-                                        <input type="text" id="objective-search" placeholder="Search objectives..."
-                                            class="dropdown-search__input">
-                                    </div>
-                                    <div class="dropdown-options" id="dropdown-options">
-                                        <!-- Pre-defined objectives will be listed here -->
-                                    </div>
-                                    <div class="dropdown-separator"></div>
-                                    <div class="dropdown-custom">
-                                        <button type="button" class="dropdown-custom__btn" id="generate-ai-btn">
-                                            <i class="fas fa-magic"></i> Generate with AI...
-                                        </button>
+                                    <!-- Add Objectives Dropdown -->
+                                    <div class="add-objectives-dropdown" id="add-objectives-dropdown"
+                                        style="display: none;">
+                                        <div class="dropdown-search">
+                                            <input type="text" id="objective-search" placeholder="Search objectives..."
+                                                class="dropdown-search__input">
+                                        </div>
+                                        <div class="dropdown-options" id="dropdown-options">
+                                            <!-- Pre-defined objectives will be listed here -->
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -154,7 +154,7 @@
                             <div class="modal" id="ai-generate-objective-modal" style="display: none;">
                                 <div class="modal__content" style="max-width: 800px;">
                                     <div class="modal__header">
-                                        <h3>Generate Learning Objectives with AI</h3>
+                                        <h3>Generate Learning Objectives</h3>
                                         <button type="button" class="modal__close" id="ai-generate-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
@@ -162,7 +162,7 @@
                                     <div class="modal__body">
                                         <div style="margin-bottom: 24px;">
                                             <p style="color: #6b7280; font-size: 14px; margin-bottom: 16px;">
-                                                Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives.
+                                                Select the course materials you want to use for generating learning objectives. The AI will analyze the content and create relevant learning objectives. If you provide your own learning objectives, the AI will reorganize them into a proper hierarchy rather than generating new ones (optional).
                                             </p>
                                             
                                             <div style="margin-bottom: 20px; padding: 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;">
@@ -195,12 +195,17 @@
                                                 </div>
 
                                                 <!-- Dynamic List of Objectives -->
-                                                <div id="ai-custom-objectives-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto;">
+                                                <div id="ai-custom-objectives-list" style="display: flex; flex-direction: column; gap: 8px;">
                                                     <!-- Objective rows will be added here -->
                                                 </div>
                                             </div>
 
-                                            <label style="margin-bottom: 12px; display: block; font-weight: 600;">Select Materials:</label>
+                                            <label style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
+                                                <span>Select Material:</span>
+                                            </label>
+                                            <p id="ai-materials-info" style="font-size: 12px; color: #6b7280; margin-bottom: 12px; line-height: 1.4; font-weight: normal;">
+                                                <i class="fas fa-info-circle" style="color: #3498db;"></i> Select a course material to generate focused learning objectives from its content.
+                                            </p>
                                             <div id="ai-materials-selection-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
                                                 <div id="ai-materials-loading" style="text-align: center; padding: 20px; color: #7f8c8d;">
                                                     <i class="fas fa-spinner fa-spin"></i> Loading materials...
@@ -251,22 +256,18 @@
                             <div class="modal" id="delete-confirmation-modal">
                                 <div class="modal__content">
                                     <div class="modal__header">
-                                        <h3>Delete Learning Objective?</h3>
+                                        <h3>Remove Learning Objective?</h3>
                                         <button type="button" class="modal__close" id="delete-modal-close">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
                                     <div class="modal__body">
-                                        <p>How would you like to handle this learning objective?</p>
+                                        <p>This will remove the learning objective from the current page. It will not be deleted from the database.</p>
                                     </div>
                                     <div class="modal__footer" style="flex-direction: column; gap: 12px; align-items: stretch;">
-                                        <button type="button" class="btn btn--secondary"
-                                            id="delete-modal-view-only" style="justify-content: center;">
-                                            <i class="fas fa-eye-slash"></i> Remove from current view only
-                                        </button>
                                         <button type="button" class="btn btn--danger"
-                                            id="delete-modal-db-complete" style="justify-content: center;">
-                                            <i class="fas fa-trash-alt"></i> Delete from database completely
+                                            id="delete-modal-view-only" style="justify-content: center;">
+                                            <i class="fas fa-trash-alt"></i> Remove from current view
                                         </button>
                                         <button type="button" class="btn btn--secondary"
                                             id="delete-modal-cancel" style="justify-content: center; margin-top: 8px; background: transparent; border: none; text-decoration: underline;">
@@ -369,16 +370,16 @@
                             </div>
 
                             <div class="quiz-selection-tabs">
-                                <button type="button" class="quiz-tab-btn quiz-tab-btn--active" data-tab="select">
-                                    Select Existing Quiz
-                                </button>
-                                <button type="button" class="quiz-tab-btn" data-tab="create">
+                                <button type="button" class="quiz-tab-btn quiz-tab-btn--active" data-tab="create">
                                     Create New Quiz
+                                </button>
+                                <button type="button" class="quiz-tab-btn" data-tab="select">
+                                    Select Existing Quiz
                                 </button>
                             </div>
 
                             <!-- Select Existing Quiz Tab -->
-                            <div class="quiz-tab-content quiz-tab-content--active" id="quiz-select-tab">
+                            <div class="quiz-tab-content" id="quiz-select-tab">
                                 <div class="quiz-select-section">
                                     <label for="quiz-select-dropdown" style="display: block; margin-bottom: 12px; font-weight: 500; color: #374151;">
                                         Choose a quiz:
@@ -393,7 +394,7 @@
                             </div>
 
                             <!-- Create New Quiz Tab -->
-                            <div class="quiz-tab-content" id="quiz-create-tab">
+                            <div class="quiz-tab-content quiz-tab-content--active" id="quiz-create-tab">
                                 <div class="quiz-create-section">
                                     <label for="quiz-name-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
                                         Quiz Name <span style="color: #e74c3c;">*</span>
@@ -434,20 +435,11 @@
                     </div>
                 </div>
 
-                <!-- Sticky Bottom Actions (Step 2 only) -->
-                <div class="sticky-bottom-actions" id="sticky-bottom-actions" style="display: none;">
-                    <div class="sticky-actions-left">
-                        <span class="selection-count">0 questions selected</span>
-                    </div>
-                    <div class="sticky-actions-right">
-                        <button type="button" class="btn btn--primary" id="add-selected-to-bank-btn">Add Selected to
-                            Question Bank</button>
-                    </div>
-                </div>
 
                 <!-- Footer Actions -->
                 <div class="footer-actions">
                     <button type="button" class="btn btn--secondary" id="back-btn" disabled>Back</button>
+                    <button type="button" class="btn btn--primary" id="add-to-bank-btn" style="display: none;">Add to Question Bank</button>
                     <button type="button" class="btn btn--primary" id="continue-btn">Continue</button>
                 </div>
             </div>
@@ -490,9 +482,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/smiles-drawer@2.0.1/dist/smiles-drawer.min.js"></script>
     <script src="scripts/smiles-renderer.js"></script>
     <script src="scripts/navigation.js"></script>
-    <script src="scripts/client-rag.js"></script>
     <script src="scripts/generating-content.js"></script>
-    <script src="scripts/direct-ollama-service.js"></script>
     <script src="scripts/generation-questions.js"></script>
     <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/question-generation.js"></script>

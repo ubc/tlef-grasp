@@ -783,7 +783,7 @@
     border: 1px solid #e9ecef;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    min-width: 300px;
+    min-width: 500px;
     z-index: 1000;
     margin-top: 4px;
 }
@@ -804,21 +804,27 @@
 }
 
 .dropdown-options {
-    max-height: 200px;
+    max-height: 320px;
     overflow-y: auto;
 }
 
 .dropdown-option {
-    padding: 8px 12px;
+    padding: 12px 16px;
     cursor: pointer;
     font-size: 14px;
     color: #2c3e50;
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    transition: background-color 0.3s ease;
+    transition: all 0.2s ease;
+    border-bottom: 1px solid #f1f3f5;
+    display: flex;
+    align-items: center;
+    border-left: 3px solid transparent;
 }
 
 .dropdown-option:hover {
-    background: #f8f9fa;
+    background: #edf2ff;
+    color: #3498db;
+    border-left-color: #3498db;
 }
 
 .dropdown-option--hidden {
@@ -826,9 +832,11 @@
 }
 
 .dropdown-option--disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
-    color: #95a5a6;
+    color: #bdc3c7;
+    background-color: #fcfcfc;
+    border-left-color: transparent !important;
 }
 
 .dropdown-option--disabled:hover {
@@ -1915,7 +1923,9 @@
 
 /* Learning Objectives */
 #add-objectives-container {
-    position: relative;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
     margin-bottom: 24px;
 }
 
@@ -1954,4 +1964,69 @@
 
 #materials-empty {
     font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+/* Question Feedback Styles */
+.question-card__feedback {
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    transition: all 0.2s ease;
+}
+
+.feedback-text {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: #4b5563;
+    font-style: italic;
+    background: #f3f4f6;
+    padding: 8px 12px;
+    border-radius: 6px;
+    width: 100%;
+}
+
+.feedback-text i {
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.feedback-edit-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #f9fafb;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px dashed #d1d5db;
+}
+
+.feedback-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6b7280;
+    letter-spacing: 0.025em;
+}
+
+.question-card__feedback--editing {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #374151;
+    background: white;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.question-card__feedback--editing:focus {
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    outline: none;
+}
+
+.question-card__option--editing {
+    margin-bottom: 4px;
 }

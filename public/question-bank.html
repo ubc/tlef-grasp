@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles/question-bank.css">
     <link rel="stylesheet" href="styles/question-generation.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 </head>
 <body>
     <div class="app-container">
@@ -21,9 +22,9 @@
                 <!-- Header Section -->
                 <div class="header-section">
                     <div class="header-tabs">
-                        <button class="tab-button" data-tab="overview">Overview</button>
+                        <button class="tab-button" data-tab="overview">Questions</button>
                         <button class="tab-button" data-tab="review">Quizzes</button>
-                        <button class="tab-button" data-tab="approved-history">Approved History</button>
+                        <button class="tab-button" data-tab="objectives">Learning Objectives</button>
                     </div>
                 </div>
 
@@ -105,7 +106,7 @@
 
                 <!-- Tab Content -->
                 <div class="tab-content">
-                    <!-- Overview Tab -->
+                    <!-- Questions Tab -->
                     <div class="tab-panel" id="overview-panel">
 
                         <!-- Action Bar -->
@@ -173,13 +174,26 @@
                         </div>
                     </div>
 
-                    <!-- Approved History Tab -->
-                    <div class="tab-panel" id="approved-history-panel" style="display: none;">
-                        <div class="approved-history-content">
-                            <h3>Approved History</h3>
-                            <p>This tab will show the approved history content.</p>
+                    <!-- Learning Objectives Tab -->
+                    <div class="tab-panel" id="objectives-panel" style="display: none;">
+                        <div class="objectives-header">
+                            <div class="objectives-header-left">
+                                <h2>Manage Learning Objectives</h2>
+                                <p class="section-description">Manage learning objectives for this course. Update titles, attach course materials, and define granular sub-objectives.</p>
+                                
+                                <div class="material-filter-container">
+                                    <label for="material-filter">Filter by Material</label>
+                                    <select id="material-filter" class="material-filter-select" style="width: 100%;">
+                                        <option value="all">All Materials</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="objectives-container" id="objectives-container">
+                            <!-- Objective cards will be populated by JavaScript -->
                         </div>
                     </div>
+
                 </div>
             </div>
         </main>
@@ -241,8 +255,37 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="scripts/navigation.js"></script>
     <script src="scripts/onboarding-check.js"></script>
     <script src="scripts/question-bank.js"></script>
-</body>
+    <!-- Objective Modal -->
+    <div class="modal" id="objective-modal" style="display: none;">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3 id="objective-modal-title">Add Learning Objective</h3>
+                <button class="modal-close" id="objective-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="objective-name-input">Objective Name</label>
+                    <input type="text" id="objective-name-input" class="form-control" placeholder="e.g., Understanding Cellular Respiration">
+                </div>
+                <div class="form-group" style="margin-top: 24px;">
+                    <label>Associated Course Materials</label>
+                    <p class="field-help">Select the materials that cover this learning objective.</p>
+                    <div id="objective-materials-list" class="materials-selection-grid">
+                        <!-- Materials checkboxes will be populated here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="objective-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="objective-modal-save">Save Objective</button>
+            </div>
+        </div>
+    </div></body>
 </html>

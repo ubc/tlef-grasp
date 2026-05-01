@@ -274,8 +274,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
       // Verify that the correct answer text exists organically in the selected position
       const correctOptionLetter = questionData.correctAnswer;
-      if (questionData.options && questionData.options[correctOptionLetter]) {
-        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${questionData.options[correctOptionLetter].substring(0, 50)}..."`);
+      const correctOption = questionData.options ? questionData.options[correctOptionLetter] : null;
+      if (correctOption) {
+        const textToLog = typeof correctOption === 'string' ? correctOption : (correctOption.text || "");
+        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${textToLog.substring(0, 50)}..."`);
       } else {
         console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
       }
@@ -422,13 +424,18 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const settings = await settingsService.getSettings(courseId);
 
     // Prepare RAG search query
-    const searchQuery = `course content learning objectives topics concepts from course: ${courseName || ''}`;
+    let searchQuery = `Identify the core knowledge areas, skills, competencies, theories, methodologies, 
+and measurable learning outcomes that students are expected to master in ${courseName || ''}. 
+Include foundational concepts, practical applications, and assessment criteria.`;
+    if (userObjectives && userObjectives.length > 0) {
+      searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
+    }
 
     console.log("Retrieving RAG content from selected materials...");
     const ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       searchQuery,
-      100,
+      200,
       courseId
     );
 
@@ -449,12 +456,14 @@ const generateLearningObjectivesHandler = async (req, res) => {
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
         .replace('{userObjectivesList}', userList)
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{sourceIdsList}', materialIds.join(', '))
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{sourceIdsList}', materialIds.join(', '))
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     }
 
     console.log("Sending prompt to LLM service...");
@@ -492,20 +501,24 @@ const generateLearningObjectivesHandler = async (req, res) => {
       const validBloomLevels = BLOOM_LEVELS;
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
-        .map((obj) => ({
-          name: obj.name.trim(),
-          granularObjectives: obj.granularObjectives
-            .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
-            .map((go) => {
-              const text = typeof go === "string" ? go.trim() : go.text.trim();
-              let bloomTaxonomies = ["Understand"]; // default
-              if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
-                 const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
-                 if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
-              }
-              return { text, bloomTaxonomies };
-            }),
-        }))
+        .map((obj) => {
+          console.log(`Objective "${obj.name}" sourceIds:`, obj.sourceIds);
+          return {
+            name: obj.name.trim(),
+            sourceIds: Array.isArray(obj.sourceIds) ? obj.sourceIds : [],
+            granularObjectives: obj.granularObjectives
+              .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
+              .map((go) => {
+                const text = typeof go === "string" ? go.trim() : go.text.trim();
+                let bloomTaxonomies = ["Understand"]; // default
+                if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
+                   const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
+                   if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
+                }
+                return { text, bloomTaxonomies };
+              }),
+          };
+        })
         .filter((obj) => obj.granularObjectives.length > 0);
 
       if (cleanedObjectives.length === 0) {

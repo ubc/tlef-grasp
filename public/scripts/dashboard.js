@@ -6,7 +6,6 @@ const SELECTORS = {
   currentDate: 'current-date',
   calendarHeader: '.calendar-header h4',
   calendarDays: '.calendar-days',
-  quickStartCards: '.quick-start-card',
   flaggedCount: 'flagged-count',
   viewFlaggedBtn: 'view-flagged-btn',
   noFlaggedData: 'no-flagged-data',
@@ -18,19 +17,7 @@ const API_ENDPOINTS = {
 };
 
 const ROUTES = {
-  courseMaterials: '/course-materials',
-  questionBank: '/question-bank',
-  questionBankReview: '/question-bank?tab=review',
   questionBankFlagged: '/question-bank?tab=overview&flagged=true',
-  quiz: '/quiz',
-  users: '/users',
-};
-
-const QUICK_ACTIONS = {
-  upload: ROUTES.courseMaterials,
-  review: ROUTES.questionBankReview,
-  questions: ROUTES.questionBank,
-  users: ROUTES.users,
 };
 
 const STORAGE_KEYS = {
@@ -275,7 +262,6 @@ class DashboardManager {
       await this.loadUserData();
       this.updateCurrentDate();
       this.calendar.render();
-      this.setupQuickStartCards();
       await this.flaggedQuestions.load();
     } catch (error) {
       console.error('Error initializing dashboard:', error);
@@ -362,28 +348,6 @@ class DashboardManager {
       currentDate.textContent = now.toLocaleDateString('en-US', options);
     }
   }
-
-  /**
-   * Setup click handlers for quick start cards
-   */
-  setupQuickStartCards() {
-    this.elements.quickStartCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        const actionText = card.querySelector('span')?.textContent?.toLowerCase();
-        this.handleQuickStartAction(actionText);
-      });
-    });
-  }
-
-  /**
-   * Handle quick start card click actions
-   */
-  handleQuickStartAction(action) {
-    const route = QUICK_ACTIONS[action];
-    if (route) {
-      window.location.href = route;
-    }
-  }
 }
 
 // Initialize dashboard when DOM is loaded
@@ -393,7 +357,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Export for potential external use
 window.GRASPDashboard = {
-    handleQuickStartAction: (action) => dashboard.handleQuickStartAction(action),
     loadFlaggedQuestionsCount: () => dashboard.flaggedQuestions.load(),
 };
 });

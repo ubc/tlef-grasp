@@ -1,5 +1,52 @@
 @import "style.css";
 
+.enrollment-code-block .enrollment-code-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+
+.enrollment-code-input {
+    flex: 1;
+    min-width: 200px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    padding: 10px 12px;
+}
+
+.secondary-btn {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.secondary-btn:hover {
+    background: #f9fafb;
+}
+
+.secondary-btn.danger-outline {
+    border-color: #fca5a5;
+    color: #b91c1c;
+}
+
+.secondary-btn.danger-outline:hover {
+    background: #fef2f2;
+}
+
+.enrollment-warning {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #6b7280;
+}
+
 .settings-header {
     display: flex;
     justify-content: space-between;
