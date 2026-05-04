@@ -2026,6 +2026,10 @@ function renderObjectiveGroups() {
 
     // Trigger auto-resize for all textareas so they fit content perfectly on load
     setTimeout(autoResizeTextareas, 0);
+
+    // Trigger LaTeX and SMILES rendering
+    if (typeof renderKatex === 'function') renderKatex();
+    if (typeof renderSmiles === 'function') renderSmiles();
   }
 
 }
@@ -2072,14 +2076,10 @@ function createObjectiveGroup(group) {
                 >
                     <i class="fas fa-trash-alt"></i>
                 </button>
-                <textarea class="objective-group__title-input" rows="1"
+                <div class="objective-group__title-text"
                     title="This title is read-only on this page"
-                    readonly
-                    onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
-                    oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
-                    style="background: transparent; border: 1px solid transparent; padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
-                    onfocus="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
-                >${currentName.replace(/"/g, '&quot;')}</textarea>
+                    style="padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; line-height: 1.4; min-height: 1.4em;"
+                >${typeof parseSmilesTags === 'function' ? parseSmilesTags(currentName) : currentName.replace(/"/g, '&quot;')}</div>
             </div>
             <div class="objective-group__header-right">
                 <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id})">
@@ -2195,16 +2195,17 @@ function createObjectiveItem(item, groupId) {
             <div class="objective-item__content" style="flex: 1; min-width: 0;">
                 <div class="objective-item__header" style="flex: 1; display: flex; width: 100%; min-width: 0;">
                     <div class="objective-item__text" style="flex: 1; width: 100%; min-width: 0;">
-                        <textarea class="granular-objective-input" rows="1"
-                            title="${item.granularId ? 'This title is read-only on this page' : 'Enter granular objective'}"
-                            ${item.granularId ? 'readonly' : ''}
+                        ${item.granularId 
+                          ? `<div class="granular-objective-text" style="padding: 4px; margin: 0; width: 100%; box-sizing: border-box; font-family: inherit; font-size: inherit; color: inherit; line-height: 1.4; min-height: 1.4em;">${typeof parseSmilesTags === 'function' ? parseSmilesTags(item.text) : item.text.replace(/"/g, '&quot;')}</div>`
+                          : `<textarea class="granular-objective-input" rows="1"
+                            title="Enter granular objective"
                             onblur="updateGranularObjectiveText(${groupId}, ${item.id}, this.value)"
                             onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
                             oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
                             style="background: transparent; border: 1px solid transparent; padding: 4px; margin: 0; width: 100%; box-sizing: border-box; font-family: inherit; font-size: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
-                            onfocus="${item.granularId ? '' : "this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)';"} this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                            onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
                             onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
-                        >${item.text.replace(/"/g, '&quot;')}</textarea>
+                        >${item.text.replace(/"/g, '&quot;')}</textarea>`}
                     </div>
                     ${subLOBadge}
                 </div>
