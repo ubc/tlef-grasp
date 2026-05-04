@@ -84,11 +84,11 @@ class QuestionGenerator {
     // Generate different types of questions based on Bloom's taxonomy
     const bloomLevels = granularLearningObjective.bloom || ["Understand"];
 
-    for (let i = 0; i < granularLearningObjective.count; i++) {
-      const bloomLevel = bloomLevels[i % bloomLevels.length];
+    for (let i = 0; i < bloomLevels.length; i++) {
+      const bloomLevel = bloomLevels[i];
       console.log(
         `Creating question ${i + 1}/${
-          granularLearningObjective.count
+          bloomLevels.length
         } with Bloom level: ${bloomLevel}`
       );
 
@@ -116,7 +116,7 @@ class QuestionGenerator {
           questions.push(question);
           
           // Add a small delay between questions to avoid rate limiting
-          if (i < granularLearningObjective.count - 1) {
+          if (i < bloomLevels.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 500));
           }
         } catch (error) {
@@ -148,7 +148,7 @@ class QuestionGenerator {
     }
 
     console.log(
-      `Generated ${questions.length}/${granularLearningObjective.count} questions for objective: ${granularLearningObjective.text}`
+      `Generated ${questions.length}/${bloomLevels.length} questions for objective: ${granularLearningObjective.text}`
     );
     
     if (failedQuestions.length > 0) {
@@ -161,7 +161,7 @@ class QuestionGenerator {
     // If we got at least some questions, return them. Otherwise throw error.
     if (questions.length === 0) {
       throw new Error(
-        `Failed to generate any questions for objective: ${granularLearningObjective.text}. All ${granularLearningObjective.count} attempts failed.`
+        `Failed to generate any questions for objective: ${granularLearningObjective.text}. All ${bloomLevels.length} attempts failed.`
       );
     }
     

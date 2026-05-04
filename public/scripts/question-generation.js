@@ -259,7 +259,7 @@ function validateCurrentStep() {
 
         // Check total questions >= 5 for each group
         const totalQuestions = group.items.reduce(
-          (sum, item) => sum + item.count,
+          (sum, item) => sum + item.bloom.length,
           0
         );
         if (totalQuestions < 5) {
@@ -2048,7 +2048,7 @@ function createObjectiveGroup(group) {
   const currentName = group.title;
 
   const itemCount = group.items.length;
-  const totalCount = group.items.reduce((sum, item) => sum + item.count, 0);
+  const totalCount = group.items.reduce((sum, item) => sum + item.bloom.length, 0);
   const isWarning = totalCount < 5;
 
   const emptyState =
@@ -2212,24 +2212,9 @@ function createObjectiveItem(item, groupId) {
                     <div class="objective-item__bloom-chips">
                         ${bloomChips}
                     </div>
-                    <div class="objective-item__min">Min: ${item.minQuestions
-    }</div>
                     ${bloomModeToggle}
                 </div>
                 ${bloomValidationMessage}
-            </div>
-            <div class="objective-item__tools">
-                <div class="objective-item__stepper">
-                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id
-    })" ${item.count <= item.minQuestions ? "disabled" : ""}>
-                        –
-                    </button>
-                    <span class="stepper-value">${item.count}</span>
-                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id
-    })" ${item.count >= 9 ? "disabled" : ""}>
-                        +
-                    </button>
-                </div>
             </div>
         </div>
     `;
