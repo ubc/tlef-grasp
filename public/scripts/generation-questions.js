@@ -108,7 +108,8 @@ class QuestionGenerator {
               granularLearningObjective.text,
               bloomLevel,
               i + 1,
-              learningObjective.materialIds || []
+              learningObjective.materialIds || [],
+              questions
             );
 
           console.log(`✅ Created question ${i + 1}:`, question.text);
@@ -177,7 +178,8 @@ class QuestionGenerator {
     granularLearningObjectiveText,
     bloomLevel,
     questionNumber,
-    materialIds = []
+    materialIds = [],
+    existingQuestions = []
   ) {
     console.log(`Generating LLM question for objective: ${learningObjectiveText}`);
 
@@ -192,6 +194,7 @@ class QuestionGenerator {
             granularLearningObjectiveText: granularLearningObjectiveText,
             bloomLevel: bloomLevel,
             materialIds: materialIds,
+            existingQuestions: existingQuestions.map(q => q.text),
           }),
           headers: {
             'Content-Type': 'application/json',

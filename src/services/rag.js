@@ -207,8 +207,6 @@ class RAGService {
       }
     });
 
-    console.log("RAG context:", ragChunks);
-
     if (ragChunks && ragChunks.length > 0) {
       const ragChunksCount = ragChunks.length;
       console.log(`✅ Found ${ragChunksCount} relevant chunks from RAG`);

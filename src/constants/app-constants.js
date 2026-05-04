@@ -8,14 +8,28 @@ Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
 
+BACKGROUND COURSE MATERIAL:
+{ragContext}
+--- END OF MATERIAL ---
+
+{existingQuestionsContext}
+
 INSTRUCTIONS:
 1. Write a question aligned to the learning objective and Bloom's level.
-2. Generate 4 answer options (A–D), one of which is correct.
+2. Generate 4 answer options (A–D), one of which is correct. Every answer option must be unique — no two options may have identical or near-identical text.
 3. Set correctAnswer to the letter of the correct option.
 4. For each incorrect option, write feedback explaining only why that specific option is wrong — do not reference, imply, or lead toward the correct answer.
 
+Bloom's level guidance:
+- Remember: recall a definition or fact
+- Understand: explain, paraphrase, or classify in own words
+- Apply: use a concept or formula in a novel scenario
+- Analyze: compare, differentiate, or break down components
+- Evaluate: justify, critique, or defend a choice
+- Create: design, construct, or propose something new
+
 PROCEDURE:
-1. Create the question content
+1. Create the question content, Your question stem must be STRUCTURALLY different from previous questions, You must approach the same concept from a different angle.
 2. Generate 4 plausible answer options.
 3. Place the correct answer in one of the positions (A, B, C, or D).
 4. Write the explanation
@@ -38,9 +52,7 @@ CRITICAL FORMATTING REQUIREMENTS:
 - CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
 - CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]). Do NOT use chemical formulas like H2O or NaCl inside these tags; use proper SMILES notation (e.g., [SMILES]O[/SMILES] or [SMILES][Na+].[Cl-][/SMILES]).
 - CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.
-
-CONTENT: {ragContext}`;
+- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in the option text.`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
 
@@ -52,10 +64,21 @@ COURSE MATERIALS CONTENT:
 INSTRUCTIONS:
 1. Analyze the course materials and identify key topics, concepts, and learning outcomes.
 2. Determine an appropriate number of main learning objectives that comprehensively cover the major themes in the provided materials.
-3. For each main learning objective, generate granular (sub) objectives that break it down into specific, measurable learning outcomes.
-4. Identify appropriate Bloom's Taxonomy levels that it targets (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
+3. For each main learning objective, generate as many granular (sub) objectives as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
+4. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
 5. Use clear, action-oriented language (e.g., "Students will be able to...").
 6. Ensure objectives are specific to the content provided, not generic.
+
+RULES FOR GRANULAR OBJECTIVES:
+- Each granular objective under a main objective must test a DISTINCT concept or skill — not a rephrasing of the same idea.
+- Do not generate two granular objectives that a student could satisfy by knowing the same single fact.
+- Each granular objective must be assessable with a question that is fundamentally different from questions assessing the other granular objectives under the same main objective.
+- Let the content drive the Bloom's level — do not force a level that does not fit the material.
+- Avoid granular objectives that are too shallow to assess meaningfully on their own, such as recalling a single definition or performing a trivial isolated task. Instead, embed such skills within a richer, more substantive objective.
+
+SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
+- No two granular objectives under the same main objective test the same fact or skill.
+- Each granular objective is genuinely distinct and necessary — remove any that are redundant or only added to meet a count.
 
 RESPONSE FORMAT (JSON):
 {

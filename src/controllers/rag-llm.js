@@ -166,7 +166,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, materialIds } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, materialIds, existingQuestions } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -236,7 +236,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         );
       }
 
-      console.log("RAG Context:", ragContext);
+      //console.log("RAG Context:", ragContext);
 
       // Use LLM service for generation
       console.log("=== USING LLM SERVICE FOR GENERATION ===");
@@ -246,11 +246,29 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context
-      const createPrompt = () => promptTemplate
-        .replace('{learningObjectiveText}', learningObjectiveText || '')
-        .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
-        .replace('{bloomLevel}', bloomLevel || '')
-        .replace('{ragContext}', ragContext || '');
+      let existingQuestionsContext = '';
+      if (existingQuestions && existingQuestions.length > 0) {
+        existingQuestionsContext = `\nPREVIOUSLY GENERATED QUESTIONS (DO NOT DUPLICATE THESE):\n` + existingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n') + `\n`;
+      }
+
+      const createPrompt = () => {
+        let p = promptTemplate
+          .replace('{learningObjectiveText}', learningObjectiveText || '')
+          .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
+          .replace('{bloomLevel}', bloomLevel || '')
+          .replace('{ragContext}', ragContext || '');
+
+        if (p.includes('{existingQuestionsContext}')) {
+          p = p.replace('{existingQuestionsContext}', existingQuestionsContext);
+        } else if (existingQuestionsContext) {
+          if (p.includes('INSTRUCTIONS:')) {
+            p = p.replace('INSTRUCTIONS:', `${existingQuestionsContext}\nINSTRUCTIONS:`);
+          } else {
+            p = `${existingQuestionsContext}\n${p}`;
+          }
+        }
+        return p;
+      };
 
       // Retry logic: regenerate until we get valid JSON
       const maxRetries = 5;
