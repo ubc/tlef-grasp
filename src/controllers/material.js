@@ -3,6 +3,8 @@ const { isUserInCourse } = require('../services/user-course');
 const { getCourseById } = require('../services/course');
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
+const { parsePdf } = require('../utils/pdf-parser');
+const { parseDocx } = require('../utils/docx-parser');
 
 const saveMaterialHandler = async (req, res) => {
     try {
@@ -560,11 +562,102 @@ const fetchUrlContentHandler = async (req, res) => {
   }
 };
 
+const uploadFileHandler = async (req, res) => {
+    try {
+        const file = req.file;
+        const { courseId, sourceId, documentTitle } = req.body;
+        const userId = req.user.id;
+
+        if (!file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        if (!courseId) {
+            return res.status(400).json({ error: "courseId is required" });
+        }
+
+        if (!isUserInCourse(userId, courseId)) {
+            return res.status(403).json({ error: "User is not in course" });
+        }
+
+        const fileName = file.originalname.toLowerCase();
+        let content = "";
+        let tokenUsage = 0;
+        
+        console.log(`Processing uploaded file: ${fileName} (${file.size} bytes)`);
+
+        if (file.mimetype === "application/pdf" || fileName.endsWith(".pdf")) {
+            const parsed = await parsePdf(file.buffer);
+            content = parsed.content;
+            tokenUsage = parsed.tokenUsage || 0;
+        } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
+            const parsed = await parseDocx(file.buffer);
+            content = parsed.content;
+            tokenUsage = parsed.tokenUsage || 0;
+        } else if (file.mimetype === "text/plain" || fileName.endsWith(".txt")) {
+            content = file.buffer.toString('utf8');
+        } else if (file.mimetype === "application/msword" || fileName.endsWith(".doc")) {
+             return res.status(400).json({ error: "DOC files are not fully supported for content extraction. Please convert to DOCX or PDF." });
+        } else {
+            return res.status(400).json({ error: "Unsupported file type" });
+        }
+        
+        if (!content || content.trim().length === 0) {
+           return res.status(400).json({ error: "Could not extract content from file" });
+        }
+
+        console.log(`✅ Extraction complete: ${content.length} characters (includes embedded image descriptions)`);
+        console.log(`📊 Total VLM Token Usage for Upload: ${tokenUsage} tokens`);
+
+        const actualSourceId = sourceId || `${courseId}-${Date.now()}-${Math.random()}`;
+
+        // Get course name for RAG metadata
+        let courseName = "Unknown Course";
+        try {
+            const course = await getCourseById(courseId);
+            if (course) {
+                courseName = course.courseName || "Unknown Course";
+            }
+        } catch (courseError) {
+            console.error("Error getting course name:", courseError);
+        }
+
+        // Save to RAG
+        await ragService.addDocumentToRAG(content, {
+            source: file.originalname,
+            type: "file",
+            course: courseName,
+            courseId: courseId,
+            sourceId: actualSourceId,
+            documentTitle: documentTitle || file.originalname,
+        }, courseId);
+
+        // Save to Database
+        await saveMaterial(actualSourceId, courseId, {
+            fileType: file.mimetype,
+            fileSize: file.size,
+            fileContent: content, // Save extracted text
+            documentTitle: documentTitle || file.originalname,
+        });
+
+        res.json({
+            success: true,
+            message: "File uploaded and processed successfully",
+            sourceId: actualSourceId,
+            contentLength: content.length
+        });
+    } catch (error) {
+        console.error("Error processing file upload:", error);
+        res.status(500).json({ error: "Failed to process file upload", details: error.message });
+    }
+};
+
 module.exports = {
   saveMaterialHandler,
   deleteMaterialHandler,
   getCourseMaterialsHandler,
   updateMaterialHandler,
   refetchMaterialHandler,
-  fetchUrlContentHandler
+  fetchUrlContentHandler,
+  uploadFileHandler
 };

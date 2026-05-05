@@ -5,7 +5,7 @@
 // Content Processing Class
 class ContentGenerator {
   constructor() {
-    this.pdfService = new PDFParsingService();
+    // PDF parsing is now handled by the backend
   }
 
   async addDocumentToKnowledgeBase(content, metadata = {}) {
@@ -81,89 +81,7 @@ class ContentGenerator {
 
 
 
-  async extractTextFromFile(file) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = (e) => reject(e);
-          reader.readAsText(file);
-        } else if (
-          file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf")
-        ) {
-          // Use PDF parsing service
-          try {
-            const pdfText = await this.pdfService.parsePDFToText(file);
-            resolve(pdfText);
-          } catch (error) {
-            console.error("PDF parsing failed:", error);
-            resolve(
-              `PDF file: ${file.name}\nError: ${error.message}\n\nNote: PDF content could not be extracted.`
-            );
-          }
-        } else if (
-          file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-          file.name.toLowerCase().endsWith(".docx")
-        ) {
-          // Use Mammoth.js for DOCX parsing
-          try {
-            if (typeof window !== "undefined" && window.mammoth) {
-              const arrayBuffer = await file.arrayBuffer();
-              const result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
-              console.log(`DOCX content extracted: ${result.value.length} characters`);
-              if (result.messages && result.messages.length > 0) {
-                console.warn("DOCX parsing warnings:", result.messages);
-              }
-              if (result.value && result.value.length > 0) {
-                resolve(result.value);
-              } else {
-                throw new Error("No content extracted from DOCX file");
-              }
-            } else {
-              throw new Error("Mammoth.js library not available. Please ensure mammoth.js is loaded.");
-            }
-          } catch (error) {
-            console.error("DOCX parsing failed:", error);
-            resolve(
-              `DOCX file: ${file.name}\nError: ${error.message}\n\nNote: DOCX content could not be extracted.`
-            );
-          }
-        } else if (
-          file.type === "application/msword" ||
-          file.name.toLowerCase().endsWith(".doc")
-        ) {
-          // DOC files (older format) - limited browser support
-          resolve(
-            `DOC file: ${file.name}\n\nNote: DOC files (older Word format) have limited browser support. Please convert to DOCX format for better compatibility.`
-          );
-        } else {
-          resolve(`File: ${file.name} (${file.type})`);
-        }
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
 
-  async processFileForRAG(file, course, sourceId = null) {
-    console.log("Processing file for RAG:", file, course, sourceId);
-    try {
-      const content = await this.extractTextFromFile(file);
-
-      if (content) {
-        return await this.addDocumentToKnowledgeBase(content, {
-          course: course.name,
-          courseId: course.id || course._id,
-          sourceId: sourceId,
-        });
-      }
-    } catch (error) {
-      console.error("Error processing file for RAG:", error);
-      return `File: ${file.name} (content could not be extracted)`;
-    }
-  }
 
   async processUrlForRAG(url, course, sourceId = null, documentTitle = null) {
     try {
@@ -235,96 +153,5 @@ class ContentGenerator {
 
 }
 
-// PDF Parsing Service
-class PDFParsingService {
-  constructor() {
-    this.isInitialized = false;
-    this.initializePDFJS();
-  }
-
-  async initializePDFJS() {
-    try {
-      // Configure PDF.js worker
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-        this.isInitialized = true;
-        console.log("PDF.js initialized successfully");
-      } else {
-        console.warn("PDF.js library not loaded");
-      }
-    } catch (error) {
-      console.error("Failed to initialize PDF.js:", error);
-    }
-  }
-
-  async parsePDF(file) {
-    if (!this.isInitialized || !window.pdfjsLib) {
-      throw new Error("PDF.js not initialized");
-    }
-
-    try {
-      console.log("Parsing PDF:", file.name);
-
-      // Convert file to ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-
-      // Load PDF document
-      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer })
-        .promise;
-
-      let fullText = "";
-      const numPages = pdf.numPages;
-
-      console.log(`PDF has ${numPages} pages`);
-
-      // Extract text from each page
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const textContent = await page.getTextContent();
-
-        // Combine text items and clean up formatting
-        const pageText = textContent.items
-          .map((item) => item.str)
-          .join(" ")
-          .replace(/\s+/g, " ") // Replace multiple spaces with single space
-          .replace(/\n\s*\n/g, "\n") // Remove empty lines
-          .trim();
-
-        if (pageText) {
-          fullText += `Page ${pageNum}:\n${pageText}\n\n`;
-        }
-      }
-
-      console.log(`Extracted ${fullText.length} characters from PDF`);
-
-      return {
-        success: true,
-        text: fullText.trim(),
-        pageCount: numPages,
-        fileName: file.name,
-        fileSize: file.size,
-      };
-    } catch (error) {
-      console.error("Error parsing PDF:", error);
-      return {
-        success: false,
-        error: error.message,
-        fileName: file.name,
-      };
-    }
-  }
-
-  async parsePDFToText(file) {
-    const result = await this.parsePDF(file);
-    if (result.success) {
-      return result.text;
-    } else {
-      throw new Error(`PDF parsing failed: ${result.error}`);
-    }
-  }
-}
-
 // Export for use in other files
 window.ContentGenerator = ContentGenerator;
-window.PDFParsingService = PDFParsingService;
