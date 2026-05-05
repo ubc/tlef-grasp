@@ -77,111 +77,54 @@ class QuestionGenerator {
       `=== GENERATING QUESTIONS FOR OBJECTIVE: ${granularLearningObjective.text} ===`
     );
 
-    const questions = [];
-    const failedQuestions = [];
-
-    // Get comprehensive content for this objective
-    // Generate different types of questions based on Bloom's taxonomy
     const bloomLevels = granularLearningObjective.bloom || ["Understand"];
+    
+    let questions = [];
 
-    for (let i = 0; i < bloomLevels.length; i++) {
-      const bloomLevel = bloomLevels[i];
-      console.log(
-        `Creating question ${i + 1}/${
-          bloomLevels.length
-        } with Bloom level: ${bloomLevel}`
+    try {
+      questions = await this.createContextualQuestionsBatch(
+        courseId,
+        courseName,
+        learningObjective.objectiveId,
+        learningObjective.title,
+        granularLearningObjective.granularId,
+        granularLearningObjective.text,
+        bloomLevels,
+        learningObjective.materialIds || []
       );
-
-      let question = null;
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      // Retry logic for individual question generation
-      while (retryCount < maxRetries && !question) {
-        try {
-            question = await this.createContextualQuestion(
-              courseId,
-              courseName,
-              learningObjective.objectiveId,
-              learningObjective.title,
-              granularLearningObjective.granularId,
-              granularLearningObjective.text,
-              bloomLevel,
-              i + 1,
-              learningObjective.materialIds || [],
-              questions
-            );
-
-          console.log(`✅ Created question ${i + 1}:`, question.text);
-          questions.push(question);
-          
-          // Add a small delay between questions to avoid rate limiting
-          if (i < bloomLevels.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        } catch (error) {
-          retryCount++;
-          console.warn(
-            `⚠️ Failed to generate question ${i + 1} (attempt ${retryCount}/${maxRetries}):`,
-            error.message
-          );
-          
-          if (retryCount < maxRetries) {
-            // Wait before retrying (exponential backoff)
-            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
-            console.log(`Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          } else {
-            console.error(
-              `❌ Failed to generate question ${i + 1} after ${maxRetries} attempts:`,
-              error.message
-            );
-            failedQuestions.push({
-              questionNumber: i + 1,
-              bloomLevel: bloomLevel,
-              error: error.message
-            });
-            // Continue with next question instead of stopping
-          }
-        }
-      }
+    } catch (error) {
+      console.error(
+        `❌ Failed to generate questions for objective: ${granularLearningObjective.text}`,
+        error.message
+      );
+      throw error;
     }
 
     console.log(
       `Generated ${questions.length}/${bloomLevels.length} questions for objective: ${granularLearningObjective.text}`
     );
     
-    if (failedQuestions.length > 0) {
-      console.warn(
-        `⚠️ Failed to generate ${failedQuestions.length} question(s):`,
-        failedQuestions
-      );
-    }
-    
-    // If we got at least some questions, return them. Otherwise throw error.
     if (questions.length === 0) {
       throw new Error(
-        `Failed to generate any questions for objective: ${granularLearningObjective.text}. All ${bloomLevels.length} attempts failed.`
+        `Failed to generate any questions for objective: ${granularLearningObjective.text}.`
       );
     }
     
     return questions;
   }
 
-  // Create a contextual question based on content and Bloom's taxonomy
-  async createContextualQuestion(
+  // Create contextual questions batch based on content and Bloom's taxonomy
+  async createContextualQuestionsBatch(
     courseId,
     courseName,
     learningObjectiveId,
     learningObjectiveText,
     granularLearningObjectiveId,
     granularLearningObjectiveText,
-    bloomLevel,
-    questionNumber,
-    materialIds = [],
-    existingQuestions = []
+    bloomLevels,
+    materialIds = []
   ) {
-    console.log(`Generating LLM question for objective: ${learningObjectiveText}`);
+    console.log(`Generating LLM batch questions for objective: ${learningObjectiveText}`);
 
     try {
         const llmResponse = await fetch('/api/rag-llm/generate-questions-with-rag', {
@@ -192,9 +135,8 @@ class QuestionGenerator {
             learningObjectiveId: learningObjectiveId,
             learningObjectiveText: learningObjectiveText,
             granularLearningObjectiveText: granularLearningObjectiveText,
-            bloomLevel: bloomLevel,
+            bloomLevels: bloomLevels,
             materialIds: materialIds,
-            existingQuestions: existingQuestions.map(q => q.text),
           }),
           headers: {
             'Content-Type': 'application/json',
@@ -215,28 +157,28 @@ class QuestionGenerator {
           );
         }
         
-        if (!response.question) {
-          throw new Error("Invalid response: question data missing");
+        if (!response.questions || !Array.isArray(response.questions)) {
+          throw new Error("Invalid response: questions array missing");
         }
         
-        const questionData = response.question;
-
-        return {
-          id: `${granularLearningObjectiveId}-${questionNumber}`,
-          granularObjectiveId: `${granularLearningObjectiveId}`,
-          text: questionData.question,
-          type: "multiple-choice",
-          options: questionData.options,
-          correctAnswer: questionData.correctAnswer,
-          bloomLevel: bloomLevel,
-          metaCode: learningObjectiveText,
-          loCode: granularLearningObjectiveText,
-          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-          by: "LLM + RAG System",
-          explanation: questionData.explanation,
-        };
+        return response.questions.map((questionData, index) => {
+          return {
+            id: `${granularLearningObjectiveId}-${index + 1}-${Date.now()}`,
+            granularObjectiveId: `${granularLearningObjectiveId}`,
+            text: questionData.question,
+            type: "multiple-choice",
+            options: questionData.options,
+            correctAnswer: questionData.correctAnswer,
+            bloomLevel: bloomLevels[index] || "Understand",
+            metaCode: learningObjectiveText,
+            loCode: granularLearningObjectiveText,
+            lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
+            by: "LLM + RAG System",
+            explanation: questionData.explanation,
+          };
+        });
     } catch (error) {
-      console.error(`Error generating question ${questionNumber}:`, error);
+      console.error(`Error generating batch questions:`, error);
       throw error;
     }
   }

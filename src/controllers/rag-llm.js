@@ -166,7 +166,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, materialIds, existingQuestions } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -174,13 +174,13 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
-    console.log("Bloom Level:", bloomLevel);
+    console.log("Bloom Levels:", bloomLevels);
 
     // Validate required parameters
-    if (!courseName || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
+    if (!courseName || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevels || !Array.isArray(bloomLevels)) {
       return res.status(400).json({
         error: "Missing required parameters",
-        details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
+        details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevels array are required",
       });
     }
 
@@ -207,7 +207,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
-    console.log("Bloom Level:", bloomLevel);
+    console.log("Bloom Levels:", bloomLevels);
 
     // Try to use RAG for content retrieval
     console.log("=== USING getLearningObjectiveRagContent ===");
@@ -246,147 +246,137 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context
-      let existingQuestionsContext = '';
-      if (existingQuestions && existingQuestions.length > 0) {
-        existingQuestionsContext = `\nPREVIOUSLY GENERATED QUESTIONS (DO NOT DUPLICATE THESE):\n` + existingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n') + `\n`;
-      }
-
-      const createPrompt = () => {
+      const createFirstPrompt = (bloomLevel) => {
         let p = promptTemplate
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{ragContext}', ragContext || '');
 
+        // Fallback cleanup in case the database prompt still has the obsolete placeholder
         if (p.includes('{existingQuestionsContext}')) {
-          p = p.replace('{existingQuestionsContext}', existingQuestionsContext);
-        } else if (existingQuestionsContext) {
-          if (p.includes('INSTRUCTIONS:')) {
-            p = p.replace('INSTRUCTIONS:', `${existingQuestionsContext}\nINSTRUCTIONS:`);
-          } else {
-            p = `${existingQuestionsContext}\n${p}`;
-          }
+          p = p.replace('{existingQuestionsContext}', '');
         }
+        
         return p;
       };
 
-      // Retry logic: regenerate until we get valid JSON
-      const maxRetries = 5;
-      let questionData = null;
-      let lastError = null;
+      const questionsData = [];
+      const successfulHistory = []; // store {role, content} to rebuild conversation on retry
+      const maxRetries = 3;
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
-          const response = await llmModule.sendMessage(createPrompt());
-          console.log("Full Prompt: ", createPrompt());
+      for (let i = 0; i < bloomLevels.length; i++) {
+        const currentBloomLevel = bloomLevels[i];
+        let questionData = null;
+        let lastError = null;
 
-          console.log("✅ LLM service response received");
-          console.log(
-            "Response format:",
-            typeof response,
-            response ? Object.keys(response) : "null"
-          );
-
-          // Extract content from response
-          // sendMessage returns { content, model, usage, metadata }
-          let responseContent;
-          if (response && typeof response === "object") {
-            responseContent =
-              response.content || response.text || response.message || JSON.stringify(response);
-          } else {
-            responseContent = response;
-          }
-
-          console.log("Response content:", responseContent);
-
-          if (!responseContent) {
-            throw new Error("Empty response from LLM");
-          }
-
-          // Try to parse JSON response
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
-            // Use safe JSON parser that handles LaTeX and other edge cases
+            // Build conversation from successful history
+            const conversation = llmModule.createConversation();
+            for (const msg of successfulHistory) {
+              conversation.addMessage(msg.role, msg.content);
+            }
+
+            // Add the new prompt for this turn
+            let turnPrompt;
+            if (i === 0) {
+               turnPrompt = createFirstPrompt(currentBloomLevel);
+            } else {
+               turnPrompt = `Now generate another question for this granular learning objective, but specifically targeting Bloom's Taxonomy Level: ${currentBloomLevel}. 
+Ensure the question tests a completely different concept or facet of the objective than the previously generated questions. 
+Respond with ONLY a single valid JSON object following the exact same structure. Do not include any other text or markdown blocks.`;
+            }
+            
+            conversation.addMessage('user', turnPrompt);
+
+            console.log(`Sending prompt to LLM service (Question ${i+1}/${bloomLevels.length}, attempt ${attempt}/${maxRetries})...`);
+            
+            // Send the request
+            const response = await conversation.send();
+            
+            // Log Token Usage
+            if (response.usage) {
+              console.log(`📊 Token Usage for Question ${i+1}:`);
+              console.log(`   - Prompt tokens: ${response.usage.promptTokens || 0}`);
+              console.log(`   - Completion tokens: ${response.usage.completionTokens || 0}`);
+              console.log(`   - Total tokens: ${response.usage.totalTokens || 0}`);
+              
+              // Note: ubc-genai-toolkit-llm normalizes usage to camelCase and drops provider-specific 
+              // fields like 'cached_tokens'. The prompt caching is still happening on OpenAI's servers, 
+              // but we can't log the exact "Saved" number here without modifying the toolkit itself.
+            }
+            
+            let responseContent = response.content || response.text || response.message || JSON.stringify(response);
+            
+            if (!responseContent) throw new Error("Empty response from LLM");
+
             questionData = safeJsonParse(responseContent);
 
-            // Validate that we have the required fields
             if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
               throw new Error("Missing required fields in JSON response");
             }
 
-            // If we got here, parsing was successful
-            console.log(`✅ Successfully parsed JSON on attempt ${attempt}`);
-            break;
+            console.log(`✅ Successfully generated question ${i+1}`);
+            
+            // Save to successful history
+            successfulHistory.push({ role: 'user', content: turnPrompt });
+            successfulHistory.push({ role: 'assistant', content: responseContent });
+            
+            break; // Success, break retry loop
 
-          } catch (parseError) {
-            lastError = parseError;
-            console.warn(`❌ JSON parsing failed on attempt ${attempt}:`, parseError.message);
-            if (attempt < maxRetries) {
-              console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
-              continue;
-            } else {
-              throw parseError;
+          } catch (error) {
+             lastError = error;
+             console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
+             if (attempt === maxRetries) {
+                console.error(`Failed to generate question ${i+1} after all retries.`);
+             } else {
+                console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
+             }
+          }
+        }
+
+        if (questionData) {
+          // Programmatically scramble the generated options to guarantee uniform true randomness 
+          // and defeat the LLM's inherent statistical bias toward picking B or C before sending it 
+          // back to the UI for preview.
+          if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
+            const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+            const optionValues = optionKeys.map(k => questionData.options[k]);
+            
+            for (let j = optionValues.length - 1; j > 0; j--) {
+              const k = Math.floor(Math.random() * (j + 1));
+              [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
             }
+            
+            const originalCorrectValue = questionData.options[questionData.correctAnswer];
+            let newCorrectKey = questionData.correctAnswer;
+            
+            for (let j = 0; j < optionKeys.length; j++) {
+              const key = optionKeys[j];
+              questionData.options[key] = optionValues[j];
+              if (optionValues[j] === originalCorrectValue) {
+                newCorrectKey = key;
+              }
+            }
+            
+            const correctOptionLetter = questionData.correctAnswer;
+            questionData.correctAnswer = newCorrectKey;
+            console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
           }
 
-        } catch (error) {
-          lastError = error;
-          console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
-          if (attempt < maxRetries) {
-            console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
-            continue;
-          } else {
-            throw error;
-          }
+          questionsData.push(questionData);
         }
       }
 
-      // If we still don't have valid questionData after all retries, throw error
-      if (!questionData) {
-        throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
-      }
-
-      // Verify that the correct answer text exists organically in the selected position
-      const correctOptionLetter = questionData.correctAnswer;
-      const correctOption = questionData.options ? questionData.options[correctOptionLetter] : null;
-      if (correctOption) {
-        const textToLog = typeof correctOption === 'string' ? correctOption : (correctOption.text || "");
-        console.log(`✅ Correct answer organically located at position ${correctOptionLetter}: "${textToLog.substring(0, 50)}..."`);
-      } else {
-        console.warn(`⚠️ Warning: No option found at the LLM's selected position ${correctOptionLetter}, but continuing anyway`);
-      }
-
-      // Programmatically scramble the generated options to guarantee uniform true randomness 
-      // and defeat the LLM's inherent statistical bias toward picking B or C before sending it 
-      // back to the UI for preview.
-      if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
-        const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
-        const optionValues = optionKeys.map(k => questionData.options[k]);
-        
-        for (let i = optionValues.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [optionValues[i], optionValues[j]] = [optionValues[j], optionValues[i]];
-        }
-        
-        const originalCorrectValue = questionData.options[questionData.correctAnswer];
-        let newCorrectKey = questionData.correctAnswer;
-        
-        for (let i = 0; i < optionKeys.length; i++) {
-          const key = optionKeys[i];
-          questionData.options[key] = optionValues[i];
-          if (optionValues[i] === originalCorrectValue) {
-            newCorrectKey = key;
-          }
-        }
-        
-        questionData.correctAnswer = newCorrectKey;
-        console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey} to perfectly bypass LLM model bias`);
+      if (questionsData.length === 0) {
+        throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
       res.json({
         success: true,
-        question: questionData,
-        method: "RAG + LLM Service",
+        questions: questionsData,
+        method: "RAG + LLM Stateful Conversation",
       });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
