@@ -1,10 +1,12 @@
-const { PNG } = require("pngjs");
+const sharp = require("sharp");
 const llmService = require("../services/llm");
+const fs = require("fs").promises;
+const path = require("path");
 
 async function describeImage(base64Image, contextText) {
   try {
     const llmModule = await llmService.getLLMInstance();
-    const prompt = `You are an educational assistant. Describe the following image in detail. Use the surrounding text to provide context. Focus on data, charts, diagrams, and educational concepts. Ignore decorative elements like logos or borders. Surrounding text context: "${contextText}"\nRespond ONLY in valid JSON format with a single key "description" containing your detailed description. If the image is merely decorative and contains no educational value, set the description to "decorative".`;
+    const prompt = `You are an expert data extractor. You MUST precisely transcribe EVERY single word, number, equation, and label visible in the image. Do NOT skip any text, even if it is a large heading, handwritten, or appears to be a definition. Treat the image as the single source of truth. After transcribing all text exactly as written, describe the visual relationships, diagrams, or charts. Surrounding text context is provided for understanding, not as an excuse to skip text: "${contextText}"\nRespond ONLY in valid JSON format with a single key "description" containing your full transcription and description. If the image is entirely decorative, set the description to "decorative".`;
     
     const message = [
       { type: "text", text: prompt },
@@ -20,17 +22,13 @@ async function describeImage(base64Image, contextText) {
       const parsed = JSON.parse(cleanContent);
       description = parsed.description || "";
     } catch (e) {
-      // Fallback if not perfectly parsed
       description = rawContent;
     }
     
     const usage = response.usage || { totalTokens: 0 };
-    
     if (description.toLowerCase().includes("decorative") && description.length < 150) {
-      console.log(`⚠️ Image ignored (classified as decorative)`);
       return { description: null, usage };
     }
-    
     return { description, usage };
   } catch (error) {
     console.error("Error describing image:", error);
@@ -38,152 +36,166 @@ async function describeImage(base64Image, contextText) {
   }
 }
 
+/**
+ * Clusters individual OCR items into cohesive "image blocks" based on spatial proximity.
+ */
+function clusterOcrItems(items, threshold = 60) {
+  if (items.length === 0) return [];
+  const clusters = [];
+  for (const item of items) {
+    let assigned = false;
+    for (const cluster of clusters) {
+      const b = cluster.bbox;
+      const isClose = !(item.x > b.x + b.w + threshold || 
+                        item.x + item.width < b.x - threshold || 
+                        item.y > b.y + b.h + threshold ||
+                        item.y + item.height < b.y - threshold);
+      if (isClose) {
+        cluster.items.push(item);
+        const x1 = Math.min(b.x, item.x);
+        const y1 = Math.min(b.y, item.y);
+        const x2 = Math.max(b.x + b.w, item.x + item.width);
+        const y2 = Math.max(b.y + b.h, item.y + item.height);
+        cluster.bbox = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      clusters.push({ items: [item], bbox: { x: item.x, y: item.y, w: item.width, h: item.height } });
+    }
+  }
+  return clusters;
+}
+
+/**
+ * Pure Node.js Hybrid Parser:
+ * 1. LiteParse for layout analysis and local OCR detection.
+ * 2. Sharp for targeted image extraction.
+ * 3. VLM (OpenAI) as a "Visual Healer" for equations and diagrams.
+ * 4. NFKC Normalization for robust searchability.
+ */
 async function parsePdf(buffer) {
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  
-  // Workaround for standard fonts
-  const standardFontDataUrl = new URL(
-    'pdfjs-dist/standard_fonts/',
-    'file://' + require.resolve('pdfjs-dist/package.json')
-  ).href;
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer),
-    standardFontDataUrl: standardFontDataUrl,
-  });
-  
-  // Import LiteParse dynamically for ES module compatibility
   const { LiteParse } = await import("@llamaindex/liteparse");
-  const parser = new LiteParse({ ocrEnabled: false });
+  const parser = new LiteParse({ ocrEnabled: true });
 
-  const pdfDocument = await loadingTask.promise;
-  const numPages = pdfDocument.numPages;
-  let fullText = "";
-  let totalTokens = 0;
+  console.log(`Starting Pure Node PDF extraction...`);
+  
+  try {
+    const result = await parser.parse(buffer);
+    let fullText = "";
+    let totalTokens = 0;
 
-  console.log(`Parsing PDF with ${numPages} pages...`);
+    for (const page of result.pages) {
+      const pageNum = page.pageNum;
+      let pageText = page.text;
+      
+      const ocrItems = page.textItems.filter(item => item.fontName === 'OCR');
+      
+      // The visual path is ONLY triggered if LiteParse explicitly found an image region.
+      const hasImages = ocrItems.length > 0;
 
-  for (let i = 1; i <= numPages; i++) {
-    const page = await pdfDocument.getPage(i);
-    const textContent = await page.getTextContent();
-    let pageText = textContent.items.map(item => item.str).join(" ").replace(/\s+/g, " ");
-    
-    let complexFallbackNeeded = false;
-    let extractedImages = [];
-    
-    try {
-      const ops = await page.getOperatorList();
-      for (let j = 0; j < ops.fnArray.length; j++) {
-        if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject) {
-          try {
-            const imgName = ops.argsArray[j][0];
+      if (hasImages) {
+        console.log(`📸 Visual content detected on page ${pageNum}. Processing...`);
+        try {
+          const screenshots = await parser.screenshot(buffer, [pageNum]);
+          if (screenshots && screenshots.length > 0) {
+            const pageImage = screenshots[0];
+            const scaleX = pageImage.width / page.width;
+            const scaleY = pageImage.height / page.height;
+            const padding = 50;
+
+            let regions = [];
+            let clusters = [];
             
-            const img = await new Promise((resolve) => {
-              const timeout = setTimeout(() => {
-                console.warn(`Timeout waiting for image object ${imgName} on page ${i}. Triggering full-page fallback...`);
-                resolve(null);
-              }, 2000); 
+            if (ocrItems.length > 0) {
+              clusters = clusterOcrItems(ocrItems);
+            }
+
+            if (clusters.length === 1) {
+              // Page has 1 image -> Extract individually (full res, cheaper)
+              // We use a generous padding (e.g., 50px) below to prevent cutting off handwritten text 
+              // that might sit just outside the strict OCR bounding box.
+              regions = [{
+                bbox: clusters[0].bbox,
+                items: clusters[0].items,
+                isFullPage: false
+              }];
+            } else {
+              // Page has 2+ images (or 0 as fallback) -> Screenshot the whole page (context wins)
+              regions = [{
+                bbox: { x: 0, y: 0, w: page.width, h: page.height },
+                items: ocrItems,
+                isFullPage: true
+              }];
+            }
+
+            for (const region of regions) {
+              const b = region.bbox;
+              const p = region.isFullPage ? 0 : padding;
+              
+              const crop = {
+                left: Math.round(Math.max(0, (b.x - p) * scaleX)),
+                top: Math.round(Math.max(0, (b.y - p) * scaleY)),
+                width: Math.round(Math.min(pageImage.width, (b.w + p * 2) * scaleX)),
+                height: Math.round(Math.min(pageImage.height, (b.h + p * 2) * scaleY))
+              };
+
+              if (!region.isFullPage && (crop.width < 50 || crop.height < 50)) continue;
 
               try {
-                page.objs.get(imgName, (data) => {
-                  clearTimeout(timeout);
-                  resolve(data);
-                });
-              } catch (e) {
-                clearTimeout(timeout);
-                resolve(null);
-              }
-            });
-            
-            if (!img) {
-               complexFallbackNeeded = true;
-               break; 
-            }
-            
-            // Filter out small images (likely decorative)
-            if (img && img.width > 100 && img.height > 100) {
-              const png = new PNG({ width: img.width, height: img.height });
-              
-              if (img.data.length === img.width * img.height * 4) {
-                png.data = Buffer.from(img.data);
-              } else if (img.data.length === img.width * img.height * 3) {
-                for (let k = 0, p = 0; k < img.data.length; k += 3, p += 4) {
-                  png.data[p] = img.data[k];
-                  png.data[p + 1] = img.data[k + 1];
-                  png.data[p + 2] = img.data[k + 2];
-                  png.data[p + 3] = 255;
+                const croppedBuffer = await sharp(pageImage.imageBuffer)
+                  .extract(crop)
+                  .toBuffer();
+                
+                const base64 = croppedBuffer.toString('base64');
+                const contextText = pageText;  
+                
+                const vlmResult = await describeImage(base64, contextText);
+                
+                if (vlmResult && vlmResult.usage) {
+                  totalTokens += vlmResult.usage.totalTokens || vlmResult.usage.total_tokens || 0;
                 }
-              } else if (img.data.length === img.width * img.height) {
-                for (let k = 0, p = 0; k < img.data.length; k++, p += 4) {
-                  png.data[p] = img.data[k];
-                  png.data[p + 1] = img.data[k];
-                  png.data[p + 2] = img.data[k];
-                  png.data[p + 3] = 255;
+                
+                if (vlmResult && vlmResult.description) {
+                  const descBlock = `\n\n[Visual/Scientific Content: ${vlmResult.description}]\n\n`;
+                  
+                  if (!region.isFullPage && region.items.length > 0) {
+                    // Find the longest OCR string to use as a reliable anchor
+                    const longestItem = [...region.items].sort((a, b) => b.str.length - a.str.length)[0];
+                    
+                    if (longestItem && longestItem.str.length > 3 && pageText.includes(longestItem.str)) {
+                      // Insert the description block right before the anchor to maintain logical flow, without deleting anything
+                      pageText = pageText.replace(longestItem.str, descBlock + longestItem.str);
+                    } else {
+                      // If no reliable anchor, append to the end of the page
+                      pageText += descBlock;
+                    }
+                  } else {
+                    // Prepend the visual context for broken equations/sparse pages
+                    pageText = descBlock + pageText;
+                  }
                 }
-              } else {
-                 console.warn("Unsupported image format on page", i);
-                 complexFallbackNeeded = true;
-                 break;
+              } catch (cropErr) {
+                console.warn(`Error processing region on page ${pageNum}:`, cropErr.message);
               }
-              
-              const base64 = PNG.sync.write(png).toString('base64');
-              extractedImages.push(base64);
             }
-          } catch (e) {
-             console.warn(`Error extracting image natively: ${e.message}. Triggering fallback...`);
-             complexFallbackNeeded = true;
-             break;
           }
+        } catch (e) {
+          console.warn(`Fallback: Error in visual processing for page ${pageNum}:`, e.message);
         }
       }
-    } catch (e) {
-      console.warn(`Could not check for images on page ${i}:`, e.message);
+
+      pageText = pageText.replace(/\s+/g, " ").trim();
+      fullText += `Page ${pageNum}:\n${pageText}\n\n`;
     }
     
-    if (complexFallbackNeeded) {
-      try {
-        console.log(`📸 Complex images detected on page ${i}. Using LiteParse to snapshot the full page...`);
-        const screenshots = await parser.screenshot(Buffer.from(buffer), [i]);
-        
-        if (screenshots && screenshots.length > 0) {
-          const base64 = screenshots[0].imageBuffer.toString('base64');
-          const contextText = pageText.substring(0, 500); 
-          
-          const result = await describeImage(base64, contextText);
-          
-          if (result && result.usage) {
-             totalTokens += result.usage.totalTokens || result.usage.total_tokens || 0;
-          }
-          
-          if (result && result.description) {
-            console.log(`✅ Page ${i} visual content described successfully: "${result.description.substring(0, 50)}..."`);
-            pageText += `\n\n[Visual Content Description: ${result.description}]\n\n`;
-          }
-        }
-      } catch (e) {
-        console.warn(`Error generating screenshot for page ${i}:`, e.message);
-      }
-    } else if (extractedImages.length > 0) {
-      console.log(`📸 Successfully extracted ${extractedImages.length} individual image(s) from page ${i}...`);
-      for (const base64 of extractedImages) {
-        const contextText = pageText.substring(0, 500);
-        const result = await describeImage(base64, contextText);
-        
-        if (result && result.usage) {
-          totalTokens += result.usage.totalTokens || result.usage.total_tokens || 0;
-        }
-        
-        if (result && result.description) {
-          console.log(`✅ Image described successfully: "${result.description.substring(0, 50)}..."`);
-          pageText += `\n\n[Image Description: ${result.description}]\n\n`;
-        }
-      }
-    }
-    
-    fullText += `Page ${i}:\n${pageText}\n\n`;
+    const normalizedContent = fullText.trim().normalize('NFKC');
+    return { content: normalizedContent, tokenUsage: totalTokens };
+  } catch (error) {
+    console.error("Critical Error parsing PDF with LiteParse:", error);
+    throw error;
   }
-  
-  return { content: fullText.trim(), tokenUsage: totalTokens };
 }
 
 module.exports = { parsePdf };
