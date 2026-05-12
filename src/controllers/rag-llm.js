@@ -166,7 +166,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds, count } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -175,6 +175,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
     console.log("Bloom Levels:", bloomLevels);
+    console.log("Requested Count:", count);
 
     // Validate required parameters
     if (!courseName || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevels || !Array.isArray(bloomLevels)) {
@@ -208,6 +209,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
     console.log("Bloom Levels:", bloomLevels);
+    console.log("Target Count:", count);
 
     // Try to use RAG for content retrieval
     console.log("=== USING getLearningObjectiveRagContent ===");
@@ -264,9 +266,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       const questionsData = [];
       const successfulHistory = []; // store {role, content} to rebuild conversation on retry
       const maxRetries = 3;
+      const targetCount = parseInt(count) || bloomLevels.length || 1;
 
-      for (let i = 0; i < bloomLevels.length; i++) {
-        const currentBloomLevel = bloomLevels[i];
+      for (let i = 0; i < targetCount; i++) {
+        const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
         let questionData = null;
         let lastError = null;
 
@@ -290,7 +293,7 @@ Respond with ONLY a single valid JSON object following the exact same structure.
             
             conversation.addMessage('user', turnPrompt);
 
-            console.log(`Sending prompt to LLM service (Question ${i+1}/${bloomLevels.length}, attempt ${attempt}/${maxRetries})...`);
+            console.log(`Sending prompt to LLM service (Question ${i+1}/${targetCount}, attempt ${attempt}/${maxRetries})...`);
             
             // Send the request
             const response = await conversation.send();
@@ -301,10 +304,6 @@ Respond with ONLY a single valid JSON object following the exact same structure.
               console.log(`   - Prompt tokens: ${response.usage.promptTokens || 0}`);
               console.log(`   - Completion tokens: ${response.usage.completionTokens || 0}`);
               console.log(`   - Total tokens: ${response.usage.totalTokens || 0}`);
-              
-              // Note: ubc-genai-toolkit-llm normalizes usage to camelCase and drops provider-specific 
-              // fields like 'cached_tokens'. The prompt caching is still happening on OpenAI's servers, 
-              // but we can't log the exact "Saved" number here without modifying the toolkit itself.
             }
             
             let responseContent = response.content || response.text || response.message || JSON.stringify(response);
@@ -337,9 +336,7 @@ Respond with ONLY a single valid JSON object following the exact same structure.
         }
 
         if (questionData) {
-          // Programmatically scramble the generated options to guarantee uniform true randomness 
-          // and defeat the LLM's inherent statistical bias toward picking B or C before sending it 
-          // back to the UI for preview.
+          // Programmatically scramble the generated options 
           if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
             const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
             const optionValues = optionKeys.map(k => questionData.options[k]);
@@ -364,6 +361,9 @@ Respond with ONLY a single valid JSON object following the exact same structure.
             questionData.correctAnswer = newCorrectKey;
             console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
           }
+          
+          // Add the bloom level to the question data so the UI knows which level it belongs to
+          questionData.bloomLevel = currentBloomLevel;
 
           questionsData.push(questionData);
         }

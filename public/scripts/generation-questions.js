@@ -90,7 +90,8 @@ class QuestionGenerator {
         granularLearningObjective.granularId,
         granularLearningObjective.text,
         bloomLevels,
-        learningObjective.materialIds || []
+        learningObjective.materialIds || [],
+        granularLearningObjective.count
       );
     } catch (error) {
       console.error(
@@ -122,7 +123,8 @@ class QuestionGenerator {
     granularLearningObjectiveId,
     granularLearningObjectiveText,
     bloomLevels,
-    materialIds = []
+    materialIds = [],
+    count
   ) {
     console.log(`Generating LLM batch questions for objective: ${learningObjectiveText}`);
 
@@ -137,6 +139,7 @@ class QuestionGenerator {
             granularLearningObjectiveText: granularLearningObjectiveText,
             bloomLevels: bloomLevels,
             materialIds: materialIds,
+            count: count,
           }),
           headers: {
             'Content-Type': 'application/json',

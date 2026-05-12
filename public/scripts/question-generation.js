@@ -1652,7 +1652,7 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
           text: granular.name,
           bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
           minQuestions: 2,
-          count: 2,
+          count: granular.questionCount || Math.max(2, (granular.bloomTaxonomies?.length || 0)),
           mode: "manual",
           level: 1,
           selected: false,
@@ -1759,6 +1759,9 @@ async function deleteGranularObjective(groupId, itemId) {
   // Update UI and announce
   renderObjectiveGroups();
   announceToScreenReader(`Deleted granular objective: ${item.text}`);
+
+  // Persist deletion to database
+  await saveObjectiveToDatabase(groupId);
 }
 
 // ===== GRANULAR SELECTION FUNCTIONS =====
@@ -2076,10 +2079,15 @@ function createObjectiveGroup(group) {
                 >
                     <i class="fas fa-trash-alt"></i>
                 </button>
-                <div class="objective-group__title-text"
-                    title="This title is read-only on this page"
-                    style="padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; line-height: 1.4; min-height: 1.4em;"
-                >${typeof parseSmilesTags === 'function' ? parseSmilesTags(currentName) : currentName.replace(/"/g, '&quot;')}</div>
+                <textarea class="objective-group__title-input" rows="1"
+                    title="Edit learning objective title"
+                    onblur="updateMetaObjectiveTitle(${group.id}, this.value)"
+                    onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
+                    oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                    style="background: transparent; border: 1px solid transparent; padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; line-height: 1.4; min-height: 1.4em; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden;"
+                    onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                    onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
+                >${currentName.replace(/"/g, '&quot;')}</textarea>
             </div>
             <div class="objective-group__header-right">
                 <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id})">
@@ -2195,9 +2203,7 @@ function createObjectiveItem(item, groupId) {
             <div class="objective-item__content" style="flex: 1; min-width: 0;">
                 <div class="objective-item__header" style="flex: 1; display: flex; width: 100%; min-width: 0;">
                     <div class="objective-item__text" style="flex: 1; width: 100%; min-width: 0;">
-                        ${item.granularId 
-                          ? `<div class="granular-objective-text" style="padding: 4px; margin: 0; width: 100%; box-sizing: border-box; font-family: inherit; font-size: inherit; color: inherit; line-height: 1.4; min-height: 1.4em;">${typeof parseSmilesTags === 'function' ? parseSmilesTags(item.text) : item.text.replace(/"/g, '&quot;')}</div>`
-                          : `<textarea class="granular-objective-input" rows="1"
+                        <textarea class="granular-objective-input" rows="1"
                             title="Enter granular objective"
                             onblur="updateGranularObjectiveText(${groupId}, ${item.id}, this.value)"
                             onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
@@ -2205,7 +2211,7 @@ function createObjectiveItem(item, groupId) {
                             style="background: transparent; border: 1px solid transparent; padding: 4px; margin: 0; width: 100%; box-sizing: border-box; font-family: inherit; font-size: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
                             onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
                             onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
-                        >${item.text.replace(/"/g, '&quot;')}</textarea>`}
+                        >${item.text.replace(/"/g, '&quot;')}</textarea>
                     </div>
                     ${subLOBadge}
                 </div>
@@ -2216,6 +2222,17 @@ function createObjectiveItem(item, groupId) {
                     ${bloomModeToggle}
                 </div>
                 ${bloomValidationMessage}
+            </div>
+            <div class="objective-item__tools">
+                <div class="objective-item__stepper">
+                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id})" ${item.count >= 9 ? "disabled" : ""}>
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <span class="stepper-value">${item.count}</span>
+                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id})" ${item.count <= Math.max(2, item.bloom.length) ? "disabled" : ""}>
+                        <i class="fas fa-minus"></i>
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -2239,6 +2256,11 @@ function toggleBloomChip(groupId, itemId, level) {
       item.bloom.splice(index, 1);
     } else {
       item.bloom.push(level);
+      
+      // Ensure count >= bloom.length
+      if (item.count < item.bloom.length) {
+        item.count = item.bloom.length;
+      }
     }
     renderObjectiveGroups();
     
@@ -2253,9 +2275,8 @@ function toggleBloomChip(groupId, itemId, level) {
  * Handle auto-saving Bloom taxonomy changes
  */
 async function updateGranularObjectiveBloom(groupId) {
-  // Database updates disabled on this page.
-  // Bloom selections are maintained in state.objectiveGroups for the current session.
-  return;
+  // Call database save function
+  await saveObjectiveToDatabase(groupId);
 }
 
 function setBloomMode(groupId, itemId, mode) {
@@ -2271,7 +2292,7 @@ function setBloomMode(groupId, itemId, mode) {
   }
 }
 
-function incrementCount(groupId, itemId) {
+async function incrementCount(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   const item = group?.items.find((i) => i.id === itemId);
 
@@ -2279,17 +2300,24 @@ function incrementCount(groupId, itemId) {
     item.count++;
     renderObjectiveGroups();
     announceToScreenReader(`Count increased to ${item.count}`);
+    await saveObjectiveToDatabase(groupId);
   }
 }
 
-function decrementCount(groupId, itemId) {
+async function decrementCount(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   const item = group?.items.find((i) => i.id === itemId);
 
-  if (item && item.count > item.minQuestions) {
+  if (!item) return;
+
+  // Requirement: count >= bloom.length (minimum 2)
+  const minAllowed = Math.max(2, (item.bloom?.length || 0));
+
+  if (item.count > minAllowed) {
     item.count--;
     renderObjectiveGroups();
     announceToScreenReader(`Count decreased to ${item.count}`);
+    await saveObjectiveToDatabase(groupId);
   }
 }
 
@@ -2297,16 +2325,6 @@ function decrementCount(groupId, itemId) {
 
 async function editMetaObjective(groupId) {
   showToast("Learning objective settings are managed through the dedicated UI", "info");
-  return;
-}
-
-/**
- * Handle inline title edits for Meta Learning Objectives
- */
-async function updateMetaObjectiveTitle(groupId, newTitle) {
-  // Title changes are disabled for existing meta objectives on this page.
-  // This function is kept for structural consistency but does not update DB.
-  renderObjectiveGroups(); 
   return;
 }
 
@@ -2335,7 +2353,107 @@ async function updateGranularObjectiveText(groupId, itemId, newText) {
   
   // Background render to clean up focus states
   renderObjectiveGroups();
+
+  // Persist change to database
+  await saveObjectiveToDatabase(groupId);
 }
+
+/**
+ * Handle inline text edits for Meta Objectives
+ */
+async function updateMetaObjectiveTitle(groupId, newTitle) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group) return;
+
+  const trimmedTitle = newTitle.trim();
+
+  // Abort if no change or empty
+  if (!trimmedTitle || group.title.trim() === trimmedTitle) {
+    if (!trimmedTitle) {
+      renderObjectiveGroups();
+    }
+    return;
+  }
+
+  // Update local state only (session-only)
+  group.title = trimmedTitle;
+
+  // Background render to clean up focus states
+  renderObjectiveGroups();
+
+  // Persist change to database
+  await saveObjectiveToDatabase(groupId);
+}
+
+/**
+ * Save updated objective and its granular objectives to the database
+ */
+async function saveObjectiveToDatabase(groupId) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group || !group.objectiveId) return;
+
+  const courseId = getCourseId();
+  if (!courseId) return;
+
+  // Prepare the granular objectives array for the API
+  const granularObjectives = group.items.map(item => {
+    const granularObj = {
+      text: item.text,
+      bloomTaxonomies: item.bloom || [],
+      questionCount: item.count
+    };
+    
+    // Include ID if it exists (for updates)
+    if (item.granularId) {
+      granularObj.id = item.granularId;
+    }
+    
+    return granularObj;
+  });
+
+  const updateData = {
+    name: group.title,
+    courseId: courseId,
+    materialIds: group.materialIds || [],
+    granularObjectives: granularObjectives
+  };
+
+  try {
+    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success && data.granularObjectives) {
+      // Update local items with database IDs (important for newly created granular objectives)
+      data.granularObjectives.forEach(dbGranular => {
+        // Try to match by ID first
+        let localItem = group.items.find(item => item.granularId === dbGranular._id.toString());
+        
+        // If no ID match, try to match by text for newly created ones
+        if (!localItem) {
+          localItem = group.items.find(item => !item.granularId && item.text === dbGranular.name);
+        }
+        
+        if (localItem) {
+          localItem.granularId = dbGranular._id.toString();
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error saving objective to database:', error);
+  }
+}
+
 
 function addNewGranularObjective(groupId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
