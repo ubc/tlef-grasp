@@ -192,6 +192,10 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       formula,
       normalizedVars
     );
+    calculationQuestionService.validateStemReferencesAllVariables(
+      stemText,
+      normalizedVars
+    );
     const formulaCanonical =
       calculationQuestionService.prepareCalculationFormula(
         formula,
@@ -450,7 +454,7 @@ function safeJsonParse(jsonInput) {
 function jsonOnlyRetrySuffix(attempt, questionType) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
   const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
-  const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template with {{var}} placeholders), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". No "options" or MC correctAnswer.`;
+  const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template that inlines every variable as {{name}} using the EXACT name from "calculationVariables[].name"; do NOT use a generic literal like {{var}}), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". Every variable that appears in "calculationFormula" must also appear in "stem" as {{name}}. No "options" or MC correctAnswer.`;
   const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
   let schema;
   if (questionType === "multiple-choice") schema = mcSchema;

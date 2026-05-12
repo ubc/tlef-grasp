@@ -174,6 +174,42 @@ function sanitizeVariableName(spec) {
 }
 
 /**
+ * Return the set of variable names that the stem template references via {{name}}
+ * placeholders, restricted to names that are also declared in variableSpecs.
+ * Single-brace {name} and {{var=name}} variants are normalized first.
+ */
+function getStemReferencedVariableNames(template, variableSpecs) {
+  const allowed = buildAllowedVariableNames(variableSpecs);
+  const t = normalizePlaceholders(template, variableSpecs);
+  const found = new Set();
+  const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const name = String(m[1]);
+    if (allowed.has(name)) found.add(name);
+  }
+  return found;
+}
+
+/**
+ * Enforce that the stem references every variable declared in calculationVariables
+ * as a {{name}} placeholder using the exact declared name. Used at generation/save
+ * time so we never persist a calculation question with a generic literal like
+ * {{var}} that the renderer would have to paper over at display time.
+ */
+function validateStemReferencesAllVariables(template, variableSpecs) {
+  const allowed = buildAllowedVariableNames(variableSpecs);
+  if (allowed.size === 0) return;
+  const referenced = getStemReferencedVariableNames(template, variableSpecs);
+  const missing = [...allowed].filter((n) => !referenced.has(n));
+  if (missing.length > 0) {
+    throw new Error(
+      `stem must reference each variable as {{name}} using the exact name from calculationVariables. Missing: ${missing.join(", ")}.`
+    );
+  }
+}
+
+/**
  * Ensure every identifier used in the formula is declared in calculationVariables.
  */
 function validateFormulaAgainstVariableSpecs(formula, variableSpecs) {
@@ -236,7 +272,8 @@ function buildStudentCalculationInstance({
     try {
       const values = generateVariableValues(variableSpecs);
       evaluateCalculationFormula(f, values);
-      const rendered = renderCalculationTemplate(template, values, variableSpecs);
+      const renderResult = renderCalculationTemplate(template, values, variableSpecs);
+      const rendered = composeStudentCalculationStem(renderResult, values, variableSpecs);
       const token = signCalculationToken(qid, values);
       return {
         ok: true,
@@ -348,10 +385,74 @@ function resolveCalculationDisplayTemplate(stem, title, variableSpecs) {
 }
 
 /**
+ * Take the result of renderCalculationTemplate plus the sampled values and produce
+ * the final stem shown to the student. When the stem template did not (or could not)
+ * reference every formula variable, append a "Given:" line so every value the
+ * grader will use is visible. This keeps poorly-templated stems (e.g. a generic
+ * "{{var}}" placeholder) usable instead of surfacing a load error.
+ *
+ * @param {{ text: string, referencedVariableNames: Set<string>, unknownPlaceholderNames: Set<string> }} renderResult
+ * @param {Record<string, number>} values
+ * @param {Array} variableSpecs
+ * @returns {string}
+ */
+function composeStudentCalculationStem(renderResult, values, variableSpecs) {
+  const baseText = String(renderResult?.text || "");
+  const referenced =
+    renderResult && renderResult.referencedVariableNames instanceof Set
+      ? renderResult.referencedVariableNames
+      : new Set();
+  const unknown =
+    renderResult && renderResult.unknownPlaceholderNames instanceof Set
+      ? renderResult.unknownPlaceholderNames
+      : new Set();
+
+  const specByName = {};
+  for (const s of variableSpecs || []) {
+    const name = sanitizeVariableName(s);
+    if (name) specByName[name] = s;
+  }
+
+  const missing = [];
+  for (const spec of variableSpecs || []) {
+    const name = sanitizeVariableName(spec);
+    if (!name) continue;
+    if (referenced.has(name)) continue;
+    if (!(name in values)) continue;
+    missing.push(name);
+  }
+
+  if (missing.length === 0 && unknown.size === 0) {
+    return baseText;
+  }
+
+  const visibleNames =
+    missing.length > 0
+      ? missing
+      : Object.keys(values).filter((n) => !referenced.has(n));
+  if (visibleNames.length === 0) {
+    return baseText;
+  }
+
+  const givenParts = visibleNames.map(
+    (name) => `${name} = ${formatVariableForTemplate(values[name], specByName[name])}`
+  );
+  const separator = baseText.trim().length > 0 ? "\n\n" : "";
+  return `${baseText}${separator}Given: ${givenParts.join(", ")}.`;
+}
+
+/**
  * Replace {{varName}} in template with formatted values.
+ * Unknown placeholders (no matching variable) are rendered as "?" rather than
+ * throwing, so a stem with a generic placeholder like {{var}} still produces
+ * a readable question. The set of variables actually referenced by the stem
+ * (and the names of any unknown placeholders) is reported back to the caller
+ * so it can decide whether to append a "Given:" listing of the values.
+ *
  * @param {string} template
  * @param {Record<string, number>} values
  * @param {Array} variableSpecs
+ * @returns {{ text: string, referencedVariableNames: Set<string>, unknownPlaceholderNames: Set<string> }}
  */
 function renderCalculationTemplate(template, values, variableSpecs = []) {
   const specByName = {};
@@ -359,15 +460,20 @@ function renderCalculationTemplate(template, values, variableSpecs = []) {
     if (s && s.name) specByName[String(s.name).trim()] = s;
   }
   const t = normalizePlaceholders(template, variableSpecs);
-  return String(t || "").replace(
+  const referencedVariableNames = new Set();
+  const unknownPlaceholderNames = new Set();
+  const text = String(t || "").replace(
     /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g,
     (_, name) => {
-      if (!(name in values)) {
-        throw new Error(`Template references "{{${name}}}" but variable is missing`);
+      if (name in values) {
+        referencedVariableNames.add(name);
+        return formatVariableForTemplate(values[name], specByName[name]);
       }
-      return formatVariableForTemplate(values[name], specByName[name]);
+      unknownPlaceholderNames.add(name);
+      return "?";
     }
   );
+  return { text, referencedVariableNames, unknownPlaceholderNames };
 }
 
 /**
@@ -516,6 +622,8 @@ module.exports = {
   resolveCalculationDisplayTemplate,
   buildStudentCalculationInstance,
   validateFormulaAgainstVariableSpecs,
+  validateStemReferencesAllVariables,
+  getStemReferencedVariableNames,
   prepareCalculationFormula,
   canonicalizeCalculationSyntax,
   normalizeAsciiFormula,

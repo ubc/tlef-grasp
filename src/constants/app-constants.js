@@ -62,9 +62,9 @@ Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; 
 --- If Question Type is "calculation" ---
 PROCEDURE:
 1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question, must not reveal numeric answers.
-2. "stem" is the question text with placeholders for variables only as {{variableName}} (double braces). Every variable in "calculationFormula" must appear in "stem" as {{name}} matching "calculationVariables[].name".
+2. "stem" is the question text with placeholders for variables. Each placeholder MUST be written as {{name}} using the EXACT variable name from "calculationVariables[].name". Do NOT use a generic placeholder like {{var}}, {{x}}, or {{value}} unless that exact name is also declared in "calculationVariables". Every variable that appears in "calculationFormula" MUST appear at least once in "stem" as {{name}} so the student sees its numeric value.
 3. "calculationFormula" MUST be one expression the calculator can evaluate: use variable names and + - * / ^ ( ). Prefer plain ASCII (e.g. "a*b", "(x+1)/y"). Do NOT use ∫, ∑, matrices, or LaTeX environments in the formula. Put math display only in "stem" (LaTeX allowed there). If you use LaTeX-style operators in the formula, keep them minimal (e.g. \\frac{a}{b} or \\times)—the server may normalize them, but simple ASCII is best.
-4. "calculationVariables" is a non-empty array of objects: { "name", "min", "max", optional "decimals" (0–8) or "integerOnly": true }.
+4. "calculationVariables" is a non-empty array of objects: { "name", "min", "max", optional "decimals" (0–8) or "integerOnly": true }. Every name used in "stem" and "calculationFormula" must be declared here.
 5. "calculationAnswerDecimals" is how many decimal places the correct numeric answer should be rounded to (integer 0–12).
 
 Example:
@@ -104,7 +104,7 @@ CRITICAL FORMATTING REQUIREMENTS (all matching types):
 - Do NOT include any text before or after the JSON object.
 - CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
 - For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
-- For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template with {{var}} placeholders. The formula field must stay machine-evaluable (no integral sign ∫ or similar).
+- For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template, and place each variable inline as {{name}} where "name" is one of "calculationVariables[].name" (never a literal {{var}} placeholder). The formula field must stay machine-evaluable (no integral sign ∫ or similar).
 - For open-ended: Include "openEndedSampleAnswer" and "openEndedGradingCriteria"; the platform does not auto-grade text responses.
 FORMATTING INSIDE JSON STRINGS:
 - Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
