@@ -520,7 +520,6 @@ Include foundational concepts, practical applications, and assessment criteria.`
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
         .replace('{userObjectivesList}', userList)
-        .replace('{sourceIdsList}', materialIds.join(', '))
         .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
@@ -566,10 +565,8 @@ Include foundational concepts, practical applications, and assessment criteria.`
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
         .map((obj) => {
-          console.log(`Objective "${obj.name}" sourceIds:`, obj.sourceIds);
           return {
             name: obj.name.trim(),
-            sourceIds: Array.isArray(obj.sourceIds) ? obj.sourceIds : [],
             granularObjectives: obj.granularObjectives
               .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
               .map((go) => {
