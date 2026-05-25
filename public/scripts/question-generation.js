@@ -3678,26 +3678,7 @@ async function handleSaveToQuiz() {
       return;
     }
 
-    // Collect all questions from state
-    const questions = [];
-    for (const group of state.questionGroups) {
-      for (const lo of group.los) {
-        for (const question of lo.questions) {
-          // Transform question to match the expected format
-          questions.push({
-            title: question.title || question.stem || "",
-            stem: question.stem || question.title || "",
-            options: question.options || [],
-            correctAnswer: question.correctAnswer || 0,
-            bloom: question.bloom || question.bloomLevel || "Understand",
-            granularObjectiveId: question.granularObjectiveId || null,
-            by: question.createdBy || "system",
-            status: question.status || "Draft",
-            flagStatus: question.flagStatus || false,
-          });
-        }
-      }
-    }
+
 
     if (questions.length === 0) {
       showToast("No questions to add", "warning");
