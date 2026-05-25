@@ -260,8 +260,9 @@ function createQuizCard(quiz) {
           Due: ${new Date(quiz.expireDate).toLocaleDateString()}
         </span>
         ` : ''}
+        ${quiz.deliveryFormat === "spaced-3phase" ? `
         <div class="quiz-count-breakdown">
-          <span class="quiz-count-item quiz" title="New Quiz Questions">
+          <span class="quiz-count-item quiz" title="One question per granular learning objective">
             <i class="fas fa-book"></i>
             ${quiz.phase1Count || 0} New
           </span>
@@ -274,6 +275,14 @@ function createQuizCard(quiz) {
             ${quiz.phase3Count || 0} Review
           </span>
         </div>
+        ` : `
+        <div class="quiz-count-breakdown">
+          <span class="quiz-count-item quiz" title="Total Questions">
+            <i class="fas fa-list-ol"></i>
+            ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) === 1 ? '' : 's'}
+          </span>
+        </div>
+        `}
       </div>
       ${achievements.length > 0 ? `
         <div class="quiz-card-achievements-detail">

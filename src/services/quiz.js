@@ -19,6 +19,7 @@ const createQuiz = async (courseId, quizData) => {
             name: quizData.name,
             description: quizData.description || "",
             published: false,
+            deliveryFormat: quizData.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved",
             // Only add dates if they are provided
             ...(quizData.releaseDate && { releaseDate: new Date(quizData.releaseDate) }),
             ...(quizData.expireDate && { expireDate: new Date(quizData.expireDate) }),
@@ -575,8 +576,16 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
     try {
         const db = await databaseService.connect();
         const quiz = await getQuizById(quizId);
-        
+
         if (!quiz) throw new Error("Quiz not found");
+
+        // Missing field defaults to "all-approved" — the new default delivery format.
+        // Only quizzes explicitly set to "spaced-3phase" run the 3-phase orchestration.
+        const deliveryFormat = quiz.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved";
+
+        if (deliveryFormat === "all-approved") {
+            return await getQuizQuestions(quizId, true);
+        }
 
         const phase1SelectionRaw = (await getPhase1Questions(quizId, userId)).map(q => ({ ...q, phase: 1 }));
         const phase2SelectionRaw = (await getPhase2Questions(quizId, userId)).map(q => ({ ...q, phase: 2 }));

@@ -3592,20 +3592,60 @@ async function handleSaveToQuiz() {
   try {
     let quizId = selectedQuizId;
 
-    // If creating new quiz, create it first
+    // Collect all questions from state first
+    const questions = [];
+    for (const group of state.questionGroups) {
+      for (const lo of group.los) {
+        for (const question of lo.questions) {
+          // Transform question to match the expected format
+          questions.push({
+            title: question.title || question.stem || "",
+            stem: question.stem || question.title || "",
+            options: question.options,
+            correctAnswer: question.correctAnswer,
+            bloom: question.bloom || "Remember",
+            learningObjectiveId: group.objectiveId,
+            granularObjectiveId: lo.granularId
+          });
+        }
+      }
+    }
+
+    if (questions.length === 0) {
+      showToast("No questions to save", "error");
+      return;
+    }
+
+    // If creating new quiz, create it and save questions atomically
     if (isCreatingNewQuiz) {
       const nameInput = document.getElementById("quiz-name-input");
       const descriptionInput = document.getElementById("quiz-description-input");
       const releaseDateInput = document.getElementById("quiz-release-date");
       const expireDateInput = document.getElementById("quiz-expire-date");
+      const deliveryFormatInput = document.getElementById("quiz-delivery-format");
 
       if (!nameInput || !nameInput.value.trim()) {
         showToast("Please enter a quiz name", "error");
         return;
       }
+      
+      const releaseDate = releaseDateInput && releaseDateInput.value ? new Date(releaseDateInput.value).toISOString() : null;
+      const expireDate = expireDateInput && expireDateInput.value ? new Date(expireDateInput.value).toISOString() : null;
+
+      if (!releaseDate) {
+        showToast("Please select a release date", "error");
+        return;
+      }
+
+      if (!expireDate) {
+        showToast("Please select an expire date", "error");
+        return;
+      }
 
       const courseId = getCourseId();
 
+      const formatVal = deliveryFormatInput ? deliveryFormatInput.value : '';
+      
       const response = await fetch(API_ENDPOINTS.quiz, {
         method: 'POST',
         headers: {
@@ -3615,8 +3655,10 @@ async function handleSaveToQuiz() {
           courseId: courseId,
           name: nameInput.value.trim(),
           description: descriptionInput.value.trim() || '',
-          releaseDate: releaseDateInput ? releaseDateInput.value : null,
-          expireDate: expireDateInput ? expireDateInput.value : null
+          releaseDate: releaseDate,
+          expireDate: expireDate,
+          deliveryFormat: formatVal || 'all-approved',
+          newQuestions: questions
         }),
       });
 
@@ -3626,10 +3668,9 @@ async function handleSaveToQuiz() {
       }
 
       const data = await response.json();
-      quizId = data.quiz._id || data.quiz.insertedId;
-      if (typeof quizId === 'object' && quizId.toString) {
-        quizId = quizId.toString();
-      }
+      showToast(`Quiz created and ${data.questionsAdded || 0} questions saved successfully`, "success");
+      closeModal("save-quiz-modal");
+      return;
     }
 
     if (!quizId) {
@@ -3722,6 +3763,41 @@ async function handleSaveToQuiz() {
     }
   }
 }
+function showDeliveryFormatPopup(btn) {
+  const container = btn.closest(".delivery-format-control, .quiz-delivery-format-section");
+  if (!container) return;
+  const popup = container.querySelector(".delivery-format-popup");
+  const template = container.querySelector(`.delivery-format-info-template[data-value="${btn.dataset.value}"]`);
+  if (popup && template) {
+    popup.innerHTML = template.innerHTML;
+    popup.classList.add("delivery-format-popup--visible");
+  }
+}
+
+function hideDeliveryFormatPopup(el, event) {
+  const group = el.closest(".delivery-format-group");
+  if (event && event.relatedTarget && group) {
+    const nextBtn = event.relatedTarget.closest && event.relatedTarget.closest(".delivery-format-btn");
+    if (nextBtn && group.contains(nextBtn)) return;
+  }
+  const container = el.closest(".delivery-format-control, .quiz-delivery-format-section");
+  if (!container) return;
+  const popup = container.querySelector(".delivery-format-popup");
+  if (popup) popup.classList.remove("delivery-format-popup--visible");
+}
+
+function selectDeliveryFormat(btn) {
+  const group = btn.closest(".delivery-format-group");
+  if (!group) return;
+  group.querySelectorAll(".delivery-format-btn").forEach(b => b.classList.remove("delivery-format-btn--active"));
+  btn.classList.add("delivery-format-btn--active");
+  const hidden = document.getElementById("quiz-delivery-format");
+  if (hidden) hidden.value = btn.dataset.value;
+}
+window.showDeliveryFormatPopup = showDeliveryFormatPopup;
+window.hideDeliveryFormatPopup = hideDeliveryFormatPopup;
+window.selectDeliveryFormat = selectDeliveryFormat;
+
 window.incrementCount = incrementCount;
 window.decrementCount = decrementCount;
 window.editMetaObjective = editMetaObjective;

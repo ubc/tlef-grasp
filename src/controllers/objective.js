@@ -18,9 +18,28 @@ const getAllObjectives = async (req, res) => {
     }
 
     const objectives = await getParentObjectives(courseId);
+    
+    // Populate materialIds for each objective
+    const populatedObjectives = await Promise.all(objectives.map(async (obj) => {
+      try {
+        const materials = await getMaterialsForObjective(obj._id);
+        const materialIds = materials.map(m => m.sourceId || m._id.toString());
+        return {
+          ...obj,
+          materialIds
+        };
+      } catch (err) {
+        console.error(`Error populating materials for objective ${obj._id}:`, err);
+        return {
+          ...obj,
+          materialIds: []
+        };
+      }
+    }));
+
     res.json({
       success: true,
-      objectives: objectives,
+      objectives: populatedObjectives,
     });
   } catch (error) {
     console.error('Error fetching objectives:', error);

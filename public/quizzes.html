@@ -41,10 +41,114 @@
 
                     <!-- Create Quiz Tab -->
                     <div class="tab-panel" id="create-quiz-panel" style="display: none;">
-                        <div class="empty-state">
-                            <i class="fas fa-plus-circle" style="font-size: 48px; margin-bottom: 20px; color: #3498db;"></i>
-                            <h3>Create New Quiz</h3>
-                            <p>This feature is coming soon! You will be able to create custom quizzes by selecting specific questions or using AI-assisted selection.</p>
+                        <div class="create-quiz-wizard">
+                            <!-- Wizard Header -->
+                            <div class="wizard-header">
+                                <div class="wizard-step active" data-step="1">
+                                    <div class="step-circle">1</div>
+                                    <span class="step-label">Select Materials</span>
+                                </div>
+                                <div class="wizard-line"></div>
+                                <div class="wizard-step" data-step="2">
+                                    <div class="step-circle">2</div>
+                                    <span class="step-label">Select Objectives</span>
+                                </div>
+                                <div class="wizard-line"></div>
+                                <div class="wizard-step" data-step="3">
+                                    <div class="step-circle">3</div>
+                                    <span class="step-label">Quiz Settings</span>
+                                </div>
+                            </div>
+
+                            <!-- Wizard Content -->
+                            <div class="wizard-content">
+                                <!-- Step 1: Materials -->
+                                <div class="wizard-step-content active" id="wizard-step-1">
+                                    <h3>Select Course Materials</h3>
+                                    <p class="step-description">Choose the materials you want to test the students on.</p>
+                                    <div class="material-selection-container" id="material-selection-list">
+                                        <!-- Checkboxes populated via JS -->
+                                        <div class="empty-state-mini"><i class="fas fa-spinner fa-spin"></i> Loading materials...</div>
+                                    </div>
+                                    <div class="wizard-actions">
+                                        <button class="btn btn-primary" id="btn-next-step-1">Next: Select Objectives <i class="fas fa-arrow-right"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Objectives -->
+                                <div class="wizard-step-content" id="wizard-step-2" style="display: none;">
+                                    <h3>Select Learning Objectives</h3>
+                                    <p class="step-description">Select the meta learning objectives to include. Questions tied to these and their granular objectives will be added.</p>
+                                    <div class="objective-selection-container" id="objective-selection-list">
+                                        <!-- Checkboxes populated via JS -->
+                                    </div>
+                                    <div class="wizard-actions wizard-actions--between">
+                                        <button class="btn btn-secondary" id="btn-prev-step-2"><i class="fas fa-arrow-left"></i> Back</button>
+                                        <button class="btn btn-primary" id="btn-next-step-2">Next: Quiz Settings <i class="fas fa-arrow-right"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Settings -->
+                                <div class="wizard-step-content" id="wizard-step-3" style="display: none;">
+                                    <h3>Quiz Settings</h3>
+                                    
+                                    <div class="quiz-settings-form">
+                                        <div class="form-group">
+                                            <label for="new-quiz-name">Quiz Name</label>
+                                            <input type="text" id="new-quiz-name" class="form-control" placeholder="e.g. Midterm Review Quiz">
+                                        </div>
+
+                                        <div style="display: flex; flex-direction: row; gap: 20px;">
+                                            <div class="form-group" style="flex: 1;">
+                                                <label for="quiz-release-date">Release Date</label>
+                                                <input type="datetime-local" id="quiz-release-date" class="form-control" style="width: 100%; box-sizing: border-box;">
+                                            </div>
+                                            <div class="form-group" style="flex: 1;">
+                                                <label for="quiz-expire-date">Expire Date</label>
+                                                <input type="datetime-local" id="quiz-expire-date" class="form-control" style="width: 100%; box-sizing: border-box;">
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label>Delivery Format</label>
+                                            <div class="delivery-format-control">
+                                                <div class="delivery-format-popup" aria-live="polite"></div>
+                                                <div class="delivery-format-group" onmouseleave="hideDeliveryFormatPopup(this, event)">
+                                                    <button type="button" class="delivery-format-btn delivery-format-btn--active" data-value="all-approved" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)">
+                                                        <span>Standard</span>
+                                                        <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button type="button" class="delivery-format-btn" data-value="spaced-3phase" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)">
+                                                        <span>Adaptive</span>
+                                                        <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                                <template class="delivery-format-info-template" data-value="all-approved"><strong>Default.</strong> Delivers every approved question in the quiz, in the order they were added. Students see the same set every time — no personalization, no spaced repetition.</template>
+                                                <template class="delivery-format-info-template" data-value="spaced-3phase">Three-phase spaced repetition tailored to each student: (1) one new question per granular learning objective, (2) remediation items the student failed in their previous quiz, (3) spaced review of previously-mastered objectives.</template>
+                                            </div>
+                                            <input type="hidden" id="quiz-delivery-format" value="all-approved">
+                                        </div>    
+
+
+                                        <div class="questions-preview">
+                                            <div class="preview-card">
+                                                <i class="fas fa-list-ol"></i>
+                                                <div class="preview-details">
+                                                    <span class="preview-label">Matching Questions Found</span>
+                                                    <span class="preview-count" id="matched-questions-count">0</span>
+                                                </div>
+                                            </div>
+                                            <div id="matched-questions-breakdown" style="margin: 15px 0;"></div>
+                                            <p class="preview-note">These questions will be associated with your new quiz.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="wizard-actions wizard-actions--between">
+                                        <button class="btn btn-secondary" id="btn-prev-step-3"><i class="fas fa-arrow-left"></i> Back</button>
+                                        <button class="btn btn-primary" id="btn-create-quiz"><i class="fas fa-check"></i> Create Quiz</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -138,6 +242,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="scripts/navigation.js"></script>

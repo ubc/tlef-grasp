@@ -40,22 +40,55 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description, releaseDate, expireDate } = req.body;
-    
-    if (!courseId || !name) {
+    const { courseId, name, description, releaseDate, expireDate, deliveryFormat, questionIds, newQuestions } = req.body;
+
+    if (!courseId || !name || !releaseDate || !expireDate || !deliveryFormat) {
       return res.status(400).json({
         success: false,
-        error: "Course ID and quiz name are required",
+        error: "Course ID, name, releaseDate, expireDate, and deliveryFormat are required",
       });
     }
-    
-    const quiz = await quizService.createQuiz(courseId, { 
-      name, 
+
+    if (deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'.",
+      });
+    }
+
+    const quiz = await quizService.createQuiz(courseId, {
+      name,
       description,
       releaseDate,
-      expireDate
+      expireDate,
+      deliveryFormat
     });
-    res.status(201).json({ success: true, quiz });
+    
+    const quizId = quiz._id.toString();
+    const finalQuestionIds = [];
+
+    // Attach existing questions
+    if (questionIds && Array.isArray(questionIds)) {
+      finalQuestionIds.push(...questionIds);
+    }
+
+    // Create and attach new questions
+    if (newQuestions && Array.isArray(newQuestions)) {
+      for (const questionData of newQuestions) {
+        try {
+          const questionResult = await questionService.saveQuestion(courseId, questionData);
+          finalQuestionIds.push(questionResult.insertedId.toString());
+        } catch (error) {
+          console.error("Error saving new question during quiz creation:", error);
+        }
+      }
+    }
+
+    if (finalQuestionIds.length > 0) {
+      await quizService.addQuestionsToQuiz(quizId, finalQuestionIds);
+    }
+
+    res.status(201).json({ success: true, quiz, questionsAdded: finalQuestionIds.length });
   } catch (error) {
     console.error("Error creating quiz:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -68,7 +101,14 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, releaseDate, expireDate } = req.body;
+    const { name, description, published, releaseDate, expireDate, deliveryFormat } = req.body;
+
+    if (deliveryFormat !== undefined && deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'."
+      });
+    }
     
     // Get existing quiz to check current values
     const existingQuiz = await quizService.getQuizById(quizId);
@@ -91,12 +131,13 @@ const updateQuizHandler = async (req, res) => {
       }
     }
 
-    const result = await quizService.updateQuiz(quizId, { 
-      name, 
-      description, 
+    const result = await quizService.updateQuiz(quizId, {
+      name,
+      description,
       published,
       releaseDate,
-      expireDate
+      expireDate,
+      deliveryFormat
     });
     
     if (result.matchedCount === 0) {

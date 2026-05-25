@@ -429,6 +429,28 @@
                                         </div>
                                     </div>
 
+                                    <div style="margin-bottom: 16px;">
+                                        <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">
+                                            Delivery Format
+                                        </label>
+                                        <div class="delivery-format-control">
+                                            <div class="delivery-format-popup" aria-live="polite"></div>
+                                            <div class="delivery-format-group" onmouseleave="hideDeliveryFormatPopup(this, event)">
+                                                <button type="button" class="delivery-format-btn delivery-format-btn--active" data-value="all-approved" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)" onclick="selectDeliveryFormat(this)">
+                                                    <span>Standard</span>
+                                                    <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                </button>
+                                                <button type="button" class="delivery-format-btn" data-value="spaced-3phase" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)" onclick="selectDeliveryFormat(this)">
+                                                    <span>Adaptive</span>
+                                                    <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                </button>
+                                            </div>
+                                            <template class="delivery-format-info-template" data-value="all-approved"><strong>Default.</strong> Delivers every approved question in the quiz, in the order they were added. Students see the same set every time — no personalization, no spaced repetition.</template>
+                                            <template class="delivery-format-info-template" data-value="spaced-3phase">Three-phase spaced repetition tailored to each student: (1) one new question per granular learning objective, (2) remediation items the student failed in their previous quiz, (3) spaced review of previously-mastered objectives.</template>
+                                        </div>
+                                        <input type="hidden" id="quiz-delivery-format" value="all-approved">
+                                    </div>
+
                                 </div>
                             </div>
                         </div>
