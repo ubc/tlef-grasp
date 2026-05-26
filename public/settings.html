@@ -35,9 +35,100 @@
                 </div>                 <!-- Tab Content: Course Settings -->
                 <div id="general" class="tab-content active">
                     <div class="settings-section">
-                        <h2>Course Configuration</h2>
+                        <h2>Question Type by Bloom Level</h2>
+                        <p class="section-intro">
+                            Set the primary question type generated for each Bloom's Taxonomy level.
+                            Changes apply to this course only. The default mapping is used when no override is set.
+                        </p>
                         <div class="settings-form">
-                            <p><em>General settings for this course can be added here in the future.</em></p>
+                            <table class="bloom-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bloom's Level</th>
+                                        <th>Primary Question Type</th>
+                                        <th>Default</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-remember">Remember</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Remember">
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="calculation">Calculation</option>
+                                                <option value="open-ended">Open-ended</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Fill-in-the-blank</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-understand">Understand</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Understand">
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="calculation">Calculation</option>
+                                                <option value="open-ended">Open-ended</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Multiple Choice</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-apply">Apply</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Apply">
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="calculation">Calculation</option>
+                                                <option value="open-ended">Open-ended</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Multiple Choice</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-analyze">Analyze</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Analyze">
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="calculation">Calculation</option>
+                                                <option value="open-ended">Open-ended</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Multiple Choice</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-evaluate">Evaluate</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Evaluate">
+                                                <option value="calculation">Calculation</option>
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="open-ended">Open-ended</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Calculation</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="bloom-badge bloom-create">Create</span></td>
+                                        <td>
+                                            <select class="bloom-select" data-bloom="Create">
+                                                <option value="open-ended">Open-ended</option>
+                                                <option value="multiple-choice">Multiple Choice</option>
+                                                <option value="fill-in-the-blank">Fill-in-the-blank</option>
+                                                <option value="calculation">Calculation</option>
+                                            </select>
+                                        </td>
+                                        <td class="bloom-default">Open-ended</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div class="bloom-actions">
+                                <button id="reset-bloom-defaults" class="secondary-btn">
+                                    <i class="fas fa-undo"></i> Reset to Defaults
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

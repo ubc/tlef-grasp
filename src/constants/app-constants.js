@@ -199,10 +199,22 @@ const DEFAULT_PROMPTS = {
     objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT
 };
 
+// Default mapping from Bloom's level to ordered question-type preferences.
+// The first entry is what auto-generation picks; the rest are fallbacks.
+const DEFAULT_BLOOM_TYPE_PREFERENCES = {
+    Remember:  ["fill-in-the-blank", "multiple-choice"],
+    Understand: ["multiple-choice", "fill-in-the-blank"],
+    Apply:      ["multiple-choice", "fill-in-the-blank"],
+    Analyze:    ["multiple-choice", "fill-in-the-blank"],
+    Evaluate:   ["calculation", "multiple-choice"],
+    Create:     ["open-ended", "multiple-choice"],
+};
+
 module.exports = {
     QUESTION_GENERATION_PROMPT,
     OBJECTIVE_GENERATION_AUTO_PROMPT,
     OBJECTIVE_GENERATION_MANUAL_PROMPT,
     BLOOM_LEVELS,
-    DEFAULT_PROMPTS
+    DEFAULT_PROMPTS,
+    DEFAULT_BLOOM_TYPE_PREFERENCES,
 };

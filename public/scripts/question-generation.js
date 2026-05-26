@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   initializeNavigation();
   initializeEventListeners();
-  initializeModules();
+  await initializeModules();
   await loadCourseData();
   await checkCourseMaterials();
   updateUI();
@@ -151,14 +151,30 @@ async function checkCourseMaterials() {
   }
 }
 
-function initializeModules() {
+async function fetchBloomTypePreferences() {
+  try {
+    const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+    const courseId = selectedCourse.id;
+    if (!courseId) return null;
+    const response = await fetch(`/api/courses/${courseId}/settings`);
+    const data = await response.json();
+    return data.success && data.settings && data.settings.bloomTypePreferences
+      ? data.settings.bloomTypePreferences
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function initializeModules() {
   try {
     if (window.ContentGenerator) {
       contentGenerator = new window.ContentGenerator();
     }
 
     if (window.QuestionGenerator && contentGenerator) {
-      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      const bloomTypePreferences = await fetchBloomTypePreferences();
+      questionGenerator = new window.QuestionGenerator(contentGenerator, { bloomTypePreferences });
     }
   } catch (error) {
     console.error('Error initializing modules:', error);
@@ -2901,7 +2917,8 @@ async function generateQuestionsFromContent() {
       if (!contentGenerator) {
         contentGenerator = new window.ContentGenerator();
       }
-      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      const bloomTypePreferences = await fetchBloomTypePreferences();
+      questionGenerator = new window.QuestionGenerator(contentGenerator, { bloomTypePreferences });
     } catch (error) {
       console.error('Failed to initialize QuestionGenerator:', error);
       setGenerationUI(false);
