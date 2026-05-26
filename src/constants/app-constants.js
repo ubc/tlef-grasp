@@ -62,34 +62,43 @@ Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; 
 --- If Question Type is "calculation" ---
 CRITICAL RULES — violating any of these causes immediate rejection:
 1. STEM PLACEHOLDERS: Every variable MUST appear in "stem" using DOUBLE curly braces: {{name}}. The name must exactly match the "name" field in "calculationVariables". Example: if the variable name is "V", write {{V}} in the stem. Writing {V}, [V], (V), or bare "V" is WRONG and will be rejected.
-2. FORMULA SYNTAX: "calculationFormula" must use ONLY plain ASCII: + - * / ^ ( ) digits and declared variable names. NO LaTeX (no \frac, no \sqrt{}, no $...$), NO Unicode math symbols (∫ ∑ ∂ π ℯ), NO "from a to b" text. Use PI and E (uppercase ASCII) for the math constants — do NOT declare "pi", "PI", "e", or "E" as variables.
+2. FORMULA SYNTAX: "calculationFormula" must use ONLY: + - * / ^ ( ) digits, declared variable names, and the built-in functions sin cos tan sqrt log exp and constants PI E. NO LaTeX (no \frac, no \sqrt{}, no $...$), NO Unicode math symbols (∫ ∑ ∂ π ℯ), NO "from a to b" text, NO = sign. Do NOT declare "pi", "PI", "e", or "E" as variable names.
 3. ALL VARIABLES USED: Every name declared in "calculationVariables" must appear in BOTH "stem" (as {{name}}) AND "calculationFormula". A variable that only appears in one of them will be rejected.
 
 You are authoring a parameterised question: the server samples random values, substitutes {{name}} in the stem, then evaluates "calculationFormula" with those values to compute the correct answer.
 
-SCOPE: The correct answer must be a SINGLE numeric value from ONE closed-form arithmetic expression. Do NOT use integrals, summations, derivatives, or symbolic solving. If the natural answer requires those, pick a simpler sub-problem (e.g. evaluate a formula at a point) or use a different question type.
+SCOPE: The correct answer must be a SINGLE numeric value from ONE closed-form arithmetic expression. The formula field must be pure ASCII arithmetic — no ∫, ∑, d/dx, or symbolic notation.
+
+CALCULUS-SAFE PATTERN: For calculus objectives (derivatives, integrals, ODEs), pre-solve the symbolic math yourself, then encode the closed-form result in "calculationFormula". Show the original calculus problem in "stem" using LaTeX; compute the answer via arithmetic.
+- Derivative: stem shows \( f'(x) \) at \( x = {{x}} \); formula: "2*a*x + b" (from f(x) = ax²+bx → f'(x) = 2ax+b)
+- Definite integral with simple closed form: stem shows \( \int_0^{{{b}}} {{a}}x^2\,dx \); formula: "a * b^3 / 3"
+- ODE solution: stem shows dy/dt = {{k}}y, y(0)={{y0}} at t={{t}}; formula: "y0 * E^(k*t)" + add calculationAnswerTolerancePercent: 1
+- IMPORTANT — if the integral or equation has NO simple closed form (e.g. involves cos, sin, ln, or complex compositions that cannot be written as a single arithmetic expression), do NOT write the integral in the formula. Instead, REFORMULATE to a simpler testable sub-skill: evaluate the integrand at a point, apply the power rule to a polynomial term, or test an initial condition — anything expressible as plain arithmetic.
 
 PROCEDURE:
 1. "topicTitle": short neutral label (3–10 words), no "?", must not reveal the answer.
 2. "stem": question text. Each variable must appear as {{name}} (double curly braces). Do NOT write the variable's numeric value — use the {{name}} placeholder instead.
 3. "calculationFormula": ONE ASCII expression solving the stem. Reference EVERY declared variable at least once. No LaTeX, no Unicode math.
 4. "calculationVariables": non-empty array of {"name": "...", "min": number, "max": number, "decimals": 0–8} or {"name": "...", "min": number, "max": number, "integerOnly": true}. "min" and "max" must be numbers, never null. Forbidden names: "pi", "PI", "e", "E".
-5. "calculationAnswerDecimals": integer 0–12.
-6. "explanation": brief explanation of the formula.
+5. "calculationAnswerDecimals": integer 0–12. Controls how many decimal places are shown to the student — not the grading window when tolerancePercent is set.
+6. (Optional) "calculationAnswerTolerancePercent": number 0–100. Use when the domain grades within a percentage band rather than by rounding — e.g. 2 for chemistry (≈2 sig figs), 5 for geology or engineering estimates. Omit for physics/math where exact decimal rounding is expected.
+7. "explanation": brief explanation of the formula.
 
-Example:
+Example JSON structure (STRUCTURAL REFERENCE ONLY — do NOT copy this topic, formula, or variables; create your own based on the course content above):
 {
   "type": "calculation",
-  "topicTitle": "Ohm's law application",
-  "stem": "Given voltage {{V}} V and resistance {{R}} Ω, the current is _____ A.",
-  "calculationFormula": "V / R",
+  "topicTitle": "topic title here",
+  "stem": "A question involving {{a}} and {{b}} goes here.",
+  "calculationFormula": "a * b",
   "calculationVariables": [
-    { "name": "V", "min": 10, "max": 120, "integerOnly": true },
-    { "name": "R", "min": 5, "max": 50, "decimals": 1 }
+    { "name": "a", "min": 1, "max": 10, "integerOnly": true },
+    { "name": "b", "min": 1, "max": 5, "decimals": 1 }
   ],
   "calculationAnswerDecimals": 2,
-  "explanation": "Apply Ohm's law I = V/R."
+  "explanation": "Brief justification from the content."
 }
+
+CRITICAL: The formula above ("a * b") is a placeholder. You MUST derive the formula from the actual course content. If the content is about differential equations, write a differential-equation formula. If about integration, write an integration result. Do NOT output "V / R" or "a * b" unless the content is specifically about those relationships.
 
 Do NOT include "options" or a multiple-choice "correctAnswer" in the calculation output.
 

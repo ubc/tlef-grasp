@@ -236,6 +236,11 @@ const getQuizQuestionsHandler = async (req, res) => {
           q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
             ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
             : 2;
+        const tolerancePercent =
+          q.calculationAnswerTolerancePercent != null &&
+          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
+            ? Number(q.calculationAnswerTolerancePercent)
+            : null;
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
         const built = calculationQuestion.buildStudentCalculationInstance({
           template,
@@ -251,6 +256,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             questionType: "calculation",
             calculationToken: built.token,
             answerDecimalPlaces: built.answerDecimalPlaces,
+            calculationAnswerTolerancePercent: tolerancePercent,
             options: {},
             learningObjectiveId: q.learningObjectiveId,
             granularObjectiveId: q.granularObjectiveId,

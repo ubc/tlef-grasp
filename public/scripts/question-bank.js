@@ -2638,6 +2638,8 @@ class QuestionBankPage {
           question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
             ? parseInt(question.calculationAnswerDecimals, 10)
             : 2;
+        const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
+        const tol = Number.isFinite(rawTol) ? Math.max(0, Math.min(100, rawTol)) : null;
         this.currentEditingQuestion = {
           id: questionId,
           title: question.title || "",
@@ -2646,6 +2648,7 @@ class QuestionBankPage {
           calculationFormula: (question.calculationFormula || "").trim(),
           calculationVariables: vars,
           calculationAnswerDecimals: Number.isFinite(dec) ? dec : 2,
+          calculationAnswerTolerancePercent: tol,
           canEdit,
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
@@ -2836,6 +2839,8 @@ class QuestionBankPage {
         question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
           ? String(question.calculationAnswerDecimals)
           : "2";
+      const tolRaw = parseFloat(question.calculationAnswerTolerancePercent);
+      const tolVal = Number.isFinite(tolRaw) ? String(Math.max(0, Math.min(100, tolRaw))) : "";
 
       modalBody.innerHTML = `
       <div class="question-modal-content">
@@ -2882,12 +2887,21 @@ class QuestionBankPage {
                     style="${readonlyStyle}">${varsJson}</textarea>
         </div>
         <div class="question-modal-field">
-          <label for="question-modal-calc-decimals">Answer decimal places</label>
+          <label for="question-modal-calc-decimals">Answer decimal places (display)</label>
           <input type="number" id="question-modal-calc-decimals" min="0" max="12" step="1"
                  class="question-modal-input ${readonlyClass}"
                  value="${decVal.replace(/"/g, "&quot;")}"
                  ${readonlyAttr}
                  style="${readonlyStyle};max-width:120px;">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-tolerance">Answer tolerance % <span style="font-weight:400;color:#6c757d;">(optional — leave blank for exact decimal rounding)</span></label>
+          <input type="number" id="question-modal-calc-tolerance" min="0" max="100" step="0.1"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${tolVal.replace(/"/g, "&quot;")}"
+                 placeholder="e.g. 2 for chemistry, 5 for engineering"
+                 ${readonlyAttr}
+                 style="${readonlyStyle};max-width:180px;">
         </div>
       </div>
     `;
@@ -3155,6 +3169,7 @@ class QuestionBankPage {
         const formulaEl = document.getElementById("question-modal-calc-formula");
         const varsEl = document.getElementById("question-modal-calc-vars");
         const decEl = document.getElementById("question-modal-calc-decimals");
+        const tolEl = document.getElementById("question-modal-calc-tolerance");
         const formula = formulaEl ? formulaEl.value.trim() : "";
         if (!formula) {
           this.showNotification("Formula is required", "error");
@@ -3191,6 +3206,8 @@ class QuestionBankPage {
         let dec = parseInt(decEl ? decEl.value : "2", 10);
         if (!Number.isFinite(dec)) dec = 2;
         dec = Math.max(0, Math.min(12, dec));
+        let tolPct = parseFloat(tolEl ? tolEl.value : "");
+        tolPct = Number.isFinite(tolPct) ? Math.max(0, Math.min(100, tolPct)) : null;
 
         const updateData = {
           title,
@@ -3199,6 +3216,7 @@ class QuestionBankPage {
           calculationFormula: formula,
           calculationVariables: variables,
           calculationAnswerDecimals: dec,
+          calculationAnswerTolerancePercent: tolPct,
           options: {},
           acceptableAnswers: [],
         };

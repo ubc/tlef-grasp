@@ -459,6 +459,9 @@ class QuestionGenerator {
         let answerDec = parseInt(questionData.calculationAnswerDecimals, 10);
         if (!Number.isFinite(answerDec)) answerDec = 2;
         answerDec = Math.max(0, Math.min(12, answerDec));
+        let tolerancePct = parseFloat(questionData.calculationAnswerTolerancePercent);
+        if (!Number.isFinite(tolerancePct)) tolerancePct = null;
+        else tolerancePct = Math.max(0, Math.min(100, tolerancePct));
         return {
           id: `${granularLearningObjectiveId}-${questionNumber}`,
           granularObjectiveId: `${granularLearningObjectiveId}`,
@@ -472,6 +475,7 @@ class QuestionGenerator {
           calculationFormula: questionData.calculationFormula,
           calculationVariables: questionData.calculationVariables,
           calculationAnswerDecimals: answerDec,
+          calculationAnswerTolerancePercent: tolerancePct,
           bloomLevel: bloomLevel,
           difficulty: this.determineDifficulty(bloomLevel),
           metaCode: learningObjectiveText,

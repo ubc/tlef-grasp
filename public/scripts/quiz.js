@@ -555,9 +555,14 @@ function showQuestion(questionIndex) {
   }
 
   if (question.questionType === "calculation" && !question.calculationLoadError) {
-    const p = Number(question.answerDecimalPlaces);
-    const dec = Number.isFinite(p) ? Math.max(0, Math.min(12, Math.round(p))) : 2;
-    completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Round your answer to <strong>${dec}</strong> decimal place${dec === 1 ? "" : "s"}.</div>`;
+    const tol = Number(question.calculationAnswerTolerancePercent);
+    if (Number.isFinite(tol) && tol > 0) {
+      completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Your answer will be accepted within <strong>${tol}%</strong> of the correct value.</div>`;
+    } else {
+      const p = Number(question.answerDecimalPlaces);
+      const dec = Number.isFinite(p) ? Math.max(0, Math.min(12, Math.round(p))) : 2;
+      completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Round your answer to <strong>${dec}</strong> decimal place${dec === 1 ? "" : "s"}.</div>`;
+    }
   }
 
   if (question.questionType === "open-ended") {

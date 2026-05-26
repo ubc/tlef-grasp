@@ -217,7 +217,10 @@ FORMAT FOR "calculationVariables":
 - A JSON array of objects, one per variable: "name" (string), "min" and "max" (numbers; equal min and max fixes a constant), "decimals" (0–8 for sampled value rounding), optional "integerOnly": true.
 
 FORMAT FOR "calculationAnswerDecimals":
-- Integer 0-12: how many decimal places the student's submitted answer is rounded to for grading.
+- Integer 0-12: how many decimal places are displayed to the student. Controls display precision only.
+
+FORMAT FOR "calculationAnswerTolerancePercent" (OPTIONAL):
+- Number 0-100. Use when the domain grades within a percentage band: e.g. 2 for chemistry, 5 for geology/engineering. Omit for math/physics where exact decimal rounding is expected.
 
 Example (base yours on the provided materials):
 {
@@ -235,7 +238,7 @@ Example (base yours on the provided materials):
 
 INSTRUCTIONS:
 1. Create one specific calculation item tied to the provided content—not a generic drill unrelated to the materials.
-2. Set "type" to "calculation" and include "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation".
+2. Set "type" to "calculation" and include "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation". Add "calculationAnswerTolerancePercent" only when the subject warrants percentage-based grading.
 3. Use about 2-4 variables unless the objective clearly needs only one.
 4. Ensure the formula always evaluates to a finite real number for every value in the given ranges (no division by zero; no invalid operations).
 5. Do NOT include "options", a lettered multiple-choice "correctAnswer", or a static numeric "correctAnswer"—the platform computes the correct value from the formula and sampled variables.

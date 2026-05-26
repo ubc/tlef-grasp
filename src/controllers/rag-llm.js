@@ -204,6 +204,11 @@ function validateAndNormalizeQuestionData(data, requestedType) {
     let answerDec = parseInt(merged.calculationAnswerDecimals, 10);
     if (!Number.isFinite(answerDec)) answerDec = 2;
     answerDec = Math.max(0, Math.min(12, answerDec));
+
+    const tolRaw = parseFloat(merged.calculationAnswerTolerancePercent);
+    const answerTolerance = Number.isFinite(tolRaw)
+      ? Math.max(0, Math.min(100, tolRaw))
+      : null;
     let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
       .trim()
       .replace(/\?+$/, "");
@@ -239,6 +244,7 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       calculationFormula: formulaCanonical,
       calculationVariables: normalizedVars,
       calculationAnswerDecimals: answerDec,
+      calculationAnswerTolerancePercent: answerTolerance,
       explanation: merged.explanation != null ? String(merged.explanation) : "",
       options: null,
     };
@@ -523,35 +529,41 @@ function jsonOnlyRetrySuffix(attempt, questionType, lastError) {
   let calcExtra = "";
   if (questionType === "calculation" && lastError) {
     const msg = String(lastError.message || "");
-    if (/prose response|text.*instead of|refused/i.test(msg)) {
-      calcExtra = "\nPrevious response was commentary, not a question. You MUST output a JSON calculation question. ";
+    if (/prose response|text.*instead of|refused|Expected.*property|JSON at position|Unexpected token/i.test(msg)) {
+      calcExtra = "\nPrevious response was prose or malformed JSON, not a question object. Output ONLY a valid JSON calculation question — no commentary, no textbook summaries, no text outside the JSON object. ";
     }
-    if (/d\/dt|d\/dx|differential|integral|lim |∫|∑|calculus|symbolic/i.test(msg) ||
+    if (/∫|unsupported characters/i.test(msg)) {
+      calcExtra +=
+        "\nThe formula contained ∫ (integral sign) which the engine cannot evaluate. You have TWO options — pick whichever gives a valid arithmetic formula:" +
+        "\n  OPTION A — Pre-solve: if the integral has a simple closed form, write it. Example: ∫₀^b ax² dx → formula \"a * b^3 / 3\"." +
+        "\n  OPTION B — Reformulate: if the integral has NO simple closed form (e.g. involves cos, sin, ln), change the question entirely. Test a simpler but related arithmetic sub-skill: evaluate the integrand at x={{x}}, compute the derivative of a term, or apply the power rule." +
+        "\nThe formula field must contain ONLY + - * / ^ ( ) sin cos sqrt log exp E PI and variable names — absolutely no ∫, no d/dt, no = sign.";
+    } else if (/d\/dt|d\/dx|∑|calculus|symbolic/i.test(msg) ||
         /not defined in calculationVariables/i.test(msg) ||
         /expected variable for assignment/i.test(msg)) {
       calcExtra +=
-        "\nThe previous formula used calculus notation (d/dt, d/dx, integrals, limits) which the engine CANNOT evaluate. " +
-        "Do NOT attempt differential equations or symbolic calculus. " +
-        "Instead, pick a SIMPLE ARITHMETIC sub-problem related to the topic — for example: " +
-        "evaluate a polynomial at a point, compute a rate using a given formula, apply a physics/finance formula, or calculate a geometric quantity. " +
-        "The formula must be a single closed-form expression using only + - * / ^ ( ) and numbers.";
+        "\nThe previous formula used symbolic notation which the engine cannot evaluate. " +
+        "Pre-solve the calculus: differentiate or solve the ODE analytically, then encode the closed-form result as plain ASCII arithmetic. " +
+        "Examples: derivative of ax²+bx at x → formula \"2*a*x + b\"; ODE y(t)=y₀e^(kt) → formula \"y0 * E^(k*t)\". " +
+        "If no simple closed form exists, reformulate to a simpler arithmetic sub-question instead. " +
+        "The formula field must contain only + - * / ^ ( ) and variable names — no d/dt, no ∫, no = sign.";
     }
   }
 
   const calcSchema = `For calculation — return ONLY this JSON shape (no other text):${calcExtra}
 {
   "type": "calculation",
-  "topicTitle": "short label",
-  "stem": "Question text with {{V}} volts and {{R}} ohms.",
-  "calculationFormula": "V / R",
+  "topicTitle": "short label based on the content",
+  "stem": "Question about {{a}} and {{b}} drawn from the content.",
+  "calculationFormula": "formula derived from the content (NOT a * b unless content is multiplication)",
   "calculationVariables": [
-    {"name": "V", "min": 10, "max": 120, "integerOnly": true},
-    {"name": "R", "min": 5, "max": 50, "decimals": 1}
+    {"name": "a", "min": 1, "max": 10, "integerOnly": true},
+    {"name": "b", "min": 1, "max": 5, "decimals": 1}
   ],
   "calculationAnswerDecimals": 2,
   "explanation": "brief"
 }
-RULES: (1) stem MUST use {{name}} double curly braces for every variable — NOT [V], NOT {V}, NOT bare "V". (2) calculationFormula uses ONLY ASCII + - * / ^ ( ) and variable names — NO LaTeX, NO \\frac, NO ∫ ∑, NO d/dt, NO = sign. (3) Every name in calculationVariables must appear in BOTH stem (as {{name}}) AND calculationFormula. (4) min/max must be numbers. No "options" field.`;
+RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) calculationFormula uses ONLY: + - * / ^ ( ) sin cos tan sqrt log exp E PI and declared variable names — NO LaTeX, NO ∫ ∑, NO d/dt, NO = sign. (3) Every name in calculationVariables must appear in BOTH stem AND calculationFormula. (4) min/max must be numbers. No "options" field. (5) Derive the formula from the actual course content — do NOT copy the placeholder formula above.`;
   const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
   let schema;
   if (questionType === "multiple-choice") schema = mcSchema;

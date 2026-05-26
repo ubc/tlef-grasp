@@ -212,31 +212,42 @@ FORMAT FOR THE "stem" FIELD (mandatory):
 - Every variable in "calculationFormula" must appear in "stem" as {{name}} with the same "name" as in "calculationVariables".
 
 FORMAT FOR "calculationFormula":
-- One expression using variable names and + - * / ^ and parentheses. Prefer plain ASCII (e.g. "a * b", "(a + b) / 2"). Do NOT use ∫, ∑, or other symbols the calculator cannot parse. Avoid LaTeX in this field; use LaTeX only in "stem" if needed. (Simple \\frac or \\times may be normalized server-side, but ASCII is strongly preferred.)
+- One expression using variable names and + - * / ^ and parentheses. Plain ASCII only (e.g. "a * b", "(a + b) / 2", "y0 * E^(k*t)"). Do NOT use ∫, ∑, d/dx, or symbolic notation — the evaluator cannot parse them. Use LaTeX only in "stem" for display; keep "calculationFormula" as pure arithmetic.
+
+CALCULUS-SAFE PATTERN: For calculus objectives, pre-solve the symbolic math yourself, then encode the closed-form result in "calculationFormula". The system evaluates it numerically at random variable values.
+- Derivative: f(x) = {{a}}x²+{{b}}x → f'({{x}}) → formula: "2*a*x + b"
+- Definite integral with simple closed form: ∫₀^{{b}} {{a}}x² dx → formula: "a * b^3 / 3"
+- ODE: dy/dt = {{k}}y, y(0)={{y0}} at t={{t}} → formula: "y0 * E^(k*t)" (add calculationAnswerTolerancePercent: 1)
+- IMPORTANT — if the integral has NO simple closed form (e.g. involves cos, sin, ln, or complex compositions), do NOT write the integral in the formula. Instead REFORMULATE to a simpler sub-skill: evaluate the integrand at a point, apply the power rule to a term, or test an initial condition — anything expressible as plain arithmetic.
 
 FORMAT FOR "calculationVariables":
 - Array of objects: "name", "min", "max", "decimals" (0-8), optional "integerOnly": true. Use min === max for a fixed constant.
 
 FORMAT FOR "calculationAnswerDecimals":
-- Integer 0–12 for grading precision (student answer rounded to this many decimal places).
+- Integer 0–12. Controls how many decimal places are displayed to the student — not the grading window when tolerancePercent is set.
 
-Example:
+FORMAT FOR "calculationAnswerTolerancePercent" (OPTIONAL):
+- Number 0–100. Use when the domain grades within a percentage band: e.g. 2 for chemistry, 5 for geology/engineering, 1 for ODE/integral results. Omit for exact arithmetic.
+
+Example JSON structure (STRUCTURAL REFERENCE ONLY — do NOT copy this topic, formula, or variables; create your own based on the course content above):
 {
   "type": "calculation",
-  "topicTitle": "Product of two quantities",
-  "stem": "If a = {{a}} and b = {{b}}, what is a multiplied by b?",
+  "topicTitle": "topic title here",
+  "stem": "A question involving {{a}} and {{b}} goes here.",
   "calculationFormula": "a * b",
   "calculationVariables": [
-    { "name": "a", "min": 1, "max": 5, "decimals": 1 },
-    { "name": "b", "min": 1, "max": 20, "decimals": 0, "integerOnly": true }
+    { "name": "a", "min": 1, "max": 10, "integerOnly": true },
+    { "name": "b", "min": 1, "max": 5, "decimals": 1 }
   ],
-  "calculationAnswerDecimals": 1,
-  "explanation": "Apply multiplication; values are drawn from the configured ranges."
+  "calculationAnswerDecimals": 2,
+  "explanation": "Brief justification from the content."
 }
+
+CRITICAL: The formula above ("a * b") is a placeholder. You MUST derive the formula from the actual course content. If the content is about differential equations, write a differential-equation formula. If about integration, write an integration result. Do NOT output generic formulas unrelated to the materials.
 
 INSTRUCTIONS:
 1. Create one calculation item grounded in the provided materials.
-2. Include "type": "calculation", "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation".
+2. Include "type": "calculation", "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", and "explanation". Add "calculationAnswerTolerancePercent" only when the subject warrants percentage-based grading.
 3. Prefer 2-4 variables unless a single variable clearly suffices for the objective.
 4. Ensure the formula stays finite for all sampled values in range (e.g. no division by zero).
 5. Do NOT include "options", multiple-choice letters, or a static numeric correct answer field—the server grades using the formula and sampled variables.

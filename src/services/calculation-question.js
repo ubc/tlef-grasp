@@ -553,10 +553,28 @@ function parseStudentNumericAnswer(text) {
   return n;
 }
 
-/** Compare student answer to expected within decimal rounding rules. */
-function numericAnswersMatch(studentValue, expectedValue, answerDecimals) {
-  const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
+/**
+ * Compare student answer to expected value.
+ * When tolerancePercent is a finite number 0–100, grades by relative error:
+ *   |student − expected| / |expected| ≤ tolerancePercent / 100
+ * When expected ≈ 0 (|expected| < 1e-10), falls back to absolute error with the
+ * same threshold to avoid division by zero.
+ * When tolerancePercent is absent/null, uses existing decimal-rounding behaviour.
+ */
+function numericAnswersMatch(studentValue, expectedValue, answerDecimals, tolerancePercent) {
   if (!Number.isFinite(studentValue) || !Number.isFinite(expectedValue)) return false;
+
+  const tol = Number(tolerancePercent);
+  if (Number.isFinite(tol) && tol >= 0) {
+    const threshold = Math.max(0, Math.min(100, tol)) / 100;
+    const diff = Math.abs(studentValue - expectedValue);
+    if (Math.abs(expectedValue) < 1e-10) {
+      return diff <= threshold;
+    }
+    return diff / Math.abs(expectedValue) <= threshold;
+  }
+
+  const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
   const a = roundToDecimals(studentValue, d);
   const b = roundToDecimals(expectedValue, d);
   const eps = Math.max(10 ** -(d + 2), 1e-12);

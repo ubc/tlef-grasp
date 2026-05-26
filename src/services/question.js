@@ -42,6 +42,12 @@ const saveQuestion = async (courseId, questionData) => {
                 ? Math.max(0, Math.min(12, parseInt(answerDecRaw, 10) || 2))
                 : 2;
 
+        const tolRaw = questionData.calculationAnswerTolerancePercent;
+        const calculationAnswerTolerancePercent =
+            tolRaw !== undefined && tolRaw !== null && tolRaw !== ""
+                ? Math.max(0, Math.min(100, parseFloat(tolRaw) || 0))
+                : null;
+
         const calcVarsForStore = Array.isArray(questionData.calculationVariables)
             ? questionData.calculationVariables
             : [];
@@ -77,6 +83,7 @@ const saveQuestion = async (courseId, questionData) => {
                     : calcFormulaRaw,
             calculationVariables: calcVarsForStore,
             calculationAnswerDecimals,
+            calculationAnswerTolerancePercent,
             bloom: questionData.bloom,
             difficulty: questionData.difficulty,
             courseId: courseIdObj,
@@ -223,6 +230,14 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.calculationAnswerDecimals !== undefined) {
             const d = parseInt(updateData.calculationAnswerDecimals, 10);
             update.calculationAnswerDecimals = Math.max(0, Math.min(12, Number.isFinite(d) ? d : 2));
+        }
+        if (updateData.calculationAnswerTolerancePercent !== undefined) {
+            const t = parseFloat(updateData.calculationAnswerTolerancePercent);
+            update.calculationAnswerTolerancePercent = (updateData.calculationAnswerTolerancePercent === null ||
+                updateData.calculationAnswerTolerancePercent === "" ||
+                !Number.isFinite(t))
+                ? null
+                : Math.max(0, Math.min(100, t));
         }
         if (updateData.openEndedSampleAnswer !== undefined) {
             update.openEndedSampleAnswer =

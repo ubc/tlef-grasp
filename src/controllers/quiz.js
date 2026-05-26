@@ -310,6 +310,11 @@ const getQuizQuestionsHandler = async (req, res) => {
           q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
             ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
             : 2;
+        const tolerancePercent =
+          q.calculationAnswerTolerancePercent != null &&
+          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
+            ? Number(q.calculationAnswerTolerancePercent)
+            : null;
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
 
         if (approvedOnlyBool) {
@@ -327,6 +332,7 @@ const getQuizQuestionsHandler = async (req, res) => {
               questionType: "calculation",
               calculationToken: built.token,
               answerDecimalPlaces: built.answerDecimalPlaces,
+              calculationAnswerTolerancePercent: tolerancePercent,
               options: {},
               learningObjectiveId: q.learningObjectiveId,
               granularObjectiveId: q.granularObjectiveId,
@@ -505,6 +511,11 @@ const checkQuestionAnswerHandler = async (req, res) => {
         question.calculationAnswerDecimals !== null
           ? Math.max(0, Math.min(12, parseInt(question.calculationAnswerDecimals, 10) || 2))
           : 2;
+      const tolerancePercent =
+        question.calculationAnswerTolerancePercent != null &&
+        Number.isFinite(Number(question.calculationAnswerTolerancePercent))
+          ? Number(question.calculationAnswerTolerancePercent)
+          : null;
       let expected;
       try {
         expected = calculationQuestion.evaluateCalculationFormula(formula, verified.values);
@@ -525,7 +536,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         });
       }
       const studentNum = calculationQuestion.parseStudentNumericAnswer(answerText);
-      const isCorrect = calculationQuestion.numericAnswersMatch(studentNum, expected, answerDec);
+      const isCorrect = calculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
       const displayCorrect = calculationQuestion.formatAnswerForDisplay(expected, answerDec);
       res.json({
         success: true,
