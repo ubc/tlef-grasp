@@ -2,7 +2,7 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality question that tests students' understanding of the provided learning objective.
+const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality question based on the provided content that effectively test students' understanding of the course learning objective.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
@@ -68,44 +68,72 @@ Example:
 }
 
 --- If Question Type is "calculation" ---
-You are authoring a parameterised question. The server will sample random values
-for each variable, substitute {{name}} in the stem, and evaluate calculationFormula
+You are authoring a parameterised question. The server samples random values for
+each variable, substitutes {{name}} in the stem, and evaluates calculationFormula
 to compute the correct answer.
 
+VARIABLE NAMING RULE (most common cause of rejection):
+Use ONLY single-letter variable names: a, b, c, d, m, n, r, t, v, x, y, z.
+Do NOT use words like "mass", "velocity", "radius", "time". The formula evaluator
+requires the name in calculationFormula to be byte-for-byte identical to the name
+in calculationVariables and in the {{name}} placeholder in stem.
+
 RULES (violations cause immediate rejection):
-1. Every variable must appear in "stem" as {{name}} (double curly braces, exact match to its "name" in calculationVariables).
-2. calculationFormula must be ONE pure ASCII arithmetic expression using only:
-   + - * / ^ ( ) digits, variable names, functions sin cos tan sqrt log exp, constants PI E.
-   No LaTeX, no Unicode math symbols (∫ ∑ π ℯ), no = sign, no "from a to b" text.
-3. Every declared variable must appear in BOTH "stem" AND calculationFormula.
-4. For calculus problems, pre-solve the symbolic math yourself and encode only
-   the closed-form arithmetic result in calculationFormula. If no simple closed
-   form exists, reformulate to a directly computable sub-skill (e.g. evaluate
-   the integrand at a point, apply the power rule to one term).
+1. Use at most 3 variables. Fewer is better.
+2. Every variable must appear in "stem" as {{name}} (double curly braces, exact
+   match to its "name" in calculationVariables). No other placeholder style
+   ({name}, [name], (name)) is accepted.
+3. calculationFormula must be ONE pure ASCII arithmetic expression using only:
+   + - * / ^ ( ) digits, variable names, functions sin cos tan sqrt log exp,
+   constants PI E. No LaTeX, no Unicode math symbols (∫ ∑ π ℯ), no = sign.
+4. Every declared variable must appear in BOTH stem (as {{name}}) AND in
+   calculationFormula by the exact same single-letter name.
+5. Prefer integerOnly: true for variables unless the domain genuinely requires
+   decimals (e.g. concentrations, probabilities). Integer ranges avoid rounding
+   ambiguity and produce cleaner random values.
+6. Choose min/max so the formula never produces division by zero or sqrt of a
+   negative. If the formula contains 1/x, set min to 1 or higher. If it contains
+   sqrt(x), set min to 0 or higher.
+7. For calculus objectives (Apply / Analyze / Evaluate): pre-solve the symbolic
+   math yourself and encode only the closed-form arithmetic result in
+   calculationFormula. Show the original problem in the stem using LaTeX for
+   display; the formula must be pure arithmetic.
+   - Derivative of ax^2+bx at x: formula "2*a*x + b"
+   - Definite integral ∫₀ᵇ ax² dx: formula "a * b^3 / 3"
+   - ODE y(t)=y₀e^(kt) at t: formula "y0 * E^(k*t)" with tolerancePercent 1
+   If no simple closed form exists, reformulate to a directly computable sub-skill
+   (evaluate the integrand at a point, apply the power rule to one term).
 
 PROCEDURE:
 1. "topicTitle": short neutral label (3-10 words), no "?", must not reveal the answer.
-2. "stem": question text with each variable as {{name}}. Do NOT write numeric values — use placeholders.
-3. "calculationFormula": ONE ASCII expression. Every declared variable used at least once.
-4. "calculationVariables": array of {"name": "...", "min": number, "max": number, "decimals": 0-8}
-   or {"name": "...", "min": number, "max": number, "integerOnly": true}.
-   Forbidden names: "pi", "PI", "e", "E".
+2. "stem": question text. Every variable appears as {{name}} (double braces).
+   Do NOT write numeric values inline — use the {{name}} placeholder instead.
+3. "calculationFormula": ONE ASCII expression. References every declared variable.
+4. "calculationVariables": 1-3 entries, each {"name": single letter, "min": number,
+   "max": number, "integerOnly": true} or {"name": single letter, "min": number,
+   "max": number, "decimals": 0-8}. Forbidden names: "pi", "PI", "e", "E".
 5. "calculationAnswerDecimals": integer 0-12 (decimal places shown to the student).
-6. "calculationAnswerTolerancePercent" (optional): 0-100. Use for percentage-band grading
-   (e.g. 2 for chemistry, 5 for engineering estimates). Omit for exact rounding.
+6. "calculationAnswerTolerancePercent" (optional): 0-100 for percentage-band grading
+   (e.g. 2 for chemistry, 5 for engineering). Omit for exact decimal rounding.
 7. "explanation": brief explanation of the formula.
+
+SELF-CHECK before returning JSON:
+- Every name in calculationVariables appears in stem as {{name}} (double braces).
+- Every name in calculationVariables appears in calculationFormula by the exact same name.
+- calculationFormula contains no LaTeX, no ∫ ∑, no = sign, no word-length names.
+- min/max are numbers (not null). Formula stays finite across the declared ranges.
 
 Example (structure only — derive your own formula and variables from the course content):
 {
-  "topicTitle": "topic title here",
-  "stem": "Given {{a}} and {{b}}, calculate the result.",
-  "calculationFormula": "a * b",
+  "topicTitle": "Kinetic energy of a moving object",
+  "stem": "An object of mass {{m}} kg moves at {{v}} m/s. What is its kinetic energy in joules?",
+  "calculationFormula": "0.5 * m * v^2",
   "calculationVariables": [
-    { "name": "a", "min": 1, "max": 10, "integerOnly": true },
-    { "name": "b", "min": 1, "max": 5, "decimals": 1 }
+    { "name": "m", "min": 1, "max": 20, "integerOnly": true },
+    { "name": "v", "min": 1, "max": 15, "integerOnly": true }
   ],
-  "calculationAnswerDecimals": 2,
-  "explanation": "Brief justification from the content."
+  "calculationAnswerDecimals": 1,
+  "explanation": "Kinetic energy is KE = 0.5 mv², where m is mass and v is speed."
 }
 
 Do NOT include "options" or a multiple-choice "correctAnswer".
