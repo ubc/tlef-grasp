@@ -110,19 +110,9 @@ function shuffleArray(array) {
 }
 
 function resolveQuestionType(q) {
-  const t = String(q.questionType || q.type || "")
-    .trim()
-    .toLowerCase();
-  if (t === "fill-in-the-blank") {
-    return "fill-in-the-blank";
-  }
-  if (t === "calculation") {
-    return "calculation";
-  }
-  if (t === "open-ended") {
-    return "open-ended";
-  }
-  return "multiple-choice";
+  const t = String(q.questionType || q.type || "").trim().toLowerCase();
+  const known = ["fill-in-the-blank", "calculation", "open-ended"];
+  return known.includes(t) ? t : "multiple-choice";
 }
 
 // Helper function to shuffle question options and update correct answer
