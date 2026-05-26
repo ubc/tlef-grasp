@@ -840,7 +840,7 @@ const getQuizScores = async (quizId) => {
                 totalQuestions: scoreRecord ? scoreRecord.totalQuestions : null,
                 timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
-                studentName: student.displayName || student.username || 'Unknown Student',
+                studentName: student.displayName || student.puid || 'Unknown Student',
                 studentEmail: student.email || '-'
             };
         });

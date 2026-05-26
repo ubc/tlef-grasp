@@ -933,3 +933,111 @@ h2 {
     display: flex;
     justify-content: center;
 }
+
+/* ===== New Course Setup: cascading lookup form ===== */
+#course-setup-form .form-group--checkbox {
+    margin-bottom: 18px;
+}
+
+#course-setup-form .form-group--checkbox label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-weight: 500;
+    font-size: 14px;
+    color: #2c3e50;
+    cursor: pointer;
+}
+
+#course-setup-form .form-group--checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid #cfd8dc;
+    border-radius: 4px;
+    background: #fff;
+    flex: 0 0 auto;
+    accent-color: #4facfe;
+    cursor: pointer;
+}
+
+#course-setup-form select[multiple] {
+    padding: 6px 8px;
+    background-image: none;
+    height: auto;
+}
+
+#course-setup-form select[disabled] {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.field-help {
+    margin: 6px 2px 0;
+    color: #6c7a89;
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+/* ===== Existing-shell conflict modal ===== */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-backdrop[hidden] { display: none; }
+
+.modal-backdrop .modal {
+    max-width: 520px;
+    width: calc(100% - 32px);
+    background: #fff;
+    color: #222;
+    border-radius: 12px;
+    padding: 22px 24px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.modal-backdrop .modal h3 {
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #1f2d3d;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid #eef1f4;
+}
+
+.existing-shell-name {
+    margin: 6px 0 14px;
+    font-weight: 600;
+}
+
+.existing-shell-instructors {
+    margin: 6px 0 14px;
+    padding-left: 18px;
+}
+
+.existing-shell-instructors li { margin-bottom: 4px; }
+
+.existing-shell-instructors .muted { color: #888; font-size: 12.5px; }
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.modal-actions .back-btn,
+.modal-actions .continue-btn {
+    padding: 8px 14px;
+    font-size: 14px;
+}

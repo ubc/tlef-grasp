@@ -10,3 +10,5 @@ local_cache
 
 # OCR training data (auto-downloaded by Tesseract)
 *.traineddata
+
+.claude

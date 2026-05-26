@@ -1,18 +1,26 @@
 const crypto = require('crypto');
 const {
   createCourse,
-  getCourseByCourseCode,
   getCourseById,
+  getCourseByCode,
+  findAvailableCourseCode,
   getCourseByEnrollmentCode,
   listCoursesForEnrollment,
   updateCourseEnrollmentCode,
 } = require('../services/course');
 
+const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = require('../services/user-course');
+const materialService = require('../services/material');
+const questionService = require('../services/question');
+const { isFaculty, isStudent } = require('../utils/auth');
+const { createOrUpdateUser, getUserByPuid } = require('../services/user');
+const ubcApiService = require('../services/ubcApiService');
+const { buildCourseCode, campusDisplaySuffix } = require('../utils/slug');
+
 const COURSE_ACCESS_CODE_LENGTH = 12;
 const COURSE_ACCESS_CHARS =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
-/** Random alphanumeric string for course access links / codes */
 function generateCourseAccessCode(length = COURSE_ACCESS_CODE_LENGTH) {
   const bytes = crypto.randomBytes(length);
   let out = '';
@@ -25,36 +33,34 @@ function generateCourseAccessCode(length = COURSE_ACCESS_CODE_LENGTH) {
 function timingSafeEqualString(a, b) {
   const bufA = Buffer.from(String(a), 'utf8');
   const bufB = Buffer.from(String(b), 'utf8');
-  if (bufA.length !== bufB.length) {
-    return false;
-  }
+  if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-/** Remove enrollment secret from API payloads */
 function omitCourseAccess(course) {
   if (!course) return course;
   const { courseAccess, ...rest } = course;
   return rest;
 }
 
-const { createUserCourse, getUserCourses, isUserInCourse } = require('../services/user-course');
-const materialService = require('../services/material');
-const questionService = require('../services/question');
-const { isFaculty, isStudent } = require('../utils/auth');
+async function listCourseInstructors(courseId) {
+  const members = await getCourseUsers(courseId);
+  const instructors = [];
+  for (const m of members) {
+    if (await isFaculty(m.user)) {
+      const name = m.displayName || m.user?.displayName;
+      if (name) instructors.push(name);
+    }
+  }
+  return instructors;
+}
 
 const getMyCourses = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
     const userCourses = await getUserCourses(userId);
-    const courses = userCourses.map((course) =>
-      omitCourseAccess(course.course)
-    );
-
-    res.json({
-      success: true,
-      courses: courses,
-    });
+    const courses = userCourses.map((c) => omitCourseAccess(c.course));
+    res.json({ success: true, courses });
   } catch (error) {
     console.error("Error getting user courses:", error);
     res.status(500).json({ error: "Failed to retrieve courses" });
@@ -65,15 +71,8 @@ const getCourseByIdHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
     const course = await getCourseById(courseId);
-
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
-
-    res.json({
-      success: true,
-      course: omitCourseAccess(course),
-    });
+    if (!course) return res.status(404).json({ error: "Course not found" });
+    res.json({ success: true, course: omitCourseAccess(course) });
   } catch (error) {
     console.error("Error getting course:", error);
     res.status(500).json({ error: "Failed to retrieve course" });
@@ -83,19 +82,10 @@ const getCourseByIdHandler = async (req, res) => {
 const getCourseMaterials = async (req, res) => {
   try {
     const { courseId } = req.params;
-
-    // Verify course exists
     const course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
-
+    if (!course) return res.status(404).json({ error: "Course not found" });
     const materials = await materialService.getCourseMaterials(courseId);
-
-    res.json({
-      success: true,
-      materials: materials,
-    });
+    res.json({ success: true, materials });
   } catch (error) {
     console.error("Error getting course materials:", error);
     res.status(500).json({ error: "Failed to retrieve course materials" });
@@ -105,18 +95,10 @@ const getCourseMaterials = async (req, res) => {
 const getCourseQuestions = async (req, res) => {
   try {
     const { courseId } = req.params;
-
     const course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
-
+    if (!course) return res.status(404).json({ error: "Course not found" });
     const questions = await questionService.getQuestions(courseId);
-
-    res.json({
-      success: true,
-      questions: questions,
-    });
+    res.json({ success: true, questions });
   } catch (error) {
     console.error("Error getting course questions:", error);
     res.status(500).json({ error: "Failed to retrieve course questions" });
@@ -126,151 +108,183 @@ const getCourseQuestions = async (req, res) => {
 const addCourseMaterial = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title, type, date, status = "pending", sourceId, fileContent, fileSize } = req.body;
-
-    if (!title || !type) {
-      return res.status(400).json({ error: "Title and type are required" });
-    }
+    const { title, type, sourceId, fileContent, fileSize } = req.body;
+    if (!title || !type) return res.status(400).json({ error: "Title and type are required" });
 
     const course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
-    // Generate a sourceId if not provided (e.g. for manual entries)
     const materialSourceId = sourceId || `m${Date.now()}`;
-
     await materialService.saveMaterial(materialSourceId, courseId, {
       fileType: type,
       fileSize: fileSize || 0,
-      fileContent: fileContent,
+      fileContent,
       documentTitle: title,
     });
-
-    // Fetch the stored material to return it
     const newMaterial = await materialService.getMaterialBySourceId(materialSourceId);
-
-    res.json({
-      success: true,
-      message: "Material added successfully",
-      material: newMaterial,
-    });
+    res.json({ success: true, message: "Material added successfully", material: newMaterial });
   } catch (error) {
     console.error("Error adding course material:", error);
     res.status(500).json({ error: "Failed to add course material" });
   }
 };
 
+/**
+ * Re-fetch the chosen sections from UBC API so the server controls the
+ * authoritative course title (instead of trusting whatever the client sent).
+ * All selected sections must belong to the same UBC course.
+ */
+async function resolveSectionsToCourse(sectionIds) {
+  const sections = await ubcApiService.getCourseSectionsByIds(sectionIds);
+  if (!sections || sections.length === 0) {
+    return { error: "Could not find the selected sections in UBC API" };
+  }
+  if (sections.length !== sectionIds.length) {
+    return { error: "Some of the selected sections could not be found" };
+  }
+
+  const keys = [...new Set(sections.map((s) =>
+    `${s.course?.courseSubject?.code || ''}|${s.course?.courseNumber || ''}`
+  ))];
+  if (keys.length !== 1 || keys[0] === '|') {
+    return { error: "All selected sections must belong to the same UBC course" };
+  }
+
+  const first = sections[0];
+  const courseTitle =
+    first.course?.title ||
+    first.course?.abbreviatedTitle ||
+    first.abbreviatedTitle ||
+    '';
+  return { courseTitle };
+}
+
+async function syncStudentsToCourse(courseId, sectionIds, academicPeriod) {
+  try {
+    const students = await ubcApiService.getStudentsFromSections(sectionIds, academicPeriod);
+    if (!students || students.length === 0) return { added: 0 };
+
+    let added = 0;
+    for (const s of students) {
+      if (!s.puid) continue;
+      try {
+        let user = await getUserByPuid(s.puid);
+        if (!user) {
+          await createOrUpdateUser({
+            puid: s.puid,
+            displayName: s.displayName,
+            email: s.email,
+            affiliation: ['student'],
+          });
+          user = await getUserByPuid(s.puid);
+        }
+        if (!user) continue;
+        if (await isUserInCourse(user._id, courseId)) continue;
+        await createUserCourse(user._id, courseId);
+        added += 1;
+      } catch (perStudentError) {
+        console.error("syncStudents: skipped one student:", perStudentError);
+      }
+    }
+    return { added };
+  } catch (error) {
+    console.error("syncStudents failed:", error);
+    return { added: 0, error: error.message };
+  }
+}
+
 const createNewCourse = async (req, res) => {
   try {
-    // Staff cannot create new courses
     if (!(await isFaculty(req.user))) {
-      return res.status(403).json({
-        error: "Only faculty can create new courses"
-      });
+      return res.status(403).json({ error: "Only faculty can create new courses" });
     }
 
     const {
-      courseCode,
-      courseName,
-      instructorName,
-      semester,
-      expectedStudents,
-      courseDescription,
-      courseWeeks,
-      lecturesPerWeek,
-      courseCredits,
-      status = "active",
-    } = req.body;
+      campus,
+      academicPeriod,
+      sectionIds,
+      syncStudents = false,
+      force = false,
+    } = req.body || {};
 
-    // Validate required fields
-    if (
-      !courseCode ||
-      !courseName ||
-      !instructorName ||
-      !semester ||
-      !expectedStudents
-    ) {
-      return res.status(400).json({
-        error:
-          "Missing required fields: courseCode, courseName, instructorName, semester, and expectedStudents are required",
-      });
+    if (!campus || !academicPeriod) {
+      return res.status(400).json({ error: "Campus and academic period are required" });
+    }
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+      return res.status(400).json({ error: "Select at least one section" });
     }
 
-    // Check if course already exists
-    const existingCourse = await getCourseByCourseCode(courseCode);
-    if (existingCourse) {
-      return res
-        .status(409)
-        .json({ error: "Course with this code already exists" });
+    const resolved = await resolveSectionsToCourse(sectionIds);
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+
+    const { courseTitle } = resolved;
+    if (!courseTitle) {
+      return res.status(400).json({ error: "UBC API did not return a course title for the selected sections" });
+    }
+
+    const displaySuffix = campusDisplaySuffix(campus);
+    const courseName = displaySuffix ? `${courseTitle} ${displaySuffix}` : courseTitle;
+
+    const baseCode = buildCourseCode(courseTitle, campus);
+    if (!baseCode) {
+      return res.status(400).json({ error: "Could not derive a course code from the course name" });
+    }
+
+    let courseCode = baseCode;
+    if (force) {
+      courseCode = await findAvailableCourseCode(baseCode);
+      if (!courseCode) {
+        return res.status(500).json({ error: "Could not find an available course code" });
+      }
+    } else {
+      const existing = await getCourseByCode(baseCode);
+      if (existing) {
+        return res.status(409).json({
+          error: "existing_shell",
+          message: "Another instructor has already created a course shell for this UBC course.",
+          existing: {
+            _id: existing._id.toString(),
+            courseName: existing.courseName,
+            instructors: await listCourseInstructors(existing._id),
+          },
+        });
+      }
     }
 
     const courseAccess = generateCourseAccessCode();
-
-    // Prepare course data for database
-    const courseData = {
-      courseCode: courseCode.trim(),
-      courseName: courseName.trim(),
-      instructorName,
-      semester: semester.trim(),
-      expectedStudents,
-      courseDescription: courseDescription || "",
-      courseWeeks: courseWeeks || null,
-      lecturesPerWeek: lecturesPerWeek || null,
-      courseCredits: courseCredits || null,
-      status: status,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    const result = await createCourse({
+      courseName,
+      courseCode,
+      campus,
+      courseSectionIds: sectionIds,
       courseAccess,
-    };
-
-    // Create course in database
-    const result = await createCourse(courseData);
+    });
     const courseId = result.insertedId;
 
-    // Get the current user from session (set by passport authentication)
     const userId = req.user?._id;
     if (userId) {
-      // Create user-course relationship
       try {
         await createUserCourse(userId, courseId);
       } catch (userCourseError) {
         console.error("Error creating user-course relationship:", userCourseError);
-        // Don't fail the request if user-course creation fails, but log it
       }
     }
 
-    // Return the created course with all fields
-    const newCourse = {
-      _id: courseId.toString(),
-      code: courseCode,
-      courseName: courseName.trim(),
-      instructor: instructorName,
-      semester: semester,
-      students: expectedStudents,
-      description: courseDescription || "",
-      weeks: courseWeeks || null,
-      lecturesPerWeek: lecturesPerWeek || null,
-      credits: courseCredits || null,
-      status: status,
-      courseAccess,
-      materials: [],
-      questions: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    let syncResult = null;
+    if (syncStudents) {
+      syncResult = await syncStudentsToCourse(courseId, sectionIds, academicPeriod);
+    }
 
+    const newCourse = await getCourseById(courseId);
     res.status(201).json({
       success: true,
       message: "Course created successfully",
-      course: newCourse,
+      course: omitCourseAccess(newCourse),
+      ...(syncResult ? { studentsSynced: syncResult.added } : {}),
     });
   } catch (error) {
     console.error("Error creating course:", error);
-    res.status(500).json({
-      error: "Failed to create course",
-      details: error.message
-    });
+    res.status(500).json({ error: "Failed to create course", details: error.message });
   }
 };
 
@@ -279,19 +293,16 @@ const listEnrollmentCourses = async (req, res) => {
     if (!(await isStudent(req.user))) {
       return res.status(403).json({ error: "Only students can browse courses to join" });
     }
-
     const q = req.query.q || "";
     const courses = await listCoursesForEnrollment(q);
-    const list = courses.map((c) => ({
-      _id: c._id.toString(),
-      courseCode: c.courseCode,
-      courseName: c.courseName,
-      instructorName: c.instructorName,
-      semester: c.semester,
-      status: c.status,
-    }));
-
-    res.json({ success: true, courses: list });
+    res.json({
+      success: true,
+      courses: courses.map((c) => ({
+        _id: c._id.toString(),
+        courseName: c.courseName,
+        courseCode: c.courseCode,
+      })),
+    });
   } catch (error) {
     console.error("Error listing enrollment courses:", error);
     res.status(500).json({ error: "Failed to list courses" });
@@ -311,13 +322,7 @@ const joinCourseWithCode = async (req, res) => {
     }
 
     const course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
-
-    if (course.status === "archived") {
-      return res.status(403).json({ error: "This course is not accepting enrollments" });
-    }
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
     const userId = req.user._id || req.user.id;
     if (await isUserInCourse(userId, courseId)) {
@@ -329,23 +334,15 @@ const joinCourseWithCode = async (req, res) => {
         error: "This course does not have an enrollment code yet. Ask your instructor to open Settings and generate one.",
       });
     }
-
     if (!timingSafeEqualString(enrollmentCode.trim(), course.courseAccess)) {
       return res.status(403).json({ error: "Invalid enrollment code" });
     }
 
     await createUserCourse(userId, course._id);
-
     res.json({
       success: true,
       message: "You have been added to the course",
-      course: {
-        _id: course._id.toString(),
-        courseCode: course.courseCode,
-        courseName: course.courseName,
-        instructorName: course.instructorName,
-        semester: course.semester,
-      },
+      course: { _id: course._id.toString(), courseName: course.courseName, courseCode: course.courseCode },
     });
   } catch (error) {
     console.error("Error joining course:", error);
@@ -353,34 +350,23 @@ const joinCourseWithCode = async (req, res) => {
   }
 };
 
-/** Student joins using only the enrollment code (no courseId in URL). */
 const joinCourseByEnrollmentCode = async (req, res) => {
   try {
     if (!(await isStudent(req.user))) {
       return res.status(403).json({ error: "Only students can join a course with an enrollment code" });
     }
-
     const enrollmentCode = req.body?.enrollmentCode ?? req.body?.code;
     if (!enrollmentCode || typeof enrollmentCode !== "string" || !enrollmentCode.trim()) {
       return res.status(400).json({ error: "Enrollment code is required" });
     }
 
     const course = await getCourseByEnrollmentCode(enrollmentCode.trim());
-    if (!course) {
-      // Keep error generic so we don't leak which courses exist
-      return res.status(403).json({ error: "Invalid enrollment code" });
-    }
-
-    if (course.status === "archived") {
-      return res.status(403).json({ error: "This course is not accepting enrollments" });
-    }
+    if (!course) return res.status(403).json({ error: "Invalid enrollment code" });
 
     const userId = req.user._id || req.user.id;
-    const courseId = course._id.toString();
-    if (await isUserInCourse(userId, courseId)) {
+    if (await isUserInCourse(userId, course._id.toString())) {
       return res.status(409).json({ error: "You are already enrolled in this course" });
     }
-
     if (!course.courseAccess) {
       return res.status(503).json({
         error: "This course does not have an enrollment code yet. Ask your instructor to open Settings and generate one.",
@@ -388,17 +374,10 @@ const joinCourseByEnrollmentCode = async (req, res) => {
     }
 
     await createUserCourse(userId, course._id);
-
     res.json({
       success: true,
       message: "You have been added to the course",
-      course: {
-        _id: course._id.toString(),
-        courseCode: course.courseCode,
-        courseName: course.courseName,
-        instructorName: course.instructorName,
-        semester: course.semester,
-      },
+      course: { _id: course._id.toString(), courseName: course.courseName, courseCode: course.courseCode },
     });
   } catch (error) {
     console.error("Error joining course by code:", error);
@@ -411,7 +390,6 @@ const getEnrollmentCode = async (req, res) => {
     if (!(await isFaculty(req.user))) {
       return res.status(403).json({ error: "Only faculty can view enrollment codes" });
     }
-
     const { courseId } = req.params;
     const userId = req.user._id || req.user.id;
     if (!(await isUserInCourse(userId, courseId))) {
@@ -419,20 +397,14 @@ const getEnrollmentCode = async (req, res) => {
     }
 
     let course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
     if (!course.courseAccess) {
       const newCode = generateCourseAccessCode();
       await updateCourseEnrollmentCode(courseId, newCode);
       course = { ...course, courseAccess: newCode };
     }
-
-    res.json({
-      success: true,
-      enrollmentCode: course.courseAccess,
-    });
+    res.json({ success: true, enrollmentCode: course.courseAccess });
   } catch (error) {
     console.error("Error getting enrollment code:", error);
     res.status(500).json({ error: "Failed to load enrollment code" });
@@ -444,7 +416,6 @@ const regenerateEnrollmentCode = async (req, res) => {
     if (!(await isFaculty(req.user))) {
       return res.status(403).json({ error: "Only faculty can regenerate enrollment codes" });
     }
-
     const { courseId } = req.params;
     const userId = req.user._id || req.user.id;
     if (!(await isUserInCourse(userId, courseId))) {
@@ -452,13 +423,10 @@ const regenerateEnrollmentCode = async (req, res) => {
     }
 
     const course = await getCourseById(courseId);
-    if (!course) {
-      return res.status(404).json({ error: "Course not found" });
-    }
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
     const enrollmentCode = generateCourseAccessCode();
     await updateCourseEnrollmentCode(courseId, enrollmentCode);
-
     res.json({
       success: true,
       enrollmentCode,

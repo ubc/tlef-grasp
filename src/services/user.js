@@ -10,7 +10,6 @@ async function createOrUpdateUser(userData) {
 
         const collection = db.collection("grasp_user");
         const user = {
-            username: userData.username,
             puid: userData.puid,
             displayName: userData.displayName,
             email: userData.email,

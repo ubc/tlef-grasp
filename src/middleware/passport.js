@@ -39,7 +39,6 @@ passport.use(
 			const ubcEduCwlPuid = profile.attributes?.ubcEduCwlPuid ||
 				profile['urn:mace:dir:attribute-def:ubcEduCwlPuid'] ||
 				profile['urn:oid:1.3.6.1.4.1.60.6.1.6'];
-			const samlId = profile.nameID || ubcEduCwlPuid;
 
 			const email = profile.attributes?.mail ||
 				profile.attributes?.email ||
@@ -79,7 +78,6 @@ passport.use(
 						email: email,
 						affiliation: affiliations,
 						puid: ubcEduCwlPuid,
-						username: samlId
 					});
 					user = await getUserByPuid(ubcEduCwlPuid);
 				}

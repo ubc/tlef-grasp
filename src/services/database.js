@@ -58,6 +58,11 @@ class DatabaseService {
     try {
       await this.db.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
       await this.db.collection("grasp_course").createIndex({ courseCode: 1 }, { unique: true });
+      try {
+        await this.db.collection("grasp_course").dropIndex("campus_1_courseSubject_1_courseNumber_1");
+      } catch (e) {
+        // Legacy compound index didn't exist — fine.
+      }
       await this.db.collection("grasp_question").createIndex({ questionTitle: 1 });
       await this.db.collection("grasp_user_course").createIndex({ userId: 1, courseId: 1 }, { unique: true });
       await this.db.collection("grasp_material").createIndex({ sourceId: 1 }, { unique: true });

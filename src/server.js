@@ -18,6 +18,7 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
+const ubcApiRoutes = require("./routes/ubcApi");
 
 const { getUserRole, ROLES } = require("./utils/auth");
 const { ensureAuthenticated } = require('passport-ubcshib');
@@ -182,6 +183,9 @@ app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), 
 // Users management - faculty only
 app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), userRoutes);
 
+// UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
+app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);
+
 // Current user endpoint - all authenticated users
 app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), async (req, res) => {
   try {
@@ -195,7 +199,6 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
       user: {
         _id: req.user._id,
         id: req.user._id,
-        username: req.user.username,
         displayName: req.user.displayName,
         email: req.user.email,
         affiliation: req.user.affiliation,

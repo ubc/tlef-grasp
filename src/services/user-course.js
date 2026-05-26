@@ -125,8 +125,8 @@ const getUserCourses = async (userId) => {
                     userId: 1,
                     courseId: 1,
                     // Include all course fields at top level for easier access
-                    courseCode: "$course.courseCode",
                     courseName: "$course.courseName",
+                    courseCode: "$course.courseCode",
                     createdAt: "$course.createdAt",
                     // Keep full course object if needed
                     course: 1
@@ -200,7 +200,6 @@ const getCourseUsers = async (courseId) => {
                     userId: 1,
                     courseId: 1,
                     // Include all user fields at top level for easier access
-                    username: "$user.username",
                     puid: "$user.puid",
                     displayName: "$user.displayName",
                     email: "$user.email",
@@ -335,9 +334,9 @@ const getStudentCourses = async (userId) => {
         const transformed = userCourses.map(uc => ({
             _id: uc.courseId ? uc.courseId.toString() : '',
             id: uc.courseId ? uc.courseId.toString() : '',
-            name: uc.courseName || uc.courseCode || 'Unknown Course',
-            courseCode: uc.courseCode || '',
+            name: uc.courseName || 'Unknown Course',
             courseName: uc.courseName || '',
+            courseCode: uc.courseCode || '',
         })).filter(course => course.id); // Filter out courses without valid ID
         
         console.log('[getStudentCourses] Transformed courses:', JSON.stringify(transformed, null, 2));
