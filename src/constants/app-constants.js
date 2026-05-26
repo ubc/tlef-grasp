@@ -2,93 +2,103 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You behave like a strict JSON API, not a chat assistant.
-
-MANDATORY OUTPUT (read first):
-- Output EXACTLY one JSON object and NOTHING else: no preamble, no "##" headings, no bullet lists, no step-by-step reasoning, no "To address this", no summaries of the source, no "The final answer", no markdown code fences.
-- The first character of your entire reply MUST be "{" and the last MUST be "}".
-- Put all question text, options, and explanations INSIDE the JSON string fields only.
+const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality question that tests students' understanding of the provided learning objective.
 
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
 Question Type: {questionType}
 
-Task: Use ONLY the schema that matches Question Type. Base the question on the CONTENT section below (do not summarize or discuss the content in plain text).
+Bloom's level guidance:
+- Remember: recall a definition or fact
+- Understand: explain, paraphrase, or classify in own words
+- Apply: use a concept or formula in a novel scenario
+- Analyze: compare, differentiate, or break down components
+- Evaluate: justify, critique, or defend a choice
+- Create: design, construct, or propose something new
+
+BACKGROUND COURSE MATERIAL:
+{ragContext}
+--- END OF MATERIAL ---
+
+Use ONLY the schema for the Question Type specified above.
 
 --- If Question Type is "multiple-choice" ---
-PROCEDURE:
-1. Create the question content.
-2. Generate 4 plausible answer options, placing the CORRECT answer text in one of the positions (A, B, C, or D).
-3.  Set correctAnswer to the letter corresponding to the correct option (e.g. "C").
-4. Write a brief explanation.
+INSTRUCTIONS:
+1. Write a question stem aligned to the learning objective and Bloom's level.
+   If you have already generated questions in this conversation, the new stem
+   must approach the concept from a structurally different angle.
+2. Generate 4 answer options (A-D). Every option must be unique — no two options
+   may describe the same concept in different words.
+3. Every distractor must represent a genuine misconception a student might hold,
+   not an obviously wrong or trivially absurd option.
+4. Set correctAnswer to the letter of the correct option.
+5. For each incorrect option, write feedback that explains the specific
+   misconception in that option only. Feedback must NOT hint at the correct
+   answer, must NOT use comparative language ("partially right", "too large"),
+   and must NOT restate the correct reasoning.
 
-The response format must be a valid JSON with the exact structure as follows:
+Example structure (do NOT copy — generate content from the material above):
 {
-  "type": "multiple-choice",
-  "question": "Your specific question here",
+  "question": "A student applies [concept] to [scenario]. What is the result?",
   "options": {
-    "A": "First option text",
-    "B": "Second option text",
-    "C": "Third option text",
-    "D": "Fourth option text"
+    "A": { "text": "Incorrect option based on misconception X", "feedback": "This confuses [concept A] with [concept B]." },
+    "B": { "text": "Correct option", "feedback": "" },
+    "C": { "text": "Incorrect option based on misconception Y", "feedback": "This applies the right method to the wrong quantity." },
+    "D": { "text": "Incorrect option based on misconception Z", "feedback": "This reverses the relationship between the two variables." }
   },
-  "correctAnswer": "C",
-  "explanation": "Why this answer is correct based on the content"
+  "correctAnswer": "B"
 }
-Rules: Four non-empty options; correctAnswer is only "A", "B", "C", or "D"; randomize which letter is correct; option text must NOT start with "A)" or "A." style prefixes.
 
 --- If Question Type is "fill-in-the-blank" ---
-PROCEDURE:
-1. "topicTitle" is REQUIRED: a very short label (about 3-10 words) that names the topic or skill being tested. It must be a neutral phrase or title (not a question, no "?"). It must NOT reveal the answer, must NOT repeat the wording of correctAnswer or acceptableAnswers, and must NOT be instructions like "Fill in the blank" or "Complete the sentence".
-2. The "question" string is ONLY the item stem: one unfinished DECLARATIVE sentence (a statement with a gap), NOT a WH-question. FORBIDDEN in "question": "What is...", "Which...", "How...", "Define...", ending with "?".
-3. The sentence MUST contain exactly ONE blank, written ONLY as nine underscores: _________ (not ____, not [blank]).
-4. correctAnswer is what fills the blank (canonical form; use LaTeX \\( ... \\) inside JSON strings for math, with backslashes escaped for JSON).
-5. acceptableAnswers must include correctAnswer and reasonable equivalents (alternate LaTeX, plain-text math, synonyms).
-6. Do NOT include an "options" object.
+INSTRUCTIONS:
+1. "topicTitle": a short neutral label (3-10 words) naming the topic. Not a question, no "?", must not reveal the answer.
+2. "question": one unfinished DECLARATIVE sentence with exactly ONE blank written as _________ (nine underscores). Forbidden openings: "What is", "Which", "How", "Define", any question ending in "?".
+3. "correctAnswer": the canonical text that fills the blank. Use LaTeX \\( ... \\) for math (backslashes escaped for JSON).
+4. "acceptableAnswers": array including correctAnswer plus reasonable equivalents (alternate notation, synonyms).
+5. Do NOT include an "options" object.
 
 Example:
 {
-  "type": "fill-in-the-blank",
   "topicTitle": "Volume of a cone",
   "question": "The formula for the volume of a cone is _________.",
   "correctAnswer": "\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)",
   "acceptableAnswers": ["\\\\( \\\\frac{1}{3}\\\\pi r^2 h \\\\)", "1/3πr^2h"],
-  "explanation": "Why this answer is correct based on the content"
+  "explanation": "Brief justification from the content."
 }
 
-Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; exactly one _________ in "question".
-
 --- If Question Type is "calculation" ---
-CRITICAL RULES — violating any of these causes immediate rejection:
-1. STEM PLACEHOLDERS: Every variable MUST appear in "stem" using DOUBLE curly braces: {{name}}. The name must exactly match the "name" field in "calculationVariables". Example: if the variable name is "V", write {{V}} in the stem. Writing {V}, [V], (V), or bare "V" is WRONG and will be rejected.
-2. FORMULA SYNTAX: "calculationFormula" must use ONLY: + - * / ^ ( ) digits, declared variable names, and the built-in functions sin cos tan sqrt log exp and constants PI E. NO LaTeX (no \frac, no \sqrt{}, no $...$), NO Unicode math symbols (∫ ∑ ∂ π ℯ), NO "from a to b" text, NO = sign. Do NOT declare "pi", "PI", "e", or "E" as variable names.
-3. ALL VARIABLES USED: Every name declared in "calculationVariables" must appear in BOTH "stem" (as {{name}}) AND "calculationFormula". A variable that only appears in one of them will be rejected.
+You are authoring a parameterised question. The server will sample random values
+for each variable, substitute {{name}} in the stem, and evaluate calculationFormula
+to compute the correct answer.
 
-You are authoring a parameterised question: the server samples random values, substitutes {{name}} in the stem, then evaluates "calculationFormula" with those values to compute the correct answer.
-
-SCOPE: The correct answer must be a SINGLE numeric value from ONE closed-form arithmetic expression. The formula field must be pure ASCII arithmetic — no ∫, ∑, d/dx, or symbolic notation.
-
-CALCULUS-SAFE PATTERN: For calculus objectives (derivatives, integrals, ODEs), pre-solve the symbolic math yourself, then encode the closed-form result in "calculationFormula". Show the original calculus problem in "stem" using LaTeX; compute the answer via arithmetic.
-- Derivative: stem shows \( f'(x) \) at \( x = {{x}} \); formula: "2*a*x + b" (from f(x) = ax²+bx → f'(x) = 2ax+b)
-- Definite integral with simple closed form: stem shows \( \int_0^{{{b}}} {{a}}x^2\,dx \); formula: "a * b^3 / 3"
-- ODE solution: stem shows dy/dt = {{k}}y, y(0)={{y0}} at t={{t}}; formula: "y0 * E^(k*t)" + add calculationAnswerTolerancePercent: 1
-- IMPORTANT — if the integral or equation has NO simple closed form (e.g. involves cos, sin, ln, or complex compositions that cannot be written as a single arithmetic expression), do NOT write the integral in the formula. Instead, REFORMULATE to a simpler testable sub-skill: evaluate the integrand at a point, apply the power rule to a polynomial term, or test an initial condition — anything expressible as plain arithmetic.
+RULES (violations cause immediate rejection):
+1. Every variable must appear in "stem" as {{name}} (double curly braces, exact match to its "name" in calculationVariables).
+2. calculationFormula must be ONE pure ASCII arithmetic expression using only:
+   + - * / ^ ( ) digits, variable names, functions sin cos tan sqrt log exp, constants PI E.
+   No LaTeX, no Unicode math symbols (∫ ∑ π ℯ), no = sign, no "from a to b" text.
+3. Every declared variable must appear in BOTH "stem" AND calculationFormula.
+4. For calculus problems, pre-solve the symbolic math yourself and encode only
+   the closed-form arithmetic result in calculationFormula. If no simple closed
+   form exists, reformulate to a directly computable sub-skill (e.g. evaluate
+   the integrand at a point, apply the power rule to one term).
 
 PROCEDURE:
-1. "topicTitle": short neutral label (3–10 words), no "?", must not reveal the answer.
-2. "stem": question text. Each variable must appear as {{name}} (double curly braces). Do NOT write the variable's numeric value — use the {{name}} placeholder instead.
-3. "calculationFormula": ONE ASCII expression solving the stem. Reference EVERY declared variable at least once. No LaTeX, no Unicode math.
-4. "calculationVariables": non-empty array of {"name": "...", "min": number, "max": number, "decimals": 0–8} or {"name": "...", "min": number, "max": number, "integerOnly": true}. "min" and "max" must be numbers, never null. Forbidden names: "pi", "PI", "e", "E".
-5. "calculationAnswerDecimals": integer 0–12. Controls how many decimal places are shown to the student — not the grading window when tolerancePercent is set.
-6. (Optional) "calculationAnswerTolerancePercent": number 0–100. Use when the domain grades within a percentage band rather than by rounding — e.g. 2 for chemistry (≈2 sig figs), 5 for geology or engineering estimates. Omit for physics/math where exact decimal rounding is expected.
+1. "topicTitle": short neutral label (3-10 words), no "?", must not reveal the answer.
+2. "stem": question text with each variable as {{name}}. Do NOT write numeric values — use placeholders.
+3. "calculationFormula": ONE ASCII expression. Every declared variable used at least once.
+4. "calculationVariables": array of {"name": "...", "min": number, "max": number, "decimals": 0-8}
+   or {"name": "...", "min": number, "max": number, "integerOnly": true}.
+   Forbidden names: "pi", "PI", "e", "E".
+5. "calculationAnswerDecimals": integer 0-12 (decimal places shown to the student).
+6. "calculationAnswerTolerancePercent" (optional): 0-100. Use for percentage-band grading
+   (e.g. 2 for chemistry, 5 for engineering estimates). Omit for exact rounding.
 7. "explanation": brief explanation of the formula.
 
-Example JSON structure (STRUCTURAL REFERENCE ONLY — do NOT copy this topic, formula, or variables; create your own based on the course content above):
+Example (structure only — derive your own formula and variables from the course content):
 {
-  "type": "calculation",
   "topicTitle": "topic title here",
-  "stem": "A question involving {{a}} and {{b}} goes here.",
+  "stem": "Given {{a}} and {{b}}, calculate the result.",
   "calculationFormula": "a * b",
   "calculationVariables": [
     { "name": "a", "min": 1, "max": 10, "integerOnly": true },
@@ -98,38 +108,34 @@ Example JSON structure (STRUCTURAL REFERENCE ONLY — do NOT copy this topic, fo
   "explanation": "Brief justification from the content."
 }
 
-CRITICAL: The formula above ("a * b") is a placeholder. You MUST derive the formula from the actual course content. If the content is about differential equations, write a differential-equation formula. If about integration, write an integration result. Do NOT output "V / R" or "a * b" unless the content is specifically about those relationships.
-
-Do NOT include "options" or a multiple-choice "correctAnswer" in the calculation output.
+Do NOT include "options" or a multiple-choice "correctAnswer".
 
 --- If Question Type is "open-ended" ---
-PROCEDURE:
-1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question.
-2. Use "question" OR "stem" for the prompt students respond to (paragraph-length is fine). Do NOT use nine underscores; this is not fill-in-the-blank.
-3. "openEndedSampleAnswer" is REQUIRED: a strong example response. Students see it only after they submit; it is not used for auto-grading.
-4. "openEndedGradingCriteria" is REQUIRED: clear criteria or a short rubric (bullet-style in a string is fine) so students can self-check.
+INSTRUCTIONS:
+1. "topicTitle": short neutral label (3-10 words), not a question.
+2. "question": the prompt students respond to. May be paragraph-length. Do NOT use _________.
+3. "openEndedSampleAnswer": a strong example response shown to students after submission (not used for auto-grading).
+4. "openEndedGradingCriteria": clear criteria or a short rubric students can use to self-assess.
 5. Do NOT include "options", "correctAnswer", or calculation fields.
 
 Example:
 {
-  "type": "open-ended",
   "topicTitle": "Design trade-offs",
   "question": "Explain two trade-offs between caching and freshness in a web application.",
-  "openEndedSampleAnswer": "Caching improves latency and reduces load, but stale data can confuse users unless TTLs or invalidation are chosen carefully...",
-  "openEndedGradingCriteria": "Full credit: names two distinct trade-offs with reasoning. Partial: one trade-off or vague reasoning. No credit: off-topic.",
-  "explanation": "Why this aligns with the materials"
+  "openEndedSampleAnswer": "Caching improves latency and reduces load, but stale data can confuse users unless TTLs or invalidation are chosen carefully.",
+  "openEndedGradingCriteria": "Full credit: two distinct trade-offs with reasoning. Partial: one trade-off or vague reasoning. No credit: off-topic.",
+  "explanation": "Brief justification from the content."
 }
 
-CRITICAL FORMATTING REQUIREMENTS (all matching types):
+CRITICAL FORMATTING REQUIREMENTS:
 - Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL JSON ESCAPING: If your response includes LaTeX mathematical notation, you MUST properly escape all backslashes in JSON strings (each backslash in the content becomes \\\\\\\\ in JSON where needed).
-- For multiple-choice: Do NOT include letter prefixes (A), B), etc.) inside the option text values.
-- For calculation: Do NOT include an "options" object or MC "correctAnswer"; use "stem" (not only "question") for the template, and place each variable inline as {{name}} where "name" is one of "calculationVariables[].name" (never a literal {{var}} placeholder). The formula field must stay machine-evaluable (no integral sign ∫ or similar).
-- For open-ended: Include "openEndedSampleAnswer" and "openEndedGradingCriteria"; the platform does not auto-grade text responses.
-FORMATTING INSIDE JSON STRINGS:
-- Escape backslashes for LaTeX: use \\\\\\\\ where a single backslash is needed in the rendered math, so JSON.parse succeeds.
-CONTENT: {ragContext}`;
+- CRITICAL LaTeX FORMATTING: Enclose all mathematical notation in \\\\( and \\\\) for inline math
+  (e.g., \\\\( x^2 \\\\)). Do NOT use () or $ as math delimiters.
+- CRITICAL SMILES FORMATTING: Wrap SMILES strings in [SMILES][/SMILES] tags
+  (e.g., [SMILES]O[/SMILES]).
+- CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped.
+- Do NOT include letter prefixes (A), B), etc.) inside option text values.`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
 
