@@ -3032,10 +3032,10 @@ function convertQuestionsToGroups(questions) {
         isOpen: true, // Open all panels by default when generating for multiple learning objectives
         los: groupQuestions.map((question, itemIndex) => {
           const qType =
-            question.type || question.questionType || "multiple-choice";
-          const isFib = qType === "fill-in-the-blank";
-          const isCalc = qType === "calculation";
-          const isOpen = qType === "open-ended";
+            question.type || question.questionType || QUESTION_TYPES.MULTIPLE_CHOICE;
+          const isFib = qType === QUESTION_TYPES.FILL_IN_THE_BLANK;
+          const isCalc = qType === QUESTION_TYPES.CALCULATION;
+          const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
           const acceptable =
             isFib &&
             Array.isArray(question.acceptableAnswers) &&
@@ -3049,7 +3049,7 @@ function convertQuestionsToGroups(questions) {
             id: question.id,
             title: question.text,
             stem: "Select the best answer:",
-            questionType: "multiple-choice",
+            questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
             options: {
               A: {
                 id: "A",
@@ -3098,7 +3098,7 @@ function convertQuestionsToGroups(questions) {
                 return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
               })(),
             stem: question.text,
-            questionType: "fill-in-the-blank",
+            questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
             options: {},
             correctAnswer: question.correctAnswer,
             acceptableAnswers: acceptable,
@@ -3126,7 +3126,7 @@ function convertQuestionsToGroups(questions) {
                 return words.slice(0, 10).join(" ") || "Calculation";
               })(),
             stem: stemCalc,
-            questionType: "calculation",
+            questionType: QUESTION_TYPES.CALCULATION,
             options: {},
             correctAnswer: "",
             acceptableAnswers: [],
@@ -3161,7 +3161,7 @@ function convertQuestionsToGroups(questions) {
                 return words.slice(0, 10).join(" ") || "Open-ended";
               })(),
             stem: stemOpen,
-            questionType: "open-ended",
+            questionType: QUESTION_TYPES.OPEN_ENDED,
             options: {},
             correctAnswer: "",
             acceptableAnswers: [],
@@ -3352,11 +3352,11 @@ function renderGranularLoSection(lo, group) {
 function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
   const isFib =
-    (question.questionType || question.type) === "fill-in-the-blank";
+    (question.questionType || question.type) === QUESTION_TYPES.FILL_IN_THE_BLANK;
   const isCalc =
-    (question.questionType || question.type) === "calculation";
+    (question.questionType || question.type) === QUESTION_TYPES.CALCULATION;
   const isOpen =
-    (question.questionType || question.type) === "open-ended";
+    (question.questionType || question.type) === QUESTION_TYPES.OPEN_ENDED;
 
   const titleEditingHtml =
     (isFib || isCalc || isOpen) && isEditing
@@ -3742,7 +3742,7 @@ function saveQuestionEdit(questionId) {
   }
 
   const isFib =
-    (question.questionType || question.type) === "fill-in-the-blank";
+    (question.questionType || question.type) === QUESTION_TYPES.FILL_IN_THE_BLANK;
   if (isFib) {
     if (!String(question.title || "").trim()) {
       showToast("Topic title is required", "error");
@@ -3770,7 +3770,7 @@ function saveQuestionEdit(questionId) {
   }
 
   const isCalc =
-    (question.questionType || question.type) === "calculation";
+    (question.questionType || question.type) === QUESTION_TYPES.CALCULATION;
   if (isCalc) {
     if (!String(question.title || "").trim()) {
       showToast("Topic title is required", "error");
@@ -3808,7 +3808,7 @@ function saveQuestionEdit(questionId) {
   }
 
   const isOpen =
-    (question.questionType || question.type) === "open-ended";
+    (question.questionType || question.type) === QUESTION_TYPES.OPEN_ENDED;
   if (isOpen) {
     if (!String(question.title || "").trim()) {
       showToast("Topic title is required", "error");
@@ -4203,7 +4203,7 @@ async function handleSaveToQuiz() {
       for (const lo of group.los) {
         for (const question of lo.questions) {
           const qt =
-            question.questionType || question.type || "multiple-choice";
+            question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE;
           const payload = {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
@@ -4220,7 +4220,7 @@ async function handleSaveToQuiz() {
             status: question.status || "Draft",
             flagStatus: question.flagStatus || false,
           };
-          if (qt === "calculation") {
+          if (qt === QUESTION_TYPES.CALCULATION) {
             payload.options = {};
             payload.calculationFormula = question.calculationFormula || "";
             payload.calculationVariables = Array.isArray(
@@ -4232,7 +4232,7 @@ async function handleSaveToQuiz() {
             if (!Number.isFinite(d)) d = 2;
             payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
           }
-          if (qt === "open-ended") {
+          if (qt === QUESTION_TYPES.OPEN_ENDED) {
             payload.options = {};
             payload.openEndedSampleAnswer = String(
               question.openEndedSampleAnswer || ""

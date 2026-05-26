@@ -2,6 +2,7 @@ const quizService = require("../services/quiz");
 const questionService = require("../services/question");
 const calculationQuestion = require("../services/calculation-question");
 const { isFaculty } = require("../utils/auth");
+const { QUESTION_TYPES } = require("../constants/app-constants");
 
 /**
  * Get all quizzes for a course
@@ -209,16 +210,16 @@ function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "")
     .trim()
     .toLowerCase();
-  if (t === "fill-in-the-blank") {
-    return "fill-in-the-blank";
+  if (t === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+    return QUESTION_TYPES.FILL_IN_THE_BLANK;
   }
-  if (t === "calculation") {
-    return "calculation";
+  if (t === QUESTION_TYPES.CALCULATION) {
+    return QUESTION_TYPES.CALCULATION;
   }
-  if (t === "open-ended") {
-    return "open-ended";
+  if (t === QUESTION_TYPES.OPEN_ENDED) {
+    return QUESTION_TYPES.OPEN_ENDED;
   }
-  return "multiple-choice";
+  return QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
 // Helper function to generate a shuffled order of option indices
@@ -258,13 +259,13 @@ const getQuizQuestionsHandler = async (req, res) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
 
-      if (questionType === "fill-in-the-blank") {
+      if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         const fibMainText = (q.stem || q.title || "").trim();
         const formattedQuestion = {
           ...q,
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
-          questionType: "fill-in-the-blank",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           options: {},
         };
         let finalQuestion = formattedQuestion;
@@ -277,14 +278,14 @@ const getQuizQuestionsHandler = async (req, res) => {
         return finalQuestion;
       }
 
-      if (questionType === "open-ended") {
+      if (questionType === QUESTION_TYPES.OPEN_ENDED) {
         const fibMainText = (q.stem || q.title || "").trim();
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
         const formattedQuestion = {
           ...q,
           id: qid,
           question: fibMainText || questionText || "Question text not available",
-          questionType: "open-ended",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,
@@ -298,7 +299,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         return formattedQuestion;
       }
 
-      if (questionType === "calculation") {
+      if (questionType === QUESTION_TYPES.CALCULATION) {
         const vars = q.calculationVariables;
         const template = calculationQuestion.resolveCalculationDisplayTemplate(
           q.stem,
@@ -329,7 +330,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             return {
               id: qid,
               question: built.rendered,
-              questionType: "calculation",
+              questionType: QUESTION_TYPES.CALCULATION,
               calculationToken: built.token,
               answerDecimalPlaces: built.answerDecimalPlaces,
               calculationAnswerTolerancePercent: tolerancePercent,
@@ -349,7 +350,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             question:
               template ||
               "This calculation question could not be loaded. Please contact your instructor.",
-            questionType: "calculation",
+            questionType: QUESTION_TYPES.CALCULATION,
             calculationToken: null,
             answerDecimalPlaces: answerDec,
             calculationLoadError: true,
@@ -364,7 +365,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           ...q,
           id: qid,
           question: template || "Question text not available",
-          questionType: "calculation",
+          questionType: QUESTION_TYPES.CALCULATION,
           options: {},
           calculationFormula: formula,
           calculationVariables: vars,
@@ -402,7 +403,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         ...q,
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
-        questionType: "multiple-choice",
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
       };
@@ -480,7 +481,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       question.calculationFormula.trim().length > 0;
 
     const treatAsCalculation =
-      questionType === "calculation" ||
+      questionType === QUESTION_TYPES.CALCULATION ||
       (calculationToken && hasCalculationFormula);
 
     if (treatAsCalculation) {
@@ -548,7 +549,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       return;
     }
 
-    if (questionType === "open-ended") {
+    if (questionType === QUESTION_TYPES.OPEN_ENDED) {
       if (answerText === undefined || answerText === null || String(answerText).trim() === "") {
         return res.status(400).json({
           success: false,
@@ -577,7 +578,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       return;
     }
 
-    if (questionType === "fill-in-the-blank") {
+    if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       if (answerText === undefined || answerText === null) {
         return res.status(400).json({
           success: false,

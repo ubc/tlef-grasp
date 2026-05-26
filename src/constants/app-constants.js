@@ -236,6 +236,13 @@ IMPORTANT:
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
+const QUESTION_TYPES = {
+    MULTIPLE_CHOICE:   "multiple-choice",
+    FILL_IN_THE_BLANK: "fill-in-the-blank",
+    CALCULATION:       "calculation",
+    OPEN_ENDED:        "open-ended",
+};
+
 const DEFAULT_PROMPTS = {
     questionGeneration: QUESTION_GENERATION_PROMPT,
     objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
@@ -245,12 +252,12 @@ const DEFAULT_PROMPTS = {
 // Default mapping from Bloom's level to ordered question-type preferences.
 // The first entry is what auto-generation picks; the rest are fallbacks.
 const DEFAULT_BLOOM_TYPE_PREFERENCES = {
-    Remember:  ["fill-in-the-blank", "multiple-choice"],
-    Understand: ["multiple-choice", "fill-in-the-blank"],
-    Apply:      ["multiple-choice", "fill-in-the-blank"],
-    Analyze:    ["multiple-choice", "fill-in-the-blank"],
-    Evaluate:   ["calculation", "multiple-choice"],
-    Create:     ["open-ended", "multiple-choice"],
+    Remember:  [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.MULTIPLE_CHOICE],
+    Understand: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+    Apply:      [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+    Analyze:    [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+    Evaluate:   [QUESTION_TYPES.CALCULATION, QUESTION_TYPES.MULTIPLE_CHOICE],
+    Create:     [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
 };
 
 module.exports = {
@@ -258,6 +265,7 @@ module.exports = {
     OBJECTIVE_GENERATION_AUTO_PROMPT,
     OBJECTIVE_GENERATION_MANUAL_PROMPT,
     BLOOM_LEVELS,
+    QUESTION_TYPES,
     DEFAULT_PROMPTS,
     DEFAULT_BLOOM_TYPE_PREFERENCES,
 };

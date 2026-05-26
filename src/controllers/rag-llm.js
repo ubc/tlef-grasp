@@ -12,7 +12,7 @@ const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
 const calculationQuestionService = require('../services/calculation-question');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES } = require('../constants/app-constants');
 
 // ---------------------------------------------------------------------------
 // Temporary debug logger — appends one JSON entry per attempt to llm-debug.json
@@ -56,10 +56,10 @@ function returnErrorResponse(res, error, details = null) {
 function resolveQuestionTypeFromPayload(data, requestedType) {
   const t = data?.type || data?.questionType;
   if (
-    t === "fill-in-the-blank" ||
-    t === "multiple-choice" ||
-    t === "calculation" ||
-    t === "open-ended"
+    t === QUESTION_TYPES.FILL_IN_THE_BLANK ||
+    t === QUESTION_TYPES.MULTIPLE_CHOICE ||
+    t === QUESTION_TYPES.CALCULATION ||
+    t === QUESTION_TYPES.OPEN_ENDED
   ) {
     return t;
   }
@@ -138,7 +138,7 @@ function repairLooseMultipleChoiceShape(data) {
   }
   return {
     ...d,
-    type: d.type || "multiple-choice",
+    type: d.type || QUESTION_TYPES.MULTIPLE_CHOICE,
     options,
     correctAnswer: letters[correctIdx],
   };
@@ -173,7 +173,7 @@ function validateAndNormalizeQuestionData(data, requestedType) {
     );
   }
 
-  if (resolvedType === "calculation") {
+  if (resolvedType === QUESTION_TYPES.CALCULATION) {
     const merged = { ...data };
     const stemText = String(merged.stem || merged.question || "").trim();
     if (!stemText) {
@@ -258,8 +258,8 @@ function validateAndNormalizeQuestionData(data, requestedType) {
         normalizedVars
       );
     return {
-      type: "calculation",
-      questionType: "calculation",
+      type: QUESTION_TYPES.CALCULATION,
+      questionType: QUESTION_TYPES.CALCULATION,
       topicTitle,
       question: stemText,
       stem: stemText,
@@ -272,7 +272,7 @@ function validateAndNormalizeQuestionData(data, requestedType) {
     };
   }
 
-  if (resolvedType === "open-ended") {
+  if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
     const merged = { ...data };
     const stemText = String(merged.stem || merged.question || "").trim();
     if (!stemText) {
@@ -300,8 +300,8 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       topicTitle = words.slice(0, 10).join(" ") || "Open-ended";
     }
     return {
-      type: "open-ended",
-      questionType: "open-ended",
+      type: QUESTION_TYPES.OPEN_ENDED,
+      questionType: QUESTION_TYPES.OPEN_ENDED,
       topicTitle,
       question: stemText,
       stem: stemText,
@@ -316,7 +316,7 @@ function validateAndNormalizeQuestionData(data, requestedType) {
     throw new Error("Missing required field: question");
   }
 
-  if (resolvedType === "fill-in-the-blank") {
+  if (resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
     const merged = { ...data };
     if (
       (merged.correctAnswer == null || String(merged.correctAnswer).trim() === "") &&
@@ -353,8 +353,8 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       topicTitle = words.slice(0, 10).join(" ") || "Fill-in-the-blank";
     }
     return {
-      type: "fill-in-the-blank",
-      questionType: "fill-in-the-blank",
+      type: QUESTION_TYPES.FILL_IN_THE_BLANK,
+      questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
       topicTitle,
       question: qText,
       correctAnswer: canonical,
@@ -386,8 +386,8 @@ function validateAndNormalizeQuestionData(data, requestedType) {
   }
   letter = letter.trim().toUpperCase();
   return {
-    type: "multiple-choice",
-    questionType: "multiple-choice",
+    type: QUESTION_TYPES.MULTIPLE_CHOICE,
+    questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
     question: mcData.question.trim(),
     options: {
       A: String(mcData.options.A).trim(),
@@ -480,7 +480,7 @@ function tryParseQuestionJsonFromLaxText(jsonString) {
  * for small models like llama3.1:8b.
  */
 function filterPromptToType(template, questionType) {
-  const allTypes = ["multiple-choice", "fill-in-the-blank", "calculation", "open-ended"];
+  const allTypes = [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
   const targetIdx = allTypes.indexOf(questionType);
   if (targetIdx === -1) return template;
 
@@ -549,7 +549,7 @@ function jsonOnlyRetrySuffix(attempt, questionType, lastError) {
 
   // Build targeted extra guidance from the last error message for calculation type.
   let calcExtra = "";
-  if (questionType === "calculation" && lastError) {
+  if (questionType === QUESTION_TYPES.CALCULATION && lastError) {
     const msg = String(lastError.message || "");
     if (/prose response|text.*instead of|refused|Expected.*property|JSON at position|Unexpected token/i.test(msg)) {
       calcExtra = "\nPrevious response was prose or malformed JSON, not a question object. Output ONLY a valid JSON calculation question — no commentary, no textbook summaries, no text outside the JSON object. ";
@@ -588,10 +588,10 @@ function jsonOnlyRetrySuffix(attempt, questionType, lastError) {
 RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) calculationFormula uses ONLY: + - * / ^ ( ) sin cos tan sqrt log exp E PI and declared variable names — NO LaTeX, NO ∫ ∑, NO d/dt, NO = sign. (3) Every name in calculationVariables must appear in BOTH stem AND calculationFormula. (4) min/max must be numbers. No "options" field. (5) Derive the formula from the actual course content — do NOT copy the placeholder formula above.`;
   const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
   let schema;
-  if (questionType === "multiple-choice") schema = mcSchema;
-  else if (questionType === "fill-in-the-blank") schema = fibSchema;
-  else if (questionType === "calculation") schema = calcSchema;
-  else if (questionType === "open-ended") schema = openSchema;
+  if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) schema = mcSchema;
+  else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) schema = fibSchema;
+  else if (questionType === QUESTION_TYPES.CALCULATION) schema = calcSchema;
+  else if (questionType === QUESTION_TYPES.OPEN_ENDED) schema = openSchema;
   else schema = mcSchema;
   return `
 
@@ -687,10 +687,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
     // Validate question types
     const ALLOWED_QUESTION_TYPES = [
-      "multiple-choice",
-      "fill-in-the-blank",
-      "calculation",
-      "open-ended",
+      QUESTION_TYPES.MULTIPLE_CHOICE,
+      QUESTION_TYPES.FILL_IN_THE_BLANK,
+      QUESTION_TYPES.CALCULATION,
+      QUESTION_TYPES.OPEN_ENDED,
     ];
     if (!questionType || !ALLOWED_QUESTION_TYPES.includes(questionType)) {
       return res.status(400).json({
@@ -871,7 +871,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
       }
 
-      if (questionData.questionType === "multiple-choice") {
+      if (questionData.questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
         const correctOptionLetter = questionData.correctAnswer;
         const optText = questionData.options?.[correctOptionLetter];
         if (optText) {
@@ -883,11 +883,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             `⚠️ Warning: No option text at position ${correctOptionLetter}, but continuing anyway`
           );
         }
-      } else if (questionData.questionType === "calculation") {
+      } else if (questionData.questionType === QUESTION_TYPES.CALCULATION) {
         console.log(
           `✅ Calculation question: formula "${String(questionData.calculationFormula || "").substring(0, 60)}..."`
         );
-      } else if (questionData.questionType === "open-ended") {
+      } else if (questionData.questionType === QUESTION_TYPES.OPEN_ENDED) {
         console.log("✅ Open-ended question with sample answer and grading criteria");
       }
 

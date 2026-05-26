@@ -93,7 +93,7 @@ const QUESTION_TYPE_LABELS = {
 
 function normalizeQuestionTypeKey(raw) {
   const t = (raw || "").toString().trim().toLowerCase().replace(/_/g, "-");
-  return QUESTION_TYPE_LABELS[t] ? t : "multiple-choice";
+  return QUESTION_TYPE_LABELS[t] ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
 function formatQuestionTypeLabel(raw) {
@@ -1885,7 +1885,7 @@ class QuestionBankPage {
           <span class="bloom-chip">${question.bloom || "N/A"}</span>
         </td>
         <td class="question-type-cell">
-          <span class="question-type-chip question-type-chip--${question.questionType || "multiple-choice"}">${formatQuestionTypeLabel(question.questionType)}</span>
+          <span class="question-type-chip question-type-chip--${question.questionType || QUESTION_TYPES.MULTIPLE_CHOICE}">${formatQuestionTypeLabel(question.questionType)}</span>
         </td>
         <td class="status-cell">
           <span class="status-pill status-pill--${(question.status || "Draft").toLowerCase()}">${question.status || "Draft"}</span>
@@ -1977,8 +1977,8 @@ class QuestionBankPage {
           bValue = (b.bloom || "").toLowerCase();
           break;
         case "questionType":
-          aValue = (a.questionType || "multiple-choice").toLowerCase();
-          bValue = (b.questionType || "multiple-choice").toLowerCase();
+          aValue = (a.questionType || QUESTION_TYPES.MULTIPLE_CHOICE).toLowerCase();
+          bValue = (b.questionType || QUESTION_TYPES.MULTIPLE_CHOICE).toLowerCase();
           break;
         case "status":
           aValue = (a.status || "Draft").toLowerCase();
@@ -2612,7 +2612,7 @@ class QuestionBankPage {
 
       const qType = normalizeQuestionTypeKey(question.questionType || question.type);
 
-      if (qType === "fill-in-the-blank") {
+      if (qType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         const canonical =
           question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
         let acceptable = Array.isArray(question.acceptableAnswers)
@@ -2625,14 +2625,14 @@ class QuestionBankPage {
           id: questionId,
           title: question.title || question.stem || "",
           stem: question.stem || question.title || "",
-          questionType: "fill-in-the-blank",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           correctAnswer: canonical,
           acceptableAnswers: acceptable,
           canEdit,
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
         };
-      } else if (qType === "calculation") {
+      } else if (qType === QUESTION_TYPES.CALCULATION) {
         const vars = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
         const dec =
           question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
@@ -2644,7 +2644,7 @@ class QuestionBankPage {
           id: questionId,
           title: question.title || "",
           stem: question.stem || "",
-          questionType: "calculation",
+          questionType: QUESTION_TYPES.CALCULATION,
           calculationFormula: (question.calculationFormula || "").trim(),
           calculationVariables: vars,
           calculationAnswerDecimals: Number.isFinite(dec) ? dec : 2,
@@ -2653,12 +2653,12 @@ class QuestionBankPage {
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
         };
-      } else if (qType === "open-ended") {
+      } else if (qType === QUESTION_TYPES.OPEN_ENDED) {
         this.currentEditingQuestion = {
           id: questionId,
           title: question.title || "",
           stem: question.stem || question.title || "",
-          questionType: "open-ended",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
           openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
           openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
           canEdit,
@@ -2702,7 +2702,7 @@ class QuestionBankPage {
           id: questionId,
           title: question.title || question.stem || "",
           stem: question.stem || question.title || "",
-          questionType: "multiple-choice",
+          questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
           options: normalizedOptions,
           correctAnswer: correctAnswerLetter,
           canEdit,
@@ -2748,9 +2748,9 @@ class QuestionBankPage {
       modalTitleEl.textContent = canEdit ? "Edit question" : "View question";
     }
 
-    const isCalc = question.questionType === "calculation";
-    const isFib = question.questionType === "fill-in-the-blank";
-    const isOpen = question.questionType === "open-ended";
+    const isCalc = question.questionType === QUESTION_TYPES.CALCULATION;
+    const isFib = question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
+    const isOpen = question.questionType === QUESTION_TYPES.OPEN_ENDED;
 
     if (isOpen) {
       const isReadOnly = !canEdit;
@@ -3155,7 +3155,7 @@ class QuestionBankPage {
       const title = titleInput ? titleInput.value.trim() : "";
       const stem = stemInput ? stemInput.value.trim() : "";
 
-      if (this.currentEditingQuestion.questionType === "calculation") {
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.CALCULATION) {
         if (!title) {
           this.showNotification("Topic title is required", "error");
           if (saveBtn) saveBtn.disabled = false;
@@ -3212,7 +3212,7 @@ class QuestionBankPage {
         const updateData = {
           title,
           stem,
-          questionType: "calculation",
+          questionType: QUESTION_TYPES.CALCULATION,
           calculationFormula: formula,
           calculationVariables: variables,
           calculationAnswerDecimals: dec,
@@ -3236,7 +3236,7 @@ class QuestionBankPage {
         if (q) {
           q.title = updateData.title;
           q.stem = updateData.stem;
-          q.questionType = "calculation";
+          q.questionType = QUESTION_TYPES.CALCULATION;
         }
 
         this.closeQuestionModal();
@@ -3246,7 +3246,7 @@ class QuestionBankPage {
         return;
       }
 
-      if (this.currentEditingQuestion.questionType === "open-ended") {
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.OPEN_ENDED) {
         if (!title) {
           this.showNotification("Topic title is required", "error");
           if (saveBtn) saveBtn.disabled = false;
@@ -3275,7 +3275,7 @@ class QuestionBankPage {
         const updateData = {
           title,
           stem,
-          questionType: "open-ended",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
           openEndedSampleAnswer,
           openEndedGradingCriteria,
           options: {},
@@ -3298,7 +3298,7 @@ class QuestionBankPage {
         if (q) {
           q.title = updateData.title;
           q.stem = updateData.stem;
-          q.questionType = "open-ended";
+          q.questionType = QUESTION_TYPES.OPEN_ENDED;
         }
 
         this.closeQuestionModal();
@@ -3308,7 +3308,7 @@ class QuestionBankPage {
         return;
       }
 
-      if (this.currentEditingQuestion.questionType === "fill-in-the-blank") {
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         if (!title) {
           this.showNotification("Topic title is required", "error");
           if (saveBtn) saveBtn.disabled = false;
@@ -3348,7 +3348,7 @@ class QuestionBankPage {
         const updateData = {
           title,
           stem,
-          questionType: "fill-in-the-blank",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           correctAnswer: correct,
           acceptableAnswers: acceptable,
           options: {},
@@ -3369,7 +3369,7 @@ class QuestionBankPage {
         if (q) {
           q.title = updateData.title;
           q.stem = updateData.stem;
-          q.questionType = "fill-in-the-blank";
+          q.questionType = QUESTION_TYPES.FILL_IN_THE_BLANK;
         }
 
         this.closeQuestionModal();
@@ -3431,7 +3431,7 @@ class QuestionBankPage {
       const updateData = {
         title: title || stem,
         stem: stem || title,
-        questionType: "multiple-choice",
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObject,
         correctAnswer: correctAnswerLetter,
       };

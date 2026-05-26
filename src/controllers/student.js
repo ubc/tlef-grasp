@@ -4,6 +4,7 @@ const calculationQuestion = require('../services/calculation-question');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
+const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
 
 const isQuizAccessible = (quiz) => {
@@ -111,8 +112,8 @@ function shuffleArray(array) {
 
 function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "").trim().toLowerCase();
-  const known = ["fill-in-the-blank", "calculation", "open-ended"];
-  return known.includes(t) ? t : "multiple-choice";
+  const known = [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
+  return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
 // Helper function to shuffle question options and update correct answer
@@ -186,15 +187,15 @@ const getQuizQuestionsHandler = async (req, res) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
       const fibMainText =
-        questionType === "fill-in-the-blank"
+        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK
           ? (q.stem || q.title || "").trim()
           : questionText;
 
-      if (questionType === "fill-in-the-blank") {
+      if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         return {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
-          questionType: "fill-in-the-blank",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,
@@ -202,11 +203,11 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      if (questionType === "open-ended") {
+      if (questionType === QUESTION_TYPES.OPEN_ENDED) {
         return {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
-          questionType: "open-ended",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,
@@ -214,7 +215,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      if (questionType === "calculation") {
+      if (questionType === QUESTION_TYPES.CALCULATION) {
         const vars = q.calculationVariables;
         const template = calculationQuestion.resolveCalculationDisplayTemplate(
           q.stem,
@@ -243,7 +244,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           return {
             id: qid,
             question: built.rendered,
-            questionType: "calculation",
+            questionType: QUESTION_TYPES.CALCULATION,
             calculationToken: built.token,
             answerDecimalPlaces: built.answerDecimalPlaces,
             calculationAnswerTolerancePercent: tolerancePercent,
@@ -263,7 +264,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           question:
             template ||
             "This calculation question could not be loaded. Please contact your instructor.",
-          questionType: "calculation",
+          questionType: QUESTION_TYPES.CALCULATION,
           calculationToken: null,
           answerDecimalPlaces: answerDec,
           calculationLoadError: true,
@@ -296,7 +297,7 @@ const getQuizQuestionsHandler = async (req, res) => {
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
-        questionType: "multiple-choice",
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
         learningObjectiveId: q.learningObjectiveId,
@@ -319,7 +320,7 @@ const getQuizQuestionsHandler = async (req, res) => {
 
     // Shuffle MC options only; other types have no options to shuffle
     const randomizedQuestions = transformedQuestions.map((q) =>
-      q.questionType === "multiple-choice" ? shuffleQuestionOptions(q) : q
+      q.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? shuffleQuestionOptions(q) : q
     );
 
     res.json({

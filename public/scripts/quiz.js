@@ -544,7 +544,7 @@ function showQuestion(questionIndex) {
   
   const rawStem = (question.stem || "").trim();
   const isGenericFibStem =
-    question.questionType === "fill-in-the-blank" &&
+    question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK &&
     /^fill\s+in\s+the\s+blank:?\s*$/i.test(rawStem);
   if (question.stem && !isGenericFibStem) {
     completeHTML += `
@@ -554,7 +554,7 @@ function showQuestion(questionIndex) {
     `;
   }
 
-  if (question.questionType === "calculation" && !question.calculationLoadError) {
+  if (question.questionType === QUESTION_TYPES.CALCULATION && !question.calculationLoadError) {
     const tol = Number(question.calculationAnswerTolerancePercent);
     if (Number.isFinite(tol) && tol > 0) {
       completeHTML += `<div class="calc-question-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">Your answer will be accepted within <strong>${tol}%</strong> of the correct value.</div>`;
@@ -565,7 +565,7 @@ function showQuestion(questionIndex) {
     }
   }
 
-  if (question.questionType === "open-ended") {
+  if (question.questionType === QUESTION_TYPES.OPEN_ENDED) {
     completeHTML += `<div class="open-ended-hint" style="font-size:0.95em;color:#6c757d;margin-top:10px;">This question is <strong>not auto-graded</strong>. After you submit, you will see a <strong>sample answer</strong> and the <strong>grading criteria</strong> for self-checking.</div>`;
   }
   
@@ -608,7 +608,7 @@ function showQuestion(questionIndex) {
   // Disable next button if current question hasn't been answered
   const hasAnswer = quizState.answers[questionId] !== undefined;
   const calcBroken =
-    question.questionType === "calculation" && question.calculationLoadError;
+    question.questionType === QUESTION_TYPES.CALCULATION && question.calculationLoadError;
   document.getElementById("nextButton").disabled = !hasAnswer && !calcBroken;
 
   // Update question indicators
@@ -616,15 +616,15 @@ function showQuestion(questionIndex) {
 }
 
 function isFillInTheBlankQuestion(question) {
-  return question.questionType === "fill-in-the-blank";
+  return question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
 }
 
 function isCalculationQuestion(question) {
-  return question.questionType === "calculation";
+  return question.questionType === QUESTION_TYPES.CALCULATION;
 }
 
 function isOpenEndedQuestion(question) {
-  return question.questionType === "open-ended";
+  return question.questionType === QUESTION_TYPES.OPEN_ENDED;
 }
 
 function renderFillInTheBlankAnswerUI(question, questionIndex) {
@@ -861,7 +861,7 @@ async function submitOpenEndedAnswer(questionId, questionIndex) {
       sampleAnswer: result.sampleAnswer,
       gradingCriteria: result.gradingCriteria,
       feedbackText: result.feedback,
-      questionType: "open-ended",
+      questionType: QUESTION_TYPES.OPEN_ENDED,
     };
 
     btn.textContent = prevLabel;
@@ -940,7 +940,7 @@ async function submitCalculationAnswer(questionId, questionIndex) {
       correctAnswer: result.correctAnswer,
       feedbackText: result.feedback,
       correctOptionText: result.correctOptionText,
-      questionType: "calculation",
+      questionType: QUESTION_TYPES.CALCULATION,
     };
 
     btn.textContent = prevLabel;
@@ -1007,7 +1007,7 @@ async function submitFillInBlankAnswer(questionId, questionIndex) {
       correctAnswer: result.correctAnswer,
       feedbackText: result.feedback,
       correctOptionText: result.correctOptionText,
-      questionType: "fill-in-the-blank"
+      questionType: QUESTION_TYPES.FILL_IN_THE_BLANK
     };
 
     btn.textContent = prevLabel;
@@ -1209,7 +1209,7 @@ function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
     : "";
 
   // Open-ended: no right/wrong; show sample answer and criteria after submit
-  if (feedbackData.openEnded || (feedbackData.questionType === "open-ended" && feedbackData.isCorrect === null)) {
+  if (feedbackData.openEnded || (feedbackData.questionType === QUESTION_TYPES.OPEN_ENDED && feedbackData.isCorrect === null)) {
     feedbackMessage.className = "feedback-message feedback-open-ended";
     const sample = feedbackData.sampleAnswer != null ? String(feedbackData.sampleAnswer).trim() : "";
     const crit =
@@ -1243,8 +1243,8 @@ function showFeedback(questionIndex, questionId, selectedIndex, correctAnswer) {
     feedbackSection.style.display = "block";
   } else {
     feedbackMessage.className = "feedback-message feedback-incorrect";
-    const isFib = feedbackData.questionType === "fill-in-the-blank";
-    const isCalc = feedbackData.questionType === "calculation";
+    const isFib = feedbackData.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
+    const isCalc = feedbackData.questionType === QUESTION_TYPES.CALCULATION;
     const fibReveal =
       isFib && feedbackData.correctOptionText != null && String(feedbackData.correctOptionText).trim() !== "";
     const calcReveal =
@@ -1289,7 +1289,7 @@ function updateQuestionIndicators() {
       indicator.classList.add("answered");
       if (quizState.feedback[questionId]) {
         const fd = quizState.feedback[questionId];
-        if (fd.openEnded || (fd.questionType === "open-ended" && fd.isCorrect === null)) {
+        if (fd.openEnded || (fd.questionType === QUESTION_TYPES.OPEN_ENDED && fd.isCorrect === null)) {
           indicator.classList.add("submitted");
         } else if (fd.isCorrect) {
           indicator.classList.add("correct");
@@ -1307,7 +1307,7 @@ async function showCompletion() {
   document.querySelector(".quiz-navigation").style.display = "none";
 
   // Score only auto-graded items; open-ended questions are excluded from the percentage
-  const gradedQuestions = quizState.quizData.questions.filter((q) => q.questionType !== "open-ended");
+  const gradedQuestions = quizState.quizData.questions.filter((q) => q.questionType !== QUESTION_TYPES.OPEN_ENDED);
   const totalGraded = gradedQuestions.length;
   let correctCount = 0;
   gradedQuestions.forEach((q) => {

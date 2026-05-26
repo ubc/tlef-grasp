@@ -1,4 +1,5 @@
 const databaseService = require('./database');
+const { QUESTION_TYPES } = require('../constants/app-constants');
 const calculationQuestion = require('./calculation-question');
 const { ObjectId } = require('mongodb');
 
@@ -22,9 +23,9 @@ const saveQuestion = async (courseId, questionData) => {
         const questionType =
             questionData.questionType ||
             questionData.type ||
-            "multiple-choice";
+            QUESTION_TYPES.MULTIPLE_CHOICE;
 
-        if (String(questionType).toLowerCase() === "calculation") {
+        if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
             calculationQuestion.validateFormulaAgainstVariableSpecs(
                 typeof questionData.calculationFormula === "string"
                     ? questionData.calculationFormula
@@ -67,15 +68,15 @@ const saveQuestion = async (courseId, questionData) => {
                 ? questionData.acceptableAnswers
                 : [],
             openEndedSampleAnswer:
-                qtLower === "open-ended"
+                qtLower === QUESTION_TYPES.OPEN_ENDED
                     ? String(questionData.openEndedSampleAnswer || "").trim()
                     : "",
             openEndedGradingCriteria:
-                qtLower === "open-ended"
+                qtLower === QUESTION_TYPES.OPEN_ENDED
                     ? String(questionData.openEndedGradingCriteria || "").trim()
                     : "",
             calculationFormula:
-                qtLower === "calculation"
+                qtLower === QUESTION_TYPES.CALCULATION
                     ? calculationQuestion.prepareCalculationFormula(
                           calcFormulaRaw,
                           calcVarsForStore
@@ -271,7 +272,7 @@ const updateQuestion = async (questionId, updateData) => {
                 const qt = String(merged.questionType || merged.type || "")
                     .trim()
                     .toLowerCase();
-                if (qt === "calculation") {
+                if (qt === QUESTION_TYPES.CALCULATION) {
                     const mergedFormula =
                         typeof merged.calculationFormula === "string"
                             ? merged.calculationFormula

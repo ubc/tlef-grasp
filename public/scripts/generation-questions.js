@@ -150,7 +150,7 @@ class QuestionGenerator {
   
   determineQuestionType(bloomLevel) {
     const preferences = this.getBloomTypePreferences();
-    return preferences[bloomLevel]?.[0] || "multiple-choice";
+    return preferences[bloomLevel]?.[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
   }
 
   prepareContentForQuestions(summary, objectiveGroups) {
@@ -235,7 +235,7 @@ class QuestionGenerator {
         }
       }
 
-      if (!question && activeQuestionType === "calculation") {
+      if (!question && activeQuestionType === QUESTION_TYPES.CALCULATION) {
         console.warn(
           `⚠️ Calculation retries exhausted for question ${i + 1}; falling back to multiple-choice for objective "${granularLearningObjective.text}".`
         );
@@ -249,9 +249,9 @@ class QuestionGenerator {
             granularLearningObjective.text,
             bloomLevel,
             i + 1,
-            "multiple-choice"
+            QUESTION_TYPES.MULTIPLE_CHOICE
           );
-          activeQuestionType = "multiple-choice";
+          activeQuestionType = QUESTION_TYPES.MULTIPLE_CHOICE;
           console.log(`✅ Created fallback multiple-choice question ${i + 1}:`, question.text);
           questions.push(question);
           if (i < granularLearningObjective.count - 1) {
@@ -269,7 +269,7 @@ class QuestionGenerator {
       if (!question) {
         console.error(
           `❌ Failed to generate question ${i + 1} after ${maxRetries} attempts${
-            questionType === "calculation" ? " (including multiple-choice fallback)" : ""
+            questionType === QUESTION_TYPES.CALCULATION ? " (including multiple-choice fallback)" : ""
           }:`,
           lastError ? lastError.message : "unknown error"
         );
@@ -338,7 +338,7 @@ class QuestionGenerator {
   
       const resolvedType = questionData.type || questionData.questionType || questionType;
 
-      if (resolvedType === "calculation") {
+      if (resolvedType === QUESTION_TYPES.CALCULATION) {
         const stemText = String(
           questionData.stem || questionData.question || ""
         ).trim();
@@ -366,8 +366,8 @@ class QuestionGenerator {
           granularObjectiveId: `${granularLearningObjectiveId}`,
           text: stemText,
           topicTitle: topicTitleCalc,
-          type: "calculation",
-          questionType: "calculation",
+          type: QUESTION_TYPES.CALCULATION,
+          questionType: QUESTION_TYPES.CALCULATION,
           options: null,
           correctAnswer: "",
           acceptableAnswers: [],
@@ -385,7 +385,7 @@ class QuestionGenerator {
         };
       }
 
-      if (resolvedType === "open-ended") {
+      if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
         const stemText = String(
           questionData.stem || questionData.question || ""
         ).trim();
@@ -407,8 +407,8 @@ class QuestionGenerator {
           text: stemText,
           stem: stemText,
           topicTitle: topicTitleOpen,
-          type: "open-ended",
-          questionType: "open-ended",
+          type: QUESTION_TYPES.OPEN_ENDED,
+          questionType: QUESTION_TYPES.OPEN_ENDED,
           options: null,
           correctAnswer: "",
           acceptableAnswers: [],
@@ -429,7 +429,7 @@ class QuestionGenerator {
       }
 
       const acceptable =
-        resolvedType === "fill-in-the-blank"
+        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
           ? Array.isArray(questionData.acceptableAnswers) && questionData.acceptableAnswers.length
             ? questionData.acceptableAnswers
             : questionData.correctAnswer != null
@@ -439,7 +439,7 @@ class QuestionGenerator {
 
       const fibStem = String(questionData.question || "").trim();
       const rawTopic =
-        resolvedType === "fill-in-the-blank"
+        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
           ? String(
               questionData.topicTitle ||
                 questionData.topic ||
@@ -448,7 +448,7 @@ class QuestionGenerator {
             ).trim()
           : "";
       const topicTitleFib =
-        resolvedType === "fill-in-the-blank"
+        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
           ? rawTopic ||
             (() => {
               const before = fibStem.split("_________")[0].trim();
@@ -461,7 +461,7 @@ class QuestionGenerator {
         id: `${granularLearningObjectiveId}-${questionNumber}`,
         granularObjectiveId: `${granularLearningObjectiveId}`,
         text: questionData.question,
-        topicTitle: resolvedType === "fill-in-the-blank" ? topicTitleFib : undefined,
+        topicTitle: resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK ? topicTitleFib : undefined,
         type: resolvedType,
         questionType: resolvedType,
         options: questionData.options || null,
@@ -542,15 +542,15 @@ class QuestionGenerator {
     let csv =
       "Question Type,Question,Option A,Option B,Option C,Option D,Correct Answer,Acceptable Answers,Bloom Level,Difficulty\n";
     questions.forEach((q) => {
-      const qt = q.type || q.questionType || "multiple-choice";
-      if (qt === "calculation") {
+      const qt = q.type || q.questionType || QUESTION_TYPES.MULTIPLE_CHOICE;
+      if (qt === QUESTION_TYPES.CALCULATION) {
         const stem = q.text || q.stem || "";
         const formula = q.calculationFormula || "";
         const varsJson = JSON.stringify(q.calculationVariables || []);
         csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(formula)},${this.escapeCsvField(varsJson)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
         return;
       }
-      if (qt === "fill-in-the-blank") {
+      if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         const acc =
           Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length
             ? q.acceptableAnswers.join("; ")
@@ -561,7 +561,7 @@ class QuestionGenerator {
         csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(fibQ)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
         return;
       }
-      if (qt === "open-ended") {
+      if (qt === QUESTION_TYPES.OPEN_ENDED) {
         const stem = q.text || q.stem || "";
         const sample = q.openEndedSampleAnswer || "";
         const crit = q.openEndedGradingCriteria || "";
@@ -588,9 +588,9 @@ class QuestionGenerator {
   formatAsQTI(questions) {
     const itemsXml = questions
       .map((q, index) => {
-        const qt = q.type || q.questionType || "multiple-choice";
+        const qt = q.type || q.questionType || QUESTION_TYPES.MULTIPLE_CHOICE;
         const ident = `q${index + 1}`;
-        if (qt === "calculation") {
+        if (qt === QUESTION_TYPES.CALCULATION) {
           const stem = q.text || q.stem || "";
           const note = `[Formula: ${q.calculationFormula || ""}; variables JSON: ${JSON.stringify(q.calculationVariables || [])}; answerDecimals: ${q.calculationAnswerDecimals != null ? q.calculationAnswerDecimals : 2}]`;
           return `
@@ -623,7 +623,7 @@ class QuestionGenerator {
       </resprocessing>
     </item>`;
         }
-        if (qt === "fill-in-the-blank") {
+        if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
           const acceptable =
             Array.isArray(q.acceptableAnswers) && q.acceptableAnswers.length
               ? q.acceptableAnswers
