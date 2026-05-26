@@ -45,14 +45,9 @@ async function initializeSettings() {
         const resetBloomBtn = document.getElementById('reset-bloom-defaults');
         if (resetBloomBtn) {
             resetBloomBtn.addEventListener('click', () => {
-                const defaults = {
-                    Remember:  "fill-in-the-blank",
-                    Understand: "multiple-choice",
-                    Apply:      "multiple-choice",
-                    Analyze:    "multiple-choice",
-                    Evaluate:   "calculation",
-                    Create:     "open-ended",
-                };
+                const defaults = Object.fromEntries(
+                    Object.entries(window.DEFAULT_BLOOM_TYPE_PREFERENCES).map(([level, types]) => [level, types[0]])
+                );
                 document.querySelectorAll('.bloom-select').forEach(select => {
                     const level = select.getAttribute('data-bloom');
                     if (defaults[level]) select.value = defaults[level];

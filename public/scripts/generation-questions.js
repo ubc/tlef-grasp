@@ -1,21 +1,10 @@
 // Generation Questions Module
 // Handles question generation based on content and objectives
 
-// Question Generation Class
-// Default Bloom → question-type preferences (mirrors DEFAULT_BLOOM_TYPE_PREFERENCES in app-constants.js).
-const DEFAULT_BLOOM_TYPE_PREFERENCES = {
-  Remember:  ["fill-in-the-blank", "multiple-choice"],
-  Understand: ["multiple-choice", "fill-in-the-blank"],
-  Apply:      ["multiple-choice", "fill-in-the-blank"],
-  Analyze:    ["multiple-choice", "fill-in-the-blank"],
-  Evaluate:   ["calculation", "multiple-choice"],
-  Create:     ["open-ended", "multiple-choice"],
-};
-
 class QuestionGenerator {
   constructor(contentGenerator, options = {}) {
     this.contentGenerator = contentGenerator;
-    this.bloomTypePreferences = options.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
+    this.bloomTypePreferences = options.bloomTypePreferences || window.DEFAULT_BLOOM_TYPE_PREFERENCES;
     this.llmService = null;
     this.initializeLLMService();
   }
@@ -23,101 +12,11 @@ class QuestionGenerator {
   async initializeLLMService() {
     try {
       console.log("=== QUESTION GENERATOR LLM INITIALIZATION ===");
-  
       this.llmService = {
         isAvailable: () => true,
-  
-        generateMultipleChoiceQuestion: async ({
-          courseId,
-          courseName,
-          learningObjectiveId,
-          learningObjectiveText,
-          granularLearningObjectiveText,
-          bloomLevel,
-        }) => {
-          return await this.callQuestionGenerationApi({
-            courseId,
-            courseName,
-            learningObjectiveId,
-            learningObjectiveText,
-            granularLearningObjectiveText,
-            bloomLevel,
-            questionType: "multiple-choice",
-          });
-        },
-  
-        generateFillInTheBlankQuestion: async ({
-          courseId,
-          courseName,
-          learningObjectiveId,
-          learningObjectiveText,
-          granularLearningObjectiveText,
-          bloomLevel,
-        }) => {
-          return await this.callQuestionGenerationApi({
-            courseId,
-            courseName,
-            learningObjectiveId,
-            learningObjectiveText,
-            granularLearningObjectiveText,
-            bloomLevel,
-            questionType: "fill-in-the-blank",
-          });
-        },
-
-        generateCalculationQuestion: async ({
-          courseId,
-          courseName,
-          learningObjectiveId,
-          learningObjectiveText,
-          granularLearningObjectiveText,
-          bloomLevel,
-        }) => {
-          return await this.callQuestionGenerationApi({
-            courseId,
-            courseName,
-            learningObjectiveId,
-            learningObjectiveText,
-            granularLearningObjectiveText,
-            bloomLevel,
-            questionType: "calculation",
-          });
-        },
-
-        generateOpenEndedQuestion: async ({
-          courseId,
-          courseName,
-          learningObjectiveId,
-          learningObjectiveText,
-          granularLearningObjectiveText,
-          bloomLevel,
-        }) => {
-          return await this.callQuestionGenerationApi({
-            courseId,
-            courseName,
-            learningObjectiveId,
-            learningObjectiveText,
-            granularLearningObjectiveText,
-            bloomLevel,
-            questionType: "open-ended",
-          });
-        },
-  
-        generateQuestionByType: async (questionType, params) => {
-          switch (questionType) {
-            case "fill-in-the-blank":
-              return await this.llmService.generateFillInTheBlankQuestion(params);
-            case "calculation":
-              return await this.llmService.generateCalculationQuestion(params);
-            case "open-ended":
-              return await this.llmService.generateOpenEndedQuestion(params);
-            case "multiple-choice":
-            default:
-              return await this.llmService.generateMultipleChoiceQuestion(params);
-          }
-        },
+        generateQuestionByType: async (questionType, params) =>
+          await this.callQuestionGenerationApi({ ...params, questionType }),
       };
-  
       console.log("✅ Server-side RAG + LLM service initialized");
     } catch (error) {
       console.error("❌ Failed to initialize LLM service:", error);

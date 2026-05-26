@@ -84,20 +84,20 @@ function getObjectId(obj) {
 }
 
 /** Normalize API questionType / type for display (legacy rows default to multiple-choice). */
+const QUESTION_TYPE_LABELS = {
+  "fill-in-the-blank": "Fill-in-the-blank",
+  "calculation": "Calculation",
+  "open-ended": "Open-ended",
+  "multiple-choice": "Multiple choice",
+};
+
 function normalizeQuestionTypeKey(raw) {
-  const t = (raw || "multiple-choice").toString().trim().toLowerCase().replace(/_/g, "-");
-  if (t === "fill-in-the-blank") return "fill-in-the-blank";
-  if (t === "calculation") return "calculation";
-  if (t === "open-ended") return "open-ended";
-  return "multiple-choice";
+  const t = (raw || "").toString().trim().toLowerCase().replace(/_/g, "-");
+  return QUESTION_TYPE_LABELS[t] ? t : "multiple-choice";
 }
 
 function formatQuestionTypeLabel(raw) {
-  const key = normalizeQuestionTypeKey(raw);
-  if (key === "fill-in-the-blank") return "Fill-in-the-blank";
-  if (key === "calculation") return "Calculation";
-  if (key === "open-ended") return "Open-ended";
-  return "Multiple choice";
+  return QUESTION_TYPE_LABELS[normalizeQuestionTypeKey(raw)];
 }
 
 /** Escape text placed inside <textarea>...</textarea> body */
