@@ -290,8 +290,10 @@ class QuestionGenerator {
       let question = null;
       let retryCount = 0;
       const maxRetries = 3;
-      
-      // Retry logic for individual question generation
+      let lastError = null;
+      let activeQuestionType = questionType;
+
+      // Retry per question; if a "calculation" attempt exhausts retries, fall back to multiple-choice once below.
       while (retryCount < maxRetries && !question) {
         try {
             question = await this.createContextualQuestion(
@@ -303,7 +305,7 @@ class QuestionGenerator {
               granularLearningObjective.text,
               bloomLevel,
               i + 1,
-              questionType
+              activeQuestionType
             );
 
           console.log(`✅ Created question ${i + 1}:`, question.text);
@@ -315,6 +317,7 @@ class QuestionGenerator {
           }
         } catch (error) {
           retryCount++;
+          lastError = error;
           console.warn(
             `⚠️ Failed to generate question ${i + 1} (attempt ${retryCount}/${maxRetries}):`,
             error.message
@@ -325,20 +328,54 @@ class QuestionGenerator {
             const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
             console.log(`Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
-          } else {
-            console.error(
-              `❌ Failed to generate question ${i + 1} after ${maxRetries} attempts:`,
-              error.message
-            );
-            failedQuestions.push({
-              questionNumber: i + 1,
-              bloomLevel: bloomLevel,
-              questionType: questionType,
-              error: error.message
-            });
-            // Continue with next question instead of stopping
           }
         }
+      }
+
+      if (!question && activeQuestionType === "calculation") {
+        console.warn(
+          `⚠️ Calculation retries exhausted for question ${i + 1}; falling back to multiple-choice for objective "${granularLearningObjective.text}".`
+        );
+        try {
+          question = await this.createContextualQuestion(
+            courseId,
+            courseName,
+            learningObjective.objectiveId,
+            learningObjective.title,
+            granularLearningObjective.granularId,
+            granularLearningObjective.text,
+            bloomLevel,
+            i + 1,
+            "multiple-choice"
+          );
+          activeQuestionType = "multiple-choice";
+          console.log(`✅ Created fallback multiple-choice question ${i + 1}:`, question.text);
+          questions.push(question);
+          if (i < granularLearningObjective.count - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (fallbackError) {
+          console.error(
+            `❌ Fallback to multiple-choice also failed for question ${i + 1}:`,
+            fallbackError.message
+          );
+          lastError = fallbackError;
+        }
+      }
+
+      if (!question) {
+        console.error(
+          `❌ Failed to generate question ${i + 1} after ${maxRetries} attempts${
+            questionType === "calculation" ? " (including multiple-choice fallback)" : ""
+          }:`,
+          lastError ? lastError.message : "unknown error"
+        );
+        failedQuestions.push({
+          questionNumber: i + 1,
+          bloomLevel: bloomLevel,
+          questionType: questionType,
+          error: lastError ? lastError.message : "unknown error",
+        });
       }
     }
 

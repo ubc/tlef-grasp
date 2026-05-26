@@ -60,12 +60,22 @@ Example:
 Return valid JSON in this shape. Rules: No "options" key; include "topicTitle"; exactly one _________ in "question".
 
 --- If Question Type is "calculation" ---
+CRITICAL RULES — violating any of these causes immediate rejection:
+1. STEM PLACEHOLDERS: Every variable MUST appear in "stem" using DOUBLE curly braces: {{name}}. The name must exactly match the "name" field in "calculationVariables". Example: if the variable name is "V", write {{V}} in the stem. Writing {V}, [V], (V), or bare "V" is WRONG and will be rejected.
+2. FORMULA SYNTAX: "calculationFormula" must use ONLY plain ASCII: + - * / ^ ( ) digits and declared variable names. NO LaTeX (no \frac, no \sqrt{}, no $...$), NO Unicode math symbols (∫ ∑ ∂ π ℯ), NO "from a to b" text. Use PI and E (uppercase ASCII) for the math constants — do NOT declare "pi", "PI", "e", or "E" as variables.
+3. ALL VARIABLES USED: Every name declared in "calculationVariables" must appear in BOTH "stem" (as {{name}}) AND "calculationFormula". A variable that only appears in one of them will be rejected.
+
+You are authoring a parameterised question: the server samples random values, substitutes {{name}} in the stem, then evaluates "calculationFormula" with those values to compute the correct answer.
+
+SCOPE: The correct answer must be a SINGLE numeric value from ONE closed-form arithmetic expression. Do NOT use integrals, summations, derivatives, or symbolic solving. If the natural answer requires those, pick a simpler sub-problem (e.g. evaluate a formula at a point) or use a different question type.
+
 PROCEDURE:
-1. "topicTitle" is REQUIRED: a short neutral label (3–10 words), not a question, must not reveal numeric answers.
-2. "stem" is the question text with placeholders for variables. Each placeholder MUST be written as {{name}} using the EXACT variable name from "calculationVariables[].name". Do NOT use a generic placeholder like {{var}}, {{x}}, or {{value}} unless that exact name is also declared in "calculationVariables". Every variable that appears in "calculationFormula" MUST appear at least once in "stem" as {{name}} so the student sees its numeric value.
-3. "calculationFormula" MUST be one expression the calculator can evaluate: use variable names and + - * / ^ ( ). Prefer plain ASCII (e.g. "a*b", "(x+1)/y"). Do NOT use ∫, ∑, matrices, or LaTeX environments in the formula. Put math display only in "stem" (LaTeX allowed there). If you use LaTeX-style operators in the formula, keep them minimal (e.g. \\frac{a}{b} or \\times)—the server may normalize them, but simple ASCII is best.
-4. "calculationVariables" is a non-empty array of objects: { "name", "min", "max", optional "decimals" (0–8) or "integerOnly": true }. Every name used in "stem" and "calculationFormula" must be declared here.
-5. "calculationAnswerDecimals" is how many decimal places the correct numeric answer should be rounded to (integer 0–12).
+1. "topicTitle": short neutral label (3–10 words), no "?", must not reveal the answer.
+2. "stem": question text. Each variable must appear as {{name}} (double curly braces). Do NOT write the variable's numeric value — use the {{name}} placeholder instead.
+3. "calculationFormula": ONE ASCII expression solving the stem. Reference EVERY declared variable at least once. No LaTeX, no Unicode math.
+4. "calculationVariables": non-empty array of {"name": "...", "min": number, "max": number, "decimals": 0–8} or {"name": "...", "min": number, "max": number, "integerOnly": true}. "min" and "max" must be numbers, never null. Forbidden names: "pi", "PI", "e", "E".
+5. "calculationAnswerDecimals": integer 0–12.
+6. "explanation": brief explanation of the formula.
 
 Example:
 {
@@ -78,8 +88,10 @@ Example:
     { "name": "R", "min": 5, "max": 50, "decimals": 1 }
   ],
   "calculationAnswerDecimals": 2,
-  "explanation": "Why this applies to the content"
+  "explanation": "Apply Ohm's law I = V/R."
 }
+
+Do NOT include "options" or a multiple-choice "correctAnswer" in the calculation output.
 
 --- If Question Type is "open-ended" ---
 PROCEDURE:

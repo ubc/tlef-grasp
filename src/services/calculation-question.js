@@ -21,9 +21,7 @@ function randomIntegerInclusive(min, max) {
   return Math.floor(Math.random() * (hi - lo + 1)) + lo;
 }
 
-/**
- * Map common Unicode math operators to ASCII for expr-eval.
- */
+/** Map common Unicode math operators to ASCII for expr-eval. */
 function normalizeAsciiFormula(formula) {
   return String(formula || "")
     .replace(/\u2212/g, "-")
@@ -33,10 +31,7 @@ function normalizeAsciiFormula(formula) {
     .trim();
 }
 
-/**
- * expr-eval parses "number(" and "ident(" as function calls. Insert * for juxtaposition multiplication
- * (e.g. 0.28(x+1) → 0.28*(x+1), (a)(b) → (a)*(b), x(y+1) → x*(y+1) when ident is not sin/sqrt/etc.).
- */
+/** Insert * for juxtaposition multiplication (e.g. 0.28(x+1) → 0.28*(x+1)) so expr-eval doesn't read it as a call. */
 function insertImplicitMultiplication(formula) {
   let s = String(formula || "");
   for (let i = 0; i < 24; i++) {
@@ -66,10 +61,7 @@ function insertImplicitMultiplication(formula) {
   return s;
 }
 
-/**
- * Strip invisible chars, LaTeX-style fragments, and unicode math → ASCII expr-eval syntax.
- * Does not handle true integrals (∑ ∫); those still fail parse until rewritten by the author.
- */
+/** Strip invisibles, LaTeX fragments, and unicode math → ASCII expr-eval syntax (∑ ∫ still fail parse). */
 function canonicalizeCalculationSyntax(formula) {
   let s = String(formula || "").trim();
   if (!s) return "";
@@ -89,6 +81,8 @@ function canonicalizeCalculationSyntax(formula) {
   s = s.replace(/\\mp\b/gi, " ");
 
   s = s.replace(/\\pi\b/gi, "PI");
+  s = s.replace(/[\u03c0\u03a0]/g, "PI");
+  s = s.replace(/\u212f/g, "E");
   s = s.replace(/\\sin\b/gi, "sin");
   s = s.replace(/\\cos\b/gi, "cos");
   s = s.replace(/\\tan\b/gi, "tan");
@@ -135,9 +129,7 @@ function buildAllowedVariableNames(variableSpecs) {
   return allowed;
 }
 
-/**
- * Full normalization for storage and parsing (syntax + pi → PI when not a variable name).
- */
+/** Full normalization for storage and parsing (syntax + pi/e → PI/E when not declared as variables). */
 function prepareCalculationFormula(formula, variableSpecs) {
   const allowed = buildAllowedVariableNames(variableSpecs);
   let f = canonicalizeCalculationSyntax(formula);
@@ -145,14 +137,15 @@ function prepareCalculationFormula(formula, variableSpecs) {
   return f.trim();
 }
 
-/**
- * If instructors write "pi" but mean π, map to built-in PI unless they declared a variable named pi.
- */
+/** Rewrite bare "pi"/"e" to expr-eval's case-sensitive PI/E, unless declared as a variable. */
 function normalizePiToBuiltin(formula, allowedVariableNames) {
   const allow = allowedVariableNames instanceof Set ? allowedVariableNames : new Set(allowedVariableNames || []);
   let s = String(formula || "");
-  if (!allow.has("pi")) {
+  if (!allow.has("pi") && !allow.has("PI")) {
     s = s.replace(/\bpi\b/gi, "PI");
+  }
+  if (!allow.has("e") && !allow.has("E")) {
+    s = s.replace(/\be\b/g, "E");
   }
   return s;
 }
@@ -173,11 +166,47 @@ function sanitizeVariableName(spec) {
     .replace(/[^a-zA-Z0-9_]/g, "");
 }
 
-/**
- * Return the set of variable names that the stem template references via {{name}}
- * placeholders, restricted to names that are also declared in variableSpecs.
- * Single-brace {name} and {{var=name}} variants are normalized first.
- */
+/** Names expr-eval already supplies as math constants; declaring them as variables would override them. */
+const RESERVED_VARIABLE_NAMES = new Set(["pi", "PI", "e", "E"]);
+
+/** Reject variable names that collide with built-in math constants (PI, E). */
+function validateNoReservedVariableNames(variableSpecs) {
+  if (!Array.isArray(variableSpecs)) return;
+  const offenders = [];
+  for (const spec of variableSpecs) {
+    const name = sanitizeVariableName(spec);
+    if (!name) continue;
+    if (RESERVED_VARIABLE_NAMES.has(name)) offenders.push(name);
+  }
+  if (offenders.length > 0) {
+    throw new Error(
+      `calculationVariables name(s) ${offenders.join(", ")} collide with built-in math constants. Use PI and E directly in calculationFormula (e.g. "PI * r^2") and do not declare them as variables.`
+    );
+  }
+}
+
+/** Reject formulas that don't reference every declared variable (catches literals baked in for sampled values). */
+function validateFormulaReferencesAllVariables(formula, variableSpecs) {
+  const allowed = buildAllowedVariableNames(variableSpecs);
+  if (allowed.size === 0) return;
+  const f = prepareCalculationFormula(formula, variableSpecs);
+  if (!f) return;
+  let used;
+  try {
+    const parser = new Parser();
+    used = new Set(parser.parse(f).variables());
+  } catch (e) {
+    throw formulaParseErrorToMessage(e);
+  }
+  const missing = [...allowed].filter((n) => !used.has(n));
+  if (missing.length > 0) {
+    throw new Error(
+      `calculationFormula must reference every declared variable. Missing from formula: ${missing.join(", ")}. Replace any hard-coded numeric literals in the formula with these variable names so the answer actually depends on the values shown in the stem.`
+    );
+  }
+}
+
+/** Names the stem references via {{name}} (after normalizing {name} and {{var=name}}), filtered to declared vars. */
 function getStemReferencedVariableNames(template, variableSpecs) {
   const allowed = buildAllowedVariableNames(variableSpecs);
   const t = normalizePlaceholders(template, variableSpecs);
@@ -191,12 +220,7 @@ function getStemReferencedVariableNames(template, variableSpecs) {
   return found;
 }
 
-/**
- * Enforce that the stem references every variable declared in calculationVariables
- * as a {{name}} placeholder using the exact declared name. Used at generation/save
- * time so we never persist a calculation question with a generic literal like
- * {{var}} that the renderer would have to paper over at display time.
- */
+/** Enforce that the stem references every declared variable as {{name}} using the exact declared name. */
 function validateStemReferencesAllVariables(template, variableSpecs) {
   const allowed = buildAllowedVariableNames(variableSpecs);
   if (allowed.size === 0) return;
@@ -209,9 +233,7 @@ function validateStemReferencesAllVariables(template, variableSpecs) {
   }
 }
 
-/**
- * Ensure every identifier used in the formula is declared in calculationVariables.
- */
+/** Ensure every identifier used in the formula is declared in calculationVariables. */
 function validateFormulaAgainstVariableSpecs(formula, variableSpecs) {
   const allowed = buildAllowedVariableNames(variableSpecs);
   if (allowed.size === 0) {
@@ -242,9 +264,7 @@ function validateFormulaAgainstVariableSpecs(formula, variableSpecs) {
   }
 }
 
-/**
- * Build rendered stem + signed token for one student attempt; retries a few times on rare sampling glitches.
- */
+/** Build rendered stem + signed token for one student attempt; retries on rare sampling singularities. */
 function buildStudentCalculationInstance({
   template,
   formula,
@@ -303,10 +323,6 @@ function getHmacSecret() {
   );
 }
 
-/**
- * @param {Array<{ name: string, min?: number, max?: number, decimals?: number, integerOnly?: boolean }>} variables
- * @returns {Record<string, number>}
- */
 function generateVariableValues(variables) {
   if (!Array.isArray(variables) || variables.length === 0) {
     throw new Error("Calculation questions require at least one variable definition");
@@ -348,10 +364,7 @@ function formatVariableForTemplate(value, spec) {
   return String(n);
 }
 
-/**
- * Upgrade single-brace {var} to {{var}} for known variable names (LLMs sometimes omit braces).
- * Also rewrites {{var=name}} / {{ var = name }} (authoring / LLM style) to {{name}}.
- */
+/** Upgrade {var} → {{var}} for declared names, and rewrite {{var=name}} → {{name}}. */
 function normalizePlaceholders(template, variableSpecs) {
   let t = String(template || "");
   t = t.replace(
@@ -359,9 +372,7 @@ function normalizePlaceholders(template, variableSpecs) {
     "{{$1}}"
   );
   for (const spec of variableSpecs || []) {
-    const name = String(spec?.name || "")
-      .trim()
-      .replace(/[^a-zA-Z0-9_]/g, "");
+    const name = sanitizeVariableName(spec);
     if (!name) continue;
     const hasDouble = new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`).test(t);
     if (hasDouble) continue;
@@ -371,9 +382,7 @@ function normalizePlaceholders(template, variableSpecs) {
   return t;
 }
 
-/**
- * Prefer the field that actually contains {{placeholders}} (stem vs title).
- */
+/** Prefer whichever of stem/title actually contains {{placeholders}}. */
 function resolveCalculationDisplayTemplate(stem, title, variableSpecs) {
   const stemT = String(stem || "").trim();
   const titleT = String(title || "").trim();
@@ -384,18 +393,7 @@ function resolveCalculationDisplayTemplate(stem, title, variableSpecs) {
   return normalizePlaceholders(template, variableSpecs);
 }
 
-/**
- * Take the result of renderCalculationTemplate plus the sampled values and produce
- * the final stem shown to the student. When the stem template did not (or could not)
- * reference every formula variable, append a "Given:" line so every value the
- * grader will use is visible. This keeps poorly-templated stems (e.g. a generic
- * "{{var}}" placeholder) usable instead of surfacing a load error.
- *
- * @param {{ text: string, referencedVariableNames: Set<string>, unknownPlaceholderNames: Set<string> }} renderResult
- * @param {Record<string, number>} values
- * @param {Array} variableSpecs
- * @returns {string}
- */
+/** Final student-facing stem; appends "Given:" listing for any sampled value the template doesn't show. */
 function composeStudentCalculationStem(renderResult, values, variableSpecs) {
   const baseText = String(renderResult?.text || "");
   const referenced =
@@ -441,23 +439,12 @@ function composeStudentCalculationStem(renderResult, values, variableSpecs) {
   return `${baseText}${separator}Given: ${givenParts.join(", ")}.`;
 }
 
-/**
- * Replace {{varName}} in template with formatted values.
- * Unknown placeholders (no matching variable) are rendered as "?" rather than
- * throwing, so a stem with a generic placeholder like {{var}} still produces
- * a readable question. The set of variables actually referenced by the stem
- * (and the names of any unknown placeholders) is reported back to the caller
- * so it can decide whether to append a "Given:" listing of the values.
- *
- * @param {string} template
- * @param {Record<string, number>} values
- * @param {Array} variableSpecs
- * @returns {{ text: string, referencedVariableNames: Set<string>, unknownPlaceholderNames: Set<string> }}
- */
+/** Replace {{name}} with formatted values; unknown placeholders render as "?" and are reported back. */
 function renderCalculationTemplate(template, values, variableSpecs = []) {
   const specByName = {};
   for (const s of variableSpecs || []) {
-    if (s && s.name) specByName[String(s.name).trim()] = s;
+    const name = sanitizeVariableName(s);
+    if (name) specByName[name] = s;
   }
   const t = normalizePlaceholders(template, variableSpecs);
   const referencedVariableNames = new Set();
@@ -476,10 +463,6 @@ function renderCalculationTemplate(template, values, variableSpecs = []) {
   return { text, referencedVariableNames, unknownPlaceholderNames };
 }
 
-/**
- * @param {string} formula
- * @param {Record<string, number>} values
- */
 function evaluateCalculationFormula(formula, values) {
   const coerced = {};
   if (values && typeof values === "object") {
@@ -570,9 +553,7 @@ function parseStudentNumericAnswer(text) {
   return n;
 }
 
-/**
- * Compare student answer to expected within decimal rounding rules.
- */
+/** Compare student answer to expected within decimal rounding rules. */
 function numericAnswersMatch(studentValue, expectedValue, answerDecimals) {
   const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
   if (!Number.isFinite(studentValue) || !Number.isFinite(expectedValue)) return false;
@@ -622,6 +603,8 @@ module.exports = {
   resolveCalculationDisplayTemplate,
   buildStudentCalculationInstance,
   validateFormulaAgainstVariableSpecs,
+  validateFormulaReferencesAllVariables,
+  validateNoReservedVariableNames,
   validateStemReferencesAllVariables,
   getStemReferencedVariableNames,
   prepareCalculationFormula,

@@ -130,6 +130,20 @@ function validateAndNormalizeQuestionData(data, requestedType) {
     throw new Error("Invalid question payload");
   }
 
+  // Detect prose-refusal shape: { "text": "..." } with no recognized question fields.
+  // llama3.1:8b sometimes returns this when it thinks the topic can't fit the type.
+  if (
+    typeof data.text === "string" &&
+    !data.question && !data.stem && !data.type &&
+    !data.options && !data.calculationFormula
+  ) {
+    throw new Error(
+      "Model returned a prose response instead of a question. " +
+      "If the topic involves differential equations, integrals, or symbolic calculus, " +
+      "re-scope to a direct arithmetic calculation (e.g. evaluate a polynomial, apply a physics formula, compute a rate)."
+    );
+  }
+
   const resolvedType = resolveQuestionTypeFromPayload(data, requestedType);
   if (resolvedType !== requestedType) {
     throw new Error(
@@ -145,7 +159,17 @@ function validateAndNormalizeQuestionData(data, requestedType) {
         "Missing required field: stem (or question template) for calculation"
       );
     }
-    const formula = String(merged.calculationFormula || "").trim();
+
+    // Strip assignment LHS if the model writes "answer = expr" instead of just "expr".
+    // E.g. "r = -1 / m" → "-1 / m".  Keep "==" untouched (comparison, not assignment).
+    let rawFormula = String(merged.calculationFormula || "").trim();
+    const assignMatch = rawFormula.match(/^[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)/);
+    if (assignMatch) {
+      rawFormula = rawFormula.slice(assignMatch[0].length).trim();
+      merged.calculationFormula = rawFormula;
+    }
+
+    const formula = rawFormula;
     if (!formula) {
       throw new Error("Missing required field: calculationFormula");
     }
@@ -188,7 +212,12 @@ function validateAndNormalizeQuestionData(data, requestedType) {
       const words = before.split(/\s+/).filter(Boolean);
       topicTitle = words.slice(0, 10).join(" ") || "Calculation";
     }
+    calculationQuestionService.validateNoReservedVariableNames(normalizedVars);
     calculationQuestionService.validateFormulaAgainstVariableSpecs(
+      formula,
+      normalizedVars
+    );
+    calculationQuestionService.validateFormulaReferencesAllVariables(
       formula,
       normalizedVars
     );
@@ -386,7 +415,8 @@ function extractBalancedFrom(str, start) {
 }
 
 /**
- * Try each `{` position: parse balanced span; accept first object with a non-empty "question" string.
+ * Try each `{` position: parse balanced span; accept first object with a non-empty "question" or
+ * "stem" string (calculation questions use "stem" as the primary field).
  * Skips spurious `{` from LaTeX (e.g. \\boxed{0}) that are not full question JSON.
  */
 function tryParseQuestionJsonFromLaxText(jsonString) {
@@ -400,13 +430,12 @@ function tryParseQuestionJsonFromLaxText(jsonString) {
     if (balanced) {
       try {
         const obj = JSON.parse(balanced);
-        if (
-          obj &&
-          typeof obj === "object" &&
-          typeof obj.question === "string" &&
-          obj.question.trim()
-        ) {
-          return obj;
+        if (obj && typeof obj === "object") {
+          const hasQuestion = typeof obj.question === "string" && obj.question.trim();
+          const hasStem = typeof obj.stem === "string" && obj.stem.trim();
+          if (hasQuestion || hasStem) {
+            return obj;
+          }
         }
       } catch (_) {
         /* try next { */
@@ -415,6 +444,41 @@ function tryParseQuestionJsonFromLaxText(jsonString) {
     pos = start + 1;
   }
   return null;
+}
+
+/**
+ * Strip sections for other question types from the prompt so the model only sees
+ * the schema relevant to the requested type. Reduces prompt length significantly
+ * for small models like llama3.1:8b.
+ */
+function filterPromptToType(template, questionType) {
+  const allTypes = ["multiple-choice", "fill-in-the-blank", "calculation", "open-ended"];
+  const targetIdx = allTypes.indexOf(questionType);
+  if (targetIdx === -1) return template;
+
+  const sectionHeaders = allTypes.map(t => `--- If Question Type is "${t}" ---`);
+  const footerMarker = "CRITICAL FORMATTING REQUIREMENTS";
+
+  const positions = sectionHeaders.map(h => template.indexOf(h));
+  const footerPos = template.indexOf(footerMarker);
+
+  const targetStart = positions[targetIdx];
+  if (targetStart === -1) return template;
+
+  let targetEnd = footerPos !== -1 ? footerPos : template.length;
+  for (let i = 0; i < positions.length; i++) {
+    if (i === targetIdx) continue;
+    const p = positions[i];
+    if (p > targetStart && p < targetEnd) targetEnd = p;
+  }
+
+  const validPositions = positions.filter(p => p !== -1);
+  const firstSectionPos = validPositions.length > 0 ? Math.min(...validPositions) : -1;
+  const preamble = firstSectionPos !== -1 ? template.slice(0, firstSectionPos) : "";
+  const targetSection = template.slice(targetStart, targetEnd);
+  const footer = footerPos !== -1 ? template.slice(footerPos) : "";
+
+  return preamble + targetSection + footer;
 }
 
 function safeJsonParse(jsonInput) {
@@ -451,10 +515,43 @@ function safeJsonParse(jsonInput) {
   }
 }
 
-function jsonOnlyRetrySuffix(attempt, questionType) {
+function jsonOnlyRetrySuffix(attempt, questionType, lastError) {
   const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
   const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
-  const calcSchema = `For calculation: "type":"calculation", "topicTitle", "stem" (template that inlines every variable as {{name}} using the EXACT name from "calculationVariables[].name"; do NOT use a generic literal like {{var}}), "calculationFormula" (single expr-eval expression: use ONLY ASCII + - * / ^ ( ) digits and variable names; NO LaTeX, NO ∫ ∑, NO $...$; you may use \\frac{a}{b} or \\times in output—the server normalizes them, but prefer "a/b" and "*"), "calculationVariables" (non-empty array of {name, min, max, decimals or integerOnly}), "calculationAnswerDecimals" (0-12), "explanation". Every variable that appears in "calculationFormula" must also appear in "stem" as {{name}}. No "options" or MC correctAnswer.`;
+
+  // Build targeted extra guidance from the last error message for calculation type.
+  let calcExtra = "";
+  if (questionType === "calculation" && lastError) {
+    const msg = String(lastError.message || "");
+    if (/prose response|text.*instead of|refused/i.test(msg)) {
+      calcExtra = "\nPrevious response was commentary, not a question. You MUST output a JSON calculation question. ";
+    }
+    if (/d\/dt|d\/dx|differential|integral|lim |∫|∑|calculus|symbolic/i.test(msg) ||
+        /not defined in calculationVariables/i.test(msg) ||
+        /expected variable for assignment/i.test(msg)) {
+      calcExtra +=
+        "\nThe previous formula used calculus notation (d/dt, d/dx, integrals, limits) which the engine CANNOT evaluate. " +
+        "Do NOT attempt differential equations or symbolic calculus. " +
+        "Instead, pick a SIMPLE ARITHMETIC sub-problem related to the topic — for example: " +
+        "evaluate a polynomial at a point, compute a rate using a given formula, apply a physics/finance formula, or calculate a geometric quantity. " +
+        "The formula must be a single closed-form expression using only + - * / ^ ( ) and numbers.";
+    }
+  }
+
+  const calcSchema = `For calculation — return ONLY this JSON shape (no other text):${calcExtra}
+{
+  "type": "calculation",
+  "topicTitle": "short label",
+  "stem": "Question text with {{V}} volts and {{R}} ohms.",
+  "calculationFormula": "V / R",
+  "calculationVariables": [
+    {"name": "V", "min": 10, "max": 120, "integerOnly": true},
+    {"name": "R", "min": 5, "max": 50, "decimals": 1}
+  ],
+  "calculationAnswerDecimals": 2,
+  "explanation": "brief"
+}
+RULES: (1) stem MUST use {{name}} double curly braces for every variable — NOT [V], NOT {V}, NOT bare "V". (2) calculationFormula uses ONLY ASCII + - * / ^ ( ) and variable names — NO LaTeX, NO \\frac, NO ∫ ∑, NO d/dt, NO = sign. (3) Every name in calculationVariables must appear in BOTH stem (as {{name}}) AND calculationFormula. (4) min/max must be numbers. No "options" field.`;
   const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
   let schema;
   if (questionType === "multiple-choice") schema = mcSchema;
@@ -611,16 +708,18 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context (optional retry suffix nudges small/local models toward JSON-only)
-      const buildBasePrompt = () =>
-        promptTemplate
+      const buildBasePrompt = () => {
+        const filled = promptTemplate
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{questionType}', questionType || '')
           .replace('{ragContext}', ragContext || '');
+        return filterPromptToType(filled, questionType);
+      };
 
-      const createPrompt = (attempt) =>
-        attempt > 1 ? buildBasePrompt() + jsonOnlyRetrySuffix(attempt, questionType) : buildBasePrompt();
+      const createPrompt = (attempt, errForRetry) =>
+        attempt > 1 ? buildBasePrompt() + jsonOnlyRetrySuffix(attempt, questionType, errForRetry) : buildBasePrompt();
 
       // Retry logic: regenerate until we get valid JSON
       const maxRetries = 5;
@@ -630,8 +729,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
-          const promptForAttempt = createPrompt(attempt);
-          const response = await llmModule.sendMessage(promptForAttempt);
+          const promptForAttempt = createPrompt(attempt, lastError);
+          const response = await llmModule.sendMessage(promptForAttempt, { responseFormat: "json" });
           console.log("Full Prompt: ", promptForAttempt);
 
           console.log("✅ LLM service response received");
@@ -883,7 +982,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     console.log("Sending prompt to LLM service...");
-    const response = await llmModule.sendMessage(fullPrompt);
+    const response = await llmModule.sendMessage(fullPrompt, { responseFormat: "json" });
     console.log("Full Prompt: ", fullPrompt);
 
     console.log("✅ LLM service response received");

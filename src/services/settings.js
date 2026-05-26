@@ -8,6 +8,21 @@ const KEY_MAP = {
     'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual'
 };
 
+const REQUIRED_PROMPT_MARKERS = {
+    questionGeneration: [
+        '{questionType}',
+        '{learningObjectiveText}',
+        '{ragContext}'
+    ]
+};
+
+const isStalePromptSnapshot = (promptKey, value) => {
+    const required = REQUIRED_PROMPT_MARKERS[promptKey];
+    if (!required) return false;
+    const v = String(value || '');
+    return required.some((marker) => !v.includes(marker));
+};
+
 /**
  * Get application settings for a specific course
  * @param {string} courseId - The course ID to get settings for
@@ -29,23 +44,29 @@ const getSettings = async (courseId) => {
             prompts: {}
         };
 
-        // Populate prompts with defaults or found values
+        // Resolve each prompt: use stored value when present and structurally compatible,
+        // otherwise fall back to the current default and persist it (insert if missing, refresh if stale).
         for (const promptKey in DEFAULT_PROMPTS) {
             const dbKey = KEY_MAP[`prompts.${promptKey}`];
-            settings.prompts[promptKey] = (dbKey ? settingsMap[dbKey] : null) ?? DEFAULT_PROMPTS[promptKey];
-        }
-
-        // Proactively save defaults if they don't exist (only for mapped keys) for this course
-        for (const path in KEY_MAP) {
-            const dbKey = KEY_MAP[path];
-            if (!(dbKey in settingsMap)) {
-                const item = path.split('.')[1];
-                const value = DEFAULT_PROMPTS[item];
+            if (!dbKey) {
+                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
+                continue;
+            }
+            const storedValue = settingsMap[dbKey];
+            const stored = storedValue != null;
+            const stale = stored && isStalePromptSnapshot(promptKey, storedValue);
+            if (!stored || stale) {
+                if (stale) {
+                    console.log(`[settings] Refreshing stale prompt snapshot "${dbKey}" for course ${courseId}.`);
+                }
+                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
                 await collection.updateOne(
-                    { name: dbKey, courseId: courseId },
-                    { $set: { name: dbKey, value: value, courseId: courseId, updatedAt: new Date() } },
+                    { name: dbKey, courseId },
+                    { $set: { name: dbKey, value: DEFAULT_PROMPTS[promptKey], courseId, updatedAt: new Date() } },
                     { upsert: true }
                 );
+            } else {
+                settings.prompts[promptKey] = storedValue;
             }
         }
         
