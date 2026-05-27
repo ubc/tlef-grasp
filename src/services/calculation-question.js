@@ -564,17 +564,21 @@ function parseStudentNumericAnswer(text) {
 function numericAnswersMatch(studentValue, expectedValue, answerDecimals, tolerancePercent) {
   if (!Number.isFinite(studentValue) || !Number.isFinite(expectedValue)) return false;
 
+  const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
   const tol = Number(tolerancePercent);
   if (Number.isFinite(tol) && tol >= 0) {
     const threshold = Math.max(0, Math.min(100, tol)) / 100;
     const diff = Math.abs(studentValue - expectedValue);
-    if (Math.abs(expectedValue) < 1e-10) {
-      return diff <= threshold;
+    // Use absolute comparison when expected rounds to zero at the displayed precision.
+    // Relative error would always be ~100% for sub-ULP values, even when both sides
+    // display as "0" — e.g. formula 1/n with large n gives 0.0001 which rounds to 0.00.
+    const displayZeroThreshold = 0.5 * Math.pow(10, -d);
+    if (Math.abs(expectedValue) < displayZeroThreshold) {
+      return diff < displayZeroThreshold;
     }
     return diff / Math.abs(expectedValue) <= threshold;
   }
 
-  const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
   const a = roundToDecimals(studentValue, d);
   const b = roundToDecimals(expectedValue, d);
   const eps = Math.max(10 ** -(d + 2), 1e-12);

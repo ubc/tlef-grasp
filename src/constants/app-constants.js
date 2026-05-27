@@ -2,12 +2,23 @@
  * Application-wide default prompt constants
  */
 
+const SUBTOPIC_DETERMINATION_PROMPT = `Identify the single most specific sub-topic to target for a question about the following learning objective.
+
+Course: {courseName}
+Learning Objective: {learningObjectiveText}
+Granular Learning Objective: {granularLearningObjectiveText}
+
+Return ONLY this JSON with no other text:
+{"subtopic": "the specific concept directly named or implied by the granular objective (e.g. arithmetic sequences, geometric series, Newton's second law)"}`;
+
 const QUESTION_GENERATION_PROMPT = `You are an university instructor. Generate a high-quality question based on the provided content that effectively test students' understanding of the course learning objective.
 
+Course: {courseName}
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 Bloom's Taxonomy Level(s): {bloomLevel}
 Question Type: {questionType}
+Sub-topic: {subtopic}
 
 Bloom's level guidance:
 - Remember: recall a definition or fact
@@ -20,6 +31,8 @@ Bloom's level guidance:
 BACKGROUND COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
+
+The question MUST be specifically about the sub-topic above — ignore unrelated content in the materials. Where applicable, draw on exercises or worked examples from the materials that relate to that sub-topic.
 
 Use ONLY the schema for the Question Type specified above.
 
@@ -87,7 +100,9 @@ RULES (violations cause immediate rejection):
    + - * / ^ ( ) digits, variable names, functions sin cos tan sqrt log exp,
    constants PI E. No LaTeX, no Unicode math symbols (∫ ∑ π ℯ), no = sign.
 4. Every declared variable must appear in BOTH stem (as {{name}}) AND in
-   calculationFormula by the exact same single-letter name.
+   calculationFormula by the exact same single-letter name. Conversely, every
+   {{name}} placeholder in the stem must be a declared variable — never put
+   expressions inside braces ({{n^2}}, {{2a}}, {{r^n}} are all invalid).
 5. Prefer integerOnly: true for variables unless the domain genuinely requires
    decimals (e.g. concentrations, probabilities). Integer ranges avoid rounding
    ambiguity and produce cleaner random values.
@@ -103,6 +118,17 @@ RULES (violations cause immediate rejection):
    - ODE y(t)=y₀e^(kt) at t: formula "y0 * E^(k*t)" with tolerancePercent 1
    If no simple closed form exists, reformulate to a directly computable sub-skill
    (evaluate the integrand at a point, apply the power rule to one term).
+8. The stem must ask for a specific numeric value. NEVER frame a calculation
+   question as convergent/divergent, yes/no, or true/false — those belong in
+   multiple-choice or fill-in-the-blank. For limit-based topics, ask "What is
+   the value of lim..." or "Evaluate..." and provide the closed-form numeric answer.
+9. Do NOT use a variable to approximate a limit index (e.g. setting n to a large
+   range to simulate n→∞). Instead, express the limit's closed-form result as the
+   formula and randomize concrete domain parameters (first term, common ratio, etc.).
+10. The formula must be algebraically non-trivial: every declared variable must
+    survive simplification and affect the computed result. If any variable cancels
+    out entirely (e.g. "a*(1-r)/(1-r)" reduces to just "a", losing r), the formula
+    is mathematically wrong — derive the correct expression before submitting.
 
 PROCEDURE:
 1. "topicTitle": short neutral label (3-10 words), no "?", must not reveal the answer.
@@ -119,9 +145,12 @@ PROCEDURE:
 
 SELF-CHECK before returning JSON:
 - Every name in calculationVariables appears in stem as {{name}} (double braces).
+- Every {{name}} in the stem is a declared variable — no expressions inside braces.
 - Every name in calculationVariables appears in calculationFormula by the exact same name.
 - calculationFormula contains no LaTeX, no ∫ ∑, no = sign, no word-length names.
 - min/max are numbers (not null). Formula stays finite across the declared ranges.
+- The formula is non-trivial: mentally substitute mid-range values and confirm every variable affects the result (no variable cancels out).
+- The stem asks for a computable number, not a convergence/divergence label.
 
 Example (structure only — derive your own formula and variables from the course content):
 {
@@ -261,6 +290,7 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
 };
 
 module.exports = {
+    SUBTOPIC_DETERMINATION_PROMPT,
     QUESTION_GENERATION_PROMPT,
     OBJECTIVE_GENERATION_AUTO_PROMPT,
     OBJECTIVE_GENERATION_MANUAL_PROMPT,

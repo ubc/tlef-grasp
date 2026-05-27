@@ -12,29 +12,7 @@ const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
 const calculationQuestionService = require('../services/calculation-question');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES } = require('../constants/app-constants');
-
-// ---------------------------------------------------------------------------
-// Temporary debug logger — appends one JSON entry per attempt to llm-debug.json
-// in the project root. Remove once rejection patterns are understood.
-// ---------------------------------------------------------------------------
-const fs = require('fs');
-const path = require('path');
-const DEBUG_LOG_PATH = path.join(__dirname, '../../llm-debug.json');
-
-function llmDebugLog(entry) {
-  try {
-    let existing = [];
-    if (fs.existsSync(DEBUG_LOG_PATH)) {
-      try { existing = JSON.parse(fs.readFileSync(DEBUG_LOG_PATH, 'utf8')); } catch (_) {}
-    }
-    if (!Array.isArray(existing)) existing = [];
-    existing.push({ ts: new Date().toISOString(), ...entry });
-    fs.writeFileSync(DEBUG_LOG_PATH, JSON.stringify(existing, null, 2), 'utf8');
-  } catch (writeErr) {
-    console.warn('[llmDebugLog] Could not write debug file:', writeErr.message);
-  }
-}
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, SUBTOPIC_DETERMINATION_PROMPT } = require('../constants/app-constants');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -664,6 +642,21 @@ const searchRagHandler = async (req, res) => {
   }
 };
 
+async function determineSubtopic(llmModule, courseName, learningObjectiveText, granularObjectiveText) {
+  const prompt = SUBTOPIC_DETERMINATION_PROMPT
+    .replace('{courseName}', courseName || '')
+    .replace('{learningObjectiveText}', learningObjectiveText || '')
+    .replace('{granularLearningObjectiveText}', granularObjectiveText || '');
+  try {
+    const response = await llmModule.sendMessage(prompt, { responseFormat: 'json' });
+    const content = response?.content || String(response || '');
+    const parsed = safeJsonParse(content);
+    return typeof parsed?.subtopic === 'string' ? parsed.subtopic.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
     const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, questionType } = req.body;
@@ -741,13 +734,19 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         // Get LLM instance from service
         const llmModule = await llmService.getLLMInstance();
 
+      const subtopic = (await determineSubtopic(llmModule, courseName, learningObjectiveText, granularLearningObjectiveText))
+        || granularLearningObjectiveText || '';
+      console.log('[RAG-LLM] Focused sub-topic:', subtopic);
+
       // Create prompt with RAG context (optional retry suffix nudges small/local models toward JSON-only)
       const buildBasePrompt = () => {
         const filled = promptTemplate
+          .replace('{courseName}', courseName || '')
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{questionType}', questionType || '')
+          .replace('{subtopic}', subtopic)
           .replace('{ragContext}', ragContext || '');
         return filterPromptToType(filled, questionType);
       };
@@ -809,14 +808,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
             // If we got here, parsing was successful
             console.log(`✅ Successfully parsed JSON on attempt ${attempt}`);
-            llmDebugLog({
-              event: 'success',
-              questionType,
-              bloomLevel,
-              granularObjective: granularLearningObjectiveText,
-              attempt,
-              rawResponse: contentStr,
-            });
             break;
 
           } catch (parseError) {
@@ -828,15 +819,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
               "| snippet (0-400):",
               JSON.stringify(contentStr.slice(0, 400))
             );
-            llmDebugLog({
-              event: 'rejection',
-              questionType,
-              bloomLevel,
-              granularObjective: granularLearningObjectiveText,
-              attempt,
-              rejectionReason: parseError.message,
-              rawResponse: contentStr,
-            });
             if (attempt < maxRetries) {
               console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
               continue;
@@ -848,15 +830,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         } catch (error) {
           lastError = error;
           console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
-          llmDebugLog({
-            event: 'llm_error',
-            questionType,
-            bloomLevel,
-            granularObjective: granularLearningObjectiveText,
-            attempt,
-            rejectionReason: error.message,
-            rawResponse: null,
-          });
           if (attempt < maxRetries) {
             console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
             continue;
