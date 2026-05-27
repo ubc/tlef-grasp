@@ -11,7 +11,7 @@ const llmService = require('../services/llm');
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -35,10 +35,10 @@ function safeJsonParse(jsonInput) {
   if (typeof jsonInput === 'object' && jsonInput !== null && !Array.isArray(jsonInput)) {
     return jsonInput;
   }
-  
+
   // If it's not a string, convert it
   let jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
-  
+
   /**
    * Internal helper to extract JSON and attempt parsing
    * @param {string} str 
@@ -47,8 +47,8 @@ function safeJsonParse(jsonInput) {
     try {
       return JSON.parse(str);
     } catch (error) {
-      // Try extracting from markdown code blocks
-      const codeBlockMatch = str.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      // Try extracting from markdown code blocks (object or array)
+      const codeBlockMatch = str.match(/```(?:json)?\s*([\[{][\s\S]*?[\]}])\s*```/);
       if (codeBlockMatch) {
         try {
           return JSON.parse(codeBlockMatch[1]);
@@ -56,8 +56,17 @@ function safeJsonParse(jsonInput) {
           // If code block also fails, continue to other fixes
         }
       }
-      
-      // Try to extract just the first object { ... }
+
+      // Try to extract the first JSON array [ ... ] or object { ... }
+      const arrayMatch = str.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        try {
+          return JSON.parse(arrayMatch[0]);
+        } catch (e) {
+          // continue
+        }
+      }
+
       const jsonMatch = str.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
@@ -66,7 +75,7 @@ function safeJsonParse(jsonInput) {
           // If extraction fails, continue
         }
       }
-      
+
       throw error;
     }
   };
@@ -81,11 +90,11 @@ function safeJsonParse(jsonInput) {
       // Valid: ", \, /, b, f, n, r, t, uXXXX
       // Note: We skip escaping if it's already a double backslash
       console.warn("Initial JSON parse failed. Attempting to fix unescaped backslashes...");
-      
+
       // Fix: Escape backslashes that aren't valid JSON escapes
       // This handles things like \( and \) which the LLM often fails to escape properly
       const fixedBackslashes = jsonString.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
-      
+
       return attemptParse(fixedBackslashes);
     } catch (secondError) {
       // 3. Last resort: if it failed due to a specific character like \r or \n inside a string
@@ -214,38 +223,44 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     // Try to use RAG for content retrieval
     console.log("=== USING getLearningObjectiveRagContent ===");
     // Use objective text as the query for RAG search
-      // Fetch settings for prompt
-      const settings = await settingsService.getSettings(courseId);
-      const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
+    // Fetch settings for prompt
+    const settings = await settingsService.getSettings(courseId);
+    const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
 
-      // Prepare RAG search query
-      const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
+    // Prepare RAG search query
+    const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
 
-      let ragContext = '';
-      if (learningObjectiveId) {
-        ragContext = await ragService.getLearningObjectiveRagContent(
-          learningObjectiveId,
-          searchQuery,
-          courseId
-        );
-      } else if (materialIds && materialIds.length > 0) {
-        // Fallback to materials if objective is not yet in database
-        ragContext = await ragService.getRagContentFromMaterials(
-          materialIds,
-          searchQuery,
-          50, // limit
-          courseId
-        );
-      }
+    const questionRagThreshold = parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.6;
+    const questionRagLimit = parseInt(process.env.RAG_CHUNK_LIMIT) || 50;
 
-      //console.log("RAG Context:", ragContext);
+    let ragContext = '';
+    if (learningObjectiveId) {
+      ragContext = await ragService.getLearningObjectiveRagContent(
+        learningObjectiveId,
+        searchQuery,
+        courseId,
+        questionRagThreshold,
+        questionRagLimit
+      );
+    } else if (materialIds && materialIds.length > 0) {
+      // Fallback to materials if objective is not yet in database
+      ragContext = await ragService.getRagContentFromMaterials(
+        materialIds,
+        searchQuery,
+        questionRagLimit,
+        courseId,
+        questionRagThreshold
+      );
+    }
 
-      // Use LLM service for generation
-      console.log("=== USING LLM SERVICE FOR GENERATION ===");
+    //console.log("RAG Context:", ragContext);
 
-      try {
-        // Get LLM instance from service
-        const llmModule = await llmService.getLLMInstance();
+    // Use LLM service for generation
+    console.log("=== USING LLM SERVICE FOR GENERATION ===");
+
+    try {
+      // Get LLM instance from service
+      const llmModule = await llmService.getLLMInstance();
 
       // Create prompt with RAG context
       const createFirstPrompt = (bloomLevel) => {
@@ -259,7 +274,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         if (p.includes('{existingQuestionsContext}')) {
           p = p.replace('{existingQuestionsContext}', '');
         }
-        
+
         return p;
       };
 
@@ -284,30 +299,30 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             // Add the new prompt for this turn
             let turnPrompt;
             if (i === 0) {
-               turnPrompt = createFirstPrompt(currentBloomLevel);
+              turnPrompt = createFirstPrompt(currentBloomLevel);
             } else {
-               turnPrompt = `Now generate another question for this granular learning objective, but specifically targeting Bloom's Taxonomy Level: ${currentBloomLevel}. 
+              turnPrompt = `Now generate another question for this granular learning objective, but specifically targeting Bloom's Taxonomy Level: ${currentBloomLevel}. 
 Ensure the question tests a completely different concept or facet of the objective than the previously generated questions. 
 Respond with ONLY a single valid JSON object following the exact same structure. Do not include any other text or markdown blocks.`;
             }
-            
+
             conversation.addMessage('user', turnPrompt);
 
-            console.log(`Sending prompt to LLM service (Question ${i+1}/${targetCount}, attempt ${attempt}/${maxRetries})...`);
-            
+            console.log(`Sending prompt to LLM service (Question ${i + 1}/${targetCount}, attempt ${attempt}/${maxRetries})...`);
+
             // Send the request
             const response = await conversation.send();
-            
+
             // Log Token Usage
             if (response.usage) {
-              console.log(`📊 Token Usage for Question ${i+1}:`);
+              console.log(`📊 Token Usage for Question ${i + 1}:`);
               console.log(`   - Prompt tokens: ${response.usage.promptTokens || 0}`);
               console.log(`   - Completion tokens: ${response.usage.completionTokens || 0}`);
               console.log(`   - Total tokens: ${response.usage.totalTokens || 0}`);
             }
-            
+
             let responseContent = response.content || response.text || response.message || JSON.stringify(response);
-            
+
             if (!responseContent) throw new Error("Empty response from LLM");
 
             questionData = safeJsonParse(responseContent);
@@ -316,22 +331,22 @@ Respond with ONLY a single valid JSON object following the exact same structure.
               throw new Error("Missing required fields in JSON response");
             }
 
-            console.log(`✅ Successfully generated question ${i+1}`);
-            
+            console.log(`✅ Successfully generated question ${i + 1}`);
+
             // Save to successful history
             successfulHistory.push({ role: 'user', content: turnPrompt });
             successfulHistory.push({ role: 'assistant', content: responseContent });
-            
+
             break; // Success, break retry loop
 
           } catch (error) {
-             lastError = error;
-             console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
-             if (attempt === maxRetries) {
-                console.error(`Failed to generate question ${i+1} after all retries.`);
-             } else {
-                console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
-             }
+            lastError = error;
+            console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
+            if (attempt === maxRetries) {
+              console.error(`Failed to generate question ${i + 1} after all retries.`);
+            } else {
+              console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
+            }
           }
         }
 
@@ -340,15 +355,15 @@ Respond with ONLY a single valid JSON object following the exact same structure.
           if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
             const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
             const optionValues = optionKeys.map(k => questionData.options[k]);
-            
+
             for (let j = optionValues.length - 1; j > 0; j--) {
               const k = Math.floor(Math.random() * (j + 1));
               [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
             }
-            
+
             const originalCorrectValue = questionData.options[questionData.correctAnswer];
             let newCorrectKey = questionData.correctAnswer;
-            
+
             for (let j = 0; j < optionKeys.length; j++) {
               const key = optionKeys[j];
               questionData.options[key] = optionValues[j];
@@ -356,12 +371,12 @@ Respond with ONLY a single valid JSON object following the exact same structure.
                 newCorrectKey = key;
               }
             }
-            
+
             const correctOptionLetter = questionData.correctAnswer;
             questionData.correctAnswer = newCorrectKey;
             console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
           }
-          
+
           // Add the bloom level to the question data so the UI knows which level it belongs to
           questionData.bloomLevel = currentBloomLevel;
 
@@ -573,8 +588,8 @@ Include foundational concepts, practical applications, and assessment criteria.`
                 const text = typeof go === "string" ? go.trim() : go.text.trim();
                 let bloomTaxonomies = ["Understand"]; // default
                 if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
-                   const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
-                   if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
+                  const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
+                  if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
                 }
                 return { text, bloomTaxonomies };
               }),
@@ -608,10 +623,166 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
+async function rateQuestions(questions, llmModule) {
+  const compactQuestions = questions.map(q => ({
+    id: q.id,
+    bloomLevel: q.bloomLevel,
+    question: q.question,
+    options: Object.fromEntries(
+      Object.entries(q.options).map(([k, v]) => [
+        k,
+        typeof v === 'string' ? { text: v, feedback: '' } : { text: v.text || '', feedback: v.feedback || '' }
+      ])
+    ),
+    correctAnswer: q.correctAnswer
+  }));
+
+  const prompt = QUESTION_REVIEW_PROMPT.replace('{questionsJson}', JSON.stringify(compactQuestions, null, 2));
+  const response = await llmModule.sendMessage(prompt);
+  const responseContent = response.content || response.text || response.message;
+  let ratings = safeJsonParse(responseContent);
+  // Model sometimes returns a single object instead of a one-element array — normalise it
+  if (!Array.isArray(ratings) && ratings && typeof ratings === 'object') {
+    ratings = [ratings];
+  }
+  if (!Array.isArray(ratings)) throw new Error("Rating response is not a JSON array");
+  return ratings;
+}
+
+async function generateSingleQuestion(params, llmModule, promptTemplate) {
+  const { learningObjectiveText, granularObjectiveText, bloomLevel, learningObjectiveId, materialIds, courseId } = params;
+
+  const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularObjectiveText || ''}`;
+  const questionRagThreshold = parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.6;
+  const questionRagLimit = parseInt(process.env.RAG_CHUNK_LIMIT) || 50;
+
+  let ragContext = '';
+  if (learningObjectiveId) {
+    ragContext = await ragService.getLearningObjectiveRagContent(learningObjectiveId, searchQuery, courseId, questionRagThreshold, questionRagLimit);
+  } else if (materialIds && materialIds.length > 0) {
+    ragContext = await ragService.getRagContentFromMaterials(materialIds, searchQuery, questionRagLimit, courseId, questionRagThreshold);
+  }
+
+  const prompt = promptTemplate
+    .replace('{learningObjectiveText}', learningObjectiveText || '')
+    .replace('{granularLearningObjectiveText}', granularObjectiveText || '')
+    .replace('{bloomLevel}', bloomLevel || '')
+    .replace('{ragContext}', ragContext || '')
+    .replace('{existingQuestionsContext}', '');
+
+  const conversation = llmModule.createConversation();
+  conversation.addMessage('user', prompt);
+  const response = await conversation.send();
+  const responseContent = response.content || response.text || response.message;
+  const questionData = safeJsonParse(responseContent);
+
+  if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
+    throw new Error("Invalid question structure from LLM");
+  }
+
+  // Shuffle correct answer position
+  const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+  const optionValues = optionKeys.map(k => questionData.options[k]);
+  for (let j = optionValues.length - 1; j > 0; j--) {
+    const k = Math.floor(Math.random() * (j + 1));
+    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
+  }
+  const originalCorrectValue = questionData.options[questionData.correctAnswer];
+  optionKeys.forEach((key, j) => {
+    questionData.options[key] = optionValues[j];
+    if (optionValues[j] === originalCorrectValue) questionData.correctAnswer = key;
+  });
+
+  return questionData;
+}
+
+const QUALITY_THRESHOLD = 8.5;
+const MAX_REGENERATION_ATTEMPTS = 3;
+
+const reviewQuestionsHandler = async (req, res) => {
+  try {
+    const { questions } = req.body;
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ success: false, error: "questions array is required" });
+    }
+
+    const llmModule = await llmService.getLLMInstance();
+    const courseId = questions[0]?.courseId || null;
+    const settings = courseId ? await settingsService.getSettings(courseId) : null;
+    const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
+
+    console.log(`=== REVIEWING ${questions.length} QUESTIONS ===`);
+    const ratings = await rateQuestions(questions, llmModule);
+
+    const results = [];
+
+    for (const q of questions) {
+      const rating = ratings.find(r => r.questionId === q.id) || { score: 10, issue: '' };
+      console.log(`Question ${q.id}: score ${rating.score}`);
+
+      if (rating.score >= QUALITY_THRESHOLD) {
+        results.push({ originalId: q.id, replaced: false, flagged: false, issue: '' });
+        continue;
+      }
+
+      let bestQuestion = null;
+      let bestScore = rating.score;
+      let bestIssue = rating.issue;
+
+      for (let attempt = 1; attempt <= MAX_REGENERATION_ATTEMPTS; attempt++) {
+        console.log(`  Regenerating (attempt ${attempt}/${MAX_REGENERATION_ATTEMPTS}, score: ${bestScore})`);
+        try {
+          const newQuestionData = await generateSingleQuestion({
+            learningObjectiveText: q.learningObjectiveText,
+            granularObjectiveText: q.granularObjectiveText,
+            bloomLevel: q.bloomLevel,
+            learningObjectiveId: q.learningObjectiveId,
+            materialIds: q.materialIds,
+            courseId: q.courseId,
+          }, llmModule, promptTemplate);
+
+          const tempQ = { ...q, question: newQuestionData.question, options: newQuestionData.options, correctAnswer: newQuestionData.correctAnswer };
+          const newRatings = await rateQuestions([tempQ], llmModule);
+          const newRating = newRatings[0] || { score: 0, issue: 'Rating failed' };
+
+          if (newRating.score > bestScore) {
+            bestQuestion = newQuestionData;
+            bestScore = newRating.score;
+            bestIssue = newRating.issue;
+          }
+
+          console.log(`  Attempt ${attempt} score: ${newRating.score} (best so far: ${bestScore})`);
+          if (bestScore >= QUALITY_THRESHOLD) break;
+        } catch (err) {
+          console.error(`  Regeneration attempt ${attempt} failed:`, err.message);
+        }
+      }
+
+      results.push({
+        originalId: q.id,
+        replaced: bestQuestion !== null,
+        flagged: bestScore < QUALITY_THRESHOLD,
+        issue: bestScore < QUALITY_THRESHOLD ? bestIssue : '',
+        question: bestQuestion
+      });
+    }
+
+    const flaggedCount = results.filter(r => r.flagged).length;
+    const replacedCount = results.filter(r => r.replaced).length;
+    console.log(`✅ Review complete: ${replacedCount} regenerated, ${flaggedCount} still flagged`);
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('Error reviewing questions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   addDocumentToRagHandler,
   searchRagHandler,
   generateQuestionsWithRagHandler,
   deleteDocumentHandler,
-  generateLearningObjectivesHandler
+  generateLearningObjectivesHandler,
+  reviewQuestionsHandler
 };

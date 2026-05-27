@@ -168,6 +168,9 @@ class QuestionGenerator {
           return {
             id: `${granularLearningObjectiveId}-${index + 1}-${Date.now()}`,
             granularObjectiveId: `${granularLearningObjectiveId}`,
+            learningObjectiveId: learningObjectiveId,
+            materialIds: materialIds,
+            courseId: courseId,
             text: questionData.question,
             type: "multiple-choice",
             options: questionData.options,

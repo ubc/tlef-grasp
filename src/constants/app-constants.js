@@ -123,7 +123,7 @@ INSTRUCTIONS:
 2. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
 3. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
 4. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-5. Every granular objective must start with the exact phrase "Students will be able to..." followed by an active verb.
+5. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
 6. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
 
 Bloom's level guidance (sample verbs in parentheses):
@@ -147,7 +147,7 @@ SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - No granular objective is a rephrasing of its parent meta objective.
 - Each granular objective is genuinely distinct and necessary — remove any that are redundant or only added to meet a count.
 - Every meta objective has at least one granular objective.
-- Every granular objective starts with "Students will be able to..." and has at least one Bloom level.
+- Every granular objective begins with an active verb and has at least one Bloom level.
 
 Return ONLY the JSON object below. Do not include any introductory text, explanations, or markdown code fences. Respond with exactly this shape:
 {
@@ -155,8 +155,8 @@ Return ONLY the JSON object below. Do not include any introductory text, explana
     {
       "name": "Main learning objective title",
       "granularObjectives": [
-        { "text": "Students will be able to [verb] [skill]...", "bloomTaxonomies": ["Understand", "Apply"] },
-        { "text": "Students will be able to [verb] [skill]...", "bloomTaxonomies": ["Analyze"] }
+        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Understand", "Apply"] },
+        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Analyze"] }
       ]
     }
   ]
@@ -189,8 +189,8 @@ Generation Constraints (The "Gap-Fill" Rule):
 
 Syntax & Language:
 1. Action-Oriented:
-   - AI-generated granular objectives must start with the exact phrase "Students will be able to..." followed by an active verb.
-   - For user-provided granular objectives, preserve the instructor’s wording. If it does not already start with "Students will be able to...", rewrite it minimally to start with that phrase while keeping the original meaning and verb intact.
+   - Write each granular objective as a clear statement beginning with an active verb (e.g., "Apply...", "Distinguish...", "Derive..."). Do not add boilerplate prefixes.
+   - For user-provided granular objectives, preserve the instructor’s wording exactly. Only correct obvious grammatical errors.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create). For user-provided granular objectives, infer Bloom levels from the verb and scope of the text.
 3. Alignment: All content must be derived strictly from the provided course content. Do not invent material that is not in the provided course content.
 
@@ -207,7 +207,7 @@ Return ONLY the JSON object below. Do not include any introductory text, explana
       "name": "Meta Objective Name",
       "granularObjectives": [
         {
-          "text": "Students will be able to [action verb] [specific skill]...",
+          "text": "[Active verb] [specific skill]...",
           "bloomTaxonomies": ["Apply", "Analyze"]
         }
       ]
@@ -221,6 +221,39 @@ FINAL INSTRUCTIONS:
 3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
 4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
+const QUESTION_REVIEW_PROMPT = `You are a quality reviewer for university exam questions. Score each question from 1–10 based on the criteria below. A score of 8.5 or above means the question is acceptable for use.
+
+Each question includes: the question text, Bloom's taxonomy level, answer options (each with text and feedback for incorrect options), and the correct answer letter.
+
+Scoring criteria — deduct points for any of the following:
+1. Identical or numerically equal answer options.
+2. Semantically indistinguishable options — two options conveying the same idea or leading to the same conclusion, even if worded differently.
+3. Mathematical or factual errors in the correct answer or stem.
+4. Factually incorrect feedback — feedback that makes a false claim about the material (not just "this is wrong", but actively incorrect statements).
+5. Imprecise or overly broad correct answer (e.g., "every X" when the truth is "every X satisfying condition Y").
+6. Bloom's level mismatch — the cognitive demand does not match the stated level.
+7. Style or format inconsistency — the correct answer uses a noticeably different format or precision than the distractors, signalling the correct answer.
+8. A stem that hints at or paraphrases the correct answer.
+9. Near-duplicate question — another question in this set tests the same concept in essentially the same way.
+
+QUESTIONS:
+{questionsJson}
+
+CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Never return a plain object. Never return fewer objects than there are questions.
+
+[
+  { "questionId": "<id>", "score": 9.5, "issue": "" },
+  { "questionId": "<id>", "score": 6.0, "issue": "Brief description of the specific problem." }
+]
+
+Rules:
+- The array must have the same number of elements as the number of questions provided.
+- Score based on genuine correctness and clarity problems only, not minor stylistic preferences.
+- If a question scores 8.5 or above, set issue to an empty string.
+- If a question scores below 8.5, name the specific problem (e.g., "Bloom mismatch", "Feedback error", "Semantically indistinguishable options").
+- Keep issue descriptions to 1-2 sentences.
+- Do NOT wrap the JSON in markdown code blocks.`;
+
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
 const DEFAULT_PROMPTS = {
@@ -231,6 +264,7 @@ const DEFAULT_PROMPTS = {
 
 module.exports = {
     QUESTION_GENERATION_PROMPT,
+    QUESTION_REVIEW_PROMPT,
     OBJECTIVE_GENERATION_AUTO_PROMPT,
     OBJECTIVE_GENERATION_MANUAL_PROMPT,
     BLOOM_LEVELS,

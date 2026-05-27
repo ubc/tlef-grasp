@@ -11,6 +11,7 @@ const API_ENDPOINTS = {
   quiz: '/api/quiz',
   quizCourse: '/api/quiz/course',
   ragLlmGenerateLO: '/api/rag-llm/generate-learning-objectives',
+  reviewQuestions: '/api/rag-llm/review-questions',
 };
 
 const STORAGE_KEYS = {
@@ -2783,6 +2784,9 @@ async function generateQuestionsFromContent() {
 
     // Update the UI
     renderStep2();
+
+    // Run AI review in the background — does not block the instructor from seeing questions
+    reviewGeneratedQuestions();
   } catch (error) {
     console.error('Failed to generate questions from content:', error);
 
@@ -2794,6 +2798,106 @@ async function generateQuestionsFromContent() {
   } finally {
     // Hide loading UI (renderStep2 will handle empty-state)
     setGenerationUI(false);
+  }
+}
+
+async function reviewGeneratedQuestions() {
+  const allQuestions = [];
+  state.questionGroups.forEach(group => {
+    group.los.forEach(lo => {
+      lo.questions.forEach(q => {
+        allQuestions.push({
+          id: q.id,
+          bloomLevel: q.bloom,
+          question: q.title,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          learningObjectiveText: q.metaCode,
+          granularObjectiveText: q.loCode,
+          learningObjectiveId: q.learningObjectiveId,
+          materialIds: q.materialIds,
+          courseId: q.courseId
+        });
+      });
+    });
+  });
+
+  if (allQuestions.length === 0) return;
+
+  // Show reviewing banner
+  setReviewBannerVisible(true);
+
+  try {
+    const response = await fetch(API_ENDPOINTS.reviewQuestions, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: allQuestions })
+    });
+
+    if (!response.ok) throw new Error(`Review request failed: ${response.status}`);
+
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.results)) return;
+
+    const resultMap = {};
+    data.results.forEach(r => { resultMap[r.originalId] = r; });
+
+    state.questionGroups.forEach(group => {
+      group.los.forEach(lo => {
+        lo.questions.forEach((q, idx) => {
+          const result = resultMap[q.id];
+          if (!result) return;
+
+          if (result.replaced && result.question) {
+            // Replace question content with the regenerated version
+            const raw = result.question;
+            const optionKeys = ['A', 'B', 'C', 'D'];
+            const normalizedOptions = {};
+            optionKeys.forEach(key => {
+              const opt = raw.options?.[key];
+              if (opt && typeof opt === 'object') {
+                normalizedOptions[key] = { id: key, text: opt.text || '', feedback: opt.feedback || '' };
+              } else if (typeof opt === 'string') {
+                normalizedOptions[key] = { id: key, text: opt, feedback: '' };
+              }
+            });
+            lo.questions[idx] = {
+              ...q,
+              title: raw.question,
+              options: normalizedOptions,
+              correctAnswer: raw.correctAnswer,
+              lastEdited: new Date().toISOString().slice(0, 16).replace('T', ' '),
+            };
+            q = lo.questions[idx];
+          }
+
+          q.reviewFlag = result.flagged;
+          q.reviewIssue = result.issue || '';
+        });
+      });
+    });
+
+    renderQuestionGroups();
+  } catch (error) {
+    console.error('Failed to review questions:', error);
+  } finally {
+    setReviewBannerVisible(false);
+  }
+}
+
+function setReviewBannerVisible(visible) {
+  let banner = document.getElementById('ai-review-banner');
+  if (visible) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'ai-review-banner';
+      banner.className = 'ai-review-banner';
+      banner.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI is reviewing questions for issues...';
+      const container = document.getElementById('questions-container');
+      if (container) container.prepend(banner);
+    }
+  } else {
+    if (banner) banner.remove();
   }
 }
 
@@ -2924,6 +3028,7 @@ function convertQuestionsToGroups(questions) {
                 metaCode: question.metaCode || metaCode,
                 loCode: question.loCode || question.text,
                 granularObjectiveId: question.granularObjectiveId,
+                learningObjectiveId: question.learningObjectiveId,
               },
             ],
           };
@@ -3070,6 +3175,16 @@ function renderGranularLoSection(lo, group) {
 function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
 
+  // Programmatic check for identical options (type-agnostic safety net)
+  if (!question.reviewFlag) {
+    const optionTexts = Object.values(question.options).map(o => (typeof o === 'string' ? o : o.text || '').trim().toLowerCase());
+    const hasDuplicates = optionTexts.some((t, i) => optionTexts.indexOf(t) !== i);
+    if (hasDuplicates) {
+      question.reviewFlag = true;
+      question.reviewIssue = 'Two or more answer options are identical. Each option must present a distinct choice.';
+    }
+  }
+
   return `
         <div class="question-card" data-question-id="${question.id}">
             <div class="question-card__header">
@@ -3096,6 +3211,11 @@ function renderQuestionCard(question, group) {
                     <div>By: ${question.by}</div>
                 </div>
             </div>
+            ${question.reviewFlag ? `
+            <div class="question-card__review-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>${question.reviewIssue}</span>
+            </div>` : ''}
             <div class="question-card__body">
                 ${isEditing
       ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
@@ -3604,8 +3724,7 @@ async function handleSaveToQuiz() {
             options: question.options,
             correctAnswer: question.correctAnswer,
             bloom: question.bloom || "Remember",
-            learningObjectiveId: group.objectiveId,
-            granularObjectiveId: question.granularObjectiveId,
+            granularObjectiveId: question.granularObjectiveId
           });
         }
       }
@@ -3670,8 +3789,12 @@ async function handleSaveToQuiz() {
       const data = await response.json();
       const questionsCount = data.questionsAdded || questions.length;
       showSuccessModal(`Successfully created quiz and added ${questionsCount} question${questionsCount !== 1 ? 's' : ''}!`, questionsCount);
+
       if (nameInput) nameInput.value = "";
       if (descriptionInput) descriptionInput.value = "";
+      selectedQuizId = null;
+      isCreatingNewQuiz = false;
+
       return;
     }
 

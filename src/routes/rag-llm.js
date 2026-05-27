@@ -19,4 +19,7 @@ router.delete("/delete-document/:sourceId", ragLlmController.deleteDocumentHandl
 // Generate learning objectives from selected materials
 router.post("/generate-learning-objectives", ragLlmController.generateLearningObjectivesHandler);
 
+// AI review of generated questions
+router.post("/review-questions", ragLlmController.reviewQuestionsHandler);
+
 module.exports = router;
