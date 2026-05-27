@@ -846,7 +846,7 @@ async function handleCustomObjectiveSubmission() {
   try {
     const courseId = getCourseId();
     const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
-    
+
     const requestBody = {
       name: group.title,
       granularObjectives: group.items.map(i => ({
@@ -945,12 +945,12 @@ function showAIGenerateObjectiveModalInternal() {
   if (customObjectivesList) {
     customObjectivesList.innerHTML = "";
   }
-  
+
   const bulkPasteContainer = document.getElementById("ai-bulk-paste-container");
   if (bulkPasteContainer) {
     bulkPasteContainer.style.display = "none";
   }
-  
+
   const bulkPasteInput = document.getElementById("ai-bulk-paste-input");
   if (bulkPasteInput) {
     bulkPasteInput.value = "";
@@ -1019,7 +1019,7 @@ function addCustomObjectiveRow(text = "") {
   input.value = text;
   input.placeholder = "Enter a learning objective...";
   input.style.cssText = "flex: 1; padding: 8px 12px; font-size: 14px;";
-  
+
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "btn btn--icon";
@@ -1033,7 +1033,7 @@ function addCustomObjectiveRow(text = "") {
   row.appendChild(input);
   row.appendChild(deleteBtn);
   list.appendChild(row);
-  
+
   // Focus the new input
   input.focus();
 }
@@ -1124,7 +1124,7 @@ function displayAIMaterialsInModal(materials) {
       if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
         return;
       }
-      
+
       radio.checked = true;
       updateAIGenerateButtonState();
     });
@@ -1171,7 +1171,7 @@ function displayAIMaterialsInModal(materials) {
 function updateAIGenerateButtonState() {
   const generateBtn = document.getElementById("ai-generate-btn");
   const selectedRadio = document.querySelector(".ai-material-radio:checked");
-  
+
   if (generateBtn) {
     generateBtn.disabled = !selectedRadio;
   }
@@ -1717,7 +1717,7 @@ async function deleteObjectiveGroup(groupId, action = null) {
     // Stage 1: Ask the user what they want to do
     currentEditGroupId = groupId;
     const deleteModal = document.getElementById("delete-confirmation-modal");
-    
+
     // We only remove from view now, no DB deletion allowed here
     if (deleteModal) deleteModal.style.display = "flex";
     return;
@@ -1740,7 +1740,7 @@ async function deleteObjectiveGroup(groupId, action = null) {
   // Update dropdown to re-enable deleted objective so it can be added back
   updateDropdownDisabledState();
   announceToScreenReader(`Removed ${group.title} from view.`);
-  
+
   currentEditGroupId = null;
 }
 
@@ -1750,7 +1750,7 @@ async function deleteGranularObjective(groupId, itemId) {
 
   const itemIndex = group.items.findIndex((i) => i.id === itemId);
   if (itemIndex === -1) return;
-  
+
   const item = group.items[itemIndex];
 
   // Remove the item from the group array (UI only)
@@ -2256,14 +2256,14 @@ function toggleBloomChip(groupId, itemId, level) {
       item.bloom.splice(index, 1);
     } else {
       item.bloom.push(level);
-      
+
       // Ensure count >= bloom.length
       if (item.count < item.bloom.length) {
         item.count = item.bloom.length;
       }
     }
     renderObjectiveGroups();
-    
+
     // Auto-save the new bloom selection if it's an existing objective
     if (group.objectiveId) {
       updateGranularObjectiveBloom(groupId);
@@ -2343,14 +2343,14 @@ async function updateGranularObjectiveText(groupId, itemId, newText) {
   // Abort if no change or empty
   if (!trimmedNewText || item.text.trim() === trimmedNewText) {
     if (!trimmedNewText) {
-        renderObjectiveGroups(); 
+      renderObjectiveGroups();
     }
     return;
   }
 
   // Update local state only (session-only)
   item.text = trimmedNewText;
-  
+
   // Background render to clean up focus states
   renderObjectiveGroups();
 
@@ -2402,12 +2402,12 @@ async function saveObjectiveToDatabase(groupId) {
       bloomTaxonomies: item.bloom || [],
       questionCount: item.count
     };
-    
+
     // Include ID if it exists (for updates)
     if (item.granularId) {
       granularObj.id = item.granularId;
     }
-    
+
     return granularObj;
   });
 
@@ -2432,18 +2432,18 @@ async function saveObjectiveToDatabase(groupId) {
     }
 
     const data = await response.json();
-    
+
     if (data.success && data.granularObjectives) {
       // Update local items with database IDs (important for newly created granular objectives)
       data.granularObjectives.forEach(dbGranular => {
         // Try to match by ID first
         let localItem = group.items.find(item => item.granularId === dbGranular._id.toString());
-        
+
         // If no ID match, try to match by text for newly created ones
         if (!localItem) {
           localItem = group.items.find(item => !item.granularId && item.text === dbGranular.name);
         }
-        
+
         if (localItem) {
           localItem.granularId = dbGranular._id.toString();
         }
@@ -2581,7 +2581,7 @@ function initializeModals() {
   if (deleteModalCancel) {
     deleteModalCancel.addEventListener("click", () => hideModal(deleteModal));
   }
-  
+
   if (deleteModalViewOnly) {
     deleteModalViewOnly.addEventListener("click", () => {
       // Use the stored edit group id to know which objective group to delete
@@ -2591,7 +2591,7 @@ function initializeModals() {
       hideModal(deleteModal);
     });
   }
-  
+
   if (deleteModalDbComplete) {
     deleteModalDbComplete.addEventListener("click", () => {
       if (currentEditGroupId) {
@@ -2875,7 +2875,7 @@ function convertQuestionsToGroups(questions) {
           // Normalize options - the LLM now returns { text, feedback } for each option
           const normalizedOptions = {};
           const optionKeys = ['A', 'B', 'C', 'D'];
-          
+
           optionKeys.forEach(key => {
             const opt = question.options?.[key];
             if (typeof opt === 'string') {
@@ -3107,7 +3107,7 @@ function renderQuestionCard(question, group) {
         // correctAnswer is now a letter (A, B, C, D), compare with option.id
         const isCorrect = option.id === question.correctAnswer;
         const feedback = option.feedback || (isCorrect ? "" : "Incorrect");
-        
+
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3120,13 +3120,13 @@ function renderQuestionCard(question, group) {
           }
                         </div>
                         <div class="question-card__feedback">
-                          ${isEditing 
-                            ? `<div class="feedback-edit-wrapper">
+                          ${isEditing
+            ? `<div class="feedback-edit-wrapper">
                                  <span class="feedback-label">Feedback:</span>
                                  <input type="text" class="question-card__feedback--editing" value="${feedback.replace(/"/g, '&quot;')}" onblur="updateQuestionFeedback('${question.id}', '${option.id}', this.value)">
                                </div>`
-                            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
-                          }
+            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
+          }
                         </div>
                     `;
       }
@@ -3605,7 +3605,7 @@ async function handleSaveToQuiz() {
             correctAnswer: question.correctAnswer,
             bloom: question.bloom || "Remember",
             learningObjectiveId: group.objectiveId,
-            granularObjectiveId: lo.granularId
+            granularObjectiveId: question.granularObjectiveId,
           });
         }
       }
@@ -3628,7 +3628,7 @@ async function handleSaveToQuiz() {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      
+
       const releaseDate = releaseDateInput && releaseDateInput.value ? new Date(releaseDateInput.value).toISOString() : null;
       const expireDate = expireDateInput && expireDateInput.value ? new Date(expireDateInput.value).toISOString() : null;
 
@@ -3645,7 +3645,7 @@ async function handleSaveToQuiz() {
       const courseId = getCourseId();
 
       const formatVal = deliveryFormatInput ? deliveryFormatInput.value : '';
-      
+
       const response = await fetch(API_ENDPOINTS.quiz, {
         method: 'POST',
         headers: {
@@ -3668,8 +3668,10 @@ async function handleSaveToQuiz() {
       }
 
       const data = await response.json();
-      showToast(`Quiz created and ${data.questionsAdded || 0} questions saved successfully`, "success");
-      closeModal("save-quiz-modal");
+      const questionsCount = data.questionsAdded || questions.length;
+      showSuccessModal(`Successfully created quiz and added ${questionsCount} question${questionsCount !== 1 ? 's' : ''}!`, questionsCount);
+      if (nameInput) nameInput.value = "";
+      if (descriptionInput) descriptionInput.value = "";
       return;
     }
 
