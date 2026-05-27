@@ -223,6 +223,11 @@ app.use((req, res) => {
   res.status(404).send('404: Page Not Found');
 });
 
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
+
+// Increase the server timeout for heavy operations like PDF parsing (3 minutes)
+server.timeout = 180000;
+server.keepAliveTimeout = 180000;
+server.headersTimeout = 185000;
