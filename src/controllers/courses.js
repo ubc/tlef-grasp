@@ -10,6 +10,7 @@ const {
 } = require('../services/course');
 
 const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = require('../services/user-course');
+const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
 const { isFaculty, isStudent } = require('../utils/auth');
@@ -150,18 +151,20 @@ async function resolveSectionsToCourse(sectionIds) {
     return { error: "All selected sections must belong to the same UBC course" };
   }
 
+  const ubcCourseId = keys[0];
+
   const first = sections[0];
   const courseTitle =
     first.course?.title ||
     first.course?.abbreviatedTitle ||
     first.abbreviatedTitle ||
     '';
-  return { courseTitle };
+  return { courseTitle, sections, ubcCourseId };
 }
 
 async function syncStudentsToCourse(courseId, sectionIds, academicPeriod) {
   try {
-    const students = await ubcApiService.getStudentsFromSections(sectionIds, academicPeriod);
+    const students = await ubcApiService.getStudentsWithSectionsByIds(sectionIds, academicPeriod);
     if (!students || students.length === 0) return { added: 0 };
 
     let added = 0;
@@ -179,9 +182,15 @@ async function syncStudentsToCourse(courseId, sectionIds, academicPeriod) {
           user = await getUserByPuid(s.puid);
         }
         if (!user) continue;
-        if (await isUserInCourse(user._id, courseId)) continue;
-        await createUserCourse(user._id, courseId);
-        added += 1;
+
+        if (!(await isUserInCourse(user._id, courseId))) {
+          await createUserCourse(user._id, courseId);
+          added += 1;
+        }
+
+        for (const sid of (s.sectionIds || [])) {
+          await upsertUserCourseSection(user._id, courseId, sid);
+        }
       } catch (perStudentError) {
         console.error("syncStudents: skipped one student:", perStudentError);
       }
@@ -202,6 +211,7 @@ const createNewCourse = async (req, res) => {
     const {
       campus,
       academicPeriod,
+      academicPeriodName,
       sectionIds,
       syncStudents = false,
       force = false,
@@ -217,7 +227,7 @@ const createNewCourse = async (req, res) => {
     const resolved = await resolveSectionsToCourse(sectionIds);
     if (resolved.error) return res.status(400).json({ error: resolved.error });
 
-    const { courseTitle } = resolved;
+    const { courseTitle, ubcCourseId } = resolved;
     if (!courseTitle) {
       return res.status(400).json({ error: "UBC API did not return a course title for the selected sections" });
     }
@@ -241,32 +251,43 @@ const createNewCourse = async (req, res) => {
       if (existing) {
         return res.status(409).json({
           error: "existing_shell",
-          message: "Another instructor has already created a course shell for this UBC course.",
-          existing: {
-            _id: existing._id.toString(),
-            courseName: existing.courseName,
-            instructors: await listCourseInstructors(existing._id),
-          },
+          message: "A course shell already exists for this title/campus.",
+          existing,
         });
       }
     }
 
-    const courseAccess = generateCourseAccessCode();
-    const result = await createCourse({
+    const courseData = {
       courseName,
       courseCode,
       campus,
-      courseSectionIds: sectionIds,
-      courseAccess,
-    });
+      courseAccess: generateCourseAccessCode(),
+      owner: req.user?._id,
+      ubcCourseId
+    };
+    const result = await createCourse(courseData);
     const courseId = result.insertedId;
-
     const userId = req.user?._id;
+
     if (userId) {
       try {
         await createUserCourse(userId, courseId);
       } catch (userCourseError) {
         console.error("Error creating user-course relationship:", userCourseError);
+      }
+    }
+
+    for (const s of resolved.sections) {
+      try {
+        await upsertCourseSection(courseId, {
+          sectionId: s.courseSectionId,
+          sectionNumber: s.sectionNumber || '',
+          academicPeriod,
+          academicPeriodName,
+          owner: userId,
+        });
+      } catch (sectionError) {
+        console.error("Error saving course section:", sectionError);
       }
     }
 
@@ -438,6 +459,187 @@ const regenerateEnrollmentCode = async (req, res) => {
   }
 };
 
+const getCourseSectionsHandler = async (req, res) => {
+  try {
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ error: "Only faculty can view course sections" });
+    }
+    const { courseId } = req.params;
+    const userId = req.user._id || req.user.id;
+    if (!(await isUserInCourse(userId, courseId))) {
+      return res.status(403).json({ error: "You must be a member of this course" });
+    }
+    const sections = await getCourseSections(courseId);
+    res.json({ success: true, sections });
+  } catch (error) {
+    console.error("Error getting course sections:", error);
+    res.status(500).json({ error: "Failed to retrieve course sections" });
+  }
+};
+
+const getSectionStudentsHandler = async (req, res) => {
+  try {
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ error: "Only faculty can view section students" });
+    }
+    const { courseId, sectionId } = req.params;
+    const userId = req.user._id || req.user.id;
+    if (!(await isUserInCourse(userId, courseId))) {
+      return res.status(403).json({ error: "You must be a member of this course" });
+    }
+    const students = await getSectionStudents(courseId, sectionId);
+    res.json({ success: true, students });
+  } catch (error) {
+    console.error("Error getting section students:", error);
+    res.status(500).json({ error: "Failed to retrieve section students" });
+  }
+};
+
+const addSectionsToCourseHandler = async (req, res) => {
+  try {
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ error: "Only faculty can add sections to courses" });
+    }
+
+    const { courseId } = req.params;
+    const { sectionIds, academicPeriod, academicPeriodName, syncStudents = false } = req.body;
+
+    if (!academicPeriod) {
+      return res.status(400).json({ error: "Academic period is required" });
+    }
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+      return res.status(400).json({ error: "Select at least one section" });
+    }
+
+    const course = await getCourseById(courseId);
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+    const userIdStr = String(req.user._id || req.user.id);
+    if (course.owner.toString() !== userIdStr) {
+      return res.status(403).json({ error: "You must be the course owner to add sections" });
+    }
+
+    const resolved = await resolveSectionsToCourse(sectionIds);
+    if (resolved.error) return res.status(400).json({ error: resolved.error });
+
+    const baseCode = buildCourseCode(resolved.courseTitle, course.campus);
+    if (!course.courseCode.startsWith(baseCode)) {
+      return res.status(400).json({ error: `Selected sections belong to a different course (${baseCode}). Expected ${course.courseCode}.` });
+    }
+
+    const userId = req.user._id || req.user.id;
+    for (const s of resolved.sections) {
+      try {
+        await upsertCourseSection(courseId, {
+          sectionId: s.courseSectionId,
+          sectionNumber: s.sectionNumber || '',
+          academicPeriod,
+          academicPeriodName,
+          owner: userId,
+        });
+      } catch (sectionError) {
+        console.error("Error creating section:", sectionError);
+      }
+    }
+
+    let syncResult = { added: 0 };
+    if (syncStudents) {
+      syncResult = await syncStudentsToCourse(courseId, sectionIds, academicPeriod);
+    }
+
+    res.json({
+      success: true,
+      message: "Sections successfully added.",
+      syncResult,
+    });
+  } catch (error) {
+    console.error("Error adding sections:", error);
+    res.status(500).json({ error: "Failed to add sections" });
+  }
+};
+
+const getMyCourseSectionsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user._id || req.user.id;
+    console.log(`[getMyCourseSectionsHandler] START. userId: ${userId}, courseId: ${courseId}`);
+
+    if (!(await isUserInCourse(userId, courseId))) {
+      console.log(`[getMyCourseSectionsHandler] User not in course!`);
+      return res.status(403).json({ error: "You must be a member of this course" });
+    }
+
+    let sections;
+    if (await isFaculty(req.user)) {
+      console.log(`[getMyCourseSectionsHandler] User is faculty.`);
+      const course = await getCourseById(courseId);
+      const courseOwnerId = course && course.owner ? course.owner.toString() : null;
+      console.log(`[getMyCourseSectionsHandler] courseOwnerId: ${courseOwnerId}`);
+
+      const allCourseSections = await getCourseSections(courseId);
+      console.log(`[getMyCourseSectionsHandler] allCourseSections found: ${allCourseSections.length}`);
+
+      sections = allCourseSections.filter(s => {
+        const sectionOwnerId = s.owner ? s.owner.toString() : courseOwnerId;
+        const matches = sectionOwnerId === userId.toString();
+        console.log(`[getMyCourseSectionsHandler] section ${s._id} | owner: ${sectionOwnerId} | match: ${matches}`);
+        return matches;
+      });
+    } else {
+      console.log(`[getMyCourseSectionsHandler] User is NOT faculty.`);
+      sections = await getUserCourseSections(userId, courseId);
+    }
+
+    console.log(`[getMyCourseSectionsHandler] Returning ${sections.length} sections.`);
+    res.json({ success: true, sections });
+  } catch (error) {
+    console.error("Error getting user course sections:", error);
+    res.status(500).json({ error: "Failed to retrieve your course sections" });
+  }
+};
+
+const getMyOwnedSectionsHandler = async (req, res) => {
+  try {
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ error: "Only faculty can view owned sections" });
+    }
+    const userId = req.user._id || req.user.id;
+    const sections = await getSectionsByOwner(userId);
+    res.json({ success: true, sections });
+  } catch (error) {
+    console.error("Error getting owned sections:", error);
+    res.status(500).json({ error: "Failed to retrieve your owned sections" });
+  }
+};
+
+const recycleSectionHandler = async (req, res) => {
+  try {
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({ error: "Only faculty can recycle sections" });
+    }
+    const { courseId, sectionId } = req.params;
+    const userId = req.user._id || req.user.id;
+
+    // Verify ownership
+    const ownedSections = await getSectionsByOwner(userId);
+    const ownsSection = ownedSections.some(s =>
+      s.courseId.toString() === courseId.toString() && s.sectionId === sectionId
+    );
+
+    if (!ownsSection) {
+      return res.status(403).json({ error: "You can only recycle sections that you own" });
+    }
+
+    const { recycleSection } = require('../services/course-section');
+    await recycleSection(courseId, sectionId);
+    res.json({ success: true, message: "Users detached successfully" });
+  } catch (error) {
+    console.error("Error recycling section:", error);
+    res.status(500).json({ error: "Failed to recycle section" });
+  }
+};
+
 module.exports = {
   getMyCourses,
   getCourseByIdHandler,
@@ -450,4 +652,10 @@ module.exports = {
   joinCourseByEnrollmentCode,
   getEnrollmentCode,
   regenerateEnrollmentCode,
+  getCourseSectionsHandler,
+  getSectionStudentsHandler,
+  getMyCourseSectionsHandler,
+  getMyOwnedSectionsHandler,
+  recycleSectionHandler,
+  addSectionsToCourseHandler,
 };

@@ -167,7 +167,9 @@ class UbcApiService {
         courseSubject,
         courseNumber,
         sectionNumber,
-        courseName: section.course?.title || section.course?.abbreviatedTitle || `${courseSubject} ${courseNumber}`
+        academicPeriod: academicPeriod,
+        courseName: section.course?.title || section.course?.abbreviatedTitle || `${courseSubject} ${courseNumber}`,
+        ubcCourseId: section.courseId || section.course?.id
       };
     });
   }
@@ -209,6 +211,40 @@ class UbcApiService {
     if (studentIds.length === 0) return [];
 
     return this.getPersonsByIdentifier('studentId', studentIds);
+  }
+
+  /**
+   * Like getStudentsFromSections, but preserves which section each student belongs to.
+   * Returns an array of person records each with a `sectionIds` field.
+   */
+  async getStudentsWithSectionsByIds(sectionIds = [], academicPeriod = '') {
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0 || !academicPeriod) return [];
+
+    const registrations = await this._fetchFromApi('academic', 'v4', 'course-registrations', {
+      academicPeriodId: academicPeriod,
+      courseSectionId: sectionIds,
+      registrationStatus: ['REGISTERED'],
+    });
+
+    if (!registrations || registrations.length === 0) return [];
+
+    // Build map: studentId -> Set of sectionIds from the registration records
+    const studentSections = new Map();
+    for (const r of registrations) {
+      if (!r.studentId) continue;
+      if (!studentSections.has(r.studentId)) studentSections.set(r.studentId, new Set());
+      if (r.courseSectionId) studentSections.get(r.studentId).add(r.courseSectionId);
+    }
+
+    const studentIds = [...studentSections.keys()];
+    if (studentIds.length === 0) return [];
+
+    const persons = await this.getPersonsByIdentifier('studentId', studentIds);
+
+    return persons.map(p => ({
+      ...p,
+      sectionIds: studentSections.has(p.id) ? [...studentSections.get(p.id)] : [],
+    }));
   }
 
   /**

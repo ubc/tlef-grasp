@@ -8,13 +8,14 @@ class UsersPage {
     
     this.isFaculty = false;
     this.courseUsers = [];
-    this.availableUsers = [];
+    
+    // Pagination & Filtering state
+    this.currentPage = 1;
+    this.itemsPerPage = 20;
+    this.sectionFilter = "all";
+    this.courseSections = [];
     this.filteredUsers = [];
-    
-    // Filter state
-    this.searchTerm = "";
-    this.roleFilter = "all";
-    
+
     this.init();
   }
 
@@ -22,7 +23,7 @@ class UsersPage {
     await this.loadUserInfo();
     this.initializeNavigation();
     this.initializeEventListeners();
-    this.updateUIForUserRole();
+
     await this.loadData();
   }
 
@@ -66,32 +67,39 @@ class UsersPage {
       });
     }
     
-    // Search and filter handlers
-    const searchInput = document.getElementById("user-search");
-    const roleFilter = document.getElementById("role-filter");
-    
-    if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
-        this.searchTerm = e.target.value.toLowerCase().trim();
+    // Section filter handler
+    const sectionFilter = document.getElementById("course-section-filter");
+    if (sectionFilter) {
+      sectionFilter.addEventListener("change", (e) => {
+        this.sectionFilter = e.target.value;
+        this.currentPage = 1; // Reset to first page
         this.applyFilters();
       });
     }
-    
-    if (roleFilter) {
-      roleFilter.addEventListener("change", (e) => {
-        this.roleFilter = e.target.value;
-        this.applyFilters();
+
+    // Pagination handlers
+    const prevPageBtn = document.getElementById("prev-page");
+    const nextPageBtn = document.getElementById("next-page");
+    if (prevPageBtn) {
+      prevPageBtn.addEventListener("click", () => {
+        if (this.currentPage > 1) {
+          this.currentPage--;
+          this.renderCourseUsers();
+        }
+      });
+    }
+    if (nextPageBtn) {
+      nextPageBtn.addEventListener("click", () => {
+        const maxPage = Math.ceil(this.filteredUsers.length / this.itemsPerPage);
+        if (this.currentPage < maxPage) {
+          this.currentPage++;
+          this.renderCourseUsers();
+        }
       });
     }
   }
 
-  updateUIForUserRole() {
-    const availableUsersSection = document.getElementById("available-users-section");
-    
-    if (availableUsersSection) {
-      availableUsersSection.style.display = this.isFaculty ? "block" : "none";
-    }
-  }
+
 
   async loadData() {
     if (!this.courseId) {
@@ -99,13 +107,53 @@ class UsersPage {
       return;
     }
 
+    // Load course sections
+    await this.loadCourseSections();
+
     // Load course users
     await this.loadCourseUsers();
+  }
 
-    // Load available users (only for faculty)
-    if (this.isFaculty) {
-      await this.loadAvailableUsers();
+  async loadCourseSections() {
+    try {
+      const response = await fetch(`/api/courses/${this.courseId}/sections`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.sections) {
+          this.courseSections = data.sections;
+          this.populateSectionFilter();
+        }
+      }
+    } catch (error) {
+      console.error("Error loading course sections:", error);
     }
+  }
+
+  populateSectionFilter() {
+    const filterSelect = document.getElementById("course-section-filter");
+    if (!filterSelect) return;
+    
+    // Clear existing options except 'all'
+    filterSelect.innerHTML = '<option value="all">All Sections</option>';
+    
+    this.courseSections.forEach(section => {
+      const option = document.createElement("option");
+      option.value = section.sectionId;
+      option.textContent = section.sectionNumber || section.sectionId;
+      filterSelect.appendChild(option);
+    });
+  }
+
+  applyFilters() {
+    if (this.sectionFilter === "all") {
+      this.filteredUsers = [...this.courseUsers];
+    } else {
+      this.filteredUsers = this.courseUsers.filter(user => {
+        return user.sections && user.sections.includes(this.sectionFilter);
+      });
+    }
+    this.currentPage = 1;
+    this.renderCourseUsers();
   }
 
   async loadCourseUsers() {
@@ -126,11 +174,10 @@ class UsersPage {
       const data = await response.json();
       if (data.success && data.users) {
         this.courseUsers = data.users;
-        this.renderCourseUsers();
       } else {
         this.courseUsers = [];
-        this.renderCourseUsers();
       }
+      this.applyFilters();
     } catch (error) {
       console.error("Error loading course users:", error);
       this.showError("Failed to load course users");
@@ -140,115 +187,39 @@ class UsersPage {
     }
   }
 
-  async loadAvailableUsers() {
-    const loadingElement = document.getElementById("available-users-loading");
-    const listElement = document.getElementById("available-users-list");
-    const emptyElement = document.getElementById("available-users-empty");
 
-    try {
-      if (loadingElement) loadingElement.style.display = "flex";
-      if (listElement) listElement.innerHTML = "";
-      if (emptyElement) emptyElement.style.display = "none";
-
-      const response = await fetch(`/api/users/all/not-in-course/${this.courseId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.success && data.users) {
-        this.availableUsers = data.users;
-        this.applyFilters();
-      } else {
-        this.availableUsers = [];
-        this.applyFilters();
-      }
-    } catch (error) {
-      console.error("Error loading available users:", error);
-      this.showError("Failed to load available users");
-      if (emptyElement) emptyElement.style.display = "block";
-    } finally {
-      if (loadingElement) loadingElement.style.display = "none";
-    }
-  }
-  
-  applyFilters() {
-    // Start with all available users
-    let filtered = [...this.availableUsers];
-    
-    // Apply role filter
-    if (this.roleFilter !== "all") {
-      filtered = filtered.filter(user => {
-        const userRole = this.getUserRole(user);
-        return userRole === this.roleFilter;
-      });
-    }
-    
-    // Apply search filter
-    if (this.searchTerm) {
-      filtered = filtered.filter(user => {
-        const name = (user.displayName || "").toLowerCase();
-        const email = (user.email || "").toLowerCase();
-        return name.includes(this.searchTerm) || email.includes(this.searchTerm);
-      });
-    }
-    
-    this.filteredUsers = filtered;
-    this.renderAvailableUsers();
-    this.updateResultsCount();
-  }
-  
-  getUserRole(user) {
-    // Check if role is already set (from API)
-    if (user.role) {
-      return user.role;
-    }
-    
-    // Determine from affiliation
-    const affiliation = user.affiliation || "";
-    const affiliations = Array.isArray(affiliation)
-      ? affiliation
-      : String(affiliation).split(',').map(a => a.trim());
-    
-    if (affiliations.includes('faculty')) {
-      return 'faculty';
-    } else if (affiliations.includes('staff')) {
-      return 'staff';
-    } else if (affiliations.includes('student') || affiliations.includes('affiliate')) {
-      return 'student';
-    }
-    return 'unknown';
-  }
-  
-  updateResultsCount() {
-    const countElement = document.getElementById("filtered-count");
-    if (countElement) {
-      countElement.textContent = this.filteredUsers.length;
-    }
-  }
 
   renderCourseUsers() {
     const listElement = document.getElementById("course-users-list");
     const emptyElement = document.getElementById("course-users-empty");
     const tableWrapper = document.getElementById("course-users-table-wrapper");
+    const paginationContainer = document.getElementById("users-pagination");
 
     if (!listElement) return;
 
-    if (this.courseUsers.length === 0) {
-      if (emptyElement) emptyElement.style.display = "block";
+    if (this.filteredUsers.length === 0) {
+      if (emptyElement) emptyElement.style.display = "flex";
       if (tableWrapper) tableWrapper.style.display = "none";
+      if (paginationContainer) paginationContainer.style.display = "none";
       listElement.innerHTML = "";
       return;
     }
 
     if (emptyElement) emptyElement.style.display = "none";
     if (tableWrapper) tableWrapper.style.display = "block";
+    if (paginationContainer) paginationContainer.style.display = "flex";
 
-    const usersHTML = this.courseUsers.map(user => {
+    // Pagination logic
+    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+    const endIndex = startIndex + this.itemsPerPage;
+    const paginatedUsers = this.filteredUsers.slice(startIndex, endIndex);
+
+    this.updatePaginationUI();
+
+    const usersHTML = paginatedUsers.map(user => {
       const userId = user.userId || user._id || user.user?._id;
       const userIdStr = userId ? (userId.toString ? userId.toString() : String(userId)) : "";
       const displayName = user.displayName || user.user?.displayName || "Unknown User";
-      const email = user.email || user.user?.email || "";
       const affiliation = user.affiliation || user.user?.affiliation || "";
       
       // Determine user role based on affiliation
@@ -273,6 +244,17 @@ class UsersPage {
 
       const currentUserBadge = isCurrentUser ? '<span class="badge badge-current"><i class="fas fa-user-circle"></i> You</span>' : '';
 
+      // Map sections
+      let sectionsHTML = '<span class="text-muted">-</span>';
+      if (user.sections && user.sections.length > 0) {
+         const sectionBadges = user.sections.map(sectionId => {
+             const sectionData = this.courseSections.find(s => s.sectionId === sectionId);
+             const sectionName = sectionData ? (sectionData.sectionNumber || sectionId) : sectionId;
+             return `<span class="badge badge-section"><i class="fas fa-book"></i> ${this.escapeHtml(sectionName)}</span>`;
+         });
+         sectionsHTML = `<div class="user-badges-cell">${sectionBadges.join('')}</div>`;
+      }
+
       return `
         <tr data-user-id="${userIdStr}">
           <td>
@@ -284,11 +266,13 @@ class UsersPage {
               ${currentUserBadge}
             </div>
           </td>
-          <td class="user-email-cell">${this.escapeHtml(email)}</td>
           <td>
             <div class="user-badges-cell">
               ${roleBadge}
             </div>
+          </td>
+          <td>
+            ${sectionsHTML}
           </td>
           <td class="actions-cell">
             ${this.isFaculty && !isCurrentUser ? `
@@ -305,102 +289,25 @@ class UsersPage {
     listElement.innerHTML = usersHTML;
   }
 
-  renderAvailableUsers() {
-    const listElement = document.getElementById("available-users-list");
-    const emptyElement = document.getElementById("available-users-empty");
-    const tableWrapper = document.getElementById("available-users-table-wrapper");
-
-    if (!listElement) return;
-
-    if (this.filteredUsers.length === 0) {
-      if (emptyElement) emptyElement.style.display = "block";
-      if (tableWrapper) tableWrapper.style.display = "none";
-      listElement.innerHTML = "";
-      return;
-    }
-
-    if (emptyElement) emptyElement.style.display = "none";
-    if (tableWrapper) tableWrapper.style.display = "block";
-
-    const usersHTML = this.filteredUsers.map(user => {
-      const userId = user._id;
-      const userIdStr = userId ? (userId.toString ? userId.toString() : String(userId)) : "";
-      const displayName = user.displayName || "Unknown User";
-      const email = user.email || "";
-      const role = this.getUserRole(user);
-
-      let roleBadge = '';
-      if (role === 'faculty') {
-        roleBadge = '<span class="badge badge-faculty"><i class="fas fa-graduation-cap"></i> Faculty</span>';
-      } else if (role === 'staff') {
-        roleBadge = '<span class="badge badge-staff"><i class="fas fa-user-tie"></i> Staff</span>';
-      } else if (role === 'student') {
-        roleBadge = '<span class="badge badge-student"><i class="fas fa-user-graduate"></i> Student</span>';
-      }
-
-      return `
-        <tr data-user-id="${userIdStr}">
-          <td>
-            <div class="user-name-cell">
-              <div class="user-avatar-small">
-                <i class="fas fa-user"></i>
-              </div>
-              <span class="user-name">${this.escapeHtml(displayName)}</span>
-            </div>
-          </td>
-          <td class="user-email-cell">${this.escapeHtml(email)}</td>
-          <td>
-            <div class="user-badges-cell">
-              ${roleBadge}
-            </div>
-          </td>
-          <td class="actions-cell">
-            <button class="btn btn-primary btn-sm" onclick="window.usersPage.addUser('${userIdStr}')" title="Add to course">
-              <i class="fas fa-user-plus"></i>
-              Add
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join("");
-
-    listElement.innerHTML = usersHTML;
+  updatePaginationUI() {
+    const pageInfo = document.getElementById("page-info");
+    const prevBtn = document.getElementById("prev-page");
+    const nextBtn = document.getElementById("next-page");
+    
+    if (!pageInfo || !prevBtn || !nextBtn) return;
+    
+    const maxPage = Math.ceil(this.filteredUsers.length / this.itemsPerPage) || 1;
+    pageInfo.textContent = `Page ${this.currentPage} of ${maxPage}`;
+    
+    prevBtn.disabled = this.currentPage <= 1;
+    nextBtn.disabled = this.currentPage >= maxPage;
+    
+    // Add opacity for disabled state visually
+    prevBtn.style.opacity = this.currentPage <= 1 ? "0.5" : "1";
+    nextBtn.style.opacity = this.currentPage >= maxPage ? "0.5" : "1";
   }
 
-  async addUser(userId) {
-    if (!this.isFaculty) {
-      this.showError("Only faculty can add users to courses");
-      return;
-    }
 
-    try {
-      const response = await fetch(`/api/users/course/${this.courseId}/add`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to add user");
-      }
-
-      const data = await response.json();
-      if (data.success) {
-        this.showSuccess("User added to course successfully");
-        // Reload all lists
-        await Promise.all([
-          this.loadCourseUsers(),
-          this.loadAvailableUsers()
-        ]);
-      }
-    } catch (error) {
-      console.error("Error adding user:", error);
-      this.showError(error.message || "Failed to add user to course");
-    }
-  }
 
   async removeUser(userId) {
     if (!this.isFaculty) {
@@ -432,11 +339,8 @@ class UsersPage {
           const data = await response.json();
           if (data.success) {
             this.showSuccess("User removed from course successfully");
-            // Reload all lists
-            await Promise.all([
-              this.loadCourseUsers(),
-              this.loadAvailableUsers()
-            ]);
+            // Reload course users
+            await this.loadCourseUsers();
           }
         } catch (error) {
           console.error("Error removing user:", error);

@@ -29,6 +29,17 @@
                             Users in Course
                         </h2>
                     </div>
+
+                    <!-- Filters -->
+                    <div class="filters-container">
+                        <div class="filter-group">
+                            <label for="course-section-filter">Filter by Section:</label>
+                            <select id="course-section-filter">
+                                <option value="all">All Sections</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="users-container">
                         <div class="loading" id="course-users-loading">
                             <i class="fas fa-spinner fa-spin"></i>
@@ -39,8 +50,8 @@
                                 <thead>
                                     <tr>
                                         <th>Name</th>
-                                        <th>Email</th>
                                         <th>Role</th>
+                                        <th>Sections</th>
                                         <th class="actions-column">Actions</th>
                                     </tr>
                                 </thead>
@@ -49,6 +60,14 @@
                                 </tbody>
                             </table>
                         </div>
+                        
+                        <!-- Pagination -->
+                        <div class="pagination-container" id="users-pagination" style="display: none;">
+                            <button class="btn btn-secondary btn-sm" id="prev-page"><i class="fas fa-chevron-left"></i></button>
+                            <span class="page-info" id="page-info">Page 1 of 1</span>
+                            <button class="btn btn-secondary btn-sm" id="next-page"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+
                         <div class="empty-state" id="course-users-empty" style="display: none;">
                             <i class="fas fa-users"></i>
                             <p>No users found in this course.</p>
@@ -56,62 +75,7 @@
                     </div>
                 </section>
 
-                <!-- Available Users Section (only visible to faculty) -->
-                <section class="users-section" id="available-users-section" style="display: none;">
-                    <div class="section-header">
-                        <h2>
-                            <i class="fas fa-user-plus"></i>
-                            Available Users
-                        </h2>
-                        <p class="section-description">Users who can be added to this course</p>
-                    </div>
-                    
-                    <!-- Filters and Search -->
-                    <div class="filters-container">
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="user-search" placeholder="Search by name or email...">
-                        </div>
-                        <div class="filter-group">
-                            <label for="role-filter">Filter by Role:</label>
-                            <select id="role-filter">
-                                <option value="all">All Roles</option>
-                                <option value="faculty">Faculty</option>
-                                <option value="staff">Staff</option>
-                                <option value="student">Student</option>
-                            </select>
-                        </div>
-                        <div class="results-count">
-                            <span id="filtered-count">0</span> users found
-                        </div>
-                    </div>
-                    
-                    <div class="users-container">
-                        <div class="loading" id="available-users-loading">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <span>Loading available users...</span>
-                        </div>
-                        <div class="table-wrapper" id="available-users-table-wrapper" style="display: none;">
-                            <table class="users-table">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Email</th>
-                                        <th>Role</th>
-                                        <th class="actions-column">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="available-users-list">
-                                    <!-- Available users will be populated here -->
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="empty-state" id="available-users-empty" style="display: none;">
-                            <i class="fas fa-user-check"></i>
-                            <p>No users available to add.</p>
-                        </div>
-                    </div>
-                </section>
+
             </div>
         </main>
     </div>

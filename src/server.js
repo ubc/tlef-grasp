@@ -140,6 +140,11 @@ app.get("/settings", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req
   res.sendFile(path.join(__dirname, "../public/settings.html"));
 });
 
+// My Sections - staff and above
+app.get("/my-sections", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/my-sections.html"));
+});
+
 // Student pages - all authenticated users (students see their view, others can preview)
 app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));

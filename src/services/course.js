@@ -2,8 +2,8 @@ const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
 
 /**
- * Schema: { _id, courseName, courseCode, campus, courseSectionIds,
- *           courseAccess, createdAt, updatedAt }
+ * Schema: { _id, courseName, courseCode, campus,
+ *           courseAccess, owner, createdAt, updatedAt }
  *
  * Note: academicPeriod is intentionally NOT persisted — a course shell is
  * meant to be reused across semesters. The selected sections are stored, but
@@ -20,8 +20,8 @@ async function createCourse(courseData) {
         if (!courseData.courseCode) {
             throw new Error("Course code is required");
         }
-        if (!Array.isArray(courseData.courseSectionIds) || courseData.courseSectionIds.length === 0) {
-            throw new Error("At least one course section is required");
+        if (!courseData.campus) {
+            throw new Error("Campus is required");
         }
 
         const collection = db.collection("grasp_course");
@@ -30,8 +30,9 @@ async function createCourse(courseData) {
             courseName: courseData.courseName,
             courseCode: courseData.courseCode,
             campus: courseData.campus,
-            courseSectionIds: courseData.courseSectionIds,
             courseAccess: courseData.courseAccess,
+            owner: courseData.owner,
+            ubcCourseId: courseData.ubcCourseId,
             createdAt: now,
             updatedAt: now,
         });
@@ -53,6 +54,9 @@ async function createCourse(courseData) {
 
 async function getCourseById(courseId) {
     try {
+        if (typeof courseId === 'string' && !ObjectId.isValid(courseId)) {
+            return null;
+        }
         const db = await databaseService.connect();
         const collection = db.collection("grasp_course");
         const id = typeof courseId === 'string' ? new ObjectId(courseId) : courseId;

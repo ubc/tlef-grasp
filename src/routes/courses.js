@@ -20,6 +20,14 @@ router.post(
   coursesController.regenerateEnrollmentCode
 );
 
+// Section routes (must be before /:courseId to avoid param capture)
+router.get("/my-owned-sections", coursesController.getMyOwnedSectionsHandler);
+router.post("/:courseId/sections/:sectionId/recycle", express.json(), coursesController.recycleSectionHandler);
+router.post("/:courseId/sections", express.json(), coursesController.addSectionsToCourseHandler);
+router.get("/:courseId/sections", coursesController.getCourseSectionsHandler);
+router.get("/:courseId/sections/:sectionId/students", coursesController.getSectionStudentsHandler);
+router.get("/:courseId/my-sections", coursesController.getMyCourseSectionsHandler);
+
 // Get course by ID
 router.get("/:courseId", coursesController.getCourseByIdHandler);
 

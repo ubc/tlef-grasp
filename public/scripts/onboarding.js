@@ -348,9 +348,11 @@ class OnboardingManager {
 
   buildCreatePayload(force = false) {
     const { campusSelect, academicPeriodSelect, syncStudents } = this.elements;
+    const academicPeriodName = academicPeriodSelect.options[academicPeriodSelect.selectedIndex]?.text || '';
     return {
       campus: campusSelect.value,
       academicPeriod: academicPeriodSelect.value,
+      academicPeriodName,
       sectionIds: this.selectedSectionIds(),
       syncStudents: !!(syncStudents && syncStudents.checked),
       force,

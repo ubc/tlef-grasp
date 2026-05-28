@@ -193,6 +193,41 @@ const getCourseUsers = async (courseId) => {
             },
             // Unwind the user array (since $lookup returns an array)
             { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+            // Join with user_course_section collection to get user's sections in this course
+            {
+                $lookup: {
+                    from: "grasp_user_course_section",
+                    let: {
+                        userIdMatch: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$userId" }, "string"] },
+                                then: { $toObjectId: "$userId" },
+                                else: "$userId"
+                            }
+                        },
+                        courseIdMatch: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$courseId" }, "string"] },
+                                then: { $toObjectId: "$courseId" },
+                                else: "$courseId"
+                            }
+                        }
+                    },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ["$userId", "$$userIdMatch"] },
+                                        { $eq: ["$courseId", "$$courseIdMatch"] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: "userSections"
+                }
+            },
             // Reshape the output to include user fields at top level
             {
                 $project: {
@@ -206,6 +241,7 @@ const getCourseUsers = async (courseId) => {
                     affiliation: "$user.affiliation",
                     registeredAt: "$user.registeredAt",
                     updatedAt: "$user.updatedAt",
+                    sections: "$userSections.sectionId",
                     // Keep full user object if needed
                     user: 1
                 }

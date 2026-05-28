@@ -35,6 +35,7 @@ class GRASPNavigation {
     if (path.includes("question-generation")) return "question-generation";
     if (path.includes("settings")) return "settings";
     if (path.includes("users")) return "users";
+    if (path.includes("my-sections")) return "my-sections";
     return "dashboard"; // default
   }
 
@@ -150,7 +151,7 @@ class GRASPNavigation {
   }
 
   isInstructorOnlyPage() {
-    const instructorPages = ['dashboard', 'question-bank', 'question-generation', 'course-materials', 'users'];
+    const instructorPages = ['dashboard', 'question-bank', 'question-generation', 'course-materials', 'users', 'my-sections'];
     return instructorPages.includes(this.currentPage);
   }
 
@@ -325,6 +326,12 @@ class GRASPNavigation {
         </li>
     `;
 
+    // Administration Section
+    menu += `
+        <li class="nav-divider" style="margin: 15px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1);"></li>
+        <li class="nav-section-title" style="padding: 0 20px 10px; font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px;">Administration</li>
+    `;
+
     // Users management - faculty only
     if (this.isFaculty) {
       menu += `
@@ -342,6 +349,12 @@ class GRASPNavigation {
           <a href="/settings" style="text-decoration: none; color: inherit;">
             <i class="fas fa-cog"></i>
             <span>Settings</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="my-sections">
+          <a href="/my-sections" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-layer-group"></i>
+            <span>My Sections</span>
           </a>
         </li>
       `;
