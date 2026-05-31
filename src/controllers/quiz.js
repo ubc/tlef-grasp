@@ -485,7 +485,6 @@ const checkQuestionAnswerHandler = async (req, res) => {
       (calculationToken && hasCalculationFormula);
 
     if (treatAsCalculation) {
-      const { answerText } = req.body;
       if (!calculationToken) {
         return res.status(400).json({
           success: false,

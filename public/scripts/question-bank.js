@@ -2752,16 +2752,15 @@ class QuestionBankPage {
     const isFib = question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
     const isOpen = question.questionType === QUESTION_TYPES.OPEN_ENDED;
 
+    const isReadOnly = !canEdit;
+    const readonlyAttr = isReadOnly ? "readonly" : "";
+    const readonlyClass = isReadOnly ? "readonly" : "";
+    const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
+    const warningHtml = isReadOnly
+      ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
+      : "";
+
     if (isOpen) {
-      const isReadOnly = !canEdit;
-      const readonlyAttr = isReadOnly ? "readonly" : "";
-      const readonlyClass = isReadOnly ? "readonly" : "";
-      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
-
-      const warningHtml = isReadOnly
-        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
-        : "";
-
       const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
       const stemContent = escapeForTextareaContent(question.stem || "");
       const sampleContent = escapeForTextareaContent(question.openEndedSampleAnswer || "");
@@ -2820,15 +2819,6 @@ class QuestionBankPage {
     }
 
     if (isCalc) {
-      const isReadOnly = !canEdit;
-      const readonlyAttr = isReadOnly ? "readonly" : "";
-      const readonlyClass = isReadOnly ? "readonly" : "";
-      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
-
-      const warningHtml = isReadOnly
-        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
-        : "";
-
       const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
       const stemContent = escapeForTextareaContent(question.stem || "");
       const formulaContent = escapeForTextareaContent(question.calculationFormula || "");
@@ -2846,7 +2836,7 @@ class QuestionBankPage {
       <div class="question-modal-content">
         ${warningHtml}
         <div class="question-modal-field">
-          <span class="question-type-chip" style="margin-bottom:12px;display:inline-block;background:#e8f4fc;color:#0c5460;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;">Calculation</span>
+          <span class="question-type-chip question-type-chip--calculation" style="margin-bottom:12px;display:inline-block;">Calculation</span>
         </div>
         <div class="question-modal-field">
           <label for="question-modal-title-input">Topic title</label>
@@ -2913,14 +2903,6 @@ class QuestionBankPage {
     }
 
     if (isFib) {
-      const isReadOnly = !canEdit;
-      const readonlyAttr = isReadOnly ? "readonly" : "";
-      const readonlyClass = isReadOnly ? "readonly" : "";
-      const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
-
-      const warningHtml = isReadOnly
-        ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
-        : "";
 
       const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
       const stemContent = escapeForTextareaContent(question.stem || question.title || "");

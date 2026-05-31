@@ -1,6 +1,19 @@
 // Generation Questions Module
 // Handles question generation based on content and objectives
 
+function escapeCsvField(value) {
+  if (value == null) return '""';
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function escapeXml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 class QuestionGenerator {
   constructor(contentGenerator, options = {}) {
     this.contentGenerator = contentGenerator;
@@ -366,7 +379,6 @@ class QuestionGenerator {
           granularObjectiveId: `${granularLearningObjectiveId}`,
           text: stemText,
           topicTitle: topicTitleCalc,
-          type: QUESTION_TYPES.CALCULATION,
           questionType: QUESTION_TYPES.CALCULATION,
           options: null,
           correctAnswer: "",
@@ -407,7 +419,6 @@ class QuestionGenerator {
           text: stemText,
           stem: stemText,
           topicTitle: topicTitleOpen,
-          type: QUESTION_TYPES.OPEN_ENDED,
           questionType: QUESTION_TYPES.OPEN_ENDED,
           options: null,
           correctAnswer: "",
@@ -462,7 +473,6 @@ class QuestionGenerator {
         granularObjectiveId: `${granularLearningObjectiveId}`,
         text: questionData.question,
         topicTitle: resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK ? topicTitleFib : undefined,
-        type: resolvedType,
         questionType: resolvedType,
         options: questionData.options || null,
         correctAnswer: questionData.correctAnswer,
@@ -525,19 +535,6 @@ class QuestionGenerator {
     }
   }
 
-  escapeCsvField(value) {
-    if (value == null) return '""';
-    return `"${String(value).replace(/"/g, '""')}"`;
-  }
-
-  escapeXml(str) {
-    return String(str ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   formatAsCSV(questions) {
     let csv =
       "Question Type,Question,Option A,Option B,Option C,Option D,Correct Answer,Acceptable Answers,Bloom Level,Difficulty\n";
@@ -547,7 +544,7 @@ class QuestionGenerator {
         const stem = q.text || q.stem || "";
         const formula = q.calculationFormula || "";
         const varsJson = JSON.stringify(q.calculationVariables || []);
-        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(formula)},${this.escapeCsvField(varsJson)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        csv += `${escapeCsvField(qt)},${escapeCsvField(stem)},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField(formula)},${escapeCsvField(varsJson)},${escapeCsvField(q.bloomLevel)},${escapeCsvField(q.difficulty)}\n`;
         return;
       }
       if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
@@ -558,7 +555,7 @@ class QuestionGenerator {
               ? String(q.correctAnswer)
               : "";
         const fibQ = q.text || q.stem || "";
-        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(fibQ)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(q.correctAnswer)},${this.escapeCsvField(acc)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        csv += `${escapeCsvField(qt)},${escapeCsvField(fibQ)},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField(q.correctAnswer)},${escapeCsvField(acc)},${escapeCsvField(q.bloomLevel)},${escapeCsvField(q.difficulty)}\n`;
         return;
       }
       if (qt === QUESTION_TYPES.OPEN_ENDED) {
@@ -566,7 +563,7 @@ class QuestionGenerator {
         const sample = q.openEndedSampleAnswer || "";
         const crit = q.openEndedGradingCriteria || "";
         const combined = `Sample: ${sample} | Criteria: ${crit}`;
-        csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(stem)},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField("")},${this.escapeCsvField(combined)},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+        csv += `${escapeCsvField(qt)},${escapeCsvField(stem)},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField("")},${escapeCsvField(combined)},${escapeCsvField(q.bloomLevel)},${escapeCsvField(q.difficulty)}\n`;
         return;
       }
       const optA = q.options?.A || "";
@@ -580,7 +577,7 @@ class QuestionGenerator {
             ? ["A", "B", "C", "D"][q.correctAnswer]
             : "A";
       const correctOpt = q.options?.[correctAnswerLetter] || "";
-      csv += `${this.escapeCsvField(qt)},${this.escapeCsvField(q.text)},${this.escapeCsvField(optA)},${this.escapeCsvField(optB)},${this.escapeCsvField(optC)},${this.escapeCsvField(optD)},${this.escapeCsvField(correctOpt)},${this.escapeCsvField("")},${this.escapeCsvField(q.bloomLevel)},${this.escapeCsvField(q.difficulty)}\n`;
+      csv += `${escapeCsvField(qt)},${escapeCsvField(q.text)},${escapeCsvField(optA)},${escapeCsvField(optB)},${escapeCsvField(optC)},${escapeCsvField(optD)},${escapeCsvField(correctOpt)},${escapeCsvField("")},${escapeCsvField(q.bloomLevel)},${escapeCsvField(q.difficulty)}\n`;
     });
     return csv;
   }
@@ -605,10 +602,10 @@ class QuestionGenerator {
       </itemmetadata>
       <presentation>
         <material>
-          <mattext>${this.escapeXml(stem)}</mattext>
+          <mattext>${escapeXml(stem)}</mattext>
         </material>
         <material>
-          <mattext>${this.escapeXml(note)}</mattext>
+          <mattext>${escapeXml(note)}</mattext>
         </material>
         <response_str ident="response1">
           <render_fib fibtype="String" columns="40" rows="1">
@@ -632,8 +629,8 @@ class QuestionGenerator {
                 : [];
           const conditions =
             acceptable.length <= 1
-              ? `<varequal respident="response1">${this.escapeXml(acceptable[0] || "")}</varequal>`
-              : `<or>${acceptable.map((a) => `<varequal respident="response1">${this.escapeXml(a)}</varequal>`).join("")}</or>`;
+              ? `<varequal respident="response1">${escapeXml(acceptable[0] || "")}</varequal>`
+              : `<or>${acceptable.map((a) => `<varequal respident="response1">${escapeXml(a)}</varequal>`).join("")}</or>`;
           return `
     <item ident="${ident}">
       <itemmetadata>
@@ -646,7 +643,7 @@ class QuestionGenerator {
       </itemmetadata>
       <presentation>
         <material>
-          <mattext>${this.escapeXml(q.text || q.stem || "")}</mattext>
+          <mattext>${escapeXml(q.text || q.stem || "")}</mattext>
         </material>
         <response_str ident="response1">
           <render_fib fibtype="String" columns="40" rows="1">
@@ -691,7 +688,7 @@ class QuestionGenerator {
       </itemmetadata>
       <presentation>
         <material>
-          <mattext>${this.escapeXml(q.text)}</mattext>
+          <mattext>${escapeXml(q.text)}</mattext>
         </material>
         <response_lid ident="response1">
           <render_choice>
@@ -700,7 +697,7 @@ class QuestionGenerator {
                 (key, optIndex) => `
             <response_label ident="choice${optIndex}">
               <material>
-                <mattext>${this.escapeXml(q.options?.[key] || "")}</mattext>
+                <mattext>${escapeXml(q.options?.[key] || "")}</mattext>
               </material>
             </response_label>
             `
