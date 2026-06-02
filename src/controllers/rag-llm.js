@@ -3,15 +3,16 @@
 
 // Import RAG service (singleton)
 const ragService = require('../services/rag');
-
-// Import LLM service (singleton)
 const llmService = require('../services/llm');
+const databaseService = require('../services/database');
+const { ObjectId } = require('mongodb');
 
 // Import services
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
+const QuestionFactory = require('../models/questions/QuestionFactory');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -30,6 +31,77 @@ function returnErrorResponse(res, error, details = null) {
  * @param {string|Object} jsonInput - The JSON string to parse, or already parsed object
  * @returns {Object} Parsed JSON object
  */
+function extractBalancedFrom(str, start) {
+  if (str[start] !== "{") {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < str.length; i++) {
+    const c = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") {
+        escape = true;
+        continue;
+      }
+      if (c === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0) {
+        return str.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Try each `{` position: parse balanced span; accept first object with a non-empty "question" or
+ * "stem" string (calculation questions use "stem" as the primary field).
+ * Skips spurious `{` from LaTeX (e.g. \\boxed{0}) that are not full question JSON.
+ */
+function tryParseQuestionJsonFromLaxText(jsonString) {
+  let pos = 0;
+  while (pos < jsonString.length) {
+    const start = jsonString.indexOf("{", pos);
+    if (start === -1) {
+      break;
+    }
+    const balanced = extractBalancedFrom(jsonString, start);
+    if (balanced) {
+      try {
+        const obj = JSON.parse(balanced);
+        if (obj && typeof obj === "object") {
+          const hasQuestion = typeof obj.question === "string" && obj.question.trim();
+          const hasStem = typeof obj.stem === "string" && obj.stem.trim();
+          if (hasQuestion || hasStem) {
+            return obj;
+          }
+        }
+      } catch (_) {
+        /* try next { */
+      }
+    }
+    pos = start + 1;
+  }
+  return null;
+}
+
 function safeJsonParse(jsonInput) {
   // If it's already an object, return it
   if (typeof jsonInput === 'object' && jsonInput !== null && !Array.isArray(jsonInput)) {
@@ -57,6 +129,11 @@ function safeJsonParse(jsonInput) {
         }
       }
 
+      const fromLax = tryParseQuestionJsonFromLaxText(jsonString);
+      if (fromLax) {
+        return fromLax;
+      }
+
       // Try to extract the first JSON array [ ... ] or object { ... }
       const arrayMatch = str.match(/\[[\s\S]*\]/);
       if (arrayMatch) {
@@ -72,7 +149,7 @@ function safeJsonParse(jsonInput) {
         try {
           return JSON.parse(jsonMatch[0]);
         } catch (e) {
-          // If extraction fails, continue
+          // continue
         }
       }
 
@@ -262,88 +339,101 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // Get LLM instance from service
       const llmModule = await llmService.getLLMInstance();
 
-      // Create prompt with RAG context
-      const createFirstPrompt = (bloomLevel) => {
-        let p = promptTemplate
+      // Determine question type for each bloom level using course settings
+      const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
+      const targetCount = parseInt(count) || bloomLevels.length || 1;
+      const questionTypeForIndex = (i) => {
+        const bl = bloomLevels[i % bloomLevels.length] || 'Understand';
+        const prefs = bloomTypePrefs[bl] || [QUESTION_TYPES.MULTIPLE_CHOICE];
+        return prefs[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
+      };
+
+      // Build the first-turn prompt (includes full RAG context for prompt caching)
+      const buildFirstPrompt = (bloomLevel, questionType) => {
+        const filled = promptTemplate
+          .replace('{courseName}', courseName || '')
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
-          .replace('{ragContext}', ragContext || '');
-
-        // Fallback cleanup in case the database prompt still has the obsolete placeholder
-        if (p.includes('{existingQuestionsContext}')) {
-          p = p.replace('{existingQuestionsContext}', '');
-        }
-
-        return p;
+          .replace('{questionType}', questionType || '')
+          .replace('{ragContext}', ragContext || '')
+          .replace('{existingQuestionsContext}', '').replace('{typeSpecificInstructions}', QuestionFactory.getModel(questionType).getPromptInstruction());
+        return filled;
       };
 
+      const typeSchemaHint = (questionType) => QuestionFactory.getModel(questionType).getSchemaHint();
+
       const questionsData = [];
-      const successfulHistory = []; // store {role, content} to rebuild conversation on retry
       const maxRetries = 3;
-      const targetCount = parseInt(count) || bloomLevels.length || 1;
+      // Conversation history of successful turns for context (enables prompt caching)
+      const conversationHistory = [];
 
       for (let i = 0; i < targetCount; i++) {
         const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
+        const currentQuestionType = questionTypeForIndex(i);
         let questionData = null;
+        const currentQuestionHistory = [];
         let lastError = null;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          let responseContent = null;
+          let turnPrompt = "";
           try {
-            // Build conversation from successful history
+            // Rebuild conversation from successful history plus the current question's attempts
             const conversation = llmModule.createConversation();
-            for (const msg of successfulHistory) {
+            for (const msg of conversationHistory) {
+              conversation.addMessage(msg.role, msg.content);
+            }
+            for (const msg of currentQuestionHistory) {
               conversation.addMessage(msg.role, msg.content);
             }
 
-            // Add the new prompt for this turn
-            let turnPrompt;
-            if (i === 0) {
-              turnPrompt = createFirstPrompt(currentBloomLevel);
+            if (i === 0 && attempt === 1) {
+              // First question, first attempt: full prompt with RAG context
+              turnPrompt = buildFirstPrompt(currentBloomLevel, currentQuestionType);
+            } else if (attempt > 1) {
+              // Retry: add correction hint for the specific type
+              turnPrompt = (i === 0 ? buildFirstPrompt(currentBloomLevel, currentQuestionType) : `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept than previously generated questions.\nRespond with ONLY a single valid JSON object. No other text.`)
+                + QuestionFactory.getModel(currentQuestionType).getRetrySuffix(attempt, lastError);
             } else {
-              turnPrompt = `Now generate another question for this granular learning objective, but specifically targeting Bloom's Taxonomy Level: ${currentBloomLevel}. 
-Ensure the question tests a completely different concept or facet of the objective than the previously generated questions. 
-Respond with ONLY a single valid JSON object following the exact same structure. Do not include any other text or markdown blocks.`;
+              // Subsequent questions (i > 0), first attempt: include schema hint since
+              // filterPromptToType stripped all other type schemas from the Q1 prompt.
+              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.\n\n${typeSchemaHint(currentQuestionType)}\n\nRespond with ONLY a single valid JSON object. No other text.`;
             }
 
             conversation.addMessage('user', turnPrompt);
 
-            console.log(`Sending prompt to LLM service (Question ${i + 1}/${targetCount}, attempt ${attempt}/${maxRetries})...`);
+            console.log(`Sending prompt to LLM (Q${i + 1}/${targetCount}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
-            // Send the request
             const response = await conversation.send();
 
-            // Log Token Usage
             if (response.usage) {
-              console.log(`📊 Token Usage for Question ${i + 1}:`);
-              console.log(`   - Prompt tokens: ${response.usage.promptTokens || 0}`);
-              console.log(`   - Completion tokens: ${response.usage.completionTokens || 0}`);
-              console.log(`   - Total tokens: ${response.usage.totalTokens || 0}`);
+              console.log(`📊 Token Usage Q${i + 1}: prompt=${response.usage.promptTokens || 0}, completion=${response.usage.completionTokens || 0}`);
             }
 
-            let responseContent = response.content || response.text || response.message || JSON.stringify(response);
-
+            responseContent = response.content || response.text || response.message || JSON.stringify(response);
             if (!responseContent) throw new Error("Empty response from LLM");
 
-            questionData = safeJsonParse(responseContent);
+            const parsed = safeJsonParse(responseContent);
+            questionData = QuestionFactory.getModel(currentQuestionType).validateAndNormalize(parsed);
 
-            if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
-              throw new Error("Missing required fields in JSON response");
-            }
+            console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
 
-            console.log(`✅ Successfully generated question ${i + 1}`);
+            // Save to conversation history so subsequent questions have context
+            conversationHistory.push({ role: 'user', content: turnPrompt });
+            conversationHistory.push({ role: 'assistant', content: responseContent });
 
-            // Save to successful history
-            successfulHistory.push({ role: 'user', content: turnPrompt });
-            successfulHistory.push({ role: 'assistant', content: responseContent });
-
-            break; // Success, break retry loop
+            break; // Success
 
           } catch (error) {
             lastError = error;
-            console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
+            console.warn(`❌ Q${i + 1} attempt ${attempt} failed:`, error.message);
+            if (responseContent) {
+              currentQuestionHistory.push({ role: 'user', content: turnPrompt });
+              currentQuestionHistory.push({ role: 'assistant', content: responseContent });
+            }
             if (attempt === maxRetries) {
-              console.error(`Failed to generate question ${i + 1} after all retries.`);
+              console.error(`Failed to generate question ${i + 1} after ${maxRetries} attempts`);
             } else {
               console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
             }
@@ -545,7 +635,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
     }
 
     console.log("Sending prompt to LLM service...");
-    const response = await llmModule.sendMessage(fullPrompt);
+    const response = await llmModule.sendMessage(fullPrompt, { responseFormat: "json" });
     console.log("Full Prompt: ", fullPrompt);
 
     console.log("✅ LLM service response received");
@@ -623,21 +713,45 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, llmModule) {
-  const compactQuestions = questions.map(q => ({
-    id: q.id,
-    bloomLevel: q.bloomLevel,
-    question: q.question,
-    options: Object.fromEntries(
-      Object.entries(q.options).map(([k, v]) => [
-        k,
-        typeof v === 'string' ? { text: v, feedback: '' } : { text: v.text || '', feedback: v.feedback || '' }
-      ])
-    ),
-    correctAnswer: q.correctAnswer
-  }));
+async function rateQuestions(questions, courseName, llmModule) {
+  const formattedQuestions = questions.map(q => {
+    // Determine the question stem based on type (MC vs others)
+    const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
 
-  const prompt = QUESTION_REVIEW_PROMPT.replace('{questionsJson}', JSON.stringify(compactQuestions, null, 2));
+    const base = {
+      id: q.id,
+      questionType: q.questionType || 'multiple-choice',
+      bloomLevel: q.bloomLevel,
+      learningObjective: q.learningObjectiveText,
+      granularObjective: q.granularObjectiveText,
+      questionStem: questionStem
+    };
+
+    if (base.questionType === 'multiple-choice') {
+      base.options = Object.fromEntries(
+        Object.entries(q.options || {}).map(([k, v]) => [
+          k,
+          typeof v === 'string' ? { text: v, feedback: '' } : { text: v.text || '', feedback: v.feedback || '' }
+        ])
+      );
+      base.correctAnswer = q.correctAnswer;
+    } else if (base.questionType === 'fill-in-the-blank') {
+      base.acceptableAnswers = q.acceptableAnswers || [];
+    } else if (base.questionType === 'calculation') {
+      base.formula = q.calculationFormula || '';
+      base.variables = q.calculationVariables || [];
+    } else if (base.questionType === 'open-ended') {
+      base.sampleAnswer = q.openEndedSampleAnswer || '';
+      base.gradingCriteria = q.openEndedGradingCriteria || '';
+    }
+
+    return base;
+  });
+
+  const prompt = QUESTION_REVIEW_PROMPT
+    .replace('{courseName}', courseName || 'N/A')
+    .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
+
   const response = await llmModule.sendMessage(prompt);
   const responseContent = response.content || response.text || response.message;
   let ratings = safeJsonParse(responseContent);
@@ -645,59 +759,9 @@ async function rateQuestions(questions, llmModule) {
   if (!Array.isArray(ratings) && ratings && typeof ratings === 'object') {
     ratings = [ratings];
   }
-  if (!Array.isArray(ratings)) throw new Error("Rating response is not a JSON array");
+  if (!Array.isArray(ratings)) throw new Error("Review response is not a JSON array");
   return ratings;
 }
-
-async function generateSingleQuestion(params, llmModule, promptTemplate) {
-  const { learningObjectiveText, granularObjectiveText, bloomLevel, learningObjectiveId, materialIds, courseId } = params;
-
-  const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularObjectiveText || ''}`;
-  const questionRagThreshold = parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.6;
-  const questionRagLimit = parseInt(process.env.RAG_CHUNK_LIMIT) || 50;
-
-  let ragContext = '';
-  if (learningObjectiveId) {
-    ragContext = await ragService.getLearningObjectiveRagContent(learningObjectiveId, searchQuery, courseId, questionRagThreshold, questionRagLimit);
-  } else if (materialIds && materialIds.length > 0) {
-    ragContext = await ragService.getRagContentFromMaterials(materialIds, searchQuery, questionRagLimit, courseId, questionRagThreshold);
-  }
-
-  const prompt = promptTemplate
-    .replace('{learningObjectiveText}', learningObjectiveText || '')
-    .replace('{granularLearningObjectiveText}', granularObjectiveText || '')
-    .replace('{bloomLevel}', bloomLevel || '')
-    .replace('{ragContext}', ragContext || '')
-    .replace('{existingQuestionsContext}', '');
-
-  const conversation = llmModule.createConversation();
-  conversation.addMessage('user', prompt);
-  const response = await conversation.send();
-  const responseContent = response.content || response.text || response.message;
-  const questionData = safeJsonParse(responseContent);
-
-  if (!questionData.question || !questionData.options || !questionData.correctAnswer) {
-    throw new Error("Invalid question structure from LLM");
-  }
-
-  // Shuffle correct answer position
-  const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
-  const optionValues = optionKeys.map(k => questionData.options[k]);
-  for (let j = optionValues.length - 1; j > 0; j--) {
-    const k = Math.floor(Math.random() * (j + 1));
-    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
-  }
-  const originalCorrectValue = questionData.options[questionData.correctAnswer];
-  optionKeys.forEach((key, j) => {
-    questionData.options[key] = optionValues[j];
-    if (optionValues[j] === originalCorrectValue) questionData.correctAnswer = key;
-  });
-
-  return questionData;
-}
-
-const QUALITY_THRESHOLD = 8.5;
-const MAX_REGENERATION_ATTEMPTS = 3;
 
 const reviewQuestionsHandler = async (req, res) => {
   try {
@@ -706,70 +770,43 @@ const reviewQuestionsHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: "questions array is required" });
     }
 
-    const llmModule = await llmService.getLLMInstance();
+    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL);
+    
+    // Resolve Course Name from courseId
     const courseId = questions[0]?.courseId || null;
-    const settings = courseId ? await settingsService.getSettings(courseId) : null;
-    const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
+    let courseName = "N/A";
+    if (courseId && ObjectId.isValid(courseId)) {
+      try {
+        const db = await databaseService.connect();
+        const course = await db.collection('grasp_course').findOne({ _id: new ObjectId(courseId) });
+        if (course) {
+          courseName = course.name;
+        }
+      } catch (dbErr) {
+        console.warn("Failed to fetch course details for review:", dbErr.message);
+      }
+    }
 
-    console.log(`=== REVIEWING ${questions.length} QUESTIONS ===`);
-    const ratings = await rateQuestions(questions, llmModule);
+    console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
+    const ratings = await rateQuestions(questions, courseName, llmModule);
 
     const results = [];
 
     for (const q of questions) {
-      const rating = ratings.find(r => r.questionId === q.id) || { score: 10, issue: '' };
-      console.log(`Question ${q.id}: score ${rating.score}`);
-
-      if (rating.score >= QUALITY_THRESHOLD) {
-        results.push({ originalId: q.id, replaced: false, flagged: false, issue: '' });
-        continue;
-      }
-
-      let bestQuestion = null;
-      let bestScore = rating.score;
-      let bestIssue = rating.issue;
-
-      for (let attempt = 1; attempt <= MAX_REGENERATION_ATTEMPTS; attempt++) {
-        console.log(`  Regenerating (attempt ${attempt}/${MAX_REGENERATION_ATTEMPTS}, score: ${bestScore})`);
-        try {
-          const newQuestionData = await generateSingleQuestion({
-            learningObjectiveText: q.learningObjectiveText,
-            granularObjectiveText: q.granularObjectiveText,
-            bloomLevel: q.bloomLevel,
-            learningObjectiveId: q.learningObjectiveId,
-            materialIds: q.materialIds,
-            courseId: q.courseId,
-          }, llmModule, promptTemplate);
-
-          const tempQ = { ...q, question: newQuestionData.question, options: newQuestionData.options, correctAnswer: newQuestionData.correctAnswer };
-          const newRatings = await rateQuestions([tempQ], llmModule);
-          const newRating = newRatings[0] || { score: 0, issue: 'Rating failed' };
-
-          if (newRating.score > bestScore) {
-            bestQuestion = newQuestionData;
-            bestScore = newRating.score;
-            bestIssue = newRating.issue;
-          }
-
-          console.log(`  Attempt ${attempt} score: ${newRating.score} (best so far: ${bestScore})`);
-          if (bestScore >= QUALITY_THRESHOLD) break;
-        } catch (err) {
-          console.error(`  Regeneration attempt ${attempt} failed:`, err.message);
-        }
-      }
+      const rating = ratings.find(r => r.questionId === q.id) || { flagged: false, issue: '' };
+      console.log(`Question ${q.id}: flagged=${rating.flagged}`);
 
       results.push({
         originalId: q.id,
-        replaced: bestQuestion !== null,
-        flagged: bestScore < QUALITY_THRESHOLD,
-        issue: bestScore < QUALITY_THRESHOLD ? bestIssue : '',
-        question: bestQuestion
+        replaced: false,
+        flagged: !!rating.flagged,
+        issue: rating.flagged ? (rating.issue || 'Blocked by reviewer') : '',
+        question: null
       });
     }
 
     const flaggedCount = results.filter(r => r.flagged).length;
-    const replacedCount = results.filter(r => r.replaced).length;
-    console.log(`✅ Review complete: ${replacedCount} regenerated, ${flaggedCount} still flagged`);
+    console.log(`✅ Review complete: ${flaggedCount} flagged`);
 
     res.json({ success: true, results });
   } catch (error) {

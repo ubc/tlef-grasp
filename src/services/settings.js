@@ -1,12 +1,14 @@
 const databaseService = require('./database');
-const { DEFAULT_PROMPTS, DEFAULT_GENERAL } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, DEFAULT_BLOOM_TYPE_PREFERENCES } = require('../constants/app-constants');
 
 // Mapping between hierarchical object structure and DB flat keys
 const KEY_MAP = {
     'prompts.questionGeneration': 'prompt_question_generation',
     'prompts.objectiveGenerationAuto': 'prompt_objective_generation_auto',
-    'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual'
+    'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual',
+    'bloomTypePreferences': 'bloom_type_preferences',
 };
+
 
 /**
  * Get application settings for a specific course
@@ -26,29 +28,38 @@ const getSettings = async (courseId) => {
 
         // Reconstruct the hierarchical settings object
         const settings = {
-            prompts: {}
+            prompts: {},
+            bloomTypePreferences: null,
         };
 
-        // Populate prompts with defaults or found values
+        // Resolve each prompt: use stored value when present, otherwise fall back to default.
         for (const promptKey in DEFAULT_PROMPTS) {
             const dbKey = KEY_MAP[`prompts.${promptKey}`];
-            settings.prompts[promptKey] = (dbKey ? settingsMap[dbKey] : null) ?? DEFAULT_PROMPTS[promptKey];
-        }
-
-        // Proactively save defaults if they don't exist (only for mapped keys) for this course
-        for (const path in KEY_MAP) {
-            const dbKey = KEY_MAP[path];
-            if (!(dbKey in settingsMap)) {
-                const item = path.split('.')[1];
-                const value = DEFAULT_PROMPTS[item];
-                await collection.updateOne(
-                    { name: dbKey, courseId: courseId },
-                    { $set: { name: dbKey, value: value, courseId: courseId, updatedAt: new Date() } },
-                    { upsert: true }
-                );
+            if (!dbKey) {
+                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
+                continue;
+            }
+            const storedValue = settingsMap[dbKey];
+            if (storedValue != null) {
+                settings.prompts[promptKey] = storedValue;
+            } else {
+                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
             }
         }
-        
+
+        // Resolve bloomTypePreferences: parse stored JSON or fall back to default.
+        const bloomDbKey = KEY_MAP['bloomTypePreferences'];
+        const storedBloom = settingsMap[bloomDbKey];
+        if (storedBloom) {
+            try {
+                settings.bloomTypePreferences = JSON.parse(storedBloom);
+            } catch {
+                settings.bloomTypePreferences = DEFAULT_BLOOM_TYPE_PREFERENCES;
+            }
+        } else {
+            settings.bloomTypePreferences = DEFAULT_BLOOM_TYPE_PREFERENCES;
+        }
+
         return settings;
     } catch (error) {
         console.error(`Error getting settings for course ${courseId}:`, error);
@@ -68,23 +79,29 @@ const updateSettings = async (courseId, updateData) => {
         
         const operations = [];
 
-        // Function to flatten and create bulk ops
+        // Function to flatten and create bulk ops.
+        // KEY_MAP is checked first: if the current path maps to a DB key, store it directly
+        // (serializing objects/arrays to JSON). Only recurse into plain objects that are NOT
+        // themselves a top-level key — this prevents bloomTypePreferences from being
+        // flattened into per-level entries.
         const processUpdates = (obj, prefix = '') => {
             for (const key in obj) {
                 const path = prefix ? `${prefix}.${key}` : key;
-                if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+                const dbKey = KEY_MAP[path];
+                if (dbKey) {
+                    const raw = obj[key];
+                    const value = (raw !== null && typeof raw === 'object')
+                        ? JSON.stringify(raw)
+                        : raw;
+                    operations.push({
+                        updateOne: {
+                            filter: { name: dbKey, courseId: courseId },
+                            update: { $set: { name: dbKey, value, courseId: courseId, updatedAt: new Date() } },
+                            upsert: true
+                        }
+                    });
+                } else if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
                     processUpdates(obj[key], path);
-                } else {
-                    const dbKey = KEY_MAP[path];
-                    if (dbKey) {
-                        operations.push({
-                            updateOne: {
-                                filter: { name: dbKey, courseId: courseId },
-                                update: { $set: { name: dbKey, value: obj[key], courseId: courseId, updatedAt: new Date() } },
-                                upsert: true
-                            }
-                        });
-                    }
                 }
             }
         };

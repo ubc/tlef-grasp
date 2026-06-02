@@ -344,3 +344,110 @@ code {
     from { opacity: 0; transform: translateX(30px); }
     to { opacity: 1; transform: translateX(0); }
 }
+
+/* Bloom Type Preferences Table */
+.bloom-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.bloom-table thead th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: #64748b;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #f0f4f8;
+}
+
+.bloom-table tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.15s;
+}
+
+.bloom-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.bloom-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.bloom-table td {
+    padding: 0.85rem 1rem;
+    vertical-align: middle;
+}
+
+.bloom-default {
+    color: #94a3b8;
+    font-size: 0.875rem;
+}
+
+/* Bloom level badges */
+.bloom-badge {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.bloom-remember  { background: #ede9fe; color: #6d28d9; }
+.bloom-understand { background: #dbeafe; color: #1d4ed8; }
+.bloom-apply     { background: #d1fae5; color: #065f46; }
+.bloom-analyze   { background: #fef3c7; color: #92400e; }
+.bloom-evaluate  { background: #ffe4e6; color: #be123c; }
+.bloom-create    { background: #fce7f3; color: #9d174d; }
+
+/* Bloom dropdown */
+.bloom-select {
+    padding: 0.5rem 0.75rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: #334155;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-width: 190px;
+}
+
+.bloom-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Bloom actions row */
+.bloom-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+}
+
+.secondary-btn {
+    background: white;
+    color: #475569;
+    border: 1.5px solid #e2e8f0;
+    padding: 0.65rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+    border-color: #94a3b8;
+    background: #f8fafc;
+    color: #1e293b;
+}

@@ -1,8 +1,10 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
+const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
 
 const isQuizAccessible = (quiz) => {
@@ -99,6 +101,33 @@ const startQuizHandler = async (req, res) => {
 };
 
 
+function resolveQuestionType(q) {
+  const t = String(q.questionType || q.type || "").trim().toLowerCase();
+  const known = [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
+  return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
+}
+
+function shuffleQuestionOptions(question) {
+  const optionKeys = ['A', 'B', 'C', 'D'];
+  const originalCorrectAnswer = question.correctAnswer;
+  const correctOptionText = question.options[originalCorrectAnswer];
+
+  const optionEntries = optionKeys.map(key => ({ key, text: question.options[key] }));
+  const shuffledEntries = shuffleArray(optionEntries);
+
+  const newOptions = {};
+  let newCorrectAnswer = 'A';
+
+  shuffledEntries.forEach((entry, index) => {
+    const newKey = optionKeys[index];
+    newOptions[newKey] = entry.text;
+    if (entry.text === correctOptionText) {
+      newCorrectAnswer = newKey;
+    }
+  });
+
+  return { ...question, options: newOptions, correctAnswer: newCorrectAnswer };
+}
 
 const getQuizQuestionsHandler = async (req, res) => {
   try {
@@ -133,6 +162,97 @@ const getQuizQuestionsHandler = async (req, res) => {
     }
 
     const transformedQuestions = questions.map((q, index) => {
+      const questionType = resolveQuestionType(q);
+      const questionText = (q.title || q.stem || "").trim();
+      const fibMainText =
+        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK
+          ? (q.stem || q.title || "").trim()
+          : questionText;
+
+      if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
+      if (questionType === QUESTION_TYPES.OPEN_ENDED) {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
+      if (questionType === QUESTION_TYPES.CALCULATION) {
+        const vars = q.calculationVariables;
+        const template = CalculationQuestion.resolveCalculationDisplayTemplate(
+          q.stem,
+          q.title,
+          vars
+        );
+        const formula = (q.calculationFormula || "").trim();
+        const answerDec =
+          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
+            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
+            : 2;
+        const tolerancePercent =
+          q.calculationAnswerTolerancePercent != null &&
+          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
+            ? Number(q.calculationAnswerTolerancePercent)
+            : null;
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+        const built = CalculationQuestion.buildStudentCalculationInstance({
+          template,
+          formula,
+          variableSpecs: vars,
+          qid,
+          answerDec,
+        });
+        if (built.ok) {
+          return {
+            id: qid,
+            question: built.rendered,
+            questionType: QUESTION_TYPES.CALCULATION,
+            calculationToken: built.token,
+            answerDecimalPlaces: built.answerDecimalPlaces,
+            calculationAnswerTolerancePercent: tolerancePercent,
+            options: {},
+            learningObjectiveId: q.learningObjectiveId,
+            granularObjectiveId: q.granularObjectiveId,
+            bloom: q.bloom,
+          };
+        }
+        console.error(
+          "Calculation question instance failed:",
+          qid,
+          built.error && built.error.message
+        );
+        return {
+          id: qid,
+          question:
+            template ||
+            "This calculation question could not be loaded. Please contact your instructor.",
+          questionType: QUESTION_TYPES.CALCULATION,
+          calculationToken: null,
+          answerDecimalPlaces: answerDec,
+          calculationLoadError: true,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -152,14 +272,12 @@ const getQuizQuestionsHandler = async (req, res) => {
         }
       }
 
-      const questionText = (q.title || q.stem || "").trim();
-
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
-        // Keep metadata for performance tracking
         learningObjectiveId: q.learningObjectiveId,
         granularObjectiveId: q.granularObjectiveId,
         bloom: q.bloom
@@ -178,14 +296,19 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-        res.json({
+    // Shuffle MC options only; other types have no options to shuffle
+    const randomizedQuestions = transformedQuestions.map((q) =>
+      q.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? shuffleQuestionOptions(q) : q
+    );
+
+    res.json({
       success: true,
       data: {
         quizId: quizId,
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0,
-        questions: transformedQuestions,
+        questions: randomizedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });

@@ -2,43 +2,15 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality multiple-choice question that tests students' understanding of the provided learning objective.
+const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality question based on the provided material that effectively tests students' understanding of the course learning objective.
 
+Course: {courseName}
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
-Bloom's Taxonomy Level: {bloomLevel}
 
 BACKGROUND COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
-
-INSTRUCTIONS:
-1. Write a question aligned to the learning objective and Bloom's level.
-2. Use the terminology from the BACKGROUND COURSE MATERIAL above. Do not
-   substitute synonyms for technical terms the material uses.
-3. Generate 4 answer options (A–D), one of which is correct. Every answer
-   option must be unique — no two options may have identical or near-identical
-   text or describe the same concept in different words.
-4. Every distractor must represent a genuine, realistic misconception a student
-   might hold — not an obviously wrong or trivially absurd option.
-5. Set correctAnswer to the letter of the correct option.
-6. For the correct option, set "feedback" to an empty string ("").
-7. For each incorrect option, write feedback that:
-   - Explains the specific misconception or error in that option only
-   - Does NOT mention what the correct value, sign, approach, or reasoning is
-   - Does NOT use comparative language like "correct sign but wrong magnitude",
-     "partially right", "incomplete", or "too large/small" when the phrasing
-     implies another option is better
-   - Does NOT restate the correct reasoning in different words
-   - Does NOT say just "Incorrect" with no explanation
-   - Focuses only on what is wrong with that specific option in isolation
-
-QUESTION-STEM RULES:
-- The stem must not contain or paraphrase the correct answer, and must not
-  hint at which option is correct through phrasing, grammar, or specificity.
-- Do not use "All of the above" or "None of the above" as options.
-- Do not use negatively-phrased stems (e.g., "Which of the following is NOT...",
-  "Which is LEAST...").
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -53,63 +25,22 @@ Bloom's level guidance (sample verbs in parentheses):
 - Create: design, construct, or propose something new (design, construct,
   propose, formulate)
 
-PROCEDURE:
-1. Create the question content. If you have already generated questions in
-   this conversation, your new question stem must be STRUCTURALLY different
-   from them — different scenario, different numbers if numerical, different
-   framing — not just reworded.
-2. Generate 4 plausible answer options representing distinct misconceptions.
-3. Place the correct answer in one of the positions (A, B, C, or D).
-4. Write feedback for each incorrect option following the rules in instruction 8.
-5. Review each feedback entry and ask: "Could a student use this feedback to
-   identify the correct answer without reading the other options?" If yes,
-   rewrite it before returning the JSON.
-
-SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
-- The stem does not reveal or paraphrase the correct option.
-- All four options are similar in length and grammatical structure.
-- Each distractor represents a distinct, plausible misconception (not absurd,
-  not a synonym of another option).
-- The question uses the same technical terminology as the source material.
-- No feedback entry tells the student what the correct answer is or compares
-  options.
-
-DO NOT copy this example — generate real content based on the material above.
-Example structure only:
-{
-  "question": "A student applies [concept] to [scenario]. What is the result?",
-  "options": {
-    "A": {
-      "text": "Incorrect approach based on common misconception X",
-      "feedback": "This confuses [concept A] with [concept B], which applies
-                   under different conditions."
-    },
-    "B": { "text": "Correct approach", "feedback": "" },
-    "C": {
-      "text": "Incorrect approach based on common misconception Y",
-      "feedback": "This applies the right method but to the wrong quantity
-                   in the problem."
-    },
-    "D": {
-      "text": "Incorrect approach based on common misconception Z",
-      "feedback": "This reverses the relationship between the two variables
-                   involved."
-    }
-  },
-  "correctAnswer": "B"
-}
-
 CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
+- Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL LaTeX FORMATTING: Enclose all mathematical notation and chemical
-  formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or
-  \\\\( H_2O \\\\)). Do NOT use () or $ for math delimiters.
+- CRITICAL LaTeX FORMATTING: Enclose all mathematical notation in \\\\( and \\\\) for inline math
+  (e.g., \\\\( x^2 \\\\)). Do NOT use () or $ as math delimiters.
 - CRITICAL SMILES FORMATTING: Wrap SMILES strings in [SMILES][/SMILES] tags
-  using proper SMILES notation only (e.g., [SMILES]O[/SMILES]).
+  (e.g., [SMILES]O[/SMILES]).
 - CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped.
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in option text.`;
+- Do NOT include letter prefixes (A), B), etc.) inside option text values.
+
+TARGET QUESTION PARAMETERS FOR THIS TASK:
+- Question Type to Generate: {questionType}
+- Bloom's Taxonomy Level: {bloomLevel}
+
+Use ONLY the schema for the Question Type specified below:
+{typeSpecificInstructions}`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
 
@@ -221,52 +152,52 @@ FINAL INSTRUCTIONS:
 3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
 4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
-const QUESTION_REVIEW_PROMPT = `You are a quality reviewer for university exam questions. Score each question from 1–10 based on the criteria below. A score of 8.5 or above means the question is acceptable for use.
+const QUESTION_REVIEW_PROMPT = `You are a quality reviewer for university-level quiz questions. For each question provided, review it to ensure it is suitable for use on a university quiz. Identify any factual errors, logical flaws, mathematical mistakes, or formatting issues that would act as a blocker.
 
-Each question includes: the question text, Bloom's taxonomy level, answer options (each with text and feedback for incorrect options), and the correct answer letter.
+COURSE: {courseName}
 
-Scoring criteria — deduct points for any of the following:
-1. Identical or numerically equal answer options.
-2. Semantically indistinguishable options — two options conveying the same idea or leading to the same conclusion, even if worded differently.
-3. Mathematical or factual errors in the correct answer or stem.
-4. Factually incorrect feedback — feedback that makes a false claim about the material (not just "this is wrong", but actively incorrect statements).
-5. Imprecise or overly broad correct answer (e.g., "every X" when the truth is "every X satisfying condition Y").
-6. Bloom's level mismatch — the cognitive demand does not match the stated level.
-7. Style or format inconsistency — the correct answer uses a noticeably different format or precision than the distractors, signalling the correct answer.
-8. A stem that hints at or paraphrases the correct answer.
-9. Near-duplicate question — another question in this set tests the same concept in essentially the same way.
-
-QUESTIONS:
+QUESTIONS TO REVIEW:
 {questionsJson}
 
-CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Never return a plain object. Never return fewer objects than there are questions.
-
+CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Do not include markdown code blocks. The JSON array must look like this:
 [
-  { "questionId": "<id>", "score": 9.5, "issue": "" },
-  { "questionId": "<id>", "score": 6.0, "issue": "Brief description of the specific problem." }
-]
-
-Rules:
-- The array must have the same number of elements as the number of questions provided.
-- Score based on genuine correctness and clarity problems only, not minor stylistic preferences.
-- If a question scores 8.5 or above, set issue to an empty string.
-- If a question scores below 8.5, name the specific problem (e.g., "Bloom mismatch", "Feedback error", "Semantically indistinguishable options").
-- Keep issue descriptions to 1-2 sentences.
-- Do NOT wrap the JSON in markdown code blocks.`;
+  { "questionId": "<id>", "flagged": true, "issue": "Brief description of the blocker/issue." },
+  { "questionId": "<id>", "flagged": false, "issue": "" }
+]`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
+const QUESTION_TYPES = {
+  MULTIPLE_CHOICE: "multiple-choice",
+  FILL_IN_THE_BLANK: "fill-in-the-blank",
+  CALCULATION: "calculation",
+  OPEN_ENDED: "open-ended",
+};
+
 const DEFAULT_PROMPTS = {
-    questionGeneration: QUESTION_GENERATION_PROMPT,
-    objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
-    objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT
+  questionGeneration: QUESTION_GENERATION_PROMPT,
+  objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
+  objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT
+};
+
+// Default mapping from Bloom's level to ordered question-type preferences.
+// The first entry is what auto-generation picks; the rest are fallbacks.
+const DEFAULT_BLOOM_TYPE_PREFERENCES = {
+  Remember: [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.MULTIPLE_CHOICE],
+  Understand: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Apply: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Analyze: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Evaluate: [QUESTION_TYPES.CALCULATION, QUESTION_TYPES.MULTIPLE_CHOICE],
+  Create: [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
 };
 
 module.exports = {
-    QUESTION_GENERATION_PROMPT,
-    QUESTION_REVIEW_PROMPT,
-    OBJECTIVE_GENERATION_AUTO_PROMPT,
-    OBJECTIVE_GENERATION_MANUAL_PROMPT,
-    BLOOM_LEVELS,
-    DEFAULT_PROMPTS
+  QUESTION_GENERATION_PROMPT,
+  QUESTION_REVIEW_PROMPT,
+  OBJECTIVE_GENERATION_AUTO_PROMPT,
+  OBJECTIVE_GENERATION_MANUAL_PROMPT,
+  BLOOM_LEVELS,
+  QUESTION_TYPES,
+  DEFAULT_PROMPTS,
+  DEFAULT_BLOOM_TYPE_PREFERENCES,
 };

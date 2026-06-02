@@ -74,6 +74,31 @@ function getObjectId(obj) {
   return toStringId(obj._id || obj.id);
 }
 
+/** Normalize API questionType / type for display (legacy rows default to multiple-choice). */
+const QUESTION_TYPE_LABELS = {
+  "fill-in-the-blank": "Fill-in-the-blank",
+  "calculation": "Calculation",
+  "open-ended": "Open-ended",
+  "multiple-choice": "Multiple choice",
+};
+
+function normalizeQuestionTypeKey(raw) {
+  const t = (raw || "").toString().trim().toLowerCase().replace(/_/g, "-");
+  return QUESTION_TYPE_LABELS[t] ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
+}
+
+function formatQuestionTypeLabel(raw) {
+  return QUESTION_TYPE_LABELS[normalizeQuestionTypeKey(raw)];
+}
+
+/** Escape text placed inside <textarea>...</textarea> body */
+function escapeForTextareaContent(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 class QuestionBankPage {
   constructor() {
     // Get course from sessionStorage
@@ -377,6 +402,9 @@ class QuestionBankPage {
             objectiveId: objectiveId, // Store the objective ID
             glo: objectiveId || "", // Will be replaced with name after loading objectives
             bloom: question.bloom || question.bloomLevel || "Understand",
+            questionType: normalizeQuestionTypeKey(
+              question.questionType || question.type
+            ),
             flagged: question.flagStatus || false,
             published: question.published || false,
             status: question.status || "Draft",
@@ -1128,9 +1156,10 @@ class QuestionBankPage {
     const sortedQuestions = this.sortQuestions(filteredQuestions);
 
     if (sortedQuestions.length === 0) {
+      const emptyColspan = this.isFaculty ? 6 : 5;
       tableBody.innerHTML = `
         <tr>
-          <td colspan="5" class="empty-state">
+          <td colspan="${emptyColspan}" class="empty-state">
             <p>No questions available.</p>
             <p>You haven't saved any questions from question generation yet.</p>
             <p>Go to <a href="/question-generation">Question Generation</a> to create and save your first questions.</p>
@@ -1195,6 +1224,9 @@ class QuestionBankPage {
         <td class="bloom-cell">
           <span class="bloom-chip">${question.bloom || "N/A"}</span>
         </td>
+        <td class="question-type-cell">
+          <span class="question-type-chip question-type-chip--${question.questionType || QUESTION_TYPES.MULTIPLE_CHOICE}">${formatQuestionTypeLabel(question.questionType)}</span>
+        </td>
         <td class="status-cell">
           <span class="status-pill status-pill--${(question.status || "Draft").toLowerCase()}">${question.status || "Draft"}</span>
         </td>
@@ -1252,7 +1284,12 @@ class QuestionBankPage {
           const titleMatch = q.title && q.title.toLowerCase().includes(searchTerm);
           const stemMatch = q.stem && q.stem.toLowerCase().includes(searchTerm);
           const gloMatch = q.glo && q.glo.toLowerCase().includes(searchTerm);
-          return titleMatch || stemMatch || gloMatch;
+          const formulaMatch =
+            q.calculationFormula &&
+            String(q.calculationFormula).toLowerCase().includes(searchTerm);
+          const typeLabel = formatQuestionTypeLabel(q.questionType).toLowerCase();
+          const typeMatch = typeLabel.includes(searchTerm);
+          return titleMatch || stemMatch || gloMatch || typeMatch || formulaMatch;
         }
       );
     }
@@ -1268,20 +1305,28 @@ class QuestionBankPage {
 
       switch (key) {
         case "title":
-          aValue = a.title.toLowerCase();
-          bValue = b.title.toLowerCase();
+          aValue = (a.title || "").toLowerCase();
+          bValue = (b.title || "").toLowerCase();
           break;
         case "glo":
-          aValue = a.glo.toLowerCase();
-          bValue = b.glo.toLowerCase();
+          aValue = (a.glo || "").toLowerCase();
+          bValue = (b.glo || "").toLowerCase();
           break;
         case "bloom":
-          aValue = a.bloom.toLowerCase();
-          bValue = b.bloom.toLowerCase();
+          aValue = (a.bloom || "").toLowerCase();
+          bValue = (b.bloom || "").toLowerCase();
+          break;
+        case "questionType":
+          aValue = (a.questionType || QUESTION_TYPES.MULTIPLE_CHOICE).toLowerCase();
+          bValue = (b.questionType || QUESTION_TYPES.MULTIPLE_CHOICE).toLowerCase();
+          break;
+        case "status":
+          aValue = (a.status || "Draft").toLowerCase();
+          bValue = (b.status || "Draft").toLowerCase();
           break;
         default:
-          aValue = a.title.toLowerCase();
-          bValue = b.title.toLowerCase();
+          aValue = (a.title || "").toLowerCase();
+          bValue = (b.title || "").toLowerCase();
       }
 
       if (dir === "asc") {
@@ -1479,49 +1524,106 @@ class QuestionBankPage {
       // Check if user can edit this question
       const canEdit = this.canEditQuestion(questionId);
 
-      // Options are always objects with keys A, B, C, D - convert to array for display
-      const optionKeys = ['A', 'B', 'C', 'D'];
-      let normalizedOptions = [];
-      if (question.options && typeof question.options === 'object') {
-        normalizedOptions = optionKeys.map((key) => {
-          const opt = question.options[key];
-          if (typeof opt === 'string') {
-            return { id: key, text: opt, feedback: "" };
-          } else if (opt && typeof opt === 'object') {
-            return { id: opt.id || key, text: opt.text || opt, feedback: opt.feedback || "" };
-          } else {
-            return { id: key, text: String(opt || ''), feedback: "" };
-          }
-        });
-      }
+      const qType = normalizeQuestionTypeKey(question.questionType || question.type);
 
-      // Ensure we have at least 4 options
-      while (normalizedOptions.length < 4) {
-        normalizedOptions.push({
-          id: String.fromCharCode(65 + normalizedOptions.length),
-          text: ''
-        });
-      }
-
-      // Store original question for comparison
-      // Convert correctAnswer to letter format (A, B, C, D) if it's a number
-      let correctAnswerLetter = question.correctAnswer;
-      if (typeof question.correctAnswer === 'number') {
-        correctAnswerLetter = ['A', 'B', 'C', 'D'][question.correctAnswer] || 'A';
-      } else if (typeof question.correctAnswer === 'string') {
-        correctAnswerLetter = question.correctAnswer.toUpperCase();
+      if (qType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        const canonical =
+          question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
+        let acceptable = Array.isArray(question.acceptableAnswers)
+          ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+          : [];
+        if (acceptable.length === 0 && canonical) {
+          acceptable = [canonical];
+        }
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || question.stem || "",
+          stem: question.stem || question.title || "",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          correctAnswer: canonical,
+          acceptableAnswers: acceptable,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
+      } else if (qType === QUESTION_TYPES.CALCULATION) {
+        const vars = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
+        const dec =
+          question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
+            ? parseInt(question.calculationAnswerDecimals, 10)
+            : 2;
+        const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
+        const tol = Number.isFinite(rawTol) ? Math.max(0, Math.min(100, rawTol)) : null;
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || "",
+          stem: question.stem || "",
+          questionType: QUESTION_TYPES.CALCULATION,
+          calculationFormula: (question.calculationFormula || "").trim(),
+          calculationVariables: vars,
+          calculationAnswerDecimals: Number.isFinite(dec) ? dec : 2,
+          calculationAnswerTolerancePercent: tol,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
+      } else if (qType === QUESTION_TYPES.OPEN_ENDED) {
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || "",
+          stem: question.stem || question.title || "",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
+          openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
+          openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
       } else {
-        correctAnswerLetter = 'A';
-      }
+        // Multiple-choice: options are objects with keys A, B, C, D - convert to array for display
+        const optionKeys = ["A", "B", "C", "D"];
+        let normalizedOptions = [];
+        if (question.options && typeof question.options === "object") {
+          normalizedOptions = optionKeys.map((key) => {
+            const opt = question.options[key];
+            if (typeof opt === "string") {
+              return { id: key, text: opt };
+            } else if (opt && typeof opt === "object") {
+              return { id: opt.id || key, text: opt.text || opt };
+            } else {
+              return { id: key, text: String(opt || "") };
+            }
+          });
+        }
 
-      this.currentEditingQuestion = {
-        id: questionId,
-        title: question.title || question.stem || "",
-        stem: question.stem || question.title || "",
-        options: normalizedOptions,
-        correctAnswer: correctAnswerLetter,
-        canEdit: canEdit,
-      };
+        while (normalizedOptions.length < 4) {
+          normalizedOptions.push({
+            id: String.fromCharCode(65 + normalizedOptions.length),
+            text: "",
+          });
+        }
+
+        let correctAnswerLetter = question.correctAnswer;
+        if (typeof question.correctAnswer === "number") {
+          correctAnswerLetter = ["A", "B", "C", "D"][question.correctAnswer] || "A";
+        } else if (typeof question.correctAnswer === "string") {
+          correctAnswerLetter = question.correctAnswer.toUpperCase();
+        } else {
+          correctAnswerLetter = "A";
+        }
+
+        this.currentEditingQuestion = {
+          id: questionId,
+          title: question.title || question.stem || "",
+          stem: question.stem || question.title || "",
+          questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+          options: normalizedOptions,
+          correctAnswer: correctAnswerLetter,
+          canEdit,
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+        };
+      }
 
       // Render question in modal (uses this.currentEditingQuestion)
       this.renderQuestionInModal();
@@ -1542,7 +1644,6 @@ class QuestionBankPage {
   }
 
   renderQuestionInModal() {
-    // Use currentEditingQuestion which has normalized data (correctAnswer as letter, options as array)
     if (!this.currentEditingQuestion) {
       console.error("currentEditingQuestion not set");
       return;
@@ -1551,17 +1652,235 @@ class QuestionBankPage {
     const question = this.currentEditingQuestion;
     const modalBody = document.getElementById("question-modal-body");
     const saveBtn = document.getElementById("question-modal-save");
+    const modalTitleEl = document.getElementById("question-modal-title");
 
     if (!modalBody) return;
 
-    // Get canEdit from currentEditingQuestion
     const canEdit = question.canEdit !== undefined ? question.canEdit : this.canEditQuestion(question.id);
 
-    // Get objective name if available
-    const objectiveName = question.learningObjectiveId
-      ? (this.objectivesMap.get(question.learningObjectiveId.toString()) || "Unknown Objective")
-      : (question.granularObjectiveId ? "Granular Objective" : "No Objective");
+    if (modalTitleEl) {
+      modalTitleEl.textContent = canEdit ? "Edit question" : "View question";
+    }
 
+    const isCalc = question.questionType === QUESTION_TYPES.CALCULATION;
+    const isFib = question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
+    const isOpen = question.questionType === QUESTION_TYPES.OPEN_ENDED;
+
+    const isReadOnly = !canEdit;
+    const readonlyAttr = isReadOnly ? "readonly" : "";
+    const readonlyClass = isReadOnly ? "readonly" : "";
+    const readonlyStyle = isReadOnly ? "background-color: #f5f5f5; cursor: not-allowed;" : "";
+    const warningHtml = isReadOnly
+      ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
+      : "";
+
+    if (isOpen) {
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || "");
+      const sampleContent = escapeForTextareaContent(question.openEndedSampleAnswer || "");
+      const criteriaContent = escapeForTextareaContent(question.openEndedGradingCriteria || "");
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip question-type-chip--open-ended" style="margin-bottom:12px;display:inline-block;">Open-ended</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Topic title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="Short topic label"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question prompt</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="The open-ended task for students"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-open-sample">Sample answer <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="question-modal-open-sample"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="A strong example answer students see after they submit"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${sampleContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-open-criteria">Grading criteria <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="question-modal-open-criteria"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="6"
+                    placeholder="What instructors look for; e.g. bullet points or a short rubric"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${criteriaContent}</textarea>
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
+
+    if (isCalc) {
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || "");
+      const formulaContent = escapeForTextareaContent(question.calculationFormula || "");
+      const varsJson = escapeForTextareaContent(
+        JSON.stringify(question.calculationVariables || [], null, 2)
+      );
+      const decVal =
+        question.calculationAnswerDecimals !== undefined && question.calculationAnswerDecimals !== null
+          ? String(question.calculationAnswerDecimals)
+          : "2";
+      const tolRaw = parseFloat(question.calculationAnswerTolerancePercent);
+      const tolVal = Number.isFinite(tolRaw) ? String(Math.max(0, Math.min(100, tolRaw))) : "";
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip question-type-chip--calculation" style="margin-bottom:12px;display:inline-block;">Calculation</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Topic title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="e.g. Multiplication with two variables"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question template</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="4"
+                    placeholder="If a = {{a}} and b = {{b}}, what is a multiplied by b?"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+          <p style="font-size:12px;color:#6c757d;margin:6px 0 0 0;">Use <code>{{variableName}}</code> placeholders matching the variables JSON below.</p>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-formula">Formula (expr-eval syntax)</label>
+          <textarea id="question-modal-calc-formula"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="2"
+                    placeholder="a * b"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${formulaContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-vars">Variables (JSON array)</label>
+          <textarea id="question-modal-calc-vars"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="8"
+                    placeholder='[{"name":"a","min":1,"max":5,"decimals":1},{"name":"b","min":1,"max":20,"decimals":0,"integerOnly":true}]'
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${varsJson}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-decimals">Answer decimal places (display)</label>
+          <input type="number" id="question-modal-calc-decimals" min="0" max="12" step="1"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${decVal.replace(/"/g, "&quot;")}"
+                 ${readonlyAttr}
+                 style="${readonlyStyle};max-width:120px;">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-calc-tolerance">Answer tolerance % <span style="font-weight:400;color:#6c757d;">(optional — leave blank for exact decimal rounding)</span></label>
+          <input type="number" id="question-modal-calc-tolerance" min="0" max="100" step="0.1"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${tolVal.replace(/"/g, "&quot;")}"
+                 placeholder="e.g. 2 for chemistry, 5 for engineering"
+                 ${readonlyAttr}
+                 style="${readonlyStyle};max-width:180px;">
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
+
+    if (isFib) {
+
+      const escapedTitle = (question.title || "").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      const stemContent = escapeForTextareaContent(question.stem || question.title || "");
+      const acceptableContent = escapeForTextareaContent(
+        (question.acceptableAnswers || []).join("\n")
+      );
+      const escapedCorrectAttr = (question.correctAnswer || "")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+      modalBody.innerHTML = `
+      <div class="question-modal-content">
+        ${warningHtml}
+        <div class="question-modal-field">
+          <span class="question-type-chip question-type-chip--fill-in-the-blank" style="margin-bottom:12px;display:inline-block;">Fill-in-the-blank</span>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-title-input">Topic title</label>
+          <input type="text"
+                 id="question-modal-title-input"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedTitle}"
+                 placeholder="Short topic label (do not reveal the answer)"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-stem-input">Question stem</label>
+          <textarea id="question-modal-stem-input"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="5"
+                    placeholder="Declarative sentence with exactly _________ (nine underscores) for the blank"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${stemContent}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-fib-correct">Correct answer</label>
+          <input type="text"
+                 id="question-modal-fib-correct"
+                 class="question-modal-input ${readonlyClass}"
+                 value="${escapedCorrectAttr}"
+                 placeholder="Canonical correct answer"
+                 ${readonlyAttr}
+                 style="${readonlyStyle}">
+        </div>
+        <div class="question-modal-field">
+          <label for="question-modal-fib-acceptable">Acceptable answers <span style="font-weight:400;color:#6c757d;">(one per line; optional)</span></label>
+          <textarea id="question-modal-fib-acceptable"
+                    class="question-modal-textarea ${readonlyClass}"
+                    rows="4"
+                    placeholder="Other accepted spellings or synonyms, one per line"
+                    ${readonlyAttr}
+                    style="${readonlyStyle}">${acceptableContent}</textarea>
+        </div>
+      </div>
+    `;
+
+      if (saveBtn) {
+        saveBtn.style.display = isReadOnly ? "none" : "inline-block";
+      }
+      return;
+    }
+
+    // --- Multiple-choice layout ---
     // Options are already normalized to array format in currentEditingQuestion
     let optionsArray = question.options || [];
     if (!Array.isArray(optionsArray) || optionsArray.length === 0) {
@@ -1591,11 +1910,7 @@ class QuestionBankPage {
       correctAnswerLetter = 'A';
     }
 
-    const isReadOnly = !(question.canEdit !== undefined ? question.canEdit : this.canEditQuestion(question.id));
-    const readonlyAttr = isReadOnly ? 'readonly' : '';
     const disabledAttr = isReadOnly ? 'disabled' : '';
-    const readonlyClass = isReadOnly ? 'readonly' : '';
-    const readonlyStyle = isReadOnly ? 'background-color: #f5f5f5; cursor: not-allowed;' : '';
 
     const optionsHtml = optionsArray.map((option, index) => {
       const optionId = option.id || String.fromCharCode(65 + index); // A, B, C, D
@@ -1638,11 +1953,6 @@ class QuestionBankPage {
         </div>
       `;
     }).join("");
-
-    // Build warning HTML separately to avoid template literal nesting issues
-    const warningHtml = isReadOnly
-      ? '<div class="question-modal-warning" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 6px; margin-bottom: 20px; color: #856404;"><i class="fas fa-lock"></i> This question is approved and cannot be edited.</div>'
-      : '';
 
     const escapedTitle = (question.title || question.stem || "").replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const escapedStem = (question.stem || question.title || "").replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1733,11 +2043,234 @@ class QuestionBankPage {
     try {
       const titleInput = document.getElementById("question-modal-title-input");
       const stemInput = document.getElementById("question-modal-stem-input");
-      const optionInputs = document.querySelectorAll(".question-modal-option-input");
 
       const title = titleInput ? titleInput.value.trim() : "";
       const stem = stemInput ? stemInput.value.trim() : "";
-      
+
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.CALCULATION) {
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question template is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        const formulaEl = document.getElementById("question-modal-calc-formula");
+        const varsEl = document.getElementById("question-modal-calc-vars");
+        const decEl = document.getElementById("question-modal-calc-decimals");
+        const tolEl = document.getElementById("question-modal-calc-tolerance");
+        const formula = formulaEl ? formulaEl.value.trim() : "";
+        if (!formula) {
+          this.showNotification("Formula is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        let variables;
+        try {
+          variables = JSON.parse(varsEl && varsEl.value.trim() ? varsEl.value.trim() : "[]");
+        } catch {
+          this.showNotification("Variables must be valid JSON", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!Array.isArray(variables) || variables.length === 0) {
+          this.showNotification("Add at least one variable in the JSON array", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        for (const v of variables) {
+          if (!v || typeof v.name !== "string" || !v.name.trim()) {
+            this.showNotification('Each variable needs a "name" string', "error");
+            if (saveBtn) saveBtn.disabled = false;
+            return;
+          }
+          const mn = Number(v.min);
+          const mx = Number(v.max);
+          if (!Number.isFinite(mn) || !Number.isFinite(mx) || mn > mx) {
+            this.showNotification(`Invalid min/max for variable "${v.name}"`, "error");
+            if (saveBtn) saveBtn.disabled = false;
+            return;
+          }
+        }
+        let dec = parseInt(decEl ? decEl.value : "2", 10);
+        if (!Number.isFinite(dec)) dec = 2;
+        dec = Math.max(0, Math.min(12, dec));
+        let tolPct = parseFloat(tolEl ? tolEl.value : "");
+        tolPct = Number.isFinite(tolPct) ? Math.max(0, Math.min(100, tolPct)) : null;
+
+        const updateData = {
+          title,
+          stem,
+          questionType: QUESTION_TYPES.CALCULATION,
+          calculationFormula: formula,
+          calculationVariables: variables,
+          calculationAnswerDecimals: dec,
+          calculationAnswerTolerancePercent: tolPct,
+          options: {},
+          acceptableAnswers: [],
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = QUESTION_TYPES.CALCULATION;
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
+
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.OPEN_ENDED) {
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question prompt is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        const sampleEl = document.getElementById("question-modal-open-sample");
+        const critEl = document.getElementById("question-modal-open-criteria");
+        const openEndedSampleAnswer = sampleEl ? sampleEl.value.trim() : "";
+        const openEndedGradingCriteria = critEl ? critEl.value.trim() : "";
+        if (!openEndedSampleAnswer) {
+          this.showNotification("Sample answer is required for open-ended questions", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!openEndedGradingCriteria) {
+          this.showNotification("Grading criteria are required for open-ended questions", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        const updateData = {
+          title,
+          stem,
+          questionType: QUESTION_TYPES.OPEN_ENDED,
+          openEndedSampleAnswer,
+          openEndedGradingCriteria,
+          options: {},
+          acceptableAnswers: [],
+          correctAnswer: "",
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = QUESTION_TYPES.OPEN_ENDED;
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
+
+      if (this.currentEditingQuestion.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        if (!title) {
+          this.showNotification("Topic title is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem) {
+          this.showNotification("Question stem is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        if (!stem.includes("_________")) {
+          this.showNotification('Stem must include exactly one blank: _________ (nine underscores)', "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        const correctInput = document.getElementById("question-modal-fib-correct");
+        const acceptableInput = document.getElementById("question-modal-fib-acceptable");
+        const correct = correctInput ? correctInput.value.trim() : "";
+        if (!correct) {
+          this.showNotification("Correct answer is required", "error");
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+
+        let acceptable = [];
+        if (acceptableInput && acceptableInput.value.trim()) {
+          acceptable = acceptableInput.value
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        }
+        if (acceptable.length === 0) {
+          acceptable = [correct];
+        }
+
+        const updateData = {
+          title,
+          stem,
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          correctAnswer: correct,
+          acceptableAnswers: acceptable,
+          options: {},
+        };
+
+        const response = await fetch(`${API_ENDPOINTS.question}/${this.currentEditingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Failed to update question");
+        }
+
+        const q = this.questions.find((x) => toStringId(x.id) === toStringId(this.currentEditingQuestion.id));
+        if (q) {
+          q.title = updateData.title;
+          q.stem = updateData.stem;
+          q.questionType = QUESTION_TYPES.FILL_IN_THE_BLANK;
+        }
+
+        this.closeQuestionModal();
+        this.renderQuestionsTable();
+        this.showNotification("Question updated successfully", "success");
+        return;
+      }
+
+      const optionInputs = document.querySelectorAll(".question-modal-option-input");
       const feedbackInputs = document.querySelectorAll(".question-modal-feedback-input");
       const feedbackMap = new Map();
       feedbackInputs.forEach(input => {
@@ -1797,6 +2330,7 @@ class QuestionBankPage {
       const updateData = {
         title: title || stem,
         stem: stem || title,
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObject,
         correctAnswer: correctAnswerLetter,
       };

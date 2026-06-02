@@ -159,8 +159,12 @@ const getObjectiveWithMaterials = async (objectiveId, courseId = null) => {
       return null;
     }
     
-    // Pass the objective's _id (which is an ObjectId) to get materials
-    const materials = await objectiveMaterialService.getMaterialsForObjective(objective._id);
+    // If it's a granular objective (parent is not 0), resolve materials from its parent objective
+    const targetId = (objective.parent && objective.parent !== 0 && objective.parent !== '0')
+      ? objective.parent
+      : objective._id;
+      
+    const materials = await objectiveMaterialService.getMaterialsForObjective(targetId);
     
     return {
       ...objective,
