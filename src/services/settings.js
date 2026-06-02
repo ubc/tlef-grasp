@@ -9,20 +9,6 @@ const KEY_MAP = {
     'bloomTypePreferences': 'bloom_type_preferences',
 };
 
-const REQUIRED_PROMPT_MARKERS = {
-    questionGeneration: [
-        '{questionType}',
-        '{learningObjectiveText}',
-        '{ragContext}'
-    ]
-};
-
-const isStalePromptSnapshot = (promptKey, value) => {
-    const required = REQUIRED_PROMPT_MARKERS[promptKey];
-    if (!required) return false;
-    const v = String(value || '');
-    return required.some((marker) => !v.includes(marker));
-};
 
 /**
  * Get application settings for a specific course
@@ -46,8 +32,7 @@ const getSettings = async (courseId) => {
             bloomTypePreferences: null,
         };
 
-        // Resolve each prompt: use stored value when present and structurally compatible,
-        // otherwise fall back to the current default and persist it (insert if missing, refresh if stale).
+        // Resolve each prompt: use stored value when present, otherwise fall back to default.
         for (const promptKey in DEFAULT_PROMPTS) {
             const dbKey = KEY_MAP[`prompts.${promptKey}`];
             if (!dbKey) {
@@ -55,20 +40,10 @@ const getSettings = async (courseId) => {
                 continue;
             }
             const storedValue = settingsMap[dbKey];
-            const stored = storedValue != null;
-            const stale = stored && isStalePromptSnapshot(promptKey, storedValue);
-            if (!stored || stale) {
-                if (stale) {
-                    console.log(`[settings] Refreshing stale prompt snapshot "${dbKey}" for course ${courseId}.`);
-                }
-                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
-                await collection.updateOne(
-                    { name: dbKey, courseId },
-                    { $set: { name: dbKey, value: DEFAULT_PROMPTS[promptKey], courseId, updatedAt: new Date() } },
-                    { upsert: true }
-                );
-            } else {
+            if (storedValue != null) {
                 settings.prompts[promptKey] = storedValue;
+            } else {
+                settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
             }
         }
 

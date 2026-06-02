@@ -3,16 +3,16 @@
 
 // Import RAG service (singleton)
 const ragService = require('../services/rag');
-
-// Import LLM service (singleton)
 const llmService = require('../services/llm');
+const databaseService = require('../services/database');
+const { ObjectId } = require('mongodb');
 
 // Import services
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const settingsService = require('../services/settings');
-const calculationQuestionService = require('../services/calculation-question');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, SUBTOPIC_DETERMINATION_PROMPT } = require('../constants/app-constants');
+const QuestionFactory = require('../models/questions/QuestionFactory');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
 
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
@@ -30,356 +30,6 @@ function returnErrorResponse(res, error, details = null) {
  * This function provides minimal fallback handling for edge cases.
  * @param {string|Object} jsonInput - The JSON string to parse, or already parsed object
  * @returns {Object} Parsed JSON object
- */
-function resolveQuestionTypeFromPayload(data, requestedType) {
-  const t = data?.type || data?.questionType;
-  if (
-    t === QUESTION_TYPES.FILL_IN_THE_BLANK ||
-    t === QUESTION_TYPES.MULTIPLE_CHOICE ||
-    t === QUESTION_TYPES.CALCULATION ||
-    t === QUESTION_TYPES.OPEN_ENDED
-  ) {
-    return t;
-  }
-  return requestedType;
-}
-
-/** Map array shapes and letter-only `answer` to MC fields when possible. */
-function normalizeMultipleChoiceAliases(data) {
-  const d = { ...data };
-  if (Array.isArray(d.choices) && d.choices.length >= 4) {
-    d.options = {
-      A: String(d.choices[0]),
-      B: String(d.choices[1]),
-      C: String(d.choices[2]),
-      D: String(d.choices[3]),
-    };
-  }
-  if (Array.isArray(d.options) && d.options.length >= 4) {
-    d.options = {
-      A: String(d.options[0]),
-      B: String(d.options[1]),
-      C: String(d.options[2]),
-      D: String(d.options[3]),
-    };
-  }
-  if (
-    (d.correctAnswer == null || String(d.correctAnswer).trim() === "") &&
-    typeof d.answer === "string" &&
-    /^[ABCD]$/i.test(d.answer.trim())
-  ) {
-    d.correctAnswer = d.answer.trim().toUpperCase();
-  }
-  return d;
-}
-
-/**
- * Models often return { question, answer, explanation } for MC. If `answer` is the correct
- * option text (not A–D), synthesize A–D options and a matching correctAnswer letter.
- */
-function repairLooseMultipleChoiceShape(data) {
-  let d = normalizeMultipleChoiceAliases(data);
-  const hasFullOptions =
-    d.options &&
-    typeof d.options === "object" &&
-    !Array.isArray(d.options) &&
-    ["A", "B", "C", "D"].every(
-      (k) => d.options[k] != null && String(d.options[k]).trim()
-    );
-  if (hasFullOptions) {
-    return d;
-  }
-  if (typeof d.answer !== "string" || !d.answer.trim()) {
-    return d;
-  }
-  const correctText = d.answer.trim();
-  if (/^[ABCD]$/i.test(correctText)) {
-    return d;
-  }
-  const distractors = [
-    "Divergent.",
-    "Convergent only if extra conditions hold that are not stated.",
-    "The usual convergence test does not apply to this series.",
-    "The partial sums do not approach a finite limit.",
-  ]
-    .filter((x) => x.toLowerCase() !== correctText.toLowerCase())
-    .slice(0, 3);
-  while (distractors.length < 3) {
-    distractors.push(`Incorrect alternative ${distractors.length + 1}.`);
-  }
-  const letters = ["A", "B", "C", "D"];
-  const correctIdx = Math.floor(Math.random() * 4);
-  const options = {};
-  let u = 0;
-  for (let i = 0; i < 4; i++) {
-    options[letters[i]] = i === correctIdx ? correctText : distractors[u++];
-  }
-  return {
-    ...d,
-    type: d.type || QUESTION_TYPES.MULTIPLE_CHOICE,
-    options,
-    correctAnswer: letters[correctIdx],
-  };
-}
-
-/**
- * Validate LLM JSON for the requested question type and return a normalized object for the API.
- */
-function validateAndNormalizeQuestionData(data, requestedType) {
-  if (!data || typeof data !== "object") {
-    throw new Error("Invalid question payload");
-  }
-
-  // Detect prose-refusal shape: { "text": "..." } with no recognized question fields.
-  // llama3.1:8b sometimes returns this when it thinks the topic can't fit the type.
-  if (
-    typeof data.text === "string" &&
-    !data.question && !data.stem && !data.type &&
-    !data.options && !data.calculationFormula
-  ) {
-    throw new Error(
-      "Model returned a prose response instead of a question. " +
-      "If the topic involves differential equations, integrals, or symbolic calculus, " +
-      "re-scope to a direct arithmetic calculation (e.g. evaluate a polynomial, apply a physics formula, compute a rate)."
-    );
-  }
-
-  const resolvedType = resolveQuestionTypeFromPayload(data, requestedType);
-  if (resolvedType !== requestedType) {
-    throw new Error(
-      `Response type "${resolvedType}" does not match requested questionType "${requestedType}"`
-    );
-  }
-
-  if (resolvedType === QUESTION_TYPES.CALCULATION) {
-    const merged = { ...data };
-    const stemText = String(merged.stem || merged.question || "").trim();
-    if (!stemText) {
-      throw new Error(
-        "Missing required field: stem (or question template) for calculation"
-      );
-    }
-
-    // Strip assignment LHS if the model writes "answer = expr" instead of just "expr".
-    // E.g. "r = -1 / m" → "-1 / m".  Keep "==" untouched (comparison, not assignment).
-    let rawFormula = String(merged.calculationFormula || "").trim();
-    const assignMatch = rawFormula.match(/^[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)/);
-    if (assignMatch) {
-      rawFormula = rawFormula.slice(assignMatch[0].length).trim();
-      merged.calculationFormula = rawFormula;
-    }
-
-    const formula = rawFormula;
-    if (!formula) {
-      throw new Error("Missing required field: calculationFormula");
-    }
-    const vars = merged.calculationVariables;
-    if (!Array.isArray(vars) || vars.length === 0) {
-      throw new Error("calculationVariables must be a non-empty array");
-    }
-    const normalizedVars = vars.map((v, i) => {
-      if (!v || typeof v !== "object") {
-        throw new Error(`calculationVariables[${i}] must be an object`);
-      }
-      const name = String(v.name || "")
-        .trim()
-        .replace(/[^a-zA-Z0-9_]/g, "");
-      if (!name) {
-        throw new Error(`calculationVariables[${i}] needs a valid "name"`);
-      }
-      const min = Number(v.min);
-      const max = Number(v.max);
-      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
-        throw new Error(`Invalid min/max for variable "${name}"`);
-      }
-      const out = { name, min, max };
-      if (v.integerOnly === true) {
-        out.integerOnly = true;
-      } else {
-        const d = parseInt(v.decimals, 10);
-        out.decimals = Number.isFinite(d) ? Math.max(0, Math.min(8, d)) : 0;
-      }
-      return out;
-    });
-    let answerDec = parseInt(merged.calculationAnswerDecimals, 10);
-    if (!Number.isFinite(answerDec)) answerDec = 2;
-    answerDec = Math.max(0, Math.min(12, answerDec));
-
-    const tolRaw = parseFloat(merged.calculationAnswerTolerancePercent);
-    const answerTolerance = Number.isFinite(tolRaw)
-      ? Math.max(0, Math.min(100, tolRaw))
-      : null;
-    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
-      .trim()
-      .replace(/\?+$/, "");
-    if (!topicTitle) {
-      const before = stemText.split("{{")[0].trim();
-      const words = before.split(/\s+/).filter(Boolean);
-      topicTitle = words.slice(0, 10).join(" ") || "Calculation";
-    }
-    calculationQuestionService.validateNoReservedVariableNames(normalizedVars);
-    calculationQuestionService.validateFormulaAgainstVariableSpecs(
-      formula,
-      normalizedVars
-    );
-    calculationQuestionService.validateFormulaReferencesAllVariables(
-      formula,
-      normalizedVars
-    );
-    calculationQuestionService.validateStemReferencesAllVariables(
-      stemText,
-      normalizedVars
-    );
-    const formulaCanonical =
-      calculationQuestionService.prepareCalculationFormula(
-        formula,
-        normalizedVars
-      );
-    return {
-      type: QUESTION_TYPES.CALCULATION,
-      questionType: QUESTION_TYPES.CALCULATION,
-      topicTitle,
-      question: stemText,
-      stem: stemText,
-      calculationFormula: formulaCanonical,
-      calculationVariables: normalizedVars,
-      calculationAnswerDecimals: answerDec,
-      calculationAnswerTolerancePercent: answerTolerance,
-      explanation: merged.explanation != null ? String(merged.explanation) : "",
-      options: null,
-    };
-  }
-
-  if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
-    const merged = { ...data };
-    const stemText = String(merged.stem || merged.question || "").trim();
-    if (!stemText) {
-      throw new Error(
-        "Missing required field: stem or question for open-ended"
-      );
-    }
-    const sample = String(
-      merged.openEndedSampleAnswer || merged.sampleAnswer || ""
-    ).trim();
-    if (!sample) {
-      throw new Error("Missing required field: openEndedSampleAnswer");
-    }
-    const criteria = String(
-      merged.openEndedGradingCriteria || merged.gradingCriteria || ""
-    ).trim();
-    if (!criteria) {
-      throw new Error("Missing required field: openEndedGradingCriteria");
-    }
-    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
-      .trim()
-      .replace(/\?+$/, "");
-    if (!topicTitle) {
-      const words = stemText.split(/\s+/).filter(Boolean);
-      topicTitle = words.slice(0, 10).join(" ") || "Open-ended";
-    }
-    return {
-      type: QUESTION_TYPES.OPEN_ENDED,
-      questionType: QUESTION_TYPES.OPEN_ENDED,
-      topicTitle,
-      question: stemText,
-      stem: stemText,
-      openEndedSampleAnswer: sample,
-      openEndedGradingCriteria: criteria,
-      explanation: merged.explanation != null ? String(merged.explanation) : "",
-      options: null,
-    };
-  }
-
-  if (!data.question || typeof data.question !== "string" || !data.question.trim()) {
-    throw new Error("Missing required field: question");
-  }
-
-  if (resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-    const merged = { ...data };
-    if (
-      (merged.correctAnswer == null || String(merged.correctAnswer).trim() === "") &&
-      typeof merged.answer === "string" &&
-      merged.answer.trim()
-    ) {
-      merged.correctAnswer = merged.answer.trim();
-    }
-    const ca = merged.correctAnswer;
-    if (ca === undefined || ca === null || String(ca).trim() === "") {
-      throw new Error(
-        "Missing required field: correctAnswer (expected short answer text for fill-in-the-blank)"
-      );
-    }
-    const canonical = typeof ca === "string" ? ca.trim() : String(ca);
-    let acceptable = merged.acceptableAnswers;
-    if (!Array.isArray(acceptable) || acceptable.length === 0) {
-      acceptable = [canonical];
-    } else {
-      acceptable = acceptable
-        .map((a) => (typeof a === "string" ? a.trim() : String(a)))
-        .filter(Boolean);
-      if (acceptable.length === 0) {
-        acceptable = [canonical];
-      }
-    }
-    const qText = merged.question.trim();
-    let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
-      .trim()
-      .replace(/\?+$/, "");
-    if (!topicTitle) {
-      const beforeBlank = qText.split("_________")[0].trim();
-      const words = beforeBlank.split(/\s+/).filter(Boolean);
-      topicTitle = words.slice(0, 10).join(" ") || "Fill-in-the-blank";
-    }
-    return {
-      type: QUESTION_TYPES.FILL_IN_THE_BLANK,
-      questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
-      topicTitle,
-      question: qText,
-      correctAnswer: canonical,
-      acceptableAnswers: acceptable,
-      explanation: merged.explanation != null ? String(merged.explanation) : "",
-      options: null,
-    };
-  }
-
-  const mcData = repairLooseMultipleChoiceShape(data);
-
-  if (!mcData.options || typeof mcData.options !== "object" || Array.isArray(mcData.options)) {
-    throw new Error(
-      'Missing required field: options (object with keys A, B, C, D). For multiple-choice do not use a single "answer" string instead of four options and correctAnswer A–D.'
-    );
-  }
-  for (const key of ["A", "B", "C", "D"]) {
-    const opt = mcData.options[key];
-    if (opt === undefined || opt === null || String(opt).trim() === "") {
-      throw new Error(`Missing or empty option ${key}`);
-    }
-  }
-  let letter = mcData.correctAnswer;
-  if (typeof letter === "number") {
-    letter = ["A", "B", "C", "D"][letter];
-  }
-  if (typeof letter !== "string" || !/^[ABCD]$/i.test(letter.trim())) {
-    throw new Error("correctAnswer must be A, B, C, or D for multiple-choice");
-  }
-  letter = letter.trim().toUpperCase();
-  return {
-    type: QUESTION_TYPES.MULTIPLE_CHOICE,
-    questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-    question: mcData.question.trim(),
-    options: {
-      A: String(mcData.options.A).trim(),
-      B: String(mcData.options.B).trim(),
-      C: String(mcData.options.C).trim(),
-      D: String(mcData.options.D).trim(),
-    },
-    correctAnswer: letter,
-    explanation: mcData.explanation != null ? String(mcData.explanation) : "",
-  };
-}
-
-/**
- * Balanced {...} from str[start] where str[start] === "{" (respects JSON strings).
  */
 function extractBalancedFrom(str, start) {
   if (str[start] !== "{") {
@@ -452,132 +102,90 @@ function tryParseQuestionJsonFromLaxText(jsonString) {
   return null;
 }
 
-/**
- * Strip sections for other question types from the prompt so the model only sees
- * the schema relevant to the requested type. Reduces prompt length significantly
- * for small models like llama3.1:8b.
- */
-function filterPromptToType(template, questionType) {
-  const allTypes = [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
-  const targetIdx = allTypes.indexOf(questionType);
-  if (targetIdx === -1) return template;
-
-  const sectionHeaders = allTypes.map(t => `--- If Question Type is "${t}" ---`);
-  const footerMarker = "CRITICAL FORMATTING REQUIREMENTS";
-
-  const positions = sectionHeaders.map(h => template.indexOf(h));
-  const footerPos = template.indexOf(footerMarker);
-
-  const targetStart = positions[targetIdx];
-  if (targetStart === -1) return template;
-
-  let targetEnd = footerPos !== -1 ? footerPos : template.length;
-  for (let i = 0; i < positions.length; i++) {
-    if (i === targetIdx) continue;
-    const p = positions[i];
-    if (p > targetStart && p < targetEnd) targetEnd = p;
-  }
-
-  const validPositions = positions.filter(p => p !== -1);
-  const firstSectionPos = validPositions.length > 0 ? Math.min(...validPositions) : -1;
-  const preamble = firstSectionPos !== -1 ? template.slice(0, firstSectionPos) : "";
-  const targetSection = template.slice(targetStart, targetEnd);
-  const footer = footerPos !== -1 ? template.slice(footerPos) : "";
-
-  return preamble + targetSection + footer;
-}
-
 function safeJsonParse(jsonInput) {
   // If it's already an object, return it
   if (typeof jsonInput === 'object' && jsonInput !== null && !Array.isArray(jsonInput)) {
     return jsonInput;
   }
-  
+
   // If it's not a string, convert it
-  const jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
-  
-  try {
-    // Try direct parsing - the LLM should return valid JSON
-    return JSON.parse(jsonString);
-  } catch (error) {
-    // Fallback: try extracting JSON from markdown code blocks if present
+  let jsonString = typeof jsonInput === 'string' ? jsonInput : String(jsonInput);
+
+  /**
+   * Internal helper to extract JSON and attempt parsing
+   * @param {string} str 
+   */
+  const attemptParse = (str) => {
     try {
-      const codeBlockMatch = jsonString.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      return JSON.parse(str);
+    } catch (error) {
+      // Try extracting from markdown code blocks (object or array)
+      const codeBlockMatch = str.match(/```(?:json)?\s*([\[{][\s\S]*?[\]}])\s*```/);
       if (codeBlockMatch) {
-        return JSON.parse(codeBlockMatch[1]);
+        try {
+          return JSON.parse(codeBlockMatch[1]);
+        } catch (e) {
+          // If code block also fails, continue to other fixes
+        }
       }
 
       const fromLax = tryParseQuestionJsonFromLaxText(jsonString);
       if (fromLax) {
         return fromLax;
       }
-      
+
+      // Try to extract the first JSON array [ ... ] or object { ... }
+      const arrayMatch = str.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        try {
+          return JSON.parse(arrayMatch[0]);
+        } catch (e) {
+          // continue
+        }
+      }
+
+      const jsonMatch = str.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          // continue
+        }
+      }
+
       throw error;
-    } catch (fallbackError) {
-      // If parsing fails, the LLM response was invalid JSON
-      // This should not happen if the LLM follows the prompt instructions
-      throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${error.message}`);
+    }
+  };
+
+  try {
+    // 1. Try standard parse
+    return attemptParse(jsonString);
+  } catch (initialError) {
+    try {
+      // 2. Try fixing unescaped backslashes (very common with LaTeX)
+      // We look for backslashes that are NOT followed by valid JSON escape characters
+      // Valid: ", \, /, b, f, n, r, t, uXXXX
+      // Note: We skip escaping if it's already a double backslash
+      console.warn("Initial JSON parse failed. Attempting to fix unescaped backslashes...");
+
+      // Fix: Escape backslashes that aren't valid JSON escapes
+      // This handles things like \( and \) which the LLM often fails to escape properly
+      const fixedBackslashes = jsonString.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+
+      return attemptParse(fixedBackslashes);
+    } catch (secondError) {
+      // 3. Last resort: if it failed due to a specific character like \r or \n inside a string
+      // sometimes the LLM sends literal newlines inside strings
+      try {
+        console.warn("Second parse attempt failed. Attempting to fix literal newlines...");
+        const fixedNewlines = jsonString.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+        return attemptParse(fixedNewlines);
+      } catch (thirdError) {
+        // If all attempts fail, throw original error with a helpful message
+        throw new Error(`Invalid JSON response from LLM. The response must be valid JSON with properly escaped LaTeX backslashes (use \\\\ for each \\ in LaTeX). Original error: ${initialError.message}`);
+      }
     }
   }
-}
-
-function jsonOnlyRetrySuffix(attempt, questionType, lastError) {
-  const mcSchema = `For multiple-choice, required keys are exactly: "type":"multiple-choice", "question", "options" (object with four string values for keys "A","B","C","D" only), "correctAnswer" (one letter: A, B, C, or D), "explanation". Do NOT use a top-level "answer" field instead of "options" + "correctAnswer".`;
-  const fibSchema = `For fill-in-the-blank: include "topicTitle" (short topic label, not a question, must not reveal the answer or say "fill in the blank"). "question" must be one unfinished declarative sentence (not What/Which/How), with exactly one blank as _________ (nine underscores). Include "correctAnswer", "acceptableAnswers", "explanation". No "options".`;
-
-  // Build targeted extra guidance from the last error message for calculation type.
-  let calcExtra = "";
-  if (questionType === QUESTION_TYPES.CALCULATION && lastError) {
-    const msg = String(lastError.message || "");
-    if (/prose response|text.*instead of|refused|Expected.*property|JSON at position|Unexpected token/i.test(msg)) {
-      calcExtra = "\nPrevious response was prose or malformed JSON, not a question object. Output ONLY a valid JSON calculation question — no commentary, no textbook summaries, no text outside the JSON object. ";
-    }
-    if (/∫|unsupported characters/i.test(msg)) {
-      calcExtra +=
-        "\nThe formula contained ∫ (integral sign) which the engine cannot evaluate. You have TWO options — pick whichever gives a valid arithmetic formula:" +
-        "\n  OPTION A — Pre-solve: if the integral has a simple closed form, write it. Example: ∫₀^b ax² dx → formula \"a * b^3 / 3\"." +
-        "\n  OPTION B — Reformulate: if the integral has NO simple closed form (e.g. involves cos, sin, ln), change the question entirely. Test a simpler but related arithmetic sub-skill: evaluate the integrand at x={{x}}, compute the derivative of a term, or apply the power rule." +
-        "\nThe formula field must contain ONLY + - * / ^ ( ) sin cos sqrt log exp E PI and variable names — absolutely no ∫, no d/dt, no = sign.";
-    } else if (/d\/dt|d\/dx|∑|calculus|symbolic/i.test(msg) ||
-        /not defined in calculationVariables/i.test(msg) ||
-        /expected variable for assignment/i.test(msg)) {
-      calcExtra +=
-        "\nThe previous formula used symbolic notation which the engine cannot evaluate. " +
-        "Pre-solve the calculus: differentiate or solve the ODE analytically, then encode the closed-form result as plain ASCII arithmetic. " +
-        "Examples: derivative of ax²+bx at x → formula \"2*a*x + b\"; ODE y(t)=y₀e^(kt) → formula \"y0 * E^(k*t)\". " +
-        "If no simple closed form exists, reformulate to a simpler arithmetic sub-question instead. " +
-        "The formula field must contain only + - * / ^ ( ) and variable names — no d/dt, no ∫, no = sign.";
-    }
-  }
-
-  const calcSchema = `For calculation — return ONLY this JSON shape (no other text):${calcExtra}
-{
-  "type": "calculation",
-  "topicTitle": "short label based on the content",
-  "stem": "Question about {{a}} and {{b}} drawn from the content.",
-  "calculationFormula": "formula derived from the content (NOT a * b unless content is multiplication)",
-  "calculationVariables": [
-    {"name": "a", "min": 1, "max": 10, "integerOnly": true},
-    {"name": "b", "min": 1, "max": 5, "decimals": 1}
-  ],
-  "calculationAnswerDecimals": 2,
-  "explanation": "brief"
-}
-RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) calculationFormula uses ONLY: + - * / ^ ( ) sin cos tan sqrt log exp E PI and declared variable names — NO LaTeX, NO ∫ ∑, NO d/dt, NO = sign. (3) Every name in calculationVariables must appear in BOTH stem AND calculationFormula. (4) min/max must be numbers. No "options" field. (5) Derive the formula from the actual course content — do NOT copy the placeholder formula above.`;
-  const openSchema = `For open-ended: "type":"open-ended", "topicTitle", "question" (or "stem") as the prompt, "openEndedSampleAnswer" (model answer shown after submit), "openEndedGradingCriteria" (rubric / what earns full credit), "explanation". No "options" or auto-graded correctAnswer.`;
-  let schema;
-  if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) schema = mcSchema;
-  else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) schema = fibSchema;
-  else if (questionType === QUESTION_TYPES.CALCULATION) schema = calcSchema;
-  else if (questionType === QUESTION_TYPES.OPEN_ENDED) schema = openSchema;
-  else schema = mcSchema;
-  return `
-
----
-REGENERATION (attempt ${attempt}): Previous output was invalid JSON or the wrong shape.
-${schema}
-Reply with ONE raw JSON object only. Forbidden: markdown, headings, lists, prose outside JSON, code fences.
-Your entire message must start with { and end with }.`;
 }
 
 const addDocumentToRagHandler = async (req, res) => {
@@ -642,24 +250,9 @@ const searchRagHandler = async (req, res) => {
   }
 };
 
-async function determineSubtopic(llmModule, courseName, learningObjectiveText, granularObjectiveText) {
-  const prompt = SUBTOPIC_DETERMINATION_PROMPT
-    .replace('{courseName}', courseName || '')
-    .replace('{learningObjectiveText}', learningObjectiveText || '')
-    .replace('{granularLearningObjectiveText}', granularObjectiveText || '');
-  try {
-    const response = await llmModule.sendMessage(prompt, { responseFormat: 'json' });
-    const content = response?.content || String(response || '');
-    const parsed = safeJsonParse(content);
-    return typeof parsed?.subtopic === 'string' ? parsed.subtopic.trim() : '';
-  } catch {
-    return '';
-  }
-}
-
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevel, questionType } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds, count } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -667,28 +260,22 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
-    console.log("Bloom Level:", bloomLevel);
-    console.log("Question Type:", questionType);
+    console.log("Bloom Levels:", bloomLevels);
+    console.log("Requested Count:", count);
 
     // Validate required parameters
-    if (!courseName || !learningObjectiveId || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevel) {
+    if (!courseName || !learningObjectiveText || !granularLearningObjectiveText || !bloomLevels || !Array.isArray(bloomLevels)) {
       return res.status(400).json({
         error: "Missing required parameters",
-        details: "courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, and bloomLevel are required",
+        details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevels array are required",
       });
     }
 
-    // Validate question types
-    const ALLOWED_QUESTION_TYPES = [
-      QUESTION_TYPES.MULTIPLE_CHOICE,
-      QUESTION_TYPES.FILL_IN_THE_BLANK,
-      QUESTION_TYPES.CALCULATION,
-      QUESTION_TYPES.OPEN_ENDED,
-    ];
-    if (!questionType || !ALLOWED_QUESTION_TYPES.includes(questionType)) {
+    // Ensure we have either an objective ID or material IDs for RAG context
+    if (!learningObjectiveId && (!materialIds || !Array.isArray(materialIds) || materialIds.length === 0)) {
       return res.status(400).json({
-        error: "Invalid or missing questionType",
-        details: `questionType must be one of: ${ALLOWED_QUESTION_TYPES.join(", ")}`,
+        error: "Missing learning context",
+        details: "Either learningObjectiveId or materialIds must be provided to retrieve relevant context for question generation",
       });
     }
 
@@ -707,167 +294,194 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
-    console.log("Bloom Level:", bloomLevel);
+    console.log("Bloom Levels:", bloomLevels);
+    console.log("Target Count:", count);
 
     // Try to use RAG for content retrieval
     console.log("=== USING getLearningObjectiveRagContent ===");
     // Use objective text as the query for RAG search
-      // Fetch settings for prompt
-      const settings = await settingsService.getSettings(courseId);
-      const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
+    // Fetch settings for prompt
+    const settings = await settingsService.getSettings(courseId);
+    const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
 
-      // Prepare RAG search query
-      const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
+    // Prepare RAG search query
+    const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
 
-      const ragContext = await ragService.getLearningObjectiveRagContent(
+    const questionRagThreshold = parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.6;
+    const questionRagLimit = parseInt(process.env.RAG_CHUNK_LIMIT) || 50;
+
+    let ragContext = '';
+    if (learningObjectiveId) {
+      ragContext = await ragService.getLearningObjectiveRagContent(
         learningObjectiveId,
         searchQuery,
-        courseId
+        courseId,
+        questionRagThreshold,
+        questionRagLimit
       );
+    } else if (materialIds && materialIds.length > 0) {
+      // Fallback to materials if objective is not yet in database
+      ragContext = await ragService.getRagContentFromMaterials(
+        materialIds,
+        searchQuery,
+        questionRagLimit,
+        courseId,
+        questionRagThreshold
+      );
+    }
 
-      console.log("RAG Context:", ragContext);
+    //console.log("RAG Context:", ragContext);
 
-      // Use LLM service for generation
-      console.log("=== USING LLM SERVICE FOR GENERATION ===");
+    // Use LLM service for generation
+    console.log("=== USING LLM SERVICE FOR GENERATION ===");
 
-      try {
-        // Get LLM instance from service
-        const llmModule = await llmService.getLLMInstance();
+    try {
+      // Get LLM instance from service
+      const llmModule = await llmService.getLLMInstance();
 
-      const subtopic = (await determineSubtopic(llmModule, courseName, learningObjectiveText, granularLearningObjectiveText))
-        || granularLearningObjectiveText || '';
-      console.log('[RAG-LLM] Focused sub-topic:', subtopic);
+      // Determine question type for each bloom level using course settings
+      const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
+      const targetCount = parseInt(count) || bloomLevels.length || 1;
+      const questionTypeForIndex = (i) => {
+        const bl = bloomLevels[i % bloomLevels.length] || 'Understand';
+        const prefs = bloomTypePrefs[bl] || [QUESTION_TYPES.MULTIPLE_CHOICE];
+        return prefs[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
+      };
 
-      // Create prompt with RAG context (optional retry suffix nudges small/local models toward JSON-only)
-      const buildBasePrompt = () => {
+      // Build the first-turn prompt (includes full RAG context for prompt caching)
+      const buildFirstPrompt = (bloomLevel, questionType) => {
         const filled = promptTemplate
           .replace('{courseName}', courseName || '')
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{questionType}', questionType || '')
-          .replace('{subtopic}', subtopic)
-          .replace('{ragContext}', ragContext || '');
-        return filterPromptToType(filled, questionType);
+          .replace('{ragContext}', ragContext || '')
+          .replace('{existingQuestionsContext}', '').replace('{typeSpecificInstructions}', QuestionFactory.getModel(questionType).getPromptInstruction());
+        return filled;
       };
 
-      const createPrompt = (attempt, errForRetry) =>
-        attempt > 1 ? buildBasePrompt() + jsonOnlyRetrySuffix(attempt, questionType, errForRetry) : buildBasePrompt();
+      const typeSchemaHint = (questionType) => QuestionFactory.getModel(questionType).getSchemaHint();
 
-      // Retry logic: regenerate until we get valid JSON
-      const maxRetries = 5;
-      let questionData = null;
-      let lastError = null;
+      const questionsData = [];
+      const maxRetries = 3;
+      // Conversation history of successful turns for context (enables prompt caching)
+      const conversationHistory = [];
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`Sending prompt to LLM service (attempt ${attempt}/${maxRetries})...`);
-          const promptForAttempt = createPrompt(attempt, lastError);
-          const response = await llmModule.sendMessage(promptForAttempt, { responseFormat: "json" });
-          console.log("Full Prompt: ", promptForAttempt);
+      for (let i = 0; i < targetCount; i++) {
+        const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
+        const currentQuestionType = questionTypeForIndex(i);
+        let questionData = null;
+        const currentQuestionHistory = [];
+        let lastError = null;
 
-          console.log("✅ LLM service response received");
-          console.log(
-            "Response format:",
-            typeof response,
-            response ? Object.keys(response) : "null"
-          );
-          console.log("[RAG-LLM] Raw LLM response object (first pass, before JSON extract):", response);
-
-          // Extract content from response
-          // sendMessage returns { content, model, usage, metadata }
-          let responseContent;
-          if (response && typeof response === "object") {
-            responseContent =
-              response.content || response.text || response.message || JSON.stringify(response);
-          } else {
-            responseContent = response;
-          }
-
-          const contentStr =
-            typeof responseContent === "string"
-              ? responseContent
-              : String(responseContent ?? "");
-          console.log(
-            "[RAG-LLM] Extracted text length:",
-            contentStr.length,
-            "| starts with:",
-            JSON.stringify(contentStr.slice(0, 120))
-          );
-          console.log("[RAG-LLM] Extracted text (full, for JSON debug):\n", contentStr);
-
-          if (!responseContent) {
-            throw new Error("Empty response from LLM");
-          }
-
-          // Try to parse JSON response
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          let responseContent = null;
+          let turnPrompt = "";
           try {
-            // Use safe JSON parser that handles LaTeX and other edge cases
-            const parsed = safeJsonParse(responseContent);
-            questionData = validateAndNormalizeQuestionData(parsed, questionType);
+            // Rebuild conversation from successful history plus the current question's attempts
+            const conversation = llmModule.createConversation();
+            for (const msg of conversationHistory) {
+              conversation.addMessage(msg.role, msg.content);
+            }
+            for (const msg of currentQuestionHistory) {
+              conversation.addMessage(msg.role, msg.content);
+            }
 
-            // If we got here, parsing was successful
-            console.log(`✅ Successfully parsed JSON on attempt ${attempt}`);
-            break;
-
-          } catch (parseError) {
-            lastError = parseError;
-            console.warn(`❌ JSON parsing failed on attempt ${attempt}:`, parseError.message);
-            console.warn(
-              "[RAG-LLM] Parse failed — content length:",
-              contentStr.length,
-              "| snippet (0-400):",
-              JSON.stringify(contentStr.slice(0, 400))
-            );
-            if (attempt < maxRetries) {
-              console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
-              continue;
+            if (i === 0 && attempt === 1) {
+              // First question, first attempt: full prompt with RAG context
+              turnPrompt = buildFirstPrompt(currentBloomLevel, currentQuestionType);
+            } else if (attempt > 1) {
+              // Retry: add correction hint for the specific type
+              turnPrompt = (i === 0 ? buildFirstPrompt(currentBloomLevel, currentQuestionType) : `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept than previously generated questions.\nRespond with ONLY a single valid JSON object. No other text.`)
+                + QuestionFactory.getModel(currentQuestionType).getRetrySuffix(attempt, lastError);
             } else {
-              throw parseError;
+              // Subsequent questions (i > 0), first attempt: include schema hint since
+              // filterPromptToType stripped all other type schemas from the Q1 prompt.
+              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.\n\n${typeSchemaHint(currentQuestionType)}\n\nRespond with ONLY a single valid JSON object. No other text.`;
+            }
+
+            conversation.addMessage('user', turnPrompt);
+
+            console.log(`Sending prompt to LLM (Q${i + 1}/${targetCount}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
+
+            const response = await conversation.send();
+
+            if (response.usage) {
+              console.log(`📊 Token Usage Q${i + 1}: prompt=${response.usage.promptTokens || 0}, completion=${response.usage.completionTokens || 0}`);
+            }
+
+            responseContent = response.content || response.text || response.message || JSON.stringify(response);
+            if (!responseContent) throw new Error("Empty response from LLM");
+
+            const parsed = safeJsonParse(responseContent);
+            questionData = QuestionFactory.getModel(currentQuestionType).validateAndNormalize(parsed);
+
+            console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
+
+            // Save to conversation history so subsequent questions have context
+            conversationHistory.push({ role: 'user', content: turnPrompt });
+            conversationHistory.push({ role: 'assistant', content: responseContent });
+
+            break; // Success
+
+          } catch (error) {
+            lastError = error;
+            console.warn(`❌ Q${i + 1} attempt ${attempt} failed:`, error.message);
+            if (responseContent) {
+              currentQuestionHistory.push({ role: 'user', content: turnPrompt });
+              currentQuestionHistory.push({ role: 'assistant', content: responseContent });
+            }
+            if (attempt === maxRetries) {
+              console.error(`Failed to generate question ${i + 1} after ${maxRetries} attempts`);
+            } else {
+              console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
             }
           }
+        }
 
-        } catch (error) {
-          lastError = error;
-          console.warn(`❌ LLM call failed on attempt ${attempt}:`, error.message);
-          if (attempt < maxRetries) {
-            console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
-            continue;
-          } else {
-            throw error;
+        if (questionData) {
+          // Programmatically scramble the generated options 
+          if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
+            const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+            const optionValues = optionKeys.map(k => questionData.options[k]);
+
+            for (let j = optionValues.length - 1; j > 0; j--) {
+              const k = Math.floor(Math.random() * (j + 1));
+              [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
+            }
+
+            const originalCorrectValue = questionData.options[questionData.correctAnswer];
+            let newCorrectKey = questionData.correctAnswer;
+
+            for (let j = 0; j < optionKeys.length; j++) {
+              const key = optionKeys[j];
+              questionData.options[key] = optionValues[j];
+              if (optionValues[j] === originalCorrectValue) {
+                newCorrectKey = key;
+              }
+            }
+
+            const correctOptionLetter = questionData.correctAnswer;
+            questionData.correctAnswer = newCorrectKey;
+            console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
           }
+
+          // Add the bloom level to the question data so the UI knows which level it belongs to
+          questionData.bloomLevel = currentBloomLevel;
+
+          questionsData.push(questionData);
         }
       }
 
-      // If we still don't have valid questionData after all retries, throw error
-      if (!questionData) {
-        throw new Error(`Failed to generate valid JSON after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
-      }
-
-      if (questionData.questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
-        const correctOptionLetter = questionData.correctAnswer;
-        const optText = questionData.options?.[correctOptionLetter];
-        if (optText) {
-          console.log(
-            `✅ Correct answer at position ${correctOptionLetter}: "${String(optText).substring(0, 50)}..."`
-          );
-        } else {
-          console.warn(
-            `⚠️ Warning: No option text at position ${correctOptionLetter}, but continuing anyway`
-          );
-        }
-      } else if (questionData.questionType === QUESTION_TYPES.CALCULATION) {
-        console.log(
-          `✅ Calculation question: formula "${String(questionData.calculationFormula || "").substring(0, 60)}..."`
-        );
-      } else if (questionData.questionType === QUESTION_TYPES.OPEN_ENDED) {
-        console.log("✅ Open-ended question with sample answer and grading criteria");
+      if (questionsData.length === 0) {
+        throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
       res.json({
         success: true,
-        question: questionData,
-        method: "RAG + LLM Service",
+        questions: questionsData,
+        method: "RAG + LLM Stateful Conversation",
       });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
@@ -979,13 +593,18 @@ const generateLearningObjectivesHandler = async (req, res) => {
     const settings = await settingsService.getSettings(courseId);
 
     // Prepare RAG search query
-    const searchQuery = `course content learning objectives topics concepts from course: ${courseName || ''}`;
+    let searchQuery = `Identify the core knowledge areas, skills, competencies, theories, methodologies, 
+and measurable learning outcomes that students are expected to master in ${courseName || ''}. 
+Include foundational concepts, practical applications, and assessment criteria.`;
+    if (userObjectives && userObjectives.length > 0) {
+      searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
+    }
 
     console.log("Retrieving RAG content from selected materials...");
     const ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       searchQuery,
-      100,
+      200,
       courseId
     );
 
@@ -1006,12 +625,13 @@ const generateLearningObjectivesHandler = async (req, res) => {
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
         .replace('{userObjectivesList}', userList)
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
         .replace('{courseName}', courseName || "Course")
-        .replace('{ragContext}', ragContext.substring(0, 8000) + (ragContext.length > 8000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{sourceIdsList}', materialIds.join(', '))
+        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     }
 
     console.log("Sending prompt to LLM service...");
@@ -1049,20 +669,22 @@ const generateLearningObjectivesHandler = async (req, res) => {
       const validBloomLevels = BLOOM_LEVELS;
       const cleanedObjectives = objectivesData.objectives
         .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
-        .map((obj) => ({
-          name: obj.name.trim(),
-          granularObjectives: obj.granularObjectives
-            .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
-            .map((go) => {
-              const text = typeof go === "string" ? go.trim() : go.text.trim();
-              let bloomTaxonomies = ["Understand"]; // default
-              if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
-                 const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
-                 if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
-              }
-              return { text, bloomTaxonomies };
-            }),
-        }))
+        .map((obj) => {
+          return {
+            name: obj.name.trim(),
+            granularObjectives: obj.granularObjectives
+              .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
+              .map((go) => {
+                const text = typeof go === "string" ? go.trim() : go.text.trim();
+                let bloomTaxonomies = ["Understand"]; // default
+                if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
+                  const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
+                  if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
+                }
+                return { text, bloomTaxonomies };
+              }),
+          };
+        })
         .filter((obj) => obj.granularObjectives.length > 0);
 
       if (cleanedObjectives.length === 0) {
@@ -1091,10 +713,113 @@ const generateLearningObjectivesHandler = async (req, res) => {
   }
 };
 
+async function rateQuestions(questions, courseName, llmModule) {
+  const formattedQuestions = questions.map(q => {
+    // Determine the question stem based on type (MC vs others)
+    const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
+
+    const base = {
+      id: q.id,
+      questionType: q.questionType || 'multiple-choice',
+      bloomLevel: q.bloomLevel,
+      learningObjective: q.learningObjectiveText,
+      granularObjective: q.granularObjectiveText,
+      questionStem: questionStem
+    };
+
+    if (base.questionType === 'multiple-choice') {
+      base.options = Object.fromEntries(
+        Object.entries(q.options || {}).map(([k, v]) => [
+          k,
+          typeof v === 'string' ? { text: v, feedback: '' } : { text: v.text || '', feedback: v.feedback || '' }
+        ])
+      );
+      base.correctAnswer = q.correctAnswer;
+    } else if (base.questionType === 'fill-in-the-blank') {
+      base.acceptableAnswers = q.acceptableAnswers || [];
+    } else if (base.questionType === 'calculation') {
+      base.formula = q.calculationFormula || '';
+      base.variables = q.calculationVariables || [];
+    } else if (base.questionType === 'open-ended') {
+      base.sampleAnswer = q.openEndedSampleAnswer || '';
+      base.gradingCriteria = q.openEndedGradingCriteria || '';
+    }
+
+    return base;
+  });
+
+  const prompt = QUESTION_REVIEW_PROMPT
+    .replace('{courseName}', courseName || 'N/A')
+    .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
+
+  const response = await llmModule.sendMessage(prompt);
+  const responseContent = response.content || response.text || response.message;
+  let ratings = safeJsonParse(responseContent);
+  // Model sometimes returns a single object instead of a one-element array — normalise it
+  if (!Array.isArray(ratings) && ratings && typeof ratings === 'object') {
+    ratings = [ratings];
+  }
+  if (!Array.isArray(ratings)) throw new Error("Review response is not a JSON array");
+  return ratings;
+}
+
+const reviewQuestionsHandler = async (req, res) => {
+  try {
+    const { questions } = req.body;
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ success: false, error: "questions array is required" });
+    }
+
+    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL);
+    
+    // Resolve Course Name from courseId
+    const courseId = questions[0]?.courseId || null;
+    let courseName = "N/A";
+    if (courseId && ObjectId.isValid(courseId)) {
+      try {
+        const db = await databaseService.connect();
+        const course = await db.collection('grasp_course').findOne({ _id: new ObjectId(courseId) });
+        if (course) {
+          courseName = course.name;
+        }
+      } catch (dbErr) {
+        console.warn("Failed to fetch course details for review:", dbErr.message);
+      }
+    }
+
+    console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
+    const ratings = await rateQuestions(questions, courseName, llmModule);
+
+    const results = [];
+
+    for (const q of questions) {
+      const rating = ratings.find(r => r.questionId === q.id) || { flagged: false, issue: '' };
+      console.log(`Question ${q.id}: flagged=${rating.flagged}`);
+
+      results.push({
+        originalId: q.id,
+        replaced: false,
+        flagged: !!rating.flagged,
+        issue: rating.flagged ? (rating.issue || 'Blocked by reviewer') : '',
+        question: null
+      });
+    }
+
+    const flaggedCount = results.filter(r => r.flagged).length;
+    console.log(`✅ Review complete: ${flaggedCount} flagged`);
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('Error reviewing questions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   addDocumentToRagHandler,
   searchRagHandler,
   generateQuestionsWithRagHandler,
   deleteDocumentHandler,
-  generateLearningObjectivesHandler
+  generateLearningObjectivesHandler,
+  reviewQuestionsHandler
 };

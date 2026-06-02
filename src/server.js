@@ -53,12 +53,14 @@ app.use(
           "https://cdn.jsdelivr.net",
         ],
         imgSrc: ["'self'", "data:", "blob:"],
-        connectSrc: ["'self'", "https://api.openai.com"],
+        connectSrc: ["'self'", "https://api.openai.com", "https://cdn.jsdelivr.net"],
         workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
       },
     },
   })
 );
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 app.use(sessionMiddleware);
 app.use(passport.initialize());
@@ -84,11 +86,12 @@ app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRou
 
 // Page routes
 app.get("/", (req, res) => {
-  // Redirect to onboarding or login
+  // If authenticated, redirect to appropriate page
   if (req.isAuthenticated()) {
     res.redirect('/onboarding');
   } else {
-    res.redirect('/auth/login');
+    // Show welcome page
+    res.sendFile(path.join(__dirname, "../public/index.html"));
   }
 });
 
@@ -114,8 +117,16 @@ app.get("/question-bank", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (
   res.sendFile(path.join(__dirname, "../public/question-bank.html"));
 });
 
+app.get("/quizzes", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quizzes.html"));
+});
+
 app.get("/question-review", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/question-review.html"));
+});
+
+app.get("/quiz-scores", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/quiz-scores.html"));
 });
 
 // Users page - faculty only
@@ -131,6 +142,10 @@ app.get("/settings", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req
 // Student pages - all authenticated users (students see their view, others can preview)
 app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
+});
+
+app.get("/student-settings", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/student-settings.html"));
 });
 
 app.get("/quiz", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {

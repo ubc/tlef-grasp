@@ -11,6 +11,7 @@ const API_ENDPOINTS = {
   quiz: '/api/quiz',
   quizCourse: '/api/quiz/course',
   ragLlmGenerateLO: '/api/rag-llm/generate-learning-objectives',
+  reviewQuestions: '/api/rag-llm/review-questions',
 };
 
 const STORAGE_KEYS = {
@@ -48,7 +49,7 @@ const selectedCourseData = getSelectedCourse();
 const state = {
   step: 1, // Step 1 is now Create Objectives (was step 3)
   course: selectedCourseData || '',
-  selectedCourse: selectedCourseData?.courseName || '', // Course name for display
+  selectedCourse: selectedCourseData?.courseName || selectedCourseData?.name || '', // Course name for display
   objectiveGroups: [], // Step 1: Create Objectives
   // Step 2: Question Generation
   questionGroups: [], // Meta LO groups with granular LOs and questions
@@ -216,6 +217,12 @@ function initializeEventListeners() {
 
   // Step 3: Quiz selection/creation
   initializeQuizSelection();
+
+  // Add to bank button (Step 2)
+  const addToBankBtn = document.getElementById("add-to-bank-btn");
+  if (addToBankBtn) {
+    addToBankBtn.addEventListener("click", handleAddAllToBank);
+  }
 }
 
 function goToNextStep() {
@@ -269,7 +276,7 @@ function validateCurrentStep() {
 
         // Check total questions >= 5 for each group
         const totalQuestions = group.items.reduce(
-          (sum, item) => sum + item.count,
+          (sum, item) => sum + (item.count || 0),
           0
         );
         if (totalQuestions < 5) {
@@ -390,11 +397,19 @@ function updateNavigationButtons() {
 
   const backBtn = document.getElementById("back-btn");
   const continueBtn = document.getElementById("continue-btn");
+  const addToBankBtn = document.getElementById("add-to-bank-btn");
 
   if (backBtn) {
     backBtn.disabled = state.step === 1;
     backBtn.textContent = "Back";
     backBtn.className = "btn btn--secondary";
+    backBtn.style.display = "inline-flex";
+  }
+
+  if (addToBankBtn) {
+    addToBankBtn.style.display = state.step === 2 ? "inline-flex" : "none";
+    addToBankBtn.className = "btn btn--primary";
+    addToBankBtn.disabled = state.step !== 2;
   }
 
   if (continueBtn) {
@@ -407,6 +422,10 @@ function updateNavigationButtons() {
       continueBtn.disabled = state.objectiveGroups.length === 0;
       continueBtn.textContent = "Continue";
       continueBtn.className = continueBtn.disabled ? "btn btn--primary btn--disabled" : "btn btn--primary";
+    } else if (state.step === 2) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Add to Quiz";
+      continueBtn.className = "btn btn--primary";
     } else {
       continueBtn.disabled = false;
       continueBtn.textContent = "Continue";
@@ -844,7 +863,7 @@ async function handleCustomObjectiveSubmission() {
   try {
     const courseId = getCourseId();
     const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
-    
+
     const requestBody = {
       name: group.title,
       granularObjectives: group.items.map(i => ({
@@ -943,12 +962,12 @@ function showAIGenerateObjectiveModalInternal() {
   if (customObjectivesList) {
     customObjectivesList.innerHTML = "";
   }
-  
+
   const bulkPasteContainer = document.getElementById("ai-bulk-paste-container");
   if (bulkPasteContainer) {
     bulkPasteContainer.style.display = "none";
   }
-  
+
   const bulkPasteInput = document.getElementById("ai-bulk-paste-input");
   if (bulkPasteInput) {
     bulkPasteInput.value = "";
@@ -1017,7 +1036,7 @@ function addCustomObjectiveRow(text = "") {
   input.value = text;
   input.placeholder = "Enter a learning objective...";
   input.style.cssText = "flex: 1; padding: 8px 12px; font-size: 14px;";
-  
+
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "btn btn--icon";
@@ -1031,7 +1050,7 @@ function addCustomObjectiveRow(text = "") {
   row.appendChild(input);
   row.appendChild(deleteBtn);
   list.appendChild(row);
-  
+
   // Focus the new input
   input.focus();
 }
@@ -1108,17 +1127,24 @@ function displayAIMaterialsInModal(materials) {
     const materialItem = document.createElement("div");
     materialItem.className = "material-selection-item";
     materialItem.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; background: white; cursor: pointer;";
-    materialItem.addEventListener("click", () => {
-      checkbox.checked = !checkbox.checked;
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "ai-material-selection";
+    radio.value = material.sourceId;
+    radio.id = `ai-material-${material.sourceId}`;
+    radio.className = "ai-material-radio";
+    radio.addEventListener("change", updateAIGenerateButtonState);
+
+    materialItem.addEventListener("click", (e) => {
+      // If the user clicked the radio or label directly, the browser
+      // handles the selection automatically.
+      if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
+        return;
+      }
+
+      radio.checked = true;
       updateAIGenerateButtonState();
     });
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = material.sourceId;
-    checkbox.id = `ai-material-${material.sourceId}`;
-    checkbox.className = "ai-material-checkbox";
-    checkbox.addEventListener("change", updateAIGenerateButtonState);
 
     const label = document.createElement("label");
     label.htmlFor = `ai-material-${material.sourceId}`;
@@ -1152,7 +1178,7 @@ function displayAIMaterialsInModal(materials) {
     label.appendChild(fileName);
     label.appendChild(details);
 
-    materialItem.appendChild(checkbox);
+    materialItem.appendChild(radio);
     materialItem.appendChild(label);
 
     materialsList.appendChild(materialItem);
@@ -1161,9 +1187,10 @@ function displayAIMaterialsInModal(materials) {
 
 function updateAIGenerateButtonState() {
   const generateBtn = document.getElementById("ai-generate-btn");
-  const checkboxes = document.querySelectorAll(".ai-material-checkbox:checked");
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
+
   if (generateBtn) {
-    generateBtn.disabled = checkboxes.length === 0;
+    generateBtn.disabled = !selectedRadio;
   }
 }
 
@@ -1174,14 +1201,13 @@ async function handleAIGenerateObjectives() {
   const generatedContainer = document.getElementById("ai-generated-objectives-container");
   const generatedList = document.getElementById("ai-generated-objectives-list");
 
-  // Get selected materials
-  const materialCheckboxes = document.querySelectorAll(".ai-material-checkbox:checked");
-  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
-
-  if (selectedMaterials.length === 0) {
-    showToast("Please select at least one material", "warning");
+  // Get selected material
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
+  if (!selectedRadio) {
+    showToast("Please select a material", "warning");
     return;
   }
+  const selectedMaterials = [selectedRadio.value];
 
   // Get custom objectives if provided
   const objectiveInputs = document.querySelectorAll(".ai-custom-objective-input");
@@ -1234,6 +1260,13 @@ async function handleAIGenerateObjectives() {
         courseId: selectedCourse.id,
         courseName: selectedCourse.name,
         materialIds: selectedMaterials,
+        materialTitles: (() => {
+          const item = selectedRadio.closest('.material-selection-item');
+          const fileNameDiv = item?.querySelector('label div');
+          const titles = {};
+          if (fileNameDiv) titles[selectedRadio.value] = fileNameDiv.textContent.trim();
+          return titles;
+        })(),
         userObjectives: userObjectives
       }),
     });
@@ -1322,7 +1355,7 @@ function displayGeneratedObjectives(objectives) {
     // Main objective
     const mainObjective = document.createElement("div");
     mainObjective.style.cssText = "font-weight: 600; font-size: 16px; color: #1f2937; margin-bottom: 12px; cursor: pointer;";
-    mainObjective.textContent = `${index + 1}. ${objective.name}`;
+    mainObjective.innerHTML = `${index + 1}. ${typeof parseSmilesTags === 'function' ? parseSmilesTags(objective.name) : objective.name}`;
     mainObjective.addEventListener("click", () => {
       checkbox.checked = !checkbox.checked;
       checkbox.dispatchEvent(new Event("change"));
@@ -1336,13 +1369,13 @@ function displayGeneratedObjectives(objectives) {
       const granularText = typeof granular === 'string' ? granular : granular.text;
       const granularItem = document.createElement("li");
       granularItem.style.cssText = "padding: 8px 0 8px 24px; color: #4b5563; font-size: 14px; position: relative;";
-      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${granularText}`;
+      const processedText = typeof parseSmilesTags === 'function' ? parseSmilesTags(granularText) : granularText;
+      granularItem.innerHTML = `<span style="position: absolute; left: 0; color: #9ca3af;">•</span> ${processedText}`;
       granularList.appendChild(granularItem);
     });
 
     contentWrapper.appendChild(mainObjective);
     contentWrapper.appendChild(granularList);
-
     objectiveCard.appendChild(checkbox);
     objectiveCard.appendChild(contentWrapper);
     generatedList.appendChild(objectiveCard);
@@ -1350,6 +1383,10 @@ function displayGeneratedObjectives(objectives) {
     // Set initial border color
     objectiveCard.style.borderColor = "#3b82f6";
   });
+
+  // Trigger LaTeX and SMILES rendering for the preview
+  if (typeof renderKatex === 'function') renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 
   // Update save button state
   updateAISaveButtonState();
@@ -1390,9 +1427,9 @@ async function handleAISaveObjectives() {
     return;
   }
 
-  // Get selected materials
-  const materialCheckboxes = document.querySelectorAll('.ai-material-checkbox:checked');
-  const selectedMaterials = Array.from(materialCheckboxes).map(cb => cb.value);
+  // Get selected material
+  const selectedRadio = document.querySelector(".ai-material-radio:checked");
+  const selectedMaterials = selectedRadio ? [selectedRadio.value] : [];
 
   // Get course info
   const selectedCourse = getSelectedCourse();
@@ -1409,92 +1446,67 @@ async function handleAISaveObjectives() {
   }
 
   try {
-    // Save only selected objectives
-    const savedObjectives = [];
+    // Save each selected objective to the database
     for (const index of selectedIndices) {
       const objective = generatedObjectives[index];
       if (!objective) continue;
-      const requestBody = {
-        name: objective.name,
-        granularObjectives: objective.granularObjectives.map(go => typeof go === 'string' ? { text: go } : { text: go.text, bloomTaxonomies: go.bloomTaxonomies }),
-        courseId: selectedCourse.id,
-      };
 
-      // Create objective
-      const response = await fetch(API_ENDPOINTS.objective, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to save objective: ${objective.name}`);
-      }
-
-      const objectiveId = data.objective._id || data.objective.id;
-
-      // Associate materials separately
-      if (selectedMaterials.length > 0) {
-        const materialsResponse = await fetch(`${API_ENDPOINTS.objective}/${objectiveId}/materials`, {
-          method: 'PUT',
+      try {
+        const response = await fetch(API_ENDPOINTS.objective, {
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ materialIds: selectedMaterials }),
+          body: JSON.stringify({
+            name: objective.name,
+            courseId: selectedCourse.id,
+            materialIds: selectedMaterials,
+            granularObjectives: objective.granularObjectives.map(go => ({
+              text: typeof go === 'string' ? go : go.text,
+              bloomTaxonomies: typeof go === 'string' ? [] : (go.bloomTaxonomies || [])
+            }))
+          }),
         });
 
-        if (!materialsResponse.ok) {
-          const materialsData = await materialsResponse.json();
-          console.warn(`Failed to associate materials for objective ${objectiveId}:`, materialsData.error);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || `Failed to save objective: ${objective.name}`);
         }
-      }
 
-      if (data.success && data.objective) {
-        savedObjectives.push({
-          parent: data.objective,
-          granular: data.granularObjectives || [],
-          materialIds: selectedMaterials,
-        });
-      }
-    }
+        const dbObjective = data.objective;
+        const dbGranulars = data.granularObjectives;
 
-    // Add objectives to the page
-    for (const saved of savedObjectives) {
-      const objectiveId = saved.parent._id || saved.parent.id;
-      const objectiveName = saved.parent.name;
+        // Create group in local state using DB response
+        const newGroupId = Date.now() + Math.random();
+        const newGroupNumber = state.objectiveGroups.length + 1;
 
-      // Create new learning objective group
-      const newGroupId = Date.now() + Math.random();
-      const newGroupNumber = state.objectiveGroups.length + 1;
-
-      const newGroup = {
-        id: newGroupId,
-        objectiveId: objectiveId.toString(),
-        metaId: `db-${objectiveId}`,
-        title: objectiveName,
-        isOpen: true,
-        selected: false,
-        materialIds: saved.materialIds || [],
-        items: saved.granular.map((granular, index) => ({
-          id: parseFloat(`${newGroupNumber}.${index + 1}`),
-          granularId: granular._id ? granular._id.toString() : null,
-          text: granular.name,
-          bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
-          minQuestions: 2,
-          count: 2,
-          mode: "manual",
-          level: 1,
+        const newGroup = {
+          id: newGroupId,
+          objectiveId: dbObjective._id,
+          metaId: `db-${dbObjective._id}`,
+          title: dbObjective.name,
+          isOpen: true,
           selected: false,
-        })),
-      };
+          materialIds: selectedMaterials,
+          items: dbGranulars.map((granular, gIdx) => ({
+            id: parseFloat(`${newGroupNumber}.${gIdx + 1}`),
+            granularId: granular._id,
+            text: granular.name,
+            bloom: granular.bloomTaxonomies || [],
+            minQuestions: 2,
+            count: 2,
+            mode: "manual",
+            level: 1,
+            selected: false,
+          })),
+        };
 
-
-
-      state.objectiveGroups.push(newGroup);
+        state.objectiveGroups.push(newGroup);
+      } catch (saveError) {
+        console.error(`Error saving objective "${objective.name}":`, saveError);
+        showToast(`Failed to save "${objective.name}": ${saveError.message}`, "error");
+        // Continue with other objectives
+      }
     }
 
     // Renumber all groups
@@ -1504,15 +1516,15 @@ async function handleAISaveObjectives() {
     // Update dropdown to disable the newly added objectives
     updateDropdownDisabledState();
 
-    showToast(`Successfully saved ${savedObjectives.length} learning objective(s)`, "success");
+    showToast(`Successfully added ${selectedIndices.length} learning objective(s) to page`, "success");
 
     // Close modal
     if (modal) {
       hideModal(modal);
     }
   } catch (error) {
-    console.error("Error saving objectives:", error);
-    showToast(error.message || "Failed to save learning objectives", "error");
+    console.error("Error adding objectives:", error);
+    showToast(error.message || "Failed to add learning objectives", "error");
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -1657,7 +1669,7 @@ async function handleObjectiveSelection(objectiveId, objectiveName) {
           text: granular.name,
           bloom: granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0 ? granular.bloomTaxonomies : [],
           minQuestions: 2,
-          count: 2,
+          count: granular.questionCount || Math.max(2, (granular.bloomTaxonomies?.length || 0)),
           mode: "manual",
           level: 1,
           selected: false,
@@ -1722,53 +1734,14 @@ async function deleteObjectiveGroup(groupId, action = null) {
     // Stage 1: Ask the user what they want to do
     currentEditGroupId = groupId;
     const deleteModal = document.getElementById("delete-confirmation-modal");
-    
-    if (group.objectiveId) {
-      if (deleteModal) deleteModal.style.display = "flex";
-    } else {
-        // If it's a completely new unsaved draft group, just strip it from view.
-        deleteObjectiveGroup(groupId, 'view-only'); 
-    }
+
+    // We only remove from view now, no DB deletion allowed here
+    if (deleteModal) deleteModal.style.display = "flex";
     return;
   }
 
   // Stage 2: Actually perform the deletion based on user choice
-  if (action === 'db-complete' && group.objectiveId) {
-    const deletingToast = showToast("Deleting objective from database...", "info");
-    try {
-      const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
-         method: 'DELETE',
-      });
-      
-      let data;
-      try {
-        const responseText = await response.text();
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch {
-        throw new Error('Invalid response from server');
-      }
-      
-      if (!response.ok || !data.success) {
-         throw new Error(data.error || "Failed to delete learning objective from database");
-      }
-      
-      if (deletingToast) deletingToast.remove();
-      showToast("Objective fully deleted from database", "success");
-      
-      // Update dropdown options to permanently remove it
-      try {
-         await initializeAddObjectivesDropdown();
-      } catch(err) {
-         console.error('Failed to update dropdown post-deletion', err);
-      }
-      
-    } catch (error) {
-       console.error("Error full-deleting group:", error);
-       if (deletingToast) deletingToast.remove();
-       showToast(error.message || "Failed to delete objective from database", "error");
-       return; // Abort UI removal if DB delete fails
-    }
-  }
+  // action === 'db-complete' logic removed to prevent database updates
 
   // Remove the group from UI state
   state.objectiveGroups = state.objectiveGroups.filter(
@@ -1781,14 +1754,10 @@ async function deleteObjectiveGroup(groupId, action = null) {
   // Update UI
   renderObjectiveGroups();
 
-  if (action === 'view-only') {
-     // Update dropdown to re-enable deleted objective so it can be added back
-     updateDropdownDisabledState();
-     announceToScreenReader(`Removed ${group.title} from view.`);
-  } else {
-      announceToScreenReader(`Deleted ${group.title} completely.`);
-  }
-  
+  // Update dropdown to re-enable deleted objective so it can be added back
+  updateDropdownDisabledState();
+  announceToScreenReader(`Removed ${group.title} from view.`);
+
   currentEditGroupId = null;
 }
 
@@ -1798,60 +1767,18 @@ async function deleteGranularObjective(groupId, itemId) {
 
   const itemIndex = group.items.findIndex((i) => i.id === itemId);
   if (itemIndex === -1) return;
-  
+
   const item = group.items[itemIndex];
 
-  // Remove the item from the group array
+  // Remove the item from the group array (UI only)
   group.items.splice(itemIndex, 1);
-
-  // If this objective is linked to the backend, save the change
-  if (group.objectiveId) {
-    const savingToast = showToast("Deleting granular objective...", "info");
-    try {
-      const courseId = getCourseId();
-
-      const requestBody = {
-        name: group.title, // Group title is already cleaned from prefix
-        courseId: courseId,
-        granularObjectives: group.items.map(i => ({
-          id: i.granularId,
-          text: i.text,
-          bloomTaxonomies: i.bloom || []
-        }))
-      };
-
-      const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete from database");
-      }
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || "Failed to delete from database");
-      }
-
-      if (savingToast) savingToast.remove();
-      showToast("Granular objective deleted successfully", "success");
-    } catch (err) {
-      console.error("Error deleting granular objective:", err);
-      if (savingToast) savingToast.remove();
-      showToast(err.message || "Failed to delete objective. Reverting.", "error");
-      
-      // Revert the deletion in UI state
-      group.items.splice(itemIndex, 0, item);
-      renderObjectiveGroups();
-      return;
-    }
-  }
 
   // Update UI and announce
   renderObjectiveGroups();
   announceToScreenReader(`Deleted granular objective: ${item.text}`);
+
+  // Persist deletion to database
+  await saveObjectiveToDatabase(groupId);
 }
 
 // ===== GRANULAR SELECTION FUNCTIONS =====
@@ -2119,6 +2046,10 @@ function renderObjectiveGroups() {
 
     // Trigger auto-resize for all textareas so they fit content perfectly on load
     setTimeout(autoResizeTextareas, 0);
+
+    // Trigger LaTeX and SMILES rendering
+    if (typeof renderKatex === 'function') renderKatex();
+    if (typeof renderSmiles === 'function') renderSmiles();
   }
 
 }
@@ -2141,7 +2072,7 @@ function createObjectiveGroup(group) {
   const currentName = group.title;
 
   const itemCount = group.items.length;
-  const totalCount = group.items.reduce((sum, item) => sum + item.count, 0);
+  const totalCount = group.items.reduce((sum, item) => sum + (item.count || 0), 0);
   const isWarning = totalCount < 5;
 
   const emptyState =
@@ -2166,26 +2097,16 @@ function createObjectiveGroup(group) {
                     <i class="fas fa-trash-alt"></i>
                 </button>
                 <textarea class="objective-group__title-input" rows="1"
-                    title="Click to edit title"
+                    title="Edit learning objective title"
                     onblur="updateMetaObjectiveTitle(${group.id}, this.value)"
                     onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
                     oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
-                    style="background: transparent; border: 1px solid transparent; padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden; line-height: 1.4; min-height: 1.4em;"
+                    style="background: transparent; border: 1px solid transparent; padding: 4px 8px; margin: 0; width: 100%; flex: 1; min-width: 0; box-sizing: border-box; font-size: 1.1em; font-weight: 600; font-family: inherit; color: inherit; line-height: 1.4; min-height: 1.4em; transition: border-color 0.2s, background-color 0.2s; border-radius: 4px; resize: none; overflow: hidden;"
                     onfocus="this.style.backgroundColor='#fff'; this.style.borderColor='#ccc'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.1)'; this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
                     onfocusout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'; this.style.boxShadow='none';"
                 >${currentName.replace(/"/g, '&quot;')}</textarea>
             </div>
             <div class="objective-group__header-right">
-                ${group.objectiveId ? `
-                <button type="button" 
-                    class="objective-group__edit-btn" 
-                    onclick="editMetaObjective(${group.id})"
-                    title="Objective Settings"
-                    aria-label="Settings for ${group.title}"
-                >
-                    <i class="fas fa-cog"></i>
-                </button>
-                ` : ''}
                 <div class="objective-group__toggle" onclick="toggleObjectiveGroup(${group.id})">
                     <i class="fas fa-chevron-down"></i>
                 </div>
@@ -2300,7 +2221,7 @@ function createObjectiveItem(item, groupId) {
                 <div class="objective-item__header" style="flex: 1; display: flex; width: 100%; min-width: 0;">
                     <div class="objective-item__text" style="flex: 1; width: 100%; min-width: 0;">
                         <textarea class="granular-objective-input" rows="1"
-                            title="Click to edit granular objective"
+                            title="Enter granular objective"
                             onblur="updateGranularObjectiveText(${groupId}, ${item.id}, this.value)"
                             onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }"
                             oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
@@ -2315,22 +2236,18 @@ function createObjectiveItem(item, groupId) {
                     <div class="objective-item__bloom-chips">
                         ${bloomChips}
                     </div>
-                    <div class="objective-item__min">Min: ${item.minQuestions
-    }</div>
                     ${bloomModeToggle}
                 </div>
                 ${bloomValidationMessage}
             </div>
             <div class="objective-item__tools">
                 <div class="objective-item__stepper">
-                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id
-    })" ${item.count <= item.minQuestions ? "disabled" : ""}>
-                        –
+                    <button type="button" class="stepper-btn" onclick="decrementCount(${groupId}, ${item.id})" ${item.count <= Math.max(2, item.bloom.length) ? "disabled" : ""}>
+                        <i class="fas fa-minus"></i>
                     </button>
                     <span class="stepper-value">${item.count}</span>
-                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id
-    })" ${item.count >= 9 ? "disabled" : ""}>
-                        +
+                    <button type="button" class="stepper-btn" onclick="incrementCount(${groupId}, ${item.id})" ${item.count >= 9 ? "disabled" : ""}>
+                        <i class="fas fa-plus"></i>
                     </button>
                 </div>
             </div>
@@ -2356,9 +2273,14 @@ function toggleBloomChip(groupId, itemId, level) {
       item.bloom.splice(index, 1);
     } else {
       item.bloom.push(level);
+
+      // Ensure count >= bloom.length
+      if (item.count < item.bloom.length) {
+        item.count = item.bloom.length;
+      }
     }
     renderObjectiveGroups();
-    
+
     // Auto-save the new bloom selection if it's an existing objective
     if (group.objectiveId) {
       updateGranularObjectiveBloom(groupId);
@@ -2370,39 +2292,8 @@ function toggleBloomChip(groupId, itemId, level) {
  * Handle auto-saving Bloom taxonomy changes
  */
 async function updateGranularObjectiveBloom(groupId) {
-  const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group || !group.objectiveId) return;
-
-  try {
-    const courseId = getCourseId();
-    const currentName = group.title;
-
-    const requestBody = {
-      name: currentName,
-      courseId: courseId,
-      // Re-map the granular objectives, implicitly including our bloom update via state
-      granularObjectives: group.items.map(i => ({
-        id: i.granularId,
-        text: i.text,
-        bloomTaxonomies: i.bloom || []
-      }))
-    };
-
-    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-        throw new Error("Failed to save bloom taxonomy");
-    }
-    
-    // Silently succeed, no toast needed for every checkbox click
-  } catch (err) {
-    console.error("Error updating bloom taxonomy:", err);
-    showToast("Failed to save changes automatically. Try refreshing.", "error");
-  }
+  // Call database save function
+  await saveObjectiveToDatabase(groupId);
 }
 
 function setBloomMode(groupId, itemId, mode) {
@@ -2418,7 +2309,7 @@ function setBloomMode(groupId, itemId, mode) {
   }
 }
 
-function incrementCount(groupId, itemId) {
+async function incrementCount(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   const item = group?.items.find((i) => i.id === itemId);
 
@@ -2426,107 +2317,32 @@ function incrementCount(groupId, itemId) {
     item.count++;
     renderObjectiveGroups();
     announceToScreenReader(`Count increased to ${item.count}`);
+    await saveObjectiveToDatabase(groupId);
   }
 }
 
-function decrementCount(groupId, itemId) {
+async function decrementCount(groupId, itemId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
   const item = group?.items.find((i) => i.id === itemId);
 
-  if (item && item.count > item.minQuestions) {
+  if (!item) return;
+
+  // Requirement: count >= bloom.length (minimum 2)
+  const minAllowed = Math.max(2, (item.bloom?.length || 0));
+
+  if (item.count > minAllowed) {
     item.count--;
     renderObjectiveGroups();
     announceToScreenReader(`Count decreased to ${item.count}`);
+    await saveObjectiveToDatabase(groupId);
   }
 }
 
 
 
 async function editMetaObjective(groupId) {
-  const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group || !group.objectiveId) {
-    showToast("Cannot edit this learning objective", "warning");
-    return;
-  }
-
-  const currentName = group.title;
-
-  // Use the shared modal in edit mode
-  currentEditGroupId = groupId;
-  showCustomObjectiveModal("edit", {
-    objectiveId: group.objectiveId,
-    name: currentName,
-    granularObjectives: group.items || [],
-  });
-}
-
-/**
- * Handle inline title edits for Meta Learning Objectives
- */
-async function updateMetaObjectiveTitle(groupId, newTitle) {
-  const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group || !group.objectiveId) return;
-
-  // Since the user requested the removal of "Learning Objective N: " 
-  // group.title will exactly match the intended objective name.
-  const currentName = group.title;
-  const trimmedNewTitle = newTitle.trim();
-
-  // Abort if no change or empty
-  if (!trimmedNewTitle || currentName === trimmedNewTitle) {
-    if (!trimmedNewTitle) {
-        // Reset view if empty
-        renderObjectiveGroups(); 
-    }
-    return;
-  }
-
-  const savingToast = showToast("Saving title...", "info");
-
-  try {
-    const courseId = getCourseId();
-
-    // The PUT endpoint requires name, materialIds, and granularObjectives
-    const requestBody = {
-      name: trimmedNewTitle,
-      courseId: courseId,
-      // Pass existing granular objectives unchanged
-      granularObjectives: (group.items || []).map(item => ({
-        id: item.granularId, // Maps back to existing ID
-        text: item.text,
-        bloomTaxonomies: item.bloom || []
-      }))
-    };
-
-    const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    let data;
-    try {
-      const responseText = await response.text();
-      data = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      throw new Error('Invalid response from server');
-    }
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || "Failed to update learning objective title");
-    }
-
-    // Update state and UI
-    group.title = trimmedNewTitle;
-    
-    if (savingToast) savingToast.remove();
-    showToast("Title updated successfully", "success");
-  } catch (err) {
-    console.error("Error updating title:", err);
-    if (savingToast) savingToast.remove();
-    showToast(err.message || "Failed to save title", "error");
-    renderObjectiveGroups(); // Revert UI on failure
-  }
+  showToast("Learning objective settings are managed through the dedicated UI", "info");
+  return;
 }
 
 /**
@@ -2534,7 +2350,7 @@ async function updateMetaObjectiveTitle(groupId, newTitle) {
  */
 async function updateGranularObjectiveText(groupId, itemId, newText) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
-  if (!group || !group.objectiveId) return;
+  if (!group) return;
 
   const item = group.items.find((i) => i.id === itemId);
   if (!item) return;
@@ -2544,76 +2360,117 @@ async function updateGranularObjectiveText(groupId, itemId, newText) {
   // Abort if no change or empty
   if (!trimmedNewText || item.text.trim() === trimmedNewText) {
     if (!trimmedNewText) {
-        // Reset view if empty
-        renderObjectiveGroups(); 
+      renderObjectiveGroups();
     }
     return;
   }
 
-  // Update local state temporarily
-  const previousText = item.text;
+  // Update local state only (session-only)
   item.text = trimmedNewText;
 
-  const savingToast = showToast("Saving granular objective...", "info");
+  // Background render to clean up focus states
+  renderObjectiveGroups();
 
-  try {
-    const courseId = getCourseId();
-    const currentName = group.title;
+  // Persist change to database
+  await saveObjectiveToDatabase(groupId);
+}
 
-    // The PUT endpoint requires name, materialIds, and granularObjectives
-    const requestBody = {
-      name: currentName,
-      courseId: courseId,
-      // Re-map the granular objectives, implicitly including our text update via state
-      granularObjectives: group.items.map(i => ({
-        id: i.granularId,
-        text: i.text,
-        bloomTaxonomies: i.bloom || []
-      }))
+/**
+ * Handle inline text edits for Meta Objectives
+ */
+async function updateMetaObjectiveTitle(groupId, newTitle) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group) return;
+
+  const trimmedTitle = newTitle.trim();
+
+  // Abort if no change or empty
+  if (!trimmedTitle || group.title.trim() === trimmedTitle) {
+    if (!trimmedTitle) {
+      renderObjectiveGroups();
+    }
+    return;
+  }
+
+  // Update local state only (session-only)
+  group.title = trimmedTitle;
+
+  // Background render to clean up focus states
+  renderObjectiveGroups();
+
+  // Persist change to database
+  await saveObjectiveToDatabase(groupId);
+}
+
+/**
+ * Save updated objective and its granular objectives to the database
+ */
+async function saveObjectiveToDatabase(groupId) {
+  const group = state.objectiveGroups.find((g) => g.id === groupId);
+  if (!group || !group.objectiveId) return;
+
+  const courseId = getCourseId();
+  if (!courseId) return;
+
+  // Prepare the granular objectives array for the API
+  const granularObjectives = group.items.map(item => {
+    const granularObj = {
+      text: item.text,
+      bloomTaxonomies: item.bloom || [],
+      questionCount: item.count
     };
 
+    // Include ID if it exists (for updates)
+    if (item.granularId) {
+      granularObj.id = item.granularId;
+    }
+
+    return granularObj;
+  });
+
+  const updateData = {
+    name: group.title,
+    courseId: courseId,
+    materialIds: group.materialIds || [],
+    granularObjectives: granularObjectives
+  };
+
+  try {
     const response = await fetch(`${API_ENDPOINTS.objective}/${group.objectiveId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData)
     });
 
-    let data;
-    try {
-      const responseText = await response.text();
-      data = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      throw new Error('Invalid response from server');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || "Failed to update granular objective");
-    }
+    const data = await response.json();
 
-    // Update newly created items with their DB-generated IDs
-    if (data.granularObjectives && Array.isArray(data.granularObjectives)) {
-      data.granularObjectives.forEach(dbObj => {
-        // Try to match items that don't have an ID yet by their exact text
-        const matchedItem = group.items.find(i => (!i.granularId && i.text === (dbObj.name || dbObj.text)) || i.granularId === dbObj._id?.toString());
-        if (matchedItem && !matchedItem.granularId && dbObj._id) {
-          matchedItem.granularId = dbObj._id.toString();
+    if (data.success && data.granularObjectives) {
+      // Update local items with database IDs (important for newly created granular objectives)
+      data.granularObjectives.forEach(dbGranular => {
+        // Try to match by ID first
+        let localItem = group.items.find(item => item.granularId === dbGranular._id.toString());
+
+        // If no ID match, try to match by text for newly created ones
+        if (!localItem) {
+          localItem = group.items.find(item => !item.granularId && item.text === dbGranular.name);
+        }
+
+        if (localItem) {
+          localItem.granularId = dbGranular._id.toString();
         }
       });
     }
-
-    if (savingToast) savingToast.remove();
-    showToast("Granular objective updated successfully", "success");
-    // Background render to clean up focus states
-    renderObjectiveGroups();
-  } catch (err) {
-    console.error("Error updating granular objective:", err);
-    if (savingToast) savingToast.remove();
-    showToast(err.message || "Failed to save granular objective", "error");
-    // Revert local state
-    item.text = previousText;
-    renderObjectiveGroups(); 
+  } catch (error) {
+    console.error('Error saving objective to database:', error);
   }
 }
+
 
 function addNewGranularObjective(groupId) {
   const group = state.objectiveGroups.find((g) => g.id === groupId);
@@ -2741,7 +2598,7 @@ function initializeModals() {
   if (deleteModalCancel) {
     deleteModalCancel.addEventListener("click", () => hideModal(deleteModal));
   }
-  
+
   if (deleteModalViewOnly) {
     deleteModalViewOnly.addEventListener("click", () => {
       // Use the stored edit group id to know which objective group to delete
@@ -2751,7 +2608,7 @@ function initializeModals() {
       hideModal(deleteModal);
     });
   }
-  
+
   if (deleteModalDbComplete) {
     deleteModalDbComplete.addEventListener("click", () => {
       if (currentEditGroupId) {
@@ -2828,8 +2685,8 @@ function initializeQuizSelection() {
   // Set up event listeners
   setupQuizSelectionListeners();
 
-  // Switch to select tab by default
-  switchQuizTab('select');
+  // Switch to create tab by default
+  switchQuizTab('create');
 
   // Default question limit logic removed as quizzes are now dynamically sized
 }
@@ -2875,6 +2732,7 @@ function getStep2UIElements() {
     regenerateAllBtn: document.getElementById("regenerate-all-btn"),
     backBtn: document.getElementById("back-btn"),
     continueBtn: document.getElementById("continue-btn"),
+    addToBankBtn: document.getElementById("add-to-bank-btn"),
   };
 }
 
@@ -2897,6 +2755,7 @@ function setGenerationUI(showLoading) {
     // Disable navigation buttons during generation
     if (ui.backBtn) ui.backBtn.disabled = true;
     if (ui.continueBtn) ui.continueBtn.disabled = true;
+    if (ui.addToBankBtn) ui.addToBankBtn.disabled = true;
   } else {
     // Hide loading state
     if (ui.questionsLoading) ui.questionsLoading.style.display = "none";
@@ -2942,6 +2801,9 @@ async function generateQuestionsFromContent() {
 
     // Update the UI
     renderStep2();
+
+    // Run AI review in the background — does not block the instructor from seeing questions
+    reviewGeneratedQuestions();
   } catch (error) {
     console.error('Failed to generate questions from content:', error);
 
@@ -2955,6 +2817,92 @@ async function generateQuestionsFromContent() {
     setGenerationUI(false);
   }
 }
+
+
+async function reviewGeneratedQuestions() {
+  const allQuestions = [];
+  state.questionGroups.forEach(group => {
+    group.los.forEach(lo => {
+      lo.questions.forEach(q => {
+        allQuestions.push({
+          id: q.id,
+          questionType: q.questionType || q.type || 'multiple-choice',
+          bloomLevel: q.bloom,
+          title: q.title,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          acceptableAnswers: q.acceptableAnswers,
+          calculationFormula: q.calculationFormula,
+          calculationVariables: q.calculationVariables,
+          openEndedSampleAnswer: q.openEndedSampleAnswer,
+          openEndedGradingCriteria: q.openEndedGradingCriteria,
+          learningObjectiveText: q.metaCode,
+          granularObjectiveText: q.loCode,
+          learningObjectiveId: q.learningObjectiveId,
+          materialIds: q.materialIds,
+          courseId: q.courseId
+        });
+      });
+    });
+  });
+
+  if (allQuestions.length === 0) return;
+
+  // Show reviewing banner
+  setReviewBannerVisible(true);
+
+  try {
+    const response = await fetch(API_ENDPOINTS.reviewQuestions, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: allQuestions })
+    });
+
+    if (!response.ok) throw new Error(`Review request failed: ${response.status}`);
+
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.results)) return;
+
+    const resultMap = {};
+    data.results.forEach(r => { resultMap[r.originalId] = r; });
+
+    state.questionGroups.forEach(group => {
+      group.los.forEach(lo => {
+        lo.questions.forEach((q) => {
+          const result = resultMap[q.id];
+          if (!result) return;
+
+          q.reviewFlag = result.flagged;
+          q.reviewIssue = result.issue || '';
+        });
+      });
+    });
+
+    renderQuestionGroups();
+  } catch (error) {
+    console.error('Failed to review questions:', error);
+  } finally {
+    setReviewBannerVisible(false);
+  }
+}
+
+function setReviewBannerVisible(visible) {
+  let banner = document.getElementById('ai-review-banner');
+  if (visible) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'ai-review-banner';
+      banner.className = 'ai-review-banner';
+      banner.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI is reviewing questions for issues...';
+      const container = document.getElementById('questions-container');
+      if (container) container.prepend(banner);
+    }
+  } else {
+    if (banner) banner.remove();
+  }
+}
+
 
 // Show question generation error message
 function showQuestionGenerationError(errorMessage) {
@@ -3037,157 +2985,114 @@ function convertQuestionsToGroups(questions) {
           const isCalc = qType === QUESTION_TYPES.CALCULATION;
           const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
           const acceptable =
-            isFib &&
-            Array.isArray(question.acceptableAnswers) &&
-            question.acceptableAnswers.length
+            isFib && Array.isArray(question.acceptableAnswers) && question.acceptableAnswers.length
               ? question.acceptableAnswers
               : isFib && question.correctAnswer != null
                 ? [String(question.correctAnswer)]
                 : [];
 
-          const mcCard = {
-            id: question.id,
-            title: question.text,
-            stem: "Select the best answer:",
-            questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-            options: {
-              A: {
-                id: "A",
-                text: question.options?.A || "Option A",
-                feedback: `${question.correctAnswer === "A" ? "Correct" : "Incorrect"} - ${question.explanation}`,
-              },
-              B: {
-                id: "B",
-                text: question.options?.B || "Option B",
-                feedback: `${question.correctAnswer === "B" ? "Correct" : "Incorrect"} - ${question.explanation}`,
-              },
-              C: {
-                id: "C",
-                text: question.options?.C || "Option C",
-                feedback: `${question.correctAnswer === "C" ? "Correct" : "Incorrect"} - ${question.explanation}`,
-              },
-              D: {
-                id: "D",
-                text: question.options?.D || "Option D",
-                feedback: `${question.correctAnswer === "D" ? "Correct" : "Incorrect"} - ${question.explanation}`,
-              },
-            },
-            correctAnswer: question.correctAnswer,
-            acceptableAnswers: [],
-            bloom: question.bloomLevel || "Understand",
-            difficulty: question.difficulty || "Medium",
-            status: "Draft",
-            lastEdited:
-              question.lastEdited ||
-              new Date().toISOString().slice(0, 16).replace("T", " "),
-            by: question.by || "System",
-            metaCode: question.metaCode || metaCode,
-            loCode: question.loCode || question.text,
-            granularObjectiveId: question.granularObjectiveId,
+          // Normalize MC options to {id, text, feedback} objects
+          const normalizeOptions = (opts) => {
+            if (!opts || typeof opts !== 'object') return {};
+            const out = {};
+            ['A', 'B', 'C', 'D'].forEach(key => {
+              const opt = opts[key];
+              if (typeof opt === 'string') {
+                out[key] = { id: key, text: opt, feedback: "" };
+              } else if (opt && typeof opt === 'object') {
+                out[key] = { id: key, text: opt.text || "", feedback: opt.feedback || "" };
+              } else {
+                out[key] = { id: key, text: `Option ${key}`, feedback: "" };
+              }
+            });
+            return out;
           };
 
-          const fibCard = {
-            id: question.id,
-            title:
-              (question.topicTitle && String(question.topicTitle).trim()) ||
-              (() => {
-                const before = String(question.text || "")
-                  .split("_________")[0]
-                  .trim();
-                const words = before.split(/\s+/).filter(Boolean);
-                return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
-              })(),
-            stem: question.text,
-            questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
-            options: {},
-            correctAnswer: question.correctAnswer,
-            acceptableAnswers: acceptable,
-            bloom: question.bloomLevel || "Understand",
-            difficulty: question.difficulty || "Medium",
-            status: "Draft",
-            lastEdited:
-              question.lastEdited ||
-              new Date().toISOString().slice(0, 16).replace("T", " "),
-            by: question.by || "System",
-            metaCode: question.metaCode || metaCode,
-            loCode: question.loCode || question.text,
-            granularObjectiveId: question.granularObjectiveId,
-            explanation: question.explanation,
-          };
-
-          const stemCalc = String(question.text || question.stem || "").trim();
-          const calcCard = {
-            id: question.id,
-            title:
-              (question.topicTitle && String(question.topicTitle).trim()) ||
-              (() => {
-                const before = stemCalc.split("{{")[0].trim();
-                const words = before.split(/\s+/).filter(Boolean);
-                return words.slice(0, 10).join(" ") || "Calculation";
-              })(),
-            stem: stemCalc,
-            questionType: QUESTION_TYPES.CALCULATION,
-            options: {},
-            correctAnswer: "",
-            acceptableAnswers: [],
-            calculationFormula: question.calculationFormula || "",
-            calculationVariables: Array.isArray(question.calculationVariables)
-              ? question.calculationVariables
-              : [],
-            calculationAnswerDecimals:
-              question.calculationAnswerDecimals != null
-                ? question.calculationAnswerDecimals
-                : 2,
-            bloom: question.bloomLevel || "Understand",
-            difficulty: question.difficulty || "Medium",
-            status: "Draft",
-            lastEdited:
-              question.lastEdited ||
-              new Date().toISOString().slice(0, 16).replace("T", " "),
-            by: question.by || "System",
-            metaCode: question.metaCode || metaCode,
-            loCode: question.loCode || question.text,
-            granularObjectiveId: question.granularObjectiveId,
-            explanation: question.explanation,
-          };
-
-          const stemOpen = String(question.text || question.stem || "").trim();
-          const openCard = {
-            id: question.id,
-            title:
-              (question.topicTitle && String(question.topicTitle).trim()) ||
-              (() => {
-                const words = stemOpen.split(/\s+/).filter(Boolean);
-                return words.slice(0, 10).join(" ") || "Open-ended";
-              })(),
-            stem: stemOpen,
-            questionType: QUESTION_TYPES.OPEN_ENDED,
-            options: {},
-            correctAnswer: "",
-            acceptableAnswers: [],
-            openEndedSampleAnswer: String(
-              question.openEndedSampleAnswer || ""
-            ).trim(),
-            openEndedGradingCriteria: String(
-              question.openEndedGradingCriteria || ""
-            ).trim(),
-            bloom: question.bloomLevel || "Understand",
-            difficulty: question.difficulty || "Medium",
-            status: "Draft",
-            lastEdited:
-              question.lastEdited ||
-              new Date().toISOString().slice(0, 16).replace("T", " "),
-            by: question.by || "System",
-            metaCode: question.metaCode || metaCode,
-            loCode: question.loCode || question.text,
-            granularObjectiveId: question.granularObjectiveId,
-            explanation: question.explanation,
-          };
-
-          let card = mcCard;
-          if (isFib) card = fibCard;
-          else if (isCalc) card = calcCard;
-          else if (isOpen) card = openCard;
+          let card;
+          if (isFib) {
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = String(question.text || "").split("_________")[0].trim().split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Fill-in-the-blank"; })(),
+              stem: question.stem || question.text,
+              questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+              options: {},
+              correctAnswer: question.correctAnswer,
+              acceptableAnswers: acceptable,
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else if (isCalc) {
+            const stemCalc = String(question.stem || question.text || "").trim();
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = stemCalc.split("{{")[0].trim().split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Calculation"; })(),
+              stem: stemCalc,
+              questionType: QUESTION_TYPES.CALCULATION,
+              options: {},
+              correctAnswer: "",
+              acceptableAnswers: [],
+              calculationFormula: question.calculationFormula || "",
+              calculationVariables: Array.isArray(question.calculationVariables) ? question.calculationVariables : [],
+              calculationAnswerDecimals: question.calculationAnswerDecimals ?? 2,
+              calculationAnswerTolerancePercent: question.calculationAnswerTolerancePercent ?? null,
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else if (isOpen) {
+            const stemOpen = String(question.stem || question.text || "").trim();
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = stemOpen.split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Open-ended"; })(),
+              stem: stemOpen,
+              questionType: QUESTION_TYPES.OPEN_ENDED,
+              options: {},
+              correctAnswer: "",
+              acceptableAnswers: [],
+              openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
+              openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else {
+            card = {
+              id: question.id,
+              title: question.text,
+              stem: "Select the best answer:",
+              questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+              options: normalizeOptions(question.options),
+              correctAnswer: question.correctAnswer,
+              acceptableAnswers: [],
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              learningObjectiveId: question.learningObjectiveId,
+            };
+          }
 
           return {
             id: `lo-${index + 1}-${itemIndex + 1}`,
@@ -3247,6 +3152,7 @@ function setupStep2EventListeners() {
 function renderStep2() {
   renderQuestionGroups();
   renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 }
 
 function renderQuestionGroups() {
@@ -3291,8 +3197,9 @@ function renderQuestionGroups() {
   // Set up question card event listeners
   setupQuestionCardListeners();
 
-  // Re-render LaTeX after rendering questions
-  renderKatex();
+  // Re-render LaTeX and SMILES after the DOM is updated
+  if (typeof renderKatex === "function") renderKatex();
+  if (typeof renderSmiles === "function") renderSmiles();
 }
 
 // Toggle meta learning objective group expand/collapse
@@ -3358,6 +3265,16 @@ function renderQuestionCard(question, group) {
   const isOpen =
     (question.questionType || question.type) === QUESTION_TYPES.OPEN_ENDED;
 
+  // Check for identical MC options
+  if (!question.reviewFlag && !isFib && !isCalc && !isOpen && question.options) {
+    const optionTexts = Object.values(question.options).map(o => (typeof o === 'string' ? o : o.text || '').trim().toLowerCase());
+    const hasDuplicates = optionTexts.some((t, i) => optionTexts.indexOf(t) !== i);
+    if (hasDuplicates) {
+      question.reviewFlag = true;
+      question.reviewIssue = 'Two or more answer options are identical. Each option must present a distinct choice.';
+    }
+  }
+
   const titleEditingHtml =
     (isFib || isCalc || isOpen) && isEditing
       ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
@@ -3416,26 +3333,16 @@ function renderQuestionCard(question, group) {
                 </div>`;
     }
   } else if (isCalc) {
-    const vars = Array.isArray(question.calculationVariables)
-      ? question.calculationVariables
-      : [];
+    const vars = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
     const varsJson = JSON.stringify(vars, null, 2);
-    const dec =
-      question.calculationAnswerDecimals != null
-        ? question.calculationAnswerDecimals
-        : 2;
-    const varsSummary = vars
-      .map((v) => {
-        if (!v || typeof v !== "object") return "";
-        const n = escapeQuestionHtml(String(v.name ?? ""));
-        const range = `${escapeQuestionHtml(String(v.min))}–${escapeQuestionHtml(String(v.max))}`;
-        const mode = v.integerOnly
-          ? " (integers)"
-          : ` (decimals: ${escapeQuestionHtml(String(v.decimals ?? 0))})`;
-        return `<li><strong>${n}</strong>: ${range}${mode}</li>`;
-      })
-      .filter(Boolean)
-      .join("");
+    const dec = question.calculationAnswerDecimals != null ? question.calculationAnswerDecimals : 2;
+    const varsSummary = vars.map((v) => {
+      if (!v || typeof v !== "object") return "";
+      const n = escapeQuestionHtml(String(v.name ?? ""));
+      const range = `${escapeQuestionHtml(String(v.min))}–${escapeQuestionHtml(String(v.max))}`;
+      const mode = v.integerOnly ? " (integers)" : ` (decimals: ${escapeQuestionHtml(String(v.decimals ?? 0))})`;
+      return `<li><strong>${n}</strong>: ${range}${mode}</li>`;
+    }).filter(Boolean).join("");
     if (isEditing) {
       bodyHtml = `
                 <div class="question-card__fib-edit">
@@ -3501,15 +3408,13 @@ function renderQuestionCard(question, group) {
     bodyHtml = `
                 ${isEditing
       ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>`
-      : `<p class="question-card__stem">${question.stem}</p>`
+      : `<p class="question-card__stem">${parseSmilesTags(question.stem)}</p>`
     }
                 <div class="question-card__options">
                     ${Object.values(question.options || {}).map(
       (option, index) => {
-        const isCorrect =
-          option.id === question.correctAnswer ||
-          (typeof question.correctAnswer === "number" &&
-            index === question.correctAnswer);
+        const isCorrect = option.id === question.correctAnswer;
+        const feedback = option.feedback || (isCorrect ? "" : "Incorrect");
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3517,11 +3422,19 @@ function renderQuestionCard(question, group) {
           }" value="${option.id}" ${isCorrect ? "checked" : ""
           } disabled>
                             ${isEditing
-            ? `<input type="text" value="${(option.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
-            : `<label>${option.id}. ${option.text}</label>`
+            ? `<input type="text" value="${(option.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onblur="saveOptionEdit('${question.id}', '${option.id}', this.value)">`
+            : `<label>${option.id}. ${parseSmilesTags(option.text)}</label>`
           }
                         </div>
-                        <div class="question-card__feedback">${isCorrect ? "Correct" : "Incorrect"}</div>
+                        <div class="question-card__feedback">
+                          ${isEditing
+            ? `<div class="feedback-edit-wrapper">
+                                 <span class="feedback-label">Feedback:</span>
+                                 <input type="text" class="question-card__feedback--editing" value="${feedback.replace(/"/g, '&quot;')}" onblur="updateQuestionFeedback('${question.id}', '${option.id}', this.value)">
+                               </div>`
+            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
+          }
+                        </div>
                     `;
       }
     )
@@ -3544,6 +3457,11 @@ function renderQuestionCard(question, group) {
                     <div>By: ${question.by}</div>
                 </div>
             </div>
+            ${question.reviewFlag ? `
+            <div class="question-card__review-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>${question.reviewIssue}</span>
+            </div>` : ''}
             <div class="question-card__body">
                 ${bodyHtml}
             </div>
@@ -3626,7 +3544,7 @@ async function handleAddQuestionToBank(question) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        question: question,
+        questions: question,
         courseId: getCourseId(),
       }),
     });
@@ -3680,23 +3598,14 @@ function updateQuestionFibCorrectAnswer(questionId, value) {
 function updateQuestionFibAcceptableAnswers(questionId, value) {
   const question = findQuestionById(questionId);
   if (!question) return;
-  const lines = String(value ?? "")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const lines = String(value ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
   const canonical = String(question.correctAnswer ?? "").trim();
-  if (lines.length === 0 && canonical) {
-    question.acceptableAnswers = [canonical];
-  } else {
-    question.acceptableAnswers = lines;
-  }
+  question.acceptableAnswers = lines.length === 0 && canonical ? [canonical] : lines;
 }
 
 function updateQuestionCalcFormula(questionId, value) {
   const question = findQuestionById(questionId);
-  if (question) {
-    question.calculationFormula = String(value ?? "").trim();
-  }
+  if (question) question.calculationFormula = String(value ?? "").trim();
 }
 
 function updateQuestionCalcVariablesJson(questionId, value) {
@@ -3704,12 +3613,8 @@ function updateQuestionCalcVariablesJson(questionId, value) {
   if (!question) return;
   try {
     const parsed = JSON.parse(String(value ?? "").trim() || "[]");
-    if (Array.isArray(parsed)) {
-      question.calculationVariables = parsed;
-    }
-  } catch {
-    /* keep previous variables until Save validates */
-  }
+    if (Array.isArray(parsed)) question.calculationVariables = parsed;
+  } catch { /* keep previous variables until Save validates */ }
 }
 
 function updateQuestionCalcDecimals(questionId, value) {
@@ -3722,15 +3627,18 @@ function updateQuestionCalcDecimals(questionId, value) {
 
 function updateQuestionOpenSample(questionId, value) {
   const question = findQuestionById(questionId);
-  if (question) {
-    question.openEndedSampleAnswer = String(value ?? "").trim();
-  }
+  if (question) question.openEndedSampleAnswer = String(value ?? "").trim();
 }
 
 function updateQuestionOpenCriteria(questionId, value) {
   const question = findQuestionById(questionId);
-  if (question) {
-    question.openEndedGradingCriteria = String(value ?? "").trim();
+  if (question) question.openEndedGradingCriteria = String(value ?? "").trim();
+}
+
+function updateQuestionFeedback(questionId, optionId, newFeedback) {
+  const question = findQuestionById(questionId);
+  if (question && question.options[optionId]) {
+    question.options[optionId].feedback = newFeedback.trim();
   }
 }
 
@@ -4152,67 +4060,19 @@ async function handleSaveToQuiz() {
   try {
     let quizId = selectedQuizId;
 
-    // If creating new quiz, create it first
-    if (isCreatingNewQuiz) {
-      const nameInput = document.getElementById("quiz-name-input");
-      const descriptionInput = document.getElementById("quiz-description-input");
-      const releaseDateInput = document.getElementById("quiz-release-date");
-      const expireDateInput = document.getElementById("quiz-expire-date");
-
-      if (!nameInput || !nameInput.value.trim()) {
-        showToast("Please enter a quiz name", "error");
-        return;
-      }
-
-      const courseId = getCourseId();
-
-      const response = await fetch(API_ENDPOINTS.quiz, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          courseId: courseId,
-          name: nameInput.value.trim(),
-          description: descriptionInput.value.trim() || '',
-          releaseDate: releaseDateInput ? releaseDateInput.value : null,
-          expireDate: expireDateInput ? expireDateInput.value : null
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create quiz');
-      }
-
-      const data = await response.json();
-      quizId = data.quiz._id || data.quiz.insertedId;
-      if (typeof quizId === 'object' && quizId.toString) {
-        quizId = quizId.toString();
-      }
-    }
-
-    if (!quizId) {
-      showToast("Please select or create a quiz", "error");
-      return;
-    }
-
-    // Collect all questions from state
+    // Collect all questions from state with full type-specific fields
     const questions = [];
     for (const group of state.questionGroups) {
       for (const lo of group.los) {
         for (const question of lo.questions) {
-          const qt =
-            question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE;
+          const qt = question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE;
           const payload = {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
             options: question.options || [],
             correctAnswer: question.correctAnswer ?? "",
             questionType: qt,
-            acceptableAnswers: Array.isArray(question.acceptableAnswers)
-              ? question.acceptableAnswers
-              : [],
+            acceptableAnswers: Array.isArray(question.acceptableAnswers) ? question.acceptableAnswers : [],
             bloom: question.bloom || question.bloomLevel || "Understand",
             difficulty: question.difficulty || "medium",
             granularObjectiveId: question.granularObjectiveId || null,
@@ -4223,23 +4083,15 @@ async function handleSaveToQuiz() {
           if (qt === QUESTION_TYPES.CALCULATION) {
             payload.options = {};
             payload.calculationFormula = question.calculationFormula || "";
-            payload.calculationVariables = Array.isArray(
-              question.calculationVariables
-            )
-              ? question.calculationVariables
-              : [];
+            payload.calculationVariables = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
             let d = parseInt(question.calculationAnswerDecimals, 10);
             if (!Number.isFinite(d)) d = 2;
             payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
           }
           if (qt === QUESTION_TYPES.OPEN_ENDED) {
             payload.options = {};
-            payload.openEndedSampleAnswer = String(
-              question.openEndedSampleAnswer || ""
-            ).trim();
-            payload.openEndedGradingCriteria = String(
-              question.openEndedGradingCriteria || ""
-            ).trim();
+            payload.openEndedSampleAnswer = String(question.openEndedSampleAnswer || "").trim();
+            payload.openEndedGradingCriteria = String(question.openEndedGradingCriteria || "").trim();
           }
           questions.push(payload);
         }
@@ -4247,7 +4099,75 @@ async function handleSaveToQuiz() {
     }
 
     if (questions.length === 0) {
-      showToast("No questions to add", "warning");
+      showToast("No questions to save", "error");
+      return;
+    }
+
+    // If creating new quiz, create it and save questions atomically
+    if (isCreatingNewQuiz) {
+      const nameInput = document.getElementById("quiz-name-input");
+      const descriptionInput = document.getElementById("quiz-description-input");
+      const releaseDateInput = document.getElementById("quiz-release-date");
+      const expireDateInput = document.getElementById("quiz-expire-date");
+      const deliveryFormatInput = document.getElementById("quiz-delivery-format");
+
+      if (!nameInput || !nameInput.value.trim()) {
+        showToast("Please enter a quiz name", "error");
+        return;
+      }
+
+      const releaseDate = releaseDateInput && releaseDateInput.value ? new Date(releaseDateInput.value).toISOString() : null;
+      const expireDate = expireDateInput && expireDateInput.value ? new Date(expireDateInput.value).toISOString() : null;
+
+      if (!releaseDate) {
+        showToast("Please select a release date", "error");
+        return;
+      }
+
+      if (!expireDate) {
+        showToast("Please select an expire date", "error");
+        return;
+      }
+
+      const courseId = getCourseId();
+
+      const formatVal = deliveryFormatInput ? deliveryFormatInput.value : '';
+
+      const response = await fetch(API_ENDPOINTS.quiz, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          courseId: courseId,
+          name: nameInput.value.trim(),
+          description: descriptionInput.value.trim() || '',
+          releaseDate: releaseDate,
+          expireDate: expireDate,
+          deliveryFormat: formatVal || 'all-approved',
+          newQuestions: questions
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create quiz');
+      }
+
+      const data = await response.json();
+      const questionsCount = data.questionsAdded || questions.length;
+      showSuccessModal(`Successfully created quiz and added ${questionsCount} question${questionsCount !== 1 ? 's' : ''}!`, questionsCount);
+
+      if (nameInput) nameInput.value = "";
+      if (descriptionInput) descriptionInput.value = "";
+      selectedQuizId = null;
+      isCreatingNewQuiz = false;
+
+      return;
+    }
+
+    if (!quizId) {
+      showToast("Please select or create a quiz", "error");
       return;
     }
 
@@ -4310,6 +4230,41 @@ async function handleSaveToQuiz() {
     }
   }
 }
+function showDeliveryFormatPopup(btn) {
+  const container = btn.closest(".delivery-format-control, .quiz-delivery-format-section");
+  if (!container) return;
+  const popup = container.querySelector(".delivery-format-popup");
+  const template = container.querySelector(`.delivery-format-info-template[data-value="${btn.dataset.value}"]`);
+  if (popup && template) {
+    popup.innerHTML = template.innerHTML;
+    popup.classList.add("delivery-format-popup--visible");
+  }
+}
+
+function hideDeliveryFormatPopup(el, event) {
+  const group = el.closest(".delivery-format-group");
+  if (event && event.relatedTarget && group) {
+    const nextBtn = event.relatedTarget.closest && event.relatedTarget.closest(".delivery-format-btn");
+    if (nextBtn && group.contains(nextBtn)) return;
+  }
+  const container = el.closest(".delivery-format-control, .quiz-delivery-format-section");
+  if (!container) return;
+  const popup = container.querySelector(".delivery-format-popup");
+  if (popup) popup.classList.remove("delivery-format-popup--visible");
+}
+
+function selectDeliveryFormat(btn) {
+  const group = btn.closest(".delivery-format-group");
+  if (!group) return;
+  group.querySelectorAll(".delivery-format-btn").forEach(b => b.classList.remove("delivery-format-btn--active"));
+  btn.classList.add("delivery-format-btn--active");
+  const hidden = document.getElementById("quiz-delivery-format");
+  if (hidden) hidden.value = btn.dataset.value;
+}
+window.showDeliveryFormatPopup = showDeliveryFormatPopup;
+window.hideDeliveryFormatPopup = hideDeliveryFormatPopup;
+window.selectDeliveryFormat = selectDeliveryFormat;
+
 window.incrementCount = incrementCount;
 window.decrementCount = decrementCount;
 window.editMetaObjective = editMetaObjective;
@@ -4341,3 +4296,73 @@ window.toggleQuestionFlag = toggleQuestionFlag;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
+window.handleAddAllToBank = handleAddAllToBank;
+
+async function handleAddAllToBank() {
+  try {
+    const questions = [];
+    for (const group of state.questionGroups) {
+      for (const lo of group.los) {
+        for (const question of lo.questions) {
+          questions.push({
+            title: question.title || question.stem || "",
+            stem: question.stem || question.title || "",
+            options: question.options || [],
+            correctAnswer: question.correctAnswer || 0,
+            bloom: question.bloom || question.bloomLevel || "Understand",
+            granularObjectiveId: question.granularObjectiveId || null,
+            by: question.createdBy || "system",
+            status: question.status || "Draft",
+            flagStatus: question.flagStatus || false,
+          });
+        }
+      }
+    }
+
+    if (questions.length === 0) {
+      showToast("No questions to add", "warning");
+      return;
+    }
+
+    const addToBankBtn = document.getElementById('add-to-bank-btn');
+    if (addToBankBtn) {
+      addToBankBtn.disabled = true;
+      addToBankBtn.textContent = 'Saving...';
+    }
+
+    const courseId = getCourseId();
+    const response = await fetch(API_ENDPOINTS.questionSave, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        courseId: courseId,
+        questions: questions,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save questions to bank');
+    }
+
+    const data = await response.json();
+    const questionsCount = data.savedCount || questions.length;
+
+    showSuccessModal(
+      `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to the Question Bank!`,
+      questionsCount
+    );
+
+  } catch (error) {
+    console.error("Error saving to bank:", error);
+    showToast(error.message, "error");
+  } finally {
+    const addToBankBtn = document.getElementById('add-to-bank-btn');
+    if (addToBankBtn) {
+      addToBankBtn.disabled = false;
+      addToBankBtn.textContent = 'Add to Question Bank';
+    }
+  }
+}

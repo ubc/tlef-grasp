@@ -18,24 +18,9 @@ class QuestionGenerator {
   constructor(contentGenerator, options = {}) {
     this.contentGenerator = contentGenerator;
     this.bloomTypePreferences = options.bloomTypePreferences || window.DEFAULT_BLOOM_TYPE_PREFERENCES;
-    this.llmService = null;
-    this.initializeLLMService();
   }
 
-  async initializeLLMService() {
-    try {
-      console.log("=== QUESTION GENERATOR LLM INITIALIZATION ===");
-      this.llmService = {
-        isAvailable: () => true,
-        generateQuestionByType: async (questionType, params) =>
-          await this.callQuestionGenerationApi({ ...params, questionType }),
-      };
-      console.log("✅ Server-side RAG + LLM service initialized");
-    } catch (error) {
-      console.error("❌ Failed to initialize LLM service:", error);
-      this.llmService = null;
-    }
-  }
+
 
   async callQuestionGenerationApi({
     courseId,
@@ -100,9 +85,6 @@ class QuestionGenerator {
         course,
         objectiveGroupsCount: objectiveGroups.length,
         contentGeneratorAvailable: !!this.contentGenerator,
-        ragAvailable: this.contentGenerator
-          ? this.contentGenerator.isRAGAvailable()
-          : false,
       });
 
       const allQuestions = [];
@@ -118,7 +100,7 @@ class QuestionGenerator {
           try {
             // Generate questions for this specific objective using RAG
             const objectiveQuestions = await this.generateQuestionsForObjective(
-              course.name || '',
+              course.name || course.courseName || '',
               learningObjective,
               granularLearningObjective,
               course.id || course._id
@@ -160,26 +142,12 @@ class QuestionGenerator {
   getBloomTypePreferences() {
     return this.bloomTypePreferences;
   }
-  
+
   determineQuestionType(bloomLevel) {
     const preferences = this.getBloomTypePreferences();
     return preferences[bloomLevel]?.[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
   }
 
-  prepareContentForQuestions(summary, objectiveGroups) {
-    let content = `Summary: ${summary}\n\n`;
-    content += `Objectives:\n`;
-    objectiveGroups.forEach((group) => {
-      group.items.forEach((item) => {
-        content += `- ${item.text} (${item.bloom.join(", ")}) Min: ${
-          item.minQuestions
-        }, Count: ${item.count}\n`;
-      });
-    });
-    content += `\nGenerate multiple choice questions based on this content.`;
-
-    return content;
-  }
 
   // Generate questions for specific objectives using enhanced content analysis
   async generateQuestionsForObjective(courseName, learningObjective, granularLearningObjective, courseId) {
@@ -187,328 +155,135 @@ class QuestionGenerator {
       `=== GENERATING QUESTIONS FOR OBJECTIVE: ${granularLearningObjective.text} ===`
     );
 
-    const questions = [];
-    const failedQuestions = [];
-
-    // Get comprehensive content for this objective
-    // Generate different types of questions based on Bloom's taxonomy
     const bloomLevels = granularLearningObjective.bloom || ["Understand"];
+    
+    let questions = [];
 
-    for (let i = 0; i < granularLearningObjective.count; i++) {
-      const bloomLevel = bloomLevels[i % bloomLevels.length];
-      const questionType = this.determineQuestionType(bloomLevel);
-      console.log(
-        `Creating question ${i + 1}/${
-          granularLearningObjective.count
-        } with Bloom level: ${bloomLevel} and question type: ${questionType}`
+    try {
+      questions = await this.createContextualQuestionsBatch(
+        courseId,
+        courseName,
+        learningObjective.objectiveId,
+        learningObjective.title,
+        granularLearningObjective.granularId,
+        granularLearningObjective.text,
+        bloomLevels,
+        learningObjective.materialIds || [],
+        granularLearningObjective.count
       );
-
-      let question = null;
-      let retryCount = 0;
-      const maxRetries = 3;
-      let lastError = null;
-      let activeQuestionType = questionType;
-
-      // Retry per question; if a "calculation" attempt exhausts retries, fall back to multiple-choice once below.
-      while (retryCount < maxRetries && !question) {
-        try {
-            question = await this.createContextualQuestion(
-              courseId,
-              courseName,
-              learningObjective.objectiveId,
-              learningObjective.title,
-              granularLearningObjective.granularId,
-              granularLearningObjective.text,
-              bloomLevel,
-              i + 1,
-              activeQuestionType
-            );
-
-          console.log(`✅ Created question ${i + 1}:`, question.text);
-          questions.push(question);
-          
-          // Add a small delay between questions to avoid rate limiting
-          if (i < granularLearningObjective.count - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        } catch (error) {
-          retryCount++;
-          lastError = error;
-          console.warn(
-            `⚠️ Failed to generate question ${i + 1} (attempt ${retryCount}/${maxRetries}):`,
-            error.message
-          );
-          
-          if (retryCount < maxRetries) {
-            // Wait before retrying (exponential backoff)
-            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
-            console.log(`Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-      }
-
-      if (!question && activeQuestionType === QUESTION_TYPES.CALCULATION) {
-        console.warn(
-          `⚠️ Calculation retries exhausted for question ${i + 1}; falling back to multiple-choice for objective "${granularLearningObjective.text}".`
-        );
-        try {
-          question = await this.createContextualQuestion(
-            courseId,
-            courseName,
-            learningObjective.objectiveId,
-            learningObjective.title,
-            granularLearningObjective.granularId,
-            granularLearningObjective.text,
-            bloomLevel,
-            i + 1,
-            QUESTION_TYPES.MULTIPLE_CHOICE
-          );
-          activeQuestionType = QUESTION_TYPES.MULTIPLE_CHOICE;
-          console.log(`✅ Created fallback multiple-choice question ${i + 1}:`, question.text);
-          questions.push(question);
-          if (i < granularLearningObjective.count - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        } catch (fallbackError) {
-          console.error(
-            `❌ Fallback to multiple-choice also failed for question ${i + 1}:`,
-            fallbackError.message
-          );
-          lastError = fallbackError;
-        }
-      }
-
-      if (!question) {
-        console.error(
-          `❌ Failed to generate question ${i + 1} after ${maxRetries} attempts${
-            questionType === QUESTION_TYPES.CALCULATION ? " (including multiple-choice fallback)" : ""
-          }:`,
-          lastError ? lastError.message : "unknown error"
-        );
-        failedQuestions.push({
-          questionNumber: i + 1,
-          bloomLevel: bloomLevel,
-          questionType: questionType,
-          error: lastError ? lastError.message : "unknown error",
-        });
-      }
+    } catch (error) {
+      console.error(
+        `❌ Failed to generate questions for objective: ${granularLearningObjective.text}`,
+        error.message
+      );
+      throw error;
     }
 
     console.log(
-      `Generated ${questions.length}/${granularLearningObjective.count} questions for objective: ${granularLearningObjective.text}`
+      `Generated ${questions.length}/${bloomLevels.length} questions for objective: ${granularLearningObjective.text}`
     );
     
-    if (failedQuestions.length > 0) {
-      console.warn(
-        `⚠️ Failed to generate ${failedQuestions.length} question(s):`,
-        failedQuestions
-      );
-    }
-    
-    // If we got at least some questions, return them. Otherwise throw error.
     if (questions.length === 0) {
       throw new Error(
-        `Failed to generate any questions for objective: ${granularLearningObjective.text}. All ${granularLearningObjective.count} attempts failed.`
+        `Failed to generate any questions for objective: ${granularLearningObjective.text}.`
       );
     }
     
     return questions;
   }
 
-  // Create a contextual question based on content and Bloom's taxonomy
-  async createContextualQuestion(
+  // Create contextual questions batch based on content and Bloom's taxonomy
+  async createContextualQuestionsBatch(
     courseId,
     courseName,
     learningObjectiveId,
     learningObjectiveText,
     granularLearningObjectiveId,
     granularLearningObjectiveText,
-    bloomLevel,
-    questionNumber,
-    questionType
+    bloomLevels,
+    materialIds = [],
+    count
   ) {
-    if (!this.llmService || !this.llmService.isAvailable()) {
-      throw new Error("Question generation service is currently unavailable");
-    }
-  
-    console.log(
-      `Generating ${questionType} question for objective: ${learningObjectiveText}`
-    );
-  
+    console.log(`Generating batch questions for objective: ${learningObjectiveText}`);
+
     try {
-      const questionData = await this.llmService.generateQuestionByType(
-        questionType,
-        {
+      const llmResponse = await fetch('/api/rag-llm/generate-questions-with-rag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           courseId,
           courseName,
           learningObjectiveId,
           learningObjectiveText,
           granularLearningObjectiveText,
+          bloomLevels,
+          materialIds,
+          count,
+        }),
+      });
+
+      if (!llmResponse.ok) {
+        const errorText = await llmResponse.text().catch(() => 'Unknown error');
+        throw new Error(`Server error: ${llmResponse.status} - ${errorText}`);
+      }
+
+      const response = await llmResponse.json();
+
+      if (!response.success) {
+        throw new Error(response.error || "Question generation service is currently unavailable");
+      }
+
+      if (!response.questions || !Array.isArray(response.questions)) {
+        throw new Error("Invalid response: questions array missing");
+      }
+
+      return response.questions.map((questionData, index) => {
+        const resolvedType = questionData.questionType || questionData.type || QUESTION_TYPES.MULTIPLE_CHOICE;
+        const bloomLevel = questionData.bloomLevel || bloomLevels[index % bloomLevels.length] || "Understand";
+
+        const base = {
+          id: `${granularLearningObjectiveId}-${index + 1}-${Date.now()}`,
+          granularObjectiveId: `${granularLearningObjectiveId}`,
+          learningObjectiveId,
+          materialIds,
+          courseId,
+          text: questionData.question || questionData.stem || "",
+          topicTitle: questionData.topicTitle || "",
+          questionType: resolvedType,
+          options: questionData.options || null,
+          correctAnswer: questionData.correctAnswer || "",
+          acceptableAnswers: questionData.acceptableAnswers || [],
           bloomLevel,
-        }
-      );
-  
-      const resolvedType = questionData.type || questionData.questionType || questionType;
-
-      if (resolvedType === QUESTION_TYPES.CALCULATION) {
-        const stemText = String(
-          questionData.stem || questionData.question || ""
-        ).trim();
-        let topicTitleCalc = String(
-          questionData.topicTitle ||
-            questionData.topic ||
-            questionData.shortTitle ||
-            ""
-        )
-          .trim()
-          .replace(/\?+$/, "");
-        if (!topicTitleCalc) {
-          const before = stemText.split("{{")[0].trim();
-          const words = before.split(/\s+/).filter(Boolean);
-          topicTitleCalc = words.slice(0, 10).join(" ") || "Calculation";
-        }
-        let answerDec = parseInt(questionData.calculationAnswerDecimals, 10);
-        if (!Number.isFinite(answerDec)) answerDec = 2;
-        answerDec = Math.max(0, Math.min(12, answerDec));
-        let tolerancePct = parseFloat(questionData.calculationAnswerTolerancePercent);
-        if (!Number.isFinite(tolerancePct)) tolerancePct = null;
-        else tolerancePct = Math.max(0, Math.min(100, tolerancePct));
-        return {
-          id: `${granularLearningObjectiveId}-${questionNumber}`,
-          granularObjectiveId: `${granularLearningObjectiveId}`,
-          text: stemText,
-          topicTitle: topicTitleCalc,
-          questionType: QUESTION_TYPES.CALCULATION,
-          options: null,
-          correctAnswer: "",
-          acceptableAnswers: [],
-          calculationFormula: questionData.calculationFormula,
-          calculationVariables: questionData.calculationVariables,
-          calculationAnswerDecimals: answerDec,
-          calculationAnswerTolerancePercent: tolerancePct,
-          bloomLevel: bloomLevel,
-          difficulty: this.determineDifficulty(bloomLevel),
           metaCode: learningObjectiveText,
           loCode: granularLearningObjectiveText,
           lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
           by: "LLM + RAG System",
-          explanation: questionData.explanation,
+          explanation: questionData.explanation || "",
         };
-      }
 
-      if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
-        const stemText = String(
-          questionData.stem || questionData.question || ""
-        ).trim();
-        let topicTitleOpen = String(
-          questionData.topicTitle ||
-            questionData.topic ||
-            questionData.shortTitle ||
-            ""
-        )
-          .trim()
-          .replace(/\?+$/, "");
-        if (!topicTitleOpen) {
-          const words = stemText.split(/\s+/).filter(Boolean);
-          topicTitleOpen = words.slice(0, 10).join(" ") || "Open-ended";
+        if (resolvedType === QUESTION_TYPES.CALCULATION) {
+          base.stem = questionData.stem || questionData.question || "";
+          base.calculationFormula = questionData.calculationFormula || "";
+          base.calculationVariables = questionData.calculationVariables || [];
+          base.calculationAnswerDecimals = questionData.calculationAnswerDecimals ?? 2;
+          base.calculationAnswerTolerancePercent = questionData.calculationAnswerTolerancePercent ?? null;
+        } else if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
+          base.stem = questionData.stem || questionData.question || "";
+          base.openEndedSampleAnswer = questionData.openEndedSampleAnswer || "";
+          base.openEndedGradingCriteria = questionData.openEndedGradingCriteria || "";
+        } else if (resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+          base.stem = questionData.question || "";
         }
-        return {
-          id: `${granularLearningObjectiveId}-${questionNumber}`,
-          granularObjectiveId: `${granularLearningObjectiveId}`,
-          text: stemText,
-          stem: stemText,
-          topicTitle: topicTitleOpen,
-          questionType: QUESTION_TYPES.OPEN_ENDED,
-          options: null,
-          correctAnswer: "",
-          acceptableAnswers: [],
-          openEndedSampleAnswer: String(
-            questionData.openEndedSampleAnswer || ""
-          ).trim(),
-          openEndedGradingCriteria: String(
-            questionData.openEndedGradingCriteria || ""
-          ).trim(),
-          bloomLevel: bloomLevel,
-          difficulty: this.determineDifficulty(bloomLevel),
-          metaCode: learningObjectiveText,
-          loCode: granularLearningObjectiveText,
-          lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-          by: "LLM + RAG System",
-          explanation: questionData.explanation,
-        };
-      }
 
-      const acceptable =
-        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
-          ? Array.isArray(questionData.acceptableAnswers) && questionData.acceptableAnswers.length
-            ? questionData.acceptableAnswers
-            : questionData.correctAnswer != null
-              ? [String(questionData.correctAnswer)]
-              : []
-          : [];
-
-      const fibStem = String(questionData.question || "").trim();
-      const rawTopic =
-        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
-          ? String(
-              questionData.topicTitle ||
-                questionData.topic ||
-                questionData.shortTitle ||
-                ""
-            ).trim()
-          : "";
-      const topicTitleFib =
-        resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK
-          ? rawTopic ||
-            (() => {
-              const before = fibStem.split("_________")[0].trim();
-              const words = before.split(/\s+/).filter(Boolean);
-              return words.slice(0, 10).join(" ") || "Fill-in-the-blank";
-            })()
-          : "";
-
-      return {
-        id: `${granularLearningObjectiveId}-${questionNumber}`,
-        granularObjectiveId: `${granularLearningObjectiveId}`,
-        text: questionData.question,
-        topicTitle: resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK ? topicTitleFib : undefined,
-        questionType: resolvedType,
-        options: questionData.options || null,
-        correctAnswer: questionData.correctAnswer,
-        acceptableAnswers: acceptable,
-        bloomLevel: bloomLevel,
-        difficulty: this.determineDifficulty(bloomLevel),
-        metaCode: learningObjectiveText,
-        loCode: granularLearningObjectiveText,
-        lastEdited: new Date().toISOString().slice(0, 16).replace("T", " "),
-        by: "LLM + RAG System",
-        explanation: questionData.explanation,
-      };
+        return base;
+      });
     } catch (error) {
-      console.error(`Error generating question ${questionNumber}:`, error);
+      console.error(`Error generating batch questions:`, error);
       throw error;
     }
   }
 
-  // Extract key concepts from content for question generation
-  extractKeyConceptsForQuestion(content) {
-    const concepts = [];
 
-    // Look for capitalized terms and technical concepts
-    const capitalizedWords =
-      content.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
-
-    capitalizedWords.forEach((word) => {
-      if (word.length > 3 && !this.isCommonWord(word)) {
-        concepts.push(word);
-      }
-    });
-
-    return [...new Set(concepts)].slice(0, 5);
-  }
-
-  // Determine difficulty based on Bloom's taxonomy
   determineDifficulty(bloomLevel) {
     const difficultyMap = {
       remember: "Easy",

@@ -88,6 +88,7 @@ const createObjective = async (objectiveData) => {
       const granularObjectives = objectiveData.granularObjectives.map((granular) => ({
         name: granular.text || granular.name,
         bloomTaxonomies: granular.bloomTaxonomies || [],
+        questionCount: granular.questionCount || 2,
         parent: parentId,
         courseId: courseIdObj,
         createdAt: new Date(),
@@ -158,8 +159,12 @@ const getObjectiveWithMaterials = async (objectiveId, courseId = null) => {
       return null;
     }
     
-    // Pass the objective's _id (which is an ObjectId) to get materials
-    const materials = await objectiveMaterialService.getMaterialsForObjective(objective._id);
+    // If it's a granular objective (parent is not 0), resolve materials from its parent objective
+    const targetId = (objective.parent && objective.parent !== 0 && objective.parent !== '0')
+      ? objective.parent
+      : objective._id;
+      
+    const materials = await objectiveMaterialService.getMaterialsForObjective(targetId);
     
     return {
       ...objective,
@@ -245,12 +250,14 @@ const updateObjective = async (objectiveId, updateData) => {
             id: granularId,
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
+            questionCount: granular.questionCount || 2,
           });
         } else {
           // New granular objective - create it
           granularToCreate.push({
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
+            questionCount: granular.questionCount || 2,
             parent: id,
             courseId: courseIdForGranular,
             createdAt: new Date(),
@@ -264,6 +271,7 @@ const updateObjective = async (objectiveId, updateData) => {
         const update = {
           name: granular.name,
           bloomTaxonomies: granular.bloomTaxonomies,
+          questionCount: granular.questionCount,
           updatedAt: new Date()
         };
         // Update courseId if provided

@@ -4,6 +4,7 @@
 // Constants
 const UPLOAD_API_ENDPOINTS = {
   materialSave: '/api/material/save',
+  materialUpload: '/api/material/upload',
 };
 
 const UPLOAD_STORAGE_KEYS = {
@@ -199,42 +200,43 @@ async function addFiles(files) {
           continue;
         }
 
-        if (contentGenerator) {
-          const sourceId = selectedCourse.id + '-' + Date.now() + '-' + Math.random();
-          const response = await contentGenerator.processFileForRAG(
-            file,
-            selectedCourse,
-            sourceId
-          );
+        const sourceId = selectedCourse.id + '-' + Date.now() + '-' + Math.random();
+        
+        // Use FormData to send file to backend
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('courseId', selectedCourse.id);
+        formData.append('sourceId', sourceId);
+        formData.append('documentTitle', file.name);
 
-          if (response.success) {
-            try {
-              await saveMaterialToDatabase(
-                sourceId,
-                selectedCourse.id,
-                {
-                  fileType: file.type,
-                  fileSize: file.size,
-                  documentTitle: file.name,
-                }
-              );
+        const response = await fetch(UPLOAD_API_ENDPOINTS.materialUpload, {
+          method: 'POST',
+          body: formData,
+        });
 
-              const stateFileObj = {
-                fileSize: file.size,
-                fileType: file.type,
-                documentTitle: file.name,
-                sourceId: sourceId,
-                createdAt: new Date(),
-              };
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Upload failed');
+        }
 
-              addMaterialToCourseMaterials(stateFileObj, sourceId);
-            } catch (error) {
-              console.error('Error saving material to database:', error);
-            }
-          }
+        const data = await response.json();
+
+        if (data.success) {
+          const stateFileObj = {
+            fileSize: file.size,
+            fileType: file.type,
+            documentTitle: file.name,
+            sourceId: sourceId,
+            createdAt: new Date(),
+          };
+
+          addMaterialToCourseMaterials(stateFileObj, sourceId);
+        } else {
+          showNotification('Failed to process file on server', 'error');
         }
       } catch (error) {
         console.error('Error processing file:', error);
+        showNotification(`Failed to upload ${file.name}: ${error.message}`, 'error');
       }
     }
 

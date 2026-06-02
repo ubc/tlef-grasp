@@ -19,10 +19,10 @@ class RAGService {
     this.instances = new Map();
     this.RAGModule = null;
     this.ConsoleLogger = null;
-    
+
     // Config templates
     this.baseConfig = null;
-    
+
     // Global initialization (loading modules)
     this.initializationPromise = this.initializeBase();
 
@@ -73,7 +73,7 @@ class RAGService {
           llmConfig: embeddingLlmConfig,
         }
       };
-      
+
       console.log("✅ RAG Base initialized");
     } catch (err) {
       console.error("❌ Failed to initialize RAG Base:", err);
@@ -96,20 +96,34 @@ class RAGService {
 
   async getOrCreateInstance(courseId) {
     await this.initializationPromise;
-    
+
     const collectionName = this.getCollectionName(courseId);
-    
+
     if (this.instances.has(collectionName)) {
       return this.instances.get(collectionName);
     }
 
     console.log(`Creating RAG instance for collection: ${collectionName}`);
-    
+
     const ragConfig = {
       ...this.baseConfig,
       qdrantConfig: {
         ...this.baseConfig.qdrantConfig,
         collectionName: collectionName
+      },
+      chunkingConfig: (content) => {
+        const chunks = [];
+        const chunkSize = 1000;
+        const overlap = 150;
+
+        let i = 0;
+        while (i < content.length) {
+          const end = Math.min(i + chunkSize, content.length);
+          chunks.push(content.substring(i, end));
+          if (end === content.length) break;
+          i += chunkSize - overlap;
+        }
+        return chunks;
       },
       logger: new this.ConsoleLogger(`RAG-${collectionName}`)
     };
@@ -184,7 +198,7 @@ class RAGService {
     console.log(`✅ Document with sourceId ${sourceId} deleted successfully`);
   }
 
-  async getLearningObjectiveRagContent(objectiveId, query, courseId = null) {
+  async getLearningObjectiveRagContent(objectiveId, query, courseId = null, scoreThreshold = undefined, limit = 20) {
     const instance = await this.getOrCreateInstance(courseId);
     if (!instance) {
       throw new Error("RAG instance is not initialized for this course");
@@ -200,28 +214,26 @@ class RAGService {
       throw new Error(`Objective with ID ${objectiveId} not found`);
     }
 
-    // Use provided query for RAG search
-    let ragChunks = await instance.retrieveContext(query, {
-      limit: 50,
-    });
+    const filter = {
+      must: [{ key: "sourceId", match: { any: objective.materials.map((material) => material.sourceId) } }]
+    };
 
-    // Get materials source IDs, filter out chunks that are not in the materials
-    const materialsSourceIds = objective.materials.map((material) => material.sourceId);
-    console.log("Materials source IDs:", materialsSourceIds);
-    ragChunks = ragChunks.filter((chunk) => materialsSourceIds.includes(chunk.metadata.sourceId));
+    let ragChunks = await instance.retrieveContext(query, { limit, scoreThreshold, filter });
 
-    console.log("RAG context:", ragChunks);
+    // Fallback: if threshold filtered everything out, retry without it
+    if (ragChunks.length === 0 && scoreThreshold !== undefined) {
+      console.log(`⚠️ Score threshold ${scoreThreshold} returned 0 chunks — retrying without threshold`);
+      ragChunks = await instance.retrieveContext(query, { limit, filter });
+    }
 
     if (ragChunks && ragChunks.length > 0) {
-      const ragChunksCount = ragChunks.length;
-      console.log(`✅ Found ${ragChunksCount} relevant chunks from RAG`);
+      const scores = ragChunks.map(c => c.score?.toFixed(3) || 'n/a');
+      console.log(`✅ Found ${ragChunks.length} relevant chunks from RAG (threshold: ${scoreThreshold ?? 'none'}, scores: ${scores.join(', ')})`);
       const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
       console.log("RAG context length:", ragContext.length);
       return ragContext;
     } else {
-      console.log(
-        "⚠️ No relevant chunks found in RAG, using provided content"
-      );
+      console.log("⚠️ No relevant chunks found in RAG");
       return '';
     }
   }
@@ -233,7 +245,7 @@ class RAGService {
    * @param {number} limit - Maximum number of chunks to retrieve (default: 100)
    * @returns {Promise<string>} Combined RAG context from all materials
    */
-  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 100, courseId = null) {
+  async getRagContentFromMaterials(sourceIds, query = "course content", limit = 50, courseId = null, scoreThreshold = undefined) {
     const instance = await this.getOrCreateInstance(courseId);
     if (!instance) {
       throw new Error("RAG instance is not initialized for this course");
@@ -244,21 +256,39 @@ class RAGService {
     }
 
     // Use provided query for RAG search
-    let ragChunks = await instance.retrieveContext(query, {
-      limit: limit,
-    });
+    const filter = { must: [{ key: "sourceId", match: { any: sourceIds } }] };
 
-    // Filter chunks to only include those from the specified materials
-    ragChunks = ragChunks.filter((chunk) => {
-      const chunkSourceId = chunk.metadata?.sourceId;
-      return chunkSourceId && sourceIds.includes(chunkSourceId);
-    });
+    let ragChunks = await instance.retrieveContext(query, { limit, scoreThreshold, filter });
 
-    console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials`);
+    // Fallback: if threshold filtered everything out, retry without it
+    if (ragChunks.length === 0 && scoreThreshold !== undefined) {
+      console.log(`⚠️ Score threshold ${scoreThreshold} returned 0 chunks — retrying without threshold`);
+      ragChunks = await instance.retrieveContext(query, { limit, filter });
+    }
+
+    const scores = ragChunks.map(c => c.score?.toFixed(3) || 'n/a');
+    console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials (threshold: ${scoreThreshold ?? 'none'}, scores: ${scores.join(', ')})`);
 
     if (ragChunks && ragChunks.length > 0) {
-      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
-      console.log("RAG context length:", ragContext.length);
+      // Group chunks by sourceId
+      const chunksBySource = {};
+      ragChunks.forEach(chunk => {
+        const sid = chunk.metadata?.sourceId || 'Unknown';
+        if (!chunksBySource[sid]) {
+          chunksBySource[sid] = {
+            title: chunk.metadata?.documentTitle || chunk.metadata?.fileName || 'Unknown Source',
+            contents: []
+          };
+        }
+        chunksBySource[sid].contents.push(chunk.content);
+      });
+
+      // Format context grouped by material
+      const ragContext = Object.entries(chunksBySource).map(([sid, data]) => {
+        return `### MATERIAL: ${data.title} (SOURCE ID: ${sid})\n${data.contents.join('\n\n')}`;
+      }).join("\n\n---\n\n");
+
+      console.log(`✅ Processed RAG context from ${Object.keys(chunksBySource).length} materials`);
       return ragContext;
     } else {
       console.log("⚠️ No relevant chunks found in RAG for selected materials");

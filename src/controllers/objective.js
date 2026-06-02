@@ -18,9 +18,28 @@ const getAllObjectives = async (req, res) => {
     }
 
     const objectives = await getParentObjectives(courseId);
+    
+    // Populate materialIds for each objective
+    const populatedObjectives = await Promise.all(objectives.map(async (obj) => {
+      try {
+        const materials = await getMaterialsForObjective(obj._id);
+        const materialIds = materials.map(m => m.sourceId || m._id.toString());
+        return {
+          ...obj,
+          materialIds
+        };
+      } catch (err) {
+        console.error(`Error populating materials for objective ${obj._id}:`, err);
+        return {
+          ...obj,
+          materialIds: []
+        };
+      }
+    }));
+
     res.json({
       success: true,
-      objectives: objectives,
+      objectives: populatedObjectives,
     });
   } catch (error) {
     console.error('Error fetching objectives:', error);
@@ -86,6 +105,11 @@ const createObjectiveHandler = async (req, res) => {
       granularObjectives: granularObjectives || [],
       courseId: courseId,
     });
+
+    // Persist material relationships if provided
+    if (materialIds && Array.isArray(materialIds) && materialIds.length > 0) {
+      await updateObjectiveMaterialRelations(result.parent._id.toString(), materialIds);
+    }
 
     res.json({
       success: true,

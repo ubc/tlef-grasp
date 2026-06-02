@@ -1,6 +1,6 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const calculationQuestion = require('./calculation-question');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { ObjectId } = require('mongodb');
 
 const saveQuestion = async (courseId, questionData) => {
@@ -26,7 +26,7 @@ const saveQuestion = async (courseId, questionData) => {
             QUESTION_TYPES.MULTIPLE_CHOICE;
 
         if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
-            calculationQuestion.validateFormulaAgainstVariableSpecs(
+            CalculationQuestion.validateFormulaAgainstVariableSpecs(
                 typeof questionData.calculationFormula === "string"
                     ? questionData.calculationFormula
                     : "",
@@ -77,7 +77,7 @@ const saveQuestion = async (courseId, questionData) => {
                     : "",
             calculationFormula:
                 qtLower === QUESTION_TYPES.CALCULATION
-                    ? calculationQuestion.prepareCalculationFormula(
+                    ? CalculationQuestion.prepareCalculationFormula(
                           calcFormulaRaw,
                           calcVarsForStore
                       )
@@ -86,7 +86,6 @@ const saveQuestion = async (courseId, questionData) => {
             calculationAnswerDecimals,
             calculationAnswerTolerancePercent,
             bloom: questionData.bloom,
-            difficulty: questionData.difficulty,
             courseId: courseIdObj,
             granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
@@ -207,7 +206,7 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.options !== undefined) update.options = updateData.options;
         if (updateData.correctAnswer !== undefined) update.correctAnswer = updateData.correctAnswer;
         if (updateData.bloom !== undefined) update.bloom = updateData.bloom;
-        if (updateData.difficulty !== undefined) update.difficulty = updateData.difficulty;
+
         if (updateData.status !== undefined) update.status = updateData.status;
         if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
         if (updateData.questionType !== undefined) update.questionType = updateData.questionType;
@@ -280,12 +279,12 @@ const updateQuestion = async (questionId, updateData) => {
                     const mergedVars = Array.isArray(merged.calculationVariables)
                         ? merged.calculationVariables
                         : [];
-                    calculationQuestion.validateFormulaAgainstVariableSpecs(
+                    CalculationQuestion.validateFormulaAgainstVariableSpecs(
                         mergedFormula,
                         mergedVars
                     );
                     update.calculationFormula =
-                        calculationQuestion.prepareCalculationFormula(
+                        CalculationQuestion.prepareCalculationFormula(
                             mergedFormula,
                             mergedVars
                         );

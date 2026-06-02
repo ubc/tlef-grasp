@@ -1,8 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const materialController = require('../controllers/material');
+const multer = require("multer");
+
+// Use memory storage for uploaded files so we can process them immediately
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.post("/save", express.json(), materialController.saveMaterialHandler);
+
+router.post("/upload", upload.single("file"), materialController.uploadFileHandler);
 
 router.delete("/delete/:sourceId", materialController.deleteMaterialHandler);
 

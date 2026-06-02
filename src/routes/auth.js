@@ -11,8 +11,8 @@ const authController = require('../controllers/auth');
 // Login route - redirects to UBC IdP
 router.get('/ubcshib', authController.login);
 
-// Callback route - called by UBC IdP after authentication
-router.post(
+// Callback route - called by UBC IdP after authentication or logout
+router.all(
 	'/saml/callback',
 	authController.callback,
 	authController.callbackSuccess

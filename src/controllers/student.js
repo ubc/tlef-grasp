@@ -1,6 +1,6 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
-const calculationQuestion = require('../services/calculation-question');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
@@ -100,15 +100,6 @@ const startQuizHandler = async (req, res) => {
   }
 };
 
-// Helper function to shuffle an array (Fisher-Yates algorithm)
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
 
 function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "").trim().toLowerCase();
@@ -116,39 +107,26 @@ function resolveQuestionType(q) {
   return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
-// Helper function to shuffle question options and update correct answer
 function shuffleQuestionOptions(question) {
   const optionKeys = ['A', 'B', 'C', 'D'];
   const originalCorrectAnswer = question.correctAnswer;
-  // If options are objects {A: "text", ...}
   const correctOptionText = question.options[originalCorrectAnswer];
 
-  // Create array of option entries and shuffle
-  const optionEntries = optionKeys.map(key => ({
-    key,
-    text: question.options[key]
-  }));
+  const optionEntries = optionKeys.map(key => ({ key, text: question.options[key] }));
   const shuffledEntries = shuffleArray(optionEntries);
 
-  // Rebuild options object with shuffled order
   const newOptions = {};
   let newCorrectAnswer = 'A';
 
   shuffledEntries.forEach((entry, index) => {
     const newKey = optionKeys[index];
     newOptions[newKey] = entry.text;
-
-    // Track where the correct answer moved to
     if (entry.text === correctOptionText) {
       newCorrectAnswer = newKey;
     }
   });
 
-  return {
-    ...question,
-    options: newOptions,
-    correctAnswer: newCorrectAnswer
-  };
+  return { ...question, options: newOptions, correctAnswer: newCorrectAnswer };
 }
 
 const getQuizQuestionsHandler = async (req, res) => {
@@ -217,7 +195,7 @@ const getQuizQuestionsHandler = async (req, res) => {
 
       if (questionType === QUESTION_TYPES.CALCULATION) {
         const vars = q.calculationVariables;
-        const template = calculationQuestion.resolveCalculationDisplayTemplate(
+        const template = CalculationQuestion.resolveCalculationDisplayTemplate(
           q.stem,
           q.title,
           vars
@@ -233,7 +211,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             ? Number(q.calculationAnswerTolerancePercent)
             : null;
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
-        const built = calculationQuestion.buildStudentCalculationInstance({
+        const built = CalculationQuestion.buildStudentCalculationInstance({
           template,
           formula,
           variableSpecs: vars,
@@ -395,6 +373,14 @@ const submitQuizHandler = async (req, res) => {
         });
 
         const db = await databaseService.connect();
+        
+        // Determine if this is the student's very first formally submitted attempt for this quiz
+        const existingScore = await db.collection("grasp_quiz_score").findOne({
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
+        });
+        const isFirstAttempt = !existingScore;
+
         const rawSubmittedQuestions = await db.collection("grasp_question").find({
             _id: { $in: submittedQuestionIds }
         }).toArray();
@@ -417,7 +403,10 @@ const submitQuizHandler = async (req, res) => {
                     learningObjectiveId: questionData.learningObjectiveId,
                     granularObjectiveId: questionData.granularObjectiveId,
                     bloom: questionData.bloom,
-                    isCorrect: !!feedbackResult.isCorrect
+                    isCorrect: !!feedbackResult.isCorrect,
+                    isFirstAttempt: isFirstAttempt,
+                    selectedAnswer: feedbackResult.selectedKey,
+                    correctAnswer: feedbackResult.correctAnswer
                 });
             }
         }
@@ -430,6 +419,19 @@ const submitQuizHandler = async (req, res) => {
           quizName,
           score
         );
+      }
+
+      // Record overall quiz score (Service handles first-attempt-only logic via DB unique index)
+      if (userId && quizId) {
+        await quizService.saveQuizScore({
+            userId: userId.toString(),
+            quizId,
+            courseId: courseId ? courseId.toString() : null,
+            score,
+            correctAnswers,
+            totalQuestions,
+            timeSpent
+        });
       }
     } catch (performanceError) {
       console.error("Error recording performance or awarding achievements:", performanceError);

@@ -11,10 +11,12 @@ let quizState = {
   currentQuestionIndex: 0,
   answers: {},
   feedback: {}, // Store feedback for each question
-  quizData: null,
   userId: null,
   userRole: null,
-  courseId: null
+  courseId: null,
+  completedQuizIds: [], // Added to track completions based on scores
+  startTime: null,
+  timerInterval: null
 };
 
 async function initializeQuiz() {
@@ -71,10 +73,11 @@ async function loadQuizList() {
     // Update course name display
     document.getElementById("courseNameDisplay").textContent = selectedCourse.name || "Unknown Course";
 
-    // Fetch quizzes and achievements in parallel
-    const [quizzesResponse, achievementsResponse] = await Promise.all([
+    // Fetch quizzes, achievements, and completion scores in parallel
+    const [quizzesResponse, achievementsResponse, scoresResponse] = await Promise.all([
       fetch(`/api/quiz/course/${quizState.courseId}`),
-      fetch(`/api/achievement/my?courseId=${quizState.courseId}`)
+      fetch(`/api/achievement/my?courseId=${quizState.courseId}`),
+      fetch(`/api/quiz/my-scores?courseId=${quizState.courseId}`)
     ]);
 
     const quizzesData = await quizzesResponse.json();
@@ -86,7 +89,12 @@ async function loadQuizList() {
         userAchievements = achievementsData.data;
       }
     }
-
+    if (scoresResponse.ok) {
+      const scoresData = await scoresResponse.json();
+      if (scoresData.success && scoresData.completedQuizIds) {
+        quizState.completedQuizIds = scoresData.completedQuizIds;
+      }
+    }
     if (quizzesData.success && quizzesData.quizzes) {
       // Filter to only show published quizzes and check dates
       const now = new Date();
@@ -105,6 +113,9 @@ async function loadQuizList() {
           publishedQuizzes.map(async (quiz) => {
             const quizId = quiz._id ? (quiz._id.toString ? quiz._id.toString() : String(quiz._id)) : String(quiz.id || "");
             let questionCount = 0;
+            let phase1Count = 0;
+            let phase2Count = 0;
+            let phase3Count = 0;
 
             try {
               // Get approved questions count (for students)
@@ -113,6 +124,12 @@ async function loadQuizList() {
                 const questionsData = await questionsResponse.json();
                 if (questionsData.success && questionsData.questions) {
                   questionCount = questionsData.questions.length;
+                  
+                  // Calculate breakdown
+                  const questions = questionsData.questions;
+                  phase1Count = questions.filter(q => q.phase === 1).length;
+                  phase2Count = questions.filter(q => q.phase === 2).length;
+                  phase3Count = questions.filter(q => q.phase === 3).length;
                 }
               }
             } catch (error) {
@@ -128,6 +145,9 @@ async function loadQuizList() {
             return {
               ...quiz,
               questionCount: questionCount,
+              phase1Count: phase1Count || 0,
+              phase2Count: phase2Count || 0,
+              phase3Count: phase3Count || 0,
               achievements: quizAchievements
             };
           })
@@ -199,7 +219,8 @@ function createQuizCard(quiz) {
 
   // Check for achievements
   const achievements = quiz.achievements || [];
-  const hasCompleted = achievements.some(a => a.type === 'quiz_completed');
+  // NEW: Check completion based on scores table, not achievements
+  const hasCompleted = quizState.completedQuizIds.includes(quizId);
   const hasPerfect = achievements.some(a => a.type === 'quiz_perfect');
 
   // Build achievement badges HTML
@@ -239,10 +260,29 @@ function createQuizCard(quiz) {
           Due: ${new Date(quiz.expireDate).toLocaleDateString()}
         </span>
         ` : ''}
-        <span class="quiz-question-count">
-          <i class="fas fa-question-circle"></i>
-          ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) !== 1 ? 's' : ''}
-        </span>
+        ${quiz.deliveryFormat === "spaced-3phase" ? `
+        <div class="quiz-count-breakdown">
+          <span class="quiz-count-item quiz" title="One question per granular learning objective">
+            <i class="fas fa-book"></i>
+            ${quiz.phase1Count || 0} New
+          </span>
+          <span class="quiz-count-item remediation" title="Remediation Questions">
+            <i class="fas fa-fire-alt"></i>
+            ${quiz.phase2Count || 0} Remediation
+          </span>
+          <span class="quiz-count-item review" title="Spaced Learning Questions">
+            <i class="fas fa-history"></i>
+            ${quiz.phase3Count || 0} Review
+          </span>
+        </div>
+        ` : `
+        <div class="quiz-count-breakdown">
+          <span class="quiz-count-item quiz" title="Total Questions">
+            <i class="fas fa-list-ol"></i>
+            ${quiz.questionCount || 0} Question${(quiz.questionCount || 0) === 1 ? '' : 's'}
+          </span>
+        </div>
+        `}
       </div>
       ${achievements.length > 0 ? `
         <div class="quiz-card-achievements-detail">
@@ -349,6 +389,9 @@ async function startQuiz(quizId) {
       quizState.currentQuestionIndex = 0;
       quizState.answers = {};
       quizState.feedback = {};
+      quizState.startTime = Date.now();
+      
+      startTimer();
 
       // Hide loading overlay
       const loadingOverlay = document.getElementById("quizLoadingOverlay");
@@ -405,6 +448,9 @@ function resetQuizState() {
   quizState.answers = {};
   quizState.feedback = {};
   quizState.quizData = null;
+  quizState.startTime = null;
+  
+  stopTimer();
 
   // Also hide completion section if it's visible
   const completionSection = document.getElementById("completionSection");
@@ -462,6 +508,9 @@ function restartQuiz() {
         quizState.currentQuestionIndex = 0;
         quizState.answers = {};
         quizState.feedback = {};
+        quizState.startTime = Date.now();
+        
+        startTimer();
       
         // Render updated quiz
         renderQuiz();
@@ -526,7 +575,7 @@ function showQuestion(questionIndex) {
 
   let completeHTML = `
     <div class="question-title" style="margin-bottom: ${question.stem ? '10px' : '0'};">
-      ${escapeHtml(question.question || question.title || "Question text not available")}
+      ${parseSmilesTags(escapeHtml(question.question || question.title || "Question text not available"))}
     </div>
   `;
 
@@ -549,7 +598,7 @@ function showQuestion(questionIndex) {
   if (question.stem && !isGenericFibStem) {
     completeHTML += `
       <div class="question-stem" style="font-size: 1.1em; font-weight: 500; color: #34495e;">
-        ${escapeHtml(question.stem)}
+        ${parseSmilesTags(escapeHtml(question.stem))}
       </div>
     `;
   }
@@ -597,6 +646,7 @@ function showQuestion(questionIndex) {
 
   // Render LaTeX after content is updated
   renderKatex();
+  if (typeof renderSmiles === 'function') renderSmiles();
 
   // Update navigation buttons
   document.getElementById("prevButton").disabled = questionIndex === 0;
@@ -1050,16 +1100,13 @@ function renderAnswerOptions(question, questionIndex) {
     return;
   }
 
-  // The secure backend now passes an array of indices [3, 0, 1, 2]
-  const optionOrderIndices = question.optionOrder || [0, 1, 2, 3];
   const questionId = question.id;
   
-  // The backend still physically keys the options DB dictionary as A, B, C, D
+  // The backend physically keys the options DB dictionary as A, B, C, D
   const databaseKeys = ['A', 'B', 'C', 'D'];
-  const selectedIndex = quizState.answers[questionId];
+  const selectedIndex = quizState.answers[questionId]; // 0, 1, 2, or 3
 
-  optionOrderIndices.forEach((mappedIndex, uiLoopCount) => {
-    const rawDBKey = databaseKeys[mappedIndex]; // e.g. 'C'
+  databaseKeys.forEach((rawDBKey, index) => {
     const optionRaw = question.options[rawDBKey];
     
     // Safely extract the string text from the dictionary object 
@@ -1068,38 +1115,32 @@ function renderAnswerOptions(question, questionIndex) {
 
     const optionDiv = document.createElement("div");
     optionDiv.className = "answer-option";
-    // We bind the dataset to the underlying index number so the backend can look it up securely
-    optionDiv.dataset.index = mappedIndex;
+    optionDiv.dataset.index = index;
 
-    // Add selected class if this exact mappedIndex was selected previously
-    if (selectedIndex === mappedIndex) {
+    // Add selected class if this exact index was selected previously
+    if (selectedIndex === index) {
       optionDiv.classList.add("selected");
     }
 
     // Add correct/incorrect classes if feedback exists (check by question ID)
     if (quizState.feedback[questionId]) {
       const feedbackData = quizState.feedback[questionId];
-      // Note: check against the parsed `rawDBKey` (e.g. 'C') because feedbackData.correctAnswer returns letters
       if (rawDBKey === feedbackData.correctAnswer) {
         optionDiv.classList.add("correct");
-      } else if (selectedIndex === mappedIndex && !feedbackData.isCorrect) {
+      } else if (selectedIndex === index && !feedbackData.isCorrect) {
         optionDiv.classList.add("incorrect");
       }
     }
 
-    // Visually, the UI should always render A -> B -> C -> D regardless of the mapping
-    const visualOrderLetter = databaseKeys[uiLoopCount];
-
     // Escape HTML and use innerHTML to support LaTeX rendering
-    const escapedOptionText = escapeHtml(optionText);
     optionDiv.innerHTML = `
-      <div class="option-letter">${visualOrderLetter}</div>
-      <div class="option-text">${escapedOptionText}</div>
+      <div class="option-letter">${rawDBKey}</div>
+      <div class="option-text">${parseSmilesTags(escapeHtml(optionText))}</div>
     `;
 
-    // Only allow selection if not already answered
+    // Only allow clicking if no feedback is shown for this DB question yet
     if (!quizState.feedback[questionId]) {
-      optionDiv.addEventListener("click", () => selectAnswer(mappedIndex, rawDBKey, questionIndex, questionId));
+      optionDiv.addEventListener("click", () => selectAnswer(index, rawDBKey, questionIndex, questionId));
     }
 
     answerOptions.appendChild(optionDiv);
@@ -1138,13 +1179,13 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
       throw new Error(result.error || "Could not check your answer.");
     }
 
-    // Store the selected mapped index
     quizState.answers[questionId] = selectedIndex;
     
     // Store exact server-authoritative feedback payload
     quizState.feedback[questionId] = {
       isCorrect: result.isCorrect,
       selectedAnswer: selectedIndex,
+      selectedKey: rawDBKey, // Store the raw A/B/C/D key for tracking
       correctAnswer: result.correctAnswer, // This will be the raw DB 'A', 'B' string
       feedbackText: result.feedback,
       correctOptionText: result.correctOptionText
@@ -1158,13 +1199,10 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
 
     // Update highlighting immediately on all options
     options.forEach(option => {
-      // Parse the embedded mapped index from the dataset (e.g. 0-3)
-      const mappedIndex = parseInt(option.dataset.index, 10);
-      
-      // We must reconstruct the raw backend key ('A', 'B', 'C', 'D') for this mapped index
-      // because the API evaluation result.correctAnswer returns the correct string key
+      // Parse the embedded index from the dataset (e.g. 0-3)
+      const index = parseInt(option.dataset.index, 10);
       const databaseKeys = ['A', 'B', 'C', 'D'];
-      const optionKey = databaseKeys[mappedIndex]; 
+      const optionKey = databaseKeys[index]; 
 
       option.classList.remove("selected", "correct", "incorrect");
 
@@ -1174,7 +1212,7 @@ async function selectAnswer(selectedIndex, rawDBKey, questionIndex, questionId) 
       }
 
       // Add incorrect class to the selected wrong answer
-      if (mappedIndex === selectedIndex && !result.isCorrect) {
+      if (index === selectedIndex && !result.isCorrect) {
         option.classList.add("incorrect");
       }
     });
@@ -1301,7 +1339,39 @@ function updateQuestionIndicators() {
   });
 }
 
+function startTimer() {
+  stopTimer();
+  updateTimerDisplay(); // Initial update
+  quizState.timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (quizState.timerInterval) {
+    clearInterval(quizState.timerInterval);
+    quizState.timerInterval = null;
+  }
+}
+
+function updateTimerDisplay() {
+  if (!quizState.startTime) return;
+  
+  const timerDisplay = document.getElementById("quizTimerDisplay");
+  if (!timerDisplay) return;
+
+  const elapsedMs = Date.now() - quizState.startTime;
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  
+  const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  timerDisplay.textContent = formattedTime;
+}
+
 async function showCompletion() {
+  // Stop the timer
+  stopTimer();
+
   // Hide quiz content
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
@@ -1354,6 +1424,8 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
     return [];
   }
 
+  const timeSpent = quizState.startTime ? (Date.now() - quizState.startTime) : 0;
+
   try {
     const response = await fetch(`/api/student/quizzes/${quizState.currentQuiz}/submit`, {
       method: "POST",
@@ -1366,7 +1438,7 @@ async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
         score: score,
         correctAnswers: correctAnswers,
         totalQuestions: totalQuestions,
-        timeSpent: 0,
+        timeSpent: timeSpent,
         sessionId: Date.now().toString()
       })
     });

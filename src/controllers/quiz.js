@@ -1,6 +1,6 @@
 const quizService = require("../services/quiz");
 const questionService = require("../services/question");
-const calculationQuestion = require("../services/calculation-question");
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { isFaculty } = require("../utils/auth");
 const { QUESTION_TYPES } = require("../constants/app-constants");
 
@@ -42,22 +42,55 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description, releaseDate, expireDate } = req.body;
-    
-    if (!courseId || !name) {
+    const { courseId, name, description, releaseDate, expireDate, deliveryFormat, questionIds, newQuestions } = req.body;
+
+    if (!courseId || !name || !releaseDate || !expireDate || !deliveryFormat) {
       return res.status(400).json({
         success: false,
-        error: "Course ID and quiz name are required",
+        error: "Course ID, name, releaseDate, expireDate, and deliveryFormat are required",
       });
     }
-    
-    const quiz = await quizService.createQuiz(courseId, { 
-      name, 
+
+    if (deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'.",
+      });
+    }
+
+    const quiz = await quizService.createQuiz(courseId, {
+      name,
       description,
       releaseDate,
-      expireDate
+      expireDate,
+      deliveryFormat
     });
-    res.status(201).json({ success: true, quiz });
+    
+    const quizId = quiz._id.toString();
+    const finalQuestionIds = [];
+
+    // Attach existing questions
+    if (questionIds && Array.isArray(questionIds)) {
+      finalQuestionIds.push(...questionIds);
+    }
+
+    // Create and attach new questions
+    if (newQuestions && Array.isArray(newQuestions)) {
+      for (const questionData of newQuestions) {
+        try {
+          const questionResult = await questionService.saveQuestion(courseId, questionData);
+          finalQuestionIds.push(questionResult.insertedId.toString());
+        } catch (error) {
+          console.error("Error saving new question during quiz creation:", error);
+        }
+      }
+    }
+
+    if (finalQuestionIds.length > 0) {
+      await quizService.addQuestionsToQuiz(quizId, finalQuestionIds);
+    }
+
+    res.status(201).json({ success: true, quiz, questionsAdded: finalQuestionIds.length });
   } catch (error) {
     console.error("Error creating quiz:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -70,7 +103,14 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, releaseDate, expireDate } = req.body;
+    const { name, description, published, releaseDate, expireDate, deliveryFormat } = req.body;
+
+    if (deliveryFormat !== undefined && deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'."
+      });
+    }
     
     // Get existing quiz to check current values
     const existingQuiz = await quizService.getQuizById(quizId);
@@ -93,12 +133,13 @@ const updateQuizHandler = async (req, res) => {
       }
     }
 
-    const result = await quizService.updateQuiz(quizId, { 
-      name, 
-      description, 
+    const result = await quizService.updateQuiz(quizId, {
+      name,
+      description,
       published,
       releaseDate,
-      expireDate
+      expireDate,
+      deliveryFormat
     });
     
     if (result.matchedCount === 0) {
@@ -301,7 +342,7 @@ const getQuizQuestionsHandler = async (req, res) => {
 
       if (questionType === QUESTION_TYPES.CALCULATION) {
         const vars = q.calculationVariables;
-        const template = calculationQuestion.resolveCalculationDisplayTemplate(
+        const template = CalculationQuestion.resolveCalculationDisplayTemplate(
           q.stem,
           q.title,
           vars
@@ -319,7 +360,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
 
         if (approvedOnlyBool) {
-          const built = calculationQuestion.buildStudentCalculationInstance({
+          const built = CalculationQuestion.buildStudentCalculationInstance({
             template,
             formula,
             variableSpecs: vars,
@@ -497,7 +538,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: "answerText is required for calculation questions",
         });
       }
-      const verified = calculationQuestion.verifyCalculationToken(calculationToken);
+      const verified = CalculationQuestion.verifyCalculationToken(calculationToken);
       if (!verified || String(verified.questionId) !== String(questionId)) {
         return res.status(400).json({
           success: false,
@@ -518,7 +559,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
           : null;
       let expected;
       try {
-        expected = calculationQuestion.evaluateCalculationFormula(formula, verified.values);
+        expected = CalculationQuestion.evaluateCalculationFormula(formula, verified.values);
       } catch (e) {
         console.error("Calculation check evaluate failed:", e);
         const msg = e && e.message ? String(e.message) : "";
@@ -535,9 +576,9 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: clientError ? msg : "Could not grade this calculation question",
         });
       }
-      const studentNum = calculationQuestion.parseStudentNumericAnswer(answerText);
-      const isCorrect = calculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
-      const displayCorrect = calculationQuestion.formatAnswerForDisplay(expected, answerDec);
+      const studentNum = CalculationQuestion.parseStudentNumericAnswer(answerText);
+      const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
+      const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
       res.json({
         success: true,
         isCorrect,
@@ -662,8 +703,67 @@ const checkQuestionAnswerHandler = async (req, res) => {
   }
 };
 
+/**
+ * Get scores for a quiz with student data (Instructors only)
+ */
+const getQuizScoresHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const scores = await quizService.getQuizScores(quizId);
+    
+    if (!scores) {
+      return res.status(404).json({ success: false, error: "Scores not found" });
+    }
+    
+    res.json({ success: true, data: scores });
+  } catch (error) {
+    console.error("Error fetching quiz scores:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Get detailed student attempt answers for a specific quiz (Instructors only)
+ */
+const getStudentQuizAttemptHandler = async (req, res) => {
+  try {
+    const { quizId, userId } = req.params;
+    const attempts = await quizService.getStudentQuizAttempt(quizId, userId);
+    
+    if (!attempts) {
+      return res.status(404).json({ success: false, error: "Attempts not found" });
+    }
+    
+    res.json({ success: true, data: attempts });
+  } catch (error) {
+    console.error("Error fetching student quiz attempts:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Get all completed quiz IDs for the current student in a course
+ */
+const getMyScoresHandler = async (req, res) => {
+  try {
+    const { courseId } = req.query;
+    const userId = req.user._id || req.user.id;
+
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: "courseId is required" });
+    }
+
+    const completedQuizIds = await quizService.getUserScoresForCourse(userId, courseId);
+    res.json({ success: true, completedQuizIds });
+  } catch (error) {
+    console.error("Error fetching my scores:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
+  getMyScoresHandler,
   getQuizByIdHandler,
   createQuizHandler,
   updateQuizHandler,
@@ -671,5 +771,7 @@ module.exports = {
   addQuizQuestionsHandler,
   getQuizQuestionsHandler,
   recordPerformanceHandler,
-  checkQuestionAnswerHandler
+  checkQuestionAnswerHandler,
+  getQuizScoresHandler,
+  getStudentQuizAttemptHandler
 };

@@ -87,7 +87,14 @@ passport.use(
 				// Get user role for session
 				const role = await getUserRole(user);
 
-				return done(null, { ...user, role });
+				return done(null, { 
+					...user, 
+					role,
+					nameID: profile.nameID,
+					nameIDFormat: profile.nameIDFormat,
+					nameIDNameQualifier: profile.nameIDNameQualifier,
+					nameIDSPNameQualifier: profile.nameIDSPNameQualifier
+				});
 			} catch (error) {
 				return done(new Error('Error saving user to database: ' + error.message));
 			}
@@ -101,7 +108,11 @@ passport.serializeUser((user, done) => {
 	// Convert MongoDB document to plain JavaScript object
 	const userObj = {
 		...user,
-		_id: user._id ? user._id.toString() : user._id
+		_id: user._id ? user._id.toString() : user._id,
+		nameID: user.nameID,
+		nameIDFormat: user.nameIDFormat,
+		nameIDNameQualifier: user.nameIDNameQualifier,
+		nameIDSPNameQualifier: user.nameIDSPNameQualifier
 	};
 
 	// Store full user object in session

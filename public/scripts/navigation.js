@@ -21,8 +21,11 @@ class GRASPNavigation {
 
   detectCurrentPage() {
     const path = window.location.pathname;
+    if (path.includes("quiz-scores")) return "quiz-scores";
     if (path.includes("quiz-summary")) return "quiz-summary";
+    if (path.includes("student-settings")) return "student-settings";
     if (path.includes("student-dashboard")) return "student-dashboard";
+    if (path.includes("quizzes")) return "quizzes";
     if (path.includes("quiz")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
     if (path.includes("achievements")) return "achievements";
@@ -292,13 +295,13 @@ class GRASPNavigation {
         </li>
         <li class="nav-item" data-page="course-materials">
           <a href="/course-materials" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-folder"></i>
+            <i class="fas fa-upload"></i>
             <span>Course Materials</span>
           </a>
         </li>
         <li class="nav-item" data-page="question-generation">
           <a href="/question-generation" style="text-decoration: none; color: inherit;">
-            <i class="fas fa-puzzle-piece"></i>
+            <i class="fas fa-wand-magic-sparkles"></i>
             <span>Question Generation</span>
           </a>
         </li>
@@ -306,6 +309,18 @@ class GRASPNavigation {
           <a href="/question-bank" style="text-decoration: none; color: inherit;">
             <i class="fas fa-book"></i>
             <span>Question Bank</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="quizzes">
+          <a href="/quizzes" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-clipboard-list"></i>
+            <span>Quizzes</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="quiz-scores">
+          <a href="/quiz-scores" style="text-decoration: none; color: inherit;">
+            <i class="fas fa-chart-bar"></i>
+            <span>Quiz Scores</span>
           </a>
         </li>
     `;
@@ -509,7 +524,6 @@ class GRASPNavigation {
       }
 
       .course-dropdown:hover {
-        background: rgba(255, 255, 255, 0.15);
         border-color: rgba(255, 255, 255, 0.3);
       }
 
@@ -889,8 +903,8 @@ class GRASPNavigation {
     // Clear selected course from sessionStorage
     sessionStorage.removeItem("grasp-selected-course");
 
-    // Redirect to onboarding page
-    window.location.href = "/onboarding";
+    // Redirect to auth logout route
+    window.location.href = "/auth/logout";
   }
 
   switchRole() {
@@ -966,6 +980,9 @@ class GRASPNavigation {
         case "settings":
           document.title = "Settings - GRASP";
           break;
+        case "student-settings":
+          document.title = "Settings - GRASP";
+          break;
         default:
           document.title = "GRASP";
       }
@@ -982,7 +999,10 @@ class GRASPNavigation {
   }
 
   openSettings() {
-    // Navigate to settings page
+    if (this.isStudent) {
+      window.location.href = '/student-settings';
+      return;
+    }
     window.location.href = '/settings';
   }
 

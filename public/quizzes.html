@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Quizzes - GRASP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:ital,wdth,wght@0,75..100,300..800;1,75..100,300..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/navigation.css">
+    <link rel="stylesheet" href="styles/quizzes.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/smiles-drawer@2.0.1/dist/smiles-drawer.min.js"></script>
+    <script src="scripts/smiles-renderer.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <!-- Header Section -->
+                <div class="header-section">
+                    <div class="header-tabs">
+                        <button class="tab-button active" data-tab="manage-quizzes">Manage Quizzes</button>
+                        <button class="tab-button" data-tab="create-quiz">Create New Quiz</button>
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Manage Quizzes Tab -->
+                    <div class="tab-panel active" id="manage-quizzes-panel">
+                        <div class="quizzes-container" id="quizzes-container">
+                            <!-- Quiz cards will be populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Create Quiz Tab -->
+                    <div class="tab-panel" id="create-quiz-panel" style="display: none;">
+                        <div class="create-quiz-wizard">
+                            <!-- Wizard Header -->
+                            <div class="wizard-header">
+                                <div class="wizard-step active" data-step="1">
+                                    <div class="step-circle">1</div>
+                                    <span class="step-label">Select Materials</span>
+                                </div>
+                                <div class="wizard-line"></div>
+                                <div class="wizard-step" data-step="2">
+                                    <div class="step-circle">2</div>
+                                    <span class="step-label">Select Objectives</span>
+                                </div>
+                                <div class="wizard-line"></div>
+                                <div class="wizard-step" data-step="3">
+                                    <div class="step-circle">3</div>
+                                    <span class="step-label">Quiz Settings</span>
+                                </div>
+                            </div>
+
+                            <!-- Wizard Content -->
+                            <div class="wizard-content">
+                                <!-- Step 1: Materials -->
+                                <div class="wizard-step-content active" id="wizard-step-1">
+                                    <h3>Select Course Materials</h3>
+                                    <p class="step-description">Choose the materials you want to test the students on.</p>
+                                    <div class="material-selection-container" id="material-selection-list">
+                                        <!-- Checkboxes populated via JS -->
+                                        <div class="empty-state-mini"><i class="fas fa-spinner fa-spin"></i> Loading materials...</div>
+                                    </div>
+                                    <div class="wizard-actions">
+                                        <button class="btn btn-primary" id="btn-next-step-1">Next: Select Objectives <i class="fas fa-arrow-right"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Objectives -->
+                                <div class="wizard-step-content" id="wizard-step-2" style="display: none;">
+                                    <h3>Select Learning Objectives</h3>
+                                    <p class="step-description">Select the meta learning objectives to include. Questions tied to these and their granular objectives will be added.</p>
+                                    <div class="objective-selection-container" id="objective-selection-list">
+                                        <!-- Checkboxes populated via JS -->
+                                    </div>
+                                    <div class="wizard-actions wizard-actions--between">
+                                        <button class="btn btn-secondary" id="btn-prev-step-2"><i class="fas fa-arrow-left"></i> Back</button>
+                                        <button class="btn btn-primary" id="btn-next-step-2">Next: Quiz Settings <i class="fas fa-arrow-right"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Settings -->
+                                <div class="wizard-step-content" id="wizard-step-3" style="display: none;">
+                                    <h3>Quiz Settings</h3>
+                                    
+                                    <div class="quiz-settings-form">
+                                        <div class="form-group">
+                                            <label for="new-quiz-name">Quiz Name</label>
+                                            <input type="text" id="new-quiz-name" class="form-control" placeholder="e.g. Midterm Review Quiz">
+                                        </div>
+
+                                        <div style="display: flex; flex-direction: row; gap: 20px;">
+                                            <div class="form-group" style="flex: 1;">
+                                                <label for="quiz-release-date">Release Date</label>
+                                                <input type="datetime-local" id="quiz-release-date" class="form-control" style="width: 100%; box-sizing: border-box;">
+                                            </div>
+                                            <div class="form-group" style="flex: 1;">
+                                                <label for="quiz-expire-date">Expire Date</label>
+                                                <input type="datetime-local" id="quiz-expire-date" class="form-control" style="width: 100%; box-sizing: border-box;">
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label>Delivery Format</label>
+                                            <div class="delivery-format-control">
+                                                <div class="delivery-format-popup" aria-live="polite"></div>
+                                                <div class="delivery-format-group" onmouseleave="hideDeliveryFormatPopup(this, event)">
+                                                    <button type="button" class="delivery-format-btn delivery-format-btn--active" data-value="all-approved" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)">
+                                                        <span>Standard</span>
+                                                        <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button type="button" class="delivery-format-btn" data-value="spaced-3phase" onmouseenter="showDeliveryFormatPopup(this)" onmouseleave="hideDeliveryFormatPopup(this, event)" onfocus="showDeliveryFormatPopup(this)" onblur="hideDeliveryFormatPopup(this, event)">
+                                                        <span>Adaptive</span>
+                                                        <i class="fas fa-info-circle delivery-format-info-icon" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                                <template class="delivery-format-info-template" data-value="all-approved"><strong>Default.</strong> Delivers every approved question in the quiz, in the order they were added. Students see the same set every time — no personalization, no spaced repetition.</template>
+                                                <template class="delivery-format-info-template" data-value="spaced-3phase">Three-phase spaced repetition tailored to each student: (1) one new question per granular learning objective, (2) remediation items the student failed in their previous quiz, (3) spaced review of previously-mastered objectives.</template>
+                                            </div>
+                                            <input type="hidden" id="quiz-delivery-format" value="all-approved">
+                                        </div>    
+
+
+                                        <div class="questions-preview">
+                                            <div class="preview-card">
+                                                <i class="fas fa-list-ol"></i>
+                                                <div class="preview-details">
+                                                    <span class="preview-label">Matching Questions Found</span>
+                                                    <span class="preview-count" id="matched-questions-count">0</span>
+                                                </div>
+                                            </div>
+                                            <div id="matched-questions-breakdown" style="margin: 15px 0;"></div>
+                                            <p class="preview-note">These questions will be associated with your new quiz.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="wizard-actions wizard-actions--between">
+                                        <button class="btn btn-secondary" id="btn-prev-step-3"><i class="fas fa-arrow-left"></i> Back</button>
+                                        <button class="btn btn-primary" id="btn-create-quiz"><i class="fas fa-check"></i> Create Quiz</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirm-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Confirm Action</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Are you sure you want to proceed?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Question Detail Modal -->
+    <div class="modal" id="question-detail-modal" style="display: none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="question-modal-title">Question Details</h3>
+                <button class="modal-close" id="question-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="question-modal-body">
+                <!-- Question content will be populated here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="question-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="question-modal-save" style="display: none;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Export Selection Modal -->
+    <div class="export-summary-modal" id="export-selection-modal" style="display: none;">
+        <div class="export-summary-modal__content" style="max-width: 600px;">
+            <div class="export-summary-modal__header">
+                <h3>Export Quiz</h3>
+                <button type="button" class="export-summary-modal__close" id="export-selection-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="export-summary-modal__body">
+                <div class="export-options">
+                    <div class="export-info" style="margin-bottom: 20px;">
+                        <h3 id="export-quiz-name-display" style="margin: 0 0 10px 0; font-size: 20px; color: #2c3e50;">Quiz Name</h3>
+                        <div class="export-note">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Select a format to download your quiz questions.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="export-format-section">
+                        <p class="export-format-title">Select Format</p>
+                        <div class="export-format-buttons">
+                            <button type="button" class="export-format-btn" data-format="qti">
+                                <i class="fas fa-file-archive"></i>
+                                <span>Canvas (QTI)</span>
+                                <small>ZIP format for LMS</small>
+                            </button>
+                            <button type="button" class="export-format-btn" data-format="csv">
+                                <i class="fas fa-file-csv"></i>
+                                <span>CSV</span>
+                                <small>Excel / Sheets</small>
+                            </button>
+                            <button type="button" class="export-format-btn" data-format="json">
+                                <i class="fas fa-file-code"></i>
+                                <span>JSON</span>
+                                <small>Raw Data</small>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="export-summary-modal__footer">
+                <button type="button" class="btn btn--secondary" id="export-selection-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="scripts/navigation.js"></script>
+    <script src="scripts/onboarding-check.js"></script>
+    <script src="scripts/quizzes.js"></script>
+</body>
+</html>

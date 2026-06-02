@@ -28,6 +28,7 @@ async function createCourse(courseData) {
             status: courseData.status || "active",
             createdAt: courseData.createdAt || new Date(),
             updatedAt: courseData.updatedAt || new Date(),
+            courseAccess: courseData.courseAccess
         });
 
         // Create specialized Qdrant collection for this course
@@ -81,8 +82,85 @@ async function getCourseById(courseId) {
     }
 }
 
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * List courses for student enrollment UI (no secrets). Optional case-insensitive search.
+ */
+async function listCoursesForEnrollment(searchQuery) {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_course");
+        const filter = { status: { $ne: "archived" } };
+        if (searchQuery && String(searchQuery).trim()) {
+            const q = escapeRegex(String(searchQuery).trim());
+            const regex = new RegExp(q, "i");
+            filter.$or = [
+                { courseName: regex },
+                { courseCode: regex },
+                { instructorName: regex },
+                { semester: regex },
+            ];
+        }
+        const courses = await collection
+            .find(filter)
+            .project({
+                courseCode: 1,
+                courseName: 1,
+                instructorName: 1,
+                semester: 1,
+                status: 1,
+            })
+            .sort({ courseName: 1 })
+            .limit(300)
+            .toArray();
+        return courses;
+    } catch (error) {
+        console.error("Error listing courses for enrollment:", error);
+        throw error;
+    }
+}
+
+async function updateCourseEnrollmentCode(courseId, courseAccess) {
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_course");
+    const { ObjectId } = require("mongodb");
+    const id = typeof courseId === "string" ? new ObjectId(courseId) : courseId;
+    const result = await collection.updateOne(
+        { _id: id },
+        { $set: { courseAccess, updatedAt: new Date() } }
+    );
+    return result;
+}
+
+/**
+ * Find a course by its enrollment code (courseAccess). Exact match after trim.
+ */
+async function getCourseByEnrollmentCode(code) {
+    if (!code || typeof code !== "string") {
+        return null;
+    }
+    const trimmed = code.trim();
+    if (!trimmed) {
+        return null;
+    }
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_course");
+        return collection.findOne({ courseAccess: trimmed });
+    } catch (error) {
+        console.error("Error getting course by enrollment code:", error);
+        throw error;
+    }
+}
+
 module.exports = {
     createCourse,
     getCourseByCourseCode,
     getCourseById,
+    getCourseByEnrollmentCode,
+    listCoursesForEnrollment,
+    updateCourseEnrollmentCode,
 };

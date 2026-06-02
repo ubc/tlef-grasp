@@ -47,7 +47,29 @@ const updateSettingsHandler = async (req, res) => {
     }
 };
 
+/**
+ * Get default application settings (prompts)
+ */
+const getDefaultSettingsHandler = async (req, res) => {
+    try {
+        const { DEFAULT_PROMPTS } = require('../constants/app-constants');
+        res.json({
+            success: true,
+            defaults: {
+                prompts: DEFAULT_PROMPTS
+            }
+        });
+    } catch (error) {
+        console.error('Error in getDefaultSettingsHandler:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch default settings'
+        });
+    }
+};
+
 module.exports = {
     getSettingsHandler,
-    updateSettingsHandler
+    updateSettingsHandler,
+    getDefaultSettingsHandler
 };

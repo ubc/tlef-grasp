@@ -131,6 +131,25 @@
                             </div>
                         </div>
                     </div>
+                    <div class="settings-section">
+                        <h2>Student enrollment code</h2>
+                        <p class="section-intro">Share this code with students so they can join this course from <strong>Onboarding → Join a course</strong> without you adding each person manually.</p>
+                        <div class="settings-form enrollment-code-block">
+                            <div class="form-group">
+                                <label for="enrollment-code-display">Current enrollment code</label>
+                                <div class="enrollment-code-row">
+                                    <input type="text" id="enrollment-code-display" class="enrollment-code-input" readonly placeholder="Loading…" autocomplete="off">
+                                    <button type="button" id="copy-enrollment-code" class="secondary-btn" title="Copy code">
+                                        <i class="fas fa-copy"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" id="regenerate-enrollment-code" class="secondary-btn danger-outline">
+                                <i class="fas fa-sync-alt"></i> Regenerate code
+                            </button>
+                            <p class="help-text enrollment-warning"><i class="fas fa-exclamation-triangle"></i> Regenerating invalidates the previous code. Students who still have the old code will need the new one.</p>
+                        </div>
+                    </div>
                 </div>
 
 
@@ -142,7 +161,12 @@
                         
                         <div class="settings-form">
                             <div class="form-group">
-                                <label for="prompt-question-generation">Question Generation Prompt</label>
+                                <div class="label-row">
+                                    <label for="prompt-question-generation">Question Generation Prompt</label>
+                                    <button type="button" class="reset-btn" data-prompt="questionGeneration" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-question-generation" rows="15" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Handles the creation of multiple-choice questions based on selected objectives.</p>
@@ -158,7 +182,12 @@
                             </div>
                             
                             <div class="form-group">
-                                <label for="prompt-objective-auto">Learning Objective Generation Prompt - Auto Mode</label>
+                                <div class="label-row">
+                                    <label for="prompt-objective-auto">Learning Objective Generation Prompt - Auto Mode</label>
+                                    <button type="button" class="reset-btn" data-prompt="objectiveGenerationAuto" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-objective-auto" rows="12" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Used when the AI generates a set of course learning objectives from scratch based on processed materials.</p>
@@ -171,7 +200,12 @@
                             </div>
 
                             <div class="form-group">
-                                <label for="prompt-objective-manual">Learning Objective Generation Prompt - Manual Mode</label>
+                                <div class="label-row">
+                                    <label for="prompt-objective-manual">Learning Objective Generation Prompt - Manual Mode</label>
+                                    <button type="button" class="reset-btn" data-prompt="objectiveGenerationManual" title="Reset to default">
+                                        <i class="fas fa-undo"></i> Reset to Default
+                                    </button>
+                                </div>
                                 <textarea id="prompt-objective-manual" rows="12" class="prompt-textarea"></textarea>
                                 <div class="help-text">
                                     <p>Used when you provide specific main objectives and want the AI to generate detailed sub-objectives and taxonomy levels for them.</p>
