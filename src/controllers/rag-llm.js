@@ -509,7 +509,7 @@ const deleteDocumentHandler = async (req, res) => {
       return res.status(404).json({ error: "Course current material attached to not found" });
     }
 
-    if (!isUserInCourse(userId, courseId)) {
+    if (!await isUserInCourse(userId, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -563,7 +563,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     // Check user permissions
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({
         success: false,
         error: "User is not in course",
