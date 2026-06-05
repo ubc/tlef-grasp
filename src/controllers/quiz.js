@@ -238,14 +238,6 @@ const addQuizQuestionsHandler = async (req, res) => {
   }
 };
 
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
 
 function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "")
@@ -263,18 +255,6 @@ function resolveQuestionType(q) {
   return QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
-// Helper function to generate a shuffled order of option indices
-function shuffleQuestionOptions(question) {
-  const optionIndices = [0, 1, 2, 3];
-  const shuffledIndices = shuffleArray(optionIndices);
-
-  return {
-    ...question,
-    optionOrder: shuffledIndices
-    // We intentionally leave correctAnswer and options alone here
-    // as they will be cleansed before sending to the client.
-  };
-}
 
 /**
  * Get all questions in a quiz
@@ -449,7 +429,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
       };
 
-      let finalQuestion = approvedOnlyBool ? shuffleQuestionOptions(formattedQuestion) : formattedQuestion;
+      const finalQuestion = formattedQuestion;
 
       if (approvedOnlyBool) {
         delete finalQuestion.correctAnswer;

@@ -107,27 +107,6 @@ function resolveQuestionType(q) {
   return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
-function shuffleQuestionOptions(question) {
-  const optionKeys = ['A', 'B', 'C', 'D'];
-  const originalCorrectAnswer = question.correctAnswer;
-  const correctOptionText = question.options[originalCorrectAnswer];
-
-  const optionEntries = optionKeys.map(key => ({ key, text: question.options[key] }));
-  const shuffledEntries = shuffleArray(optionEntries);
-
-  const newOptions = {};
-  let newCorrectAnswer = 'A';
-
-  shuffledEntries.forEach((entry, index) => {
-    const newKey = optionKeys[index];
-    newOptions[newKey] = entry.text;
-    if (entry.text === correctOptionText) {
-      newCorrectAnswer = newKey;
-    }
-  });
-
-  return { ...question, options: newOptions, correctAnswer: newCorrectAnswer };
-}
 
 const getQuizQuestionsHandler = async (req, res) => {
   try {
@@ -277,7 +256,6 @@ const getQuizQuestionsHandler = async (req, res) => {
         question: questionText || "Question text not available",
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
-        correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
         learningObjectiveId: q.learningObjectiveId,
         granularObjectiveId: q.granularObjectiveId,
         bloom: q.bloom
@@ -296,11 +274,6 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    // Shuffle MC options only; other types have no options to shuffle
-    const randomizedQuestions = transformedQuestions.map((q) =>
-      q.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? shuffleQuestionOptions(q) : q
-    );
-
     res.json({
       success: true,
       data: {
@@ -308,7 +281,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         title: quiz.name || "Quiz",
         course: courseName,
         duration: 0,
-        questions: randomizedQuestions,
+        questions: transformedQuestions,
       },
       message: "Quiz questions retrieved successfully",
     });
