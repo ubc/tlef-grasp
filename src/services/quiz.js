@@ -125,15 +125,14 @@ const deleteQuiz = async (quizId) => {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_quiz");
         
-        // First delete all question associations
-        await db.collection("grasp_quiz_question").deleteMany({
-            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
-        });
-        
-        // Then delete the quiz itself
-        const result = await collection.deleteOne({ 
-            _id: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId 
-        });
+        const qid = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+
+        await db.collection("grasp_quiz_question").deleteMany({ quizId: qid });
+        await db.collection("grasp_student_attempt").deleteMany({ quizId: qid });
+        await db.collection("grasp_student_performance").deleteMany({ quizId: qid });
+        await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
+
+        const result = await collection.deleteOne({ _id: qid });
         
         return result;
     } catch (error) {
@@ -278,10 +277,8 @@ const getPhase1Questions = async (quizId, userId) => {
     const quiz = await getQuizById(quizId);
     if (!quiz) throw new Error("Quiz not found");
 
-    const rawBankQuestions = await getQuizQuestions(quizId, true);
-    if (!rawBankQuestions || rawBankQuestions.length === 0) return [];
-
-    const bankQuestions = await enrichQuestionsWithLO(rawBankQuestions);
+    const bankQuestions = await getQuizQuestions(quizId, true);
+    if (!bankQuestions || bankQuestions.length === 0) return [];
 
     const attemptCollection = db.collection("grasp_student_attempt");
     const userAttempts = await attemptCollection.find({
