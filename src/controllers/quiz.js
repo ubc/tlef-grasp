@@ -3,6 +3,7 @@ const questionService = require("../services/question");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
+const { isFaculty } = require('../utils/auth');
 
 /**
  * Get all quizzes for a course
@@ -58,7 +59,7 @@ const createQuizHandler = async (req, res) => {
       });
     }
 
-    if (!await isUserInCourse(req.user._id || req.user.id, courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
@@ -122,7 +123,7 @@ const updateQuizHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
 
-    if (!await isUserInCourse(req.user._id || req.user.id, existingQuiz.courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, existingQuiz.courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
@@ -172,7 +173,7 @@ const deleteQuizHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
 
-    if (!await isUserInCourse(req.user._id || req.user.id, quizToDelete.courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quizToDelete.courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
@@ -210,7 +211,7 @@ const addQuizQuestionsHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: "Course ID is required" });
     }
 
-    if (!await isUserInCourse(req.user._id || req.user.id, courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
     
@@ -756,7 +757,7 @@ const getQuizScoresHandler = async (req, res) => {
     const quiz = await quizService.getQuizById(quizId);
     if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
 
-    if (!await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
@@ -782,7 +783,7 @@ const getStudentQuizAttemptHandler = async (req, res) => {
     const quiz = await quizService.getQuizById(quizId);
     if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
 
-    if (!await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 

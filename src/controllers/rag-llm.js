@@ -10,6 +10,7 @@ const { ObjectId } = require('mongodb');
 // Import services
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
+const { isFaculty } = require('../utils/auth');
 const settingsService = require('../services/settings');
 const QuestionFactory = require('../models/questions/QuestionFactory');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
@@ -509,7 +510,7 @@ const deleteDocumentHandler = async (req, res) => {
       return res.status(404).json({ error: "Course current material attached to not found" });
     }
 
-    if (!await isUserInCourse(userId, courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(userId, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -563,7 +564,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     // Check user permissions
-    if (!await isUserInCourse(req.user.id, courseId)) {
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({
         success: false,
         error: "User is not in course",
