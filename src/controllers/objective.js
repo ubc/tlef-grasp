@@ -13,7 +13,7 @@ const getAllObjectives = async (req, res) => {
       });
     }
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -55,7 +55,7 @@ const getGranularObjectivesHandler = async (req, res) => {
     const parentId = req.params.id;
     const { courseId } = req.query;
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
   
@@ -82,7 +82,7 @@ const createObjectiveHandler = async (req, res) => {
   try {
     const { name, granularObjectives, materialIds, courseId } = req.body;
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -132,7 +132,7 @@ const getObjectiveMaterials = async (req, res) => {
 
     const courseId = await getObjectiveCourseId(objectiveId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -156,7 +156,7 @@ const updateObjectiveMaterials = async (req, res) => {
 
     const courseId = await getObjectiveCourseId(objectiveId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -183,7 +183,7 @@ const updateObjectiveHandler = async (req, res) => {
     const objectiveId = req.params.id;
     const { name, granularObjectives, materialIds, courseId } = req.body;
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -235,7 +235,7 @@ const deleteObjectiveHandler = async (req, res) => {
     // We still need to verify course permission for deletion.
     const courseId = await getObjectiveCourseId(objectiveId);
 
-    if (courseId && !isUserInCourse(req.user.id, courseId)) {
+    if (courseId && !await isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
