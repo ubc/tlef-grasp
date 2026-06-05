@@ -1,8 +1,8 @@
 const quizService = require("../services/quiz");
 const questionService = require("../services/question");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
-const { isFaculty } = require("../utils/auth");
 const { QUESTION_TYPES } = require("../constants/app-constants");
+const { isUserInCourse } = require('../services/user-course');
 
 /**
  * Get all quizzes for a course
@@ -56,6 +56,10 @@ const createQuizHandler = async (req, res) => {
         success: false,
         error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'.",
       });
+    }
+
+    if (!await isUserInCourse(req.user._id || req.user.id, courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
     const quiz = await quizService.createQuiz(courseId, {
@@ -118,6 +122,10 @@ const updateQuizHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
 
+    if (!await isUserInCourse(req.user._id || req.user.id, existingQuiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
     // Validation for publishing: a quiz must have a release date
     const finalPublished = published !== undefined ? published : existingQuiz.published;
     
@@ -158,15 +166,16 @@ const updateQuizHandler = async (req, res) => {
  */
 const deleteQuizHandler = async (req, res) => {
   try {
-    // Only faculty can delete quizzes
-    if (!(await isFaculty(req.user))) {
-      return res.status(403).json({ 
-        success: false, 
-        error: "Only faculty can delete quizzes" 
-      });
-    }
-    
     const { quizId } = req.params;
+    const quizToDelete = await quizService.getQuizById(quizId);
+    if (!quizToDelete) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
+    }
+
+    if (!await isUserInCourse(req.user._id || req.user.id, quizToDelete.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
     const result = await quizService.deleteQuiz(quizId);
     
     if (result.deletedCount === 0) {
@@ -198,10 +207,11 @@ const addQuizQuestionsHandler = async (req, res) => {
     // First, save all questions to the database and get their IDs
     const courseId = req.body.courseId;
     if (!courseId) {
-      return res.status(400).json({
-        success: false,
-        error: "Course ID is required",
-      });
+      return res.status(400).json({ success: false, error: "Course ID is required" });
+    }
+
+    if (!await isUserInCourse(req.user._id || req.user.id, courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
     
     const savedQuestionIds = [];
@@ -742,12 +752,19 @@ const checkQuestionAnswerHandler = async (req, res) => {
 const getQuizScoresHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
+
+    if (!await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
     const scores = await quizService.getQuizScores(quizId);
-    
     if (!scores) {
       return res.status(404).json({ success: false, error: "Scores not found" });
     }
-    
+
     res.json({ success: true, data: scores });
   } catch (error) {
     console.error("Error fetching quiz scores:", error);
@@ -761,6 +778,14 @@ const getQuizScoresHandler = async (req, res) => {
 const getStudentQuizAttemptHandler = async (req, res) => {
   try {
     const { quizId, userId } = req.params;
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
+
+    if (!await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
     const attempts = await quizService.getStudentQuizAttempt(quizId, userId);
     
     if (!attempts) {
