@@ -192,6 +192,108 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const QUESTION_TYPES = {
+        MULTIPLE_CHOICE: 'multiple-choice',
+        FILL_IN_THE_BLANK: 'fill-in-the-blank',
+        CALCULATION: 'calculation',
+        OPEN_ENDED: 'open-ended',
+    };
+
+    const renderTextAnswerBlock = (attempt) => {
+        const isCalculation = attempt.questionType === QUESTION_TYPES.CALCULATION;
+        const studentAnswer = attempt.selectedAnswer
+            ? escapeHtml(attempt.selectedAnswer)
+            : '<em style="color:#95a5a6;">Not recorded</em>';
+
+        const correctAnswer = attempt.correctAnswer
+            ? escapeHtml(attempt.correctAnswer)
+            : null;
+
+        const answerClass = attempt.isCorrect ? 'review-text-value--correct' : 'review-text-value--incorrect';
+
+        let html = `
+            <div class="review-text-answer">
+                <div class="review-text-row">
+                    <span class="review-text-label">Student's Answer:</span>
+                    <span class="review-text-value ${answerClass}">${studentAnswer}</span>
+                </div>`;
+
+        // For calculation, always show the correct answer; for others, only when wrong
+        if (correctAnswer && (isCalculation || !attempt.isCorrect)) {
+            html += `
+                <div class="review-text-row">
+                    <span class="review-text-label">Correct Answer:</span>
+                    <span class="review-text-value review-text-value--correct">${correctAnswer}</span>
+                </div>`;
+        }
+
+        html += `</div>`;
+        return html;
+    };
+
+    const renderOpenEndedBlock = (attempt) => {
+        const studentAnswer = attempt.selectedAnswer
+            ? escapeHtml(attempt.selectedAnswer)
+            : '<em style="color:#95a5a6;">Not recorded</em>';
+
+        const sampleAnswer = attempt.openEndedSampleAnswer
+            ? escapeHtml(attempt.openEndedSampleAnswer)
+            : '<em style="color:#95a5a6;">No sample answer provided.</em>';
+
+        const gradingCriteria = attempt.openEndedGradingCriteria
+            ? escapeHtml(attempt.openEndedGradingCriteria)
+            : '<em style="color:#95a5a6;">No grading criteria provided.</em>';
+
+        return `
+            <div class="review-text-answer">
+                <div class="review-text-row">
+                    <span class="review-text-label">Student's Response:</span>
+                    <span class="review-text-value">${studentAnswer}</span>
+                </div>
+            </div>
+            <div class="review-open-ended-panel">
+                <div class="review-open-ended-section">
+                    <strong>Sample Answer:</strong>
+                    <p>${sampleAnswer}</p>
+                </div>
+                <div class="review-open-ended-section">
+                    <strong>Grading Criteria:</strong>
+                    <p>${gradingCriteria}</p>
+                </div>
+            </div>`;
+    };
+
+    const renderMultipleChoiceBlock = (attempt) => {
+        const dbKeys = ['A', 'B', 'C', 'D'];
+        let optionsHtml = '';
+
+        dbKeys.forEach(key => {
+            const optionRaw = attempt.options[key];
+            const optionText = typeof optionRaw === 'object' && optionRaw !== null ? (optionRaw.text || "") : (optionRaw || "");
+            if (!optionText) return;
+
+            let classes = "review-option";
+            if (key === attempt.correctAnswer) {
+                classes += " correct";
+            } else if (key === attempt.selectedAnswer && !attempt.isCorrect) {
+                classes += " incorrect";
+            }
+
+            if (!attempt.selectedAnswer && !attempt.isCorrect && key !== attempt.correctAnswer) {
+                classes = "review-option";
+            }
+
+            optionsHtml += `
+                <div class="${classes}">
+                    <div class="review-option-letter">${key}</div>
+                    <div class="review-option-text">${window.parseSmilesTags ? window.parseSmilesTags(escapeHtml(optionText)) : escapeHtml(optionText)}</div>
+                </div>
+            `;
+        });
+
+        return `<div class="review-options">${optionsHtml}</div>`;
+    };
+
     const fetchAndRenderStudentReview = async (quizId, userId, studentName, score) => {
         reviewStudentName.textContent = `Review: ${studentName}`;
         reviewSummary.innerHTML = `<p>Loading attempt data...</p>`;
@@ -212,70 +314,73 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            const correctCount = attempts.filter(a => a.isCorrect).length;
-            const totalCount = attempts.length;
-            
-            reviewSummary.innerHTML = `
-                <div style="font-size: 16px; color: #2c3e50;">
-                    <strong>Score:</strong> <span class="score-badge ${getScoreClass(score)}" style="margin-right: 15px;">${Number(score).toFixed(1)}%</span>
-                    <strong>Questions Answered:</strong> ${correctCount} / ${totalCount} Correct
-                </div>
-            `;
+            const openEndedAttempts = attempts.filter(a => a.questionType === QUESTION_TYPES.OPEN_ENDED);
+            const gradedAttempts = attempts.filter(a => a.questionType !== QUESTION_TYPES.OPEN_ENDED);
+            const correctCount = gradedAttempts.filter(a => a.isCorrect).length;
+            const totalGraded = gradedAttempts.length;
+            const openEndedCount = openEndedAttempts.length;
+
+            let summaryHtml = `<div style="font-size: 16px; color: #2c3e50; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                <span><strong>Score:</strong> <span class="score-badge ${getScoreClass(score)}">${Number(score).toFixed(1)}%</span></span>`;
+
+            if (totalGraded > 0) {
+                summaryHtml += `<span><strong>Auto-graded:</strong> ${correctCount} / ${totalGraded} correct</span>`;
+            }
+            if (openEndedCount > 0) {
+                summaryHtml += `<span class="review-badge-pending"><i class="fas fa-pencil-alt"></i> ${openEndedCount} open-ended — manual grading required</span>`;
+            }
+
+            summaryHtml += `</div>`;
+            reviewSummary.innerHTML = summaryHtml;
 
             attempts.forEach((attempt, index) => {
                 const qDiv = document.createElement("div");
-                qDiv.className = "review-question";
-                
-                const dbKeys = ['A', 'B', 'C', 'D'];
-                let optionsHtml = '';
+                const isOpenEnded = attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
+                qDiv.className = `review-question${isOpenEnded ? ' review-question--open-ended' : ''}`;
 
-                dbKeys.forEach(key => {
-                    const optionRaw = attempt.options[key];
-                    const optionText = typeof optionRaw === 'object' && optionRaw !== null ? (optionRaw.text || "") : (optionRaw || "");
-                    if (!optionText) return;
+                const questionTypeLabel = {
+                    [QUESTION_TYPES.MULTIPLE_CHOICE]: 'Multiple Choice',
+                    [QUESTION_TYPES.FILL_IN_THE_BLANK]: 'Fill in the Blank',
+                    [QUESTION_TYPES.CALCULATION]: 'Calculation',
+                    [QUESTION_TYPES.OPEN_ENDED]: 'Open-ended',
+                }[attempt.questionType] || 'Multiple Choice';
 
-                    let classes = "review-option";
-                    if (key === attempt.correctAnswer) {
-                        classes += " correct";
-                    } else if (key === attempt.selectedAnswer && !attempt.isCorrect) {
-                        classes += " incorrect";
+                let statusBadge;
+                if (isOpenEnded) {
+                    statusBadge = `<span class="review-badge-pending"><i class="fas fa-clock"></i> Needs Manual Grading</span>`;
+                } else if (attempt.isCorrect) {
+                    statusBadge = `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>`;
+                } else {
+                    statusBadge = `<span style="color: #e74c3c;"><i class="fas fa-times-circle"></i> Incorrect</span>`;
+                    if (!attempt.selectedAnswer && attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
+                        statusBadge += ` <span style="color: #95a5a6; font-size: 0.8em; font-weight: normal; margin-left: 10px;">(Exact answer wasn't logged)</span>`;
                     }
-
-                    // For older attempts without selectedAnswer logged, don't show incorrect highlights since it's unknown
-                    if (!attempt.selectedAnswer && !attempt.isCorrect && key !== attempt.correctAnswer) {
-                        classes = "review-option"; // Can't know which one they picked
-                    }
-
-                    optionsHtml += `
-                        <div class="${classes}">
-                            <div class="review-option-letter">${key}</div>
-                            <div class="review-option-text">${window.parseSmilesTags ? window.parseSmilesTags(escapeHtml(optionText)) : escapeHtml(optionText)}</div>
-                        </div>
-                    `;
-                });
-
-                let statusBadge = attempt.isCorrect 
-                    ? `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>` 
-                    : `<span style="color: #e74c3c;"><i class="fas fa-times-circle"></i> Incorrect</span>`;
-                
-                if (!attempt.selectedAnswer) {
-                    statusBadge += ` <span style="color: #95a5a6; font-size: 0.8em; font-weight: normal; margin-left: 10px;">(Exact answer wasn't logged)</span>`;
                 }
+
+                let bodyHtml;
+                if (isOpenEnded) {
+                    bodyHtml = renderOpenEndedBlock(attempt);
+                } else if (attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK || attempt.questionType === QUESTION_TYPES.CALCULATION) {
+                    bodyHtml = renderTextAnswerBlock(attempt);
+                } else {
+                    bodyHtml = renderMultipleChoiceBlock(attempt);
+                }
+
+                const questionTitle = window.parseSmilesTags
+                    ? window.parseSmilesTags(escapeHtml(attempt.questionText))
+                    : escapeHtml(attempt.questionText);
 
                 qDiv.innerHTML = `
                     <div class="review-question-header">
-                        <span>Question ${index + 1}</span>
+                        <span>Question ${index + 1} <span class="review-question-type-label">${questionTypeLabel}</span></span>
                         ${statusBadge}
                     </div>
-                    <div class="review-question-title">${window.parseSmilesTags ? window.parseSmilesTags(escapeHtml(attempt.questionText)) : escapeHtml(attempt.questionText)}</div>
-                    <div class="review-options">
-                        ${optionsHtml}
-                    </div>
+                    <div class="review-question-title">${questionTitle}</div>
+                    ${bodyHtml}
                 `;
                 reviewQuestionsContainer.appendChild(qDiv);
             });
-            
-            // Try to render math if katex is available globally on this page
+
             if (typeof renderKatex === 'function') {
                 renderKatex();
             }

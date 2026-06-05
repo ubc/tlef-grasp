@@ -11,7 +11,9 @@ class MultipleChoiceQuestion extends Question {
    may describe the same concept in different words.
 3. Every distractor must represent a genuine misconception a student might hold,
    not an obviously wrong or trivially absurd option.
-4. Set correctAnswer to the letter of the correct option.
+4. SELF-CHECK before setting correctAnswer: reason through the question yourself
+   and confirm exactly which option is correct. Then set correctAnswer to that
+   letter. Also confirm that none of the other options are accidentally correct.
 5. For each incorrect option, write feedback that explains the specific
    misconception in that option only. Feedback must NOT hint at the correct
    answer, must NOT use comparative language ("partially right", "too large"),
@@ -45,7 +47,7 @@ correctAnswer must be a single letter A–D. Set feedback to "" for the correct 
     }
 
     static validateAndNormalize(data) {
-        const mcData = MultipleChoiceQuestion._repairLooseMultipleChoiceShape(data);
+        const mcData = MultipleChoiceQuestion._normalizeMultipleChoiceAliases(data);
 
         if (!mcData.options || typeof mcData.options !== "object" || Array.isArray(mcData.options)) {
             throw new Error(
@@ -129,50 +131,7 @@ correctAnswer must be a single letter A–D. Set feedback to "" for the correct 
         return d;
     }
 
-    static _repairLooseMultipleChoiceShape(data) {
-        let d = MultipleChoiceQuestion._normalizeMultipleChoiceAliases(data);
-        const hasFullOptions =
-            d.options &&
-            typeof d.options === "object" &&
-            !Array.isArray(d.options) &&
-            ["A", "B", "C", "D"].every(
-                (k) => d.options[k] != null && String(d.options[k]).trim()
-            );
-        if (hasFullOptions) {
-            return d;
-        }
-        if (typeof d.answer !== "string" || !d.answer.trim()) {
-            return d;
-        }
-        const correctText = d.answer.trim();
-        if (/^[ABCD]$/i.test(correctText)) {
-            return d;
-        }
-        const distractors = [
-            "Divergent.",
-            "Convergent only if extra conditions hold that are not stated.",
-            "The usual convergence test does not apply to this series.",
-            "The partial sums do not approach a finite limit.",
-        ]
-            .filter((x) => x.toLowerCase() !== correctText.toLowerCase())
-            .slice(0, 3);
-        while (distractors.length < 3) {
-            distractors.push(`Incorrect alternative ${distractors.length + 1}.`);
-        }
-        const letters = ["A", "B", "C", "D"];
-        const correctIdx = Math.floor(Math.random() * 4);
-        const options = {};
-        let u = 0;
-        for (let i = 0; i < 4; i++) {
-            options[letters[i]] = i === correctIdx ? correctText : distractors[u++];
-        }
-        return {
-            ...d,
-            type: d.type || QUESTION_TYPES.MULTIPLE_CHOICE,
-            options,
-            correctAnswer: letters[correctIdx],
-        };
-    }
+
 }
 
 module.exports = MultipleChoiceQuestion;

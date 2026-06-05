@@ -405,8 +405,8 @@ const submitQuizHandler = async (req, res) => {
                     bloom: questionData.bloom,
                     isCorrect: !!feedbackResult.isCorrect,
                     isFirstAttempt: isFirstAttempt,
-                    selectedAnswer: feedbackResult.selectedKey,
-                    correctAnswer: feedbackResult.correctAnswer
+                    selectedAnswer: feedbackResult.selectedKey || feedbackResult.selectedAnswer || null,
+                    correctAnswer: feedbackResult.correctOptionText || feedbackResult.correctAnswer || null
                 });
             }
         }

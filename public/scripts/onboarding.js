@@ -277,15 +277,18 @@ class OnboardingManager {
       customCourseNameGroup.style.display = 'none';
     }
 
-    // Update no-courses message for staff
-    if (noCoursesMessage && !this.isStudent) {
+    // Update no-courses message based on role
+    if (noCoursesMessage) {
       const createButton = noCoursesMessage.querySelector('button');
-      if (createButton) {
-        createButton.style.display = 'none';
-      }
       const messageText = noCoursesMessage.querySelector('p');
-      if (messageText) {
-        messageText.textContent = "You don't have any courses set up yet. Please contact a faculty member to add you to a course.";
+      if (createButton) createButton.style.display = 'none';
+      if (this.isStudent) {
+        const heading = noCoursesMessage.querySelector('h3');
+        if (heading) heading.textContent = 'No Course Found';
+        if (messageText) messageText.textContent = "You haven't been added to any course yet. Ask your instructor for an enrollment code, then use the \"Join a course\" tab to enroll.";
+      } else {
+        // Staff
+        if (messageText) messageText.textContent = "You don't have any courses set up yet. Please contact a faculty member to add you to a course.";
       }
     }
   }

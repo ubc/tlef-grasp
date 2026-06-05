@@ -152,12 +152,35 @@ FINAL INSTRUCTIONS:
 3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
 4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
-const QUESTION_REVIEW_PROMPT = `You are a quality reviewer for university-level quiz questions. For each question provided, review it to ensure it is suitable for use on a university quiz. Identify any factual errors, logical flaws, mathematical mistakes, or formatting issues that would act as a blocker.
+const QUESTION_REVIEW_PROMPT = `You are a rigorous quality reviewer for university-level quiz questions. Your job is to find blocking errors — do not rubber-stamp questions.
 
 COURSE: {courseName}
 
 QUESTIONS TO REVIEW:
 {questionsJson}
+
+For EVERY question, perform all applicable checks and flag it if ANY check fails:
+
+MULTIPLE-CHOICE:
+- Verify the correctAnswer is actually correct by reasoning through the question carefully. Flag it if the stated answer is wrong.
+- Check that no distractor is also a correct answer.
+- Flag ambiguous wording that makes the question unanswerable.
+
+FILL-IN-THE-BLANK:
+- Verify the acceptableAnswers are correct.
+- Flag if the blank is ambiguous or has other equally valid answers not listed.
+
+CALCULATION:
+- Verify the formula is correct relative to the question stem.
+- Check variable ranges: flag if any combination of min/max values can produce a nonsensical result (e.g. negative count, division by zero, constraint violations between variables).
+
+OPEN-ENDED:
+- Verify the sampleAnswer is correct and consistent with the question.
+- Flag if the gradingCriteria is too vague to be useful.
+
+ALL types:
+- Flag any factual error, logical flaw, or information that contradicts the question's own premises.
+- Do NOT flag for minor style or wording preferences — only flag genuine blockers.
 
 CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Do not include markdown code blocks. The JSON array must look like this:
 [

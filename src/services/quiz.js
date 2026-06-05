@@ -899,16 +899,20 @@ const getStudentQuizAttempt = async (quizId, userId) => {
             const questionData = questionMap[attempt.questionId.toString()];
             if (!questionData) return null;
 
+            const questionType = questionData.questionType || questionData.type || 'multiple-choice';
             return {
                 attemptId: attempt._id,
                 questionId: questionData._id,
+                questionType,
                 questionText: questionData.title || questionData.stem || "Unknown Question",
                 options: questionData.options || {},
                 selectedAnswer: attempt.selectedAnswer,
                 correctAnswer: attempt.correctAnswer || questionData.correctAnswer,
                 isCorrect: attempt.isCorrect,
                 bloom: attempt.bloom,
-                createdAt: attempt.createdAt
+                createdAt: attempt.createdAt,
+                openEndedSampleAnswer: questionData.openEndedSampleAnswer || null,
+                openEndedGradingCriteria: questionData.openEndedGradingCriteria || null,
             };
         }).filter(a => a !== null);
     } catch (error) {

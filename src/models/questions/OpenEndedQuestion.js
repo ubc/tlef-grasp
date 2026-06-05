@@ -6,9 +6,17 @@ class OpenEndedQuestion extends Question {
         return `INSTRUCTIONS:
 1. "topicTitle": short neutral label (3-10 words), not a question.
 2. "question": the prompt students respond to. May be paragraph-length. Do NOT use _________.
-3. "openEndedSampleAnswer": a strong example response shown to students after submission (not used for auto-grading).
-4. "openEndedGradingCriteria": clear criteria or a short rubric students can use to self-assess.
-5. Do NOT include "options", "correctAnswer", or calculation fields.
+3. Match the question to the required Bloom's level:
+   - Remember/Understand: recall or explain a concept ("Describe...", "Explain why...")
+   - Apply/Analyze: use or break down a concept in a scenario ("Given X, apply...", "Compare...", "Examine why...")
+   - Evaluate: justify or critique a choice ("Argue for or against...", "Assess whether...")
+   - Create: produce or design something genuinely new ("Design a...", "Propose a...", "Construct an original...")
+   Do NOT use "Create"-level verbs (design, construct, formulate) for questions that only ask students
+   to describe a known procedure or recall a concept — that is Understand or Apply.
+4. "openEndedSampleAnswer": a strong example response shown to students after submission (not used for auto-grading).
+5. "openEndedGradingCriteria": clear, specific criteria or a short rubric students can use to self-assess.
+   It must name the specific concepts or skills being assessed, not just say "complete and accurate".
+6. Do NOT include "options", "correctAnswer", or calculation fields.
 
 Example:
 {

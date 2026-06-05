@@ -2820,6 +2820,7 @@ async function generateQuestionsFromContent() {
 
 
 async function reviewGeneratedQuestions() {
+  const courseId = getCourseId();
   const allQuestions = [];
   state.questionGroups.forEach(group => {
     group.los.forEach(lo => {
@@ -2841,7 +2842,7 @@ async function reviewGeneratedQuestions() {
           granularObjectiveText: q.loCode,
           learningObjectiveId: q.learningObjectiveId,
           materialIds: q.materialIds,
-          courseId: q.courseId
+          courseId: courseId
         });
       });
     });

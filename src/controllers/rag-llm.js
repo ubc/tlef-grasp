@@ -752,6 +752,10 @@ async function rateQuestions(questions, courseName, llmModule) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
+  console.log("=== LLM REVIEW PROMPT ===");
+  console.log(prompt);
+  console.log("=== END LLM REVIEW PROMPT ===");
+
   const response = await llmModule.sendMessage(prompt);
   const responseContent = response.content || response.text || response.message;
   let ratings = safeJsonParse(responseContent);
@@ -765,13 +769,15 @@ async function rateQuestions(questions, courseName, llmModule) {
 
 const reviewQuestionsHandler = async (req, res) => {
   try {
+    console.log("=== REVIEW QUESTIONS HANDLER CALLED ===");
+    console.log("Body keys:", Object.keys(req.body || {}));
     const { questions } = req.body;
+    console.log("Questions received:", Array.isArray(questions) ? questions.length : typeof questions);
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      console.log("❌ Validation failed: questions array is missing or empty");
       return res.status(400).json({ success: false, error: "questions array is required" });
     }
 
-    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL);
-    
     // Resolve Course Name from courseId
     const courseId = questions[0]?.courseId || null;
     let courseName = "N/A";
@@ -780,12 +786,14 @@ const reviewQuestionsHandler = async (req, res) => {
         const db = await databaseService.connect();
         const course = await db.collection('grasp_course').findOne({ _id: new ObjectId(courseId) });
         if (course) {
-          courseName = course.name;
+          courseName = course.courseName || course.name || "N/A";
         }
       } catch (dbErr) {
         console.warn("Failed to fetch course details for review:", dbErr.message);
       }
     }
+
+    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null);
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
     const ratings = await rateQuestions(questions, courseName, llmModule);

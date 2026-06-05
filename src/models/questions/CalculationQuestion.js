@@ -42,7 +42,8 @@ You must output a JSON object representing a parameterized question. The server 
     - Definite integral ∫₀ᵇ ax² dx: formula "a * b^3 / 3"
     - ODE y(t)=y₀e^(kt) at t: formula "y0 * E^(k*t)"
 11. **No Limit Indices**: Do NOT use a variable to approximate a limit index (e.g., setting n to a large range to simulate n→∞). Instead, express the limit's closed-form result as the formula.
-12. **Non-Trivial**: The formula must be algebraically non-trivial: every declared variable must affect the computed result (no variable cancels out, e.g., "a*(1-r)/(1-r)" is invalid).
+12. **Non-Trivial**: The formula must be algebraically non-trivial: every declared variable must genuinely change the numeric result when its value changes. A variable that is multiplied by 0, added to 0, or cancels out is forbidden (e.g., "a*(1-r)/(1-r)", "m + 0*x", "b - b + a" are all invalid).
+13. **Arithmetic Questions Only**: Only generate a calculation question when the answer is a numeric quantity computed from the given values (a length, energy, probability, count, etc.). Do NOT generate calculation questions for conceptual or counting answers that are always the same constant regardless of the variable values (e.g., "how many solution sets exist" is always 1; "are these rows independent" is yes/no). If the answer to the question is not meaningfully affected by the variable values you declared, reformulate as a different question type.
 
 ### PROCEDURE:
 1. "type": "calculation"
