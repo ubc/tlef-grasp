@@ -654,8 +654,18 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
 const saveStudentPerformance = async (performanceData) => {
     try {
         const db = await databaseService.connect();
+
+        const userIdObj = ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId;
+        const quizIdObj = ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId;
+        const questionIdObj = ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId;
+
+        const attemptCollection = db.collection("grasp_student_attempt");
+
+        // First-answer-wins: skip if an attempt already exists for this user+quiz+question
+        const existing = await attemptCollection.findOne({ userId: userIdObj, quizId: quizIdObj, questionId: questionIdObj });
+        if (existing) return existing;
+
         const loIdentifier = performanceData.learningObjectiveId?.toString() || performanceData.granularObjectiveId?.toString();
-        
         if (!loIdentifier) {
             console.warn("[Quiz Service] Attempt saved without LO identifier. Phase 2/3 will not track this.");
         }
@@ -663,27 +673,29 @@ const saveStudentPerformance = async (performanceData) => {
         const quiz = await getQuizById(performanceData.quizId);
         const courseId = quiz ? quiz.courseId : null;
 
-        const attemptCollection = db.collection("grasp_student_attempt");
         const attemptData = {
-            userId: ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId,
+            userId: userIdObj,
             courseId: courseId ? (ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId) : null,
-            quizId: ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId,
-            questionId: ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId,
+            quizId: quizIdObj,
+            questionId: questionIdObj,
             learningObjectiveId: performanceData.learningObjectiveId ? (ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId) : null,
             granularObjectiveId: performanceData.granularObjectiveId ? (ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId) : null,
             bloom: performanceData.bloom,
-            isCorrect: !!performanceData.isCorrect,
+            isCorrect: performanceData.isCorrect != null ? !!performanceData.isCorrect : null,
             selectedAnswer: performanceData.selectedAnswer || null,
             correctAnswer: performanceData.correctAnswer || null,
-            isFirstAttempt: performanceData.isFirstAttempt !== undefined ? performanceData.isFirstAttempt : true,
+            correctOptionText: performanceData.correctOptionText || null,
+            sampleAnswer: performanceData.sampleAnswer || null,
+            gradingCriteria: performanceData.gradingCriteria || null,
+            feedbackText: performanceData.feedbackText || null,
+            questionType: performanceData.questionType || null,
+            isFirstAttempt: true,
             createdAt: new Date()
         };
         const attemptResult = await attemptCollection.insertOne(attemptData);
 
-        if (loIdentifier && courseId) {
+        if (loIdentifier && courseId && performanceData.isCorrect !== null) {
             const performanceCollection = db.collection("grasp_student_performance");
-            const userIdObj = ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId;
-            const quizIdObj = ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId;
 
             // CRITICAL: Check if this is a retake. 
             // If a score already exists for this User + Quiz, it is a retake.
@@ -713,10 +725,10 @@ const saveStudentPerformance = async (performanceData) => {
 
             if (isFirstAttemptInSession) {
                 const updateFields = {
-                    $set: { 
+                    $set: {
                         lastQuizIdSeen: new ObjectId(quizIdStr),
                         updatedAt: new Date(),
-                        needsRemediation: !performanceData.isCorrect
+                        needsRemediation: performanceData.isCorrect !== true
                     }
                 };
 

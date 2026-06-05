@@ -482,8 +482,9 @@ const recordPerformanceHandler = async (req, res) => {
  */
 const checkQuestionAnswerHandler = async (req, res) => {
   try {
-    const { questionId } = req.params;
+    const { quizId, questionId } = req.params;
     const { selectedIndex, answerText } = req.body;
+    const userId = req.user?._id || req.user?.id;
 
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
@@ -559,6 +560,19 @@ const checkQuestionAnswerHandler = async (req, res) => {
       const studentNum = CalculationQuestion.parseStudentNumericAnswer(answerText);
       const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
       const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
+      if (userId && quizId) {
+        quizService.saveStudentPerformance({
+          userId: String(userId), quizId: String(quizId), questionId: String(questionId),
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+          bloom: question.bloom,
+          questionType: QUESTION_TYPES.CALCULATION,
+          isCorrect,
+          selectedAnswer: String(answerText).trim(),
+          correctAnswer: displayCorrect,
+          correctOptionText: displayCorrect,
+        }).catch(e => console.error('[check] Failed to record attempt:', e));
+      }
       res.json({
         success: true,
         isCorrect,
@@ -583,6 +597,19 @@ const checkQuestionAnswerHandler = async (req, res) => {
           success: false,
           error: "This open-ended question is missing a sample answer. Ask your instructor to fix it in the question bank.",
         });
+      }
+      if (userId && quizId) {
+        quizService.saveStudentPerformance({
+          userId: String(userId), quizId: String(quizId), questionId: String(questionId),
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+          bloom: question.bloom,
+          questionType: QUESTION_TYPES.OPEN_ENDED,
+          isCorrect: null,
+          selectedAnswer: String(answerText).trim(),
+          sampleAnswer: sample,
+          gradingCriteria: criteria || null,
+        }).catch(e => console.error('[check] Failed to record attempt:', e));
       }
       res.json({
         success: true,
@@ -629,12 +656,24 @@ const checkQuestionAnswerHandler = async (req, res) => {
       const normalizedAcceptable = [...variants].map((a) => normalizeFib(a)).filter(Boolean);
       const isCorrect = normalizedAcceptable.length > 0 && normalizedAcceptable.some((a) => a === given);
       const canonical = trimmedCanonical;
+      if (userId && quizId) {
+        quizService.saveStudentPerformance({
+          userId: String(userId), quizId: String(quizId), questionId: String(questionId),
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+          bloom: question.bloom,
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          isCorrect,
+          selectedAnswer: String(answerText).trim(),
+          correctAnswer: isCorrect ? canonical : null,
+          correctOptionText: canonical || null,
+        }).catch(e => console.error('[check] Failed to record attempt:', e));
+      }
       res.json({
         success: true,
         isCorrect,
         feedback: isCorrect ? "Correct." : "",
         correctAnswer: isCorrect ? canonical : null,
-        // Reveal canonical text when wrong so the client can show "The correct answer is …"
         correctOptionText: canonical || null,
       });
       return;
@@ -670,6 +709,20 @@ const checkQuestionAnswerHandler = async (req, res) => {
       ? (correctOptionObj.text || "")
       : (correctOptionObj || "");
 
+    if (userId && quizId) {
+      quizService.saveStudentPerformance({
+        userId: String(userId), quizId: String(quizId), questionId: String(questionId),
+        learningObjectiveId: question.learningObjectiveId,
+        granularObjectiveId: question.granularObjectiveId,
+        bloom: question.bloom,
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+        isCorrect,
+        selectedAnswer: selectedKey,
+        correctAnswer: isCorrect ? correctAnswerLetter : null,
+        correctOptionText: isCorrect ? correctOptionText : null,
+        feedbackText: feedback,
+      }).catch(e => console.error('[check] Failed to record attempt:', e));
+    }
     res.json({
       success: true,
       isCorrect,

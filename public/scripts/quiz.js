@@ -366,14 +366,11 @@ async function startQuiz(quizId) {
     // Fetch quiz metadata and questions concurrently
     const [quizResponse, questionsResponse] = await Promise.all([
       fetch(`/api/quiz/${quizId}`),
-      fetch(`/api/quiz/${quizId}/questions?approvedOnly=true&_t=${Date.now()}`, {
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+      fetch(`/api/student/quizzes/${quizId}/questions`, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
       })
     ]);
-    
+
     const quizData = await quizResponse.json();
     const questionsData = await questionsResponse.json();
 
@@ -382,13 +379,38 @@ async function startQuiz(quizId) {
       quizState.quizData = {
         quizId: quizId,
         title: quizData.quiz ? quizData.quiz.name : "Quiz",
-        course: "Course", // Could fetch course name if needed, but placeholder is fine for UI
+        course: questionsData.data?.course || "Course",
         duration: quizData.quiz ? quizData.quiz.duration || 0 : 0,
-        questions: questionsData.questions
+        questions: questionsData.data?.questions || []
       };
       quizState.currentQuestionIndex = 0;
       quizState.answers = {};
       quizState.feedback = {};
+
+      // Restore previously recorded answers (first-attempt resumption)
+      const prevAnswers = questionsData.data?.previousAnswers || {};
+      Object.entries(prevAnswers).forEach(([qid, prev]) => {
+        if (prev.questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
+          if (prev.selectedIndex !== undefined && prev.selectedIndex >= 0) {
+            quizState.answers[qid] = prev.selectedIndex;
+          }
+        } else {
+          quizState.answers[qid] = prev.selectedAnswer;
+        }
+        quizState.feedback[qid] = {
+          isCorrect: prev.isCorrect,
+          selectedAnswer: prev.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? prev.selectedIndex : prev.selectedAnswer,
+          selectedKey: prev.selectedAnswer,
+          correctAnswer: prev.correctAnswer || null,
+          correctOptionText: prev.correctOptionText || null,
+          feedbackText: prev.feedbackText || "",
+          openEnded: prev.questionType === QUESTION_TYPES.OPEN_ENDED,
+          sampleAnswer: prev.sampleAnswer || null,
+          gradingCriteria: prev.gradingCriteria || null,
+          questionType: prev.questionType,
+        };
+      });
+
       quizState.startTime = Date.now();
       
       startTimer();
@@ -1369,90 +1391,75 @@ function updateTimerDisplay() {
 }
 
 async function showCompletion() {
-  // Stop the timer
   stopTimer();
 
-  // Hide quiz content
   document.querySelector(".quiz-content").style.display = "none";
   document.querySelector(".quiz-navigation").style.display = "none";
 
-  // Score only auto-graded items; open-ended questions are excluded from the percentage
+  // Compute local score for immediate display while awaiting server confirmation
   const gradedQuestions = quizState.quizData.questions.filter((q) => q.questionType !== QUESTION_TYPES.OPEN_ENDED);
-  const totalGraded = gradedQuestions.length;
-  let correctCount = 0;
+  const localTotal = gradedQuestions.length;
+  let localCorrect = 0;
   gradedQuestions.forEach((q) => {
-    const qid = q.id;
-    const feedbackResult = qid ? quizState.feedback[qid] : null;
-    if (feedbackResult && feedbackResult.isCorrect === true) {
-      correctCount++;
-    }
+    const fb = quizState.feedback[q.id];
+    if (fb && fb.isCorrect === true) localCorrect++;
   });
+  const localScore = localTotal > 0 ? Math.round((localCorrect / localTotal) * 100) : null;
+  const openEndedCount = quizState.quizData.questions.length - localTotal;
 
-  const score =
-    totalGraded > 0 ? Math.round((correctCount / totalGraded) * 100) : null;
-  const openEndedCount = quizState.quizData.questions.length - totalGraded;
-
-  // Update completion section
-  document.getElementById("correctCount").textContent = correctCount;
-  document.getElementById("totalCount").textContent = totalGraded;
   const scoreEl = document.getElementById("scorePercentage");
+  document.getElementById("correctCount").textContent = localCorrect;
+  document.getElementById("totalCount").textContent = localTotal;
   if (scoreEl) {
-    if (score === null) {
-      scoreEl.textContent = openEndedCount > 0 ? "—" : "0%";
-    } else {
-      scoreEl.textContent = `${score}%`;
-    }
+    scoreEl.textContent = localScore === null ? (openEndedCount > 0 ? "—" : "0%") : `${localScore}%`;
+  }
+  document.getElementById("completionSection").style.display = "block";
+
+  // Submit and update display with server-authoritative values
+  const timeSpent = quizState.startTime ? (Date.now() - quizState.startTime) : 0;
+  const result = await submitQuizToBackend(timeSpent);
+
+  const serverTotal = result.totalQuestions ?? localTotal;
+  const serverCorrect = result.correctAnswers ?? localCorrect;
+  const serverScore = result.score !== undefined ? result.score : localScore;
+
+  document.getElementById("correctCount").textContent = serverCorrect;
+  document.getElementById("totalCount").textContent = serverTotal;
+  if (scoreEl) {
+    scoreEl.textContent = serverScore === null ? (openEndedCount > 0 ? "—" : "0%") : `${serverScore}%`;
   }
 
-  // Submit quiz to backend and get achievements
-  const newAchievements = await submitQuizToBackend(
-    score ?? 0,
-    correctCount,
-    totalGraded
-  );
-
-  // Show achievements (perfect score only when there was at least one graded question and score is 100%)
-  displayNewAchievements(newAchievements, score !== null && score === 100);
-
-  // Show completion section
-  document.getElementById("completionSection").style.display = "block";
+  displayNewAchievements(result.newAchievements || [], serverScore === 100 && serverTotal > 0);
 }
 
-async function submitQuizToBackend(score, correctAnswers, totalQuestions) {
+async function submitQuizToBackend(timeSpent) {
   if (!quizState.currentQuiz) {
     console.warn("Cannot submit quiz: missing quiz ID");
-    return [];
+    return {};
   }
-
-  const timeSpent = quizState.startTime ? (Date.now() - quizState.startTime) : 0;
 
   try {
     const response = await fetch(`/api/student/quizzes/${quizState.currentQuiz}/submit`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        answers: quizState.answers,
-        feedback: quizState.feedback,
-        score: score,
-        correctAnswers: correctAnswers,
-        totalQuestions: totalQuestions,
-        timeSpent: timeSpent,
-        sessionId: Date.now().toString()
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeSpent, sessionId: Date.now().toString() })
     });
 
     const data = await response.json();
     if (data.success && data.data) {
-      return data.data.newAchievements || [];
+      return {
+        newAchievements: data.data.newAchievements || [],
+        score: data.data.score,
+        correctAnswers: data.data.correctAnswers,
+        totalQuestions: data.data.totalQuestions,
+      };
     } else {
       console.error("Failed to submit quiz:", data.message);
-      return [];
+      return {};
     }
   } catch (error) {
     console.error("Error submitting quiz:", error);
-    return [];
+    return {};
   }
 }
 
