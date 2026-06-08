@@ -404,6 +404,7 @@
     border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s;
+    margin-bottom: 10px;
 }
 
 .answer-option:hover {

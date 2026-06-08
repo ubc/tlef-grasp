@@ -643,13 +643,7 @@ function showQuestion(questionIndex) {
   questionTitleElement.innerHTML = completeHTML;
   document.getElementById("currentQuestion").textContent = questionIndex + 1;
   
-  // Show question ID for debugging
-  const idDisplay = document.getElementById("questionIdDisplay");
-  if (idDisplay) {
-    idDisplay.textContent = `ID: ${question.id || 'N/A'}`;
-  }
-
-  // Update progress bar
+// Update progress bar
   const progress = ((questionIndex + 1) / quizState.quizData.questions.length) * 100;
   document.getElementById("progressFill").style.width = `${progress}%`;
 
