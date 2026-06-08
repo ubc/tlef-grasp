@@ -318,16 +318,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             const gradedAttempts = attempts.filter(a => a.questionType !== QUESTION_TYPES.OPEN_ENDED);
             const correctCount = gradedAttempts.filter(a => a.isCorrect).length;
             const totalGraded = gradedAttempts.length;
-            const openEndedCount = openEndedAttempts.length;
+            let pendingCount = openEndedAttempts.filter(a => a.isCorrect === null).length;
+
+            let currentScore = score;
+
+            const updateSummary = () => {
+                const scoreBadgeEl = reviewSummary.querySelector('.review-score-badge');
+                if (scoreBadgeEl) {
+                    scoreBadgeEl.textContent = currentScore !== null ? `${Number(currentScore).toFixed(1)}%` : '—';
+                    scoreBadgeEl.className = `score-badge review-score-badge ${getScoreClass(currentScore)}`;
+                }
+                const pendingBadgeEl = reviewSummary.querySelector('.review-pending-badge');
+                if (pendingBadgeEl) {
+                    if (pendingCount > 0) {
+                        pendingBadgeEl.innerHTML = `<i class="fas fa-pencil-alt"></i> ${pendingCount} open-ended — manual grading required`;
+                        pendingBadgeEl.style.display = '';
+                    } else {
+                        pendingBadgeEl.style.display = 'none';
+                    }
+                }
+            };
 
             let summaryHtml = `<div style="font-size: 16px; color: #2c3e50; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
-                <span><strong>Score:</strong> <span class="score-badge ${getScoreClass(score)}">${Number(score).toFixed(1)}%</span></span>`;
+                <span><strong>Score:</strong> <span class="score-badge review-score-badge ${getScoreClass(score)}">${score !== null ? `${Number(score).toFixed(1)}%` : '—'}</span></span>`;
 
             if (totalGraded > 0) {
                 summaryHtml += `<span><strong>Auto-graded:</strong> ${correctCount} / ${totalGraded} correct</span>`;
             }
-            if (openEndedCount > 0) {
-                summaryHtml += `<span class="review-badge-pending"><i class="fas fa-pencil-alt"></i> ${openEndedCount} open-ended — manual grading required</span>`;
+            if (openEndedAttempts.length > 0) {
+                summaryHtml += `<span class="review-badge-pending review-pending-badge"${pendingCount === 0 ? ' style="display:none"' : ''}><i class="fas fa-pencil-alt"></i> ${pendingCount} open-ended — manual grading required</span>`;
             }
 
             summaryHtml += `</div>`;
@@ -347,7 +366,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 let statusBadge;
                 if (isOpenEnded) {
-                    statusBadge = `<span class="review-badge-pending"><i class="fas fa-clock"></i> Needs Manual Grading</span>`;
+                    if (attempt.isCorrect === true) {
+                        statusBadge = `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>`;
+                    } else if (attempt.isCorrect === false) {
+                        statusBadge = `<span style="color: #e74c3c;"><i class="fas fa-times-circle"></i> Incorrect</span>`;
+                    } else {
+                        statusBadge = `<span class="review-badge-pending"><i class="fas fa-clock"></i> Needs Manual Grading</span>`;
+                    }
                 } else if (attempt.isCorrect) {
                     statusBadge = `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>`;
                 } else {
@@ -370,14 +395,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? window.parseSmilesTags(escapeHtml(attempt.questionText))
                     : escapeHtml(attempt.questionText);
 
+                const gradeActionsHtml = (isOpenEnded && attempt.isCorrect === null)
+                    ? `<div class="review-grade-actions">
+                        <button class="review-grade-btn review-grade-btn--correct"><i class="fas fa-check"></i> Mark Correct</button>
+                        <button class="review-grade-btn review-grade-btn--incorrect"><i class="fas fa-times"></i> Mark Incorrect</button>
+                       </div>`
+                    : '';
+
                 qDiv.innerHTML = `
                     <div class="review-question-header">
                         <span>Question ${index + 1} <span class="review-question-type-label">${questionTypeLabel}</span></span>
-                        ${statusBadge}
+                        <span class="review-status-cell">${statusBadge}</span>
                     </div>
                     <div class="review-question-title">${questionTitle}</div>
                     ${bodyHtml}
+                    ${gradeActionsHtml}
                 `;
+
+                if (isOpenEnded && attempt.isCorrect === null) {
+                    qDiv.querySelectorAll('.review-grade-btn').forEach(btn => {
+                        btn.addEventListener('click', async () => {
+                            const gradeCorrect = btn.classList.contains('review-grade-btn--correct');
+                            qDiv.querySelectorAll('.review-grade-btn').forEach(b => b.disabled = true);
+
+                            try {
+                                const res = await fetch(`/api/quiz/${quizId}/student/${userId}/grade`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ questionId: attempt.questionId, isCorrect: gradeCorrect })
+                                });
+                                const data = await res.json();
+                                if (!data.success) throw new Error(data.error || 'Grading failed');
+
+                                currentScore = data.score;
+                                pendingCount = Math.max(0, pendingCount - 1);
+                                updateSummary();
+
+                                qDiv.querySelector('.review-grade-actions').remove();
+                                const statusCell = qDiv.querySelector('.review-status-cell');
+                                if (gradeCorrect) {
+                                    statusCell.innerHTML = `<span style="color: #2ecc71;"><i class="fas fa-check-circle"></i> Correct</span>`;
+                                } else {
+                                    statusCell.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-times-circle"></i> Incorrect</span>`;
+                                }
+                            } catch (err) {
+                                console.error('Grading error:', err);
+                                qDiv.querySelectorAll('.review-grade-btn').forEach(b => b.disabled = false);
+                            }
+                        });
+                    });
+                }
+
                 reviewQuestionsContainer.appendChild(qDiv);
             });
 

@@ -72,5 +72,11 @@ router.get("/:quizId/scores", requireRole(ROLES.STAFF), quizController.getQuizSc
  */
 router.get("/:quizId/student/:userId/attempts", requireRole(ROLES.STAFF), quizController.getStudentQuizAttemptHandler);
 
+/**
+ * PUT /api/quiz/:quizId/student/:userId/grade
+ * Grade an open-ended question for a student (Faculty only)
+ */
+router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeOpenEndedHandler);
+
 module.exports = router;
 

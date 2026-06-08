@@ -801,6 +801,32 @@ const getStudentQuizAttemptHandler = async (req, res) => {
 };
 
 /**
+ * Grade an open-ended question for a specific student (Faculty only)
+ */
+const gradeOpenEndedHandler = async (req, res) => {
+  try {
+    const { quizId, userId } = req.params;
+    const { questionId, isCorrect } = req.body;
+
+    if (typeof isCorrect !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'isCorrect must be a boolean' });
+    }
+    if (!questionId) {
+      return res.status(400).json({ success: false, error: 'questionId is required' });
+    }
+
+    const result = await quizService.gradeOpenEndedAttempt(userId, quizId, questionId, isCorrect);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error grading open-ended attempt:', error);
+    const status = error.message === 'Open-ended attempt not found' ? 404
+      : error.message === 'Attempt has already been graded' ? 409
+      : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Get all completed quiz IDs for the current student in a course
  */
 const getMyScoresHandler = async (req, res) => {
@@ -832,5 +858,6 @@ module.exports = {
   recordPerformanceHandler,
   checkQuestionAnswerHandler,
   getQuizScoresHandler,
-  getStudentQuizAttemptHandler
+  getStudentQuizAttemptHandler,
+  gradeOpenEndedHandler
 };
