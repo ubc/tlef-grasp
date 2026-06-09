@@ -591,7 +591,8 @@ class QuestionBankPage {
 
     // Modal events
     this.initializeModalEvents();
-    this.initializeObjectiveEvents(); 
+    this.initializeObjectiveEvents();
+    this.initializeAddQuestionModal();
   }
   initializeSortableHeaders() {
     const sortableHeaders = document.querySelectorAll(".sortable-header");
@@ -612,8 +613,10 @@ class QuestionBankPage {
     if (approveBtn) approveBtn.addEventListener("click", () => this.handleBulkApprove());
     if (unapproveBtn) unapproveBtn.addEventListener("click", () => this.handleBulkUnapprove());
     if (flagBtn) flagBtn.addEventListener("click", () => this.handleFlag());
-    if (deleteBtn)
-      deleteBtn.addEventListener("click", () => this.handleDelete());
+    if (deleteBtn) deleteBtn.addEventListener("click", () => this.handleDelete());
+
+    const addQuestionBtn = document.getElementById("add-question-btn");
+    if (addQuestionBtn) addQuestionBtn.addEventListener("click", () => this.openAddQuestionModal());
 
     // Select all checkbox
     const selectAllCheckbox = document.getElementById("select-all");
@@ -701,7 +704,11 @@ class QuestionBankPage {
    * Hides action bar, checkboxes, and buttons for non-faculty users
    */
   initializePermissionBasedUI() {
-    if (this.isFaculty) return; // No need to hide anything for faculty
+    if (this.isFaculty) {
+      const toolbar = document.getElementById("questions-toolbar");
+      if (toolbar) toolbar.style.display = "flex";
+      return;
+    }
 
     // Elements to hide for non-faculty
     const elementsToHide = [
@@ -1587,11 +1594,11 @@ class QuestionBankPage {
           normalizedOptions = optionKeys.map((key) => {
             const opt = question.options[key];
             if (typeof opt === "string") {
-              return { id: key, text: opt };
+              return { id: key, text: opt, feedback: "" };
             } else if (opt && typeof opt === "object") {
-              return { id: opt.id || key, text: opt.text || opt };
+              return { id: opt.id || key, text: opt.text || String(opt), feedback: String(opt.feedback || "") };
             } else {
-              return { id: key, text: String(opt || "") };
+              return { id: key, text: String(opt || ""), feedback: "" };
             }
           });
         }
@@ -2270,8 +2277,9 @@ class QuestionBankPage {
         return;
       }
 
-      const optionInputs = document.querySelectorAll(".question-modal-option-input");
-      const feedbackInputs = document.querySelectorAll(".question-modal-feedback-input");
+      const questionModalBody = document.getElementById("question-modal-body");
+      const optionInputs = questionModalBody.querySelectorAll(".question-modal-option-input");
+      const feedbackInputs = questionModalBody.querySelectorAll(".question-modal-feedback-input");
       const feedbackMap = new Map();
       feedbackInputs.forEach(input => {
         const index = input.dataset.optionIndex;
@@ -2963,7 +2971,7 @@ class QuestionBankPage {
   getMaterialIcon(type) {
     const info = { icon: "fas fa-file", color: "#718096" };
     if (!type) return info;
-    
+
     const t = type.toLowerCase();
     if (t.includes("pdf")) {
       info.icon = "fas fa-file-pdf";
@@ -2982,6 +2990,741 @@ class QuestionBankPage {
       info.color = "#27ae60";
     }
     return info;
+  }
+
+  // ==================== Add New Question Wizard ====================
+
+  openAddQuestionModal() {
+    if (!this.requireFaculty("add new questions")) return;
+
+    this.addQuestionWizard = {
+      step: 1,
+      questionType: null,
+      form: {},
+      metaObjectiveId: null,
+      granularObjectiveId: null,
+      bloom: null,
+      approve: false,
+      quizId: null,
+    };
+
+    const modal = document.getElementById("add-question-modal");
+    if (modal) {
+      modal.style.display = "flex";
+      this.renderWizardStep(1);
+      this.updateWizardNav();
+    }
+  }
+
+  closeAddQuestionModal() {
+    const modal = document.getElementById("add-question-modal");
+    if (modal) modal.style.display = "none";
+    const body = document.getElementById("add-question-modal-body");
+    if (body) body.innerHTML = "";
+    this.addQuestionWizard = null;
+  }
+
+  initializeAddQuestionModal() {
+    const modal = document.getElementById("add-question-modal");
+    const closeBtn = document.getElementById("add-question-modal-close");
+    const cancelBtn = document.getElementById("add-question-cancel-btn");
+    const backBtn = document.getElementById("add-question-back-btn");
+    const nextBtn = document.getElementById("add-question-next-btn");
+
+    if (closeBtn) closeBtn.addEventListener("click", () => this.closeAddQuestionModal());
+    if (cancelBtn) cancelBtn.addEventListener("click", () => this.closeAddQuestionModal());
+    if (backBtn) backBtn.addEventListener("click", () => this.retreatWizard());
+    if (nextBtn) nextBtn.addEventListener("click", () => this.advanceWizard());
+
+    if (modal) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) this.closeAddQuestionModal();
+      });
+    }
+  }
+
+  updateWizardNav() {
+    const wiz = this.addQuestionWizard;
+    if (!wiz) return;
+
+    const backBtn = document.getElementById("add-question-back-btn");
+    const nextBtn = document.getElementById("add-question-next-btn");
+    const titleEl = document.getElementById("add-question-modal-title");
+
+    if (backBtn) backBtn.style.display = wiz.step > 1 ? "inline-flex" : "none";
+    if (nextBtn) {
+      nextBtn.disabled = false;
+      nextBtn.textContent = wiz.step === 4 ? "Save Question" : "Next";
+    }
+
+    const stepLabels = {
+      1: "Select Question Type",
+      2: "Fill in Question Details",
+      3: "Associate Learning Objective",
+      4: "Review & Save",
+    };
+    if (titleEl) titleEl.textContent = stepLabels[wiz.step] || "Add New Question";
+  }
+
+  renderWizardStepIndicator(step) {
+    document.querySelectorAll(".wizard-step-item").forEach((item) => {
+      const s = parseInt(item.dataset.step, 10);
+      item.classList.remove("active", "completed");
+      if (s === step) item.classList.add("active");
+      else if (s < step) item.classList.add("completed");
+    });
+  }
+
+  renderWizardStep(step) {
+    this.renderWizardStepIndicator(step);
+    const body = document.getElementById("add-question-modal-body");
+    if (!body) return;
+
+    switch (step) {
+      case 1: this.renderWizardStep1(body); break;
+      case 2: this.renderWizardStep2(body); break;
+      case 3: this.renderWizardStep3(body); break;
+      case 4: this.renderWizardStep4(body); break;
+    }
+  }
+
+  renderWizardStep1(body) {
+    const types = [
+      { type: QUESTION_TYPES.MULTIPLE_CHOICE,   icon: "fa-list-ul",    name: "Multiple Choice",    desc: "4 options, one correct answer" },
+      { type: QUESTION_TYPES.FILL_IN_THE_BLANK, icon: "fa-pencil-alt", name: "Fill-in-the-Blank",  desc: "Sentence with a blank to complete" },
+      { type: QUESTION_TYPES.CALCULATION,       icon: "fa-calculator",  name: "Calculation",        desc: "Formula with randomised variables" },
+      { type: QUESTION_TYPES.OPEN_ENDED,        icon: "fa-paragraph",  name: "Open-Ended",         desc: "Free-text with sample answer & rubric" },
+    ];
+
+    const selected = this.addQuestionWizard.questionType;
+
+    body.innerHTML = `
+      <div class="question-modal-content">
+        <div class="question-type-grid">
+          ${types.map((t) => `
+            <button type="button" class="type-card${selected === t.type ? " selected" : ""}" data-type="${t.type}">
+              <i class="fas ${t.icon}"></i>
+              <span class="type-card-name">${t.name}</span>
+              <span class="type-card-desc">${t.desc}</span>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    `;
+
+    body.querySelectorAll(".type-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        body.querySelectorAll(".type-card").forEach((c) => c.classList.remove("selected"));
+        card.classList.add("selected");
+        this.addQuestionWizard.questionType = card.dataset.type;
+        this.updateWizardNav();
+      });
+    });
+  }
+
+  renderWizardStep2(body) {
+    const qt = this.addQuestionWizard.questionType;
+    const f = this.addQuestionWizard.form;
+
+    let typeFieldsHtml = "";
+
+    if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      const opts = f.options || [
+        { id: "A", text: "", feedback: "" },
+        { id: "B", text: "", feedback: "" },
+        { id: "C", text: "", feedback: "" },
+        { id: "D", text: "", feedback: "" },
+      ];
+      const correct = f.correctAnswer || "A";
+      typeFieldsHtml = `
+        <div class="question-modal-field">
+          <label>Options <span style="font-size:12px;color:#6c757d;">— select the radio button next to the correct answer</span></label>
+          <div class="question-modal-options">
+            ${opts.map((opt) => `
+              <div class="question-modal-option">
+                <div class="question-modal-option-header">
+                  <input type="radio" name="wiz-correct-answer" value="${opt.id}" ${correct === opt.id ? "checked" : ""} id="wiz-opt-${opt.id}">
+                  <label for="wiz-opt-${opt.id}" class="question-modal-option-label"><span class="option-letter">${opt.id}</span></label>
+                </div>
+                <div class="question-modal-option-fields">
+                  <input type="text" class="question-modal-option-input" data-option-id="${opt.id}" value="${this.escapeHtml(opt.text)}" placeholder="Enter option text...">
+                  <input type="text" class="question-modal-feedback-input" data-option-id="${opt.id}" value="${this.escapeHtml(opt.feedback || "")}" placeholder="Feedback shown after submission (optional)..." style="margin-top:5px;font-size:0.9em;font-style:italic;background:#f9fafb;">
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+      typeFieldsHtml = `
+        <div class="question-modal-field">
+          <label for="wiz-fib-correct">Correct answer</label>
+          <input type="text" id="wiz-fib-correct" class="question-modal-input" value="${this.escapeHtml(f.correctAnswer || "")}" placeholder="Canonical correct answer">
+        </div>
+        <div class="question-modal-field">
+          <label for="wiz-fib-acceptable">Acceptable answers <span style="font-weight:400;color:#6c757d;">(one per line; optional)</span></label>
+          <textarea id="wiz-fib-acceptable" class="question-modal-textarea" rows="3" placeholder="Other accepted spellings or synonyms, one per line">${this.escapeHtml((f.acceptableAnswers || []).join("\n"))}</textarea>
+        </div>
+      `;
+    } else if (qt === QUESTION_TYPES.CALCULATION) {
+      // Replaced after innerHTML is set by renderWizardStep2Calculation
+      typeFieldsHtml = `<div id="wiz-calc-placeholder"></div>`;
+    } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
+      typeFieldsHtml = `
+        <div class="question-modal-field">
+          <label for="wiz-open-sample">Sample answer <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="wiz-open-sample" class="question-modal-textarea" rows="5" placeholder="A strong example answer students see after they submit">${this.escapeHtml(f.openEndedSampleAnswer || "")}</textarea>
+        </div>
+        <div class="question-modal-field">
+          <label for="wiz-open-criteria">Grading criteria <span style="font-weight:400;color:#6c757d;">(shown after submit)</span></label>
+          <textarea id="wiz-open-criteria" class="question-modal-textarea" rows="5" placeholder="What instructors look for; bullet points or a short rubric">${this.escapeHtml(f.openEndedGradingCriteria || "")}</textarea>
+        </div>
+      `;
+    }
+
+    const isFib = qt === QUESTION_TYPES.FILL_IN_THE_BLANK;
+    const isCalc = qt === QUESTION_TYPES.CALCULATION;
+    const stemLabel = isCalc ? "Question template" : "Question stem";
+    const stemPlaceholder = isFib
+      ? "Declarative sentence with _________ (nine underscores) for the blank"
+      : isCalc
+        ? 'e.g. An object of mass {{m}} kg moves at {{v}} m/s. What is its kinetic energy in joules?'
+        : "Enter question stem...";
+    const stemHint = isFib
+      ? `<p style="font-size:12px;color:#6c757d;margin:4px 0 0 0;">Use exactly _________ (nine underscores) to mark the blank.</p>`
+      : isCalc
+        ? `<p style="font-size:12px;color:#6c757d;margin:4px 0 0 0;">Wrap each variable name in double curly braces, e.g. <code>{{m}}</code>. Every variable declared below must appear here.</p>`
+        : "";
+
+    body.innerHTML = `
+      <div class="question-modal-content">
+        <div class="question-modal-field">
+          <label for="wiz-title">Question title <span style="font-weight:400;color:#6c757d;">(short label)</span></label>
+          <input type="text" id="wiz-title" class="question-modal-input" value="${this.escapeHtml(f.title || "")}" placeholder="e.g. Kinetic energy formula">
+        </div>
+        <div class="question-modal-field">
+          <label for="wiz-stem">${stemLabel}</label>
+          <textarea id="wiz-stem" class="question-modal-textarea" rows="4" placeholder="${stemPlaceholder}">${this.escapeHtml(f.stem || "")}</textarea>
+          ${stemHint}
+        </div>
+        ${typeFieldsHtml}
+      </div>
+    `;
+
+    if (isCalc) {
+      this.renderWizardStep2Calculation(body, f);
+    }
+  }
+
+  renderWizardStep2Calculation(body, f) {
+    const calcPlaceholder = body.querySelector("#wiz-calc-placeholder");
+    if (!calcPlaceholder) return;
+
+    calcPlaceholder.outerHTML = `
+      <div class="calc-guide-banner">
+        <div class="calc-guide-title"><i class="fas fa-info-circle"></i> How Calculation Questions Work</div>
+        <div class="calc-guide-body">
+          <p>Each student receives a unique version with randomly sampled variable values. The system substitutes them into the question template and evaluates the answer formula automatically.</p>
+          <div class="calc-guide-example">
+            <div class="calc-guide-row"><span class="calc-guide-tag">Template</span><span>An object of mass <code>{{m}}</code> kg moves at <code>{{v}}</code> m/s. What is its kinetic energy in joules?</span></div>
+            <div class="calc-guide-row"><span class="calc-guide-tag">Formula</span><code>0.5 * m * v^2</code></div>
+            <div class="calc-guide-row"><span class="calc-guide-tag">Student sees</span><span>An object of mass <em>8</em> kg moves at <em>6</em> m/s… → Answer: <strong>144.0</strong> J</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="question-modal-field">
+        <label for="wiz-calc-formula">Answer formula</label>
+        <input type="text" id="wiz-calc-formula" class="question-modal-input" value="${this.escapeHtml(f.calculationFormula || "")}" placeholder="e.g. 0.5 * m * v^2">
+        <p class="calc-field-hint">Plain arithmetic only — operators: <code>+  -  *  /  ^</code> &nbsp;|&nbsp; functions: <code>sqrt  sin  cos  log  exp</code> &nbsp;|&nbsp; constants: <code>PI</code> (π) &nbsp;<code>E</code> (e). No LaTeX, no = sign.</p>
+      </div>
+
+      <div class="question-modal-field">
+        <label>Variables <span style="font-weight:400;color:#6c757d;">— up to 3; single-letter names only (a–z, except e)</span></label>
+        <div class="calc-vars-header">
+          <span class="calc-vars-col-label">Name</span>
+          <span class="calc-vars-col-label">Min</span>
+          <span class="calc-vars-col-label">Max</span>
+          <span class="calc-vars-col-label" style="flex:1.4;">Sampling</span>
+          <span style="width:28px;"></span>
+        </div>
+        <div id="wiz-calc-vars-list"></div>
+        <button type="button" class="btn btn-secondary calc-add-var-btn" id="wiz-add-var-btn" style="margin-top:8px;">
+          <i class="fas fa-plus"></i> Add Variable
+        </button>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div class="question-modal-field" style="flex:1;min-width:140px;">
+          <label for="wiz-calc-decimals">Answer decimal places</label>
+          <input type="number" id="wiz-calc-decimals" class="question-modal-input" min="0" max="12" value="${f.calculationAnswerDecimals ?? 2}" style="max-width:120px;">
+          <p class="calc-field-hint">Decimal places shown in the correct answer (0 = integer answer).</p>
+        </div>
+        <div class="question-modal-field" style="flex:1;min-width:140px;">
+          <label for="wiz-calc-tolerance">Tolerance % <span style="font-weight:400;color:#6c757d;">(optional)</span></label>
+          <input type="number" id="wiz-calc-tolerance" class="question-modal-input" min="0" max="100" step="0.1" value="${f.calculationAnswerTolerancePercent ?? ""}" placeholder="e.g. 2" style="max-width:180px;">
+          <p class="calc-field-hint">Accept answers within ±N% of correct. Leave blank for exact match.</p>
+        </div>
+      </div>
+    `;
+
+    const varList = document.getElementById("wiz-calc-vars-list");
+    const existingVars = Array.isArray(f.calculationVariables) && f.calculationVariables.length
+      ? f.calculationVariables
+      : [{ name: "", min: 1, max: 10, integerOnly: true }];
+    existingVars.forEach((v) => this.addCalcVarRow(varList, v));
+
+    document.getElementById("wiz-add-var-btn").addEventListener("click", () => {
+      if (varList.querySelectorAll(".calc-var-row").length >= 3) {
+        this.showNotification("Maximum 3 variables allowed", "warning");
+        return;
+      }
+      this.addCalcVarRow(varList, { name: "", min: 1, max: 10, integerOnly: true });
+    });
+  }
+
+  addCalcVarRow(container, varData) {
+    const row = document.createElement("div");
+    row.className = "calc-var-row";
+
+    const savedType = varData.integerOnly === true
+      ? "integer"
+      : String(Number.isFinite(varData.decimals) ? varData.decimals : 2);
+
+    row.innerHTML = `
+      <div class="calc-var-name-wrap">
+        <span class="calc-var-brace">{{</span>
+        <input type="text" class="question-modal-input calc-var-name" maxlength="1"
+               placeholder="m" value="${this.escapeHtml(varData.name || "")}"
+               title="Single lowercase letter (a–z, except e)">
+        <span class="calc-var-brace">}}</span>
+      </div>
+      <input type="number" class="question-modal-input calc-var-min" placeholder="1"
+             value="${varData.min ?? ""}" title="Minimum value (inclusive)">
+      <input type="number" class="question-modal-input calc-var-max" placeholder="10"
+             value="${varData.max ?? ""}" title="Maximum value (inclusive)">
+      <select class="form-control calc-var-type">
+        <option value="integer" ${savedType === "integer" ? "selected" : ""}>Integer</option>
+        <option value="1"       ${savedType === "1"       ? "selected" : ""}>1 decimal place</option>
+        <option value="2"       ${savedType === "2"       ? "selected" : ""}>2 decimal places</option>
+        <option value="3"       ${savedType === "3"       ? "selected" : ""}>3 decimal places</option>
+      </select>
+      <button type="button" class="calc-var-remove-btn" title="Remove variable">
+        <i class="fas fa-times"></i>
+      </button>
+    `;
+
+    row.querySelector(".calc-var-remove-btn").addEventListener("click", () => {
+      if (container.querySelectorAll(".calc-var-row").length > 1) {
+        row.remove();
+      } else {
+        this.showNotification("At least one variable is required", "warning");
+      }
+    });
+
+    container.appendChild(row);
+  }
+
+  async renderWizardStep3(body) {
+    body.innerHTML = `<div style="text-align:center;padding:40px;"><i class="fas fa-spinner fa-spin fa-2x" style="color:#3498db;"></i><p style="margin-top:12px;color:#718096;">Loading objectives...</p></div>`;
+
+    if (!this.detailedObjectives || this.detailedObjectives.length === 0) {
+      try {
+        await this.loadDetailedObjectives();
+      } catch (e) {
+        body.innerHTML = `<div style="color:#e53e3e;padding:20px;">Failed to load learning objectives. Please try again.</div>`;
+        return;
+      }
+    }
+
+    const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
+    const wiz = this.addQuestionWizard;
+
+    const metaOptions = this.detailedObjectives
+      .map((o) => `<option value="${o.id}"${wiz.metaObjectiveId === o.id ? " selected" : ""}>${this.escapeHtml(o.name)}</option>`)
+      .join("");
+
+    body.innerHTML = `
+      <div class="question-modal-content">
+        <div class="question-modal-field">
+          <label for="wiz-meta-lo">Meta Learning Objective</label>
+          <select id="wiz-meta-lo" class="form-control">
+            <option value="">— Select a learning objective —</option>
+            ${metaOptions}
+          </select>
+        </div>
+        <div class="question-modal-field" id="wiz-granular-field" style="${wiz.metaObjectiveId ? "" : "display:none;"}">
+          <label for="wiz-granular-lo">Granular Learning Objective</label>
+          <select id="wiz-granular-lo" class="form-control">
+            <option value="">— Select a granular objective —</option>
+          </select>
+        </div>
+        <div class="question-modal-field">
+          <label for="wiz-bloom">Bloom's Taxonomy Level</label>
+          <select id="wiz-bloom" class="form-control">
+            <option value="">— Select a Bloom's level —</option>
+            ${BLOOM_LEVELS.map((l) => `<option value="${l}"${wiz.bloom === l ? " selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    `;
+
+    const metaSelect = document.getElementById("wiz-meta-lo");
+    const granularField = document.getElementById("wiz-granular-field");
+    const granularSelect = document.getElementById("wiz-granular-lo");
+
+    const populateGranular = (metaId) => {
+      const objective = this.detailedObjectives.find((o) => o.id === metaId);
+      if (!objective || !objective.granular || objective.granular.length === 0) {
+        granularSelect.innerHTML = `<option value="">No granular objectives found</option>`;
+        return;
+      }
+      granularSelect.innerHTML = `
+        <option value="">— Select a granular objective —</option>
+        ${objective.granular.map((g) => {
+          const gId = getObjectId(g);
+          const text = g.name || g.text || "";
+          return `<option value="${gId}"${wiz.granularObjectiveId === gId ? " selected" : ""}>${this.escapeHtml(text)}</option>`;
+        }).join("")}
+      `;
+    };
+
+    if (wiz.metaObjectiveId) {
+      granularField.style.display = "block";
+      populateGranular(wiz.metaObjectiveId);
+    }
+
+    metaSelect.addEventListener("change", () => {
+      wiz.metaObjectiveId = metaSelect.value || null;
+      wiz.granularObjectiveId = null;
+      if (wiz.metaObjectiveId) {
+        granularField.style.display = "block";
+        populateGranular(wiz.metaObjectiveId);
+      } else {
+        granularField.style.display = "none";
+      }
+    });
+
+    granularSelect.addEventListener("change", () => {
+      wiz.granularObjectiveId = granularSelect.value || null;
+    });
+
+    document.getElementById("wiz-bloom").addEventListener("change", (e) => {
+      wiz.bloom = e.target.value || null;
+    });
+  }
+
+  renderWizardStep4(body) {
+    const wiz = this.addQuestionWizard;
+
+    const quizOptions = this.allQuizzes
+      .map((q) => {
+        const qId = getObjectId(q);
+        return `<option value="${qId}"${wiz.quizId === qId ? " selected" : ""}>${this.escapeHtml(q.name || "Unnamed Quiz")}</option>`;
+      })
+      .join("");
+
+    body.innerHTML = `
+      <div class="question-modal-content">
+        <div class="question-modal-field">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="wiz-approve" ${wiz.approve ? "checked" : ""} style="width:18px;height:18px;cursor:pointer;">
+            <span>Mark as <strong>Approved</strong></span>
+          </label>
+          <p style="font-size:12px;color:#6c757d;margin:6px 0 0 24px;">Leave unchecked to save as Draft for review later.</p>
+        </div>
+        <div class="question-modal-field" style="margin-top:24px;">
+          <label for="wiz-quiz">Add to a quiz <span style="font-weight:400;color:#6c757d;">(optional)</span></label>
+          <select id="wiz-quiz" class="form-control">
+            <option value="">Don't add to any quiz</option>
+            ${quizOptions}
+          </select>
+          <p style="font-size:12px;color:#6c757d;margin:6px 0 0 0;">The question is always saved to the Question Bank. Selecting a quiz links it there too.</p>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("wiz-approve").addEventListener("change", (e) => {
+      wiz.approve = e.target.checked;
+    });
+
+    document.getElementById("wiz-quiz").addEventListener("change", (e) => {
+      wiz.quizId = e.target.value || null;
+    });
+  }
+
+  collectWizardStep2FormData() {
+    const wiz = this.addQuestionWizard;
+    const qt = wiz.questionType;
+
+    wiz.form.title = (document.getElementById("wiz-title")?.value || "").trim();
+    wiz.form.stem = (document.getElementById("wiz-stem")?.value || "").trim();
+
+    if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      const wizBody = document.getElementById("add-question-modal-body");
+      const optInputs = wizBody.querySelectorAll(".question-modal-option-input");
+      const feedInputs = wizBody.querySelectorAll(".question-modal-feedback-input");
+      const correctRadio = wizBody.querySelector('input[name="wiz-correct-answer"]:checked');
+
+      wiz.form.options = Array.from(optInputs).map((inp, i) => ({
+        id: inp.dataset.optionId || String.fromCharCode(65 + i),
+        text: inp.value.trim(),
+        feedback: "",
+      }));
+      feedInputs.forEach((inp) => {
+        const opt = wiz.form.options.find((o) => o.id === inp.dataset.optionId);
+        if (opt) opt.feedback = inp.value.trim();
+      });
+      wiz.form.correctAnswer = correctRadio ? correctRadio.value : "A";
+
+    } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+      wiz.form.correctAnswer = (document.getElementById("wiz-fib-correct")?.value || "").trim();
+      const raw = (document.getElementById("wiz-fib-acceptable")?.value || "").trim();
+      wiz.form.acceptableAnswers = raw ? raw.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+
+    } else if (qt === QUESTION_TYPES.CALCULATION) {
+      wiz.form.calculationFormula = (document.getElementById("wiz-calc-formula")?.value || "").trim();
+
+      const varList = document.getElementById("wiz-calc-vars-list");
+      if (varList) {
+        wiz.form.calculationVariables = Array.from(varList.querySelectorAll(".calc-var-row")).map((row) => {
+          const name = (row.querySelector(".calc-var-name")?.value || "").trim();
+          const min = parseFloat(row.querySelector(".calc-var-min")?.value);
+          const max = parseFloat(row.querySelector(".calc-var-max")?.value);
+          const typeVal = row.querySelector(".calc-var-type")?.value || "integer";
+          const v = { name, min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 10 };
+          if (typeVal === "integer") {
+            v.integerOnly = true;
+          } else {
+            v.decimals = Math.max(0, Math.min(8, parseInt(typeVal, 10) || 0));
+          }
+          return v;
+        });
+      }
+
+      const dec = parseInt(document.getElementById("wiz-calc-decimals")?.value, 10);
+      wiz.form.calculationAnswerDecimals = Number.isFinite(dec) ? Math.max(0, Math.min(12, dec)) : 2;
+      const tol = parseFloat(document.getElementById("wiz-calc-tolerance")?.value);
+      wiz.form.calculationAnswerTolerancePercent = Number.isFinite(tol) ? Math.max(0, Math.min(100, tol)) : null;
+
+    } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
+      wiz.form.openEndedSampleAnswer = (document.getElementById("wiz-open-sample")?.value || "").trim();
+      wiz.form.openEndedGradingCriteria = (document.getElementById("wiz-open-criteria")?.value || "").trim();
+    }
+  }
+
+  validateWizardStep(step) {
+    const wiz = this.addQuestionWizard;
+
+    if (step === 1) {
+      if (!wiz.questionType) {
+        this.showNotification("Please select a question type", "error");
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 2) {
+      this.collectWizardStep2FormData();
+      const f = wiz.form;
+      const qt = wiz.questionType;
+
+      if (!f.title) {
+        this.showNotification("Question title is required", "error");
+        return false;
+      }
+      if (!f.stem) {
+        this.showNotification("Question stem is required", "error");
+        return false;
+      }
+
+      if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
+        if (!f.options || f.options.some((o) => !o.text)) {
+          this.showNotification("All 4 option texts are required", "error");
+          return false;
+        }
+        const texts = f.options.map((o) => o.text.toLowerCase());
+        if (new Set(texts).size !== texts.length) {
+          this.showNotification("Options must be unique — no two options may be identical", "error");
+          return false;
+        }
+      } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        if (!f.stem.includes("_________")) {
+          this.showNotification("Stem must include exactly one blank: _________ (nine underscores)", "error");
+          return false;
+        }
+        if (!f.correctAnswer) {
+          this.showNotification("Correct answer is required", "error");
+          return false;
+        }
+      } else if (qt === QUESTION_TYPES.CALCULATION) {
+        if (!f.calculationFormula) {
+          this.showNotification("Answer formula is required", "error");
+          return false;
+        }
+        if (!Array.isArray(f.calculationVariables) || f.calculationVariables.length === 0) {
+          this.showNotification("At least one variable is required", "error");
+          return false;
+        }
+        const reserved = new Set(["e", "E", "pi", "PI"]);
+        for (const v of f.calculationVariables) {
+          const name = String(v.name || "").trim();
+          if (!name) {
+            this.showNotification("Each variable needs a single-letter name", "error");
+            return false;
+          }
+          if (!/^[a-zA-Z]$/.test(name)) {
+            this.showNotification(`Variable name "${name}" must be a single letter (a–z)`, "error");
+            return false;
+          }
+          if (reserved.has(name)) {
+            this.showNotification(`"${name}" is reserved — choose a different letter`, "error");
+            return false;
+          }
+          if (!Number.isFinite(Number(v.min)) || !Number.isFinite(Number(v.max))) {
+            this.showNotification(`Variable "${name}": min and max must be numbers`, "error");
+            return false;
+          }
+          if (Number(v.min) >= Number(v.max)) {
+            this.showNotification(`Variable "${name}": max must be greater than min`, "error");
+            return false;
+          }
+        }
+        const varNames = f.calculationVariables.map((v) => v.name);
+        const dupName = varNames.find((n, i) => varNames.indexOf(n) !== i);
+        if (dupName) {
+          this.showNotification(`Variable name "${dupName}" is used more than once`, "error");
+          return false;
+        }
+      } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
+        if (!f.openEndedSampleAnswer) {
+          this.showNotification("Sample answer is required", "error");
+          return false;
+        }
+        if (!f.openEndedGradingCriteria) {
+          this.showNotification("Grading criteria are required", "error");
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (step === 3) {
+      if (!wiz.metaObjectiveId) {
+        this.showNotification("Please select a meta learning objective", "error");
+        return false;
+      }
+      if (!wiz.granularObjectiveId) {
+        this.showNotification("Please select a granular learning objective", "error");
+        return false;
+      }
+      if (!wiz.bloom) {
+        this.showNotification("Please select a Bloom's taxonomy level", "error");
+        return false;
+      }
+      return true;
+    }
+
+    return true;
+  }
+
+  async advanceWizard() {
+    const wiz = this.addQuestionWizard;
+    if (!wiz) return;
+
+    if (!this.validateWizardStep(wiz.step)) return;
+
+    if (wiz.step === 4) {
+      await this.submitNewQuestion();
+      return;
+    }
+
+    wiz.step++;
+    await this.renderWizardStep(wiz.step);
+    this.updateWizardNav();
+  }
+
+  retreatWizard() {
+    const wiz = this.addQuestionWizard;
+    if (!wiz || wiz.step <= 1) return;
+    wiz.step--;
+    this.renderWizardStep(wiz.step);
+    this.updateWizardNav();
+  }
+
+  async submitNewQuestion() {
+    const wiz = this.addQuestionWizard;
+    if (!wiz) return;
+
+    const nextBtn = document.getElementById("add-question-next-btn");
+    if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = "Saving..."; }
+
+    try {
+      const qt = wiz.questionType;
+      const f = wiz.form;
+
+      const payload = {
+        title: f.title,
+        stem: f.stem,
+        questionType: qt,
+        bloom: wiz.bloom,
+        learningObjectiveId: wiz.metaObjectiveId,
+        granularObjectiveId: wiz.granularObjectiveId,
+        status: wiz.approve ? QUESTION_STATUS.approved : QUESTION_STATUS.draft,
+        options: {},
+        correctAnswer: "",
+        acceptableAnswers: [],
+      };
+
+      if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
+        const optionsObj = {};
+        f.options.forEach((o) => { optionsObj[o.id] = { text: o.text, feedback: o.feedback || "" }; });
+        payload.options = optionsObj;
+        payload.correctAnswer = f.correctAnswer;
+      } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        payload.correctAnswer = f.correctAnswer;
+        payload.acceptableAnswers = f.acceptableAnswers && f.acceptableAnswers.length
+          ? f.acceptableAnswers
+          : [f.correctAnswer];
+      } else if (qt === QUESTION_TYPES.CALCULATION) {
+        payload.calculationFormula = f.calculationFormula;
+        payload.calculationVariables = f.calculationVariables;
+        payload.calculationAnswerDecimals = f.calculationAnswerDecimals;
+        payload.calculationAnswerTolerancePercent = f.calculationAnswerTolerancePercent;
+      } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
+        payload.openEndedSampleAnswer = f.openEndedSampleAnswer;
+        payload.openEndedGradingCriteria = f.openEndedGradingCriteria;
+      }
+
+      let response;
+      if (wiz.quizId) {
+        response = await fetch(`${API_ENDPOINTS.quiz}/${wiz.quizId}/questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ courseId: this.courseId, questions: [payload] }),
+        });
+      } else {
+        response = await fetch("/api/question/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ courseId: this.courseId, questions: [payload] }),
+        });
+      }
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save question");
+      }
+
+      this.closeAddQuestionModal();
+      await this.renderOverview();
+      this.showNotification("Question added successfully", "success");
+
+    } catch (error) {
+      console.error("Error saving new question:", error);
+      this.showNotification(error.message || "Failed to save question", "error");
+      if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = "Save Question"; }
+    }
   }
 }
 

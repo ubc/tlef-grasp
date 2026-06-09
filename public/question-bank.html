@@ -86,6 +86,13 @@
                     <!-- Questions Tab -->
                     <div class="tab-panel" id="overview-panel">
 
+                        <!-- Questions Toolbar (faculty only) -->
+                        <div class="questions-toolbar" id="questions-toolbar" style="display: none;">
+                            <button class="btn btn-primary" id="add-question-btn">
+                                <i class="fas fa-plus"></i> Add New Question
+                            </button>
+                        </div>
+
                         <!-- Action Bar -->
                         <div class="action-bar" id="action-bar">
                             <div class="selection-info">
@@ -214,6 +221,49 @@
     </div>
 
 
+
+    <!-- Add New Question Wizard Modal -->
+    <div class="modal" id="add-question-modal" style="display: none;">
+        <div class="modal-content add-question-modal-content">
+            <div class="modal-header">
+                <h3 id="add-question-modal-title">Select Question Type</h3>
+                <button class="modal-close" id="add-question-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="wizard-steps-bar">
+                <div class="wizard-step-item active" data-step="1">
+                    <span class="wizard-step-num">1</span>
+                    <span class="wizard-step-label">Type</span>
+                </div>
+                <div class="wizard-step-connector"></div>
+                <div class="wizard-step-item" data-step="2">
+                    <span class="wizard-step-num">2</span>
+                    <span class="wizard-step-label">Details</span>
+                </div>
+                <div class="wizard-step-connector"></div>
+                <div class="wizard-step-item" data-step="3">
+                    <span class="wizard-step-num">3</span>
+                    <span class="wizard-step-label">Objective</span>
+                </div>
+                <div class="wizard-step-connector"></div>
+                <div class="wizard-step-item" data-step="4">
+                    <span class="wizard-step-num">4</span>
+                    <span class="wizard-step-label">Finish</span>
+                </div>
+            </div>
+            <div class="modal-body" id="add-question-modal-body">
+                <!-- Step content rendered by JS -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="add-question-cancel-btn">Cancel</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" id="add-question-back-btn" style="display: none;">Back</button>
+                    <button class="btn btn-primary" id="add-question-next-btn">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
