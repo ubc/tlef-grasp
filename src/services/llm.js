@@ -47,7 +47,7 @@ class LLMService {
    * @param {string|null} [overrideModel=null] - Optional model to override the default model
    * @returns {Promise<Object>} LLM instance
    */
-  async getLLMInstance(overrideModel = null) {
+  async getLLMInstance(overrideModel = null, overrideOptions = {}) {
     if (!this.isInitialized) {
       await this.initializationPromise;
     }
@@ -71,11 +71,16 @@ class LLMService {
         provider: 'openai',
         apiKey: process.env.OPENAI_API_KEY,
         defaultModel: overrideModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        defaultOptions: {
-          temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.2,
-          max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
-          response_format: { type: 'json_object' }
-        },
+        defaultOptions: (() => {
+          const opts = {
+            temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.6,
+            max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+            response_format: { type: 'json_object' },
+            ...overrideOptions
+          };
+          Object.keys(opts).forEach(k => opts[k] === null && delete opts[k]);
+          return opts;
+        })(),
         logger: new ConsoleLogger('LLM'),
       };
     } else {

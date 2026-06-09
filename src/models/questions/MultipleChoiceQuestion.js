@@ -11,9 +11,10 @@ class MultipleChoiceQuestion extends Question {
    may describe the same concept in different words.
 3. Every distractor must represent a genuine misconception a student might hold,
    not an obviously wrong or trivially absurd option.
-4. SELF-CHECK before setting correctAnswer: reason through the question yourself
-   and confirm exactly which option is correct. Then set correctAnswer to that
-   letter. Also confirm that none of the other options are accidentally correct.
+4. SELF-CHECK before setting correctAnswer: work through the problem step by step
+   in the scratchwork field. Show your calculations or reasoning. Then set
+   correctAnswer to the letter you confirmed is correct. Also verify no other
+   option is accidentally correct.
 5. For each incorrect option, write feedback that explains the specific
    misconception in that option only. Feedback must NOT hint at the correct
    answer, must NOT use comparative language ("partially right", "too large"),
@@ -21,6 +22,7 @@ class MultipleChoiceQuestion extends Question {
 
 Example structure (do NOT copy — generate content from the material above):
 {
+  "scratchwork": "Working through the problem: [show calculations or reasoning here]. Therefore option B is correct because [reason]. Option A is wrong because [reason]. Option C is wrong because [reason]. Option D is wrong because [reason].",
   "question": "A student applies [concept] to [scenario]. What is the result?",
   "options": {
     "A": { "text": "Incorrect option based on misconception X", "feedback": "This confuses [concept A] with [concept B]." },
@@ -34,8 +36,8 @@ Example structure (do NOT copy — generate content from the material above):
 
     static getSchemaHint() {
         return `Required JSON shape for multiple-choice:
-{ "type": "multiple-choice", "question": "Stem?", "options": { "A": {"text":"...","feedback":"..."}, "B": {"text":"...","feedback":""}, "C": {"text":"...","feedback":"..."}, "D": {"text":"...","feedback":"..."} }, "correctAnswer": "B", "explanation": "brief" }
-correctAnswer must be a single letter A–D. Set feedback to "" for the correct option.`;
+{ "scratchwork": "Work through the problem step by step here. Confirm the correct answer and verify no other option is accidentally correct.", "type": "multiple-choice", "question": "Stem?", "options": { "A": {"text":"...","feedback":"..."}, "B": {"text":"...","feedback":""}, "C": {"text":"...","feedback":"..."}, "D": {"text":"...","feedback":"..."} }, "correctAnswer": "B", "explanation": "brief" }
+correctAnswer must be a single letter A–D. Set feedback to "" for the correct option. scratchwork is required and must be completed before setting correctAnswer.`;
     }
 
     static getRetrySuffix(attempt, lastError) {
@@ -79,6 +81,12 @@ correctAnswer must be a single letter A–D. Set feedback to "" for the correct 
             }
         }
 
+        const optionTexts = ["A", "B", "C", "D"].map(k => normalizeOption(mcData.options[k]).text.toLowerCase().trim());
+        const unique = new Set(optionTexts);
+        if (unique.size < 4) {
+            throw new Error("Two or more answer options have identical or near-identical text.");
+        }
+
         let letter = mcData.correctAnswer;
         if (typeof letter === "number") {
             letter = ["A", "B", "C", "D"][letter];
@@ -92,6 +100,7 @@ correctAnswer must be a single letter A–D. Set feedback to "" for the correct 
             type: QUESTION_TYPES.MULTIPLE_CHOICE,
             questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
             question: mcData.question.trim(),
+            // scratchwork is intentionally omitted — used only for chain-of-thought during generation
             options: {
                 A: normalizeOption(mcData.options.A),
                 B: normalizeOption(mcData.options.B),

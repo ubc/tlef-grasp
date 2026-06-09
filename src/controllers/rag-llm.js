@@ -15,6 +15,29 @@ const settingsService = require('../services/settings');
 const QuestionFactory = require('../models/questions/QuestionFactory');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
 
+// Pricing per 1M tokens (input / output) for known models
+const MODEL_PRICING = {
+  'gpt-4o':            { input: 2.50,  output: 10.00 },
+  'gpt-4o-mini':       { input: 0.15,  output: 0.60  },
+  'gpt-4.1':           { input: 2.00,  output: 8.00  },
+  'gpt-4.1-mini':      { input: 0.40,  output: 1.60  },
+  'gpt-4.5':           { input: 75.00, output: 150.00 },
+  'gpt-5.4':           { input: 2.50,  output: 10.00 },
+  'gpt-5.4-mini':      { input: 0.15,  output: 0.60  },
+};
+
+function calcCost(model, promptTokens, completionTokens) {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return null;
+  return (promptTokens / 1_000_000) * pricing.input + (completionTokens / 1_000_000) * pricing.output;
+}
+
+function logCostSummary(label, model, promptTokens, completionTokens) {
+  const cost = calcCost(model, promptTokens, completionTokens);
+  const costStr = cost !== null ? `  estimated cost: $${cost.toFixed(6)}` : '  (no pricing data for model)';
+  console.log(`💰 ${label} [${model}] — input: ${promptTokens} tokens, output: ${completionTokens} tokens,${costStr}`);
+}
+
 // Simple error response function
 function returnErrorResponse(res, error, details = null) {
   console.error("Question generation failed:", error);
@@ -338,7 +361,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
     try {
       // Get LLM instance from service
-      const llmModule = await llmService.getLLMInstance();
+      const llmModule = await llmService.getLLMInstance(null, { temperature: 0.3 });
 
       // Determine question type for each bloom level using course settings
       const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
@@ -365,6 +388,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       const typeSchemaHint = (questionType) => QuestionFactory.getModel(questionType).getSchemaHint();
 
       const questionsData = [];
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
       const maxRetries = 3;
       // Conversation history of successful turns for context (enables prompt caching)
       const conversationHistory = [];
@@ -409,7 +434,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             const response = await conversation.send();
 
             if (response.usage) {
-              console.log(`📊 Token Usage Q${i + 1}: prompt=${response.usage.promptTokens || 0}, completion=${response.usage.completionTokens || 0}`);
+              const qPrompt = response.usage.promptTokens || 0;
+              const qCompletion = response.usage.completionTokens || 0;
+              totalPromptTokens += qPrompt;
+              totalCompletionTokens += qCompletion;
+              console.log(`📊 Token Usage Q${i + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
             }
 
             responseContent = response.content || response.text || response.message || JSON.stringify(response);
@@ -474,6 +503,9 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           questionsData.push(questionData);
         }
       }
+
+      const generationModel = process.env.OPENAI_MODEL || 'unknown';
+      logCostSummary(`Question generation (${questionsData.length} questions)`, generationModel, totalPromptTokens, totalCompletionTokens);
 
       if (questionsData.length === 0) {
         throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
@@ -758,7 +790,14 @@ async function rateQuestions(questions, courseName, llmModule) {
   console.log("=== END LLM REVIEW PROMPT ===");
 
   const response = await llmModule.sendMessage(prompt);
+  if (response.usage) {
+    const reviewModel = process.env.OPENAI_REVIEW_MODEL || 'unknown';
+    logCostSummary(`Question review (${questions.length} questions)`, reviewModel, response.usage.promptTokens || 0, response.usage.completionTokens || 0);
+  }
   const responseContent = response.content || response.text || response.message;
+  console.log("=== LLM REVIEW RESPONSE ===");
+  console.log(responseContent);
+  console.log("=== END LLM REVIEW RESPONSE ===");
   let ratings = safeJsonParse(responseContent);
   // Model sometimes returns a single object instead of a one-element array — normalise it
   if (!Array.isArray(ratings) && ratings && typeof ratings === 'object') {
@@ -794,7 +833,7 @@ const reviewQuestionsHandler = async (req, res) => {
       }
     }
 
-    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null);
+    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null, { temperature: 0.6, max_completion_tokens: null, response_format: null });
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
     const ratings = await rateQuestions(questions, courseName, llmModule);

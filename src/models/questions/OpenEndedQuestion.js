@@ -18,6 +18,11 @@ class OpenEndedQuestion extends Question {
    It must name the specific concepts or skills being assessed, not just say "complete and accurate".
 6. Do NOT include "options", "correctAnswer", or calculation fields.
 
+SELF-CHECK BEFORE RETURNING:
+- Re-read your question prompt. Does your openEndedSampleAnswer satisfy EVERY constraint you stated in the prompt? If not, fix the sample answer or the prompt — they must be consistent.
+- Does your openEndedGradingCriteria assess exactly what the prompt asks for? A rubric that grades things the prompt doesn't require, or omits things the prompt does require, is wrong — fix it.
+- Work through any mathematics or reasoning in your sample answer step by step. If you find an error, correct it before returning.
+
 Example:
 {
   "topicTitle": "Design trade-offs",
