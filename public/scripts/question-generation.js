@@ -2797,13 +2797,17 @@ async function generateQuestionsFromContent() {
 
   try {
     // Generate questions using the question generator
-    const questions = await questionGenerator.generateQuestions(
+    const { questions, tokenUsage: generationTokens } = await questionGenerator.generateQuestions(
       state.course,
       state.objectiveGroups,
       ({ generated, total }) => {
         if (loadingText) loadingText.textContent = `Generating questions — ${generated} of ${total}`;
       }
     );
+
+    const genModel = 'gpt-5.4-mini';
+    const genCost = (generationTokens.promptTokens / 1_000_000) * 0.15 + (generationTokens.completionTokens / 1_000_000) * 0.60;
+    console.log(`💰 Question generation total [${genModel}] — input: ${generationTokens.promptTokens} tokens, output: ${generationTokens.completionTokens} tokens, estimated cost: $${genCost.toFixed(6)}`);
 
     // Convert questions to question groups format
     state.questionGroups = convertQuestionsToGroups(questions);

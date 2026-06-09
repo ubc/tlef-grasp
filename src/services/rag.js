@@ -46,18 +46,18 @@ class RAGService {
       const embeddingLlmConfig =
         llmProvider === 'openai'
           ? {
-              provider: 'openai',
-              defaultModel:
-                process.env.LLM_EMBEDDING_MODEL || process.env.OPENAI_MODEL,
-              apiKey: process.env.OPENAI_API_KEY,
-            }
+            provider: 'openai',
+            defaultModel:
+              process.env.LLM_EMBEDDING_MODEL || process.env.OPENAI_MODEL,
+            apiKey: process.env.OPENAI_API_KEY,
+          }
           : {
-              provider: 'ollama',
-              endpoint:
-                process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
-              defaultModel:
-                process.env.LLM_EMBEDDING_MODEL || process.env.OLLAMA_MODEL,
-            };
+            provider: 'ollama',
+            endpoint:
+              process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
+            defaultModel:
+              process.env.LLM_EMBEDDING_MODEL || process.env.OLLAMA_MODEL,
+          };
 
       this.baseConfig = {
         provider: "qdrant",
@@ -209,7 +209,7 @@ class RAGService {
     }
 
     const objective = await getObjectiveWithMaterials(objectiveId);
-    console.log("Objective:", objective);
+
     if (!objective) {
       throw new Error(`Objective with ID ${objectiveId} not found`);
     }

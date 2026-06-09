@@ -17,13 +17,13 @@ const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFER
 
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
-  'gpt-4o':            { input: 2.50,  output: 10.00 },
-  'gpt-4o-mini':       { input: 0.15,  output: 0.60  },
-  'gpt-4.1':           { input: 2.00,  output: 8.00  },
-  'gpt-4.1-mini':      { input: 0.40,  output: 1.60  },
-  'gpt-4.5':           { input: 75.00, output: 150.00 },
-  'gpt-5.4':           { input: 2.50,  output: 10.00 },
-  'gpt-5.4-mini':      { input: 0.15,  output: 0.60  },
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gpt-4.1': { input: 2.00, output: 8.00 },
+  'gpt-4.1-mini': { input: 0.40, output: 1.60 },
+  'gpt-4.5': { input: 75.00, output: 150.00 },
+  'gpt-5.4': { input: 2.50, output: 10.00 },
+  'gpt-5.4-mini': { input: 0.15, output: 0.60 },
 };
 
 function calcCost(model, promptTokens, completionTokens) {
@@ -515,6 +515,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         success: true,
         questions: questionsData,
         method: "RAG + LLM Stateful Conversation",
+        tokenUsage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
       });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
@@ -785,10 +786,6 @@ async function rateQuestions(questions, courseName, llmModule) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
-  console.log("=== LLM REVIEW PROMPT ===");
-  console.log(prompt);
-  console.log("=== END LLM REVIEW PROMPT ===");
-
   const response = await llmModule.sendMessage(prompt);
   if (response.usage) {
     const reviewModel = process.env.OPENAI_REVIEW_MODEL || 'unknown';
@@ -833,7 +830,7 @@ const reviewQuestionsHandler = async (req, res) => {
       }
     }
 
-    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null, { temperature: 0.6, max_completion_tokens: null, response_format: null });
+    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null, { temperature: 0.1, max_completion_tokens: null, response_format: null });
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
     const ratings = await rateQuestions(questions, courseName, llmModule);

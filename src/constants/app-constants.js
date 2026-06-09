@@ -187,11 +187,17 @@ TOPIC ALIGNMENT:
 
 BLOOM LEVEL ACCURACY:
 - Remember/Understand = recall or recognition. Apply = execute a procedure. Analyze = break down, compare, explain why. Evaluate = judge or critique.
-- Is the stated Bloom level inflated? (e.g. labelled Analyze but only requires recalling a fact or applying a formula)
+- Only flag if you are confident the stated Bloom level is wrong — for example, labelled Analyze but a student could answer it by recalling a single fact. If the question plausibly matches the stated level, do NOT flag it.
+- Do not flag a question for Bloom level if you would assign it the same level that is already stated.
 
 DISTRACTOR QUALITY (multiple-choice):
 - Does each distractor represent a real mistake students make — an arithmetic slip, a misconception, partial understanding?
 - Can a student identify the correct answer from answer length or formatting alone, without knowing the content?
+- Is the feedback for each incorrect option mathematically and factually accurate? It must state the actual reason that option is wrong. Feedback that describes a superficial symptom ("this assumes X") when the real reason is something else ("the system is inconsistent") is a defect — flag it.
+
+OPEN-ENDED RUBRIC (open-ended questions only):
+- Would the grading criteria apply fairly to multiple valid approaches, or is it too narrowly fitted to the sample answer?
+- A rubric that only credits the exact method shown in the sample answer will incorrectly penalise students who reach the correct answer a different way. Flag this if the question admits multiple valid approaches and the rubric does not acknowledge them.
 
 QUESTION AUTHENTICITY:
 - Does the question test subject knowledge, or does it test test-taking skill?
@@ -207,11 +213,13 @@ The JSON array must look like this:
 [
   {
     "questionId": "<id>",
+    "reasoning": "Work through all checks here before deciding.",
     "flagged": true,
     "issue": "Brief description of the issue."
   },
   {
     "questionId": "<id>",
+    "reasoning": "Work through all checks here before deciding.",
     "flagged": false,
     "issue": ""
   }

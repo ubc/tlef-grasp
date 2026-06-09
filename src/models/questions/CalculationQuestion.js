@@ -95,7 +95,15 @@ Rules: stem MUST use {{name}} for every variable; formula uses only + - * / ^ ( 
             if (/prose response|text.*instead of|refused|Expected.*property|JSON at position|Unexpected token/i.test(msg)) {
                 calcExtra += "\nPrevious response was prose or malformed JSON, not a question object. Output ONLY a valid JSON calculation question — no commentary, no textbook summaries, no text outside the JSON object. ";
             }
-            if (/∫|unsupported characters/i.test(msg)) {
+            if (/stem must reference each variable|calculationFormula must reference every declared variable/i.test(msg)) {
+                const missingMatch = msg.match(/Missing(?:\s+from\s+\w+)?:\s*([^\s.]+)/i);
+                const missingVars = missingMatch ? missingMatch[1] : "the variable";
+                calcExtra +=
+                    `\nThe variable(s) "${missingVars}" were declared in calculationVariables but not actually used. Fix by choosing ONE of these options:` +
+                    `\n  OPTION A — Use the variable: make sure the stem contains {{${missingVars}}} (double curly braces, exact same spelling) AND the formula uses "${missingVars}".` +
+                    `\n  OPTION B — Remove the variable: if your question does not need "${missingVars}", delete it from calculationVariables entirely.` +
+                    `\nDo NOT declare a variable you do not use. Every entry in calculationVariables MUST appear in both the stem (as {{name}}) and the formula.`;
+            } else if (/∫|unsupported characters/i.test(msg)) {
                 calcExtra +=
                     "\nThe formula contained ∫ (integral sign) which the engine cannot evaluate. You have TWO options — pick whichever gives a valid arithmetic formula:" +
                     "\n  OPTION A — Pre-solve: if the integral has a simple closed form, write it. Example: ∫₀^b ax² dx → formula \"a * b^3 / 3\"." +

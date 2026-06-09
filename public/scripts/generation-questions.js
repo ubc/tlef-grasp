@@ -91,6 +91,8 @@ class QuestionGenerator {
         (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0), 0
       );
       let generated = 0;
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
 
       const allQuestions = [];
 
@@ -104,7 +106,7 @@ class QuestionGenerator {
 
           try {
             // Generate questions for this specific objective using RAG
-            const objectiveQuestions = await this.generateQuestionsForObjective(
+            const { questions: objectiveQuestions, tokenUsage } = await this.generateQuestionsForObjective(
               course.name || course.courseName || '',
               learningObjective,
               granularLearningObjective,
@@ -115,6 +117,8 @@ class QuestionGenerator {
               `Generated ${objectiveQuestions.length} questions for objective: ${granularLearningObjective.text}`
             );
             allQuestions.push(...objectiveQuestions);
+            totalPromptTokens += tokenUsage?.promptTokens || 0;
+            totalCompletionTokens += tokenUsage?.completionTokens || 0;
             generated += objectiveQuestions.length;
             if (onProgress) onProgress({ generated, total });
           } catch (error) {
@@ -139,7 +143,7 @@ class QuestionGenerator {
       console.log("Generated questions count:", allQuestions.length);
       console.log("Questions:", allQuestions);
 
-      return allQuestions;
+      return { questions: allQuestions, tokenUsage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens } };
     } catch (error) {
       console.error("Failed to generate questions:", error);
       throw error;
@@ -163,11 +167,9 @@ class QuestionGenerator {
     );
 
     const bloomLevels = granularLearningObjective.bloom || ["Understand"];
-    
-    let questions = [];
 
     try {
-      questions = await this.createContextualQuestionsBatch(
+      const { questions, tokenUsage } = await this.createContextualQuestionsBatch(
         courseId,
         courseName,
         learningObjective.objectiveId,
@@ -178,6 +180,18 @@ class QuestionGenerator {
         learningObjective.materialIds || [],
         granularLearningObjective.count
       );
+
+      console.log(
+        `Generated ${questions.length}/${bloomLevels.length} questions for objective: ${granularLearningObjective.text}`
+      );
+
+      if (questions.length === 0) {
+        throw new Error(
+          `Failed to generate any questions for objective: ${granularLearningObjective.text}.`
+        );
+      }
+
+      return { questions, tokenUsage };
     } catch (error) {
       console.error(
         `❌ Failed to generate questions for objective: ${granularLearningObjective.text}`,
@@ -185,18 +199,6 @@ class QuestionGenerator {
       );
       throw error;
     }
-
-    console.log(
-      `Generated ${questions.length}/${bloomLevels.length} questions for objective: ${granularLearningObjective.text}`
-    );
-    
-    if (questions.length === 0) {
-      throw new Error(
-        `Failed to generate any questions for objective: ${granularLearningObjective.text}.`
-      );
-    }
-    
-    return questions;
   }
 
   // Create contextual questions batch based on content and Bloom's taxonomy
@@ -244,7 +246,9 @@ class QuestionGenerator {
         throw new Error("Invalid response: questions array missing");
       }
 
-      return response.questions.map((questionData, index) => {
+      const batchTokenUsage = response.tokenUsage || { promptTokens: 0, completionTokens: 0 };
+
+      const questions = response.questions.map((questionData, index) => {
         const resolvedType = questionData.questionType || questionData.type || QUESTION_TYPES.MULTIPLE_CHOICE;
         const bloomLevel = questionData.bloomLevel || bloomLevels[index % bloomLevels.length] || "Understand";
 
@@ -284,6 +288,8 @@ class QuestionGenerator {
 
         return base;
       });
+
+      return { questions, tokenUsage: batchTokenUsage };
     } catch (error) {
       console.error(`Error generating batch questions:`, error);
       throw error;
