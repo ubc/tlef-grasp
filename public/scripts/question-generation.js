@@ -16,6 +16,7 @@ const API_ENDPOINTS = {
 
 const STORAGE_KEYS = {
   selectedCourse: 'grasp-selected-course',
+  questionDraft: 'grasp-draft-questions',
 };
 
 /**
@@ -38,6 +39,79 @@ function getCourseId() {
   if (state.course?.id) return state.course.id;
   const selectedCourse = getSelectedCourse();
   return selectedCourse?.id || null;
+}
+
+// ===== DRAFT PERSISTENCE (localStorage) =====
+
+function getDraftStorageKey() {
+  const courseId = getCourseId();
+  return courseId ? `${STORAGE_KEYS.questionDraft}-${courseId}` : null;
+}
+
+function saveDraftToLocalStorage() {
+  const key = getDraftStorageKey();
+  if (!key || state.questionGroups.length === 0) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      questionGroups: state.questionGroups,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (e) {
+    console.warn('Failed to save draft to localStorage:', e);
+  }
+}
+
+function clearDraftFromLocalStorage() {
+  const key = getDraftStorageKey();
+  if (key) localStorage.removeItem(key);
+}
+
+function loadDraftFromLocalStorage() {
+  const key = getDraftStorageKey();
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function checkForExistingDraft() {
+  const draft = loadDraftFromLocalStorage();
+  if (!draft || !Array.isArray(draft.questionGroups) || draft.questionGroups.length === 0) return;
+
+  const totalQuestions = draft.questionGroups.reduce(
+    (sum, g) => sum + g.los.reduce((s, lo) => s + lo.questions.length, 0), 0
+  );
+  const savedAt = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'a previous session';
+
+  const msgEl = document.getElementById('draft-restore-message');
+  if (msgEl) {
+    msgEl.textContent = `You have ${totalQuestions} question${totalQuestions !== 1 ? 's' : ''} from ${savedAt} that were not saved to the question bank.`;
+  }
+
+  const modal = document.getElementById('draft-restore-modal');
+  const restoreBtn = document.getElementById('draft-restore-btn');
+  const discardBtn = document.getElementById('draft-discard-btn');
+
+  if (!modal || !restoreBtn || !discardBtn) return;
+
+  restoreBtn.onclick = () => {
+    modal.style.display = 'none';
+    state.questionGroups = draft.questionGroups;
+    state.step = 2;
+    updateUI();
+    setupStep2EventListeners();
+    renderStep2();
+  };
+
+  discardBtn.onclick = () => {
+    modal.style.display = 'none';
+    clearDraftFromLocalStorage();
+  };
+
+  modal.style.display = 'flex';
 }
 
 let questionGenerator = null;
@@ -92,6 +166,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   await loadCourseData();
   await checkCourseMaterials();
   updateUI();
+  checkForExistingDraft();
 });
 
 // ===== MODULE INITIALIZATION =====
@@ -2820,6 +2895,7 @@ async function generateQuestionsFromContent() {
 
     // Render only after the full pipeline is complete
     renderStep2();
+    saveDraftToLocalStorage();
   } catch (error) {
     console.error('Failed to generate questions from content:', error);
 
@@ -3754,6 +3830,7 @@ function saveQuestionEdit(questionId) {
   // Render the question groups (LaTeX will be automatically re-rendered)
   renderQuestionGroups();
   showToast("Question updated successfully", "success");
+  saveDraftToLocalStorage();
 }
 
 function saveOptionEdit(questionId, optionId, newText) {
@@ -3766,6 +3843,7 @@ function toggleQuestionFlag(questionId) {
     question.flagStatus = !question.flagStatus;
     renderQuestionGroups();
     showToast(`Question ${question.flagStatus ? "Flagged" : "Unflagged"}`, "success");
+    saveDraftToLocalStorage();
   }
 }
 
@@ -3807,6 +3885,7 @@ function deleteQuestion(questionId) {
 
   renderQuestionGroups();
   showToast("Question deleted successfully", "success");
+  saveDraftToLocalStorage();
 }
 
 function findQuestionById(questionId) {
@@ -4167,6 +4246,7 @@ async function handleSaveToQuiz() {
 
       const data = await response.json();
       const questionsCount = data.questionsAdded || questions.length;
+      clearDraftFromLocalStorage();
       showSuccessModal(`Successfully created quiz and added ${questionsCount} question${questionsCount !== 1 ? 's' : ''}!`, questionsCount);
 
       if (nameInput) nameInput.value = "";
@@ -4211,6 +4291,7 @@ async function handleSaveToQuiz() {
 
     const questionsCount = data.questionsAdded || questions.length;
 
+    clearDraftFromLocalStorage();
     // Show success modal with button to question bank
     showSuccessModal(
       `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to quiz!`,
@@ -4361,6 +4442,7 @@ async function handleAddAllToBank() {
     const data = await response.json();
     const questionsCount = data.savedCount || questions.length;
 
+    clearDraftFromLocalStorage();
     showSuccessModal(
       `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to the Question Bank!`,
       questionsCount

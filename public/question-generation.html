@@ -473,6 +473,26 @@
     <!-- Toast Notifications -->
     <div class="toast-container" id="toast-container"></div>
 
+    <!-- Draft Restore Modal -->
+    <div class="modal" id="draft-restore-modal" style="display: none;">
+        <div class="modal__content" style="max-width: 500px;">
+            <div class="modal__header">
+                <h3>Unsaved Questions Found</h3>
+            </div>
+            <div class="modal__body">
+                <div style="text-align: center; padding: 20px 0;">
+                    <i class="fas fa-history" style="font-size: 48px; color: #f39c12; margin-bottom: 16px;"></i>
+                    <p id="draft-restore-message" style="font-size: 15px; color: #495057; margin-bottom: 8px;"></p>
+                    <p style="font-size: 13px; color: #6c757d;">These questions have not been saved to the question bank yet.</p>
+                </div>
+            </div>
+            <div class="modal__footer" style="justify-content: center; gap: 12px;">
+                <button type="button" class="btn btn--secondary" id="draft-discard-btn">Discard</button>
+                <button type="button" class="btn btn--primary" id="draft-restore-btn">Continue Editing</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Success Modal for Quiz Save -->
     <div class="modal" id="quiz-save-success-modal" style="display: none;">
         <div class="modal__content" style="max-width: 500px;">
