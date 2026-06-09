@@ -1499,6 +1499,49 @@
     color: #e74c3c;
 }
 
+.question-card__approve-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.question-card__approve-hint {
+    font-size: 11px;
+    color: #a0aec0;
+}
+
+.question-card__approve-toggle {
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 5px 12px;
+    border-radius: 4px;
+    transition: filter 0.15s, box-shadow 0.15s;
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.question-card__approve-toggle:hover {
+    filter: brightness(0.93);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+
+.question-card__approve-toggle:active {
+    filter: brightness(0.86);
+    box-shadow: none;
+}
+
+.question-card__approve-toggle--draft {
+    background: #fff3e0;
+    color: #f57c00;
+    border: 1px solid #f57c00;
+}
+
+.question-card__approve-toggle--approved {
+    background: #e8f5e8;
+    color: #388e3c;
+    border: 1px solid #388e3c;
+}
+
 .question-card__save-btn {
     background: #3498db;
     color: white;

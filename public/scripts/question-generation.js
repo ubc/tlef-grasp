@@ -3553,12 +3553,19 @@ function renderQuestionCard(question, group) {
                 ${bodyHtml}
             </div>
             <div class="question-card__footer">
+                <div class="question-card__approve-wrap">
+                    <button type="button" class="question-card__approve-toggle question-card__approve-toggle--${question.status === 'Approved' ? 'approved' : 'draft'}"
+                            onclick="toggleQuestionApprove('${question.id}')">
+                        ${question.status === 'Approved' ? 'Approve on save' : 'Draft on save'}
+                    </button>
+                    <span class="question-card__approve-hint">Click to ${question.status === 'Approved' ? 'revert to Draft' : 'approve when saved to the bank'}</span>
+                </div>
                 <div class="question-card__actions">
-                    <button type="button" class="question-card__action-btn question-card__action-btn--edit" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--edit"
                             onclick="editQuestion('${question.id}')">
                         ${isEditing ? "Cancel" : "Edit"}
                     </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--flag"
                             onclick="toggleQuestionFlag('${question.id}')"
                             ${question.flagStatus === false
       ? 'style="background: #ffebee; color: #d32f2f;"'
@@ -3567,7 +3574,7 @@ function renderQuestionCard(question, group) {
                             >
                         ${question.flagStatus === true ? "Unflag" : "Flag"}
                     </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--delete" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--delete"
                             onclick="deleteQuestion('${question.id}')">
                         Delete
                     </button>
@@ -3845,6 +3852,32 @@ function toggleQuestionFlag(questionId) {
     showToast(`Question ${question.flagStatus ? "Flagged" : "Unflagged"}`, "success");
     saveDraftToLocalStorage();
   }
+}
+
+function toggleQuestionApprove(questionId) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  question.status = question.status === "Approved" ? "Draft" : "Approved";
+  const isApproved = question.status === "Approved";
+
+  const card = document.querySelector(`.question-card[data-question-id="${questionId}"]`);
+  if (card) {
+    const btn = card.querySelector(".question-card__approve-toggle");
+    if (btn) {
+      btn.className = `question-card__approve-toggle question-card__approve-toggle--${isApproved ? "approved" : "draft"}`;
+      btn.textContent = isApproved ? "Approve on save" : "Draft on save";
+    }
+    const hint = card.querySelector(".question-card__approve-hint");
+    if (hint) {
+      hint.textContent = `Click to ${isApproved ? "revert to Draft" : "approve when saved to the bank"}`;
+    }
+    const pill = card.querySelector(".status-pill");
+    if (pill) {
+      pill.className = `status-pill status-pill--${question.status.toLowerCase()}`;
+      pill.textContent = question.status;
+    }
+  }
+  saveDraftToLocalStorage();
 }
 
 function deleteQuestion(questionId) {
@@ -4385,6 +4418,7 @@ window.updateQuestionOpenSample = updateQuestionOpenSample;
 window.updateQuestionOpenCriteria = updateQuestionOpenCriteria;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
+window.toggleQuestionApprove = toggleQuestionApprove;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
