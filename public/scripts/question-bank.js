@@ -707,6 +707,8 @@ class QuestionBankPage {
     if (this.isFaculty) {
       const toolbar = document.getElementById("questions-toolbar");
       if (toolbar) toolbar.style.display = "flex";
+      const objHeader = document.getElementById("objectives-header-right");
+      if (objHeader) objHeader.style.display = "flex";
       return;
     }
 
@@ -2464,8 +2466,9 @@ class QuestionBankPage {
   // ==================== Learning Objectives Tab Logic ====================
 
   initializeObjectiveEvents() {
-    // Add button removed per user request
-    
+    const addObjBtn = document.getElementById('add-objective-btn');
+    if (addObjBtn) addObjBtn.addEventListener('click', () => this.showAddObjectiveModal());
+
     const modalClose = document.getElementById('objective-modal-close');
     const modalCancel = document.getElementById('objective-modal-cancel');
     if (modalClose) modalClose.addEventListener('click', () => {
@@ -2500,11 +2503,14 @@ class QuestionBankPage {
       ]);
 
       if (this.detailedObjectives.length === 0) {
+        const addHint = this.isFaculty
+          ? `<p style="color:#718096;margin-bottom:20px;">Use the <strong>Add Learning Objective</strong> button above to create one manually, or import from course materials.</p>`
+          : `<p style="color:#718096;margin-bottom:10px;">Learning objectives are usually imported from course materials.</p>`;
         container.innerHTML = `
           <div class="empty-state" style="background: white; padding: 60px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;">
             <i class="fas fa-bullseye fa-4x" style="color: #e2e8f0; margin-bottom: 20px; display: block;"></i>
             <h3 style="font-size: 20px; color: #2d3748; margin-bottom: 10px;">No Learning Objectives Found</h3>
-            <p style="color: #718096; margin-bottom: 10px;">Learning objectives are usually imported from course materials.</p>
+            ${addHint}
           </div>
         `;
         return;
@@ -2681,6 +2687,22 @@ class QuestionBankPage {
 
   // ==================== Objective CRUD ====================
 
+  showAddObjectiveModal() {
+    if (!this.requireFaculty('add learning objectives')) return;
+
+    const modal = document.getElementById('objective-modal');
+    const title = document.getElementById('objective-modal-title');
+    const nameInput = document.getElementById('objective-name-input');
+    const saveBtn = document.getElementById('objective-modal-save');
+
+    title.textContent = 'Add Learning Objective';
+    nameInput.value = '';
+    saveBtn.onclick = () => this.handleSaveObjective(null);
+
+    this.renderMaterialsSelection([]);
+    modal.style.display = 'flex';
+  }
+
   async showEditObjectiveModal(objectiveId) {
     const objective = this.detailedObjectives.find(o => o.id === objectiveId);
     if (!objective) return;
@@ -2724,7 +2746,7 @@ class QuestionBankPage {
   async handleSaveObjective(editingId = null) {
     const nameInput = document.getElementById('objective-name-input');
     const name = nameInput.value.trim();
-    
+
     if (!name) {
       this.showNotification('Please enter an objective name', 'error');
       return;
@@ -2732,6 +2754,11 @@ class QuestionBankPage {
 
     const selectedCheckboxes = document.querySelectorAll('input[name="objective-material"]:checked');
     const materialIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    if (materialIds.length === 0) {
+      this.showNotification('Please associate at least one course material', 'error');
+      return;
+    }
 
     try {
       let result;

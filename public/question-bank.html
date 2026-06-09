@@ -171,6 +171,11 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="objectives-header-right" id="objectives-header-right" style="display: none;">
+                                <button class="btn btn-primary" id="add-objective-btn">
+                                    <i class="fas fa-plus"></i> Add Learning Objective
+                                </button>
+                            </div>
                         </div>
                         <div class="objectives-container" id="objectives-container">
                             <!-- Objective cards will be populated by JavaScript -->
@@ -286,8 +291,8 @@
                     <input type="text" id="objective-name-input" class="form-control" placeholder="e.g., Understanding Cellular Respiration">
                 </div>
                 <div class="form-group" style="margin-top: 24px;">
-                    <label>Associated Course Materials</label>
-                    <p class="field-help">Select the materials that cover this learning objective.</p>
+                    <label>Associated Course Materials <span style="color:#e53e3e;">*</span></label>
+                    <p class="field-help">Select at least one material that covers this learning objective.</p>
                     <div id="objective-materials-list" class="materials-selection-grid">
                         <!-- Materials checkboxes will be populated here -->
                     </div>
