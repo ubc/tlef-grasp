@@ -2789,21 +2789,33 @@ async function generateQuestionsFromContent() {
   // Show loading UI
   setGenerationUI(true);
 
+  const loadingText = document.getElementById('questions-loading-text');
+  const totalExpected = state.objectiveGroups.reduce(
+    (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0), 0
+  );
+  if (loadingText) loadingText.textContent = `Generating questions — 0 of ${totalExpected}`;
+
   try {
     // Generate questions using the question generator
     const questions = await questionGenerator.generateQuestions(
       state.course,
-      state.objectiveGroups
+      state.objectiveGroups,
+      ({ generated, total }) => {
+        if (loadingText) loadingText.textContent = `Generating questions — ${generated} of ${total}`;
+      }
     );
 
     // Convert questions to question groups format
     state.questionGroups = convertQuestionsToGroups(questions);
 
-    // Update the UI
-    renderStep2();
+    // Switch loading message to review phase
+    if (loadingText) loadingText.textContent = `Reviewing ${questions.length} questions for quality — almost done…`;
 
-    // Run AI review in the background — does not block the instructor from seeing questions
-    reviewGeneratedQuestions();
+    // Await review so questions appear with flags already applied
+    await reviewGeneratedQuestions();
+
+    // Render only after the full pipeline is complete
+    renderStep2();
   } catch (error) {
     console.error('Failed to generate questions from content:', error);
 
@@ -2813,8 +2825,9 @@ async function generateQuestionsFromContent() {
     // Clear any existing questions
     state.questionGroups = [];
   } finally {
-    // Hide loading UI (renderStep2 will handle empty-state)
+    // Hide loading UI and reset message for next run
     setGenerationUI(false);
+    if (loadingText) loadingText.textContent = 'Generating questions… Hang tight, it may take a couple of minutes.';
   }
 }
 
@@ -2850,9 +2863,6 @@ async function reviewGeneratedQuestions() {
 
   if (allQuestions.length === 0) return;
 
-  // Show reviewing banner
-  setReviewBannerVisible(true);
-
   try {
     const response = await fetch(API_ENDPOINTS.reviewQuestions, {
       method: 'POST',
@@ -2879,12 +2889,8 @@ async function reviewGeneratedQuestions() {
         });
       });
     });
-
-    renderQuestionGroups();
   } catch (error) {
     console.error('Failed to review questions:', error);
-  } finally {
-    setReviewBannerVisible(false);
   }
 }
 

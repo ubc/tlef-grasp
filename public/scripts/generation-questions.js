@@ -75,7 +75,7 @@ class QuestionGenerator {
     return data.question;
   }  
 
-  async generateQuestions(course, objectiveGroups) {
+  async generateQuestions(course, objectiveGroups, onProgress = null) {
     try {
       console.log("=== QUESTION GENERATOR DEBUG ===");
       console.log(
@@ -87,16 +87,21 @@ class QuestionGenerator {
         contentGeneratorAvailable: !!this.contentGenerator,
       });
 
+      const total = objectiveGroups.reduce(
+        (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0), 0
+      );
+      let generated = 0;
+
       const allQuestions = [];
 
       for (const learningObjective of objectiveGroups) {
         console.log(
           `Processing group: ${learningObjective.title} with ${learningObjective.items.length} items`
         );
-  
+
         for (const granularLearningObjective of learningObjective.items) {
           console.log(`Processing objective: ${granularLearningObjective.text}`);
-  
+
           try {
             // Generate questions for this specific objective using RAG
             const objectiveQuestions = await this.generateQuestionsForObjective(
@@ -105,11 +110,13 @@ class QuestionGenerator {
               granularLearningObjective,
               course.id || course._id
             );
-  
+
             console.log(
               `Generated ${objectiveQuestions.length} questions for objective: ${granularLearningObjective.text}`
             );
             allQuestions.push(...objectiveQuestions);
+            generated += objectiveQuestions.length;
+            if (onProgress) onProgress({ generated, total });
           } catch (error) {
             console.error(
               `Failed to generate questions for objective: ${granularLearningObjective.text}`,
