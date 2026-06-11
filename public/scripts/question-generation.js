@@ -11,10 +11,12 @@ const API_ENDPOINTS = {
   quiz: '/api/quiz',
   quizCourse: '/api/quiz/course',
   ragLlmGenerateLO: '/api/rag-llm/generate-learning-objectives',
+  reviewQuestions: '/api/rag-llm/review-questions',
 };
 
 const STORAGE_KEYS = {
   selectedCourse: 'grasp-selected-course',
+  questionDraft: 'grasp-draft-questions',
 };
 
 /**
@@ -37,6 +39,79 @@ function getCourseId() {
   if (state.course?.id) return state.course.id;
   const selectedCourse = getSelectedCourse();
   return selectedCourse?.id || null;
+}
+
+// ===== DRAFT PERSISTENCE (localStorage) =====
+
+function getDraftStorageKey() {
+  const courseId = getCourseId();
+  return courseId ? `${STORAGE_KEYS.questionDraft}-${courseId}` : null;
+}
+
+function saveDraftToLocalStorage() {
+  const key = getDraftStorageKey();
+  if (!key || state.questionGroups.length === 0) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      questionGroups: state.questionGroups,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (e) {
+    console.warn('Failed to save draft to localStorage:', e);
+  }
+}
+
+function clearDraftFromLocalStorage() {
+  const key = getDraftStorageKey();
+  if (key) localStorage.removeItem(key);
+}
+
+function loadDraftFromLocalStorage() {
+  const key = getDraftStorageKey();
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function checkForExistingDraft() {
+  const draft = loadDraftFromLocalStorage();
+  if (!draft || !Array.isArray(draft.questionGroups) || draft.questionGroups.length === 0) return;
+
+  const totalQuestions = draft.questionGroups.reduce(
+    (sum, g) => sum + g.los.reduce((s, lo) => s + lo.questions.length, 0), 0
+  );
+  const savedAt = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'a previous session';
+
+  const msgEl = document.getElementById('draft-restore-message');
+  if (msgEl) {
+    msgEl.textContent = `You have ${totalQuestions} question${totalQuestions !== 1 ? 's' : ''} from ${savedAt} that were not saved to the question bank.`;
+  }
+
+  const modal = document.getElementById('draft-restore-modal');
+  const restoreBtn = document.getElementById('draft-restore-btn');
+  const discardBtn = document.getElementById('draft-discard-btn');
+
+  if (!modal || !restoreBtn || !discardBtn) return;
+
+  restoreBtn.onclick = () => {
+    modal.style.display = 'none';
+    state.questionGroups = draft.questionGroups;
+    state.step = 2;
+    updateUI();
+    setupStep2EventListeners();
+    renderStep2();
+  };
+
+  discardBtn.onclick = () => {
+    modal.style.display = 'none';
+    clearDraftFromLocalStorage();
+  };
+
+  modal.style.display = 'flex';
 }
 
 let questionGenerator = null;
@@ -87,10 +162,11 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   initializeNavigation();
   initializeEventListeners();
-  initializeModules();
+  await initializeModules();
   await loadCourseData();
   await checkCourseMaterials();
   updateUI();
+  checkForExistingDraft();
 });
 
 // ===== MODULE INITIALIZATION =====
@@ -151,14 +227,30 @@ async function checkCourseMaterials() {
   }
 }
 
-function initializeModules() {
+async function fetchBloomTypePreferences() {
+  try {
+    const selectedCourse = JSON.parse(sessionStorage.getItem('grasp-selected-course') || '{}');
+    const courseId = selectedCourse.id;
+    if (!courseId) return null;
+    const response = await fetch(`/api/courses/${courseId}/settings`);
+    const data = await response.json();
+    return data.success && data.settings && data.settings.bloomTypePreferences
+      ? data.settings.bloomTypePreferences
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function initializeModules() {
   try {
     if (window.ContentGenerator) {
       contentGenerator = new window.ContentGenerator();
     }
 
     if (window.QuestionGenerator && contentGenerator) {
-      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      const bloomTypePreferences = await fetchBloomTypePreferences();
+      questionGenerator = new window.QuestionGenerator(contentGenerator, { bloomTypePreferences });
     }
   } catch (error) {
     console.error('Error initializing modules:', error);
@@ -846,7 +938,7 @@ async function handleCustomObjectiveSubmission() {
   try {
     const courseId = getCourseId();
     const group = state.objectiveGroups.find((g) => g.objectiveId === objectiveId);
-    
+
     const requestBody = {
       name: group.title,
       granularObjectives: group.items.map(i => ({
@@ -945,12 +1037,12 @@ function showAIGenerateObjectiveModalInternal() {
   if (customObjectivesList) {
     customObjectivesList.innerHTML = "";
   }
-  
+
   const bulkPasteContainer = document.getElementById("ai-bulk-paste-container");
   if (bulkPasteContainer) {
     bulkPasteContainer.style.display = "none";
   }
-  
+
   const bulkPasteInput = document.getElementById("ai-bulk-paste-input");
   if (bulkPasteInput) {
     bulkPasteInput.value = "";
@@ -1019,7 +1111,7 @@ function addCustomObjectiveRow(text = "") {
   input.value = text;
   input.placeholder = "Enter a learning objective...";
   input.style.cssText = "flex: 1; padding: 8px 12px; font-size: 14px;";
-  
+
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "btn btn--icon";
@@ -1033,7 +1125,7 @@ function addCustomObjectiveRow(text = "") {
   row.appendChild(input);
   row.appendChild(deleteBtn);
   list.appendChild(row);
-  
+
   // Focus the new input
   input.focus();
 }
@@ -1124,7 +1216,7 @@ function displayAIMaterialsInModal(materials) {
       if (e.target.type === 'radio' || e.target.tagName === 'LABEL' || e.target.closest('label')) {
         return;
       }
-      
+
       radio.checked = true;
       updateAIGenerateButtonState();
     });
@@ -1171,7 +1263,7 @@ function displayAIMaterialsInModal(materials) {
 function updateAIGenerateButtonState() {
   const generateBtn = document.getElementById("ai-generate-btn");
   const selectedRadio = document.querySelector(".ai-material-radio:checked");
-  
+
   if (generateBtn) {
     generateBtn.disabled = !selectedRadio;
   }
@@ -1717,7 +1809,7 @@ async function deleteObjectiveGroup(groupId, action = null) {
     // Stage 1: Ask the user what they want to do
     currentEditGroupId = groupId;
     const deleteModal = document.getElementById("delete-confirmation-modal");
-    
+
     // We only remove from view now, no DB deletion allowed here
     if (deleteModal) deleteModal.style.display = "flex";
     return;
@@ -1740,7 +1832,7 @@ async function deleteObjectiveGroup(groupId, action = null) {
   // Update dropdown to re-enable deleted objective so it can be added back
   updateDropdownDisabledState();
   announceToScreenReader(`Removed ${group.title} from view.`);
-  
+
   currentEditGroupId = null;
 }
 
@@ -1750,7 +1842,7 @@ async function deleteGranularObjective(groupId, itemId) {
 
   const itemIndex = group.items.findIndex((i) => i.id === itemId);
   if (itemIndex === -1) return;
-  
+
   const item = group.items[itemIndex];
 
   // Remove the item from the group array (UI only)
@@ -2256,14 +2348,14 @@ function toggleBloomChip(groupId, itemId, level) {
       item.bloom.splice(index, 1);
     } else {
       item.bloom.push(level);
-      
+
       // Ensure count >= bloom.length
       if (item.count < item.bloom.length) {
         item.count = item.bloom.length;
       }
     }
     renderObjectiveGroups();
-    
+
     // Auto-save the new bloom selection if it's an existing objective
     if (group.objectiveId) {
       updateGranularObjectiveBloom(groupId);
@@ -2343,14 +2435,14 @@ async function updateGranularObjectiveText(groupId, itemId, newText) {
   // Abort if no change or empty
   if (!trimmedNewText || item.text.trim() === trimmedNewText) {
     if (!trimmedNewText) {
-        renderObjectiveGroups(); 
+      renderObjectiveGroups();
     }
     return;
   }
 
   // Update local state only (session-only)
   item.text = trimmedNewText;
-  
+
   // Background render to clean up focus states
   renderObjectiveGroups();
 
@@ -2402,12 +2494,12 @@ async function saveObjectiveToDatabase(groupId) {
       bloomTaxonomies: item.bloom || [],
       questionCount: item.count
     };
-    
+
     // Include ID if it exists (for updates)
     if (item.granularId) {
       granularObj.id = item.granularId;
     }
-    
+
     return granularObj;
   });
 
@@ -2432,18 +2524,18 @@ async function saveObjectiveToDatabase(groupId) {
     }
 
     const data = await response.json();
-    
+
     if (data.success && data.granularObjectives) {
       // Update local items with database IDs (important for newly created granular objectives)
       data.granularObjectives.forEach(dbGranular => {
         // Try to match by ID first
         let localItem = group.items.find(item => item.granularId === dbGranular._id.toString());
-        
+
         // If no ID match, try to match by text for newly created ones
         if (!localItem) {
           localItem = group.items.find(item => !item.granularId && item.text === dbGranular.name);
         }
-        
+
         if (localItem) {
           localItem.granularId = dbGranular._id.toString();
         }
@@ -2581,7 +2673,7 @@ function initializeModals() {
   if (deleteModalCancel) {
     deleteModalCancel.addEventListener("click", () => hideModal(deleteModal));
   }
-  
+
   if (deleteModalViewOnly) {
     deleteModalViewOnly.addEventListener("click", () => {
       // Use the stored edit group id to know which objective group to delete
@@ -2591,7 +2683,7 @@ function initializeModals() {
       hideModal(deleteModal);
     });
   }
-  
+
   if (deleteModalDbComplete) {
     deleteModalDbComplete.addEventListener("click", () => {
       if (currentEditGroupId) {
@@ -2759,7 +2851,8 @@ async function generateQuestionsFromContent() {
       if (!contentGenerator) {
         contentGenerator = new window.ContentGenerator();
       }
-      questionGenerator = new window.QuestionGenerator(contentGenerator);
+      const bloomTypePreferences = await fetchBloomTypePreferences();
+      questionGenerator = new window.QuestionGenerator(contentGenerator, { bloomTypePreferences });
     } catch (error) {
       console.error('Failed to initialize QuestionGenerator:', error);
       setGenerationUI(false);
@@ -2771,18 +2864,38 @@ async function generateQuestionsFromContent() {
   // Show loading UI
   setGenerationUI(true);
 
+  const loadingText = document.getElementById('questions-loading-text');
+  const totalExpected = state.objectiveGroups.reduce(
+    (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0), 0
+  );
+  if (loadingText) loadingText.textContent = `Generating questions — 0 of ${totalExpected}`;
+
   try {
     // Generate questions using the question generator
-    const questions = await questionGenerator.generateQuestions(
+    const { questions, tokenUsage: generationTokens } = await questionGenerator.generateQuestions(
       state.course,
-      state.objectiveGroups
+      state.objectiveGroups,
+      ({ generated, total }) => {
+        if (loadingText) loadingText.textContent = `Generating questions — ${generated} of ${total}`;
+      }
     );
+
+    const genModel = 'gpt-5.4-mini';
+    const genCost = (generationTokens.promptTokens / 1_000_000) * 0.15 + (generationTokens.completionTokens / 1_000_000) * 0.60;
+    console.log(`💰 Question generation total [${genModel}] — input: ${generationTokens.promptTokens} tokens, output: ${generationTokens.completionTokens} tokens, estimated cost: $${genCost.toFixed(6)}`);
 
     // Convert questions to question groups format
     state.questionGroups = convertQuestionsToGroups(questions);
 
-    // Update the UI
+    // Switch loading message to review phase
+    if (loadingText) loadingText.textContent = `Reviewing ${questions.length} questions for quality — almost done…`;
+
+    // Await review so questions appear with flags already applied
+    await reviewGeneratedQuestions();
+
+    // Render only after the full pipeline is complete
     renderStep2();
+    saveDraftToLocalStorage();
   } catch (error) {
     console.error('Failed to generate questions from content:', error);
 
@@ -2792,10 +2905,91 @@ async function generateQuestionsFromContent() {
     // Clear any existing questions
     state.questionGroups = [];
   } finally {
-    // Hide loading UI (renderStep2 will handle empty-state)
+    // Hide loading UI and reset message for next run
     setGenerationUI(false);
+    if (loadingText) loadingText.textContent = 'Generating questions… Hang tight, it may take a couple of minutes.';
   }
 }
+
+
+async function reviewGeneratedQuestions() {
+  const courseId = getCourseId();
+  const allQuestions = [];
+  state.questionGroups.forEach(group => {
+    group.los.forEach(lo => {
+      lo.questions.forEach(q => {
+        allQuestions.push({
+          id: q.id,
+          questionType: q.questionType || q.type || 'multiple-choice',
+          bloomLevel: q.bloom,
+          title: q.title,
+          stem: q.stem,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          acceptableAnswers: q.acceptableAnswers,
+          calculationFormula: q.calculationFormula,
+          calculationVariables: q.calculationVariables,
+          openEndedSampleAnswer: q.openEndedSampleAnswer,
+          openEndedGradingCriteria: q.openEndedGradingCriteria,
+          learningObjectiveText: q.metaCode,
+          granularObjectiveText: q.loCode,
+          learningObjectiveId: q.learningObjectiveId,
+          materialIds: q.materialIds,
+          courseId: courseId
+        });
+      });
+    });
+  });
+
+  if (allQuestions.length === 0) return;
+
+  try {
+    const response = await fetch(API_ENDPOINTS.reviewQuestions, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: allQuestions })
+    });
+
+    if (!response.ok) throw new Error(`Review request failed: ${response.status}`);
+
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.results)) return;
+
+    const resultMap = {};
+    data.results.forEach(r => { resultMap[r.originalId] = r; });
+
+    state.questionGroups.forEach(group => {
+      group.los.forEach(lo => {
+        lo.questions.forEach((q) => {
+          const result = resultMap[q.id];
+          if (!result) return;
+
+          q.reviewFlag = result.flagged;
+          q.reviewIssue = result.issue || '';
+        });
+      });
+    });
+  } catch (error) {
+    console.error('Failed to review questions:', error);
+  }
+}
+
+function setReviewBannerVisible(visible) {
+  let banner = document.getElementById('ai-review-banner');
+  if (visible) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'ai-review-banner';
+      banner.className = 'ai-review-banner';
+      banner.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI is reviewing questions for issues...';
+      const container = document.getElementById('questions-container');
+      if (container) container.prepend(banner);
+    }
+  } else {
+    if (banner) banner.remove();
+  }
+}
+
 
 // Show question generation error message
 function showQuestionGenerationError(errorMessage) {
@@ -2872,35 +3066,120 @@ function convertQuestionsToGroups(questions) {
         title: metaCode,
         isOpen: true, // Open all panels by default when generating for multiple learning objectives
         los: groupQuestions.map((question, itemIndex) => {
-          // Normalize options - the LLM now returns { text, feedback } for each option
-          const normalizedOptions = {};
-          const optionKeys = ['A', 'B', 'C', 'D'];
-          
-          optionKeys.forEach(key => {
-            const opt = question.options?.[key];
-            if (typeof opt === 'string') {
-              // Legacy or fallback: simple string
-              normalizedOptions[key] = {
-                id: key,
-                text: opt,
-                feedback: question.correctAnswer === key ? "" : (question.explanation || "Incorrect")
-              };
-            } else if (opt && typeof opt === 'object') {
-              // New format: { text, feedback }
-              normalizedOptions[key] = {
-                id: key,
-                text: opt.text || "",
-                feedback: opt.feedback || (question.correctAnswer === key ? "" : "Incorrect")
-              };
-            } else {
-              // Empty option fallback
-              normalizedOptions[key] = {
-                id: key,
-                text: `Option ${key}`,
-                feedback: question.correctAnswer === key ? "" : "Incorrect"
-              };
-            }
-          });
+          const qType =
+            question.type || question.questionType || QUESTION_TYPES.MULTIPLE_CHOICE;
+          const isFib = qType === QUESTION_TYPES.FILL_IN_THE_BLANK;
+          const isCalc = qType === QUESTION_TYPES.CALCULATION;
+          const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
+          const acceptable =
+            isFib && Array.isArray(question.acceptableAnswers) && question.acceptableAnswers.length
+              ? question.acceptableAnswers
+              : isFib && question.correctAnswer != null
+                ? [String(question.correctAnswer)]
+                : [];
+
+          // Normalize MC options to {id, text, feedback} objects
+          const normalizeOptions = (opts) => {
+            if (!opts || typeof opts !== 'object') return {};
+            const out = {};
+            ['A', 'B', 'C', 'D'].forEach(key => {
+              const opt = opts[key];
+              if (typeof opt === 'string') {
+                out[key] = { id: key, text: opt, feedback: "" };
+              } else if (opt && typeof opt === 'object') {
+                out[key] = { id: key, text: opt.text || "", feedback: opt.feedback || "" };
+              } else {
+                out[key] = { id: key, text: `Option ${key}`, feedback: "" };
+              }
+            });
+            return out;
+          };
+
+          let card;
+          if (isFib) {
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = String(question.text || "").split("_________")[0].trim().split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Fill-in-the-blank"; })(),
+              stem: question.stem || question.text,
+              questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+              options: {},
+              correctAnswer: question.correctAnswer,
+              acceptableAnswers: acceptable,
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else if (isCalc) {
+            const stemCalc = String(question.stem || question.text || "").trim();
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = stemCalc.split("{{")[0].trim().split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Calculation"; })(),
+              stem: stemCalc,
+              questionType: QUESTION_TYPES.CALCULATION,
+              options: {},
+              correctAnswer: "",
+              acceptableAnswers: [],
+              calculationFormula: question.calculationFormula || "",
+              calculationVariables: Array.isArray(question.calculationVariables) ? question.calculationVariables : [],
+              calculationAnswerDecimals: question.calculationAnswerDecimals ?? 2,
+              calculationAnswerTolerancePercent: question.calculationAnswerTolerancePercent ?? null,
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else if (isOpen) {
+            const stemOpen = String(question.stem || question.text || "").trim();
+            card = {
+              id: question.id,
+              title: (question.topicTitle && String(question.topicTitle).trim()) ||
+                (() => { const w = stemOpen.split(/\s+/).filter(Boolean); return w.slice(0, 10).join(" ") || "Open-ended"; })(),
+              stem: stemOpen,
+              questionType: QUESTION_TYPES.OPEN_ENDED,
+              options: {},
+              correctAnswer: "",
+              acceptableAnswers: [],
+              openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
+              openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              explanation: question.explanation,
+            };
+          } else {
+            card = {
+              id: question.id,
+              title: question.text,
+              stem: "Select the best answer:",
+              questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+              options: normalizeOptions(question.options),
+              correctAnswer: question.correctAnswer,
+              acceptableAnswers: [],
+              bloom: question.bloomLevel || "Understand",
+              status: "Draft",
+              lastEdited: question.lastEdited || new Date().toISOString().slice(0, 16).replace("T", " "),
+              by: question.by || "System",
+              metaCode: question.metaCode || metaCode,
+              loCode: question.loCode || question.text,
+              granularObjectiveId: question.granularObjectiveId,
+              learningObjectiveId: question.learningObjectiveId,
+            };
+          }
 
           return {
             id: `lo-${index + 1}-${itemIndex + 1}`,
@@ -2908,24 +3187,7 @@ function convertQuestionsToGroups(questions) {
             generated: question.count || 1,
             min: 1,
             badges: [],
-            questions: [
-              {
-                id: question.id,
-                title: question.text,
-                stem: "Select the best answer:",
-                options: normalizedOptions,
-                correctAnswer: question.correctAnswer,
-                bloom: question.bloomLevel || "Understand",
-                status: "Draft",
-                lastEdited:
-                  question.lastEdited ||
-                  new Date().toISOString().slice(0, 16).replace("T", " "),
-                by: question.by || "System",
-                metaCode: question.metaCode || metaCode,
-                loCode: question.loCode || question.text,
-                granularObjectiveId: question.granularObjectiveId,
-              },
-            ],
+            questions: [card],
           };
         }),
       };
@@ -3041,6 +3303,20 @@ function toggleMetaLoGroup(groupId) {
 // Make function available globally for onclick handlers
 window.toggleMetaLoGroup = toggleMetaLoGroup;
 
+function escapeQuestionHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeQuestionAttr(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderGranularLoSection(lo, group) {
   return `
         <div class="granular-lo-section">
@@ -3069,45 +3345,163 @@ function renderGranularLoSection(lo, group) {
 
 function renderQuestionCard(question, group) {
   const isEditing = question.isEditing || false;
+  const isFib =
+    (question.questionType || question.type) === QUESTION_TYPES.FILL_IN_THE_BLANK;
+  const isCalc =
+    (question.questionType || question.type) === QUESTION_TYPES.CALCULATION;
+  const isOpen =
+    (question.questionType || question.type) === QUESTION_TYPES.OPEN_ENDED;
 
-  return `
-        <div class="question-card" data-question-id="${question.id}">
-            <div class="question-card__header">
-                <div class="question-card__content">
-                    ${isEditing
-      ? `<input type="text" class="question-card__title--editing" value="${question.title}" onchange="updateQuestionTitle('${question.id}', this.value)">`
-      : `<h5 class="question-card__title">${question.title}</h5>`
+  // Check for identical MC options
+  if (!question.reviewFlag && !isFib && !isCalc && !isOpen && question.options) {
+    const optionTexts = Object.values(question.options).map(o => (typeof o === 'string' ? o : o.text || '').trim().toLowerCase());
+    const hasDuplicates = optionTexts.some((t, i) => optionTexts.indexOf(t) !== i);
+    if (hasDuplicates) {
+      question.reviewFlag = true;
+      question.reviewIssue = 'Two or more answer options are identical. Each option must present a distinct choice.';
     }
+  }
+
+  const titleEditingHtml =
+    (isFib || isCalc || isOpen) && isEditing
+      ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" placeholder="Topic title (short; do not reveal the answer)" onchange="updateQuestionTitle('${question.id}', this.value)">`
+      : isEditing
+        ? `<input type="text" class="question-card__title--editing" value="${escapeQuestionAttr(question.title)}" onchange="updateQuestionTitle('${question.id}', this.value)">`
+        : `<h5 class="question-card__title">${escapeQuestionHtml(question.title)}</h5>`;
+
+  const chipsHtml = `
                     <div class="question-card__chips">
-                        <span class="question-card__chip question-card__chip--meta">${question.metaCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--lo">${question.loCode
-    }</span>
-                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom
-    }</span>
+                        ${isFib ? `<span class="question-card__chip question-card__chip--fib">Fill-in-the-blank</span>` : ""}
+                        ${isCalc ? `<span class="question-card__chip question-card__chip--fib">Calculation</span>` : ""}
+                        ${isOpen ? `<span class="question-card__chip question-card__chip--fib">Open-ended</span>` : ""}
+                        <span class="question-card__chip question-card__chip--meta">${question.metaCode}</span>
+                        <span class="question-card__chip question-card__chip--lo">${question.loCode}</span>
+                        <span class="question-card__chip question-card__chip--bloom">Bloom: ${question.bloom}</span>
+                    </div>`;
+
+  let bodyHtml;
+  if (isFib) {
+    const acc = Array.isArray(question.acceptableAnswers)
+      ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+      : [];
+    const canonical = String(question.correctAnswer ?? "").trim();
+    const altAccepted = acc.filter(
+      (a) => a.toLowerCase() !== canonical.toLowerCase()
+    );
+    if (isEditing) {
+      const accTextarea = acc.length ? acc.join("\n") : canonical;
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="fib-q-${question.id}">Question stem</label>
+                    <textarea id="fib-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="One declarative sentence with exactly _________ (nine underscores) for the blank" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="fib-c-${question.id}">Correct answer</label>
+                    <input type="text" id="fib-c-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.correctAnswer)}" placeholder="Canonical correct answer" onblur="updateQuestionFibCorrectAnswer('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="fib-a-${question.id}">Acceptable answers <span class="question-card__fib-hint">(optional, one per line)</span></label>
+                    <textarea id="fib-a-${question.id}" class="question-card__stem--editing" rows="3" placeholder="Synonyms or alternate spellings, one per line" onblur="updateQuestionFibAcceptableAnswers('${question.id}', this.value)">${escapeQuestionHtml(accTextarea)}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Question stem</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
                     </div>
-                </div>
-                <div class="question-card__metadata">
-                    <div class="question-card__status">
-                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status
-    }</span>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Correct answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.correctAnswer ?? "")}</p>
                     </div>
-                    <div>Last Edited: ${question.lastEdited}</div>
-                    <div>By: ${question.by}</div>
-                </div>
-            </div>
-            <div class="question-card__body">
+                    ${altAccepted.length
+        ? `<div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Also accepted</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(altAccepted.join(", "))}</p>
+                    </div>`
+        : ""
+      }
+                </div>`;
+    }
+  } else if (isCalc) {
+    const vars = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
+    const varsJson = JSON.stringify(vars, null, 2);
+    const dec = question.calculationAnswerDecimals != null ? question.calculationAnswerDecimals : 2;
+    const varsSummary = vars.map((v) => {
+      if (!v || typeof v !== "object") return "";
+      const n = escapeQuestionHtml(String(v.name ?? ""));
+      const range = `${escapeQuestionHtml(String(v.min))}–${escapeQuestionHtml(String(v.max))}`;
+      const mode = v.integerOnly ? " (integers)" : ` (decimals: ${escapeQuestionHtml(String(v.decimals ?? 0))})`;
+      return `<li><strong>${n}</strong>: ${range}${mode}</li>`;
+    }).filter(Boolean).join("");
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="calc-q-${question.id}">Question template</label>
+                    <textarea id="calc-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="4" placeholder="Use {{variableName}} placeholders matching the formula" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="calc-f-${question.id}">Formula</label>
+                    <input type="text" id="calc-f-${question.id}" class="question-card__fib-input" value="${escapeQuestionAttr(question.calculationFormula || "")}" placeholder="e.g. V / R" onblur="updateQuestionCalcFormula('${question.id}', this.value)">
+                    <label class="question-card__fib-label" for="calc-v-${question.id}">Variables (JSON array)</label>
+                    <textarea id="calc-v-${question.id}" class="question-card__stem--editing" rows="6" placeholder='[{"name":"x","min":1,"max":10,"integerOnly":true}]' onblur="updateQuestionCalcVariablesJson('${question.id}', this.value)">${escapeQuestionHtml(varsJson)}</textarea>
+                    <label class="question-card__fib-label" for="calc-d-${question.id}">Answer decimal places (0–12)</label>
+                    <input type="number" id="calc-d-${question.id}" class="question-card__fib-input" min="0" max="12" step="1" value="${escapeQuestionAttr(String(dec))}" onblur="updateQuestionCalcDecimals('${question.id}', this.value)">
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Template</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Formula</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.calculationFormula || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Variables</span>
+                        ${varsSummary ? `<ul class="question-card__fib-value">${varsSummary}</ul>` : `<p class="question-card__fib-value">—</p>`}
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Answer decimal places</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(String(dec))}</p>
+                    </div>
+                </div>`;
+    }
+  } else if (isOpen) {
+    if (isEditing) {
+      bodyHtml = `
+                <div class="question-card__fib-edit">
+                    <label class="question-card__fib-label" for="open-q-${question.id}">Question prompt</label>
+                    <textarea id="open-q-${question.id}" class="question-card__stem--editing question-card__fib-question-input" rows="5" placeholder="Open-ended task for students" onblur="updateQuestionStem('${question.id}', this.value)">${escapeQuestionHtml(question.stem || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-s-${question.id}">Sample answer <span class="question-card__fib-hint">(shown after submit)</span></label>
+                    <textarea id="open-s-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Model answer" onblur="updateQuestionOpenSample('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</textarea>
+                    <label class="question-card__fib-label" for="open-c-${question.id}">Grading criteria</label>
+                    <textarea id="open-c-${question.id}" class="question-card__stem--editing" rows="4" placeholder="Rubric or bullet criteria" onblur="updateQuestionOpenCriteria('${question.id}', this.value)">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</textarea>
+                </div>`;
+    } else {
+      bodyHtml = `
+                <div class="question-card__fib-display">
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Prompt</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.stem || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Sample answer</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedSampleAnswer || "")}</p>
+                    </div>
+                    <div class="question-card__fib-block">
+                        <span class="question-card__fib-label">Grading criteria</span>
+                        <p class="question-card__fib-value">${escapeQuestionHtml(question.openEndedGradingCriteria || "")}</p>
+                    </div>
+                </div>`;
+    }
+  } else {
+    bodyHtml = `
                 ${isEditing
-      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`
+      ? `<textarea class="question-card__stem--editing" onblur="updateQuestionStem('${question.id}', this.value)">${(question.stem || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>`
       : `<p class="question-card__stem">${parseSmilesTags(question.stem)}</p>`
     }
                 <div class="question-card__options">
-                    ${Object.values(question.options).map(
+                    ${Object.values(question.options || {}).map(
       (option, index) => {
-        // correctAnswer is now a letter (A, B, C, D), compare with option.id
         const isCorrect = option.id === question.correctAnswer;
         const feedback = option.feedback || (isCorrect ? "" : "Incorrect");
-        
         return `
                         <div class="question-card__option ${isEditing ? "question-card__option--editing" : ""
           }">
@@ -3120,27 +3514,58 @@ function renderQuestionCard(question, group) {
           }
                         </div>
                         <div class="question-card__feedback">
-                          ${isEditing 
-                            ? `<div class="feedback-edit-wrapper">
+                          ${isEditing
+            ? `<div class="feedback-edit-wrapper">
                                  <span class="feedback-label">Feedback:</span>
                                  <input type="text" class="question-card__feedback--editing" value="${feedback.replace(/"/g, '&quot;')}" onblur="updateQuestionFeedback('${question.id}', '${option.id}', this.value)">
                                </div>`
-                            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
-                          }
+            : (!isCorrect && option.feedback ? `<span class="feedback-text"><i class="fas fa-info-circle"></i> ${option.feedback}</span>` : "")
+          }
                         </div>
                     `;
       }
     )
       .join("")}
+                </div>`;
+  }
+
+  return `
+        <div class="question-card" data-question-id="${question.id}">
+            <div class="question-card__header">
+                <div class="question-card__content">
+                    ${titleEditingHtml}
+                    ${chipsHtml}
+                </div>
+                <div class="question-card__metadata">
+                    <div class="question-card__status">
+                        <span class="status-pill status-pill--${question.status.toLowerCase()}">${question.status}</span>
+                    </div>
+                    <div>Last Edited: ${question.lastEdited}</div>
+                    <div>By: ${question.by}</div>
                 </div>
             </div>
+            ${question.reviewFlag ? `
+            <div class="question-card__review-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>${question.reviewIssue}</span>
+            </div>` : ''}
+            <div class="question-card__body">
+                ${bodyHtml}
+            </div>
             <div class="question-card__footer">
+                <div class="question-card__approve-wrap">
+                    <button type="button" class="question-card__approve-toggle question-card__approve-toggle--${question.status === 'Approved' ? 'approved' : 'draft'}"
+                            onclick="toggleQuestionApprove('${question.id}')">
+                        ${question.status === 'Approved' ? 'Approve on save' : 'Draft on save'}
+                    </button>
+                    <span class="question-card__approve-hint">Click to ${question.status === 'Approved' ? 'revert to Draft' : 'approve when saved to the bank'}</span>
+                </div>
                 <div class="question-card__actions">
-                    <button type="button" class="question-card__action-btn question-card__action-btn--edit" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--edit"
                             onclick="editQuestion('${question.id}')">
                         ${isEditing ? "Cancel" : "Edit"}
                     </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--flag" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--flag"
                             onclick="toggleQuestionFlag('${question.id}')"
                             ${question.flagStatus === false
       ? 'style="background: #ffebee; color: #d32f2f;"'
@@ -3149,7 +3574,7 @@ function renderQuestionCard(question, group) {
                             >
                         ${question.flagStatus === true ? "Unflag" : "Flag"}
                     </button>
-                    <button type="button" class="question-card__action-btn question-card__action-btn--delete" 
+                    <button type="button" class="question-card__action-btn question-card__action-btn--delete"
                             onclick="deleteQuestion('${question.id}')">
                         Delete
                     </button>
@@ -3257,6 +3682,53 @@ function updateQuestionStem(questionId, newStem) {
   }
 }
 
+function updateQuestionFibCorrectAnswer(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) {
+    question.correctAnswer = String(value ?? "").trim();
+  }
+}
+
+function updateQuestionFibAcceptableAnswers(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  const lines = String(value ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const canonical = String(question.correctAnswer ?? "").trim();
+  question.acceptableAnswers = lines.length === 0 && canonical ? [canonical] : lines;
+}
+
+function updateQuestionCalcFormula(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) question.calculationFormula = String(value ?? "").trim();
+}
+
+function updateQuestionCalcVariablesJson(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  try {
+    const parsed = JSON.parse(String(value ?? "").trim() || "[]");
+    if (Array.isArray(parsed)) question.calculationVariables = parsed;
+  } catch { /* keep previous variables until Save validates */ }
+}
+
+function updateQuestionCalcDecimals(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  let d = parseInt(value, 10);
+  if (!Number.isFinite(d)) d = 2;
+  question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+}
+
+function updateQuestionOpenSample(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) question.openEndedSampleAnswer = String(value ?? "").trim();
+}
+
+function updateQuestionOpenCriteria(questionId, value) {
+  const question = findQuestionById(questionId);
+  if (question) question.openEndedGradingCriteria = String(value ?? "").trim();
+}
+
 function updateQuestionFeedback(questionId, optionId, newFeedback) {
   const question = findQuestionById(questionId);
   if (question && question.options[optionId]) {
@@ -3271,6 +3743,93 @@ function saveQuestionEdit(questionId) {
     return;
   }
 
+  const isFib =
+    (question.questionType || question.type) === QUESTION_TYPES.FILL_IN_THE_BLANK;
+  if (isFib) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question stem is required", "error");
+      return;
+    }
+    if (!String(question.stem).includes("_________")) {
+      showToast('Stem must include exactly one blank written as _________ (nine underscores)', "error");
+      return;
+    }
+    if (!String(question.correctAnswer ?? "").trim()) {
+      showToast("Correct answer is required", "error");
+      return;
+    }
+    const ca = String(question.correctAnswer).trim();
+    if (
+      !Array.isArray(question.acceptableAnswers) ||
+      question.acceptableAnswers.length === 0
+    ) {
+      question.acceptableAnswers = [ca];
+    }
+  }
+
+  const isCalc =
+    (question.questionType || question.type) === QUESTION_TYPES.CALCULATION;
+  if (isCalc) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question template is required", "error");
+      return;
+    }
+    if (!String(question.calculationFormula || "").trim()) {
+      showToast("Formula is required", "error");
+      return;
+    }
+    const vars = question.calculationVariables;
+    if (!Array.isArray(vars) || vars.length === 0) {
+      showToast("At least one variable is required (JSON array)", "error");
+      return;
+    }
+    for (let i = 0; i < vars.length; i++) {
+      const v = vars[i];
+      if (!v || typeof v !== "object" || !String(v.name || "").trim()) {
+        showToast(`Variable ${i + 1}: each entry needs a name`, "error");
+        return;
+      }
+      const min = Number(v.min);
+      const max = Number(v.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+        showToast(`Variable "${v.name}": invalid min/max`, "error");
+        return;
+      }
+    }
+    let d = parseInt(question.calculationAnswerDecimals, 10);
+    if (!Number.isFinite(d)) d = 2;
+    question.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+  }
+
+  const isOpen =
+    (question.questionType || question.type) === QUESTION_TYPES.OPEN_ENDED;
+  if (isOpen) {
+    if (!String(question.title || "").trim()) {
+      showToast("Topic title is required", "error");
+      return;
+    }
+    if (!String(question.stem || "").trim()) {
+      showToast("Question prompt is required", "error");
+      return;
+    }
+    if (!String(question.openEndedSampleAnswer || "").trim()) {
+      showToast("Sample answer is required", "error");
+      return;
+    }
+    if (!String(question.openEndedGradingCriteria || "").trim()) {
+      showToast("Grading criteria are required", "error");
+      return;
+    }
+  }
+
   // Simply update state - mark as not editing and update timestamp
   question.isEditing = false;
   question.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -3278,6 +3837,7 @@ function saveQuestionEdit(questionId) {
   // Render the question groups (LaTeX will be automatically re-rendered)
   renderQuestionGroups();
   showToast("Question updated successfully", "success");
+  saveDraftToLocalStorage();
 }
 
 function saveOptionEdit(questionId, optionId, newText) {
@@ -3290,7 +3850,34 @@ function toggleQuestionFlag(questionId) {
     question.flagStatus = !question.flagStatus;
     renderQuestionGroups();
     showToast(`Question ${question.flagStatus ? "Flagged" : "Unflagged"}`, "success");
+    saveDraftToLocalStorage();
   }
+}
+
+function toggleQuestionApprove(questionId) {
+  const question = findQuestionById(questionId);
+  if (!question) return;
+  question.status = question.status === "Approved" ? "Draft" : "Approved";
+  const isApproved = question.status === "Approved";
+
+  const card = document.querySelector(`.question-card[data-question-id="${questionId}"]`);
+  if (card) {
+    const btn = card.querySelector(".question-card__approve-toggle");
+    if (btn) {
+      btn.className = `question-card__approve-toggle question-card__approve-toggle--${isApproved ? "approved" : "draft"}`;
+      btn.textContent = isApproved ? "Approve on save" : "Draft on save";
+    }
+    const hint = card.querySelector(".question-card__approve-hint");
+    if (hint) {
+      hint.textContent = `Click to ${isApproved ? "revert to Draft" : "approve when saved to the bank"}`;
+    }
+    const pill = card.querySelector(".status-pill");
+    if (pill) {
+      pill.className = `status-pill status-pill--${question.status.toLowerCase()}`;
+      pill.textContent = question.status;
+    }
+  }
+  saveDraftToLocalStorage();
 }
 
 function deleteQuestion(questionId) {
@@ -3331,6 +3918,7 @@ function deleteQuestion(questionId) {
 
   renderQuestionGroups();
   showToast("Question deleted successfully", "success");
+  saveDraftToLocalStorage();
 }
 
 function findQuestionById(questionId) {
@@ -3378,12 +3966,15 @@ function getFilteredGroups() {
     const query = state.filters.q.toLowerCase();
     filteredGroups = filteredGroups.filter((group) => {
       return group.los.some((lo) =>
-        lo.questions.some(
-          (q) =>
-            q.title.toLowerCase().includes(query) ||
+        lo.questions.some((q) => {
+          const stem = (q.stem || "").toLowerCase();
+          return (
+            (q.title || "").toLowerCase().includes(query) ||
+            stem.includes(query) ||
             q.loCode.toLowerCase().includes(query) ||
             q.metaCode.toLowerCase().includes(query)
-        )
+          );
+        })
       );
     });
   }
@@ -3592,21 +4183,40 @@ async function handleSaveToQuiz() {
   try {
     let quizId = selectedQuizId;
 
-    // Collect all questions from state first
+    // Collect all questions from state with full type-specific fields
     const questions = [];
     for (const group of state.questionGroups) {
       for (const lo of group.los) {
         for (const question of lo.questions) {
-          // Transform question to match the expected format
-          questions.push({
+          const qt = question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE;
+          const payload = {
             title: question.title || question.stem || "",
             stem: question.stem || question.title || "",
-            options: question.options,
-            correctAnswer: question.correctAnswer,
-            bloom: question.bloom || "Remember",
-            learningObjectiveId: group.objectiveId,
-            granularObjectiveId: lo.granularId
-          });
+            options: question.options || [],
+            correctAnswer: question.correctAnswer ?? "",
+            questionType: qt,
+            acceptableAnswers: Array.isArray(question.acceptableAnswers) ? question.acceptableAnswers : [],
+            bloom: question.bloom || question.bloomLevel || "Understand",
+            difficulty: question.difficulty || "medium",
+            granularObjectiveId: question.granularObjectiveId || null,
+            by: question.createdBy || "system",
+            status: question.status || "Draft",
+            flagStatus: question.flagStatus || false,
+          };
+          if (qt === QUESTION_TYPES.CALCULATION) {
+            payload.options = {};
+            payload.calculationFormula = question.calculationFormula || "";
+            payload.calculationVariables = Array.isArray(question.calculationVariables) ? question.calculationVariables : [];
+            let d = parseInt(question.calculationAnswerDecimals, 10);
+            if (!Number.isFinite(d)) d = 2;
+            payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+          }
+          if (qt === QUESTION_TYPES.OPEN_ENDED) {
+            payload.options = {};
+            payload.openEndedSampleAnswer = String(question.openEndedSampleAnswer || "").trim();
+            payload.openEndedGradingCriteria = String(question.openEndedGradingCriteria || "").trim();
+          }
+          questions.push(payload);
         }
       }
     }
@@ -3628,7 +4238,7 @@ async function handleSaveToQuiz() {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      
+
       const releaseDate = releaseDateInput && releaseDateInput.value ? new Date(releaseDateInput.value).toISOString() : null;
       const expireDate = expireDateInput && expireDateInput.value ? new Date(expireDateInput.value).toISOString() : null;
 
@@ -3645,7 +4255,7 @@ async function handleSaveToQuiz() {
       const courseId = getCourseId();
 
       const formatVal = deliveryFormatInput ? deliveryFormatInput.value : '';
-      
+
       const response = await fetch(API_ENDPOINTS.quiz, {
         method: 'POST',
         headers: {
@@ -3668,20 +4278,20 @@ async function handleSaveToQuiz() {
       }
 
       const data = await response.json();
-      showToast(`Quiz created and ${data.questionsAdded || 0} questions saved successfully`, "success");
-      closeModal("save-quiz-modal");
+      const questionsCount = data.questionsAdded || questions.length;
+      clearDraftFromLocalStorage();
+      showSuccessModal(`Successfully created quiz and added ${questionsCount} question${questionsCount !== 1 ? 's' : ''}!`, questionsCount);
+
+      if (nameInput) nameInput.value = "";
+      if (descriptionInput) descriptionInput.value = "";
+      selectedQuizId = null;
+      isCreatingNewQuiz = false;
+
       return;
     }
 
     if (!quizId) {
       showToast("Please select or create a quiz", "error");
-      return;
-    }
-
-
-
-    if (questions.length === 0) {
-      showToast("No questions to add", "warning");
       return;
     }
 
@@ -3714,6 +4324,7 @@ async function handleSaveToQuiz() {
 
     const questionsCount = data.questionsAdded || questions.length;
 
+    clearDraftFromLocalStorage();
     // Show success modal with button to question bank
     showSuccessModal(
       `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to quiz!`,
@@ -3798,8 +4409,16 @@ window.saveQuestionEdit = saveQuestionEdit;
 window.saveOptionEdit = saveOptionEdit;
 window.updateQuestionStem = updateQuestionStem;
 window.updateQuestionTitle = updateQuestionTitle;
+window.updateQuestionFibCorrectAnswer = updateQuestionFibCorrectAnswer;
+window.updateQuestionFibAcceptableAnswers = updateQuestionFibAcceptableAnswers;
+window.updateQuestionCalcFormula = updateQuestionCalcFormula;
+window.updateQuestionCalcVariablesJson = updateQuestionCalcVariablesJson;
+window.updateQuestionCalcDecimals = updateQuestionCalcDecimals;
+window.updateQuestionOpenSample = updateQuestionOpenSample;
+window.updateQuestionOpenCriteria = updateQuestionOpenCriteria;
 window.updateQuestionOption = updateQuestionOption;
 window.toggleQuestionFlag = toggleQuestionFlag;
+window.toggleQuestionApprove = toggleQuestionApprove;
 window.deleteQuestion = deleteQuestion;
 
 // Step 3 function exports
@@ -3857,6 +4476,7 @@ async function handleAddAllToBank() {
     const data = await response.json();
     const questionsCount = data.savedCount || questions.length;
 
+    clearDraftFromLocalStorage();
     showSuccessModal(
       `Successfully added ${questionsCount} question${questionsCount !== 1 ? 's' : ''} to the Question Bank!`,
       questionsCount

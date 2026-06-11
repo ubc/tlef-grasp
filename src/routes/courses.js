@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const coursesController = require('../controllers/courses');
 const settingsController = require('../controllers/settings');
+const { requireRole } = require('../middleware/auth');
+const { ROLES } = require('../utils/auth');
 
 
 router.get("/my", coursesController.getMyCourses);
@@ -31,10 +33,10 @@ router.get("/:courseId/my-sections", coursesController.getMyCourseSectionsHandle
 // Get course by ID
 router.get("/:courseId", coursesController.getCourseByIdHandler);
 
-// Course settings
-router.get("/defaults/settings", settingsController.getDefaultSettingsHandler);
-router.get("/:courseId/settings", settingsController.getSettingsHandler);
-router.put("/:courseId/settings", express.json(), settingsController.updateSettingsHandler);
+// Course settings (faculty only)
+router.get("/defaults/settings", requireRole(ROLES.FACULTY), settingsController.getDefaultSettingsHandler);
+router.get("/:courseId/settings", requireRole(ROLES.FACULTY), settingsController.getSettingsHandler);
+router.put("/:courseId/settings", requireRole(ROLES.FACULTY), express.json(), settingsController.updateSettingsHandler);
 
 // Get course materials
 router.get("/:courseId/materials", coursesController.getCourseMaterials);

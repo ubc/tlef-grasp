@@ -21,25 +21,25 @@ router.get("/:quizId", quizController.getQuizByIdHandler);
  * POST /api/quiz
  * Create a new quiz
  */
-router.post("/", quizController.createQuizHandler);
+router.post("/", requireRole(ROLES.FACULTY), quizController.createQuizHandler);
 
 /**
  * PUT /api/quiz/:quizId
  * Update a quiz
  */
-router.put("/:quizId", quizController.updateQuizHandler);
+router.put("/:quizId", requireRole(ROLES.FACULTY), quizController.updateQuizHandler);
 
 /**
  * DELETE /api/quiz/:quizId
  * Delete a quiz
  */
-router.delete("/:quizId", quizController.deleteQuizHandler);
+router.delete("/:quizId", requireRole(ROLES.FACULTY), quizController.deleteQuizHandler);
 
 /**
  * POST /api/quiz/:quizId/questions
  * Add questions to a quiz
  */
-router.post("/:quizId/questions", quizController.addQuizQuestionsHandler);
+router.post("/:quizId/questions", requireRole(ROLES.FACULTY), quizController.addQuizQuestionsHandler);
 
 /**
  * GET /api/quiz/:quizId/questions
@@ -71,6 +71,12 @@ router.get("/:quizId/scores", requireRole(ROLES.STAFF), quizController.getQuizSc
  * Get detailed student attempt answers for a specific quiz (Instructors only)
  */
 router.get("/:quizId/student/:userId/attempts", requireRole(ROLES.STAFF), quizController.getStudentQuizAttemptHandler);
+
+/**
+ * PUT /api/quiz/:quizId/student/:userId/grade
+ * Grade an open-ended question for a student (Faculty only)
+ */
+router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeOpenEndedHandler);
 
 module.exports = router;
 

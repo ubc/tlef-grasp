@@ -344,7 +344,7 @@
                             <!-- Questions Loading Spinner -->
                             <div class="questions-loading" id="questions-loading" style="display: none;">
                                 <i class="fas fa-spinner fa-spin"></i>
-                                <p>Generating questions… Hang tight, it may take a couple of minutes.</p>
+                                <p id="questions-loading-text">Generating questions… Hang tight, it may take a couple of minutes.</p>
                             </div>
 
                             <!-- Meta LO Groups -->
@@ -473,6 +473,26 @@
     <!-- Toast Notifications -->
     <div class="toast-container" id="toast-container"></div>
 
+    <!-- Draft Restore Modal -->
+    <div class="modal" id="draft-restore-modal" style="display: none;">
+        <div class="modal__content" style="max-width: 500px;">
+            <div class="modal__header">
+                <h3>Unsaved Questions Found</h3>
+            </div>
+            <div class="modal__body">
+                <div style="text-align: center; padding: 20px 0;">
+                    <i class="fas fa-history" style="font-size: 48px; color: #f39c12; margin-bottom: 16px;"></i>
+                    <p id="draft-restore-message" style="font-size: 15px; color: #495057; margin-bottom: 8px;"></p>
+                    <p style="font-size: 13px; color: #6c757d;">These questions have not been saved to the question bank yet.</p>
+                </div>
+            </div>
+            <div class="modal__footer" style="justify-content: center; gap: 12px;">
+                <button type="button" class="btn btn--secondary" id="draft-discard-btn">Discard</button>
+                <button type="button" class="btn btn--primary" id="draft-restore-btn">Continue Editing</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Success Modal for Quiz Save -->
     <div class="modal" id="quiz-save-success-modal" style="display: none;">
         <div class="modal__content" style="max-width: 500px;">
@@ -504,6 +524,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/smiles-drawer@2.0.1/dist/smiles-drawer.min.js"></script>
     <script src="scripts/smiles-renderer.js"></script>
     <script src="scripts/navigation.js"></script>
+    <script src="scripts/app-constants.js"></script>
     <script src="scripts/generating-content.js"></script>
     <script src="scripts/generation-questions.js"></script>
     <script src="scripts/onboarding-check.js"></script>

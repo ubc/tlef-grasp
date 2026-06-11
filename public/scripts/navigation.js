@@ -23,8 +23,7 @@ class GRASPNavigation {
     const path = window.location.pathname;
     if (path.includes("quiz-scores")) return "quiz-scores";
     if (path.includes("quiz-summary")) return "quiz-summary";
-    if (path.includes("student-settings")) return "student-settings";
-    if (path.includes("student-dashboard")) return "student-dashboard";
+if (path.includes("student-dashboard")) return "student-dashboard";
     if (path.includes("quizzes")) return "quizzes";
     if (path.includes("quiz")) return "my-quizzes";
     if (path.includes("course-materials")) return "course-materials";
@@ -202,9 +201,10 @@ class GRASPNavigation {
           <div class="user-control">
             <i class="fas fa-user"></i>
           </div>
+          ${!this.isStudent ? `
           <div class="user-control">
             <i class="fas fa-cog"></i>
-          </div>
+          </div>` : ''}
           <div class="user-control">
             <i class="fas fa-bell"></i>
             <span class="notification-badge">9</span>
@@ -344,7 +344,8 @@ class GRASPNavigation {
       `;
     }
 
-    menu += `
+    if (!this.isStudent) {
+      menu += `
         <li class="nav-item" data-page="settings">
           <a href="/settings" style="text-decoration: none; color: inherit;">
             <i class="fas fa-cog"></i>
@@ -358,6 +359,7 @@ class GRASPNavigation {
           </a>
         </li>
       `;
+    }
 
     return menu;
   }
@@ -993,10 +995,7 @@ class GRASPNavigation {
         case "settings":
           document.title = "Settings - GRASP";
           break;
-        case "student-settings":
-          document.title = "Settings - GRASP";
-          break;
-        default:
+default:
           document.title = "GRASP";
       }
     }
@@ -1012,10 +1011,6 @@ class GRASPNavigation {
   }
 
   openSettings() {
-    if (this.isStudent) {
-      window.location.href = '/student-settings';
-      return;
-    }
     window.location.href = '/settings';
   }
 

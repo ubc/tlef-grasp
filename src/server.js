@@ -2,7 +2,6 @@ require("dotenv").config();
 const path = require("path");
 
 const express = require("express");
-const cors = require("cors");
 const helmet = require("helmet");
 const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
@@ -62,7 +61,6 @@ app.use(
 );
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(cors());
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
@@ -150,9 +148,6 @@ app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDE
   res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
 });
 
-app.get("/student-settings", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/student-settings.html"));
-});
 
 app.get("/quiz", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
   res.sendFile(path.join(__dirname, "../public/quiz.html"));

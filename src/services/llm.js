@@ -44,9 +44,10 @@ class LLMService {
 
   /**
    * Get LLM instance with proper configuration
+   * @param {string|null} [overrideModel=null] - Optional model to override the default model
    * @returns {Promise<Object>} LLM instance
    */
-  async getLLMInstance() {
+  async getLLMInstance(overrideModel = null, overrideOptions = {}) {
     if (!this.isInitialized) {
       await this.initializationPromise;
     }
@@ -69,12 +70,17 @@ class LLMService {
       llmConfig = {
         provider: 'openai',
         apiKey: process.env.OPENAI_API_KEY,
-        defaultModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        defaultOptions: {
-          temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.2,
-          max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
-          response_format: { type: 'json_object' }
-        },
+        defaultModel: overrideModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        defaultOptions: (() => {
+          const opts = {
+            temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.6,
+            max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+            response_format: { type: 'json_object' },
+            ...overrideOptions
+          };
+          Object.keys(opts).forEach(k => opts[k] === null && delete opts[k]);
+          return opts;
+        })(),
         logger: new ConsoleLogger('LLM'),
       };
     } else {
@@ -82,7 +88,7 @@ class LLMService {
       llmConfig = {
         provider: 'ollama',
         endpoint: process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
-        defaultModel: process.env.OLLAMA_MODEL || 'llama3.1:8b',
+        defaultModel: overrideModel || process.env.OLLAMA_MODEL || 'llama3.1:8b',
         defaultOptions: {
           temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
           maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,

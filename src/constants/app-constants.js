@@ -2,43 +2,15 @@
  * Application-wide default prompt constants
  */
 
-const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality multiple-choice question that tests students' understanding of the provided learning objective.
+const QUESTION_GENERATION_PROMPT = `You are a university instructor. Generate a high-quality question based on the provided material that effectively tests students' understanding of the course learning objective.
 
+Course: {courseName}
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
-Bloom's Taxonomy Level: {bloomLevel}
 
 BACKGROUND COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
-
-INSTRUCTIONS:
-1. Write a question aligned to the learning objective and Bloom's level.
-2. Use the terminology from the BACKGROUND COURSE MATERIAL above. Do not
-   substitute synonyms for technical terms the material uses.
-3. Generate 4 answer options (A–D), one of which is correct. Every answer
-   option must be unique — no two options may have identical or near-identical
-   text or describe the same concept in different words.
-4. Every distractor must represent a genuine, realistic misconception a student
-   might hold — not an obviously wrong or trivially absurd option.
-5. Set correctAnswer to the letter of the correct option.
-6. For the correct option, set "feedback" to an empty string ("").
-7. For each incorrect option, write feedback that:
-   - Explains the specific misconception or error in that option only
-   - Does NOT mention what the correct value, sign, approach, or reasoning is
-   - Does NOT use comparative language like "correct sign but wrong magnitude",
-     "partially right", "incomplete", or "too large/small" when the phrasing
-     implies another option is better
-   - Does NOT restate the correct reasoning in different words
-   - Does NOT say just "Incorrect" with no explanation
-   - Focuses only on what is wrong with that specific option in isolation
-
-QUESTION-STEM RULES:
-- The stem must not contain or paraphrase the correct answer, and must not
-  hint at which option is correct through phrasing, grammar, or specificity.
-- Do not use "All of the above" or "None of the above" as options.
-- Do not use negatively-phrased stems (e.g., "Which of the following is NOT...",
-  "Which is LEAST...").
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -53,63 +25,33 @@ Bloom's level guidance (sample verbs in parentheses):
 - Create: design, construct, or propose something new (design, construct,
   propose, formulate)
 
-PROCEDURE:
-1. Create the question content. If you have already generated questions in
-   this conversation, your new question stem must be STRUCTURALLY different
-   from them — different scenario, different numbers if numerical, different
-   framing — not just reworded.
-2. Generate 4 plausible answer options representing distinct misconceptions.
-3. Place the correct answer in one of the positions (A, B, C, or D).
-4. Write feedback for each incorrect option following the rules in instruction 8.
-5. Review each feedback entry and ask: "Could a student use this feedback to
-   identify the correct answer without reading the other options?" If yes,
-   rewrite it before returning the JSON.
+SELF-CHECK BEFORE RETURNING (required):
 
-SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
-- The stem does not reveal or paraphrase the correct option.
-- All four options are similar in length and grammatical structure.
-- Each distractor represents a distinct, plausible misconception (not absurd,
-  not a synonym of another option).
-- The question uses the same technical terminology as the source material.
-- No feedback entry tells the student what the correct answer is or compares
-  options.
+TOPIC: Does your question stem directly test the concept named in the Granular Learning Objective above?
+If the question is about a different subject, rewrite it before returning.
 
-DO NOT copy this example — generate real content based on the material above.
-Example structure only:
-{
-  "question": "A student applies [concept] to [scenario]. What is the result?",
-  "options": {
-    "A": {
-      "text": "Incorrect approach based on common misconception X",
-      "feedback": "This confuses [concept A] with [concept B], which applies
-                   under different conditions."
-    },
-    "B": { "text": "Correct approach", "feedback": "" },
-    "C": {
-      "text": "Incorrect approach based on common misconception Y",
-      "feedback": "This applies the right method but to the wrong quantity
-                   in the problem."
-    },
-    "D": {
-      "text": "Incorrect approach based on common misconception Z",
-      "feedback": "This reverses the relationship between the two variables
-                   involved."
-    }
-  },
-  "correctAnswer": "B"
-}
+BLOOM: Apply the stricter definitions below before accepting your Bloom label:
+- Apply = execute a procedure on a specific scenario, not name what the procedure does
+- Analyze = explain WHY or compare components, not just perform a calculation
+- Evaluate = make a judgment or critique, not just compute an answer
+If a student can answer your question by recalling a single fact or definition, it is Remember or Understand — redesign it to genuinely match the target level.
 
 CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON.
-- Do NOT wrap the JSON in markdown code blocks.
+- Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
 - Do NOT include any text before or after the JSON object.
-- CRITICAL LaTeX FORMATTING: Enclose all mathematical notation and chemical
-  formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or
-  \\\\( H_2O \\\\)). Do NOT use () or $ for math delimiters.
+- CRITICAL LaTeX FORMATTING: Enclose all mathematical notation in \\\\( and \\\\) for inline math
+  (e.g., \\\\( x^2 \\\\)). Do NOT use () or $ as math delimiters.
 - CRITICAL SMILES FORMATTING: Wrap SMILES strings in [SMILES][/SMILES] tags
-  using proper SMILES notation only (e.g., [SMILES]O[/SMILES]).
+  (e.g., [SMILES]O[/SMILES]).
 - CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped.
-- CRITICAL: Do NOT include letter prefixes (A), B), etc.) in option text.`;
+- Do NOT include letter prefixes (A), B), etc.) inside option text values.
+
+TARGET QUESTION PARAMETERS FOR THIS TASK:
+- Question Type to Generate: {questionType}
+- Bloom's Taxonomy Level: {bloomLevel}
+
+Use ONLY the schema for the Question Type specified below:
+{typeSpecificInstructions}`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
 
@@ -123,7 +65,7 @@ INSTRUCTIONS:
 2. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
 3. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
 4. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-5. Every granular objective must start with the exact phrase "Students will be able to..." followed by an active verb.
+5. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
 6. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
 
 Bloom's level guidance (sample verbs in parentheses):
@@ -147,7 +89,7 @@ SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - No granular objective is a rephrasing of its parent meta objective.
 - Each granular objective is genuinely distinct and necessary — remove any that are redundant or only added to meet a count.
 - Every meta objective has at least one granular objective.
-- Every granular objective starts with "Students will be able to..." and has at least one Bloom level.
+- Every granular objective begins with an active verb and has at least one Bloom level.
 
 Return ONLY the JSON object below. Do not include any introductory text, explanations, or markdown code fences. Respond with exactly this shape:
 {
@@ -155,8 +97,8 @@ Return ONLY the JSON object below. Do not include any introductory text, explana
     {
       "name": "Main learning objective title",
       "granularObjectives": [
-        { "text": "Students will be able to [verb] [skill]...", "bloomTaxonomies": ["Understand", "Apply"] },
-        { "text": "Students will be able to [verb] [skill]...", "bloomTaxonomies": ["Analyze"] }
+        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Understand", "Apply"] },
+        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Analyze"] }
       ]
     }
   ]
@@ -189,8 +131,8 @@ Generation Constraints (The "Gap-Fill" Rule):
 
 Syntax & Language:
 1. Action-Oriented:
-   - AI-generated granular objectives must start with the exact phrase "Students will be able to..." followed by an active verb.
-   - For user-provided granular objectives, preserve the instructor’s wording. If it does not already start with "Students will be able to...", rewrite it minimally to start with that phrase while keeping the original meaning and verb intact.
+   - Write each granular objective as a clear statement beginning with an active verb (e.g., "Apply...", "Distinguish...", "Derive..."). Do not add boilerplate prefixes.
+   - For user-provided granular objectives, preserve the instructor’s wording exactly. Only correct obvious grammatical errors.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create). For user-provided granular objectives, infer Bloom levels from the verb and scope of the text.
 3. Alignment: All content must be derived strictly from the provided course content. Do not invent material that is not in the provided course content.
 
@@ -207,7 +149,7 @@ Return ONLY the JSON object below. Do not include any introductory text, explana
       "name": "Meta Objective Name",
       "granularObjectives": [
         {
-          "text": "Students will be able to [action verb] [specific skill]...",
+          "text": "[Active verb] [specific skill]...",
           "bloomTaxonomies": ["Apply", "Analyze"]
         }
       ]
@@ -221,18 +163,101 @@ FINAL INSTRUCTIONS:
 3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
 4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
 
+const QUESTION_REVIEW_PROMPT = `The following quiz questions were generated by AI for a university course. Evaluate each one and identify anything that is weak, problematic, or worth an instructor's attention — errors, poor design, inflated Bloom labels, weak distractors, anything.
+
+COURSE: {courseName}
+
+QUESTIONS TO EVALUATE:
+{questionsJson}
+
+For EVERY question, go through each check below and note what you find. Then set flagged to true if you found anything worth flagging.
+
+CHECKS:
+
+CORRECTNESS:
+- Is the stated correct answer actually correct? Work through it.
+- Do any distractors accidentally give a correct answer?
+- Are any two answer options identical or near-identical in text?
+- Note: blank feedback on the correct answer is intentional and is NOT a flag reason.
+- IMPORTANT: For questions involving mathematics, flag a correctness issue ONLY if you are highly confident there is an error. If you are uncertain whether the answer is correct, do NOT flag it — leave that judgment to the instructor.
+
+TOPIC ALIGNMENT:
+- Does the question content actually test the concept named in the learning objective?
+- If the question is about a completely different subject, that is a critical issue.
+
+BLOOM LEVEL ACCURACY:
+- Remember/Understand = recall or recognition. Apply = execute a procedure. Analyze = break down, compare, explain why. Evaluate = judge or critique.
+- Only flag if you are confident the stated Bloom level is wrong — for example, labelled Analyze but a student could answer it by recalling a single fact. If the question plausibly matches the stated level, do NOT flag it.
+- Do not flag a question for Bloom level if you would assign it the same level that is already stated.
+
+DISTRACTOR QUALITY (multiple-choice):
+- Does each distractor represent a real mistake students make — an arithmetic slip, a misconception, partial understanding?
+- Can a student identify the correct answer from answer length or formatting alone, without knowing the content?
+- Is the feedback for each incorrect option mathematically and factually accurate? It must state the actual reason that option is wrong. Feedback that describes a superficial symptom ("this assumes X") when the real reason is something else ("the system is inconsistent") is a defect — flag it.
+
+OPEN-ENDED RUBRIC (open-ended questions only):
+- Would the grading criteria apply fairly to multiple valid approaches, or is it too narrowly fitted to the sample answer?
+- A rubric that only credits the exact method shown in the sample answer will incorrectly penalise students who reach the correct answer a different way. Flag this if the question admits multiple valid approaches and the rubric does not acknowledge them.
+
+QUESTION AUTHENTICITY:
+- Does the question test subject knowledge, or does it test test-taking skill?
+- Are distractors over-explained in a way that reveals the correct answer?
+
+Step 2 — Set flagged to true if you found any issue in Step 1. Describe it concisely in the issue field.
+
+CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Do not include markdown code blocks.
+
+You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.
+
+The JSON array must look like this:
+[
+  {
+    "questionId": "<id>",
+    "reasoning": "Work through all checks here before deciding.",
+    "flagged": true,
+    "issue": "Brief description of the issue."
+  },
+  {
+    "questionId": "<id>",
+    "reasoning": "Work through all checks here before deciding.",
+    "flagged": false,
+    "issue": ""
+  }
+]`;
+
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
+const QUESTION_TYPES = {
+  MULTIPLE_CHOICE: "multiple-choice",
+  FILL_IN_THE_BLANK: "fill-in-the-blank",
+  CALCULATION: "calculation",
+  OPEN_ENDED: "open-ended",
+};
+
 const DEFAULT_PROMPTS = {
-    questionGeneration: QUESTION_GENERATION_PROMPT,
-    objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
-    objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT
+  questionGeneration: QUESTION_GENERATION_PROMPT,
+  objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
+  objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT
+};
+
+// Default mapping from Bloom's level to ordered question-type preferences.
+// The first entry is what auto-generation picks; the rest are fallbacks.
+const DEFAULT_BLOOM_TYPE_PREFERENCES = {
+  Remember: [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.MULTIPLE_CHOICE],
+  Understand: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Apply: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Analyze: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Evaluate: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.CALCULATION],
+  Create: [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
 };
 
 module.exports = {
-    QUESTION_GENERATION_PROMPT,
-    OBJECTIVE_GENERATION_AUTO_PROMPT,
-    OBJECTIVE_GENERATION_MANUAL_PROMPT,
-    BLOOM_LEVELS,
-    DEFAULT_PROMPTS
+  QUESTION_GENERATION_PROMPT,
+  QUESTION_REVIEW_PROMPT,
+  OBJECTIVE_GENERATION_AUTO_PROMPT,
+  OBJECTIVE_GENERATION_MANUAL_PROMPT,
+  BLOOM_LEVELS,
+  QUESTION_TYPES,
+  DEFAULT_PROMPTS,
+  DEFAULT_BLOOM_TYPE_PREFERENCES,
 };

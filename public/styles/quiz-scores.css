@@ -362,3 +362,157 @@
 .student-row:hover {
     background-color: #eff6fb !important;
 }
+
+/* Question type label in review modal header */
+.review-question-type-label {
+    font-size: 0.78em;
+    font-weight: 500;
+    color: #7f8c8d;
+    background: #f0f4f8;
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* Pending / needs-grading badge */
+.review-badge-pending {
+    color: #856404;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.review-grade-actions {
+    display: flex;
+    gap: 10px;
+    padding: 14px 0 4px;
+    border-top: 1px solid #e9ecef;
+    margin-top: 14px;
+}
+
+.review-grade-btn {
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.review-grade-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.review-grade-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.review-grade-btn--correct {
+    color: #fff;
+    background: #28a745;
+}
+
+.review-grade-btn--correct:hover:not(:disabled) {
+    background: #218838;
+}
+
+.review-grade-btn--incorrect {
+    color: #fff;
+    background: #dc3545;
+}
+
+.review-grade-btn--incorrect:hover:not(:disabled) {
+    background: #c82333;
+}
+
+/* Open-ended question highlight */
+.review-question--open-ended {
+    border-left: 4px solid #f0ad4e;
+}
+
+/* Text-answer rows (FIB, Calculation, Open-ended) */
+.review-text-answer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.review-text-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.review-text-label {
+    font-weight: 600;
+    color: #34495e;
+    white-space: nowrap;
+    min-width: 140px;
+    font-size: 14px;
+}
+
+.review-text-value {
+    font-size: 15px;
+    color: #2c3e50;
+    flex: 1;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.review-text-value--correct {
+    color: #155724;
+    background: #d4edda;
+    border-radius: 6px;
+    padding: 4px 10px;
+}
+
+.review-text-value--incorrect {
+    color: #721c24;
+    background: #f8d7da;
+    border-radius: 6px;
+    padding: 4px 10px;
+}
+
+/* Open-ended sample answer / grading criteria panel */
+.review-open-ended-panel {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.review-open-ended-section {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 12px 15px;
+}
+
+.review-open-ended-section strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #34495e;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.review-open-ended-section p {
+    margin: 0;
+    color: #555;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}

@@ -1,8 +1,10 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
+const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
 
 const isQuizAccessible = (quiz) => {
@@ -99,6 +101,12 @@ const startQuizHandler = async (req, res) => {
 };
 
 
+function resolveQuestionType(q) {
+  const t = String(q.questionType || q.type || "").trim().toLowerCase();
+  const known = [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
+  return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
+}
+
 
 const getQuizQuestionsHandler = async (req, res) => {
   try {
@@ -133,6 +141,97 @@ const getQuizQuestionsHandler = async (req, res) => {
     }
 
     const transformedQuestions = questions.map((q, index) => {
+      const questionType = resolveQuestionType(q);
+      const questionText = (q.title || q.stem || "").trim();
+      const fibMainText =
+        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK
+          ? (q.stem || q.title || "").trim()
+          : questionText;
+
+      if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
+      if (questionType === QUESTION_TYPES.OPEN_ENDED) {
+        return {
+          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
+          question: fibMainText || questionText || "Question text not available",
+          questionType: QUESTION_TYPES.OPEN_ENDED,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
+      if (questionType === QUESTION_TYPES.CALCULATION) {
+        const vars = q.calculationVariables;
+        const template = CalculationQuestion.resolveCalculationDisplayTemplate(
+          q.stem,
+          q.title,
+          vars
+        );
+        const formula = (q.calculationFormula || "").trim();
+        const answerDec =
+          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
+            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
+            : 2;
+        const tolerancePercent =
+          q.calculationAnswerTolerancePercent != null &&
+          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
+            ? Number(q.calculationAnswerTolerancePercent)
+            : null;
+        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
+        const built = CalculationQuestion.buildStudentCalculationInstance({
+          template,
+          formula,
+          variableSpecs: vars,
+          qid,
+          answerDec,
+        });
+        if (built.ok) {
+          return {
+            id: qid,
+            question: built.rendered,
+            questionType: QUESTION_TYPES.CALCULATION,
+            calculationToken: built.token,
+            answerDecimalPlaces: built.answerDecimalPlaces,
+            calculationAnswerTolerancePercent: tolerancePercent,
+            options: {},
+            learningObjectiveId: q.learningObjectiveId,
+            granularObjectiveId: q.granularObjectiveId,
+            bloom: q.bloom,
+          };
+        }
+        console.error(
+          "Calculation question instance failed:",
+          qid,
+          built.error && built.error.message
+        );
+        return {
+          id: qid,
+          question:
+            template ||
+            "This calculation question could not be loaded. Please contact your instructor.",
+          questionType: QUESTION_TYPES.CALCULATION,
+          calculationToken: null,
+          answerDecimalPlaces: answerDec,
+          calculationLoadError: true,
+          options: {},
+          learningObjectiveId: q.learningObjectiveId,
+          granularObjectiveId: q.granularObjectiveId,
+          bloom: q.bloom,
+        };
+      }
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
@@ -152,14 +251,11 @@ const getQuizQuestionsHandler = async (req, res) => {
         }
       }
 
-      const questionText = (q.title || q.stem || "").trim();
-
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
+        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
-        correctAnswer: (q.correctAnswer || "A").toString().toUpperCase(),
-        // Keep metadata for performance tracking
         learningObjectiveId: q.learningObjectiveId,
         granularObjectiveId: q.granularObjectiveId,
         bloom: q.bloom
@@ -178,7 +274,38 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-        res.json({
+    // Load previously recorded answers for first-attempt resumption
+    let previousAnswers = {};
+    try {
+      const db = await databaseService.connect();
+      const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+      const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+      const existingScore = await db.collection("grasp_quiz_score").findOne({ userId: userIdObj, quizId: quizIdObj });
+      if (!existingScore) {
+        const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
+        const optionKeys = ['A', 'B', 'C', 'D'];
+        attempts.forEach(attempt => {
+          const entry = {
+            questionType: attempt.questionType,
+            selectedAnswer: attempt.selectedAnswer,
+            isCorrect: attempt.isCorrect,
+            correctAnswer: attempt.correctAnswer,
+            correctOptionText: attempt.correctOptionText,
+            sampleAnswer: attempt.sampleAnswer,
+            gradingCriteria: attempt.gradingCriteria,
+            feedbackText: attempt.feedbackText,
+          };
+          if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
+            entry.selectedIndex = optionKeys.indexOf(attempt.selectedAnswer);
+          }
+          previousAnswers[attempt.questionId.toString()] = entry;
+        });
+      }
+    } catch (prevErr) {
+      console.error('[Student] Failed to load previous answers:', prevErr);
+    }
+
+    res.json({
       success: true,
       data: {
         quizId: quizId,
@@ -186,6 +313,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         course: courseName,
         duration: 0,
         questions: transformedQuestions,
+        previousAnswers,
       },
       message: "Quiz questions retrieved successfully",
     });
@@ -202,140 +330,73 @@ const getQuizQuestionsHandler = async (req, res) => {
 const submitQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { answers, timeSpent, sessionId, score: clientScore, correctAnswers: clientCorrectAnswers, totalQuestions: clientTotalQuestions } = req.body;
-
-    if (!answers || typeof answers !== 'object') {
-      return res.status(400).json({
-        success: false,
-        message: "Answers are required",
-      });
-    }
+    const { timeSpent, sessionId } = req.body;
 
     const quiz = await quizService.getQuizById(quizId);
-
     const accessibility = isQuizAccessible(quiz);
     if (!accessibility.success) {
-      return res.status(accessibility.status).json({
-        success: false,
-        message: accessibility.message,
-      });
+      return res.status(accessibility.status).json({ success: false, message: accessibility.message });
     }
 
-    // Validation
-    const totalQuestions = Number(clientTotalQuestions) || (req.body.feedback ? Object.keys(req.body.feedback).length : 0);
+    const userId = req.user._id || req.user.id;
+    const courseId = quiz.courseId;
+    const quizName = quiz.name || "Quiz";
 
-    if (totalQuestions === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "This quiz submission has no questions.",
-      });
+    const db = await databaseService.connect();
+    const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+    const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+
+    // Compute score from server-recorded attempts (recorded at /check time)
+    const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
+
+    if (attempts.length === 0) {
+      return res.status(400).json({ success: false, message: "No answers recorded for this quiz." });
     }
 
-    const score = Number(clientScore);
-    const correctAnswers = Number(clientCorrectAnswers) || 0;
+    const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
+    const totalQuestions = gradedAttempts.length;
+    const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
-    // Record performance and Award achievements
     let newAchievements = [];
     try {
-      const userId = req.user._id || req.user.id;
-      const courseId = quiz.courseId;
-      const quizName = quiz.name || "Quiz";
-      
-      // Accept feedback results from the client (which were securely verified server-side per click)
-      const { feedback } = req.body;
-
-      if (userId && courseId && feedback) {
-        const submittedQuestionIds = Object.keys(feedback).map(id => {
-            return ObjectId.isValid(id) ? new ObjectId(id) : id;
-        });
-
-        const db = await databaseService.connect();
-        
-        // Determine if this is the student's very first formally submitted attempt for this quiz
-        const existingScore = await db.collection("grasp_quiz_score").findOne({
-            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
-            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
-        });
-        const isFirstAttempt = !existingScore;
-
-        const rawSubmittedQuestions = await db.collection("grasp_question").find({
-            _id: { $in: submittedQuestionIds }
-        }).toArray();
-        const enrichedSubmittedQuestions = await quizService.enrichQuestionsWithLO(rawSubmittedQuestions);
-
-        // Build a fast lookup map for questions to extract LOs and Blooms
-        const questionLookup = {};
-        enrichedSubmittedQuestions.forEach(q => questionLookup[q._id.toString()] = q);
-
-        // Record performance for each question answered in this session
-        for (const questionId of Object.keys(feedback)) {
-            const questionData = questionLookup[questionId];
-            const feedbackResult = feedback[questionId];
-            
-            if (questionData && feedbackResult) {
-                await quizService.saveStudentPerformance({
-                    userId: userId.toString(),
-                    quizId,
-                    questionId,
-                    learningObjectiveId: questionData.learningObjectiveId,
-                    granularObjectiveId: questionData.granularObjectiveId,
-                    bloom: questionData.bloom,
-                    isCorrect: !!feedbackResult.isCorrect,
-                    isFirstAttempt: isFirstAttempt,
-                    selectedAnswer: feedbackResult.selectedKey,
-                    correctAnswer: feedbackResult.correctAnswer
-                });
-            }
-        }
-
-        // Award achievements
+      if (userId && courseId) {
         newAchievements = await achievementService.awardQuizAchievements(
-          userId.toString(),
-          courseId.toString(),
-          quizId,
-          quizName,
-          score
+          userId.toString(), courseId.toString(), quizId, quizName, score ?? 0
         );
       }
-
-      // Record overall quiz score (Service handles first-attempt-only logic via DB unique index)
       if (userId && quizId) {
         await quizService.saveQuizScore({
-            userId: userId.toString(),
-            quizId,
-            courseId: courseId ? courseId.toString() : null,
-            score,
-            correctAnswers,
-            totalQuestions,
-            timeSpent
+          userId: userId.toString(),
+          quizId,
+          courseId: courseId ? courseId.toString() : null,
+          score: score ?? 0,
+          correctAnswers,
+          totalQuestions,
+          timeSpent
         });
       }
     } catch (performanceError) {
-      console.error("Error recording performance or awarding achievements:", performanceError);
+      console.error("Error recording score or awarding achievements:", performanceError);
     }
 
     res.json({
       success: true,
       data: {
-        quizId: quizId,
-        sessionId: sessionId,
-        score: score,
-        correctAnswers: correctAnswers,
-        totalQuestions: totalQuestions,
-        timeSpent: timeSpent,
+        quizId,
+        sessionId,
+        score,
+        correctAnswers,
+        totalQuestions,
+        timeSpent,
         submittedAt: new Date().toISOString(),
-        message: "Quiz submitted successfully",
-        newAchievements: newAchievements,
+        newAchievements,
       },
       message: "Quiz submitted successfully",
     });
   } catch (error) {
     console.error("Error submitting quiz:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to submit quiz",
-      error: error.message,
-    });
+    res.status(500).json({ success: false, message: "Failed to submit quiz", error: error.message });
   }
 };
 

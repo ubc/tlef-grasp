@@ -125,15 +125,14 @@ const deleteQuiz = async (quizId) => {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_quiz");
         
-        // First delete all question associations
-        await db.collection("grasp_quiz_question").deleteMany({
-            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
-        });
-        
-        // Then delete the quiz itself
-        const result = await collection.deleteOne({ 
-            _id: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId 
-        });
+        const qid = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+
+        await db.collection("grasp_quiz_question").deleteMany({ quizId: qid });
+        await db.collection("grasp_student_attempt").deleteMany({ quizId: qid });
+        await db.collection("grasp_student_performance").deleteMany({ quizId: qid });
+        await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
+
+        const result = await collection.deleteOne({ _id: qid });
         
         return result;
     } catch (error) {
@@ -278,10 +277,8 @@ const getPhase1Questions = async (quizId, userId) => {
     const quiz = await getQuizById(quizId);
     if (!quiz) throw new Error("Quiz not found");
 
-    const rawBankQuestions = await getQuizQuestions(quizId, true);
-    if (!rawBankQuestions || rawBankQuestions.length === 0) return [];
-
-    const bankQuestions = await enrichQuestionsWithLO(rawBankQuestions);
+    const bankQuestions = await getQuizQuestions(quizId, true);
+    if (!bankQuestions || bankQuestions.length === 0) return [];
 
     const attemptCollection = db.collection("grasp_student_attempt");
     const userAttempts = await attemptCollection.find({
@@ -657,8 +654,18 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
 const saveStudentPerformance = async (performanceData) => {
     try {
         const db = await databaseService.connect();
+
+        const userIdObj = ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId;
+        const quizIdObj = ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId;
+        const questionIdObj = ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId;
+
+        const attemptCollection = db.collection("grasp_student_attempt");
+
+        // First-answer-wins: skip if an attempt already exists for this user+quiz+question
+        const existing = await attemptCollection.findOne({ userId: userIdObj, quizId: quizIdObj, questionId: questionIdObj });
+        if (existing) return existing;
+
         const loIdentifier = performanceData.learningObjectiveId?.toString() || performanceData.granularObjectiveId?.toString();
-        
         if (!loIdentifier) {
             console.warn("[Quiz Service] Attempt saved without LO identifier. Phase 2/3 will not track this.");
         }
@@ -666,27 +673,29 @@ const saveStudentPerformance = async (performanceData) => {
         const quiz = await getQuizById(performanceData.quizId);
         const courseId = quiz ? quiz.courseId : null;
 
-        const attemptCollection = db.collection("grasp_student_attempt");
         const attemptData = {
-            userId: ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId,
+            userId: userIdObj,
             courseId: courseId ? (ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId) : null,
-            quizId: ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId,
-            questionId: ObjectId.isValid(performanceData.questionId) ? new ObjectId(performanceData.questionId) : performanceData.questionId,
+            quizId: quizIdObj,
+            questionId: questionIdObj,
             learningObjectiveId: performanceData.learningObjectiveId ? (ObjectId.isValid(performanceData.learningObjectiveId) ? new ObjectId(performanceData.learningObjectiveId) : performanceData.learningObjectiveId) : null,
             granularObjectiveId: performanceData.granularObjectiveId ? (ObjectId.isValid(performanceData.granularObjectiveId) ? new ObjectId(performanceData.granularObjectiveId) : performanceData.granularObjectiveId) : null,
             bloom: performanceData.bloom,
-            isCorrect: !!performanceData.isCorrect,
+            isCorrect: performanceData.isCorrect != null ? !!performanceData.isCorrect : null,
             selectedAnswer: performanceData.selectedAnswer || null,
             correctAnswer: performanceData.correctAnswer || null,
-            isFirstAttempt: performanceData.isFirstAttempt !== undefined ? performanceData.isFirstAttempt : true,
+            correctOptionText: performanceData.correctOptionText || null,
+            sampleAnswer: performanceData.sampleAnswer || null,
+            gradingCriteria: performanceData.gradingCriteria || null,
+            feedbackText: performanceData.feedbackText || null,
+            questionType: performanceData.questionType || null,
+            isFirstAttempt: true,
             createdAt: new Date()
         };
         const attemptResult = await attemptCollection.insertOne(attemptData);
 
-        if (loIdentifier && courseId) {
+        if (loIdentifier && courseId && performanceData.isCorrect !== null) {
             const performanceCollection = db.collection("grasp_student_performance");
-            const userIdObj = ObjectId.isValid(performanceData.userId) ? new ObjectId(performanceData.userId) : performanceData.userId;
-            const quizIdObj = ObjectId.isValid(performanceData.quizId) ? new ObjectId(performanceData.quizId) : performanceData.quizId;
 
             // CRITICAL: Check if this is a retake. 
             // If a score already exists for this User + Quiz, it is a retake.
@@ -716,10 +725,10 @@ const saveStudentPerformance = async (performanceData) => {
 
             if (isFirstAttemptInSession) {
                 const updateFields = {
-                    $set: { 
+                    $set: {
                         lastQuizIdSeen: new ObjectId(quizIdStr),
                         updatedAt: new Date(),
-                        needsRemediation: !performanceData.isCorrect
+                        needsRemediation: performanceData.isCorrect !== true
                     }
                 };
 
@@ -751,6 +760,94 @@ const saveStudentPerformance = async (performanceData) => {
         console.error("Error saving student performance:", error);
         throw error;
     }
+};
+
+/**
+ * Grade an open-ended attempt and retroactively update mastery state.
+ * Only works on ungraded (isCorrect === null) open-ended attempts.
+ */
+const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
+    const db = await databaseService.connect();
+
+    const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+    const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+    const questionIdObj = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
+
+    const attemptCollection = db.collection('grasp_student_attempt');
+
+    const attempt = await attemptCollection.findOne({
+        userId: userIdObj,
+        quizId: quizIdObj,
+        questionId: questionIdObj,
+        questionType: 'open-ended'
+    });
+
+    if (!attempt) throw new Error('Open-ended attempt not found');
+    if (attempt.isCorrect !== null) throw new Error('Attempt has already been graded');
+
+    // Step 1: Update isCorrect on the attempt record
+    await attemptCollection.updateOne(
+        { _id: attempt._id },
+        { $set: { isCorrect: !!isCorrect, gradedAt: new Date() } }
+    );
+
+    // Step 2: Retroactive mastery update — only if this was the student's first encounter
+    const loIdentifier = attempt.learningObjectiveId || attempt.granularObjectiveId;
+    const courseId = attempt.courseId;
+
+    if (attempt.isFirstAttempt && loIdentifier && courseId) {
+        const performanceCollection = db.collection('grasp_student_performance');
+        const query = {
+            userId: userIdObj,
+            courseId: ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId,
+            learningObjectiveId: attempt.learningObjectiveId || null,
+            ...(attempt.granularObjectiveId && !attempt.learningObjectiveId ? {
+                granularObjectiveId: attempt.granularObjectiveId
+            } : {})
+        };
+
+        const existingMastery = await performanceCollection.findOne(query);
+
+        // Skip if another question for this LO already updated mastery in this quiz session
+        const alreadyUpdatedThisSession = existingMastery?.lastQuizIdSeen?.toString() === quizId.toString();
+        if (!alreadyUpdatedThisSession) {
+            const updateFields = {
+                $set: {
+                    lastQuizIdSeen: quizIdObj,
+                    updatedAt: new Date(),
+                    needsRemediation: !isCorrect
+                }
+            };
+
+            if (!isCorrect) {
+                updateFields.$set.remediationBloomLevel = attempt.bloom;
+                updateFields.$set.timesCorrect = 0;
+            } else {
+                updateFields.$inc = { timesCorrect: 1 };
+                const currentBloomIdx = BLOOM_ORDER.indexOf(attempt.bloom);
+                const storedBloomIdx = existingMastery ? BLOOM_ORDER.indexOf(existingMastery.highestBloomPassed) : -1;
+                if (currentBloomIdx > storedBloomIdx) {
+                    updateFields.$set.highestBloomPassed = attempt.bloom;
+                }
+            }
+
+            await performanceCollection.updateOne(query, updateFields, { upsert: true });
+        }
+    }
+
+    // Step 3: Recalculate and update quiz score
+    const allAttempts = await attemptCollection.find({ userId: userIdObj, quizId: quizIdObj }).toArray();
+    const gradedAttempts = allAttempts.filter(a => a.isCorrect !== null);
+    const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    const totalQuestions = gradedAttempts.length;
+    const updatedScore = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
+
+    await db.collection('grasp_quiz_score').updateOne(
+        { userId: userIdObj, quizId: quizIdObj },
+        { $set: { score: updatedScore, correctAnswers, totalQuestions } }
+    );
+
+    return { score: updatedScore, correctAnswers, totalQuestions };
 };
 
 /**
@@ -899,16 +996,20 @@ const getStudentQuizAttempt = async (quizId, userId) => {
             const questionData = questionMap[attempt.questionId.toString()];
             if (!questionData) return null;
 
+            const questionType = questionData.questionType || questionData.type || 'multiple-choice';
             return {
                 attemptId: attempt._id,
                 questionId: questionData._id,
+                questionType,
                 questionText: questionData.title || questionData.stem || "Unknown Question",
                 options: questionData.options || {},
                 selectedAnswer: attempt.selectedAnswer,
                 correctAnswer: attempt.correctAnswer || questionData.correctAnswer,
                 isCorrect: attempt.isCorrect,
                 bloom: attempt.bloom,
-                createdAt: attempt.createdAt
+                createdAt: attempt.createdAt,
+                openEndedSampleAnswer: questionData.openEndedSampleAnswer || null,
+                openEndedGradingCriteria: questionData.openEndedGradingCriteria || null,
             };
         }).filter(a => a !== null);
     } catch (error) {
@@ -958,5 +1059,6 @@ module.exports = {
     getPhase3Questions,
     getQuizScores,
     getStudentQuizAttempt,
-    getUserScoresForCourse
+    getUserScoresForCourse,
+    gradeOpenEndedAttempt
 };
