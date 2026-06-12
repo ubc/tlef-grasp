@@ -12,3 +12,5 @@ local_cache
 *.traineddata
 
 .claude
+# React client build output
+client/dist
