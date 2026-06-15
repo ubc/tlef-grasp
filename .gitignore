@@ -12,8 +12,6 @@ local_cache
 *.traineddata
 
 .claude
-# React client build output
-client/dist
 
 # Cypress artifacts
 client/cypress/screenshots
