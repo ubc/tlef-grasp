@@ -42,6 +42,7 @@ export default function AppLayout() {
           onClick={() => setSidebarOpen(true)}
           aria-label="Open navigation menu"
           aria-expanded={sidebarOpen}
+          data-testid="open-sidebar"
           className="flex h-10 w-10 items-center justify-center rounded-lg text-ink transition-colors hover:bg-gray-100"
         >
           <i className="fas fa-bars text-lg" />
@@ -58,6 +59,7 @@ export default function AppLayout() {
           className="fixed inset-0 z-[950] bg-black/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
+          data-testid="sidebar-backdrop"
         />
       )}
 
