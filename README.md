@@ -49,20 +49,16 @@ A modern, responsive instructor dashboard for a generative AI-powered formative 
 
 ```
 tlef-grasp/
-├── public/                    # Frontend files
-│   ├── dashboard.html        # Main instructor dashboard
-│   ├── index.html            # Landing page with redirect
-│   ├── settings.html         # Settings page
-│   ├── styles/
-│   │   ├── dashboard.css     # Dashboard-specific styles
-│   │   └── style.css         # Global styles and utilities
-│   └── scripts/
-│       ├── dashboard.js      # Dashboard functionality
-│       └── front-end.js      # General frontend utilities
-├── src/                      # Backend files
-│   ├── server.js             # Express server
-│   └── routes/               # API routes
-├── package.json              # Dependencies and scripts
+├── client/                   # React frontend (Vite + Tailwind)
+│   ├── src/                  # Components, pages, hooks, stores
+│   ├── dist/                 # Built assets, served in production (committed)
+│   └── cypress/              # End-to-end tests
+├── src/                      # Express backend
+│   ├── server.js             # Server entry (serves client/dist + API)
+│   ├── routes/               # API routes
+│   ├── controllers/          # Request handlers
+│   └── services/             # Business logic and data access
+├── package.json              # Backend dependencies and scripts
 └── README.md                 # This file
 ```
 
@@ -198,8 +194,8 @@ This project is licensed under the ISC License.
 
 For support and questions:
 
-- Check the documentation in the `public/README.md` file
 - Review the code comments for implementation details
+- See `client/cypress/README.md` for the end-to-end test setup
 - Open an issue for bugs or feature requests
 
 ## 🔮 Future Enhancements
