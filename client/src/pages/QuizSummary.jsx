@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useStudentQuizResults } from "../hooks/useStudentQuizzes";
 
 export default function QuizSummary() {
   const navigate = useNavigate();
@@ -9,12 +8,8 @@ export default function QuizSummary() {
   const quizId = searchParams.get("quiz");
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const summaryQuery = useQuery({
-    queryKey: ["quiz-results", quizId],
-    queryFn: () => api.get(`/api/student/quizzes/${quizId}/results`),
-    enabled: !!quizId,
-  });
-  const summary = summaryQuery.data?.success ? summaryQuery.data.data : null;
+  const summaryQuery = useStudentQuizResults(quizId);
+  const summary = summaryQuery.summary;
   const questions = summary?.questions || [];
   const question = questions[currentIndex];
 
@@ -47,7 +42,7 @@ export default function QuizSummary() {
 
   if (!quizId || summaryQuery.isError || !summary) {
     return (
-      <div className="mx-auto max-w-lg p-8">
+      <div className="mx-auto max-w-lg p-4 md:p-8">
         <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
           <i className="fas fa-exclamation-triangle mb-4 text-4xl text-warning" />
           <h3 className="text-lg font-semibold text-ink">Unable to Load Quiz Summary</h3>
@@ -75,7 +70,7 @@ export default function QuizSummary() {
       .substring(0, 5);
 
   return (
-    <div className="grid grid-cols-1 gap-8 p-8 lg:grid-cols-[300px_1fr]">
+    <div className="grid grid-cols-1 gap-6 p-4 md:gap-8 md:p-8 lg:grid-cols-[300px_1fr]">
       {/* Summary sidebar */}
       <div className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="mb-5 text-lg font-semibold text-ink">Quiz Summary</h2>
@@ -152,7 +147,7 @@ export default function QuizSummary() {
           </div>
         </div>
 
-        <div className="mt-8 flex justify-between">
+        <div className="mt-8 flex flex-wrap justify-between gap-3">
           <button
             type="button"
             disabled={currentIndex === 0}

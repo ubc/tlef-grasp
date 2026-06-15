@@ -27,6 +27,71 @@ const getParentObjectives = async (courseId) => {
 };
 
 /**
+ * Get all parent objectives for a course with their granular objectives and
+ * associated material sourceIds, using batched queries (no per-objective lookups).
+ * @param {string} courseId - The course ID
+ * @returns {Promise<Array>} [{ ...parent, granularObjectives: [], materialSourceIds: [] }]
+ */
+const getDetailedObjectives = async (courseId) => {
+  try {
+    const db = await databaseService.connect();
+    const objectiveCollection = db.collection('grasp_objective');
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+    const parents = await objectiveCollection
+      .find({ parent: 0, courseId: courseIdObj })
+      .toArray();
+    if (parents.length === 0) return [];
+
+    const parentIds = parents.map((p) => p._id);
+
+    const [granulars, relationships] = await Promise.all([
+      objectiveCollection
+        .find({ parent: { $in: parentIds }, courseId: courseIdObj })
+        .toArray(),
+      db
+        .collection('grasp_objective_material')
+        .find({ objectiveId: { $in: parentIds } })
+        .toArray(),
+    ]);
+
+    const materialIds = [...new Set(relationships.map((r) => String(r.materialId)))]
+      .map((id) => new ObjectId(id));
+    const materials = materialIds.length
+      ? await db.collection('grasp_material').find({ _id: { $in: materialIds } }).toArray()
+      : [];
+    const sourceIdByMaterialId = new Map(
+      materials.map((m) => [String(m._id), m.sourceId || String(m._id)])
+    );
+
+    const granularsByParent = new Map();
+    granulars.forEach((g) => {
+      const key = String(g.parent);
+      if (!granularsByParent.has(key)) granularsByParent.set(key, []);
+      granularsByParent.get(key).push(g);
+    });
+
+    const sourceIdsByObjective = new Map();
+    relationships.forEach((r) => {
+      const key = String(r.objectiveId);
+      const sourceId = sourceIdByMaterialId.get(String(r.materialId));
+      if (!sourceId) return;
+      if (!sourceIdsByObjective.has(key)) sourceIdsByObjective.set(key, []);
+      sourceIdsByObjective.get(key).push(sourceId);
+    });
+
+    return parents.map((parent) => ({
+      ...parent,
+      granularObjectives: granularsByParent.get(String(parent._id)) || [],
+      materialSourceIds: sourceIdsByObjective.get(String(parent._id)) || [],
+    }));
+  } catch (error) {
+    console.error('Error getting detailed objectives:', error);
+    throw error;
+  }
+};
+
+/**
  * Get all granular objectives for a parent objective
  * @param {string|ObjectId} parentId - The parent objective ID
  * @param {string} courseId - Optional course ID to filter by (for additional validation)
@@ -368,6 +433,7 @@ const getObjectiveCourseId = async (objectiveId) => {
 
 module.exports = {
   getParentObjectives,
+  getDetailedObjectives,
   getGranularObjectives,
   createObjective,
   getObjectiveById,

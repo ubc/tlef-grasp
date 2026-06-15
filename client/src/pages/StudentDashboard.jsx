@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import Calendar from "../components/Calendar";
-import { api } from "../lib/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useStudentCourses } from "../hooks/useCourses";
+import { useCourseQuizzes } from "../hooks/useQuizzes";
+import { useMyAchievements } from "../hooks/useAchievements";
 import { useAppStore } from "../stores/appStore";
 
 function StepTip({ icon = "fa-lightbulb", children }) {
@@ -37,7 +38,7 @@ function InstructionStep({ number, title, children, info = false }) {
 
 function NoCourseState({ greeting, dateLabel }) {
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <section className="mb-8">
         <h2 className="text-2xl font-bold text-ink">{greeting}</h2>
         <p className="text-muted">{dateLabel}</p>
@@ -66,16 +67,8 @@ export default function StudentDashboard() {
 
   // Always verify course access from the API so removed students lose access
   // immediately (mirrors legacy checkCourseAccess on this page).
-  const coursesQuery = useQuery({
-    queryKey: ["student-courses"],
-    queryFn: () => api.get("/api/student/courses"),
-    enabled: !!user,
-  });
-
-  const courses = (coursesQuery.data?.courses || []).map((course) => ({
-    id: course._id || course.id,
-    name: course.name || course.courseName || "Unknown Course",
-  }));
+  const coursesQuery = useStudentCourses();
+  const courses = coursesQuery.courses;
   const hasCourse = courses.length > 0;
 
   useEffect(() => {
@@ -94,27 +87,20 @@ export default function StudentDashboard() {
 
   const courseId = selectedCourse?.id;
 
-  const quizzesQuery = useQuery({
-    queryKey: ["quizzes", "course", courseId],
-    queryFn: () => api.get(`/api/quiz/course/${courseId}`),
-    enabled: !!courseId && hasCourse,
-  });
-
-  const achievementsQuery = useQuery({
-    queryKey: ["achievements", "my", courseId],
-    queryFn: () => api.get(`/api/achievement/my?courseId=${courseId}`),
+  const quizzesQuery = useCourseQuizzes(hasCourse ? courseId : null);
+  const achievementsQuery = useMyAchievements(courseId, {
     enabled: !!courseId && hasCourse,
   });
 
   const now = new Date();
-  const quizCount = (quizzesQuery.data?.quizzes || []).filter((quiz) => {
+  const quizCount = quizzesQuery.quizzes.filter((quiz) => {
     if (quiz.published !== true) return false;
     if (quiz.releaseDate && new Date(quiz.releaseDate) > now) return false;
     if (quiz.expireDate && new Date(quiz.expireDate) < now) return false;
     return true;
   }).length;
 
-  const completedCount = (achievementsQuery.data?.data || []).filter(
+  const completedCount = achievementsQuery.achievements.filter(
     (achievement) => achievement.type === "quiz_completed"
   ).length;
 
@@ -139,7 +125,7 @@ export default function StudentDashboard() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 p-8 xl:grid-cols-[1fr_320px]">
+    <div className="grid grid-cols-1 gap-6 p-4 md:gap-8 md:p-8 xl:grid-cols-[1fr_320px]">
       {/* Left column */}
       <div className="min-w-0 space-y-8">
         <section>

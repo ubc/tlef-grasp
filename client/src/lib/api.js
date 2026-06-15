@@ -32,7 +32,7 @@ async function request(path, { method = "GET", body, headers, ...rest } = {}) {
     throw new ApiError("Not authenticated", 401, null);
   }
 
-  let data = null;
+  let data;
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
     data = await response.json().catch(() => null);

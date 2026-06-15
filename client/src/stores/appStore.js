@@ -36,3 +36,10 @@ export const useAppStore = create((set) => ({
     set({ currentRole: role });
   },
 }));
+
+// Convenience selectors — most pages only need the selected course (or its id).
+export const useSelectedCourse = () =>
+  useAppStore((state) => state.selectedCourse);
+
+export const useSelectedCourseId = () =>
+  useAppStore((state) => state.selectedCourse?.id);

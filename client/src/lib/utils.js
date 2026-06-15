@@ -31,6 +31,20 @@ export const QUESTION_TYPE_CHIP_CLASSES = {
   "open-ended": "bg-teal-100 text-teal-700",
 };
 
+// Resolve a user's role from an explicit role field or their affiliations.
+export function getUserRole(user) {
+  if (user.role) return user.role;
+  const affiliation = user.affiliation || "";
+  const affiliations = Array.isArray(affiliation)
+    ? affiliation
+    : String(affiliation).split(",").map((a) => a.trim());
+  if (affiliations.includes("faculty")) return "faculty";
+  if (affiliations.includes("staff")) return "staff";
+  if (affiliations.includes("student") || affiliations.includes("affiliate"))
+    return "student";
+  return "unknown";
+}
+
 export function getMaterialIcon(type) {
   const info = { icon: "fas fa-file", color: "#718096" };
   if (!type) return info;

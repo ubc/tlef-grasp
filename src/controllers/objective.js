@@ -1,6 +1,6 @@
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
-const { getObjectiveCourseId, getParentObjectives, getGranularObjectives, createObjective, updateObjective, deleteObjective } = require('../services/objective');
+const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
@@ -47,6 +47,34 @@ const getAllObjectives = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch learning objectives',
+    });
+  }
+};
+
+// Objectives with granular sub-objectives and material sourceIds in one
+// response (replaces two follow-up requests per objective).
+const getDetailedObjectivesHandler = async (req, res) => {
+  try {
+    const { courseId } = req.query;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Course ID is required',
+      });
+    }
+
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user.id, courseId)) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
+    const objectives = await getDetailedObjectives(courseId);
+    res.json({ success: true, objectives });
+  } catch (error) {
+    console.error('Error fetching detailed objectives:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch detailed learning objectives',
     });
   }
 };
@@ -263,6 +291,7 @@ const deleteObjectiveHandler = async (req, res) => {
 
 module.exports = {
   getAllObjectives,
+  getDetailedObjectivesHandler,
   getGranularObjectivesHandler,
   createObjectiveHandler,
   getObjectiveMaterials,

@@ -57,6 +57,49 @@ const getQuizzesByCourse = async (courseId) => {
 };
 
 /**
+ * Get all quizzes for a course with their questions attached (instructor view).
+ * Uses three batched queries instead of one question lookup per quiz.
+ * @param {string} courseId - The ID of the course
+ * @returns {Promise<Array>} Array of quizzes, each with a `questions` array
+ */
+const getQuizzesByCourseWithQuestions = async (courseId) => {
+    const db = await databaseService.connect();
+    const quizzes = await getQuizzesByCourse(courseId);
+    if (quizzes.length === 0) return [];
+
+    const quizIds = quizzes.map(q => q._id);
+    const mappings = await db.collection("grasp_quiz_question").find({
+        quizId: { $in: quizIds }
+    }).toArray();
+
+    if (mappings.length === 0) {
+        return quizzes.map(quiz => ({ ...quiz, questions: [] }));
+    }
+
+    const questionIds = [...new Set(mappings.map(m => String(m.questionId)))]
+        .map(id => new ObjectId(id));
+    const rawQuestions = await db.collection("grasp_question").find({
+        _id: { $in: questionIds }
+    }).toArray();
+    const enriched = await enrichQuestionsWithLO(rawQuestions, db);
+
+    const questionsById = new Map(enriched.map(q => [String(q._id), q]));
+    const questionIdsByQuiz = new Map();
+    mappings.forEach(m => {
+        const quizKey = String(m.quizId);
+        if (!questionIdsByQuiz.has(quizKey)) questionIdsByQuiz.set(quizKey, []);
+        questionIdsByQuiz.get(quizKey).push(String(m.questionId));
+    });
+
+    return quizzes.map(quiz => ({
+        ...quiz,
+        questions: (questionIdsByQuiz.get(String(quiz._id)) || [])
+            .map(id => questionsById.get(id))
+            .filter(Boolean),
+    }));
+};
+
+/**
  * Get a quiz by ID
  * @param {string} quizId - The ID of the quiz
  * @returns {Promise<Object|null>} The quiz object
@@ -1045,6 +1088,7 @@ const getUserScoresForCourse = async (userId, courseId) => {
 module.exports = {
     createQuiz,
     getQuizzesByCourse,
+    getQuizzesByCourseWithQuestions,
     getQuizById,
     updateQuiz,
     deleteQuiz,

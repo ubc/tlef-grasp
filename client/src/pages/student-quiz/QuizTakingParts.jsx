@@ -1,0 +1,330 @@
+import { useEffect, useState } from "react";
+import { QUESTION_TYPES } from "../../lib/constants";
+import { escapeHtml } from "../../lib/format";
+import RichText from "../../components/RichText";
+
+export function Timer({ startTime }) {
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => forceTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const totalSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+
+  return (
+    <span>
+      <i className="fas fa-clock mr-1" />
+      {minutes}:{seconds}
+    </span>
+  );
+}
+
+export function TextAnswerInput({
+  question,
+  saved,
+  feedback,
+  onSubmit,
+  submitting,
+  multiline = false,
+  placeholder,
+  hint,
+}) {
+  const [value, setValue] = useState(typeof saved === "string" ? saved : "");
+  const answered = !!feedback;
+
+  // Sync when navigating between questions
+  useEffect(() => {
+    setValue(typeof saved === "string" ? saved : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question.id]);
+
+  const borderClass = !answered
+    ? "border-gray-200"
+    : feedback.openEnded || feedback.isCorrect === null
+      ? "border-primary/50 bg-primary/5"
+      : feedback.isCorrect
+        ? "border-success/60 bg-success/5"
+        : "border-danger/60 bg-danger/5";
+
+  const InputTag = multiline ? "textarea" : "input";
+
+  return (
+    <div className={`rounded-xl border-2 p-5 ${borderClass}`}>
+      <label
+        htmlFor={`answer-${question.id}`}
+        className="mb-2 block text-sm font-semibold text-ink"
+      >
+        {multiline ? "Your response" : "Your answer"}
+      </label>
+      <InputTag
+        id={`answer-${question.id}`}
+        type={multiline ? undefined : "text"}
+        rows={multiline ? 6 : undefined}
+        inputMode={hint === "calc" ? "decimal" : undefined}
+        autoComplete="off"
+        placeholder={placeholder}
+        value={value}
+        disabled={answered || submitting}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            (!multiline || event.ctrlKey || event.metaKey)
+          ) {
+            event.preventDefault();
+            if (!answered && !submitting) onSubmit(value);
+          }
+        }}
+        className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:border-primary focus:outline-none disabled:bg-gray-50"
+      />
+      <button
+        type="button"
+        disabled={answered || submitting}
+        onClick={() => onSubmit(value)}
+        className="mt-3 rounded-lg bg-primary px-5 py-2 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+      >
+        {submitting ? "Checking..." : "Submit answer"}
+      </button>
+    </div>
+  );
+}
+
+export function McqOptions({ question, answers, feedback, submitting, onSelect }) {
+  const questionId = question.id;
+  const questionFeedback = feedback[questionId];
+
+  return (
+    <div className="space-y-3">
+      {["A", "B", "C", "D"].map((key, index) => {
+        const optionRaw = question.options?.[key];
+        const optionText =
+          typeof optionRaw === "object" && optionRaw !== null
+            ? optionRaw.text || ""
+            : optionRaw || "";
+        if (!optionText) return null;
+
+        const selected = answers[questionId] === index;
+        let stateClass = "border-gray-200 hover:border-primary/50";
+        if (questionFeedback) {
+          if (key === questionFeedback.correctAnswer) {
+            stateClass = "border-success bg-success/5";
+          } else if (selected && !questionFeedback.isCorrect) {
+            stateClass = "border-danger bg-danger/5";
+          } else {
+            stateClass = "border-gray-200 opacity-70";
+          }
+        } else if (selected) {
+          stateClass = "border-primary bg-primary/5";
+        }
+
+        return (
+          <button
+            key={key}
+            type="button"
+            disabled={!!questionFeedback || submitting}
+            onClick={() => onSelect(index, key, questionId)}
+            className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors disabled:cursor-default ${stateClass}`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-page font-bold text-ink">
+              {key}
+            </span>
+            <RichText
+              text={escapeHtml(optionText)}
+              className="min-w-0 flex-1 pt-1 text-ink"
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FeedbackPanel({ feedback }) {
+  if (!feedback) return null;
+
+  // Open-ended: not auto-graded — show sample answer and criteria
+  if (
+    feedback.openEnded ||
+    (feedback.questionType === QUESTION_TYPES.OPEN_ENDED && feedback.isCorrect === null)
+  ) {
+    const sample = feedback.sampleAnswer != null ? String(feedback.sampleAnswer).trim() : "";
+    const criteria =
+      feedback.gradingCriteria != null ? String(feedback.gradingCriteria).trim() : "";
+    return (
+      <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-5">
+        <div className="mb-2 font-semibold text-ink">
+          <i className="fas fa-clipboard-check mr-2 text-primary" />
+          Response submitted
+        </div>
+        <p className="text-sm text-gray-600">
+          Your answer was not auto-graded. Compare your response to the sample answer
+          and criteria below.
+        </p>
+        {sample && (
+          <div className="mt-3">
+            <div className="text-sm font-semibold text-ink">Sample answer</div>
+            <RichText
+              text={escapeHtml(sample)}
+              className="mt-1 text-sm whitespace-pre-wrap text-gray-600"
+            />
+          </div>
+        )}
+        {criteria && (
+          <div className="mt-3">
+            <div className="text-sm font-semibold text-ink">Grading criteria</div>
+            <RichText
+              text={escapeHtml(criteria)}
+              className="mt-1 text-sm whitespace-pre-wrap text-gray-600"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (feedback.isCorrect) {
+    return (
+      <div className="mt-5 rounded-xl border border-success/40 bg-success/5 p-5">
+        <div className="font-semibold text-success">
+          <i className="fas fa-check-circle mr-2" />
+          Correct!
+        </div>
+        {feedback.feedbackText && (
+          <RichText
+            text={escapeHtml(feedback.feedbackText)}
+            className="mt-2 text-sm text-gray-600"
+          />
+        )}
+      </div>
+    );
+  }
+
+  const isTextType =
+    feedback.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
+    feedback.questionType === QUESTION_TYPES.CALCULATION;
+  const reveal =
+    isTextType &&
+    feedback.correctOptionText != null &&
+    String(feedback.correctOptionText).trim() !== "";
+
+  return (
+    <div className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-5">
+      <div className="font-semibold text-danger">
+        <i className="fas fa-times-circle mr-2" />
+        Incorrect.
+      </div>
+      {reveal && (
+        <RichText
+          text={`The correct answer is ${escapeHtml(String(feedback.correctOptionText).trim())}.`}
+          className="mt-2 text-sm text-gray-600"
+        />
+      )}
+      {feedback.feedbackText && (
+        <RichText
+          text={escapeHtml(feedback.feedbackText)}
+          className="mt-2 text-sm text-gray-600"
+        />
+      )}
+    </div>
+  );
+}
+
+export function CompletionScreen({
+  completion,
+  achievementToasts,
+  onRestart,
+  onBackToList,
+}) {
+  const { correct, total, score, openEndedCount, newAchievements } = completion;
+  const hasPerfectBadge = score === 100 && total > 0;
+
+  return (
+    <div className="mx-auto max-w-2xl p-4 md:p-8">
+      <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
+        <i className="fas fa-trophy mb-4 text-5xl text-warning" />
+        <h2 className="text-2xl font-bold text-ink">Quiz Complete!</h2>
+        <p className="mt-1 text-muted">You have completed all questions.</p>
+
+        <div className="my-8 grid grid-cols-3 gap-4">
+          <div className="rounded-xl bg-page p-4">
+            <div className="text-sm text-muted">Correct Answers:</div>
+            <div className="text-2xl font-bold text-ink">{correct}</div>
+          </div>
+          <div className="rounded-xl bg-page p-4">
+            <div className="text-sm text-muted">Total Questions:</div>
+            <div className="text-2xl font-bold text-ink">{total}</div>
+          </div>
+          <div className="rounded-xl bg-page p-4">
+            <div className="text-sm text-muted">Score:</div>
+            <div className="text-2xl font-bold text-ink">
+              {score === null ? (openEndedCount > 0 ? "—" : "0%") : `${score}%`}
+            </div>
+          </div>
+        </div>
+
+        {(newAchievements.length > 0 || hasPerfectBadge) && (
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full bg-warning/15 px-5 py-2.5 font-semibold text-warning">
+            {newAchievements.length === 1 ? (
+              <>
+                <i className={newAchievements[0].icon || "fas fa-trophy"} />
+                <span>{newAchievements[0].title}</span>
+              </>
+            ) : newAchievements.length > 1 ? (
+              <>
+                <i className="fas fa-trophy" />
+                <span>{newAchievements.length} New Achievements!</span>
+              </>
+            ) : (
+              <>
+                <i className="fas fa-star" />
+                <span>Perfect Score!</span>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-center gap-3">
+          <button
+            type="button"
+            onClick={onRestart}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
+          >
+            <i className="fas fa-redo" /> Restart Quiz
+          </button>
+          <button
+            type="button"
+            onClick={onBackToList}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            <i className="fas fa-arrow-left" /> Back to Quizzes
+          </button>
+        </div>
+      </div>
+
+      {/* Achievement notifications */}
+      <div className="fixed top-5 right-5 z-[2000] flex flex-col gap-2.5">
+        {achievementToasts.map((achievement, index) => (
+          <div
+            key={index}
+            className={`flex max-w-sm items-center gap-3 rounded-xl px-5 py-4 text-white shadow-lg ${
+              achievement.type === "quiz_perfect"
+                ? "bg-gradient-to-br from-yellow-400 to-yellow-600"
+                : "bg-gradient-to-br from-green-500 to-green-600"
+            }`}
+          >
+            <i className={`${achievement.icon || "fas fa-trophy"} text-2xl`} />
+            <div>
+              <div className="text-sm font-semibold">Achievement Unlocked!</div>
+              <div className="font-bold">{achievement.title}</div>
+              <div className="text-xs opacity-90">{achievement.description}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

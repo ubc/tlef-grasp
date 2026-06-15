@@ -47,6 +47,8 @@ app.use(
         ],
         fontSrc: [
           "'self'",
+          // Vite inlines small font files (FontAwesome/KaTeX) as data: URIs
+          "data:",
           "https://cdnjs.cloudflare.com",
           "https://fonts.gstatic.com",
           "https://cdn.jsdelivr.net",

@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../../lib/api";
 import { getObjectId, getMaterialIcon } from "../../lib/utils";
-import Modal from "../../components/ui/Modal";
+import {
+  useDetailedObjectives,
+  useSaveObjective,
+  useDeleteObjective,
+  useUpdateGranularObjectives,
+} from "../../hooks/useObjectives";
+import { useCourseMaterials } from "../../hooks/useMaterials";
+import Modal, { ConfirmModal } from "../../components/ui/Modal";
 import SearchableSelect from "../../components/ui/SearchableSelect";
 import { useToast } from "../../components/ui/Toast";
-import { useDetailedObjectives } from "./useQuestionBankData";
 
 function GranularItem({ objective, granular, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
@@ -81,27 +85,46 @@ function GranularItem({ objective, granular, onUpdate, onDelete }) {
 
 export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onMaterialFilterChange }) {
   const showToast = useToast();
-  const queryClient = useQueryClient();
   const { objectives, isPending, isError } = useDetailedObjectives(courseId);
-
-  const materialsQuery = useQuery({
-    queryKey: ["materials", courseId],
-    queryFn: () => api.get(`/api/material/course/${courseId}`),
-    enabled: !!courseId,
-  });
-  const courseMaterials = materialsQuery.data?.materials || [];
+  const { materials: courseMaterials } = useCourseMaterials(courseId);
 
   // Modal state: { editingId: string|null }
   const [objectiveModal, setObjectiveModal] = useState(null);
   const [objectiveName, setObjectiveName] = useState("");
   const [selectedMaterialIds, setSelectedMaterialIds] = useState([]);
-  const [savingObjective, setSavingObjective] = useState(false);
   const [granularInputs, setGranularInputs] = useState({});
+  // { kind: 'objective', objectiveId } | { kind: 'granular', objective, granularId }
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const refetch = () => {
-    queryClient.invalidateQueries({ queryKey: ["detailed-objectives", courseId] });
-    queryClient.invalidateQueries({ queryKey: ["question-bank", courseId] });
-  };
+  const saveMutation = useSaveObjective(courseId, {
+    onSuccess: (data, { objectiveId }) => {
+      setObjectiveModal(null);
+      showToast(
+        `Objective ${objectiveId ? "updated" : "created"} successfully`,
+        "success"
+      );
+    },
+    onError: (error) => {
+      console.error("Error saving objective:", error);
+      showToast(error.message, "error");
+    },
+  });
+
+  const deleteMutation = useDeleteObjective(courseId, {
+    onSuccess: () => showToast("Learning objective deleted", "success"),
+    onError: (error) => {
+      console.error("Error deleting objective:", error);
+      showToast(error.message, "error");
+    },
+  });
+
+  const granularMutation = useUpdateGranularObjectives(courseId, {
+    onSuccess: (data, { successMessage }) => showToast(successMessage, "success"),
+    onError: (error) => {
+      console.error("Error updating granular objectives:", error);
+      showToast(error.message, "error");
+    },
+  });
 
   const filteredObjectives =
     materialFilter === "all"
@@ -127,7 +150,7 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
     setObjectiveModal({ editingId: objective.id });
   };
 
-  const handleSaveObjective = async () => {
+  const handleSaveObjective = () => {
     const name = objectiveName.trim();
     if (!name) {
       showToast("Please enter an objective name", "error");
@@ -137,72 +160,22 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
       showToast("Please associate at least one course material", "error");
       return;
     }
-
-    setSavingObjective(true);
-    try {
-      const editingId = objectiveModal.editingId;
-      let result;
-      if (editingId) {
-        result = await api.put(`/api/objective/${editingId}`, { name, courseId });
-        if (result.success) {
-          await api.put(`/api/objective/${editingId}/materials`, {
-            materialIds: selectedMaterialIds,
-          });
-        }
-      } else {
-        result = await api.post("/api/objective", { name, courseId });
-        if (result.success) {
-          const newId = getObjectId(result.objective);
-          await api.put(`/api/objective/${newId}/materials`, {
-            materialIds: selectedMaterialIds,
-          });
-        }
-      }
-      if (!result.success) throw new Error(result.error || "Failed to save objective");
-
-      setObjectiveModal(null);
-      showToast(`Objective ${editingId ? "updated" : "created"} successfully`, "success");
-      refetch();
-    } catch (error) {
-      console.error("Error saving objective:", error);
-      showToast(error.message, "error");
-    } finally {
-      setSavingObjective(false);
-    }
+    saveMutation.mutate({
+      objectiveId: objectiveModal.editingId,
+      name,
+      materialIds: selectedMaterialIds,
+    });
   };
 
-  const handleDeleteObjective = async (objectiveId) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this learning objective? This will also delete all associated granular objectives."
-      )
-    ) {
-      return;
-    }
-    try {
-      const data = await api.delete(`/api/objective/${objectiveId}`);
-      if (!data.success) throw new Error(data.error || "Failed to delete objective");
-      showToast("Learning objective deleted", "success");
-      refetch();
-    } catch (error) {
-      console.error("Error deleting objective:", error);
-      showToast(error.message, "error");
-    }
-  };
+  const handleDeleteObjective = (objectiveId) =>
+    setDeleteTarget({ kind: "objective", objectiveId });
 
-  const updateGranularList = async (objective, updatedList, successMessage) => {
-    try {
-      const data = await api.put(`/api/objective/${objective.id}`, {
-        granularObjectives: updatedList,
-        courseId,
-      });
-      if (!data.success) throw new Error(data.error || "Failed to update objective");
-      showToast(successMessage, "success");
-      refetch();
-    } catch (error) {
-      console.error("Error updating granular objectives:", error);
-      showToast(error.message, "error");
-    }
+  const updateGranularList = (objective, updatedList, successMessage) => {
+    granularMutation.mutate({
+      objectiveId: objective.id,
+      granularObjectives: updatedList,
+      successMessage,
+    });
   };
 
   const handleAddGranular = (objective) => {
@@ -226,11 +199,20 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
     updateGranularList(objective, updatedList, "Granular objective updated");
   };
 
-  const handleDeleteGranular = (objective, granularId) => {
-    if (!window.confirm("Are you sure you want to delete this granular objective?"))
-      return;
-    const updatedList = objective.granular.filter((g) => getObjectId(g) !== granularId);
-    updateGranularList(objective, updatedList, "Granular objective deleted");
+  const handleDeleteGranular = (objective, granularId) =>
+    setDeleteTarget({ kind: "granular", objective, granularId });
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.kind === "objective") {
+      deleteMutation.mutate(deleteTarget.objectiveId);
+    } else {
+      const { objective, granularId } = deleteTarget;
+      const updatedList = objective.granular.filter(
+        (g) => getObjectId(g) !== granularId
+      );
+      updateGranularList(objective, updatedList, "Granular objective deleted");
+    }
   };
 
   const materialOptions = [
@@ -450,11 +432,11 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
             </button>
             <button
               type="button"
-              disabled={savingObjective}
+              disabled={saveMutation.isPending}
               onClick={handleSaveObjective}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
             >
-              {savingObjective ? "Saving..." : "Save Objective"}
+              {saveMutation.isPending ? "Saving..." : "Save Objective"}
             </button>
           </>
         }
@@ -522,6 +504,24 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
           )}
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        title={
+          deleteTarget?.kind === "objective"
+            ? "Delete Learning Objective"
+            : "Delete Granular Objective"
+        }
+        message={
+          deleteTarget?.kind === "objective"
+            ? "Are you sure you want to delete this learning objective? This will also delete all associated granular objectives."
+            : "Are you sure you want to delete this granular objective?"
+        }
+        confirmLabel="Delete"
+        danger
+      />
     </div>
   );
 }

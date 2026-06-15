@@ -1,23 +1,16 @@
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAppStore } from "../stores/appStore";
+import { useSelectedCourseId } from "../stores/appStore";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import {
+  useCourseUsers,
+  useAvailableUsers,
+  useAddUserToCourse,
+  useRemoveUserFromCourse,
+} from "../hooks/useUsers";
+import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
-
-function getUserRole(user) {
-  if (user.role) return user.role;
-  const affiliation = user.affiliation || "";
-  const affiliations = Array.isArray(affiliation)
-    ? affiliation
-    : String(affiliation).split(",").map((a) => a.trim());
-  if (affiliations.includes("faculty")) return "faculty";
-  if (affiliations.includes("staff")) return "staff";
-  if (affiliations.includes("student") || affiliations.includes("affiliate"))
-    return "student";
-  return "unknown";
-}
+import { LoadingRow } from "../components/ui/states";
 
 function RoleBadge({ role }) {
   const config = {
@@ -51,15 +44,6 @@ function UserNameCell({ name, isCurrentUser }) {
   );
 }
 
-function LoadingRow({ label }) {
-  return (
-    <div className="flex items-center justify-center gap-3 py-10 text-muted">
-      <i className="fas fa-spinner fa-spin text-xl" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
 function EmptyState({ icon, message }) {
   return (
     <div className="py-10 text-center text-muted">
@@ -75,51 +59,26 @@ const tableCellClass = "border-b border-gray-100 px-4 py-3 text-sm";
 
 export default function Users() {
   const showToast = useToast();
-  const queryClient = useQueryClient();
   const { user: currentUser, isFaculty } = useCurrentUser();
-  const selectedCourse = useAppStore((state) => state.selectedCourse);
-  const courseId = selectedCourse?.id;
+  const courseId = useSelectedCourseId();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [removeTarget, setRemoveTarget] = useState(null);
 
-  const courseUsersQuery = useQuery({
-    queryKey: ["course-users", courseId],
-    queryFn: () => api.get(`/api/users/course/${courseId}`),
-    enabled: !!courseId,
-  });
-  const courseUsers = courseUsersQuery.data?.users || [];
+  const { users: courseUsers, isPending: courseUsersPending } =
+    useCourseUsers(courseId);
+  const { users: availableUsers, isPending: availableUsersPending } =
+    useAvailableUsers(courseId, { enabled: isFaculty });
 
-  const availableUsersQuery = useQuery({
-    queryKey: ["available-users", courseId],
-    queryFn: () => api.get(`/api/users/all/not-in-course/${courseId}`),
-    enabled: !!courseId && isFaculty,
-  });
-  const availableUsers = availableUsersQuery.data?.users || [];
-
-  const invalidateLists = () => {
-    queryClient.invalidateQueries({ queryKey: ["course-users", courseId] });
-    queryClient.invalidateQueries({ queryKey: ["available-users", courseId] });
-  };
-
-  const addMutation = useMutation({
-    mutationFn: (userId) => api.post(`/api/users/course/${courseId}/add`, { userId }),
-    onSuccess: () => {
-      showToast("User added to course successfully", "success");
-      invalidateLists();
-    },
+  const addMutation = useAddUserToCourse(courseId, {
+    onSuccess: () => showToast("User added to course successfully", "success"),
     onError: (error) =>
       showToast(error.message || "Failed to add user to course", "error"),
   });
 
-  const removeMutation = useMutation({
-    mutationFn: (userId) =>
-      api.delete(`/api/users/course/${courseId}/remove/${userId}`),
-    onSuccess: () => {
-      showToast("User removed from course successfully", "success");
-      invalidateLists();
-    },
+  const removeMutation = useRemoveUserFromCourse(courseId, {
+    onSuccess: () => showToast("User removed from course successfully", "success"),
     onError: (error) =>
       showToast(error.message || "Failed to remove user from course", "error"),
   });
@@ -143,7 +102,7 @@ export default function Users() {
   const currentUserId = String(currentUser?._id || currentUser?.id || "");
 
   return (
-    <div className="mx-auto max-w-6xl p-8">
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
       <h1 className="mb-6 text-2xl font-bold text-ink">Course Users</h1>
 
       {/* Users in course */}
@@ -153,7 +112,7 @@ export default function Users() {
           Users in Course
         </h2>
 
-        {courseUsersQuery.isPending ? (
+        {courseUsersPending ? (
           <LoadingRow label="Loading users..." />
         ) : courseUsers.length === 0 ? (
           <EmptyState icon="fa-users" message="No users found in this course." />
@@ -259,7 +218,7 @@ export default function Users() {
             </div>
           </div>
 
-          {availableUsersQuery.isPending ? (
+          {availableUsersPending ? (
             <LoadingRow label="Loading available users..." />
           ) : filteredUsers.length === 0 ? (
             <EmptyState icon="fa-user-check" message="No users available to add." />

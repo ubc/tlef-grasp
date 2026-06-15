@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAppStore } from "../stores/appStore";
+import { useMyAchievements } from "../hooks/useAchievements";
+import { useSelectedCourseId } from "../stores/appStore";
+import { formatDate } from "../lib/format";
 
 const ACHIEVEMENT_DISPLAY = {
   quiz_completed: {
@@ -28,15 +28,6 @@ const FILTER_TABS = [
   { id: "quiz_perfect", label: "Perfect Scores", icon: "fa-star" },
 ];
 
-function formatDate(dateString) {
-  if (!dateString) return "";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function StatCard({ icon, iconClasses, value, label }) {
   return (
     <div className="flex items-center gap-4 rounded-2xl bg-white p-5 shadow-sm">
@@ -54,19 +45,14 @@ function StatCard({ icon, iconClasses, value, label }) {
 }
 
 export default function Achievements() {
-  const selectedCourse = useAppStore((state) => state.selectedCourse);
-  const courseId = selectedCourse?.id;
+  const courseId = useSelectedCourseId();
   const [filter, setFilter] = useState("all");
 
-  const achievementsQuery = useQuery({
-    queryKey: ["achievements", "my", courseId],
-    queryFn: () =>
-      api.get(`/api/achievement/my${courseId ? `?courseId=${courseId}` : ""}`),
-  });
+  const achievementsQuery = useMyAchievements(courseId);
 
   const achievements = useMemo(
     () =>
-      (achievementsQuery.data?.data || []).map((achievement) => {
+      achievementsQuery.achievements.map((achievement) => {
         const displayInfo =
           ACHIEVEMENT_DISPLAY[achievement.type] || {
             icon: "fas fa-trophy",
@@ -86,7 +72,7 @@ export default function Achievements() {
           score: achievement.score,
         };
       }),
-    [achievementsQuery.data]
+    [achievementsQuery.achievements]
   );
 
   const filtered =
@@ -100,7 +86,7 @@ export default function Achievements() {
   const perfectCount = achievements.filter((a) => a.type === "quiz_perfect").length;
 
   return (
-    <div className="mx-auto max-w-6xl p-8">
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
       <h1 className="mb-6 text-2xl font-bold text-ink">My Achievements</h1>
 
       {/* Stats */}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { normalizeQuestionTypeKey, QUESTION_TYPE_CHIP_CLASSES } from "../../lib/utils";
+import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 
@@ -19,121 +19,121 @@ function TypeChip({ type, label }) {
   );
 }
 
+// API question -> editable form state, per question type.
+function buildFormState(question) {
+  const qType = normalizeQuestionTypeKey(question.questionType || question.type);
+
+  if (qType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+    const canonical =
+      question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
+    let acceptable = Array.isArray(question.acceptableAnswers)
+      ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
+      : [];
+    if (acceptable.length === 0 && canonical) acceptable = [canonical];
+    return {
+      questionType: qType,
+      title: question.title || question.stem || "",
+      stem: question.stem || question.title || "",
+      correctAnswer: canonical,
+      acceptableAnswers: acceptable.join("\n"),
+    };
+  }
+
+  if (qType === QUESTION_TYPES.CALCULATION) {
+    const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
+    const dec =
+      question.calculationAnswerDecimals !== undefined &&
+      question.calculationAnswerDecimals !== null
+        ? parseInt(question.calculationAnswerDecimals, 10)
+        : 2;
+    return {
+      questionType: qType,
+      title: question.title || "",
+      stem: question.stem || "",
+      calculationFormula: (question.calculationFormula || "").trim(),
+      calculationVariables: JSON.stringify(
+        Array.isArray(question.calculationVariables)
+          ? question.calculationVariables
+          : [],
+        null,
+        2
+      ),
+      calculationAnswerDecimals: Number.isFinite(dec) ? String(dec) : "2",
+      calculationAnswerTolerancePercent: Number.isFinite(rawTol)
+        ? String(Math.max(0, Math.min(100, rawTol)))
+        : "",
+    };
+  }
+
+  if (qType === QUESTION_TYPES.OPEN_ENDED) {
+    return {
+      questionType: qType,
+      title: question.title || "",
+      stem: question.stem || question.title || "",
+      openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
+      openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
+    };
+  }
+
+  const optionKeys = ["A", "B", "C", "D"];
+  const options = optionKeys.map((key) => {
+    const opt = question.options?.[key];
+    if (typeof opt === "string") return { id: key, text: opt, feedback: "" };
+    if (opt && typeof opt === "object") {
+      return {
+        id: opt.id || key,
+        text: opt.text || String(opt),
+        feedback: String(opt.feedback || ""),
+      };
+    }
+    return { id: key, text: String(opt || ""), feedback: "" };
+  });
+  let correct = question.correctAnswer;
+  if (typeof correct === "number") {
+    correct = optionKeys[correct] || "A";
+  } else if (typeof correct === "string") {
+    correct = correct.toUpperCase();
+  } else {
+    correct = "A";
+  }
+  return {
+    questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+    title: question.title || question.stem || "",
+    stem: question.stem || question.title || "",
+    options,
+    correctAnswer: correct,
+    originalOptions: question.options || {},
+  };
+}
+
 // View/edit modal for a single question, loaded fresh from the API.
-export default function QuestionEditModal({ questionId, canEdit, onClose, onSaved }) {
+export default function QuestionEditModal({ questionId, canEdit, courseId, onClose }) {
   const showToast = useToast();
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
-  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    api
-      .get(`/api/question/${questionId}`)
-      .then((data) => {
-        if (cancelled) return;
-        if (!data.success || !data.question) throw new Error("Question not found");
-        const question = data.question;
-        const qType = normalizeQuestionTypeKey(question.questionType || question.type);
+  const { question, isPending: loading, error } = useQuestionDetail(questionId);
+  const loadError = error?.message || null;
 
-        if (qType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-          const canonical =
-            question.correctAnswer != null ? String(question.correctAnswer).trim() : "";
-          let acceptable = Array.isArray(question.acceptableAnswers)
-            ? question.acceptableAnswers.map((a) => String(a).trim()).filter(Boolean)
-            : [];
-          if (acceptable.length === 0 && canonical) acceptable = [canonical];
-          setForm({
-            questionType: qType,
-            title: question.title || question.stem || "",
-            stem: question.stem || question.title || "",
-            correctAnswer: canonical,
-            acceptableAnswers: acceptable.join("\n"),
-          });
-        } else if (qType === QUESTION_TYPES.CALCULATION) {
-          const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
-          const dec =
-            question.calculationAnswerDecimals !== undefined &&
-            question.calculationAnswerDecimals !== null
-              ? parseInt(question.calculationAnswerDecimals, 10)
-              : 2;
-          setForm({
-            questionType: qType,
-            title: question.title || "",
-            stem: question.stem || "",
-            calculationFormula: (question.calculationFormula || "").trim(),
-            calculationVariables: JSON.stringify(
-              Array.isArray(question.calculationVariables)
-                ? question.calculationVariables
-                : [],
-              null,
-              2
-            ),
-            calculationAnswerDecimals: Number.isFinite(dec) ? String(dec) : "2",
-            calculationAnswerTolerancePercent: Number.isFinite(rawTol)
-              ? String(Math.max(0, Math.min(100, rawTol)))
-              : "",
-          });
-        } else if (qType === QUESTION_TYPES.OPEN_ENDED) {
-          setForm({
-            questionType: qType,
-            title: question.title || "",
-            stem: question.stem || question.title || "",
-            openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
-            openEndedGradingCriteria: String(
-              question.openEndedGradingCriteria || ""
-            ).trim(),
-          });
-        } else {
-          const optionKeys = ["A", "B", "C", "D"];
-          const options = optionKeys.map((key) => {
-            const opt = question.options?.[key];
-            if (typeof opt === "string") return { id: key, text: opt, feedback: "" };
-            if (opt && typeof opt === "object") {
-              return {
-                id: opt.id || key,
-                text: opt.text || String(opt),
-                feedback: String(opt.feedback || ""),
-              };
-            }
-            return { id: key, text: String(opt || ""), feedback: "" };
-          });
-          let correct = question.correctAnswer;
-          if (typeof correct === "number") {
-            correct = optionKeys[correct] || "A";
-          } else if (typeof correct === "string") {
-            correct = correct.toUpperCase();
-          } else {
-            correct = "A";
-          }
-          setForm({
-            questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-            title: question.title || question.stem || "",
-            stem: question.stem || question.title || "",
-            options,
-            correctAnswer: correct,
-            originalOptions: question.options || {},
-          });
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(error.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [questionId]);
+  useEffect(() => {
+    if (question) setForm(buildFormState(question));
+  }, [question]);
+
+  const updateMutation = useUpdateQuestion(courseId, {
+    onSuccess: () => {
+      showToast("Question updated successfully", "success");
+      onClose();
+    },
+    onError: (err) => {
+      console.error("Error saving question:", err);
+      showToast(err.message || "Failed to save question", "error");
+    },
+  });
+  const saving = updateMutation.isPending;
 
   const set = (field) => (event) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const title = form.title.trim();
     const stem = form.stem.trim();
     let updateData;
@@ -258,18 +258,7 @@ export default function QuestionEditModal({ questionId, canEdit, onClose, onSave
       };
     }
 
-    setSaving(true);
-    try {
-      await api.put(`/api/question/${questionId}`, updateData);
-      showToast("Question updated successfully", "success");
-      onSaved?.();
-      onClose();
-    } catch (error) {
-      console.error("Error saving question:", error);
-      showToast(error.message || "Failed to save question", "error");
-    } finally {
-      setSaving(false);
-    }
+    updateMutation.mutate({ questionId, updates: updateData });
   };
 
   const readOnly = !canEdit;
@@ -302,7 +291,7 @@ export default function QuestionEditModal({ questionId, canEdit, onClose, onSave
         </>
       }
     >
-      {loading ? (
+      {loading || (!form && !loadError) ? (
         <div className="py-10 text-center text-muted">
           <i className="fas fa-spinner fa-spin mb-2 text-2xl" />
           <p>Loading question...</p>

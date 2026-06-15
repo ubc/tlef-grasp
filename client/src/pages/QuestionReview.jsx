@@ -159,7 +159,7 @@ export default function QuestionReview() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl p-8">
+    <div className="mx-auto max-w-7xl p-4 md:p-8">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <button

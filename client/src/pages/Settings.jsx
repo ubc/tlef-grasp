@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAppStore } from "../stores/appStore";
+import { useSelectedCourseId } from "../stores/appStore";
+import {
+  useCourseSettings,
+  useSettingsDefaults,
+  useEnrollmentCode,
+  useSaveCourseSettings,
+  useRegenerateEnrollmentCode,
+} from "../hooks/useCourseSettings";
 import { useToast } from "../components/ui/Toast";
+import { ConfirmModal } from "../components/ui/Modal";
 import {
   QUESTION_TYPES,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
@@ -70,9 +76,7 @@ const secondaryBtnClass =
 
 export default function Settings() {
   const showToast = useToast();
-  const queryClient = useQueryClient();
-  const selectedCourse = useAppStore((state) => state.selectedCourse);
-  const courseId = selectedCourse?.id;
+  const courseId = useSelectedCourseId();
 
   const [activeTab, setActiveTab] = useState("general");
   const [bloomPrimary, setBloomPrimary] = useState(() =>
@@ -86,28 +90,14 @@ export default function Settings() {
     objectiveGenerationManual: "",
   });
 
-  const settingsQuery = useQuery({
-    queryKey: ["course-settings", courseId],
-    queryFn: () => api.get(`/api/courses/${courseId}/settings`),
-    enabled: !!courseId,
-  });
-
-  const defaultsQuery = useQuery({
-    queryKey: ["course-settings-defaults"],
-    queryFn: () => api.get("/api/courses/defaults/settings"),
-  });
-  const defaultPrompts = defaultsQuery.data?.defaults?.prompts || {};
-
-  const codeQuery = useQuery({
-    queryKey: ["enrollment-code", courseId],
-    queryFn: () => api.get(`/api/courses/${courseId}/enrollment-code`),
-    enabled: !!courseId,
-  });
-  const enrollmentCode = codeQuery.data?.enrollmentCode || "";
+  const { settings } = useCourseSettings(courseId);
+  const { defaults } = useSettingsDefaults();
+  const defaultPrompts = defaults?.prompts || {};
+  const codeQuery = useEnrollmentCode(courseId);
+  const enrollmentCode = codeQuery.enrollmentCode;
 
   // Hydrate the form when settings arrive
   useEffect(() => {
-    const settings = settingsQuery.data?.settings;
     if (!settings) return;
     if (settings.prompts) {
       setPrompts({
@@ -126,24 +116,16 @@ export default function Settings() {
         return next;
       });
     }
-  }, [settingsQuery.data]);
+  }, [settings]);
 
-  const saveMutation = useMutation({
-    mutationFn: (payload) => api.put(`/api/courses/${courseId}/settings`, payload),
-    onSuccess: () => {
-      showToast("Settings saved successfully", "success");
-      queryClient.invalidateQueries({ queryKey: ["course-settings", courseId] });
-    },
+  const saveMutation = useSaveCourseSettings(courseId, {
+    onSuccess: () => showToast("Settings saved successfully", "success"),
     onError: (error) => showToast(error.message || "Error saving settings", "error"),
   });
 
-  const regenerateMutation = useMutation({
-    mutationFn: () =>
-      api.post(`/api/courses/${courseId}/regenerate-enrollment-code`, {}),
-    onSuccess: (data) => {
-      showToast(data.message || "Enrollment code regenerated", "success");
-      queryClient.invalidateQueries({ queryKey: ["enrollment-code", courseId] });
-    },
+  const regenerateMutation = useRegenerateEnrollmentCode(courseId, {
+    onSuccess: (data) =>
+      showToast(data.message || "Enrollment code regenerated", "success"),
     onError: (error) =>
       showToast(error.message || "Failed to regenerate code", "error"),
   });
@@ -188,19 +170,10 @@ export default function Settings() {
     }
   };
 
-  const handleRegenerate = () => {
-    if (
-      !window.confirm(
-        "Regenerate the enrollment code? The old code will stop working for new enrollments."
-      )
-    ) {
-      return;
-    }
-    regenerateMutation.mutate();
-  };
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
+    <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
         <button
@@ -254,7 +227,8 @@ export default function Settings() {
               override is set.
             </p>
 
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-200 text-muted">
                   <th className="py-2 pr-4 font-semibold">Bloom's Level</th>
@@ -297,6 +271,7 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             <div className="mt-4">
               <button type="button" onClick={handleResetBloom} className={secondaryBtnClass}>
@@ -343,7 +318,7 @@ export default function Settings() {
 
             <button
               type="button"
-              onClick={handleRegenerate}
+              onClick={() => setConfirmRegenerate(true)}
               disabled={regenerateMutation.isPending}
               className={`${secondaryBtnClass} mt-4 border-danger/40 text-danger hover:bg-danger/5`}
             >
@@ -423,6 +398,16 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      <ConfirmModal
+        open={confirmRegenerate}
+        onClose={() => setConfirmRegenerate(false)}
+        onConfirm={() => regenerateMutation.mutate()}
+        title="Regenerate Enrollment Code"
+        message="Regenerate the enrollment code? The old code will stop working for new enrollments."
+        confirmLabel="Regenerate"
+        danger
+      />
     </div>
   );
 }

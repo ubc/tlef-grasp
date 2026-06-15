@@ -109,7 +109,7 @@ function CourseSelector() {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }) {
   const { isStudent, isFaculty } = useCurrentUser();
   const { currentRole, setCurrentRole, selectedCourse, setSelectedCourse } =
     useAppStore();
@@ -135,13 +135,27 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="fixed top-0 left-0 z-[1000] h-screen w-[280px] overflow-y-auto bg-gradient-to-b from-sidebar-from to-sidebar-to text-white shadow-[2px_0_10px_rgba(0,0,0,0.1)]">
+    <aside
+      className={`fixed top-0 left-0 z-[1000] h-screen w-[280px] overflow-y-auto bg-gradient-to-b from-sidebar-from to-sidebar-to text-white shadow-[2px_0_10px_rgba(0,0,0,0.1)] transition-transform duration-300 lg:translate-x-0 ${
+        open ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
       <nav className="flex h-full flex-col">
         {/* Logo */}
         <div className="mb-5 border-b border-white/10 px-[25px] pt-[30px] pb-[25px]">
-          <div className="flex items-center gap-3 text-2xl font-bold tracking-[-0.5px]">
-            <i className="fas fa-graduation-cap text-[28px] text-primary" />
-            <span>GRASP</span>
+          <div className="flex items-center justify-between gap-3 text-2xl font-bold tracking-[-0.5px]">
+            <div className="flex items-center gap-3">
+              <i className="fas fa-graduation-cap text-[28px] text-[#5dade2]" />
+              <span>GRASP</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close navigation menu"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 lg:hidden"
+            >
+              <i className="fas fa-times text-lg" />
+            </button>
           </div>
         </div>
 
@@ -219,10 +233,11 @@ export default function Sidebar() {
               </span>
             )}
           </div>
+          {/* Brighter red than the danger token — it sits on the dark sidebar */}
           <button
             type="button"
             onClick={handleSignOut}
-            className="mt-[15px] flex w-full items-center justify-center gap-2 rounded-lg border border-danger/40 bg-danger/20 px-4 py-3 text-sm font-medium text-danger transition-all hover:-translate-y-px hover:border-danger/60 hover:bg-danger/30"
+            className="mt-[15px] flex w-full items-center justify-center gap-2 rounded-lg border border-[#e74c3c]/50 bg-[#e74c3c]/20 px-4 py-3 text-sm font-medium text-[#f5b7b1] transition-all hover:-translate-y-px hover:border-[#e74c3c]/70 hover:bg-[#e74c3c]/30"
           >
             <i className="fas fa-sign-out-alt" />
             <span>Sign Out</span>

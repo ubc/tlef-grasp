@@ -18,9 +18,9 @@ export default function Landing() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#667eea] to-[#764ba2] p-5">
       <div className="w-full max-w-[600px]">
-        <div className="relative overflow-hidden rounded-[20px] bg-white p-10 text-center shadow-[0_20px_40px_rgba(0,0,0,0.1)]">
+        <div className="relative overflow-hidden rounded-[20px] bg-white p-6 text-center shadow-[0_20px_40px_rgba(0,0,0,0.1)] sm:p-10">
           <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#4facfe] to-[#00f2fe]" />
-          <h1 className="text-3xl font-bold text-ink">Welcome to GRASP</h1>
+          <h1 className="text-2xl font-bold text-ink sm:text-3xl">Welcome to GRASP</h1>
           {!isLoading && (
             <a
               href="/auth/ubcshib"
