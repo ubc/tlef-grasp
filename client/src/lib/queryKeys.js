@@ -33,4 +33,15 @@ export const queryKeys = {
   courseSettings: (courseId) => ["course-settings", courseId],
   settingsDefaults: ["course-settings-defaults"],
   enrollmentCode: (courseId) => ["enrollment-code", courseId],
+
+  // UBC course-section integration
+  ubcCampuses: ["ubc-campuses"],
+  ubcAcademicPeriods: (campus) => ["ubc-academic-periods", campus],
+  ubcInstructorSections: (academicPeriod) => [
+    "ubc-instructor-sections",
+    academicPeriod,
+  ],
+  course: (courseId) => ["course", courseId],
+  courseSections: (courseId) => ["course-sections", courseId],
+  myCourseSections: (courseId) => ["my-course-sections", courseId],
 };

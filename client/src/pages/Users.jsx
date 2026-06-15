@@ -7,6 +7,7 @@ import {
   useAddUserToCourse,
   useRemoveUserFromCourse,
 } from "../hooks/useUsers";
+import { useCourseSections } from "../hooks/useSections";
 import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -64,10 +65,25 @@ export default function Users() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
   const [removeTarget, setRemoveTarget] = useState(null);
 
   const { users: courseUsers, isPending: courseUsersPending } =
     useCourseUsers(courseId);
+  const { sections: courseSections } = useCourseSections(courseId);
+
+  // Section id -> readable label, for badges and the filter dropdown.
+  const sectionName = (sectionId) => {
+    const match = courseSections.find((s) => s.sectionId === sectionId);
+    return match ? match.sectionNumber || sectionId : sectionId;
+  };
+
+  const visibleCourseUsers =
+    sectionFilter === "all"
+      ? courseUsers
+      : courseUsers.filter(
+          (user) => Array.isArray(user.sections) && user.sections.includes(sectionFilter)
+        );
   const { users: availableUsers, isPending: availableUsersPending } =
     useAvailableUsers(courseId, { enabled: isFaculty });
 
@@ -107,15 +123,39 @@ export default function Users() {
 
       {/* Users in course */}
       <section className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-ink">
-          <i className="fas fa-users mr-2 text-primary" />
-          Users in Course
-        </h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-ink">
+            <i className="fas fa-users mr-2 text-primary" />
+            Users in Course
+          </h2>
+          {courseSections.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="section-filter" className="text-sm font-medium text-muted">
+                Section:
+              </label>
+              <select
+                id="section-filter"
+                value={sectionFilter}
+                onChange={(event) => setSectionFilter(event.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              >
+                <option value="all">All Sections</option>
+                {courseSections.map((section) => (
+                  <option key={section.sectionId} value={section.sectionId}>
+                    {section.sectionNumber || section.sectionId}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
 
         {courseUsersPending ? (
           <LoadingRow label="Loading users..." />
         ) : courseUsers.length === 0 ? (
           <EmptyState icon="fa-users" message="No users found in this course." />
+        ) : visibleCourseUsers.length === 0 ? (
+          <EmptyState icon="fa-filter" message="No users in the selected section." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -124,11 +164,14 @@ export default function Users() {
                   <th className={tableHeadClass}>Name</th>
                   <th className={tableHeadClass}>Email</th>
                   <th className={tableHeadClass}>Role</th>
+                  {courseSections.length > 0 && (
+                    <th className={tableHeadClass}>Sections</th>
+                  )}
                   <th className={`${tableHeadClass} w-32`}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {courseUsers.map((user) => {
+                {visibleCourseUsers.map((user) => {
                   const userId = String(
                     user.userId || user._id || user.user?._id || ""
                   );
@@ -150,6 +193,24 @@ export default function Users() {
                       <td className={tableCellClass}>
                         <RoleBadge role={role} />
                       </td>
+                      {courseSections.length > 0 && (
+                        <td className={tableCellClass}>
+                          {Array.isArray(user.sections) && user.sections.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {user.sections.map((sectionId) => (
+                                <span
+                                  key={sectionId}
+                                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
+                                >
+                                  <i className="fas fa-book" /> {sectionName(sectionId)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted">-</span>
+                          )}
+                        </td>
+                      )}
                       <td className={tableCellClass}>
                         {isFaculty && !isCurrentUser ? (
                           <button

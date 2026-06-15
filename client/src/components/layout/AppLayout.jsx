@@ -10,6 +10,7 @@ const PAGE_TITLES = {
   "/question-review": "Question Review",
   "/quizzes": "Quizzes",
   "/quiz-scores": "Quiz Scores",
+  "/my-sections": "My Sections",
   "/users": "Users",
   "/settings": "Settings",
   "/student-dashboard": "Dashboard",

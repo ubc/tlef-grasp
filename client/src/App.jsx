@@ -14,6 +14,7 @@ const QuestionBank = lazy(() => import("./pages/QuestionBank"));
 const QuestionReview = lazy(() => import("./pages/QuestionReview"));
 const Quizzes = lazy(() => import("./pages/Quizzes"));
 const QuizScores = lazy(() => import("./pages/QuizScores"));
+const MySections = lazy(() => import("./pages/MySections"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
@@ -55,6 +56,7 @@ export default function App() {
                 <Route path="/question-review" element={<QuestionReview />} />
                 <Route path="/quizzes" element={<Quizzes />} />
                 <Route path="/quiz-scores" element={<QuizScores />} />
+                <Route path="/my-sections" element={<MySections />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
 

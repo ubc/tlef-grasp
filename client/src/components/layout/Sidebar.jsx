@@ -13,6 +13,7 @@ const INSTRUCTOR_ITEMS = [
   { to: "/question-bank", icon: "fa-book", label: "Question Bank" },
   { to: "/quizzes", icon: "fa-clipboard-list", label: "Quizzes" },
   { to: "/quiz-scores", icon: "fa-chart-bar", label: "Quiz Scores" },
+  { to: "/my-sections", icon: "fa-layer-group", label: "My Sections" },
 ];
 
 const STUDENT_ITEMS = [
