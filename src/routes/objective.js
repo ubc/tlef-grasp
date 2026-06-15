@@ -13,6 +13,13 @@ const objectiveController = require('../controllers/objective');
 router.get('/', objectiveController.getAllObjectives);
 
 /**
+ * GET /api/objective/detailed?courseId=...
+ * Objectives with granular sub-objectives and material sourceIds in one
+ * response (batched; avoids two follow-up requests per objective).
+ */
+router.get('/detailed', objectiveController.getDetailedObjectivesHandler);
+
+/**
  * GET /api/objective/:id/granular
  * Get granular objectives for a parent objective
  * Query params: courseId (optional, will inherit from parent if not provided)

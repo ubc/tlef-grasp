@@ -12,3 +12,8 @@ local_cache
 *.traineddata
 
 .claude
+
+# Cypress artifacts
+client/cypress/screenshots
+client/cypress/videos
+client/cypress/downloads

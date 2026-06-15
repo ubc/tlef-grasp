@@ -1,5 +1,6 @@
 require("dotenv").config();
 const path = require("path");
+const fs = require("fs");
 
 const express = require("express");
 const helmet = require("helmet");
@@ -20,8 +21,7 @@ const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
 
 const { getUserRole, ROLES } = require("./utils/auth");
-const { ensureAuthenticated } = require('passport-ubcshib');
-const { ensureAuthenticatedAPI, requireRole, requirePageRole } = require('./middleware/auth');
+const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -48,6 +48,8 @@ app.use(
         ],
         fontSrc: [
           "'self'",
+          // Vite inlines small font files (FontAwesome/KaTeX) as data: URIs
+          "data:",
           "https://cdnjs.cloudflare.com",
           "https://fonts.gstatic.com",
           "https://cdn.jsdelivr.net",
@@ -66,8 +68,11 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(dbMiddleware);
 
-// Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, "../public")));
+// Serve the built React client (client/dist). In development the client is
+// served by Vite on port 5173 with /api and /auth proxied to this server.
+const clientDistPath = path.join(__dirname, "../client/dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
+app.use(express.static(clientDistPath));
 
 // Authentication routes (no /api prefix as they serve HTML too)
 // Shibboleth SP endpoint - traditional Shibboleth callback path
@@ -83,83 +88,8 @@ app.post(
 
 app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);
 
-// Page routes
-app.get("/", (req, res) => {
-  // If authenticated, redirect to appropriate page
-  if (req.isAuthenticated()) {
-    res.redirect('/onboarding');
-  } else {
-    // Show welcome page
-    res.sendFile(path.join(__dirname, "../public/index.html"));
-  }
-});
-
-// Onboarding - all authenticated users can access
-app.get("/onboarding", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/onboarding.html"));
-});
-
-// Faculty and Staff pages (require at least staff role)
-app.get("/dashboard", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/dashboard.html"));
-});
-
-app.get("/question-generation", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-generation.html"));
-});
-
-app.get("/course-materials", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/course-materials.html"));
-});
-
-app.get("/question-bank", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-bank.html"));
-});
-
-app.get("/quizzes", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/quizzes.html"));
-});
-
-app.get("/question-review", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/question-review.html"));
-});
-
-app.get("/quiz-scores", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/quiz-scores.html"));
-});
-
-// Users page - faculty only
-app.get("/users", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/users.html"));
-});
-
-// Settings - all authenticated users
-app.get("/settings", ensureAuthenticated(), requirePageRole(ROLES.FACULTY), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/settings.html"));
-});
-
-// My Sections - staff and above
-app.get("/my-sections", ensureAuthenticated(), requirePageRole(ROLES.STAFF), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/my-sections.html"));
-});
-
-// Student pages - all authenticated users (students see their view, others can preview)
-app.get("/student-dashboard", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/student-dashboard.html"));
-});
-
-
-app.get("/quiz", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/quiz.html"));
-});
-
-app.get("/quiz-summary", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/quiz-summary.html"));
-});
-
-app.get("/achievements", ensureAuthenticated(), requirePageRole(ROLES.STUDENT), (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/achievements.html"));
-});
+// Page routes are handled client-side by the React SPA (see fallback below).
+// Role-based access is enforced on the API routes and mirrored by client guards.
 
 // API endpoints
 // Question generation, materials - require at least staff role
@@ -216,6 +146,19 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
       error: "Failed to fetch user information",
     });
   }
+});
+
+// SPA fallback: serve the React app for any non-API GET request
+app.use((req, res, next) => {
+  if (
+    req.method === "GET" &&
+    !req.path.startsWith("/api/") &&
+    !req.path.startsWith("/auth") &&
+    fs.existsSync(clientIndexPath)
+  ) {
+    return res.sendFile(clientIndexPath);
+  }
+  next();
 });
 
 // Final 404 handler for any requests that do not match a route

@@ -9,6 +9,28 @@ const { ROLES } = require("../utils/auth");
  * Get all quizzes for a course
  */
 router.get("/course/:courseId", quizController.getQuizzesByCourseHandler);
+
+/**
+ * GET /api/quiz/course/:courseId/with-questions
+ * All quizzes for a course with their questions attached (staff and above —
+ * the instructor view includes correct answers).
+ */
+router.get(
+  "/course/:courseId/with-questions",
+  requireRole(ROLES.STAFF),
+  quizController.getQuizzesByCourseWithQuestionsHandler
+);
+
+/**
+ * GET /api/quiz/course/:courseId/student-overview
+ * Published, currently-open quizzes with the student's personalized question
+ * counts. No question content or answers are included.
+ */
+router.get(
+  "/course/:courseId/student-overview",
+  quizController.getStudentQuizOverviewHandler
+);
+
 router.get("/my-scores", quizController.getMyScoresHandler);
 
 /**

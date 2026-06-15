@@ -1,0 +1,33 @@
+// Browser-side mirror of src/constants/app-constants.js
+// Keep in sync with QUESTION_TYPES and DEFAULT_BLOOM_TYPE_PREFERENCES in that file.
+
+export const QUESTION_TYPES = {
+  MULTIPLE_CHOICE: "multiple-choice",
+  FILL_IN_THE_BLANK: "fill-in-the-blank",
+  CALCULATION: "calculation",
+  OPEN_ENDED: "open-ended",
+};
+
+export const DEFAULT_BLOOM_TYPE_PREFERENCES = {
+  Remember: [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.MULTIPLE_CHOICE],
+  Understand: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Apply: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Analyze: [QUESTION_TYPES.MULTIPLE_CHOICE, QUESTION_TYPES.FILL_IN_THE_BLANK],
+  Evaluate: [QUESTION_TYPES.CALCULATION, QUESTION_TYPES.MULTIPLE_CHOICE],
+  Create: [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
+};
+
+export const USER_ROLES = {
+  FACULTY: "faculty",
+  STAFF: "staff",
+  STUDENT: "student",
+};
+
+export const BLOOM_LEVELS = [
+  "Remember",
+  "Understand",
+  "Apply",
+  "Analyze",
+  "Evaluate",
+  "Create",
+];

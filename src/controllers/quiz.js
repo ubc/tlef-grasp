@@ -20,6 +20,64 @@ const getQuizzesByCourseHandler = async (req, res) => {
 };
 
 /**
+ * Get all quizzes for a course with their questions (instructor view).
+ * Single round trip replacing one questions request per quiz.
+ */
+const getQuizzesByCourseWithQuestionsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const quizzes = await quizService.getQuizzesByCourseWithQuestions(courseId);
+    res.json({ success: true, quizzes });
+  } catch (error) {
+    console.error("Error fetching quizzes with questions:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Student quiz overview: published, currently-open quizzes with this
+ * student's personalized question counts (no question content or answers).
+ */
+const getStudentQuizOverviewHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+
+    const quizzes = await quizService.getQuizzesByCourse(courseId);
+    const now = new Date();
+    const active = quizzes.filter((quiz) => {
+      if (quiz.published !== true) return false;
+      if (quiz.releaseDate && new Date(quiz.releaseDate) > now) return false;
+      if (quiz.expireDate && new Date(quiz.expireDate) < now) return false;
+      return true;
+    });
+
+    const overview = await Promise.all(
+      active.map(async (quiz) => {
+        let questions = [];
+        try {
+          questions = await quizService.getQuizQuestionsForStudent(quiz._id.toString(), userId);
+        } catch (err) {
+          console.error(`Error selecting questions for quiz ${quiz._id}:`, err);
+        }
+        return {
+          ...quiz,
+          questionCount: questions.length,
+          phase1Count: questions.filter((q) => q.phase === 1).length,
+          phase2Count: questions.filter((q) => q.phase === 2).length,
+          phase3Count: questions.filter((q) => q.phase === 3).length,
+        };
+      })
+    );
+
+    res.json({ success: true, quizzes: overview });
+  } catch (error) {
+    console.error("Error building student quiz overview:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Get a quiz by ID
  */
 const getQuizByIdHandler = async (req, res) => {
@@ -848,6 +906,8 @@ const getMyScoresHandler = async (req, res) => {
 
 module.exports = {
   getQuizzesByCourseHandler,
+  getQuizzesByCourseWithQuestionsHandler,
+  getStudentQuizOverviewHandler,
   getMyScoresHandler,
   getQuizByIdHandler,
   createQuizHandler,
