@@ -6,6 +6,7 @@ import {
   useMyCourseSections,
   useAddSections,
   useRecycleSection,
+  useSyncSectionStudents,
 } from "../hooks/useSections";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -42,13 +43,21 @@ export default function MySections() {
   const [syncStudents, setSyncStudents] = useState(false);
   const [recycleTarget, setRecycleTarget] = useState(null);
 
+  // If sections are already linked, infer campus/period/course from them — no need to ask.
+  const inferredPeriod = mySections.length > 0 ? mySections[0].academicPeriod : null;
+  const inferredPeriodName =
+    mySections.length > 0
+      ? mySections[0].academicPeriodName || prettyPeriod(mySections[0])
+      : null;
+  const effectivePeriod = inferredPeriod || period;
+
   const { periods } = useAcademicPeriods(course?.campus);
   const { sections: instructorSections, isPending: instructorLoading } =
-    useInstructorSections(period);
+    useInstructorSections(effectivePeriod);
 
   const periodName = useMemo(
-    () => periods.find((p) => p.key === period)?.title || "",
-    [periods, period]
+    () => inferredPeriodName || periods.find((p) => p.key === period)?.title || "",
+    [inferredPeriodName, periods, period]
   );
 
   // Sections selectable to add: same UBC course as this shell, not already added.
@@ -82,6 +91,16 @@ export default function MySections() {
       showToast(error.message || "Failed to recycle section", "error"),
   });
 
+  const syncMutation = useSyncSectionStudents(courseId, {
+    onSuccess: (data) =>
+      showToast(
+        `Students synced${data?.syncResult?.added != null ? ` — ${data.syncResult.added} added` : ""}.`,
+        "success"
+      ),
+    onError: (error) =>
+      showToast(error.message || "Failed to sync students", "error"),
+  });
+
   const toggleSection = (key) =>
     setSelectedIds((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
@@ -89,10 +108,10 @@ export default function MySections() {
 
   const handleAdd = (event) => {
     event.preventDefault();
-    if (!period || selectedIds.length === 0) return;
+    if (!effectivePeriod || selectedIds.length === 0) return;
     addMutation.mutate({
       sectionIds: selectedIds,
-      academicPeriod: period,
+      academicPeriod: effectivePeriod,
       academicPeriodName: periodName,
       syncStudents,
     });
@@ -123,97 +142,130 @@ export default function MySections() {
       </p>
 
       {/* Add sections */}
-      <section className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-ink">
-          <i className="fas fa-plus mr-2 text-primary" />
-          Add sections
-        </h2>
-        <form onSubmit={handleAdd} className="space-y-4">
-          <div>
-            <label
-              htmlFor="add-academic-period"
-              className="mb-1 block text-sm font-semibold text-ink"
-            >
-              Academic period
-            </label>
-            <select
-              id="add-academic-period"
-              value={period}
-              onChange={(event) => {
-                setPeriod(event.target.value);
-                setSelectedIds([]);
-              }}
-              disabled={!course}
-              className="w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none disabled:bg-gray-100"
-            >
-              <option value="">Select academic period…</option>
-              {periods.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {period && (
+      <section className="mb-8 rounded-2xl bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <h2 className="text-lg font-semibold text-ink">
+            <i className="fas fa-plus mr-2 text-primary" />
+            Add sections
+          </h2>
+        </div>
+        <form onSubmit={handleAdd} className="p-6 space-y-5">
+          {inferredPeriod ? (
+            <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+              <i className="fas fa-calendar-check text-primary" />
+              <p className="text-sm text-ink">
+                Showing sections for{" "}
+                <span className="font-semibold">{periodName}</span>
+              </p>
+            </div>
+          ) : (
             <div>
-              <label className="mb-1 block text-sm font-semibold text-ink">
-                Available sections
+              <label
+                htmlFor="add-academic-period"
+                className="mb-1.5 block text-sm font-semibold text-ink"
+              >
+                Academic period
+              </label>
+              <select
+                id="add-academic-period"
+                value={period}
+                onChange={(event) => {
+                  setPeriod(event.target.value);
+                  setSelectedIds([]);
+                }}
+                disabled={!course}
+                className="w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none disabled:bg-gray-50"
+              >
+                <option value="">Select academic period…</option>
+                {periods.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {effectivePeriod && (
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-ink">
+                Select sections to add
               </label>
               {instructorLoading ? (
-                <p className="text-sm text-muted">
-                  <i className="fas fa-spinner fa-spin mr-2" /> Loading sections…
-                </p>
+                <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-5 text-sm text-muted">
+                  <i className="fas fa-spinner fa-spin text-primary" /> Loading sections…
+                </div>
               ) : availableSections.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-gray-200 px-4 py-3 text-sm text-muted">
+                <div className="rounded-xl border border-dashed border-gray-200 px-4 py-5 text-center text-sm text-muted">
+                  <i className="fas fa-inbox mb-1.5 block text-2xl text-gray-300" />
                   No new sections available for this course in the selected period.
-                </p>
+                </div>
               ) : (
-                <div className="max-h-56 max-w-md space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3">
-                  {availableSections.map((s) => (
-                    <label
-                      key={s.key}
-                      className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-gray-50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(s.key)}
-                        onChange={() => toggleSection(s.key)}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <span className="text-sm text-ink">{s.title}</span>
-                    </label>
-                  ))}
+                <div className="max-h-60 overflow-y-auto rounded-xl border border-gray-200">
+                  {availableSections.map((s, idx) => {
+                    const checked = selectedIds.includes(s.key);
+                    return (
+                      <label
+                        key={s.key}
+                        className={`flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50 ${
+                          idx !== 0 ? "border-t border-gray-100" : ""
+                        } ${checked ? "bg-blue-50/60" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSection(s.key)}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        <span className="text-sm font-medium text-ink">{s.title}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={syncStudents}
-              onChange={(event) => setSyncStudents(event.target.checked)}
-              className="h-4 w-4 accent-primary"
-            />
-            Sync students from these section(s)
-          </label>
+          <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-ink">Sync students</p>
+              <p className="text-xs text-muted">Enrol students from the selected section(s) into this course</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={syncStudents}
+              onClick={() => setSyncStudents((v) => !v)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                syncStudents ? "bg-primary" : "bg-gray-200"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  syncStudents ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
 
-          <button
-            type="submit"
-            disabled={!period || selectedIds.length === 0 || addMutation.isPending}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
-          >
-            {addMutation.isPending ? (
-              <>
-                <i className="fas fa-spinner fa-spin" /> Adding…
-              </>
-            ) : (
-              <>
-                <i className="fas fa-plus" /> Add Section(s)
-              </>
+          <div className="flex items-center justify-between">
+            {selectedIds.length > 0 && (
+              <span className="text-sm text-muted">
+                <span className="font-semibold text-ink">{selectedIds.length}</span> section{selectedIds.length !== 1 ? "s" : ""} selected
+              </span>
             )}
-          </button>
+            <button
+              type="submit"
+              disabled={!effectivePeriod || selectedIds.length === 0 || addMutation.isPending}
+              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+            >
+              {addMutation.isPending ? (
+                <><i className="fas fa-spinner fa-spin" /> Adding…</>
+              ) : (
+                <><i className="fas fa-plus" /> Add Section{selectedIds.length !== 1 ? "s" : ""}</>
+              )}
+            </button>
+          </div>
         </form>
       </section>
 
@@ -237,7 +289,7 @@ export default function MySections() {
                 <tr>
                   <th className={headClass}>Academic Period</th>
                   <th className={headClass}>Section</th>
-                  <th className={`${headClass} w-32`}>Actions</th>
+                  <th className={headClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,13 +304,33 @@ export default function MySections() {
                       </span>
                     </td>
                     <td className={cellClass}>
-                      <button
-                        type="button"
-                        onClick={() => setRecycleTarget(section)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/5"
-                      >
-                        <i className="fas fa-recycle" /> Recycle
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={syncMutation.isPending && syncMutation.variables?.sectionId === section.sectionId}
+                          onClick={() =>
+                            syncMutation.mutate({
+                              sectionId: section.sectionId,
+                              academicPeriod: section.academicPeriod,
+                              academicPeriodName: section.academicPeriodName || prettyPeriod(section),
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+                        >
+                          {syncMutation.isPending && syncMutation.variables?.sectionId === section.sectionId ? (
+                            <><i className="fas fa-spinner fa-spin" /> Syncing…</>
+                          ) : (
+                            <><i className="fas fa-rotate" /> Sync Students</>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRecycleTarget(section)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/5"
+                        >
+                          <i className="fas fa-recycle" /> Recycle
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

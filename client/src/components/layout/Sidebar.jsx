@@ -13,6 +13,9 @@ const INSTRUCTOR_ITEMS = [
   { to: "/question-bank", icon: "fa-book", label: "Question Bank" },
   { to: "/quizzes", icon: "fa-clipboard-list", label: "Quizzes" },
   { to: "/quiz-scores", icon: "fa-chart-bar", label: "Quiz Scores" },
+];
+
+const INSTRUCTOR_MANAGEMENT_ITEMS = [
   { to: "/my-sections", icon: "fa-layer-group", label: "My Sections" },
 ];
 
@@ -196,17 +199,30 @@ export default function Sidebar({ open = false, onClose }) {
         </div>
 
         {/* Navigation */}
-        <ul className="flex-1 px-[25px] pb-[25px]">
-          {(viewingStudent ? studentItems : INSTRUCTOR_ITEMS).map((item) => (
-            <NavItem key={item.to} {...item} />
-          ))}
-          {!viewingStudent && isFaculty && (
-            <NavItem to="/users" icon="fa-users" label="Users" />
-          )}
+        <div className="flex-1 px-[25px] pb-[25px]">
+          <ul>
+            {(viewingStudent ? studentItems : INSTRUCTOR_ITEMS).map((item) => (
+              <NavItem key={item.to} {...item} />
+            ))}
+          </ul>
           {!viewingStudent && (
-            <NavItem to="/settings" icon="fa-cog" label="Settings" />
+            <>
+              <div className="my-3 border-t border-white/10" />
+              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-white/40">
+                Management
+              </p>
+              <ul>
+                {INSTRUCTOR_MANAGEMENT_ITEMS.map((item) => (
+                  <NavItem key={item.to} {...item} />
+                ))}
+                {isFaculty && (
+                  <NavItem to="/users" icon="fa-users" label="Users" />
+                )}
+                <NavItem to="/settings" icon="fa-cog" label="Settings" />
+              </ul>
+            </>
           )}
-        </ul>
+        </div>
 
         {/* Role switch + sign out */}
         <div className="mt-auto border-t border-white/10 p-[25px]">

@@ -65,3 +65,21 @@ export function useRecycleSection(courseId, options) {
     },
   });
 }
+
+export function useSyncSectionStudents(courseId, options) {
+  const invalidate = useInvalidateSections(courseId);
+  return useMutation({
+    mutationFn: ({ sectionId, academicPeriod, academicPeriodName }) =>
+      api.post(`/api/courses/${courseId}/sections`, {
+        sectionIds: [sectionId],
+        academicPeriod,
+        academicPeriodName,
+        syncStudents: true,
+      }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
