@@ -1,214 +1,123 @@
-# GRASP - Generative AI-powered Research-informed Assessment System for Practice
+# GRASP — Generative AI-powered Research-informed Assessment System for Practice
 
-A modern, responsive instructor dashboard for a generative AI-powered formative assessment tool designed to help instructors quickly generate evidence-based, research-informed questions and provide students with spaced, adaptive, and elaborative practice.
+GRASP is a web application that helps UBC instructors turn course materials into
+evidence-based formative assessments. Instructors upload lecture content, generate
+and review AI-authored questions, and publish quizzes; students get spaced,
+adaptive, and elaborative practice — all behind UBC Single Sign-On.
 
-## 🚀 Features
+## Key Features
 
-### Core Functionality
+- **AI question generation** — Upload lecture material (text, PDF, DOCX, URLs) and
+  generate evidence-based questions grounded in your content via a
+  retrieval-augmented (RAG) pipeline.
+- **Multiple question types** — Multiple choice, fill-in-the-blank, calculation,
+  and open-ended questions, with support for math (KaTeX) and chemistry
+  (SMILES) rendering.
+- **Question review & banking** — Review, edit, flag, and organize generated
+  questions in a per-course question bank before they reach students.
+- **Quizzes & scoring** — Build quizzes from the bank, publish them to students,
+  and track scores and quiz summaries.
+- **Student practice experience** — A dedicated student dashboard with quizzes,
+  achievements, and adaptive practice.
+- **Course materials & onboarding** — Manage uploaded materials per course and
+  guide new instructors through setup.
+- **User management** — Faculty can view and manage course members.
+- **UBC SSO** — SAML-based Single Sign-On / Single Log-Out, with role-based access
+  (faculty / staff / student).
 
-- **AI-Powered Question Generation**: Quickly generate evidence-based questions for lectures
-- **Formative Assessment Tools**: Create and manage quizzes and assessments
-- **Canvas LMS Integration**: Seamlessly integrate with UBC's Canvas LMS
-- **No Extra Student Accounts**: Students can access assessments directly through Canvas
+## Tech Stack
 
-### Dashboard Components
+- **Frontend:** React 18, Vite, Tailwind CSS, React Router, TanStack Query,
+  Zustand
+- **Backend:** Node.js, Express 5
+- **Database:** MongoDB
+- **AI / RAG:** UBC GenAI Toolkit (LLM, embeddings, chunking, RAG), Qdrant vector
+  store, OpenAI or Ollama as the LLM provider
+- **Auth:** Passport + SAML (UBC Shibboleth)
+- **Testing:** Cypress (end-to-end)
 
-- **Welcome Section**: Personalized greeting with current date
-- **Quick Start Actions**: Upload, Review, Quizzes, Questions
-- **Generation Status**: Track question generation progress across lectures
-- **Review Status**: Circular progress indicator with course selection
-- **Calendar View**: Monthly calendar with current date highlighting
-- **Flagged Questions**: Track questions requiring attention
-
-### Question Generation Page
-
-- **Course Selection**: Dropdown to select course (CHEM 121, CHEM 123, CHEM 233)
-- **Material Upload Options**: Text, PDF, URL, and Panopto video uploads
-- **Drag & Drop Interface**: Modern file upload with visual feedback
-- **Upload Progress**: Real-time progress tracking for multiple files
-- **Generated Questions Preview**: AI-generated questions with edit/delete options
-- **Smart File Handling**: Automatic file type detection and processing
-
-### Technical Features
-
-- **Responsive Design**: Mobile-first approach with breakpoints at 1200px and 768px
-- **Modern UI/UX**: Clean, professional interface with smooth animations
-- **Interactive Elements**: Hover effects, progress animations, and smooth transitions
-- **Search Functionality**: Global search across the system
-- **Navigation**: Intuitive sidebar navigation with active states
-
-## 🛠️ Technology Stack
-
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES6+)
-- **Backend**: Node.js with Express.js
-- **Styling**: CSS Grid, Flexbox, CSS Custom Properties
-- **Icons**: Font Awesome 6.0
-- **Development**: Browser-sync, Nodemon, Cross-env
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 tlef-grasp/
 ├── client/                   # React frontend (Vite + Tailwind)
-│   ├── src/                  # Components, pages, hooks, stores
-│   ├── dist/                 # Built assets, served in production (committed)
-│   └── cypress/              # End-to-end tests
+│   ├── src/                  # pages, components, hooks, stores
+│   ├── dist/                 # built assets, served in production (committed)
+│   └── cypress/              # end-to-end tests
 ├── src/                      # Express backend
-│   ├── server.js             # Server entry (serves client/dist + API)
-│   ├── routes/               # API routes
-│   ├── controllers/          # Request handlers
-│   └── services/             # Business logic and data access
-├── package.json              # Backend dependencies and scripts
-└── README.md                 # This file
+│   ├── server.js             # server entry (API + serves client/dist)
+│   ├── routes/               # API + auth route definitions
+│   ├── controllers/          # request handlers
+│   ├── services/             # business logic, data access, RAG
+│   ├── models/               # question models
+│   └── middleware/           # auth, session, passport, database
+├── .env.example              # environment variable template
+├── package.json              # backend dependencies and scripts
+└── README.md                 # this file
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- npm (v6 or higher)
+- Node.js 18+
+- npm
+- A running **MongoDB** instance
+- A running **Qdrant** instance (for the question-generation vector store)
+- An LLM provider — an **OpenAI** API key, or a local **Ollama** server
+- For login: a SAML Identity Provider. For local development this is typically the
+  `docker-simple-saml` project.
 
-### Installation
+### 1. Install dependencies
 
-1. **Clone the repository**
-
-   ```bash
-   git clone <repository-url>
-   cd tlef-grasp
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-3. **Start the development server**
-
-   ```bash
-   npm run dev
-   ```
-
-4. **Access the dashboard**
-   - Open your browser and navigate to `http://localhost:8070`
-   - You'll be automatically redirected to the dashboard at `http://localhost:8070/dashboard`
-
-### Available Scripts
-
-- **`npm start`**: Start the production server
-- **`npm run dev`**: Start development mode with hot reloading
-- **`npm run dev:server`**: Start only the backend server
-- **`npm run dev:client`**: Start only the frontend with browser-sync
-
-## 🎨 Customization
-
-### Colors
-
-The dashboard uses a consistent color scheme:
-
-- **Primary Blue**: `#3498db` - Main actions and highlights
-- **Dark Blue**: `#2c3e50` - Sidebar and text
-- **Light Gray**: `#f5f5f5` - Background and cards
-- **Accent Colors**: Various shades for different states
-
-### Styling
-
-- **CSS Variables**: Easy to modify colors and spacing
-- **Responsive Breakpoints**: 1200px and 768px
-- **Component-based CSS**: Modular styling for easy maintenance
-
-### JavaScript
-
-- **Modular Functions**: Well-organized, reusable code
-- **Event Handling**: Comprehensive interaction management
-- **API Ready**: Structured for easy backend integration
-
-## 🔧 Development
-
-### Adding New Features
-
-1. **HTML**: Add new sections to `dashboard.html`
-2. **CSS**: Style new components in `dashboard.css`
-3. **JavaScript**: Add functionality in `dashboard.js`
-
-### File Organization
-
-- Keep HTML semantic and accessible
-- Use CSS Grid and Flexbox for layouts
-- Follow ES6+ JavaScript best practices
-- Maintain responsive design principles
-
-## 🌐 Browser Support
-
-- **Chrome**: 90+
-- **Firefox**: 88+
-- **Safari**: 14+
-- **Edge**: 90+
-
-## 📱 Responsive Design
-
-The dashboard is designed to work seamlessly across all device sizes:
-
-- **Desktop**: Full sidebar navigation with two-column layout
-- **Tablet**: Responsive grid adjustments
-- **Mobile**: Stacked layout with collapsible navigation
-
-## 🔒 Security Considerations
-
-- **No Sensitive Data**: Dashboard displays only non-sensitive information
-- **Input Validation**: All user inputs are validated
-- **XSS Protection**: Content is properly escaped
-- **CSRF Protection**: Ready for backend CSRF implementation
-
-## 🚀 Deployment
-
-### Production Build
+Install backend and frontend dependencies:
 
 ```bash
-npm start
+npm install
+npm --prefix client install
 ```
 
-### Environment Variables
+### 2. Configure environment
 
-Create a `.env` file in the root directory:
+Copy the template and fill in your values:
 
-```env
-TLEF_GRASP_PORT=8070
-NODE_ENV=production
+```bash
+cp .env.example .env
 ```
 
-## 🤝 Contributing
+### 3. Start the development servers
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+```bash
+npm run dev
+```
 
-## 📄 License
+This runs the Express backend (port `8070`) and the Vite dev server (port `5173`)
+in parallel. The Vite dev server proxies `/api`, `/auth`, and `/Shibboleth.sso`
+requests to the backend, so you only need to open the frontend.
 
-This project is licensed under the ISC License.
+### 4. Open the app
 
-## 🆘 Support
+Visit **http://localhost:5173/** in your browser. You'll be taken through SSO and
+into the dashboard.
 
-For support and questions:
+## Available Scripts
 
-- Review the code comments for implementation details
-- See `client/cypress/README.md` for the end-to-end test setup
-- Open an issue for bugs or feature requests
+Backend (run from the project root):
 
-## 🔮 Future Enhancements
+- **`npm run dev`** — Start backend + frontend together (development).
+- **`npm run dev:server`** — Start only the Express backend (with nodemon).
+- **`npm run dev:client`** — Start only the Vite frontend.
+- **`npm run build`** — Build the React client into `client/dist`.
+- **`npm start`** — Run the production server (serves the built client from
+  `client/dist` at port `8070`).
 
-- **Real-time Updates**: WebSocket integration for live data
-- **Advanced Analytics**: Detailed progress tracking and insights
-- **Question Templates**: Pre-built question structures
-- **Bulk Operations**: Mass question generation and management
-- **Export Features**: PDF and CSV export capabilities
-- **Integration APIs**: Canvas LMS API integration
-- **User Management**: Role-based access control
-- **Audit Logging**: Track all system activities
+Frontend (run from `client/`):
 
----
+- **`npm run lint`** / **`npm run format`** — Lint / format the client source.
+- **`npm run cypress:open`** / **`npm run test:e2e`** — Run end-to-end tests.
+  See [client/cypress/README.md](client/cypress/README.md) for setup.
 
-**GRASP** - Empowering instructors with AI-driven assessment tools for better learning outcomes.
+## License & Ownership
+
+This project is owned by the Learning Technology Innovation Centre (LTIC) at the
+University of British Columbia. All rights reserved.
