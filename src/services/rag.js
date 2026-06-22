@@ -1,11 +1,11 @@
 // RAG Service - Singleton pattern
 // Handles all RAG initialization and provides helper functions
 const { getObjectiveWithMaterials } = require('./objective');
+const { getLLMProvider, getEmbeddingModel, getQdrantVectorSize } = require('../utils/llm-provider');
 
 /** Qdrant collection vector size; must match the embedding model output. */
 function resolveQdrantVectorSize() {
-  const n = parseInt(process.env.QDRANT_VECTOR_SIZE, 10);
-  return Number.isFinite(n) && n > 0 ? n : 768;
+  return getQdrantVectorSize();
 }
 
 class RAGService {
@@ -42,21 +42,20 @@ class RAGService {
         throw new Error("Failed to load RAGModule or ConsoleLogger");
       }
 
-      const llmProvider = process.env.LLM_PROVIDER || 'ollama';
+      const llmProvider = getLLMProvider();
+      const embeddingModel = getEmbeddingModel();
       const embeddingLlmConfig =
         llmProvider === 'openai'
           ? {
             provider: 'openai',
-            defaultModel:
-              process.env.LLM_EMBEDDING_MODEL || process.env.OPENAI_MODEL,
+            defaultModel: embeddingModel,
             apiKey: process.env.OPENAI_API_KEY,
           }
           : {
             provider: 'ollama',
             endpoint:
               process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
-            defaultModel:
-              process.env.LLM_EMBEDDING_MODEL || process.env.OLLAMA_MODEL,
+            defaultModel: embeddingModel,
           };
 
       this.baseConfig = {
@@ -69,7 +68,7 @@ class RAGService {
         },
         embeddingsConfig: {
           providerType: process.env.EMBEDDING_PROVIDER,
-          model: process.env.LLM_EMBEDDING_MODEL,
+          model: embeddingModel,
           llmConfig: embeddingLlmConfig,
         }
       };
@@ -83,8 +82,9 @@ class RAGService {
 
   /**
    * Standardize collection name for a course.
-   * Includes vector size so changing QDRANT_VECTOR_SIZE uses a new Qdrant collection
-   * (Qdrant cannot alter vector dimension on an existing collection).
+   * Includes vector size so changing the embedding dimension (or switching
+   * stage) uses a new Qdrant collection — Qdrant cannot alter vector dimension
+   * on an existing collection.
    */
   getCollectionName(courseId) {
     if (!courseId) return process.env.QDRANT_COLLECTION_NAME || "question-generation-collection";

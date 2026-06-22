@@ -6,7 +6,7 @@
   "scripts": {
     "start": "cross-env NODE_ENV=production node src/server.js",
     "dev": "npm-run-all --parallel dev:*",
-    "dev:server": "cross-env NODE_ENV=development nodemon src/server.js",
+    "dev:server": "nodemon src/server.js",
     "dev:client": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
     "test": "echo \"Error: no test specified\" && exit 1"

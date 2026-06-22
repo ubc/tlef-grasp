@@ -11,6 +11,9 @@ const { ObjectId } = require('mongodb');
 const { getMaterialCourseId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
+const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
+const { generateStructured } = require('../utils/structured-llm');
+const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const settingsService = require('../services/settings');
 const QuestionFactory = require('../models/questions/QuestionFactory');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
@@ -357,12 +360,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     //console.log("RAG Context:", ragContext);
 
     // Use LLM service for generation
+    const QUESTION_GEN_TEMPERATURE = 0.3;
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
+    console.log("Generation config:", {
+      provider: getLLMProvider(),
+      model: getLLMModel(),
+      temperature: QUESTION_GEN_TEMPERATURE,
+      maxTokens: "uncapped",
+      structuredOutput: true,
+    });
 
     try {
-      // Get LLM instance from service
-      const llmModule = await llmService.getLLMInstance(null, { temperature: 0.3 });
-
       // Determine question type for each bloom level using course settings
       const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
       const targetCount = parseInt(count) || bloomLevels.length || 1;
@@ -385,8 +393,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         return filled;
       };
 
-      const typeSchemaHint = (questionType) => QuestionFactory.getModel(questionType).getSchemaHint();
-
       const questionsData = [];
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
@@ -405,15 +411,6 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           let responseContent = null;
           let turnPrompt = "";
           try {
-            // Rebuild conversation from successful history plus the current question's attempts
-            const conversation = llmModule.createConversation();
-            for (const msg of conversationHistory) {
-              conversation.addMessage(msg.role, msg.content);
-            }
-            for (const msg of currentQuestionHistory) {
-              conversation.addMessage(msg.role, msg.content);
-            }
-
             if (i === 0 && attempt === 1) {
               // First question, first attempt: full prompt with RAG context
               turnPrompt = buildFirstPrompt(currentBloomLevel, currentQuestionType);
@@ -424,24 +421,34 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             } else {
               // Subsequent questions (i > 0), first attempt: include schema hint since
               // filterPromptToType stripped all other type schemas from the Q1 prompt.
-              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.\n\n${typeSchemaHint(currentQuestionType)}\n\nRespond with ONLY a single valid JSON object. No other text.`;
+              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.`;
             }
 
-            conversation.addMessage('user', turnPrompt);
+            // Full message history (successful turns + this question's retries),
+            // so the provider can reuse the cached prefix.
+            const messages = [
+              ...conversationHistory,
+              ...currentQuestionHistory,
+              { role: 'user', content: turnPrompt },
+            ];
 
             console.log(`Sending prompt to LLM (Q${i + 1}/${targetCount}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
-            const response = await conversation.send();
+            // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
+            // question type. Low temperature for focused, well-formed questions.
+            const response = await generateStructured({
+              messages,
+              schema: QuestionFactory.getModel(currentQuestionType).getJsonSchema(),
+              temperature: QUESTION_GEN_TEMPERATURE,
+            });
 
-            if (response.usage) {
-              const qPrompt = response.usage.promptTokens || 0;
-              const qCompletion = response.usage.completionTokens || 0;
-              totalPromptTokens += qPrompt;
-              totalCompletionTokens += qCompletion;
-              console.log(`📊 Token Usage Q${i + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
-            }
+            const qPrompt = response.usage?.promptTokens || 0;
+            const qCompletion = response.usage?.completionTokens || 0;
+            totalPromptTokens += qPrompt;
+            totalCompletionTokens += qCompletion;
+            console.log(`📊 Token Usage Q${i + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
 
-            responseContent = response.content || response.text || response.message || JSON.stringify(response);
+            responseContent = response.content || "";
             if (!responseContent) throw new Error("Empty response from LLM");
 
             const parsed = safeJsonParse(responseContent);
@@ -504,7 +511,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         }
       }
 
-      const generationModel = process.env.OPENAI_MODEL || 'unknown';
+      const generationModel = getLLMModel() || 'unknown';
       logCostSummary(`Question generation (${questionsData.length} questions)`, generationModel, totalPromptTokens, totalCompletionTokens);
 
       if (questionsData.length === 0) {
@@ -613,15 +620,6 @@ const generateLearningObjectivesHandler = async (req, res) => {
       });
     }
 
-    // Get LLM instance
-    const llmModule = await llmService.getLLMInstance();
-    if (!llmModule) {
-      return res.status(500).json({
-        success: false,
-        error: "LLM service is not initialized",
-      });
-    }
-
     // Get RAG content from selected materials
     // Fetch settings for prompt
     const settings = await settingsService.getSettings(courseId);
@@ -668,20 +666,17 @@ Include foundational concepts, practical applications, and assessment criteria.`
         .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
     }
 
+    // Lower temperature for faithful, well-structured objectives. Schema-
+    // constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
     console.log("Sending prompt to LLM service...");
-    const response = await llmModule.sendMessage(fullPrompt, { responseFormat: "json" });
+    const { content: responseContent } = await generateStructured({
+      prompt: fullPrompt,
+      schema: OBJECTIVES_SCHEMA,
+      temperature: 0.4,
+    });
     console.log("Full Prompt: ", fullPrompt);
 
     console.log("✅ LLM service response received");
-
-    // Extract content from response
-    let responseContent;
-    if (response && typeof response === "object") {
-      responseContent =
-        response.content || response.text || response.message || JSON.stringify(response);
-    } else {
-      responseContent = response;
-    }
 
     if (!responseContent) {
       throw new Error("Empty response from LLM");
@@ -691,7 +686,8 @@ Include foundational concepts, practical applications, and assessment criteria.`
 
     // Try to parse JSON response
     try {
-      // Use safe JSON parser that handles LaTeX and other edge cases
+      // Use safe JSON parser that handles LaTeX and other edge cases. The
+      // structured-output schema guarantees the canonical objectives shape.
       const objectivesData = safeJsonParse(responseContent);
 
       // Validate the structure
@@ -747,7 +743,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, courseName, llmModule) {
+async function rateQuestions(questions, courseName) {
   const formattedQuestions = questions.map(q => {
     // Determine the question stem based on type (MC vs others)
     const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
@@ -786,17 +782,25 @@ async function rateQuestions(questions, courseName, llmModule) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
-  const response = await llmModule.sendMessage(prompt);
-  if (response.usage) {
-    const reviewModel = process.env.OPENAI_REVIEW_MODEL || 'unknown';
-    logCostSummary(`Question review (${questions.length} questions)`, reviewModel, response.usage.promptTokens || 0, response.usage.completionTokens || 0);
+  // Low temperature for consistent, conservative reviewing. Schema-constrained
+  // decoding guarantees the { ratings: [...] } shape.
+  const { content: responseContent, usage } = await generateStructured({
+    prompt,
+    schema: QUESTION_REVIEW_SCHEMA,
+    temperature: 0.1,
+    model: getReviewModel() || null,
+  });
+  if (usage) {
+    const reviewModel = getReviewModel() || 'unknown';
+    logCostSummary(`Question review (${questions.length} questions)`, reviewModel, usage.promptTokens || 0, usage.completionTokens || 0);
   }
-  const responseContent = response.content || response.text || response.message;
   console.log("=== LLM REVIEW RESPONSE ===");
   console.log(responseContent);
   console.log("=== END LLM REVIEW RESPONSE ===");
-  let ratings = safeJsonParse(responseContent);
-  // Model sometimes returns a single object instead of a one-element array — normalise it
+  const parsed = safeJsonParse(responseContent);
+  // The schema wraps the array as { ratings: [...] }; tolerate a bare array or a
+  // single object too, in case the OpenAI (prompt-driven) path deviates.
+  let ratings = parsed && parsed.ratings !== undefined ? parsed.ratings : parsed;
   if (!Array.isArray(ratings) && ratings && typeof ratings === 'object') {
     ratings = [ratings];
   }
@@ -830,10 +834,8 @@ const reviewQuestionsHandler = async (req, res) => {
       }
     }
 
-    const llmModule = await llmService.getLLMInstance(process.env.OPENAI_REVIEW_MODEL || null, { temperature: 0.1, max_completion_tokens: null, response_format: null });
-
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
-    const ratings = await rateQuestions(questions, courseName, llmModule);
+    const ratings = await rateQuestions(questions, courseName);
 
     const results = [];
 

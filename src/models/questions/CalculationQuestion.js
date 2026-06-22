@@ -17,7 +17,42 @@ const EXPR_EVAL_CALLABLE_NAMES = new Set([
 /** Names expr-eval already supplies as math constants; declaring them as variables would override them. */
 const RESERVED_VARIABLE_NAMES = new Set(["pi", "PI", "e", "E"]);
 
+// A variable is either integer-only or has a fixed decimal count. OpenAI strict
+// mode requires every property in `required`, so the either/or fields are
+// required-but-nullable; validateAndNormalize resolves the precedence.
+const CALCULATION_VARIABLE_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        name: { type: "string" },
+        min: { type: "number" },
+        max: { type: "number" },
+        integerOnly: { type: ["boolean", "null"] },
+        decimals: { type: ["integer", "null"] },
+    },
+    required: ["name", "min", "max", "integerOnly", "decimals"],
+};
+
+const CALCULATION_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        topicTitle: { type: "string" },
+        stem: { type: "string" },
+        calculationFormula: { type: "string" },
+        calculationVariables: { type: "array", items: CALCULATION_VARIABLE_SCHEMA },
+        calculationAnswerDecimals: { type: "integer" },
+        calculationAnswerTolerancePercent: { type: ["number", "null"] },
+        explanation: { type: "string" },
+    },
+    required: ["topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", "calculationAnswerTolerancePercent", "explanation"],
+};
+
 class CalculationQuestion extends Question {
+    static getJsonSchema() {
+        return CALCULATION_SCHEMA;
+    }
+
     static getPromptInstruction() {
         return `### PARAMETERIZED CALCULATION QUESTION STRUCTURE:
 You must output a JSON object representing a parameterized question. The server samples random values for each variable in \`calculationVariables\`, substitutes the values into the \`{{name}}\` placeholders in the \`stem\`, and evaluates \`calculationFormula\` to compute the correct answer.
@@ -64,27 +99,7 @@ You must output a JSON object representing a parameterized question. The server 
 - The formula is non-trivial: confirm every variable affects the result (no variable cancels out).
 - The stem asks for a computable number, not a convergence/divergence label.
 
-Example (structure only — derive your own formula and variables from the course content):
-{
-  "type": "calculation",
-  "topicTitle": "Kinetic energy of a moving object",
-  "stem": "An object of mass {{m}} kg moves at {{v}} m/s. What is its kinetic energy in joules?",
-  "calculationFormula": "0.5 * m * v^2",
-  "calculationVariables": [
-    { "name": "m", "min": 1, "max": 20, "integerOnly": true },
-    { "name": "v", "min": 1, "max": 15, "integerOnly": true }
-  ],
-  "calculationAnswerDecimals": 1,
-  "explanation": "Kinetic energy is KE = 0.5 mv², where m is mass and v is speed."
-}
-
-Do NOT include "options" or a multiple-choice "correctAnswer".`;
-    }
-
-    static getSchemaHint() {
-        return `Required JSON shape for calculation:
-{ "type": "calculation", "topicTitle": "short label", "stem": "Question with {{a}} and {{b}}.", "calculationFormula": "a * b", "calculationVariables": [{"name":"a","min":1,"max":10,"integerOnly":true}], "calculationAnswerDecimals": 2, "explanation": "brief" }
-Rules: stem MUST use {{name}} for every variable; formula uses only + - * / ^ ( ) and variable names; every variable appears in both stem and formula.`;
+Worked example (derive your own formula and variables from the course content): for "kinetic energy of an object of mass {{m}} kg at {{v}} m/s", the formula is "0.5 * m * v^2" with variables m and v, each appearing in both the stem (as {{m}}, {{v}}) and the formula.`;
     }
 
     static getRetrySuffix(attempt, lastError) {
@@ -94,6 +109,11 @@ Rules: stem MUST use {{name}} for every variable; formula uses only + - * / ^ ( 
             calcExtra = `\n\nYour previous attempt failed validation with the following error:\n"${msg}"\nPlease correct this error in your new response.\n\n`;
             if (/prose response|text.*instead of|refused|Expected.*property|JSON at position|Unexpected token/i.test(msg)) {
                 calcExtra += "\nPrevious response was prose or malformed JSON, not a question object. Output ONLY a valid JSON calculation question — no commentary, no textbook summaries, no text outside the JSON object. ";
+            }
+            if (/square brackets|TBRACKET|\[|\]/i.test(msg)) {
+                calcExtra +=
+                    "\nThe formula used square brackets [ ], which are invalid. Use parentheses ( ) for grouping. " +
+                    "If you meant a concentration or other quantity (e.g. [H+]), declare it as a single-letter variable (e.g. \"c\") and use {{c}} in the stem and \"c\" in the formula — example: pH from concentration → formula \"-log(c)/log(10)\" with variable c.";
             }
             if (/stem must reference each variable|calculationFormula must reference every declared variable/i.test(msg)) {
                 const missingMatch = msg.match(/Missing(?:\s+from\s+\w+)?:\s*([^\s.]+)/i);
@@ -296,6 +316,12 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       s = s.replace(/\\left\s*/gi, "");
       s = s.replace(/\\right\s*/gi, "");
 
+      // expr-eval has no square-bracket syntax. Models sometimes use [ ] as
+      // grouping; map them to parentheses so those parse. (Chemistry concentration
+      // notation like [H+] also becomes (H+), which then fails as an undeclared
+      // variable — correctly forcing a retry to use a declared {{variable}}.)
+      s = s.replace(/\[/g, "(").replace(/\]/g, ")");
+
       s = s.replace(/\\times/gi, "*");
       s = s.replace(/\\div/gi, "/");
       s = s.replace(/\\cdot/gi, "*");
@@ -378,6 +404,11 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       if (/Unknown character/i.test(m)) {
         return new Error(
           "Formula still contains unsupported characters after normalization (e.g. ∫, ∑, or complex LaTeX). Rewrite as a plain expression using + - * / ^ ( ) and variable names; \\times/\\cdot/unicode minus are converted automatically when possible."
+        );
+      }
+      if (/TBRACKET|\[|\]/i.test(m)) {
+        return new Error(
+          "Formula contains square brackets [ ] which are not valid syntax. Use parentheses ( ) for grouping, and represent any quantity (e.g. a concentration like [H+]) as a declared single-letter variable used in BOTH the stem (as {{name}}) and the formula."
         );
       }
       return new Error(`Invalid formula: ${m}`);

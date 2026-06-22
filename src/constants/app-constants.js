@@ -36,21 +36,18 @@ BLOOM: Apply the stricter definitions below before accepting your Bloom label:
 - Evaluate = make a judgment or critique, not just compute an answer
 If a student can answer your question by recalling a single fact or definition, it is Remember or Understand — redesign it to genuinely match the target level.
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Return ONLY valid JSON. Do NOT wrap in markdown code blocks.
-- Do NOT include any text before or after the JSON object.
+CONTENT FORMATTING REQUIREMENTS:
 - CRITICAL LaTeX FORMATTING: Enclose all mathematical notation in \\\\( and \\\\) for inline math
   (e.g., \\\\( x^2 \\\\)). Do NOT use () or $ as math delimiters.
 - CRITICAL SMILES FORMATTING: Wrap SMILES strings in [SMILES][/SMILES] tags
   (e.g., [SMILES]O[/SMILES]).
-- CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped.
 - Do NOT include letter prefixes (A), B), etc.) inside option text values.
 
 TARGET QUESTION PARAMETERS FOR THIS TASK:
 - Question Type to Generate: {questionType}
 - Bloom's Taxonomy Level: {bloomLevel}
 
-Use ONLY the schema for the Question Type specified below:
+Use ONLY the instructions for the Question Type specified below:
 {typeSpecificInstructions}`;
 
 const OBJECTIVE_GENERATION_AUTO_PROMPT = `You are an expert educational content designer. Based on the following course materials, generate learning objectives that are clear, measurable, and aligned with educational best practices.
@@ -91,25 +88,10 @@ SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - Every meta objective has at least one granular objective.
 - Every granular objective begins with an active verb and has at least one Bloom level.
 
-Return ONLY the JSON object below. Do not include any introductory text, explanations, or markdown code fences. Respond with exactly this shape:
-{
-  "objectives": [
-    {
-      "name": "Main learning objective title",
-      "granularObjectives": [
-        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Understand", "Apply"] },
-        { "text": "[Active verb] [specific skill]...", "bloomTaxonomies": ["Analyze"] }
-      ]
-    }
-  ]
-}
-
 IMPORTANT RULES:
 1. Base objectives strictly on the provided material content.
-2. Return ONLY valid JSON.
-3. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
-4. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
-5. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
+2. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).`;
 
 const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom’s Taxonomy.
 
@@ -142,26 +124,9 @@ SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - Every granular objective has at least one Bloom level.
 - User-provided granular objectives still convey the instructor’s original meaning.
 
-Return ONLY the JSON object below. Do not include any introductory text, explanations, or markdown code fences. Respond with exactly this shape:
-{
-  "objectives": [
-    {
-      "name": "Meta Objective Name",
-      "granularObjectives": [
-        {
-          "text": "[Active verb] [specific skill]...",
-          "bloomTaxonomies": ["Apply", "Analyze"]
-        }
-      ]
-    }
-  ]
-}
-
 FINAL INSTRUCTIONS:
-1. Return ONLY the JSON object. Do not include introductory text, explanations, or markdown code blocks.
-2. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
-3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).
-4. CRITICAL JSON ESCAPING: Ensure all LaTeX backslashes are properly escaped for JSON.`;
+1. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+2. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).`;
 
 const QUESTION_REVIEW_PROMPT = `The following quiz questions were generated by AI for a university course. Evaluate each one and identify anything that is weak, problematic, or worth an instructor's attention — errors, poor design, inflated Bloom labels, weak distractors, anything.
 
@@ -205,25 +170,9 @@ QUESTION AUTHENTICITY:
 
 Step 2 — Set flagged to true if you found any issue in Step 1. Describe it concisely in the issue field.
 
-CRITICAL: Return ONLY a single JSON array containing exactly one object for EVERY question listed above. Do not include markdown code blocks.
+CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question listed above — match each by its questionId.
 
-You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.
-
-The JSON array must look like this:
-[
-  {
-    "questionId": "<id>",
-    "reasoning": "Work through all checks here before deciding.",
-    "flagged": true,
-    "issue": "Brief description of the issue."
-  },
-  {
-    "questionId": "<id>",
-    "reasoning": "Work through all checks here before deciding.",
-    "flagged": false,
-    "issue": ""
-  }
-]`;
+You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 

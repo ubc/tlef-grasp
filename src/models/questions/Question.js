@@ -11,10 +11,12 @@ class Question {
     }
 
     /**
-     * Returns the schema hint for retrying prompt generation.
+     * Returns the JSON schema the generated question must conform to (used for
+     * constrained decoding). Shape is enforced here; semantics by
+     * validateAndNormalize.
      */
-    static getSchemaHint() {
-        throw new Error("getSchemaHint() must be implemented by subclass");
+    static getJsonSchema() {
+        throw new Error("getJsonSchema() must be implemented by subclass");
     }
 
     /**
