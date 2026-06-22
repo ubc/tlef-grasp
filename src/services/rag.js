@@ -91,6 +91,11 @@ class RAGService {
     // Normalize string ID
     const cid = typeof courseId === 'string' ? courseId : courseId.toString();
     const dim = resolveQdrantVectorSize();
+
+    if (String(dim) === '1536') {
+      return `grasp_course_${cid}`;
+    }
+
     return `grasp_course_${cid}_v${dim}`;
   }
 
