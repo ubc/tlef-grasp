@@ -1,31 +1,33 @@
 const sharp = require("sharp");
-const llmService = require("../services/llm");
+const { generateStructured } = require("./structured-llm");
+const { getVisionModel } = require("../utils/llm-provider");
+const { IMAGE_DESCRIPTION_SCHEMA } = require("../constants/llm-schemas");
 const fs = require("fs").promises;
 const path = require("path");
 
 async function describeImage(base64Image, contextText) {
   try {
-    const llmModule = await llmService.getLLMInstance();
     const prompt = `You are an expert data extractor. You MUST precisely transcribe EVERY single word, number, equation, and label visible in the image. Do NOT skip any text, even if it is a large heading, handwritten, or appears to be a definition. Treat the image as the single source of truth. After transcribing all text exactly as written, describe the visual relationships, diagrams, or charts. Surrounding text context is provided for understanding, not as an excuse to skip text: "${contextText}"\nRespond ONLY in valid JSON format with a single key "description" containing your full transcription and description. If the image is entirely decorative, set the description to "decorative".`;
-    
-    const message = [
-      { type: "text", text: prompt },
-      { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } }
-    ];
-    
-    const response = await llmModule.sendMessage(message);
-    const rawContent = response.content || response.text || response.message || "{}";
-    
+
+    // Low temperature for faithful transcription. Schema-constrained decoding
+    // guarantees the { description } shape on the Ollama (vision) path.
+    const { content: rawContent, usage } = await generateStructured({
+      prompt,
+      schema: IMAGE_DESCRIPTION_SCHEMA,
+      images: [base64Image],
+      model: getVisionModel(),
+      temperature: 0.2,
+    });
+
     let description = "";
     try {
-      const cleanContent = rawContent.replace(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/g, '$1').trim();
+      const cleanContent = (rawContent || "{}").replace(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/g, '$1').trim();
       const parsed = JSON.parse(cleanContent);
       description = parsed.description || "";
     } catch (e) {
-      description = rawContent;
+      description = rawContent || "";
     }
-    
-    const usage = response.usage || { totalTokens: 0 };
+
     if (description.toLowerCase().includes("decorative") && description.length < 150) {
       return { description: null, usage };
     }

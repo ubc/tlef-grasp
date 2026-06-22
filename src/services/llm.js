@@ -1,6 +1,8 @@
 // LLM Service - Singleton pattern
 // Handles all LLM operations for question generation
 
+const { getLLMProvider, getLLMModel } = require("../utils/llm-provider");
+
 class LLMService {
   constructor() {
     if (LLMService.instance) {
@@ -10,7 +12,7 @@ class LLMService {
     this.LLMModule = null;
     this.isInitialized = false;
     this.initializationPromise = null;
-    this.provider = process.env.LLM_PROVIDER || 'ollama';
+    this.provider = getLLMProvider();
 
     // Initialize on first instantiation
     this.initializationPromise = this.initializeLLM();
@@ -70,7 +72,7 @@ class LLMService {
       llmConfig = {
         provider: 'openai',
         apiKey: process.env.OPENAI_API_KEY,
-        defaultModel: overrideModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        defaultModel: overrideModel || getLLMModel() || 'gpt-4o-mini',
         defaultOptions: (() => {
           const opts = {
             temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.6,
@@ -88,12 +90,17 @@ class LLMService {
       llmConfig = {
         provider: 'ollama',
         endpoint: process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
-        defaultModel: overrideModel || process.env.OLLAMA_MODEL || 'llama3.1:8b',
-        defaultOptions: {
-          temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-          maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
-          format: 'json'
-        },
+        defaultModel: overrideModel || getLLMModel() || 'llama3.1:8b',
+        defaultOptions: (() => {
+          const opts = {
+            temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+            maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+            format: 'json',
+            ...overrideOptions
+          };
+          Object.keys(opts).forEach(k => opts[k] === null && delete opts[k]);
+          return opts;
+        })(),
         logger: new ConsoleLogger('LLM'),
       };
     }
