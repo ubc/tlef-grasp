@@ -25,6 +25,12 @@ const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
 
+// Behind a TLS-terminating reverse proxy (e.g. nginx) on staging/production.
+// Without this, req.secure stays false for proxied requests and express-session
+// refuses to send the `secure` session cookie, so logins silently fail (the
+// browser never stores grasp.sid → every request is a 401).
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(
   helmet({
