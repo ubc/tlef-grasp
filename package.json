@@ -17,6 +17,7 @@
   "type": "commonjs",
   "dependencies": {
     "@llamaindex/liteparse": "^1.5.3",
+    "@ubc/ubc-genai-toolkit-course-list-sync": "^0.1.2",
     "archiver": "^7.0.1",
     "cheerio": "^1.1.2",
     "connect-mongo": "^6.0.0",
