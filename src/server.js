@@ -37,31 +37,30 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: [
-          "'self'",
-          "'unsafe-inline'",
-          "https://cdnjs.cloudflare.com",
-          "https://cdn.jsdelivr.net",
-        ],
-        scriptSrcAttr: ["'unsafe-inline'"],
-        styleSrc: [
-          "'self'",
-          "'unsafe-inline'",
-          "https://cdnjs.cloudflare.com",
-          "https://fonts.googleapis.com",
-          "https://cdn.jsdelivr.net",
-        ],
+        // All JS/CSS/fonts are bundled locally by Vite (KaTeX & FontAwesome are
+        // npm deps), so no external script/style CDNs are needed.
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
+        // Legacy fallback for browsers that don't support the granular
+        // style-src-elem/style-src-attr directives below.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        // Stylesheets and <style> elements: no inline allowed. The Vite build
+        // emits only an external stylesheet and nothing injects <style> at
+        // runtime, so this stays strict.
+        styleSrcElem: ["'self'", "https://fonts.googleapis.com"],
+        // Inline style="" attributes only. Required by dynamic React style={{}}
+        // props (e.g. width: `${progress}%`) and KaTeX math layout, which emit
+        // runtime-varying values that cannot use a nonce or hash.
+        styleSrcAttr: ["'unsafe-inline'"],
         fontSrc: [
           "'self'",
           // Vite inlines small font files (FontAwesome/KaTeX) as data: URIs
           "data:",
-          "https://cdnjs.cloudflare.com",
           "https://fonts.gstatic.com",
-          "https://cdn.jsdelivr.net",
         ],
         imgSrc: ["'self'", "data:", "blob:"],
-        connectSrc: ["'self'", "https://api.openai.com", "https://cdn.jsdelivr.net"],
-        workerSrc: ["'self'", "blob:", "https://cdnjs.cloudflare.com"],
+        connectSrc: ["'self'", "https://api.openai.com"],
+        workerSrc: ["'self'", "blob:"],
       },
     },
   })
