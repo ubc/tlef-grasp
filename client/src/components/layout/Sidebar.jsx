@@ -60,8 +60,9 @@ function CourseSelector() {
     if (isLoading || isError) return;
 
     if (courses.length === 0) {
-      // No courses — students lose stale session data (removed students lose access)
-      if (isStudent && selectedCourse) setSelectedCourse(null);
+      // No courses (all deleted, or removed from the course) — drop any stale
+      // selection so the onboarding guard sends the user back to onboarding.
+      if (selectedCourse) setSelectedCourse(null);
       return;
     }
 

@@ -11,17 +11,31 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { user, isFaculty, isStudent } = useCurrentUser();
   const selectedCourse = useAppStore((state) => state.selectedCourse);
-
-  // If the user arrived already onboarded, send them to their dashboard
-  // (mirrors onboarding-check.js — but don't redirect mid-flow after creating/joining).
-  const wasOnboardedOnMount = useRef(!!selectedCourse);
-  useEffect(() => {
-    if (wasOnboardedOnMount.current && user) {
-      navigate(isStudent ? "/student-dashboard" : "/dashboard", { replace: true });
-    }
-  }, [user, isStudent, navigate]);
+  const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
   const { courses, isPending: coursesPending } = useMyCourseProfiles();
+
+  // If the user arrived already onboarded (a still-valid course is selected),
+  // send them straight to their dashboard. Decide only once the real course
+  // list has loaded, so a selection left over from a now-deleted course (e.g.
+  // after a DB reset) is cleared instead of bouncing to a "No course available"
+  // page. The ref ensures we act on the first settled load only — never
+  // mid-flow after creating/joining a course.
+  const redirectDecided = useRef(false);
+  useEffect(() => {
+    if (redirectDecided.current || !user || coursesPending) return;
+    redirectDecided.current = true;
+
+    const validSelection =
+      selectedCourse &&
+      courses.some((c) => (c._id || c.id) === selectedCourse.id);
+
+    if (validSelection) {
+      navigate(isStudent ? "/student-dashboard" : "/dashboard", { replace: true });
+    } else if (selectedCourse) {
+      setSelectedCourse(null);
+    }
+  }, [user, coursesPending, courses, selectedCourse, isStudent, navigate, setSelectedCourse]);
 
   const [activeTab, setActiveTab] = useState(null);
 
