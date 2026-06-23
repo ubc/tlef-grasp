@@ -85,17 +85,21 @@ class RAGService {
    * Includes vector size so changing the embedding dimension (or switching
    * stage) uses a new Qdrant collection — Qdrant cannot alter vector dimension
    * on an existing collection.
+   *
+   * OpenAI keeps the original, unsuffixed name (`grasp_course_<id>`) for
+   * backward compatibility with collections created before the vector-size
+   * suffix was introduced.
    */
   getCollectionName(courseId) {
     if (!courseId) return process.env.QDRANT_COLLECTION_NAME || "question-generation-collection";
     // Normalize string ID
     const cid = typeof courseId === 'string' ? courseId : courseId.toString();
-    const dim = resolveQdrantVectorSize();
 
-    if (String(dim) === '1536') {
+    if (getLLMProvider() === 'openai') {
       return `grasp_course_${cid}`;
     }
 
+    const dim = resolveQdrantVectorSize();
     return `grasp_course_${cid}_v${dim}`;
   }
 
