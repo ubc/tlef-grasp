@@ -19,6 +19,7 @@
     "@llamaindex/liteparse": "^1.5.3",
     "archiver": "^7.0.1",
     "cheerio": "^1.1.2",
+    "connect-mongo": "^6.0.0",
     "dotenv": "^17.0.1",
     "expr-eval": "^2.0.2",
     "express": "^5.1.0",

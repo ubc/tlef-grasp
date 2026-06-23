@@ -166,6 +166,20 @@ app.use((req, res) => {
   res.status(404).send('404: Page Not Found');
 });
 
+// Global error handler. Without this, failures in middleware (e.g. a slow or
+// unreachable database) fall through to Express's default handler and the
+// request appears to hang/time out. Respond with a clean error instead.
+app.use((err, req, res, next) => {
+  console.error('Unhandled request error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+  res.status(500).send('500: Internal Server Error');
+});
+
 app.listen(port, async () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
