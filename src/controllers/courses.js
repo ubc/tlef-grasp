@@ -13,7 +13,13 @@ const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = req
 const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner, getSectionsForViewer } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
-const { isFaculty, isStudent } = require('../utils/auth');
+const { isFaculty, isStaff } = require('../utils/auth');
+
+// Enrollment-code flows are available to faculty, staff, and app administrators
+// (administrators are already covered by isFaculty), but not students.
+async function canUseEnrollmentCode(user) {
+  return (await isFaculty(user)) || (await isStaff(user));
+}
 const { createOrUpdateUser, getUserByPuid } = require('../services/user');
 const ubcApiService = require('../services/ubcApiService');
 const { buildCourseCode, campusDisplaySuffix } = require('../utils/slug');
@@ -311,8 +317,8 @@ const createNewCourse = async (req, res) => {
 
 const listEnrollmentCourses = async (req, res) => {
   try {
-    if (!(await isStudent(req.user))) {
-      return res.status(403).json({ error: "Only students can browse courses to join" });
+    if (!(await canUseEnrollmentCode(req.user))) {
+      return res.status(403).json({ error: "Only faculty, staff, and administrators can browse courses to join" });
     }
     const q = req.query.q || "";
     const courses = await listCoursesForEnrollment(q);
@@ -332,14 +338,14 @@ const listEnrollmentCourses = async (req, res) => {
 
 const joinCourseWithCode = async (req, res) => {
   try {
-    if (!(await isStudent(req.user))) {
-      return res.status(403).json({ error: "Only students can join a course with an enrollment code" });
+    if (!(await canUseEnrollmentCode(req.user))) {
+      return res.status(403).json({ error: "Only faculty, staff, and administrators can join a course with an invite code" });
     }
 
     const { courseId } = req.params;
     const enrollmentCode = req.body?.enrollmentCode ?? req.body?.code;
     if (!enrollmentCode || typeof enrollmentCode !== "string" || !enrollmentCode.trim()) {
-      return res.status(400).json({ error: "Enrollment code is required" });
+      return res.status(400).json({ error: "Invite code is required" });
     }
 
     const course = await getCourseById(courseId);
@@ -352,11 +358,11 @@ const joinCourseWithCode = async (req, res) => {
 
     if (!course.courseAccess) {
       return res.status(503).json({
-        error: "This course does not have an enrollment code yet. Ask your instructor to open Settings and generate one.",
+        error: "This course does not have an invite code yet. Ask the course owner to open Settings and generate one.",
       });
     }
     if (!timingSafeEqualString(enrollmentCode.trim(), course.courseAccess)) {
-      return res.status(403).json({ error: "Invalid enrollment code" });
+      return res.status(403).json({ error: "Invalid invite code" });
     }
 
     await createUserCourse(userId, course._id);
@@ -373,16 +379,16 @@ const joinCourseWithCode = async (req, res) => {
 
 const joinCourseByEnrollmentCode = async (req, res) => {
   try {
-    if (!(await isStudent(req.user))) {
-      return res.status(403).json({ error: "Only students can join a course with an enrollment code" });
+    if (!(await canUseEnrollmentCode(req.user))) {
+      return res.status(403).json({ error: "Only faculty, staff, and administrators can join a course with an invite code" });
     }
     const enrollmentCode = req.body?.enrollmentCode ?? req.body?.code;
     if (!enrollmentCode || typeof enrollmentCode !== "string" || !enrollmentCode.trim()) {
-      return res.status(400).json({ error: "Enrollment code is required" });
+      return res.status(400).json({ error: "Invite code is required" });
     }
 
     const course = await getCourseByEnrollmentCode(enrollmentCode.trim());
-    if (!course) return res.status(403).json({ error: "Invalid enrollment code" });
+    if (!course) return res.status(403).json({ error: "Invalid invite code" });
 
     const userId = req.user._id || req.user.id;
     if (await isUserInCourse(userId, course._id.toString())) {
@@ -390,7 +396,7 @@ const joinCourseByEnrollmentCode = async (req, res) => {
     }
     if (!course.courseAccess) {
       return res.status(503).json({
-        error: "This course does not have an enrollment code yet. Ask your instructor to open Settings and generate one.",
+        error: "This course does not have an invite code yet. Ask the course owner to open Settings and generate one.",
       });
     }
 
@@ -409,7 +415,7 @@ const joinCourseByEnrollmentCode = async (req, res) => {
 const getEnrollmentCode = async (req, res) => {
   try {
     if (!(await isFaculty(req.user))) {
-      return res.status(403).json({ error: "Only faculty can view enrollment codes" });
+      return res.status(403).json({ error: "Only faculty can view invite codes" });
     }
     const { courseId } = req.params;
     const userId = req.user._id || req.user.id;
@@ -428,14 +434,14 @@ const getEnrollmentCode = async (req, res) => {
     res.json({ success: true, enrollmentCode: course.courseAccess });
   } catch (error) {
     console.error("Error getting enrollment code:", error);
-    res.status(500).json({ error: "Failed to load enrollment code" });
+    res.status(500).json({ error: "Failed to load invite code" });
   }
 };
 
 const regenerateEnrollmentCode = async (req, res) => {
   try {
     if (!(await isFaculty(req.user))) {
-      return res.status(403).json({ error: "Only faculty can regenerate enrollment codes" });
+      return res.status(403).json({ error: "Only faculty can regenerate invite codes" });
     }
     const { courseId } = req.params;
     const userId = req.user._id || req.user.id;
@@ -451,11 +457,11 @@ const regenerateEnrollmentCode = async (req, res) => {
     res.json({
       success: true,
       enrollmentCode,
-      message: "Enrollment code regenerated. Share the new code with your students.",
+      message: "Invite code regenerated. Share the new code with faculty, staff, or administrators.",
     });
   } catch (error) {
     console.error("Error regenerating enrollment code:", error);
-    res.status(500).json({ error: "Failed to regenerate enrollment code" });
+    res.status(500).json({ error: "Failed to regenerate invite code" });
   }
 };
 

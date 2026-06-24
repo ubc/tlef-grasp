@@ -76,7 +76,7 @@ export default function LoginTab({
           </h3>
           <p className="mx-auto mt-2 max-w-md text-muted">
             {isStudent
-              ? 'You haven\'t been added to any course yet. Ask your instructor for an enrollment code, then use the "Join a course" tab to enroll.'
+              ? "You haven't been added to any course yet. Ask your instructor to add you to a course."
               : canCreate
                 ? 'You don\'t have any courses set up yet. Please use the "New Course Setup" tab to create your first course.'
                 : "You don't have any courses set up yet. Please contact a faculty member to add you to a course."}

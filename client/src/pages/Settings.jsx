@@ -125,7 +125,7 @@ export default function Settings() {
 
   const regenerateMutation = useRegenerateEnrollmentCode(courseId, {
     onSuccess: (data) =>
-      showToast(data.message || "Enrollment code regenerated", "success"),
+      showToast(data.message || "Invite code regenerated", "success"),
     onError: (error) =>
       showToast(error.message || "Failed to regenerate code", "error"),
   });
@@ -281,18 +281,19 @@ export default function Settings() {
           </section>
 
           <section className="rounded-2xl bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-ink">Student enrollment code</h2>
+            <h2 className="text-lg font-semibold text-ink">Course invite code</h2>
             <p className="mt-1 mb-5 text-sm text-muted">
-              Share this code with students so they can join this course from{" "}
-              <strong className="text-ink">Onboarding → Join a course</strong> without
-              you adding each person manually.
+              Share this code with other faculty, staff, or administrators so they can
+              join this course from{" "}
+              <strong className="text-ink">Onboarding → Join a course</strong> and access
+              its dashboard.
             </p>
 
             <label
               htmlFor="enrollment-code-display"
               className="mb-2 block text-sm font-semibold text-ink"
             >
-              Current enrollment code
+              Current invite code
             </label>
             <div className="flex max-w-md gap-2">
               <input
@@ -403,8 +404,8 @@ export default function Settings() {
         open={confirmRegenerate}
         onClose={() => setConfirmRegenerate(false)}
         onConfirm={() => regenerateMutation.mutate()}
-        title="Regenerate Enrollment Code"
-        message="Regenerate the enrollment code? The old code will stop working for new enrollments."
+        title="Regenerate Invite Code"
+        message="Regenerate the invite code? The old code will stop working."
         confirmLabel="Regenerate"
         danger
       />

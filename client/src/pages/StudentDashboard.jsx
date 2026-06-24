@@ -50,7 +50,7 @@ function NoCourseState({ greeting, dateLabel }) {
         <h3 className="text-xl font-semibold text-ink">No Course Associated</h3>
         <p className="mt-2 text-muted">
           You haven't been added to any courses yet. Ask your instructor to add you
-          manually or provide you with an enrollment code.
+          to the course.
         </p>
         <div className="mt-5 flex items-center justify-center gap-2 text-sm text-muted">
           <i className="fas fa-envelope" />

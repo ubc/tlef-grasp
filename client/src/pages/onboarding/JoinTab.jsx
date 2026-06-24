@@ -19,7 +19,7 @@ export default function JoinTab() {
   const joinMutation = useJoinCourseByCode({
     onSuccess: (data) => {
       setSelectedCourse({ id: data.course._id, name: data.course.courseName });
-      navigate("/student-dashboard");
+      navigate("/dashboard");
     },
     onError: (err) => showError(err.message || "Could not join course."),
   });
@@ -27,7 +27,7 @@ export default function JoinTab() {
   const submit = () => {
     const trimmed = code.trim();
     if (!trimmed) {
-      showError("Enter the enrollment code from your instructor.");
+      showError("Enter the invite code for the course.");
       return;
     }
     joinMutation.mutate(trimmed);
@@ -39,12 +39,12 @@ export default function JoinTab() {
       <h2 className="text-2xl font-bold text-ink">Join a course</h2>
       <ErrorMessage message={error} />
       <p className="mt-1 mb-8 text-muted">
-        Enter the enrollment code your instructor shared with you.
+        Enter the invite code for the course you want to access.
       </p>
 
       <div className="mx-auto max-w-md text-left">
         <label htmlFor="join-enrollment-code" className="mb-2 block font-semibold text-ink">
-          Enrollment code
+          Invite code
         </label>
         <input
           id="join-enrollment-code"

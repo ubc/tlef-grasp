@@ -9,7 +9,7 @@ import SetupWizard from "./onboarding/SetupWizard";
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { user, isFaculty, isStudent } = useCurrentUser();
+  const { user, isFaculty, isStaff, isStudent } = useCurrentUser();
   const selectedCourse = useAppStore((state) => state.selectedCourse);
   const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
@@ -39,12 +39,16 @@ export default function Onboarding() {
 
   const [activeTab, setActiveTab] = useState(null);
 
+  // Enrollment-code "Join a course" is for faculty, staff, and administrators
+  // (admins are reported as faculty by the API), not students.
+  const canJoinByCode = isFaculty || isStaff;
+
   // Pick the initial tab once the course list arrives (legacy determineInitialTab)
   useEffect(() => {
     if (activeTab !== null || !user || coursesPending) return;
     const hasCourses = courses.length > 0;
     if (isStudent) {
-      setActiveTab(hasCourses ? "login" : "join");
+      setActiveTab("login");
     } else if (isFaculty) {
       setActiveTab(hasCourses ? "login" : "setup");
     } else {
@@ -55,7 +59,7 @@ export default function Onboarding() {
   const tabs = [
     ...(isFaculty ? [{ id: "setup", label: "New Course Setup" }] : []),
     { id: "login", label: "Login to Existing Dashboard" },
-    ...(isStudent ? [{ id: "join", label: "Join a course" }] : []),
+    ...(canJoinByCode ? [{ id: "join", label: "Join a course" }] : []),
   ];
 
   useEffect(() => {
