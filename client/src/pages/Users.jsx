@@ -5,7 +5,7 @@ import {
   useCourseUsers,
   useRemoveUserFromCourse,
 } from "../hooks/useUsers";
-import { useCourseSections } from "../hooks/useSections";
+import { useVisibleCourseSections } from "../hooks/useSections";
 import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -68,7 +68,7 @@ export default function Users() {
 
   const { users: courseUsers, isPending: courseUsersPending } =
     useCourseUsers(courseId);
-  const { sections: courseSections } = useCourseSections(courseId);
+  const { sections: courseSections } = useVisibleCourseSections(courseId);
 
   // Section id -> readable label, for badges and the filter dropdown.
   const sectionName = (sectionId) => {

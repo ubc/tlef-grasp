@@ -1,7 +1,8 @@
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse } = require('../services/user-course');
 const { getStaffUsersNotInCourse, getStudentsNotInCourse } = require('../services/user');
 const { getCourseById } = require('../services/course');
-const { isFaculty } = require('../utils/auth');
+const { getSectionsForViewer } = require('../services/course-section');
+const { isFaculty, parseAffiliations } = require('../utils/auth');
 
 const getCourseUsersHandler = async (req, res) => {
   try {
@@ -32,9 +33,39 @@ const getCourseUsersHandler = async (req, res) => {
     const courseUsers = await getCourseUsers(courseId);
     console.log("Found", courseUsers.length, "users in course");
 
+    // Scope student visibility by section ownership: the course owner and app
+    // administrators see everyone, but any other instructor only sees students
+    // enrolled in a section they own. Faculty/staff (course-level members, not
+    // bound to a section) stay visible to all instructors.
+    const { seeAll, sections: viewerSections } = await getSectionsForViewer(courseId, req.user);
+
+    let users = courseUsers;
+    if (!seeAll) {
+      const ownedSectionIds = new Set(viewerSections.map((s) => s.sectionId));
+      users = courseUsers.reduce((visible, courseUser) => {
+        const affiliations = parseAffiliations(courseUser);
+        const isStudent =
+          !affiliations.includes("faculty") && !affiliations.includes("staff");
+
+        if (!isStudent) {
+          visible.push(courseUser);
+          return visible;
+        }
+
+        // Only surface the student if (and the sections) the viewer owns.
+        const ownedSections = (courseUser.sections || []).filter((id) =>
+          ownedSectionIds.has(id)
+        );
+        if (ownedSections.length > 0) {
+          visible.push({ ...courseUser, sections: ownedSections });
+        }
+        return visible;
+      }, []);
+    }
+
     res.json({
       success: true,
-      users: courseUsers,
+      users,
     });
   } catch (error) {
     console.error("Error fetching course users:", error);
