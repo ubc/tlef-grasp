@@ -79,6 +79,32 @@ export function useDeleteQuiz(courseId, options) {
   });
 }
 
+// Per-section release/expire schedule for one quiz (instructor editor).
+export function useQuizSchedules(quizId, { enabled = true } = {}) {
+  const query = useQuery({
+    queryKey: queryKeys.quizSchedules(quizId),
+    queryFn: () => api.get(`/api/quiz/${quizId}/schedules`),
+    enabled: !!quizId && enabled,
+  });
+  return { ...query, schedules: query.data?.schedules || [] };
+}
+
+// Replace a quiz's per-section schedule. `schedules` is an array of
+// { courseSectionId, releaseDate, expireDate }.
+export function useUpdateQuizSchedules(courseId, quizId, options) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (schedules) =>
+      api.put(`/api/quiz/${quizId}/schedules`, { schedules }),
+    ...options,
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.quizSchedules(quizId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quizzesWithQuestions(courseId) });
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 // Per-student scores for one quiz (instructor view).
 export function useQuizScores(quizId) {
   const query = useQuery({

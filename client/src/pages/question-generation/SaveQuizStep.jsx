@@ -91,31 +91,10 @@ export default function SaveQuizStep({
             className="mb-5 w-full rounded-lg border border-gray-300 px-3 py-3 focus:border-primary focus:outline-none"
           />
 
-          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="quiz-release-date" className="mb-2 block font-medium text-ink">
-                Release Date
-              </label>
-              <input
-                id="quiz-release-date"
-                type="datetime-local"
-                value={form.releaseDate}
-                onChange={(event) => set("releaseDate")(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:border-primary focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="quiz-expire-date" className="mb-2 block font-medium text-ink">
-                Expire Date
-              </label>
-              <input
-                id="quiz-expire-date"
-                type="datetime-local"
-                value={form.expireDate}
-                onChange={(event) => set("expireDate")(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:border-primary focus:outline-none"
-              />
-            </div>
+          <div className="mb-4 rounded-lg bg-page px-4 py-3 text-sm text-muted">
+            <i className="fas fa-circle-info mr-1.5 text-primary" />
+            Availability is set per section after creation, from the Manage Quizzes
+            tab (“Schedule per section”).
           </div>
 
           <div>

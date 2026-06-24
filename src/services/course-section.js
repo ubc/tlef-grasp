@@ -68,6 +68,30 @@ const getSectionStudents = async (courseId, sectionId) => {
   ]).toArray();
 };
 
+/**
+ * Resolve which sections of a course a given viewer may see:
+ * - the course owner and app administrators see every section;
+ * - any other instructor sees only the sections they own.
+ * Returns { seeAll, sections }.
+ */
+const getSectionsForViewer = async (courseId, user) => {
+  const { isAppAdministrator } = require('../utils/auth');
+  const { getCourseById } = require('./course');
+
+  const sections = await getCourseSections(courseId);
+  const userId = String(user._id || user.id);
+  const course = await getCourseById(courseId);
+
+  const isOwner = !!(course && course.owner && course.owner.toString() === userId);
+  const seeAll = isOwner || (await isAppAdministrator(user));
+
+  if (seeAll) return { seeAll: true, sections };
+  return {
+    seeAll: false,
+    sections: sections.filter((s) => s.owner && s.owner.toString() === userId),
+  };
+};
+
 const getSectionsByOwner = async (ownerId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_course_section').aggregate([
@@ -136,6 +160,14 @@ const recycleSection = async (courseId, sectionId) => {
     }
   }
 
+  // Remove any per-section quiz schedules pointing at this section. Lazy-require
+  // to avoid a circular dependency (quiz-schedule depends on this module).
+  const sectionDoc = await db.collection('grasp_course_section').findOne({ courseId: cId, sectionId });
+  if (sectionDoc) {
+    const quizScheduleService = require('./quiz-schedule');
+    await quizScheduleService.removeSchedulesForSection(sectionDoc._id);
+  }
+
   // Delete the section itself
   return db.collection('grasp_course_section').deleteOne({
     courseId: cId,
@@ -150,5 +182,6 @@ module.exports = {
   getUserCourseSections,
   getSectionStudents,
   getSectionsByOwner,
+  getSectionsForViewer,
   recycleSection,
 };

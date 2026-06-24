@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSelectedCourseId } from "../stores/appStore";
 import { useCourseQuizzes, useQuizScores } from "../hooks/useQuizzes";
+import { useVisibleCourseSections } from "../hooks/useSections";
 import { formatTimeSpent, formatDateTime } from "../lib/format";
 import Pagination from "../components/ui/Pagination";
 import ScoreBadge from "./quiz-scores/ScoreBadge";
@@ -17,10 +18,18 @@ export default function QuizScores() {
 
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [search, setSearch] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
   const [page, setPage] = useState(1);
   const [review, setReview] = useState(null);
 
   const { quizzes } = useCourseQuizzes(courseId);
+  const { sections: courseSections } = useVisibleCourseSections(courseId);
+
+  // sectionId -> readable label, for badges and the filter dropdown.
+  const sectionName = (sectionId) => {
+    const match = courseSections.find((s) => s.sectionId === sectionId);
+    return match ? match.sectionNumber || sectionId : sectionId;
+  };
 
   // Default to the first (most recent) quiz once loaded
   useEffect(() => {
@@ -29,22 +38,38 @@ export default function QuizScores() {
     }
   }, [quizzes, selectedQuizId]);
 
+  // Default to the first section once sections load (no "all sections" view).
+  useEffect(() => {
+    if (!sectionFilter && courseSections.length > 0) {
+      setSectionFilter(courseSections[0].sectionId);
+    }
+  }, [courseSections, sectionFilter]);
+
   const { scores, isPending: scoresPending } = useQuizScores(selectedQuizId);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return scores;
     return scores.filter((s) => {
+      if (
+        sectionFilter &&
+        !(Array.isArray(s.sections) && s.sections.includes(sectionFilter))
+      ) {
+        return false;
+      }
+      if (!query) return true;
       const name = (s.studentName || "").toLowerCase();
       const email = (s.studentEmail || "").toLowerCase();
       return name.includes(query) || email.includes(query);
     });
-  }, [scores, search]);
+  }, [scores, search, sectionFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
   const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
   const pageData = filtered.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+  const showSections = courseSections.length > 0;
+  const colCount = showSections ? 7 : 6;
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
@@ -72,6 +97,22 @@ export default function QuizScores() {
             ))
           )}
         </select>
+        {courseSections.length > 0 && (
+          <select
+            value={sectionFilter}
+            onChange={(event) => {
+              setSectionFilter(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"
+          >
+            {courseSections.map((section) => (
+              <option key={section.sectionId} value={section.sectionId}>
+                {section.sectionNumber || section.sectionId}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative min-w-64 flex-1">
           <i className="fas fa-search absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
           <input
@@ -95,6 +136,7 @@ export default function QuizScores() {
               <tr>
                 <th className={headClass}>Student</th>
                 <th className={headClass}>Email</th>
+                {showSections && <th className={headClass}>Sections</th>}
                 <th className={headClass}>Score</th>
                 <th className={headClass}>Correct</th>
                 <th className={headClass}>Time Spent</th>
@@ -104,14 +146,14 @@ export default function QuizScores() {
             <tbody>
               {scoresPending && selectedQuizId ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted">
+                  <td colSpan={colCount} className="py-12 text-center text-muted">
                     <i className="fas fa-circle-notch fa-spin mb-2 text-2xl" />
                     <p>Loading scores...</p>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted">
+                  <td colSpan={colCount} className="py-12 text-center text-muted">
                     <i className="fas fa-inbox mb-2 text-3xl text-gray-300" />
                     <h3 className="font-semibold text-ink">No Data</h3>
                     <p>
@@ -149,6 +191,24 @@ export default function QuizScores() {
                       <td className={`${cellClass} text-muted`}>
                         {item.studentEmail || "-"}
                       </td>
+                      {showSections && (
+                        <td className={cellClass}>
+                          {Array.isArray(item.sections) && item.sections.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {item.sections.map((sectionId) => (
+                                <span
+                                  key={sectionId}
+                                  className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                                >
+                                  <i className="fas fa-book" /> {sectionName(sectionId)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted">-</span>
+                          )}
+                        </td>
+                      )}
                       <td className={cellClass}>
                         <ScoreBadge score={item.score} />
                       </td>

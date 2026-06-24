@@ -128,6 +128,17 @@ async function isStudent(user) {
 }
 
 /**
+ * Check if the user is an application administrator (PUID in APP_ADMINISTRATOR).
+ * @param {Object} user - User object
+ * @returns {Promise<boolean>} True if the user is an app administrator
+ */
+async function isAppAdministrator(user) {
+  if (!user) return false;
+  const puid = await getUserPuid(user);
+  return isAdministrator(puid);
+}
+
+/**
  * Get the user's role based on their affiliations
  * @param {Object} user - User object with affiliation and puid
  * @returns {Promise<string>} User role (faculty, staff, or student)
@@ -180,6 +191,7 @@ module.exports = {
   isFaculty,
   isStaff,
   isStudent,
+  isAppAdministrator,
   getUserRole,
   hasMinimumRole,
   parseAffiliations,

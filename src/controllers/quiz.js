@@ -1,9 +1,11 @@
 const quizService = require("../services/quiz");
+const quizScheduleService = require("../services/quiz-schedule");
+const sectionService = require("../services/course-section");
 const questionService = require("../services/question");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
-const { isFaculty } = require('../utils/auth');
+const { isFaculty, isStudent } = require('../utils/auth');
 
 /**
  * Get all quizzes for a course
@@ -43,14 +45,40 @@ const getStudentQuizOverviewHandler = async (req, res) => {
     const { courseId } = req.params;
     const userId = req.user ? (req.user._id || req.user.id) : null;
 
-    const quizzes = await quizService.getQuizzesByCourse(courseId);
-    const now = new Date();
-    const active = quizzes.filter((quiz) => {
-      if (quiz.published !== true) return false;
-      if (quiz.releaseDate && new Date(quiz.releaseDate) > now) return false;
-      if (quiz.expireDate && new Date(quiz.expireDate) < now) return false;
-      return true;
-    });
+    const published = (await quizService.getQuizzesByCourse(courseId))
+      .filter((quiz) => quiz.published === true);
+
+    let active;
+    if (!(await isStudent(req.user))) {
+      // Instructors (staff/faculty/admins) aren't enrolled in a section — let
+      // them preview every published quiz regardless of the per-section schedule.
+      active = published;
+    } else {
+      // Per-section scheduling: a quiz is only visible to a student through the
+      // section(s) they belong to. Students with no section assignment see nothing.
+      const studentCourseSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, courseId);
+      if (studentCourseSectionIds.length === 0) {
+        return res.json({ success: true, quizzes: [] });
+      }
+
+      const now = new Date();
+      const schedulesByQuiz = await quizScheduleService.getSchedulesForQuizzes(
+        published.map((q) => q._id.toString()),
+        studentCourseSectionIds
+      );
+
+      active = [];
+      for (const quiz of published) {
+        const window = quizScheduleService.resolveWindow(
+          schedulesByQuiz.get(quiz._id.toString()) || [],
+          studentCourseSectionIds,
+          now
+        );
+        if (window.accessibleNow) {
+          active.push({ ...quiz, releaseDate: window.releaseDate, expireDate: window.expireDate });
+        }
+      }
+    }
 
     const overview = await Promise.all(
       active.map(async (quiz) => {
@@ -101,12 +129,12 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description, releaseDate, expireDate, deliveryFormat, questionIds, newQuestions } = req.body;
+    const { courseId, name, description, deliveryFormat, questionIds, newQuestions } = req.body;
 
-    if (!courseId || !name || !releaseDate || !expireDate || !deliveryFormat) {
+    if (!courseId || !name || !deliveryFormat) {
       return res.status(400).json({
         success: false,
-        error: "Course ID, name, releaseDate, expireDate, and deliveryFormat are required",
+        error: "Course ID, name, and deliveryFormat are required",
       });
     }
 
@@ -124,8 +152,6 @@ const createQuizHandler = async (req, res) => {
     const quiz = await quizService.createQuiz(courseId, {
       name,
       description,
-      releaseDate,
-      expireDate,
       deliveryFormat
     });
     
@@ -166,7 +192,7 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, releaseDate, expireDate, deliveryFormat } = req.body;
+    const { name, description, published, deliveryFormat } = req.body;
 
     if (deliveryFormat !== undefined && deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
       return res.status(400).json({
@@ -174,7 +200,7 @@ const updateQuizHandler = async (req, res) => {
         error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'."
       });
     }
-    
+
     // Get existing quiz to check current values
     const existingQuiz = await quizService.getQuizById(quizId);
     if (!existingQuiz) {
@@ -185,27 +211,10 @@ const updateQuizHandler = async (req, res) => {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
-    // Validation for publishing: a quiz must have a release date
-    const finalPublished = published !== undefined ? published : existingQuiz.published;
-    
-    if (finalPublished === true) {
-      // Check final state of releaseDate
-      const finalReleaseDate = releaseDate !== undefined ? releaseDate : existingQuiz.releaseDate;
-
-      if (!finalReleaseDate) {
-        return res.status(400).json({ 
-          success: false, 
-          error: "A published quiz must have a release date." 
-        });
-      }
-    }
-
     const result = await quizService.updateQuiz(quizId, {
       name,
       description,
       published,
-      releaseDate,
-      expireDate,
       deliveryFormat
     });
     
@@ -819,9 +828,19 @@ const getQuizScoresHandler = async (req, res) => {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
 
-    const scores = await quizService.getQuizScores(quizId);
+    let scores = await quizService.getQuizScores(quizId);
     if (!scores) {
       return res.status(404).json({ success: false, error: "Scores not found" });
+    }
+
+    // Scope to the sections this viewer may see: the course owner and app
+    // administrators see all; any other instructor sees only their own sections.
+    const { seeAll, sections } = await sectionService.getSectionsForViewer(quiz.courseId, req.user);
+    if (!seeAll) {
+      const visible = new Set(sections.map((s) => s.sectionId));
+      scores = scores.filter(
+        (row) => Array.isArray(row.sections) && row.sections.some((id) => visible.has(id))
+      );
     }
 
     res.json({ success: true, data: scores });
@@ -904,10 +923,70 @@ const getMyScoresHandler = async (req, res) => {
   }
 };
 
+/**
+ * Get the per-section release/expire schedule for a quiz (instructor editor).
+ */
+const getQuizSchedulesHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
+    }
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const schedules = await quizScheduleService.getSchedulesForQuiz(quizId);
+    res.json({ success: true, schedules });
+  } catch (error) {
+    console.error("Error fetching quiz schedules:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Replace a quiz's per-section release/expire schedule (instructor editor).
+ */
+const updateQuizSchedulesHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { schedules } = req.body;
+
+    if (!Array.isArray(schedules)) {
+      return res.status(400).json({ success: false, error: "schedules must be an array" });
+    }
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
+    }
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
+    for (const row of schedules) {
+      if (row && row.releaseDate && row.expireDate && new Date(row.expireDate) <= new Date(row.releaseDate)) {
+        return res.status(400).json({
+          success: false,
+          error: "Each section's expire date must be after its release date.",
+        });
+      }
+    }
+
+    const updated = await quizScheduleService.setSchedules(quizId, schedules);
+    res.json({ success: true, schedules: updated });
+  } catch (error) {
+    console.error("Error updating quiz schedules:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,
+  getQuizSchedulesHandler,
+  updateQuizSchedulesHandler,
   getMyScoresHandler,
   getQuizByIdHandler,
   createQuizHandler,

@@ -22,6 +22,17 @@ export function useCourseSections(courseId, { enabled = true } = {}) {
   return { ...query, sections: query.data?.sections || [] };
 }
 
+// Sections of a course the current viewer may see: course owner and app
+// administrators get all sections; other instructors get only their own.
+export function useVisibleCourseSections(courseId, { enabled = true } = {}) {
+  const query = useQuery({
+    queryKey: queryKeys.visibleCourseSections(courseId),
+    queryFn: () => api.get(`/api/courses/${courseId}/visible-sections`),
+    enabled: !!courseId && enabled,
+  });
+  return { ...query, sections: query.data?.sections || [] };
+}
+
 // Sections of a course that the current instructor owns/manages (My Sections page).
 export function useMyCourseSections(courseId) {
   const query = useQuery({

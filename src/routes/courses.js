@@ -27,6 +27,7 @@ router.get("/my-owned-sections", coursesController.getMyOwnedSectionsHandler);
 router.post("/:courseId/sections/:sectionId/recycle", express.json(), coursesController.recycleSectionHandler);
 router.post("/:courseId/sections", express.json(), coursesController.addSectionsToCourseHandler);
 router.get("/:courseId/sections", coursesController.getCourseSectionsHandler);
+router.get("/:courseId/visible-sections", coursesController.getVisibleCourseSectionsHandler);
 router.get("/:courseId/sections/:sectionId/students", coursesController.getSectionStudentsHandler);
 router.get("/:courseId/my-sections", coursesController.getMyCourseSectionsHandler);
 

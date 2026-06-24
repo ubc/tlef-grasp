@@ -59,8 +59,6 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
   const [selectedMaterials, setSelectedMaterials] = useState([]);
   const [selectedObjectives, setSelectedObjectives] = useState([]);
   const [quizName, setQuizName] = useState("");
-  const [releaseDate, setReleaseDate] = useState("");
-  const [expireDate, setExpireDate] = useState("");
   const [deliveryFormat, setDeliveryFormat] = useState("all-approved");
 
   const { materials, isPending: materialsPending } = useCourseMaterials(courseId);
@@ -85,8 +83,6 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
     onSuccess: () => {
       showToast("Quiz created successfully", "success");
       setQuizName("");
-      setReleaseDate("");
-      setExpireDate("");
       setSelectedMaterials([]);
       setSelectedObjectives([]);
       setStep(1);
@@ -117,14 +113,6 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
       showToast("Please provide a quiz name", "error");
       return;
     }
-    if (!releaseDate) {
-      showToast("Please select a release date", "error");
-      return;
-    }
-    if (!expireDate) {
-      showToast("Please select an expire date", "error");
-      return;
-    }
     if (matchedQuestions.length === 0) {
       showToast("No questions matched the selected objectives", "error");
       return;
@@ -134,8 +122,6 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
       name,
       courseId,
       deliveryFormat,
-      releaseDate: new Date(releaseDate).toISOString(),
-      expireDate: new Date(expireDate).toISOString(),
       questionIds: matchedQuestions.map(getObjectId),
     });
   };
@@ -276,37 +262,11 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
               />
             </div>
 
-            <div className="flex gap-5">
-              <div className="flex-1">
-                <label
-                  htmlFor="quiz-release-date"
-                  className="mb-1 block text-sm font-semibold text-ink"
-                >
-                  Release Date
-                </label>
-                <input
-                  id="quiz-release-date"
-                  type="datetime-local"
-                  value={releaseDate}
-                  onChange={(event) => setReleaseDate(event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none"
-                />
-              </div>
-              <div className="flex-1">
-                <label
-                  htmlFor="quiz-expire-date"
-                  className="mb-1 block text-sm font-semibold text-ink"
-                >
-                  Expire Date
-                </label>
-                <input
-                  id="quiz-expire-date"
-                  type="datetime-local"
-                  value={expireDate}
-                  onChange={(event) => setExpireDate(event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none"
-                />
-              </div>
+            <div className="rounded-lg bg-page px-4 py-3 text-sm text-muted">
+              <i className="fas fa-circle-info mr-1.5 text-primary" />
+              Availability is set per section after creation — open the quiz on the
+              Manage Quizzes tab and use “Schedule per section”. Until a section is
+              scheduled, the quiz is visible to no one.
             </div>
 
             <div>

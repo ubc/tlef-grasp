@@ -20,6 +20,7 @@ export const queryKeys = {
 
   quizzes: (courseId) => ["quizzes", "course", courseId],
   quizzesWithQuestions: (courseId) => ["quizzes-with-questions", courseId],
+  quizSchedules: (quizId) => ["quiz-schedules", quizId],
   quizScores: (quizId) => ["quiz-scores", quizId],
   quizStudentAttempts: (quizId, userId) => ["quiz-attempts", quizId, userId],
   studentQuizList: (courseId) => ["student-quiz-list", courseId],
@@ -43,5 +44,6 @@ export const queryKeys = {
   ],
   course: (courseId) => ["course", courseId],
   courseSections: (courseId) => ["course-sections", courseId],
+  visibleCourseSections: (courseId) => ["visible-course-sections", courseId],
   myCourseSections: (courseId) => ["my-course-sections", courseId],
 };

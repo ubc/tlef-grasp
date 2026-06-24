@@ -33,8 +33,6 @@ const EMPTY_QUIZ_FORM = {
   selectedQuizId: "",
   quizName: "",
   quizDescription: "",
-  releaseDate: "",
-  expireDate: "",
   deliveryFormat: "all-approved",
 };
 
@@ -298,20 +296,10 @@ export default function QuestionGeneration() {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      if (!quizForm.releaseDate) {
-        showToast("Please select a release date", "error");
-        return;
-      }
-      if (!quizForm.expireDate) {
-        showToast("Please select an expire date", "error");
-        return;
-      }
       createQuizMutation.mutate({
         courseId,
         name: quizForm.quizName.trim(),
         description: quizForm.quizDescription.trim() || "",
-        releaseDate: new Date(quizForm.releaseDate).toISOString(),
-        expireDate: new Date(quizForm.expireDate).toISOString(),
         deliveryFormat: quizForm.deliveryFormat || "all-approved",
         newQuestions: questions,
       });

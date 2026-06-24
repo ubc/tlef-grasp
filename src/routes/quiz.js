@@ -34,6 +34,18 @@ router.get(
 router.get("/my-scores", quizController.getMyScoresHandler);
 
 /**
+ * GET /api/quiz/:quizId/schedules
+ * Per-section release/expire schedule for a quiz (instructors).
+ */
+router.get("/:quizId/schedules", requireRole(ROLES.FACULTY), quizController.getQuizSchedulesHandler);
+
+/**
+ * PUT /api/quiz/:quizId/schedules
+ * Replace a quiz's per-section release/expire schedule (instructors).
+ */
+router.put("/:quizId/schedules", requireRole(ROLES.FACULTY), express.json(), quizController.updateQuizSchedulesHandler);
+
+/**
  * GET /api/quiz/:quizId
  * Get a quiz by ID
  */

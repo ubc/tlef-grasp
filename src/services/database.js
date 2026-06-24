@@ -100,6 +100,10 @@ class DatabaseService {
       await this.db.collection("grasp_quiz_score").createIndex({ userId: 1, quizId: 1 }, { unique: true });
       await this.db.collection("grasp_quiz_score").createIndex({ courseId: 1 });
 
+      // --- Per-Section Quiz Scheduling ---
+      await this.db.collection("grasp_quiz_section_schedule").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });
+      await this.db.collection("grasp_quiz_section_schedule").createIndex({ courseSectionId: 1 });
+
       // --- Course Section Tracking ---
       await this.db.collection("grasp_course_section").createIndex({ courseId: 1, sectionId: 1 }, { unique: true });
       await this.db.collection("grasp_user_course_section").createIndex({ userId: 1, courseId: 1, sectionId: 1 }, { unique: true });

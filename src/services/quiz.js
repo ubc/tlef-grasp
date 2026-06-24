@@ -5,7 +5,7 @@ const { BLOOM_LEVELS } = require("../constants/app-constants");
 /**
  * Create a new quiz
  * @param {string} courseId - The ID of the course
- * @param {Object} quizData - { name, description, releaseDate, expireDate }
+ * @param {Object} quizData - { name, description, deliveryFormat }
  * @returns {Promise<Object>} The created quiz object
  */
 const createQuiz = async (courseId, quizData) => {
@@ -20,9 +20,7 @@ const createQuiz = async (courseId, quizData) => {
             description: quizData.description || "",
             published: false,
             deliveryFormat: quizData.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved",
-            // Only add dates if they are provided
-            ...(quizData.releaseDate && { releaseDate: new Date(quizData.releaseDate) }),
-            ...(quizData.expireDate && { expireDate: new Date(quizData.expireDate) }),
+            // Availability is configured per section in grasp_quiz_section_schedule.
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -135,13 +133,6 @@ const updateQuiz = async (quizId, updateData) => {
         const cleanUpdateData = Object.fromEntries(
             Object.entries(updateData)
                 .filter(([_, value]) => value !== undefined)
-                .map(([key, value]) => {
-                    // Convert date strings to actual Date objects
-                    if ((key === 'releaseDate' || key === 'expireDate') && value !== null) {
-                        return [key, new Date(value)];
-                    }
-                    return [key, value];
-                })
         );
         
         cleanUpdateData.updatedAt = new Date();
@@ -174,6 +165,7 @@ const deleteQuiz = async (quizId) => {
         await db.collection("grasp_student_attempt").deleteMany({ quizId: qid });
         await db.collection("grasp_student_performance").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
+        await db.collection("grasp_quiz_section_schedule").deleteMany({ quizId: qid });
 
         const result = await collection.deleteOne({ _id: qid });
         
@@ -393,7 +385,7 @@ const getPhase2Questions = async (quizId, userId) => {
 
     const courseQuizzes = await db.collection("grasp_quiz").find({
         courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-    }).sort({ releaseDate: 1 }).toArray();
+    }).sort({ createdAt: 1 }).toArray();
 
     const currentQuizIdx = courseQuizzes.findIndex(q => q._id.toString() === quizId.toString());
     const historicalQuizIds = courseQuizzes.slice(0, currentQuizIdx).map(q => q._id.toString());
@@ -493,7 +485,7 @@ const getPhase3Questions = async (quizId, userId) => {
 
     const courseQuizzes = await db.collection("grasp_quiz").find({
         courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-    }).sort({ releaseDate: 1 }).toArray();
+    }).sort({ createdAt: 1 }).toArray();
 
     const currentQuizIdx = courseQuizzes.findIndex(q => q._id.toString() === quizId.toString());
     
@@ -981,7 +973,8 @@ const getQuizScores = async (quizId) => {
                 timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
                 studentName: student.displayName || student.puid || 'Unknown Student',
-                studentEmail: student.email || '-'
+                studentEmail: student.email || '-',
+                sections: Array.isArray(student.sections) ? student.sections : []
             };
         });
         

@@ -1,5 +1,7 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
+const quizScheduleService = require('../services/quiz-schedule');
+const { isStudent } = require('../utils/auth');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
@@ -7,28 +9,44 @@ const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
 
-const isQuizAccessible = (quiz) => {
+// Resolve whether a student may access a quiz right now, based on the
+// release/expire window of the section(s) they belong to. Students with no
+// section assignment, or whose section has no schedule for this quiz, are
+// blocked. A quiz is open if ANY of the student's scheduled sections is open.
+const resolveStudentQuizAccess = async (quiz, user) => {
   if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
   if (!quiz.published) return { success: false, status: 403, message: "This quiz is not available. Only published quizzes can be accessed." };
 
-  const now = new Date();
-  if (quiz.releaseDate && new Date(quiz.releaseDate) > now) {
-    return { 
-      success: false, 
-      status: 403, 
-      message: `This quiz is not yet available. It will be released on ${new Date(quiz.releaseDate).toLocaleString()}.` 
+  // Instructors (staff/faculty/admins) aren't enrolled in a section — let them
+  // open any published quiz regardless of the per-section schedule.
+  if (!(await isStudent(user))) return { success: true };
+
+  const userId = user._id || user.id;
+  const studentSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, quiz.courseId);
+  if (studentSectionIds.length === 0) {
+    return {
+      success: false,
+      status: 403,
+      message: "This quiz is not available for your section. If you believe this is a mistake, contact your instructor.",
     };
   }
 
-  if (quiz.expireDate && new Date(quiz.expireDate) < now) {
-    return { 
-      success: false, 
-      status: 403, 
-      message: "This quiz has expired and is no longer available." 
+  const rows = await quizScheduleService.getSchedulesForQuiz(quiz._id.toString());
+  const window = quizScheduleService.resolveWindow(rows, studentSectionIds, new Date());
+
+  if (window.accessibleNow) return { success: true };
+
+  if (window.reason === "not-yet") {
+    return {
+      success: false,
+      status: 403,
+      message: `This quiz is not yet available. It will be released on ${new Date(window.releaseDate).toLocaleString()}.`,
     };
   }
-
-  return { success: true };
+  if (window.reason === "expired") {
+    return { success: false, status: 403, message: "This quiz has expired and is no longer available." };
+  }
+  return { success: false, status: 403, message: "This quiz has not been scheduled for your section yet." };
 };
 
 const getStudentCoursesHandler = async (req, res) => {
@@ -63,7 +81,7 @@ const startQuizHandler = async (req, res) => {
 
     const quiz = await quizService.getQuizById(quizId);
 
-    const accessibility = isQuizAccessible(quiz);
+    const accessibility = await resolveStudentQuizAccess(quiz, req.user);
     if (!accessibility.success) {
       return res.status(accessibility.status).json({
         success: false,
@@ -112,9 +130,9 @@ const getQuizQuestionsHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
 
-    // First, verify the quiz exists and is published
+    // First, verify the quiz exists and is accessible for this student's section
     const quiz = await quizService.getQuizById(quizId);
-    const accessibility = isQuizAccessible(quiz);
+    const accessibility = await resolveStudentQuizAccess(quiz, req.user);
     if (!accessibility.success) {
       return res.status(accessibility.status).json({
         success: false,
@@ -333,7 +351,7 @@ const submitQuizHandler = async (req, res) => {
     const { timeSpent, sessionId } = req.body;
 
     const quiz = await quizService.getQuizById(quizId);
-    const accessibility = isQuizAccessible(quiz);
+    const accessibility = await resolveStudentQuizAccess(quiz, req.user);
     if (!accessibility.success) {
       return res.status(accessibility.status).json({ success: false, message: accessibility.message });
     }

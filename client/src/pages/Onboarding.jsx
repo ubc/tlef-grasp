@@ -62,9 +62,26 @@ export default function Onboarding() {
     document.title = "GRASP - Onboarding";
   }, []);
 
+  const handleSignOut = () => {
+    setSelectedCourse(null);
+    window.location.href = "/auth/logout";
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 py-10">
       <div className="mx-auto w-full max-w-[700px]">
+        {/* Sign out */}
+        <div className="mb-4 flex justify-end">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+          >
+            <i className="fas fa-sign-out-alt" />
+            Sign Out
+          </button>
+        </div>
+
         {/* Tab navigation */}
         <div className="flex flex-wrap justify-center gap-2">
           {tabs.map((tab) => (

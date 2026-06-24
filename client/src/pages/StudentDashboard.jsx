@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useStudentCourses } from "../hooks/useCourses";
-import { useCourseQuizzes } from "../hooks/useQuizzes";
+import { useStudentQuizList } from "../hooks/useStudentQuizzes";
 import { useMyAchievements } from "../hooks/useAchievements";
 import { useAppStore } from "../stores/appStore";
 
@@ -87,18 +87,14 @@ export default function StudentDashboard() {
 
   const courseId = selectedCourse?.id;
 
-  const quizzesQuery = useCourseQuizzes(hasCourse ? courseId : null);
+  const quizzesQuery = useStudentQuizList(hasCourse ? courseId : null);
   const achievementsQuery = useMyAchievements(courseId, {
     enabled: !!courseId && hasCourse,
   });
 
-  const now = new Date();
-  const quizCount = quizzesQuery.quizzes.filter((quiz) => {
-    if (quiz.published !== true) return false;
-    if (quiz.releaseDate && new Date(quiz.releaseDate) > now) return false;
-    if (quiz.expireDate && new Date(quiz.expireDate) < now) return false;
-    return true;
-  }).length;
+  // The student-overview endpoint already returns only quizzes that are open for
+  // this student's section(s), so the count is simply its length.
+  const quizCount = quizzesQuery.quizzes.length;
 
   const completedCount = achievementsQuery.achievements.filter(
     (achievement) => achievement.type === "quiz_completed"

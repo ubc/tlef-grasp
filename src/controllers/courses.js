@@ -10,7 +10,7 @@ const {
 } = require('../services/course');
 
 const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = require('../services/user-course');
-const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner } = require('../services/course-section');
+const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner, getSectionsForViewer } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
 const { isFaculty, isStudent } = require('../utils/auth');
@@ -599,6 +599,24 @@ const getMyCourseSectionsHandler = async (req, res) => {
   }
 };
 
+// Sections of a course the current viewer is allowed to see: the course owner
+// and app administrators get all sections; any other instructor gets only the
+// sections they own. Used to scope the Quiz Scores section filter.
+const getVisibleCourseSectionsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user._id || req.user.id;
+    if (!(await isUserInCourse(userId, courseId))) {
+      return res.status(403).json({ error: "You must be a member of this course" });
+    }
+    const { sections } = await getSectionsForViewer(courseId, req.user);
+    res.json({ success: true, sections });
+  } catch (error) {
+    console.error("Error getting visible course sections:", error);
+    res.status(500).json({ error: "Failed to retrieve sections" });
+  }
+};
+
 const getMyOwnedSectionsHandler = async (req, res) => {
   try {
     if (!(await isFaculty(req.user))) {
@@ -656,6 +674,7 @@ module.exports = {
   getSectionStudentsHandler,
   getMyCourseSectionsHandler,
   getMyOwnedSectionsHandler,
+  getVisibleCourseSectionsHandler,
   recycleSectionHandler,
   addSectionsToCourseHandler,
 };

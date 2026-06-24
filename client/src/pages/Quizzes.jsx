@@ -6,6 +6,7 @@ import {
   useUpdateQuiz,
   useDeleteQuiz,
 } from "../hooks/useQuizzes";
+import { useCourseSections } from "../hooks/useSections";
 import { downloadQuizExport } from "../lib/exports";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -29,6 +30,7 @@ export default function Quizzes() {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { quizzes, isPending } = useQuizzesWithQuestions(courseId);
+  const { sections } = useCourseSections(courseId);
 
   const updateMutation = useUpdateQuiz(courseId, {
     onSuccess: (data, { successMessage }) => {
@@ -88,6 +90,8 @@ export default function Quizzes() {
               <QuizCard
                 key={quiz.id}
                 quiz={quiz}
+                courseId={courseId}
+                sections={sections}
                 onUpdate={(quizId, updates, successMessage) =>
                   updateMutation.mutate({ quizId, updates, successMessage })
                 }
