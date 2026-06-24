@@ -3,6 +3,7 @@ import { useSelectedCourseId } from "../stores/appStore";
 import { useAcademicPeriods, useInstructorSections } from "../hooks/useUbc";
 import {
   useCourse,
+  useCourseSections,
   useMyCourseSections,
   useAddSections,
   useRecycleSection,
@@ -36,6 +37,10 @@ export default function MySections() {
   const { course, isPending: coursePending } = useCourse(courseId);
   const { sections: mySections, isPending: sectionsPending } =
     useMyCourseSections(courseId);
+  // All sections already linked to the course (by any instructor). Used only to
+  // infer the academic period the course runs in, so a co-instructor who hasn't
+  // linked a section yet doesn't have to re-pick it.
+  const { sections: allCourseSections } = useCourseSections(courseId);
 
   // Add-section form state
   const [period, setPeriod] = useState("");
@@ -43,12 +48,16 @@ export default function MySections() {
   const [syncStudents, setSyncStudents] = useState(false);
   const [recycleTarget, setRecycleTarget] = useState(null);
 
-  // If sections are already linked, infer campus/period/course from them — no need to ask.
-  const inferredPeriod = mySections.length > 0 ? mySections[0].academicPeriod : null;
-  const inferredPeriodName =
-    mySections.length > 0
-      ? mySections[0].academicPeriodName || prettyPeriod(mySections[0])
-      : null;
+  // If sections are already linked, infer the academic period from them — no need
+  // to ask. Prefer the viewer's own linked sections, but fall back to any section
+  // already linked to the course (e.g. by the owner) so a newly-added co-instructor
+  // inherits the course's period instead of being prompted to choose it.
+  const periodSource =
+    mySections.length > 0 ? mySections[0] : allCourseSections[0] || null;
+  const inferredPeriod = periodSource?.academicPeriod || null;
+  const inferredPeriodName = periodSource
+    ? periodSource.academicPeriodName || prettyPeriod(periodSource)
+    : null;
   const effectivePeriod = inferredPeriod || period;
 
   const { periods } = useAcademicPeriods(course?.campus);

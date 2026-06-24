@@ -521,9 +521,11 @@ const addSectionsToCourseHandler = async (req, res) => {
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
     }
-    const userIdStr = String(req.user._id || req.user.id);
-    if (course.owner.toString() !== userIdStr) {
-      return res.status(403).json({ error: "You must be the course owner to add sections" });
+    // Any faculty member of the course may add sections; the new section is
+    // recorded with this user as its owner (see upsertCourseSection below).
+    const userId = req.user._id || req.user.id;
+    if (!(await isUserInCourse(userId, courseId))) {
+      return res.status(403).json({ error: "You must be a member of this course to add sections" });
     }
 
     const resolved = await resolveSectionsToCourse(sectionIds);
@@ -534,7 +536,6 @@ const addSectionsToCourseHandler = async (req, res) => {
       return res.status(400).json({ error: `Selected sections belong to a different course (${baseCode}). Expected ${course.courseCode}.` });
     }
 
-    const userId = req.user._id || req.user.id;
     for (const s of resolved.sections) {
       try {
         await upsertCourseSection(courseId, {
