@@ -1,4 +1,6 @@
 const settingsService = require('../services/settings');
+const { isUserInCourse } = require('../services/user-course');
+const { assertCoInstructorPermission, isCourseManager, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 
 /**
  * Get application settings handler
@@ -32,7 +34,17 @@ const updateSettingsHandler = async (req, res) => {
         if (!courseId) {
             return res.status(400).json({ success: false, error: 'Course ID is required' });
         }
-        const updateData = req.body;
+        if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
+            return res.status(403).json({ success: false, error: 'User is not in course' });
+        }
+        if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.SETTINGS))) return;
+        const updateData = { ...req.body };
+        // Only the course owner / app admins may change the co-instructor
+        // permission map itself — stop a co-instructor with Settings access from
+        // self-escalating. Other settings (prompts, bloom) are still saved.
+        if ('coInstructorPermissions' in updateData && !(await isCourseManager(req.user, courseId))) {
+            delete updateData.coInstructorPermissions;
+        }
         const result = await settingsService.updateSettings(courseId, updateData);
         res.json({
             success: true,

@@ -3,6 +3,7 @@ const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('
 const { isUserInCourse } = require('../services/user-course');
 const { getQuestionCourseId, getQuestion } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
+const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const quizService = require('../services/quiz');
 const { ObjectId } = require('mongodb');
 
@@ -89,6 +90,7 @@ const saveQuestionHandler = async (req, res) => {
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     // Normalize to array
     const questionsArray = Array.isArray(questions) ? questions : (questions ? [questions] : []);
@@ -134,6 +136,7 @@ const updateQuestionHandler = async (req, res) => {
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
 
     if (!updateData) {
       return res.status(400).json({ error: "No update data provided" });
@@ -179,6 +182,7 @@ const updateQuestionStatusHandler = async (req, res) => {
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
 
     // Staff cannot approve/unapprove questions
     if (!(await isFaculty(req.user))) {
@@ -223,6 +227,7 @@ const deleteQuestionHandler = async (req, res) => {
     if (!isUserInCourse(req.user.id, courseId)) {
       return res.status(403).json({ error: "User is not in course" });
     }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
 
     // Only faculty can delete questions
     if (!(await isFaculty(req.user))) {

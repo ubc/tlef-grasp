@@ -3,11 +3,11 @@ import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 
 // A single course shell (needed for its campus + ubcCourseId on the My Sections page).
-export function useCourse(courseId) {
+export function useCourse(courseId, { enabled = true } = {}) {
   const query = useQuery({
     queryKey: queryKeys.course(courseId),
     queryFn: () => api.get(`/api/courses/${courseId}`),
-    enabled: !!courseId,
+    enabled: !!courseId && enabled,
   });
   return { ...query, course: query.data?.success ? query.data.course : null };
 }

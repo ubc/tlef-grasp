@@ -7,6 +7,7 @@ const KEY_MAP = {
     'prompts.objectiveGenerationAuto': 'prompt_objective_generation_auto',
     'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual',
     'bloomTypePreferences': 'bloom_type_preferences',
+    'coInstructorPermissions': 'co_instructor_permissions',
 };
 
 
@@ -30,6 +31,7 @@ const getSettings = async (courseId) => {
         const settings = {
             prompts: {},
             bloomTypePreferences: null,
+            coInstructorPermissions: {},
         };
 
         // Resolve each prompt: use stored value when present, otherwise fall back to default.
@@ -58,6 +60,19 @@ const getSettings = async (courseId) => {
             }
         } else {
             settings.bloomTypePreferences = DEFAULT_BLOOM_TYPE_PREFERENCES;
+        }
+
+        // Resolve co-instructor permissions: a map of feature key -> boolean.
+        // An absent map (or absent key) means "allowed" — the frontend treats
+        // anything not explicitly false as enabled, so the default is full access.
+        const permsDbKey = KEY_MAP['coInstructorPermissions'];
+        const storedPerms = settingsMap[permsDbKey];
+        if (storedPerms) {
+            try {
+                settings.coInstructorPermissions = JSON.parse(storedPerms);
+            } catch {
+                settings.coInstructorPermissions = {};
+            }
         }
 
         return settings;

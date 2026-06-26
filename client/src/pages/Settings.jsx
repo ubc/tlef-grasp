@@ -7,8 +7,10 @@ import {
   useSaveCourseSettings,
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
+import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
 import {
   QUESTION_TYPES,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
@@ -89,7 +91,13 @@ export default function Settings() {
     objectiveGenerationAuto: "",
     objectiveGenerationManual: "",
   });
+  // Co-instructor permission toggles (owner only). Default every feature to
+  // enabled; the stored map only carries explicit restrictions.
+  const [coInstructorPerms, setCoInstructorPerms] = useState(() =>
+    Object.fromEntries(CO_INSTRUCTOR_PERMISSIONS.map((perm) => [perm.key, true]))
+  );
 
+  const { isOwner } = useCoInstructorAccess();
   const { settings } = useCourseSettings(courseId);
   const { defaults } = useSettingsDefaults();
   const defaultPrompts = defaults?.prompts || {};
@@ -115,6 +123,16 @@ export default function Settings() {
         }
         return next;
       });
+    }
+    if (settings.coInstructorPermissions) {
+      setCoInstructorPerms(() =>
+        Object.fromEntries(
+          CO_INSTRUCTOR_PERMISSIONS.map((perm) => [
+            perm.key,
+            settings.coInstructorPermissions[perm.key] !== false,
+          ])
+        )
+      );
     }
   }, [settings]);
 
@@ -145,7 +163,12 @@ export default function Settings() {
         return [level, [primary, ...rest]];
       })
     );
-    saveMutation.mutate({ prompts, bloomTypePreferences });
+    saveMutation.mutate({
+      prompts,
+      bloomTypePreferences,
+      // Only the owner may change co-instructor permissions.
+      ...(isOwner ? { coInstructorPermissions: coInstructorPerms } : {}),
+    });
   };
 
   const handleResetBloom = () => {
@@ -172,6 +195,18 @@ export default function Settings() {
 
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
 
+  const tabs = [
+    { id: "general", icon: "fa-cog", label: "Course Settings" },
+    { id: "prompt", icon: "fa-terminal", label: "Course Prompts" },
+    // Owner-only: control what co-instructors can access in this course.
+    ...(isOwner
+      ? [{ id: "permissions", icon: "fa-user-shield", label: "Co-Instructor Permissions" }]
+      : []),
+  ];
+
+  const toggleCoInstructorPerm = (key) =>
+    setCoInstructorPerms((prev) => ({ ...prev, [key]: !prev[key] }));
+
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -196,10 +231,7 @@ export default function Settings() {
 
       {/* Tabs */}
       <div className="mb-6 flex gap-2 border-b border-gray-200">
-        {[
-          { id: "general", icon: "fa-cog", label: "Course Settings" },
-          { id: "prompt", icon: "fa-terminal", label: "Course Prompts" },
-        ].map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -396,6 +428,52 @@ export default function Settings() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {activeTab === "permissions" && isOwner && (
+        <section className="rounded-2xl bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-ink">Co-Instructor Permissions</h2>
+          <p className="mt-1 mb-6 text-sm text-muted">
+            Choose what co-instructors (faculty who joined this course with the invite
+            code) can access. You and app administrators always have full access.
+            Dashboard, My Sections, Quizzes, and Quiz Scores are always available;
+            scheduling quizzes is always allowed. Click{" "}
+            <span className="font-semibold text-ink">Save All Changes</span> to apply.
+          </p>
+
+          <div className="divide-y divide-gray-100">
+            {CO_INSTRUCTOR_PERMISSIONS.map((perm) => {
+              const enabled = coInstructorPerms[perm.key] !== false;
+              return (
+                <div key={perm.key} className="flex items-center justify-between gap-4 py-4">
+                  <div className="flex items-start gap-3">
+                    <i className={`fas ${perm.icon} mt-0.5 w-5 text-center text-muted`} />
+                    <div>
+                      <p className="text-sm font-medium text-ink">{perm.label}</p>
+                      <p className="text-xs text-muted">{perm.description}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-label={`Allow co-instructors: ${perm.label}`}
+                    onClick={() => toggleCoInstructorPerm(perm.key)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                      enabled ? "bg-primary" : "bg-gray-200"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        enabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

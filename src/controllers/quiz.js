@@ -6,6 +6,7 @@ const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty, isStudent } = require('../utils/auth');
+const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 
 /**
  * Get all quizzes for a course
@@ -148,6 +149,7 @@ const createQuizHandler = async (req, res) => {
     if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
 
     const quiz = await quizService.createQuiz(courseId, {
       name,
@@ -281,7 +283,8 @@ const addQuizQuestionsHandler = async (req, res) => {
     if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
-    
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
+
     const savedQuestionIds = [];
     
     for (const questionData of questions) {
@@ -973,7 +976,28 @@ const updateQuizSchedulesHandler = async (req, res) => {
       }
     }
 
-    const updated = await quizScheduleService.setSchedules(quizId, schedules);
+    // Instructors (the course owner included) may only schedule the sections they
+    // own. Reject any section outside that set, and scope the update so other
+    // instructors' schedules are preserved.
+    const ownedSections = await sectionService.getSectionsOwnedByUser(
+      quiz.courseId,
+      req.user._id || req.user.id
+    );
+    const ownedSectionIds = ownedSections.map((s) => s._id.toString());
+    const ownedSet = new Set(ownedSectionIds);
+    const unauthorized = schedules.some(
+      (row) => row && row.courseSectionId && !ownedSet.has(row.courseSectionId.toString())
+    );
+    if (unauthorized) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only schedule quizzes for sections you own.",
+      });
+    }
+
+    const updated = await quizScheduleService.setSchedules(quizId, schedules, {
+      restrictToSectionIds: ownedSectionIds,
+    });
     res.json({ success: true, schedules: updated });
   } catch (error) {
     console.error("Error updating quiz schedules:", error);

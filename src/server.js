@@ -20,7 +20,7 @@ const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
 
-const { getUserRole, ROLES } = require("./utils/auth");
+const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
 
 const app = express();
@@ -128,6 +128,7 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
     const userIsFaculty = userRole === ROLES.FACULTY;
     const userIsStaff = userRole === ROLES.STAFF;
     const userIsStudent = userRole === ROLES.STUDENT;
+    const userIsAppAdministrator = await isAppAdministrator(req.user);
 
     res.json({
       success: true,
@@ -142,6 +143,7 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
         isFaculty: userIsFaculty,
         isStaff: userIsStaff,
         isStudent: userIsStudent,
+        isAppAdministrator: userIsAppAdministrator,
       },
     });
   } catch (error) {

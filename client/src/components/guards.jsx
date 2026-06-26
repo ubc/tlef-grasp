@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { useAppStore } from "../stores/appStore";
 
 const ROLE_RANK = { student: 1, staff: 2, faculty: 3 };
@@ -48,5 +49,16 @@ export function RequireRole({ min }) {
   if ((ROLE_RANK[role] || 0) < ROLE_RANK[min]) {
     return <Navigate to={isStudent ? "/student-dashboard" : "/dashboard"} replace />;
   }
+  return <Outlet />;
+}
+
+// Requires the co-instructor to have the given permission for the selected
+// course. The owner and app admins always pass. A restricted co-instructor who
+// reaches a gated URL directly is bounced to their dashboard.
+export function RequirePermission({ permission }) {
+  const { can, isLoading } = useCoInstructorAccess();
+
+  if (isLoading) return <FullPageSpinner />;
+  if (!can(permission)) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
 }

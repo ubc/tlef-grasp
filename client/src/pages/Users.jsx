@@ -5,7 +5,7 @@ import {
   useCourseUsers,
   useRemoveUserFromCourse,
 } from "../hooks/useUsers";
-import { useVisibleCourseSections } from "../hooks/useSections";
+import { useMyCourseSections } from "../hooks/useSections";
 import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -68,7 +68,8 @@ export default function Users() {
 
   const { users: courseUsers, isPending: courseUsersPending } =
     useCourseUsers(courseId);
-  const { sections: courseSections } = useVisibleCourseSections(courseId);
+  // Only the sections this instructor owns — students are scoped to these.
+  const { sections: courseSections } = useMyCourseSections(courseId);
 
   // Section id -> readable label, for badges and the filter dropdown.
   const sectionName = (sectionId) => {
@@ -140,7 +141,6 @@ export default function Users() {
                 <thead>
                   <tr>
                     <th className={tableHeadClass}>Name</th>
-                    <th className={tableHeadClass}>Email</th>
                     <th className={tableHeadClass}>Role</th>
                     {courseSections.length > 0 && (
                       <th className={tableHeadClass}>Sections</th>
@@ -155,7 +155,6 @@ export default function Users() {
                     );
                     const displayName =
                       user.displayName || user.user?.displayName || "Unknown User";
-                    const email = user.email || user.user?.email || "";
                     const role = getUserRole({
                       ...user,
                       affiliation: user.affiliation || user.user?.affiliation,
@@ -167,7 +166,6 @@ export default function Users() {
                         <td className={tableCellClass}>
                           <UserNameCell name={displayName} isCurrentUser={isCurrentUser} />
                         </td>
-                        <td className={`${tableCellClass} text-muted`}>{email}</td>
                         <td className={tableCellClass}>
                           <RoleBadge role={role} />
                         </td>

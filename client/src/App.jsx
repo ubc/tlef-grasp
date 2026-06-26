@@ -1,6 +1,11 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { RequireAuth, RequireOnboarded, RequireRole } from "./components/guards";
+import {
+  RequireAuth,
+  RequireOnboarded,
+  RequireRole,
+  RequirePermission,
+} from "./components/guards";
 import AppLayout from "./components/layout/AppLayout";
 import Landing from "./pages/Landing";
 
@@ -50,14 +55,24 @@ export default function App() {
               {/* Instructor pages (staff and faculty) */}
               <Route element={<RequireRole min="staff" />}>
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/course-materials" element={<CourseMaterials />} />
-                <Route path="/question-generation" element={<QuestionGeneration />} />
-                <Route path="/question-bank" element={<QuestionBank />} />
-                <Route path="/question-review" element={<QuestionReview />} />
-                <Route path="/quizzes" element={<Quizzes />} />
                 <Route path="/quiz-scores" element={<QuizScores />} />
                 <Route path="/my-sections" element={<MySections />} />
-                <Route path="/settings" element={<Settings />} />
+                <Route path="/quizzes" element={<Quizzes />} />
+                <Route path="/question-review" element={<QuestionReview />} />
+
+                {/* Areas the course owner can hide from co-instructors */}
+                <Route element={<RequirePermission permission="courseMaterials" />}>
+                  <Route path="/course-materials" element={<CourseMaterials />} />
+                </Route>
+                <Route element={<RequirePermission permission="questionGeneration" />}>
+                  <Route path="/question-generation" element={<QuestionGeneration />} />
+                </Route>
+                <Route element={<RequirePermission permission="questionBank" />}>
+                  <Route path="/question-bank" element={<QuestionBank />} />
+                </Route>
+                <Route element={<RequirePermission permission="settings" />}>
+                  <Route path="/settings" element={<Settings />} />
+                </Route>
               </Route>
 
               {/* Faculty-only pages */}

@@ -58,8 +58,7 @@ export default function QuizScores() {
       }
       if (!query) return true;
       const name = (s.studentName || "").toLowerCase();
-      const email = (s.studentEmail || "").toLowerCase();
-      return name.includes(query) || email.includes(query);
+      return name.includes(query);
     });
   }, [scores, search, sectionFilter]);
 
@@ -69,7 +68,7 @@ export default function QuizScores() {
   const pageData = filtered.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
   const showSections = courseSections.length > 0;
-  const colCount = showSections ? 7 : 6;
+  const colCount = showSections ? 6 : 5;
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
@@ -122,7 +121,7 @@ export default function QuizScores() {
               setSearch(event.target.value);
               setPage(1);
             }}
-            placeholder="Search by student name or email..."
+            placeholder="Search by student name..."
             className="w-full rounded-lg border border-gray-300 py-2 pr-3 pl-9 text-sm focus:border-primary focus:outline-none"
           />
         </div>
@@ -135,7 +134,6 @@ export default function QuizScores() {
             <thead>
               <tr>
                 <th className={headClass}>Student</th>
-                <th className={headClass}>Email</th>
                 {showSections && <th className={headClass}>Sections</th>}
                 <th className={headClass}>Score</th>
                 <th className={headClass}>Correct</th>
@@ -187,9 +185,6 @@ export default function QuizScores() {
                     >
                       <td className={`${cellClass} font-semibold text-ink`}>
                         {item.studentName || "Unknown Student"}
-                      </td>
-                      <td className={`${cellClass} text-muted`}>
-                        {item.studentEmail || "-"}
                       </td>
                       {showSections && (
                         <td className={cellClass}>

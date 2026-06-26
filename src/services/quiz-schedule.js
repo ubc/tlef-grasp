@@ -36,13 +36,23 @@ const getSchedulesForQuiz = async (quizId) => {
  * present (or missing a date) in the payload is removed — so clearing a
  * section's dates makes the quiz unavailable to that section.
  *
+ * When `restrictToSectionIds` is given, the call may only create/update/remove
+ * rows for those sections — schedules for any other section (e.g. another
+ * instructor's) are left untouched. Rows in the payload outside that set are
+ * ignored. This scopes scheduling to the sections an instructor owns.
+ *
  * @param {string} quizId
  * @param {Array<{courseSectionId: string, releaseDate: string|Date, expireDate: string|Date}>} rows
+ * @param {{restrictToSectionIds?: string[]}} [options]
  */
-const setSchedules = async (quizId, rows = []) => {
+const setSchedules = async (quizId, rows = [], { restrictToSectionIds = null } = {}) => {
   const db = await databaseService.connect();
   const collection = db.collection(COLLECTION);
   const qid = toObjectId(quizId);
+
+  const allowed = restrictToSectionIds
+    ? new Set(restrictToSectionIds.map((id) => id.toString()))
+    : null;
 
   const keep = [];
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -50,6 +60,8 @@ const setSchedules = async (quizId, rows = []) => {
     const releaseDate = toDateOrNull(row && row.releaseDate);
     const expireDate = toDateOrNull(row && row.expireDate);
     if (!courseSectionId || !releaseDate || !expireDate) continue;
+    // Ignore sections outside the permitted set.
+    if (allowed && !allowed.has(courseSectionId.toString())) continue;
 
     const sid = toObjectId(courseSectionId);
     keep.push(sid);
@@ -63,11 +75,16 @@ const setSchedules = async (quizId, rows = []) => {
     );
   }
 
-  // Drop rows for sections the instructor cleared / omitted.
-  await collection.deleteMany({
-    quizId: qid,
-    courseSectionId: { $nin: keep },
-  });
+  // Drop rows for sections the instructor cleared / omitted — but only within
+  // the permitted set, so other instructors' schedules are preserved.
+  const deleteFilter = { quizId: qid, courseSectionId: { $nin: keep } };
+  if (allowed) {
+    deleteFilter.courseSectionId = {
+      $nin: keep,
+      $in: [...allowed].map(toObjectId),
+    };
+  }
+  await collection.deleteMany(deleteFilter);
 
   return getSchedulesForQuiz(quizId);
 };

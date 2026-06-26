@@ -1,7 +1,7 @@
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse } = require('../services/user-course');
 const { getStaffUsersNotInCourse, getStudentsNotInCourse } = require('../services/user');
 const { getCourseById } = require('../services/course');
-const { getSectionsForViewer } = require('../services/course-section');
+const { getSectionsOwnedByUser } = require('../services/course-section');
 const { isFaculty, parseAffiliations } = require('../utils/auth');
 
 const getCourseUsersHandler = async (req, res) => {
@@ -33,35 +33,32 @@ const getCourseUsersHandler = async (req, res) => {
     const courseUsers = await getCourseUsers(courseId);
     console.log("Found", courseUsers.length, "users in course");
 
-    // Scope student visibility by section ownership: the course owner and app
-    // administrators see everyone, but any other instructor only sees students
-    // enrolled in a section they own. Faculty/staff (course-level members, not
-    // bound to a section) stay visible to all instructors.
-    const { seeAll, sections: viewerSections } = await getSectionsForViewer(courseId, req.user);
+    // Scope student visibility by section ownership: every instructor — the
+    // course owner included — only sees students enrolled in a section they own.
+    // Faculty/staff (course-level members, not bound to a section) stay visible
+    // to all instructors.
+    const ownedSections = await getSectionsOwnedByUser(courseId, req.user._id || req.user.id);
+    const ownedSectionIds = new Set(ownedSections.map((s) => s.sectionId));
 
-    let users = courseUsers;
-    if (!seeAll) {
-      const ownedSectionIds = new Set(viewerSections.map((s) => s.sectionId));
-      users = courseUsers.reduce((visible, courseUser) => {
-        const affiliations = parseAffiliations(courseUser);
-        const isStudent =
-          !affiliations.includes("faculty") && !affiliations.includes("staff");
+    const users = courseUsers.reduce((visible, courseUser) => {
+      const affiliations = parseAffiliations(courseUser);
+      const isStudent =
+        !affiliations.includes("faculty") && !affiliations.includes("staff");
 
-        if (!isStudent) {
-          visible.push(courseUser);
-          return visible;
-        }
-
-        // Only surface the student if (and the sections) the viewer owns.
-        const ownedSections = (courseUser.sections || []).filter((id) =>
-          ownedSectionIds.has(id)
-        );
-        if (ownedSections.length > 0) {
-          visible.push({ ...courseUser, sections: ownedSections });
-        }
+      if (!isStudent) {
+        visible.push(courseUser);
         return visible;
-      }, []);
-    }
+      }
+
+      // Only surface the student in (and limited to) the sections this instructor owns.
+      const studentOwnedSections = (courseUser.sections || []).filter((id) =>
+        ownedSectionIds.has(id)
+      );
+      if (studentOwnedSections.length > 0) {
+        visible.push({ ...courseUser, sections: studentOwnedSections });
+      }
+      return visible;
+    }, []);
 
     res.json({
       success: true,
@@ -215,16 +212,16 @@ const addUserToCourseHandler = async (req, res) => {
 
     // Check if current user is in course
     if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        error: "User is not in course" 
+        error: "User is not in course"
       });
     }
 
     if (!userId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: "userId is required" 
+        error: "userId is required"
       });
     }
 
@@ -266,9 +263,9 @@ const removeUserFromCourseHandler = async (req, res) => {
 
     // Check if current user is in course
     if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        error: "User is not in course" 
+        error: "User is not in course"
       });
     }
 

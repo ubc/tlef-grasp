@@ -3,8 +3,10 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useMyCourses } from "../../hooks/useCourses";
+import { useCoInstructorAccess } from "../../hooks/useCoInstructorAccess";
 import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
+import { PATH_PERMISSION } from "../../lib/permissions";
 
 const INSTRUCTOR_ITEMS = [
   { to: "/dashboard", icon: "fa-home", label: "Dashboard" },
@@ -116,6 +118,7 @@ function CourseSelector() {
 
 export default function Sidebar({ open = false, onClose }) {
   const { isStudent, isFaculty } = useCurrentUser();
+  const { can } = useCoInstructorAccess();
   const { currentRole, setCurrentRole, selectedCourse, setSelectedCourse } =
     useAppStore();
   const navigate = useNavigate();
@@ -126,6 +129,13 @@ export default function Sidebar({ open = false, onClose }) {
   // Students without a course only get the Dashboard link (legacy behavior)
   const studentItems =
     isStudent && !selectedCourse ? STUDENT_ITEMS.slice(0, 1) : STUDENT_ITEMS;
+
+  // Hide instructor links a co-instructor isn't permitted to see. Items without
+  // a gating permission (Dashboard, Quizzes, Quiz Scores) are always shown.
+  const instructorItems = INSTRUCTOR_ITEMS.filter((item) => {
+    const permission = PATH_PERMISSION[item.to];
+    return !permission || can(permission);
+  });
 
   const handleRoleSwitch = () => {
     const nextRole = currentRole === "instructor" ? "student" : "instructor";
@@ -173,7 +183,7 @@ export default function Sidebar({ open = false, onClose }) {
           >
             <i className="fas fa-user text-lg text-white/90" />
           </button>
-          {!isStudent && (
+          {!isStudent && can("settings") && (
             <Link
               to="/settings"
               className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
@@ -202,7 +212,7 @@ export default function Sidebar({ open = false, onClose }) {
         {/* Navigation */}
         <div className="flex-1 px-[25px] pb-[25px]">
           <ul>
-            {(viewingStudent ? studentItems : INSTRUCTOR_ITEMS).map((item) => (
+            {(viewingStudent ? studentItems : instructorItems).map((item) => (
               <NavItem key={item.to} {...item} />
             ))}
           </ul>
@@ -219,7 +229,9 @@ export default function Sidebar({ open = false, onClose }) {
                 {isFaculty && (
                   <NavItem to="/users" icon="fa-users" label="Users" />
                 )}
-                <NavItem to="/settings" icon="fa-cog" label="Settings" />
+                {can("settings") && (
+                  <NavItem to="/settings" icon="fa-cog" label="Settings" />
+                )}
               </ul>
             </>
           )}

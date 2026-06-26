@@ -2,11 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 
-export function useCourseSettings(courseId) {
+export function useCourseSettings(courseId, { enabled = true } = {}) {
   const query = useQuery({
     queryKey: queryKeys.courseSettings(courseId),
     queryFn: () => api.get(`/api/courses/${courseId}/settings`),
-    enabled: !!courseId,
+    enabled: !!courseId && enabled,
   });
 
   return { ...query, settings: query.data?.settings || null };

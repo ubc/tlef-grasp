@@ -2,14 +2,17 @@ import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { useQuestions } from "../hooks/useQuestions";
 import { useAppStore } from "../stores/appStore";
 
+// `permission` gates a card for co-instructors (null = always shown), matching
+// the sidebar/route gating in useCoInstructorAccess.
 const QUICK_START_CARDS = [
-  { to: "/course-materials", icon: "fa-upload", label: "Upload Materials" },
-  { to: "/question-generation", icon: "fa-wand-magic-sparkles", label: "Generate Questions" },
-  { to: "/question-bank?tab=review", icon: "fa-book", label: "Quizzes" },
-  { to: "/users", icon: "fa-users", label: "Users" },
+  { to: "/course-materials", icon: "fa-upload", label: "Upload Materials", permission: "courseMaterials" },
+  { to: "/question-generation", icon: "fa-wand-magic-sparkles", label: "Generate Questions", permission: "questionGeneration" },
+  { to: "/question-bank?tab=review", icon: "fa-book", label: "Quizzes", permission: "questionBank" },
+  { to: "/users", icon: "fa-users", label: "Users", permission: null },
 ];
 
 function FlaggedQuestionsCard() {
@@ -91,7 +94,11 @@ function FeatureItem({ icon, children }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const { can } = useCoInstructorAccess();
   const currentRole = useAppStore((state) => state.currentRole);
+  const quickStartCards = QUICK_START_CARDS.filter(
+    (card) => !card.permission || can(card.permission)
+  );
 
   // Faculty/staff viewing in student mode get the student dashboard (legacy behavior)
   useEffect(() => {
@@ -120,7 +127,7 @@ export default function Dashboard() {
         <section>
           <h3 className="mb-4 text-lg font-semibold text-ink">Quick Start</h3>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {QUICK_START_CARDS.map((card) => (
+            {quickStartCards.map((card) => (
               <Link
                 key={card.label}
                 to={card.to}

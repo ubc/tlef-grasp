@@ -92,6 +92,24 @@ const getSectionsForViewer = async (courseId, user) => {
   };
 };
 
+/**
+ * Sections of a course owned by a specific user. A section with no explicit
+ * owner is attributed to the course owner (legacy sections), matching the
+ * "My Sections" view. Used to limit quiz scheduling to one's own sections —
+ * the course owner is held to the same rule (only the sections they own).
+ */
+const getSectionsOwnedByUser = async (courseId, userId) => {
+  const { getCourseById } = require('./course');
+  const sections = await getCourseSections(courseId);
+  const course = await getCourseById(courseId);
+  const courseOwnerId = course && course.owner ? course.owner.toString() : null;
+  const uid = String(userId);
+  return sections.filter((s) => {
+    const sectionOwnerId = s.owner ? s.owner.toString() : courseOwnerId;
+    return sectionOwnerId === uid;
+  });
+};
+
 const getSectionsByOwner = async (ownerId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_course_section').aggregate([
@@ -182,6 +200,7 @@ module.exports = {
   getUserCourseSections,
   getSectionStudents,
   getSectionsByOwner,
+  getSectionsOwnedByUser,
   getSectionsForViewer,
   recycleSection,
 };

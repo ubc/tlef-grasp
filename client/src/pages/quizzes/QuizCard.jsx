@@ -138,16 +138,25 @@ function SectionSchedule({ courseId, quizId, sections }) {
     return (id) => map.get(id) || "Unknown section";
   }, [sections]);
 
+  // `sections` are the ones this instructor owns; only those sections' schedules
+  // are theirs to view and edit. Other instructors' schedules are left alone.
+  const ownedIds = useMemo(() => new Set(sections.map((s) => s._id)), [sections]);
+  const mySchedules = useMemo(
+    () => schedules.filter((s) => ownedIds.has(s.courseSectionId)),
+    [schedules, ownedIds]
+  );
+
   const now = new Date();
-  const scheduledIds = new Set(schedules.map((s) => s.courseSectionId));
+  const scheduledIds = new Set(mySchedules.map((s) => s.courseSectionId));
   const availableSections = sections
     .filter((s) => !scheduledIds.has(s._id))
     .map((s) => ({ courseSectionId: s._id, label: s.sectionNumber || s.sectionId }));
 
-  // Rebuild the full schedule payload (backend replaces the whole set) with one
-  // section changed or removed. Untouched rows keep their stored ISO dates.
+  // Rebuild the schedule payload for the sections this instructor owns (the
+  // backend replaces this instructor's set) with one section changed or removed.
+  // Untouched rows keep their stored ISO dates.
   const payloadWithout = (courseSectionId) =>
-    schedules
+    mySchedules
       .filter((s) => s.courseSectionId !== courseSectionId)
       .map((s) => ({
         courseSectionId: s.courseSectionId,
@@ -168,7 +177,7 @@ function SectionSchedule({ courseId, quizId, sections }) {
 
   const editing =
     modal?.mode === "edit"
-      ? schedules.find((s) => s.courseSectionId === modal.courseSectionId)
+      ? mySchedules.find((s) => s.courseSectionId === modal.courseSectionId)
       : null;
 
   return (
@@ -198,16 +207,16 @@ function SectionSchedule({ courseId, quizId, sections }) {
 
       {sections.length === 0 ? (
         <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
-          No sections in this course yet. Add sections under My Sections — until a
-          section is scheduled, this quiz is visible to no one.
+          You have no sections in this course yet. Add sections under My Sections —
+          until one is scheduled, this quiz is visible to no one in your sections.
         </p>
-      ) : schedules.length === 0 ? (
+      ) : mySchedules.length === 0 ? (
         <p className="text-xs text-muted">
           Not scheduled for any section — visible to no one.
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {schedules.map((row) => {
+          {mySchedules.map((row) => {
             const status = scheduleStatus(row, now);
             return (
               <button

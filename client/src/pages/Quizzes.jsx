@@ -6,7 +6,8 @@ import {
   useUpdateQuiz,
   useDeleteQuiz,
 } from "../hooks/useQuizzes";
-import { useCourseSections } from "../hooks/useSections";
+import { useMyCourseSections } from "../hooks/useSections";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { downloadQuizExport } from "../lib/exports";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -25,12 +26,20 @@ export default function Quizzes() {
   const showToast = useToast();
   const courseId = useSelectedCourseId();
 
+  const { can } = useCoInstructorAccess();
+  const canCreate = can("createQuiz");
+  // Co-instructors can always schedule existing quizzes (Manage tab); creating
+  // is a separate, owner-granted permission.
+  const tabs = canCreate ? TABS : TABS.filter((tab) => tab.id !== "create-quiz");
+
   const [activeTab, setActiveTab] = useState("manage-quizzes");
   const [exportQuiz, setExportQuiz] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { quizzes, isPending } = useQuizzesWithQuestions(courseId);
-  const { sections } = useCourseSections(courseId);
+  // Scheduling is limited to the sections this instructor owns (owner included),
+  // so the schedule picker only offers their own sections.
+  const { sections } = useMyCourseSections(courseId);
 
   const updateMutation = useUpdateQuiz(courseId, {
     onSuccess: (data, { successMessage }) => {
@@ -59,7 +68,7 @@ export default function Quizzes() {
     <div className="mx-auto max-w-6xl p-4 md:p-8">
       {/* Tabs */}
       <div className="mb-6 flex gap-2">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -75,7 +84,7 @@ export default function Quizzes() {
         ))}
       </div>
 
-      {activeTab === "manage-quizzes" ? (
+      {activeTab !== "create-quiz" || !canCreate ? (
         isPending ? (
           <LoadingState label="Loading quizzes..." />
         ) : quizzes.length === 0 ? (

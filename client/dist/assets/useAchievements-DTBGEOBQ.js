@@ -1,0 +1,1 @@
+import{i as u,r as n,h as i,q as y}from"./index-CVdn9FHt.js";function c(e,{enabled:s=!0}={}){const a=u({queryKey:y.achievements(e),queryFn:()=>i.get(`/api/achievement/my${e?`?courseId=${e}`:""}`),enabled:s}),r=n.useMemo(()=>{var t;return((t=a.data)==null?void 0:t.data)||[]},[a.data]);return{...a,achievements:r}}export{c as u};
