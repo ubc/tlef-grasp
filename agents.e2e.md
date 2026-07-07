@@ -66,7 +66,7 @@ Scripts to add (FINANCEBOT naming):
 Follow FINANCEBOT's config, adjusted for GRASP:
 
 - `testDir: './tests/e2e'`
-- `baseURL`: `http://localhost:${process.env.TLEF_GRASP_PORT || 8070}` — the Express
+- `baseURL`: `http://localhost:${process.env.TLEF_GRASP_PORT || 8052}` — the Express
   server serves the built client from `client/dist`, so **one port covers everything**.
 - `webServer`: `command: 'npm run build && npm start'`, `reuseExistingServer: !process.env.CI`
   (locally it reuses a running `npm run dev`), `timeout: 120_000`.
@@ -187,7 +187,7 @@ npm run test:ui           # Playwright UI mode
 npm run test:report       # open last HTML report; monocart-report/index.html also exists
 ```
 
-With `npm run dev` already running on :8070, Playwright reuses it (faster iteration).
+With `npm run dev` already running on :8052, Playwright reuses it (faster iteration).
 
 ## GitHub Actions
 
@@ -202,18 +202,21 @@ and a11y (model: BIOCBOT's `playwright.yml`). It must be independently runnable
   the tests log in through it for real — keep that in CI. The IdP is public:
   [ubc/docker-simple-saml](https://github.com/ubc/docker-simple-saml) ships the test
   users (`authsources.php`) and the SP registrations (`saml20-sp-remote.php`), so the
-  workflow just clones it and runs `docker compose up -d --build` as an extra step —
-  nothing IdP-related needs to be committed to this repo. **Port (decided)**: CI runs
-  GRASP on **:8052**, because that is the port the public IdP config registers —
-  entityID `https://tlef-grasp` / `http://localhost:8052` with ACS
-  `http://localhost:8052/auth/saml/callback`. There is **no :8070 entry** upstream
-  (:8070 is an uncommitted edit on the dev machine, used locally only). Set
-  `TLEF_GRASP_PORT=8052`, `SAML_ISSUER=http://localhost:8052`, and
-  `SAML_CALLBACK_URL=http://localhost:8052/auth/saml/callback` in the workflow env;
-  everything (including Playwright's baseURL) derives from the port, so local runs
-  stay on :8070 untouched. Fetch the IdP's signing cert from its metadata endpoint at
-  job start (port GRASP an equivalent of FINANCEBOT's `npm run saml:fetch-cert`
-  script) rather than committing any cert.
+  workflow clones it **outside the checkout** (a sibling dir on the runner) and runs
+  `docker compose up -d --build` as an extra step — nothing IdP-related is committed
+  to this repo, and CI always tests against the current IdP. Keep the cloned ref in a
+  single workflow env var (`IDP_REF: main`) so a breaking upstream change can be
+  pinned to a known-good SHA in a one-line edit. After `compose up`, poll the IdP's
+  metadata endpoint until it responds (BIOCBOT's "Wait for Qdrant" pattern), then
+  fetch the signing cert from that metadata before booting GRASP (port an equivalent
+  of FINANCEBOT's `npm run saml:fetch-cert` script) — never commit a cert. Note the
+  IdP's own port in CI is whatever the **upstream** compose publishes (its README
+  says :6122); set `SAML_ENTRY_POINT` to match the upstream compose file. **Port**:
+  GRASP runs on **:8052 everywhere** — local and CI — because that is the port
+  registered for `https://tlef-grasp` in the public IdP config (ACS
+  `http://localhost:8052/auth/saml/callback`). Never move GRASP to a port that isn't
+  registered upstream in `saml20-sp-remote.php`; the env vars (`TLEF_GRASP_PORT`,
+  `SAML_ISSUER`, `SAML_CALLBACK_URL`) and Playwright's baseURL all follow the port.
   Do not copy BIOCBOT's approach here: BIOCBOT's e2e suite never touches SAML — it
   logs in through its separate `local` passport strategy (register/login API) — but
   GRASP is SAML-only, and adding a test-only auth door is a last resort, not the

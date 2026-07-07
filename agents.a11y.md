@@ -113,7 +113,7 @@ npx playwright test -c playwright.a11y.config.js tests/a11y/student.a11y.spec.js
 npx playwright show-report playwright-report-a11y
 ```
 
-Reuses a running `npm run dev` on :8070 like the E2E suite.
+Reuses a running `npm run dev` on :8052 like the E2E suite.
 
 ## GitHub Actions
 
