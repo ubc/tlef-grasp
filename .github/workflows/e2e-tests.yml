@@ -140,6 +140,15 @@ jobs:
       # --- Stand up the FakeAcademicAPI (mock UBC course API) -
       # Private repo → checked out with a read-only deploy key (FAKE_API_DEPLOY_KEY
       # secret), not GITHUB_TOKEN. `path` must be inside the workspace.
+      - name: Validate FakeAcademicAPI deploy key secret
+        env:
+          FAKE_API_DEPLOY_KEY: ${{ secrets.FAKE_API_DEPLOY_KEY }}
+        run: |
+          if [ -z "$FAKE_API_DEPLOY_KEY" ]; then
+            echo "::error::FAKE_API_DEPLOY_KEY is not available to this workflow. Add it as a repository secret on ubc/tlef-grasp, not as an environment secret or on another repo."
+            exit 1
+          fi
+
       - name: Checkout FakeAcademicAPI
         uses: actions/checkout@v4
         with:
