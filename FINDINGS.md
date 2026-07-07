@@ -8,12 +8,18 @@
 - Covered `src/utils/co-instructor-permissions.js` administrator, owner, default co-instructor, explicit-deny, manager, and Express guard behavior with mocked auth/course/settings dependencies.
 - Covered `src/utils/slug.js` title sanitization and UBC campus course-code helpers.
 - Covered `src/services/calculation-question.js` formula canonicalization/evaluation, variable validation, template rendering, stem reference validation, and numeric answer comparison.
+- Covered `src/models/questions/` factory mapping plus multiple-choice, fill-in-the-blank, open-ended, and calculation normalization/error branches.
+- Covered `src/utils/llm-provider.js` provider/model/vector-size environment selection.
+- Covered `src/utils/structured-llm.js` Ollama and OpenAI orchestration with mocked LLM clients and schema-constrained payload assertions.
+- Covered `src/middleware/auth.js` API/page auth guard 401, 403, redirect, and pass-through behavior.
+- Covered `src/routes/achievement.js` through supertest with mocked achievement/user-course services for validation, forbidden, duplicate, success, and current-user read paths.
+- Covered `src/services/settings.js` database row hydration, malformed JSON fallbacks, hierarchical update flattening, and no-op update behavior with a mocked database collection.
 
 ### Issues Found
 - `src/services/calculation-question.js` normalizes `πr²` to `PIr^2` instead of `PI*r^2`, so formulas using a math constant directly adjacent to a declared variable do not parse as expected. Covered by `tests/unit/calculation-question.service.test.js` with an `it.failing` test until the app fix lands.
 
 ### Limitations
-- Service orchestration and route-handler unit tests are still TODO; this pass focused on pure and mostly pure business logic.
+- Additional route-handler unit tests are still TODO; this pass added achievement route coverage only.
 - Coverage is intentionally collected to identify branch gaps, not to enforce a percentage threshold.
 
 ## Accessibility
