@@ -107,6 +107,21 @@ describe('achievement routes', () => {
         'quiz_completed'
       );
     });
+
+    it('returns service errors as JSON 500 responses', async () => {
+      isUserInCourse.mockResolvedValue(true);
+      achievementService.saveAchievement.mockRejectedValue(new Error('write failed'));
+
+      const res = await request(buildApp()).post('/achievement').send({
+        userId: 'user-1',
+        courseId: 'course-1',
+        quizId: 'quiz-1',
+        type: 'quiz_completed',
+      });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ success: false, error: 'write failed' });
+    });
   });
 
   describe('GET /achievement/my', () => {
@@ -142,6 +157,15 @@ describe('achievement routes', () => {
       });
       expect(achievementService.getUserAchievements).not.toHaveBeenCalled();
     });
+
+    it('returns JSON 500 when achievement lookup fails', async () => {
+      achievementService.getUserAchievements.mockRejectedValue(new Error('read failed'));
+
+      const res = await request(buildApp()).get('/achievement/my');
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ success: false, error: 'read failed' });
+    });
   });
 
   describe('GET /achievement/my/counts', () => {
@@ -169,6 +193,24 @@ describe('achievement routes', () => {
         'user-1',
         'course-1'
       );
+    });
+
+    it('returns 401 without a current user id and JSON 500 on service errors', async () => {
+      const unauthenticated = await request(buildApp({})).get('/achievement/my/counts');
+
+      expect(unauthenticated.status).toBe(401);
+      expect(unauthenticated.body).toEqual({
+        success: false,
+        error: 'User not authenticated',
+      });
+
+      achievementService.getAchievementCounts.mockRejectedValue(
+        new Error('count failed')
+      );
+      const failed = await request(buildApp()).get('/achievement/my/counts');
+
+      expect(failed.status).toBe(500);
+      expect(failed.body).toEqual({ success: false, error: 'count failed' });
     });
   });
 });

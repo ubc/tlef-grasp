@@ -3,9 +3,74 @@ const CalculationQuestion = require('../../src/models/questions/CalculationQuest
 const FillInTheBlankQuestion = require('../../src/models/questions/FillInTheBlankQuestion');
 const MultipleChoiceQuestion = require('../../src/models/questions/MultipleChoiceQuestion');
 const OpenEndedQuestion = require('../../src/models/questions/OpenEndedQuestion');
+const Question = require('../../src/models/questions/Question');
 const QuestionFactory = require('../../src/models/questions/QuestionFactory');
 
 describe('question model normalization', () => {
+  it('keeps the abstract base question contract explicit', () => {
+    const instance = new Question({ id: 'question-1' });
+
+    expect(instance.data).toEqual({ id: 'question-1' });
+    expect(() => Question.getPromptInstruction()).toThrow(
+      'getPromptInstruction() must be implemented by subclass'
+    );
+    expect(() => Question.getJsonSchema()).toThrow(
+      'getJsonSchema() must be implemented by subclass'
+    );
+    expect(() => Question.getRetrySuffix()).toThrow(
+      'getRetrySuffix() must be implemented by subclass'
+    );
+    expect(() => Question.validateAndNormalize()).toThrow(
+      'validateAndNormalize() must be implemented by subclass'
+    );
+  });
+
+  it('exposes schema and retry guidance for question generation models', () => {
+    expect(MultipleChoiceQuestion.getJsonSchema().required).toEqual([
+      'scratchwork',
+      'question',
+      'options',
+      'correctAnswer',
+      'explanation',
+    ]);
+    expect(MultipleChoiceQuestion.getPromptInstruction()).toContain(
+      'Generate 4 answer options'
+    );
+    expect(
+      MultipleChoiceQuestion.getRetrySuffix(2, new Error('duplicate options'))
+    ).toContain('duplicate options');
+
+    expect(FillInTheBlankQuestion.getJsonSchema().required).toContain(
+      'acceptableAnswers'
+    );
+    expect(FillInTheBlankQuestion.getPromptInstruction()).toContain(
+      'exactly ONE blank'
+    );
+    expect(FillInTheBlankQuestion.getRetrySuffix(1, new Error('bad blank'))).toContain(
+      'bad blank'
+    );
+
+    expect(OpenEndedQuestion.getJsonSchema().required).toContain(
+      'openEndedGradingCriteria'
+    );
+    expect(OpenEndedQuestion.getPromptInstruction()).toContain(
+      'openEndedSampleAnswer'
+    );
+    expect(OpenEndedQuestion.getRetrySuffix(1, new Error('weak rubric'))).toContain(
+      'weak rubric'
+    );
+
+    expect(CalculationQuestion.getJsonSchema().required).toContain(
+      'calculationFormula'
+    );
+    expect(CalculationQuestion.getPromptInstruction()).toContain(
+      'PARAMETERIZED CALCULATION QUESTION'
+    );
+    expect(CalculationQuestion.getRetrySuffix(1, new Error('square brackets'))).toContain(
+      'square brackets'
+    );
+  });
+
   it('maps supported question types to their model classes', () => {
     expect(QuestionFactory.getModel(QUESTION_TYPES.MULTIPLE_CHOICE)).toBe(
       MultipleChoiceQuestion
@@ -151,5 +216,35 @@ describe('question model normalization', () => {
         calculationVariables: [{ name: 'x', min: 5, max: 1 }],
       })
     ).toThrow('Invalid min/max for variable "x"');
+
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        calculationFormula: 'x + 1',
+        calculationVariables: [{ name: 'x', min: 1, max: 2 }],
+      })
+    ).toThrow('Missing required field: stem');
+
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Use {{x}}.',
+        calculationVariables: [{ name: 'x', min: 1, max: 2 }],
+      })
+    ).toThrow('Missing required field: calculationFormula');
+
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Use {{x}}.',
+        calculationFormula: 'x + 1',
+        calculationVariables: [null],
+      })
+    ).toThrow('calculationVariables[0] must be an object');
+
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Use {{x}}.',
+        calculationFormula: 'x + 1',
+        calculationVariables: [{ name: '!!!', min: 1, max: 2 }],
+      })
+    ).toThrow('calculationVariables[0] needs a valid "name"');
   });
 });
