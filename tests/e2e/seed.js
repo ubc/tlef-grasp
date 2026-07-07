@@ -23,6 +23,7 @@ const BIO_STUDENT3_PUID = '67890123';
 
 // Fixed identifiers so the seed is idempotent across runs.
 const COURSE_CODE = 'E2E-BIOC-302';
+const COURSE_NAME = 'General Biochemistry (BIOC 302, seeded)';
 const SECTION_ID = 'SEC-BIOC302-101';
 const QUIZ_NAME = 'BIOC 302 Practice Quiz (seeded)';
 const OBJECTIVE_NAME = 'Enzyme kinetics (seeded)';
@@ -110,7 +111,7 @@ async function seedStudentJourneyCourse() {
     await db.collection('grasp_course').updateOne(
       { courseCode: COURSE_CODE },
       {
-        $set: { courseName: 'General Biochemistry (BIOC 302, seeded)', campus: 'ACADEMIC_UNIT-UBC-V', owner: prof._id, ubcCourseId: 'BIOC|302', updatedAt: now },
+        $set: { courseName: COURSE_NAME, campus: 'ACADEMIC_UNIT-UBC-V', owner: prof._id, ubcCourseId: 'BIOC|302', updatedAt: now },
         $setOnInsert: { courseCode: COURSE_CODE, courseAccess: 'e2ebioc302seed', createdAt: now },
       },
       { upsert: true }
@@ -249,6 +250,7 @@ module.exports = {
   seedStudentJourneyCourse,
   SEED: {
     COURSE_CODE,
+    COURSE_NAME,
     SECTION_ID,
     QUIZ_NAME,
     OBJECTIVE_NAME,
@@ -256,8 +258,11 @@ module.exports = {
     BIO_PROF2_PUID,
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,
+    QUESTION_COUNT: SEED_QUESTIONS.length,
     // The correct option letter for every seeded question is "A" — the student
     // spec relies on this to answer correctly without reading answer keys.
     CORRECT_OPTION_LETTER: 'A',
+    // Correct option text per seeded question (option A of each), in quiz order.
+    CORRECT_OPTION_TEXTS: SEED_QUESTIONS.map((q) => q.options.A.text),
   },
 };
