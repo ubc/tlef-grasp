@@ -3,17 +3,29 @@
 // pagination, retries and the raw API calls; this service only reshapes the
 // results into the option/record shapes the rest of GRASP already consumes.
 
-const { CourseListSyncModule } = require('@ubc/ubc-genai-toolkit-course-list-sync');
-
 class UbcApiService {
   constructor() {
     this._module = null;
   }
 
-  // Lazily instantiate so a missing-credential environment doesn't throw at
-  // require-time, and so dotenv has populated process.env by first use.
+  // Lazily require + instantiate so a missing-credential environment doesn't
+  // throw at require-time, and so dotenv has populated process.env by first use.
+  // The course-list-sync package is an OPTIONAL dependency (private UBC
+  // registry), so environments without it installed — e.g. CI running tests
+  // that never touch the UBC API — still boot; only an actual UBC API call
+  // surfaces the missing package with a clear error.
   get module() {
     if (!this._module) {
+      let CourseListSyncModule;
+      try {
+        ({ CourseListSyncModule } = require('@ubc/ubc-genai-toolkit-course-list-sync'));
+      } catch (err) {
+        throw new Error(
+          'UBC API is unavailable: the optional package ' +
+          '@ubc/ubc-genai-toolkit-course-list-sync is not installed.'
+        );
+      }
+
       const clientId =
         process.env.UBC_API_CLIENT_ID || process.env.UBC_COUSE_AFFILIATION_API_CLIENT_ID;
       const clientSecret =
