@@ -42,10 +42,9 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   test('sets up a new course from a UBC section via onboarding', async () => {
     await page.goto('/onboarding');
 
-    // Faculty land on the setup wizard (or reach it via the tab if they already
-    // have courses from a previous run).
-    const setupTab = page.getByRole('button', { name: 'New Course Setup' });
-    if (await setupTab.isVisible()) await setupTab.click();
+    // The faculty-only tab bar always renders on /onboarding; select the setup
+    // wizard explicitly (returning users land on "Welcome Back" otherwise).
+    await page.getByRole('button', { name: 'New Course Setup' }).click();
 
     await expect(
       page.getByRole('heading', { name: 'Set up your course' })
@@ -62,36 +61,42 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(period.locator('option')).not.toHaveCount(1);
     await period.selectOption({ index: 1 });
 
-    // bio_prof2 teaches BIOC sections; wait for at least one to load, pick it.
-    const sectionCheckbox = page
-      .getByRole('checkbox')
-      .filter({ hasNot: page.locator('[disabled]') })
-      .first();
-    await expect(page.getByText(/BIOC/).first()).toBeVisible();
-    await page.getByRole('checkbox').first().check();
+    // Drive a section only bio_prof2 owns (BIOC 410) — BIOC 302 is co-taught,
+    // so its shared course shell always trips the 409 "shell already exists"
+    // dialog. With 410 the create is clean on a fresh DB; the 409 branch below
+    // still covers reruns against a DB where a previous run created BIOC 410.
+    await page.getByRole('checkbox', { name: /BIOC 410/ }).check();
 
     await page.getByRole('button', { name: 'Create Course' }).click();
 
-    // Either a clean create or the "shell already exists" path (a prior run) —
-    // both resolve to an owned course. Handle the conflict by creating anyway.
+    // Either a clean create (success heading) or, on a rerun, the conflict
+    // dialog. Wait for whichever renders — checking the dialog immediately
+    // after the click races its render and misses it.
+    const success = page.getByRole('heading', { name: 'Welcome to GRASP!' });
     const createAnyway = page.getByRole('button', { name: 'Create anyway' });
-    if (await createAnyway.isVisible().catch(() => false)) {
+    await expect(success.or(createAnyway)).toBeVisible();
+    if (await createAnyway.isVisible()) {
       await createAnyway.click();
     }
 
-    await expect(
-      page.getByRole('heading', { name: 'Welcome to GRASP!' })
-    ).toBeVisible();
+    await expect(success).toBeVisible();
     await page.getByRole('button', { name: 'Go to Dashboard' }).click();
     await expect(page).toHaveURL('/dashboard');
   });
 
+  // Sidebar links must be reached through the nav landmark: page content (e.g.
+  // the dashboard's Quick Start panel) repeats the same link names.
+  const navLink = (name) =>
+    page.getByRole('navigation').getByRole('link', { name });
+
   test('uploads a text material for the course', async () => {
-    await page.getByRole('link', { name: 'Course Materials' }).click();
+    await navLink('Course Materials').click();
     await expect(page).toHaveURL('/course-materials');
 
-    // The Text quick-add tile opens the "Add Text Content" modal.
-    await page.getByRole('button', { name: 'Text', exact: true }).click();
+    // The Text quick-add tile opens the "Add Text Content" modal. Its
+    // accessible name is icon-glyph + "Text", so exact matching would miss it;
+    // no other button on the page contains "Text".
+    await page.getByRole('button', { name: 'Text' }).click();
     await expect(
       page.getByRole('heading', { name: 'Add Text Content' })
     ).toBeVisible();
@@ -107,7 +112,7 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   });
 
   test('generates learning objectives from the material', async () => {
-    await page.getByRole('link', { name: 'Question Generation' }).click();
+    await navLink('Question Generation').click();
     await expect(page).toHaveURL('/question-generation');
 
     await expect(
@@ -120,11 +125,12 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
       page.getByRole('heading', { name: 'Generate Learning Objectives' })
     ).toBeVisible();
 
-    await page
-      .getByRole('dialog')
-      .getByText(MATERIAL_TITLE)
-      .click();
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    // The modal lists materials as radios (it carries no ARIA dialog role);
+    // the run-unique title picks this journey's material out of any leftovers.
+    await page.getByRole('radio', { name: MATERIAL_TITLE }).check();
+    // Name ends-with match: the button is icon-glyph + "Generate" (exact
+    // matching misses the glyph), and it must not match the modal heading.
+    await page.getByRole('button', { name: /Generate$/ }).click();
 
     // Stubbed generation returns objectives; save them onto the page.
     const saveSelected = page.getByRole('button', { name: /Save Selected/ });
@@ -176,7 +182,9 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   });
 
   test('schedules the quiz for a section and publishes it', async () => {
-    await page.getByRole('link', { name: 'Quizzes', exact: true }).click();
+    // Non-exact 'Quizzes' cannot match the 'Quiz Scores' link, and exact
+    // matching would fail on the icon glyph inside the link's name.
+    await navLink('Quizzes').click();
     await expect(page).toHaveURL('/quizzes');
 
     // Locate the journey's quiz card.

@@ -221,6 +221,19 @@ async function seedStudentJourneyCourse() {
       );
     }
 
+    // --- Reset attempt state from previous runs. Completion is persisted per
+    // user+quiz (grasp_quiz_score & co.), and the student UI offers "Retake
+    // Quiz" instead of "Start Quiz" for a completed quiz — without this reset
+    // the student spec's first "Start Quiz" step only passes on a fresh DB.
+    for (const coll of [
+      'grasp_student_attempt',
+      'grasp_student_performance',
+      'grasp_quiz_score',
+      'grasp_achievement',
+    ]) {
+      await db.collection(coll).deleteMany({ quizId: quiz._id });
+    }
+
     // --- Per-section schedule: open now, expires well in the future so the
     // quiz is visible to the section's students today. ---
     const releaseDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
