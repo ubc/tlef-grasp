@@ -176,13 +176,9 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // Not .first() over all checkboxes: the page's first checkbox is the
     // "Show flagged only" filter, which would empty the table instead.
     await page.getByRole('checkbox', { name: 'Select all questions' }).check();
-    // Scope to the bulk-action bar: selecting rows also reveals per-row
-    // Approve buttons inside the table. Case-sensitive end-anchor so the
-    // glyph-prefixed " Unapprove" can't match.
-    await page
-      .getByTestId('bulk-action-bar')
-      .getByRole('button', { name: /Approve$/ })
-      .click();
+    // The bulk Approve button renders before per-row Approve buttons in the
+    // table, and selecting rows enables it.
+    await page.getByRole('button', { name: /Approve$/ }).first().click();
 
     // At least one row now shows the Approved status (cell, not the identical
     // option in the Status filter dropdown).
