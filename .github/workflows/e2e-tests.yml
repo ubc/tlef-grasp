@@ -99,6 +99,16 @@ jobs:
           done
           echo "IdP did not become ready"; exit 1
 
+      - name: Make the IdP private key readable by Apache/PHP
+        working-directory: ${{ env.IDP_DIR }}
+        # startup.sh generates cert/server.pem as root with mode 0600, but the
+        # SimpleSAMLphp PHP process runs as www-data and can't read it — so
+        # assertion signing 500s ("Unable to load private key from server.pem")
+        # and login never completes. (It works on Docker Desktop/macOS only
+        # because those bind mounts ignore uid/perms; a real Linux runner
+        # enforces them.) Relax the key so www-data can read it.
+        run: docker compose exec -T saml-idp chmod 0644 /var/www/simplesamlphp/cert/server.pem
+
       # --- GRASP + Playwright ---
       - uses: actions/setup-node@v4
         with:

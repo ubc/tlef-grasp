@@ -264,9 +264,17 @@ layer. What exists today:
   it up with `docker compose up -d --build`, and **republishes it on :8080** via a
   compose override (upstream publishes `6122:80`, but `passport-ubcshib` LOCAL
   targets `http://localhost:8080`). It polls the IdP metadata endpoint until
-  ready, points `SAML_CERT_PATH` at the cloned `cert/server.crt` (the signing cert
-  ships in that repo — no fetch, no committed cert), runs a mongo:7 service and
-  `UBC_API_USE_MOCK=true`, then lets Playwright boot GRASP and log in for real.
+  ready, then **`chmod 0644`s the IdP's `cert/server.pem`** inside the container:
+  its `startup.sh` writes the key as root mode `0600`, but SimpleSAMLphp runs as
+  `www-data` and otherwise can't read it, so assertion signing 500s ("Unable to
+  load private key") and login never completes — this only surfaces on a real
+  Linux runner, since Docker Desktop/macOS bind mounts ignore uid/perms. The IdP
+  certs are **git-ignored**, so the container generates a fresh keypair into the
+  bind-mounted `cert/` dir; `SAML_CERT_PATH` points at that generated
+  `cert/server.crt` (GRASP reads it at boot, which happens later). Runs a mongo:7
+  service and `UBC_API_USE_MOCK=true`, then lets Playwright boot GRASP and log in
+  for real. `global-setup.js` logs the SAML endpoint status codes and, on
+  failure, dumps the final URL + page text + a screenshot to `test-results/`.
   `origin/main` of the IdP repo carries the `faculty:faculty` test user and the
   `tlef-grasp`→`:8052` SP registration. Uploads `playwright-report/` and
   `monocart-report/` always, `test-results/` on failure, and dumps IdP logs on
