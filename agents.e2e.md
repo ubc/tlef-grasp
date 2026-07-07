@@ -229,6 +229,103 @@ and a11y (model: BIOCBOT's `playwright.yml`). It must be independently runnable
   - `monocart-report/` (Monocart report — **required artifact**)
   - `test-results/` (traces/videos/screenshots) — `if: failure()`
 
+## Current implementation status
+
+The Playwright foundation is in place, including a working SAML-authenticated
+layer. What exists today:
+
+- **Config**: `playwright.config.js` (repo root) — `testDir: ./tests/e2e`, single
+  chromium project, `workers: 1` / `fullyParallel: false`, `baseURL`
+  `http://localhost:${TLEF_GRASP_PORT || 8052}`,
+  `webServer: 'npm run build && npm run start:test'` with `reuseExistingServer: !CI`,
+  `trace/screenshot/video` on failure, `reducedMotion: 'reduce'`. Reporters:
+  `list` + `html` + `monocart-reporter` (→ `monocart-report/index.html`, also
+  emits `index.json`).
+- **Scripts** (root `package.json`): `start:test` (runs the server with
+  `NODE_ENV=test` — see the cookie finding below), `test:e2e`, `test:e2e:headed`,
+  `test:ui`, `test:report`.
+- **Public specs** (always run): `tests/e2e/landing.spec.js` — logged-out landing
+  shows the `Welcome to GRASP` heading and a `Log in with CWL` link → `/auth/ubcshib`;
+  a deep-link to `/dashboard` while logged out is bounced back to the landing page.
+- **Authenticated specs** (opt-in, `E2E_SAML=1`; skipped otherwise):
+  - `tests/e2e/auth.spec.js` — the SAML round-trip (priority #1): logged-out user
+    clicks the CWL link, submits `faculty`/`faculty` on the SimpleSAMLphp form,
+    lands back authenticated (Sign Out control + faculty-only "New Course Setup"
+    tab visible); a wrong password keeps them on the IdP form.
+  - `tests/e2e/faculty-onboarding.spec.js` — demonstrates the storage-state
+    pattern (`test.use({ storageState: FACULTY_AUTH_FILE })`) reusing the session
+    saved by global-setup.
+- **Auth wiring**: `tests/e2e/auth.js` (per-role storage-state paths) and
+  `tests/e2e/global-setup.js` (logs in once as faculty via the local IdP, saves
+  `tests/e2e/.auth/faculty.json`). Global-setup is wired in only when `E2E_SAML=1`.
+- **CI**: `.github/workflows/e2e-tests.yml` runs the **full** suite against a real
+  IdP (`E2E_SAML=1`). It clones [ubc/docker-simple-saml](https://github.com/ubc/docker-simple-saml)
+  (pinned via `IDP_REF`, default `main`) into a sibling dir on the runner, brings
+  it up with `docker compose up -d --build`, and **republishes it on :8080** via a
+  compose override (upstream publishes `6122:80`, but `passport-ubcshib` LOCAL
+  targets `http://localhost:8080`). It polls the IdP metadata endpoint until
+  ready, points `SAML_CERT_PATH` at the cloned `cert/server.crt` (the signing cert
+  ships in that repo — no fetch, no committed cert), runs a mongo:7 service and
+  `UBC_API_USE_MOCK=true`, then lets Playwright boot GRASP and log in for real.
+  `origin/main` of the IdP repo carries the `faculty:faculty` test user and the
+  `tlef-grasp`→`:8052` SP registration. Uploads `playwright-report/` and
+  `monocart-report/` always, `test-results/` on failure, and dumps IdP logs on
+  failure.
+
+Runs verified locally: `E2E_SAML=1 npx playwright test` → 5 passed (incl. the real
+SAML round-trip); `npx playwright test` (no IdP) → 2 passed, 3 skipped.
+
+### Repo-specific findings
+
+- **The E2E server must run in test mode, not production.** The session cookie is
+  `secure: NODE_ENV === 'production'` (`src/middleware/session.js`). Under the
+  original `npm start` (production) the browser silently refuses to store
+  `grasp.sid` over plain `http://localhost`, so the SAML callback 302s to
+  `/onboarding` but the session never persists → `/api/current-user` 401s → the
+  client bounces back to `/`. Hence `start:test` (`NODE_ENV=test`, cookie
+  non-secure) in the `webServer` command. `NODE_ENV` is only read in two places
+  (this cookie flag and a comment in `src/utils/llm-provider.js` — LLM provider
+  selection is deliberately independent of it), so test mode is otherwise inert.
+- **IdP login form (docker-simple-saml)**: fields are labelled `Login Name` and
+  `Password`; the submit control is a button named `Login` (there is also a
+  non-submit "UBC Search" button — use `{ name: 'Login', exact: true }`). SP-init
+  login (`/auth/ubcshib`) redirects to `http://localhost:8080/...` (the IdP port;
+  `SAML_ENVIRONMENT=LOCAL` in `passport-ubcshib` supplies the entryPoint — the
+  `SAML_ENTRY_POINT`/`SAML_*_URL` lines in `.env` are unused placeholders marked
+  "NOT THE SAME").
+- **Faculty test user** resolves to `displayName: faculty@ubc.ca`,
+  `affiliation: faculty`, `puid: 12345678`, `role: faculty`.
+- **Stable authenticated selectors on `/onboarding`**: the `Sign Out` button
+  (rendered for any authenticated user) and the faculty-only `New Course Setup` /
+  `Join a course` tabs. The onboarding *heading* is NOT stable — it's
+  `Welcome Back` (returning user with courses) or `Welcome to GRASP!` (setup
+  wizard, no courses) depending on DB state; don't assert on it.
+- **Protected routes are client-guarded, not server 302s.** The Express SPA
+  fallback serves `index.html` for any non-`/api`/`/auth` GET; the React
+  `RequireAuth` guard then redirects logged-out users to `/`. Assert the **client
+  URL** ends at `/`, not an HTTP status. (The API returns 401 JSON.)
+- **`SAML_PRIVATE_KEY_PATH` is unset** in the local `.env` and the server still
+  boots — only `SAML_CERT_PATH` is read synchronously
+  (`src/middleware/passport.js`), so CI only needs a readable cert file to boot.
+
+### TODO: authenticated E2E (next passes)
+
+- **Logout / SLO spec.** Not covered yet — `/auth/logout` triggers a SAML Single
+  Logout round-trip to the IdP; add a spec that logs out and confirms a
+  subsequent protected-page visit redirects to login.
+- **Staff and student roles.** Only faculty storage state is saved today. Add
+  `staff`/`student` logins in global-setup and role-gating specs (student cannot
+  reach `/users` or question generation).
+- **Confirm the CI IdP job on a real runner.** The workflow is wired end-to-end
+  and every piece is verified locally, but it has not yet run on a GitHub runner —
+  watch the first run for docker-build time and IdP readiness timing, and pin
+  `IDP_REF` to a SHA if upstream `main` drifts. (Note the IdP's `basehostname` is
+  `:6122`; SimpleSAMLphp still serves fine when hit on `:8080`, which is what the
+  login flow uses — the absolute `:6122` URLs only surface in SLO/metadata.)
+- **Add `GRASP_TEST_LLM_STUB` before any LLM/RAG-touching spec** (question
+  generation, RAG chat) and set it on the `webServer` command — no live LLM
+  calls, ever. LLM/RAG boot init is lazy and does not block `server.listen`.
+
 ## Found a bug? Document it, don't fix it
 
 Same policy as BIOCBOT's `tests/e2e/FINDINGS.md`: writing tests **will** surface real

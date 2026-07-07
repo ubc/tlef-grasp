@@ -1,0 +1,145 @@
+name: E2E Tests
+
+# Playwright end-to-end tests. Separate from the unit and a11y workflows and
+# independently runnable (workflow_dispatch) so it never gates local dev.
+#
+# This runs the FULL suite, including the SAML-authenticated specs, against a
+# real docker-simple-saml IdP stood up on the runner — the same IdP used locally,
+# so CI logs in for real (no test-only auth door). See agents.e2e.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Pin the IdP to a ref so a breaking upstream change can be locked to a
+      # known-good SHA in a one-line edit.
+      IDP_REPO: https://github.com/ubc/docker-simple-saml.git
+      IDP_REF: main
+      IDP_DIR: ${{ runner.temp }}/docker-simple-saml
+
+      # GRASP (the SAML SP) is registered upstream for :8052 — keep it there.
+      TLEF_GRASP_PORT: 8052
+      SESSION_SECRET: ci-e2e-secret
+      MONGODB_URI: mongodb://localhost:27017
+      MONGODB_DB_NAME: tlef_grasp_e2e
+
+      # SAML: LOCAL mode makes passport-ubcshib target the IdP at
+      # http://localhost:8080 (see below — we publish the IdP container there).
+      # The IdP's signing cert ships in its repo, so we point straight at the
+      # cloned copy — no metadata fetch, no committed cert.
+      SAML_ENVIRONMENT: LOCAL
+      SAML_ISSUER: http://localhost:8052
+      SAML_CALLBACK_URL: http://localhost:8052/auth/saml/callback
+      SAML_CERT_PATH: ${{ runner.temp }}/docker-simple-saml/cert/server.crt
+
+      # Run the authenticated specs for real; credentials are the local IdP's
+      # public test user, never real CWL.
+      E2E_SAML: '1'
+      E2E_USERNAME: faculty
+      E2E_PASSWORD: faculty
+
+      # Never hit the real UBC academic API from CI.
+      UBC_API_USE_MOCK: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Stand up the SAML IdP (outside the checkout, a sibling on the runner) ---
+      - name: Clone docker-simple-saml IdP
+        run: git clone --depth 1 --branch "$IDP_REF" "$IDP_REPO" "$IDP_DIR"
+
+      - name: Publish the IdP on :8080 (passport-ubcshib LOCAL expects it there)
+        # The upstream compose publishes 6122:80; passport-ubcshib's LOCAL entry
+        # point is http://localhost:8080. A compose override adds the 8080 mapping
+        # without touching the committed file.
+        run: |
+          cat > "$IDP_DIR/docker-compose.override.yml" <<'YAML'
+          services:
+            saml-idp:
+              ports:
+                - '8080:80'
+          YAML
+
+      - name: Start the IdP
+        working-directory: ${{ env.IDP_DIR }}
+        run: docker compose up -d --build
+
+      - name: Wait for the IdP to be ready
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sSf -o /dev/null "http://localhost:8080/simplesaml/saml2/idp/metadata.php"; then
+              echo "IdP is up"; exit 0
+            fi
+            echo "waiting for IdP ($i)..."; sleep 3
+          done
+          echo "IdP did not become ready"; exit 1
+
+      # --- GRASP + Playwright ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # package-lock.json is git-ignored in this repo (same as BIOCBOT), so
+      # `npm ci` is not available — use `npm install` for root and client.
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install client dependencies
+        run: npm install --prefix client
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Playwright boots GRASP itself (npm run build && npm run start:test) and
+      # global-setup logs in through the IdP before the specs run.
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Dump IdP logs on failure
+        if: failure()
+        working-directory: ${{ env.IDP_DIR }}
+        run: docker compose logs --no-color || true
+
+      - name: Upload Playwright HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload Monocart report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: monocart-report
+          path: monocart-report/
+          retention-days: 14
+
+      - name: Upload traces / videos / screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14
