@@ -137,7 +137,7 @@ jobs:
         # enforces them.) Relax the key so www-data can read it.
         run: docker compose exec -T saml-idp chmod 0644 /var/www/simplesamlphp/cert/server.pem
 
-      # --- Stand up the FakeAcademicAPI (mock UBC course API) ---
+      # --- Stand up the FakeAcademicAPI (mock UBC course API) -
       # Private repo → checked out with a read-only deploy key (FAKE_API_DEPLOY_KEY
       # secret), not GITHUB_TOKEN. `path` must be inside the workspace.
       - name: Checkout FakeAcademicAPI
