@@ -1,5 +1,17 @@
 ## E2E
 
+### Coverage Added
+- Extended `tests/e2e/global-setup.js` to save faculty, staff, and student SAML storage states from the local docker-simple-saml IdP, using per-role env overrides with local test-user fallbacks.
+- Added logout coverage in `tests/e2e/auth.spec.js`: a faculty user logs in through the IdP, signs out through GRASP, then a protected route redirects back to the logged-out landing page.
+- Added `tests/e2e/role-gating.spec.js` for student and staff authenticated boundaries: students deep-linking to instructor pages land on the student dashboard without instructor navigation, student onboarding hides instructor course-management actions, and staff onboarding can join but not create courses.
+
+### Issues Found
+- Staff role onboarding mismatch: the expected staff behavior is to show `Login to Existing Dashboard` and `Join a course`, but not the faculty-only `New Course Setup`. In the local SAML run, logging in as the docker-simple-saml `staff` user rendered `New Course Setup` and the setup wizard. The expected-behavior check is captured as `test.fixme()` in `tests/e2e/role-gating.spec.js` until the staff role mapping/test-user data is corrected. Relevant app files: `client/src/pages/Onboarding.jsx`, `src/server.js`, `src/utils/auth.js`, and `src/middleware/passport.js`.
+
+### Limitations
+- Authenticated E2E specs still require `E2E_SAML=1` plus the local SAML IdP and MongoDB services; the default non-SAML run skips them.
+- The new role-gating specs intentionally avoid seeded course data and LLM/RAG flows, so populated instructor/student course workflows remain TODO.
+
 ## Unit
 
 ### Coverage Added

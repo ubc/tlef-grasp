@@ -58,13 +58,19 @@ module.exports = defineConfig({
   // Locally, if `npm run dev` is already serving :8052 it reuses that server for
   // faster iteration.
   //
-  // NOTE: `start:test` runs the server with NODE_ENV=test, NOT production. In
-  // production the session cookie is `secure` (session.js), which the browser
-  // refuses to store over plain http://localhost — so the SAML session never
-  // persists and every request 401s. Test mode keeps the cookie non-secure so
-  // authenticated E2E works over http. See agents.e2e.md.
+  // NOTE: the server runs with NODE_ENV=test, NOT production. In production
+  // the session cookie is `secure` (session.js), which the browser refuses to
+  // store over plain http://localhost — so the SAML session never persists and
+  // every request 401s. Test mode keeps the cookie non-secure so authenticated
+  // E2E works over http. See agents.e2e.md.
+  //
+  // start-server-with-stubs.js boots the same server with the LLM/RAG modules
+  // swapped for in-memory test stubs (no live LLM / Qdrant — hard rule). If a
+  // dev server is reused locally instead, LLM-touching specs would hit the
+  // real provider — run the suite with :8052 free so Playwright boots this one.
   webServer: {
-    command: 'npm run build && npm run start:test',
+    command:
+      'npm run build && cross-env NODE_ENV=test node tests/e2e/start-server-with-stubs.js',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
