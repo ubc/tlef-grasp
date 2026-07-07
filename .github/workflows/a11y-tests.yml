@@ -1,0 +1,85 @@
+name: Accessibility Tests
+
+# Playwright + axe accessibility tests. This workflow stays separate from unit
+# and E2E workflows, and currently covers public/unauthenticated surfaces only.
+# It does not automate real SSO; authenticated a11y coverage should wait for the
+# safe local SAML IdP storage-state setup to be enabled in CI.
+
+on:
+  push:
+    # `testing` is here so this branch gets CI feedback while the workflows are
+    # being iterated on — remove it before merging to main.
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  a11y:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TLEF_GRASP_PORT: 8052
+      NODE_ENV: test
+      SESSION_SECRET: ci-a11y-secret
+      MONGODB_URI: mongodb://localhost:27017
+      MONGODB_DB_NAME: tlef_grasp_a11y
+      SAML_ISSUER: http://localhost:8052
+      SAML_CALLBACK_URL: http://localhost:8052/auth/saml/callback
+      SAML_CERT_PATH: ${{ github.workspace }}/.ci/saml-dummy.crt
+      UBC_API_USE_MOCK: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install client dependencies
+        run: npm install --prefix client
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate throwaway SAML cert (boot-only, not a real cert)
+        run: |
+          mkdir -p .ci
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout .ci/saml-dummy.key \
+            -out .ci/saml-dummy.crt \
+            -days 1 -subj "/CN=grasp-ci-a11y"
+
+      - name: Run accessibility tests
+        run: npm run test:a11y
+
+      - name: Upload accessibility report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-report
+          path: playwright-report-a11y/
+          retention-days: 14
+
+      - name: Upload traces / videos / screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-test-results
+          path: test-results/
+          retention-days: 14
