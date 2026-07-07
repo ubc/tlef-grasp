@@ -35,7 +35,10 @@ jobs:
       # known-good SHA in a one-line edit.
       IDP_REPO: https://github.com/ubc/docker-simple-saml.git
       IDP_REF: main
-      IDP_DIR: ${{ runner.temp }}/docker-simple-saml
+      # Sibling of the checkout (outside the repo working tree). Uses
+      # github.workspace, NOT runner.temp — the runner context is not available
+      # in job-level env and makes the whole workflow file invalid.
+      IDP_DIR: ${{ github.workspace }}/../docker-simple-saml
 
       # GRASP (the SAML SP) is registered upstream for :8052 — keep it there.
       TLEF_GRASP_PORT: 8052
@@ -50,7 +53,7 @@ jobs:
       SAML_ENVIRONMENT: LOCAL
       SAML_ISSUER: http://localhost:8052
       SAML_CALLBACK_URL: http://localhost:8052/auth/saml/callback
-      SAML_CERT_PATH: ${{ runner.temp }}/docker-simple-saml/cert/server.crt
+      SAML_CERT_PATH: ${{ github.workspace }}/../docker-simple-saml/cert/server.crt
 
       # Run the authenticated specs for real; credentials are the local IdP's
       # public test user, never real CWL.
