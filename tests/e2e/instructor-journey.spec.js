@@ -173,12 +173,20 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     const rows = page.getByRole('row');
     await expect(rows.first()).toBeVisible();
 
-    // The header "select all" checkbox is the first checkbox in the table.
-    await page.getByRole('checkbox').first().check();
-    await page.getByRole('button', { name: 'Approve' }).click();
+    // Not .first() over all checkboxes: the page's first checkbox is the
+    // "Show flagged only" filter, which would empty the table instead.
+    await page.getByRole('checkbox', { name: 'Select all questions' }).check();
+    // Scope to the bulk-action bar: selecting rows also reveals per-row
+    // Approve buttons inside the table. Case-sensitive end-anchor so the
+    // glyph-prefixed " Unapprove" can't match.
+    await page
+      .getByTestId('bulk-action-bar')
+      .getByRole('button', { name: /Approve$/ })
+      .click();
 
-    // At least one row now shows the Approved status.
-    await expect(page.getByText('Approved').first()).toBeVisible();
+    // At least one row now shows the Approved status (cell, not the identical
+    // option in the Status filter dropdown).
+    await expect(page.getByRole('cell', { name: 'Approved' }).first()).toBeVisible();
   });
 
   test('schedules the quiz for a section and publishes it', async () => {
