@@ -13,12 +13,8 @@ local_cache
 
 .claude
 
+# Cypress artifacts
+client/cypress/screenshots
+client/cypress/videos
+client/cypress/downloads
 client/dist
-
-# Test reports & artifacts (see agents.e2e.md / agents.unit.md / agents.a11y.md)
-playwright-report/
-playwright-report-a11y/
-monocart-report/
-test-results/
-coverage-reports/
-tests/e2e/.auth/
