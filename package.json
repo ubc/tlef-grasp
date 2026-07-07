@@ -15,14 +15,13 @@
     "test:unit:watch": "jest --watch",
     "test:unit:coverage": "jest --coverage",
     "test:unit:monocart": "jest -c jest.monocart.config.js",
-    "test:install-stubs": "node tests/stubs/install.js",
-    "test:e2e": "npm run test:install-stubs --silent && playwright test",
-    "test:e2e:headed": "npm run test:install-stubs --silent && playwright test --headed",
-    "test:a11y": "npm run test:install-stubs --silent && playwright test --config=playwright.a11y.config.js",
-    "test:a11y:headed": "npm run test:install-stubs --silent && playwright test --config=playwright.a11y.config.js --headed",
-    "test:a11y:debug": "npm run test:install-stubs --silent && playwright test --config=playwright.a11y.config.js --debug",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:a11y": "playwright test --config=playwright.a11y.config.js",
+    "test:a11y:headed": "playwright test --config=playwright.a11y.config.js --headed",
+    "test:a11y:debug": "playwright test --config=playwright.a11y.config.js --debug",
     "test:a11y:report": "playwright show-report playwright-report-a11y",
-    "test:ui": "npm run test:install-stubs --silent && playwright test --ui",
+    "test:ui": "playwright test --ui",
     "test:report": "playwright show-report"
   },
   "keywords": [],
@@ -31,6 +30,7 @@
   "type": "commonjs",
   "dependencies": {
     "@llamaindex/liteparse": "^1.5.3",
+    "@ubc/ubc-genai-toolkit-course-list-sync": "^0.1.3",
     "archiver": "^7.0.1",
     "cheerio": "^1.1.2",
     "connect-mongo": "^6.0.0",
@@ -54,9 +54,6 @@
     "ubc-genai-toolkit-embeddings": "^0.1.1",
     "ubc-genai-toolkit-llm": "^0.2.3",
     "ubc-genai-toolkit-rag": "^0.1.7"
-  },
-  "optionalDependencies": {
-    "@ubc/ubc-genai-toolkit-course-list-sync": "^0.1.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
