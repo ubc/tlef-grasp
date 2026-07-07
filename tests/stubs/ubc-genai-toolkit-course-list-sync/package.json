@@ -1,0 +1,6 @@
+{
+  "name": "@ubc/ubc-genai-toolkit-course-list-sync",
+  "version": "0.0.0-test",
+  "main": "index.js",
+  "private": true
+}
