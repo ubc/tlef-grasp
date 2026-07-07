@@ -17,6 +17,9 @@
 - Expanded `src/models/questions/CalculationQuestion.js` static helper coverage for schema/prompt/retry contracts, formula/stem validation, deterministic variable sampling/rendering, numeric parsing/comparison, token signing/verification, and student-instance construction.
 - Expanded model contract coverage for `src/models/questions/Question.js` abstract methods and prompt/schema/retry methods across question types.
 - Expanded `src/controllers/achievement.js` route-driven error-path coverage for save/read/count failures and unauthenticated count reads.
+- Expanded `src/services/calculation-question.js` helper coverage for deterministic variable sampling, rendered stem composition, student-instance construction, numeric parsing/matching, and token verification failure paths.
+- Expanded auth/co-instructor/structured-LLM branch coverage for database-backed admin lookup, DB lookup failure fallback, unauthenticated role middleware, allowed page middleware, allowed co-instructor guard, and Ollama conversation-message handling.
+- Added additional branch coverage for calculation-service impossible integer ranges, unsupported formula syntax, retry exhaustion on non-finite sampled formulas, malformed/expired signed tokens, auth role-precedence helper negatives, and settings read/write error propagation.
 
 ### Issues Found
 - `src/services/calculation-question.js` normalizes `πr²` to `PIr^2` instead of `PI*r^2`, so formulas using a math constant directly adjacent to a declared variable do not parse as expected. Covered by `tests/unit/calculation-question.service.test.js` with an `it.failing` test until the app fix lands.

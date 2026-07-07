@@ -77,6 +77,21 @@ describe('auth middleware', () => {
     expect(allowedNext).toHaveBeenCalledTimes(1);
   });
 
+  it('returns JSON 401 before role checks for unauthenticated protected API routes', async () => {
+    const req = { isAuthenticated: jest.fn(() => false) };
+    const res = mockResponse();
+
+    await requireRole(ROLES.FACULTY)(req, res, jest.fn());
+
+    expect(hasMinimumRole).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Authentication required',
+      authenticated: false,
+    });
+  });
+
   it('redirects unauthenticated page requests to login', async () => {
     const req = { isAuthenticated: jest.fn(() => false) };
     const res = mockResponse();
@@ -101,5 +116,19 @@ describe('auth middleware', () => {
     expect(staffRes.send).toHaveBeenCalledWith(
       'Access denied. Insufficient permissions.'
     );
+  });
+
+  it('passes page requests through when the user has the required role', async () => {
+    hasMinimumRole.mockResolvedValue(true);
+    const next = jest.fn();
+
+    await requirePageRole(ROLES.FACULTY)(
+      { isAuthenticated: jest.fn(() => true), user: { _id: 'faculty-1' } },
+      mockResponse(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(getUserRole).not.toHaveBeenCalled();
   });
 });

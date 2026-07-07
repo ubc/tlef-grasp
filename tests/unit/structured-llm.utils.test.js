@@ -63,6 +63,23 @@ describe('generateStructured', () => {
     expect(mockGetLLMInstance).not.toHaveBeenCalled();
   });
 
+  it('uses provided conversation messages for Ollama without synthesizing a prompt message', async () => {
+    mockGetLLMProvider.mockReturnValue('ollama');
+    mockGetLLMModel.mockReturnValue('llama-model');
+    mockChat.mockResolvedValue({ message: { content: '{}' } });
+    const messages = [{ role: 'user', content: 'Use history' }];
+
+    await generateStructured({ messages, prompt: 'ignored', schema });
+
+    expect(mockChat).toHaveBeenCalledWith({
+      model: 'llama-model',
+      messages,
+      stream: false,
+      format: schema,
+      options: { temperature: 0.4 },
+    });
+  });
+
   it('passes strict json_schema response format to the toolkit for OpenAI prompts', async () => {
     mockGetLLMProvider.mockReturnValue('openai');
     const sendMessage = jest.fn().mockResolvedValue({

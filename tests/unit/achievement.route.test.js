@@ -26,6 +26,18 @@ function buildApp(user = { _id: 'user-1' }) {
 }
 
 describe('achievement routes', () => {
+  let consoleErrorSpy;
+
+  beforeAll(() => {
+    // Error-path tests deliberately reject service calls; the controller logs
+    // via console.error before responding. Suppress that expected noise.
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
   beforeEach(() => {
     achievementService.saveAchievement.mockReset();
     achievementService.getUserAchievements.mockReset();

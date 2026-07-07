@@ -62,6 +62,21 @@ describe('settings service', () => {
         coInstructorPermissions: {},
       });
     });
+
+    it('logs and rethrows database read errors', async () => {
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+      databaseService.connect.mockRejectedValue(new Error('connect failed'));
+
+      await expect(settingsService.getSettings('course-1')).rejects.toThrow(
+        'connect failed'
+      );
+
+      expect(console.error).toHaveBeenCalledWith(
+        'Error getting settings for course course-1:',
+        expect.any(Error)
+      );
+      console.error.mockRestore();
+    });
   });
 
   describe('updateSettings', () => {
@@ -152,6 +167,27 @@ describe('settings service', () => {
       ).resolves.toEqual({ success: true });
 
       expect(collection.bulkWrite).not.toHaveBeenCalled();
+    });
+
+    it('logs and rethrows database write errors', async () => {
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+      databaseService.connect.mockResolvedValue({
+        collection: jest.fn(() => ({
+          bulkWrite: jest.fn().mockRejectedValue(new Error('bulk failed')),
+        })),
+      });
+
+      await expect(
+        settingsService.updateSettings('course-1', {
+          prompts: { questionGeneration: 'Updated prompt' },
+        })
+      ).rejects.toThrow('bulk failed');
+
+      expect(console.error).toHaveBeenCalledWith(
+        'Error updating settings for course course-1:',
+        expect.any(Error)
+      );
+      console.error.mockRestore();
     });
   });
 });
