@@ -1,6 +1,7 @@
 // @ts-check
 const { expect } = require('@playwright/test');
 const { MongoClient, ObjectId } = require('mongodb');
+const { seedStudentJourneyCourse, SEED } = require('../e2e/seed');
 
 const COURSE_KEY = 'grasp-selected-course';
 const ROLE_KEY = 'grasp-current-role';
@@ -106,16 +107,17 @@ async function getOrSeedCourse(page) {
   return seedCourseForUser(user);
 }
 
-async function selectCourse(page, course) {
+async function selectCourse(page, course, role = 'instructor') {
   await page.addInitScript(
-    ({ courseKey, roleKey, selectedCourse }) => {
+    ({ courseKey, roleKey, selectedCourse, selectedRole }) => {
       window.sessionStorage.setItem(courseKey, JSON.stringify(selectedCourse));
-      window.localStorage.setItem(roleKey, 'instructor');
+      window.localStorage.setItem(roleKey, selectedRole);
     },
     {
       courseKey: COURSE_KEY,
       roleKey: ROLE_KEY,
       selectedCourse: course,
+      selectedRole: role,
     }
   );
 }
@@ -124,6 +126,45 @@ async function prepareAuthenticatedCourse(page) {
   const course = await getOrSeedCourse(page);
   await selectCourse(page, course);
   return course;
+}
+
+function normalizeCourse(course) {
+  return {
+    id: String(course._id || course.id),
+    name: course.courseName || course.name || 'Selected Course',
+  };
+}
+
+async function prepareSeededInstructorCourse(page) {
+  await seedStudentJourneyCourse();
+
+  const response = await page.request.get('/api/courses/my');
+  expect(response.ok(), 'instructor can read /api/courses/my').toBe(true);
+  const body = await response.json();
+  const course = (body.courses || []).find(
+    (candidate) => (candidate.courseName || candidate.name) === SEED.COURSE_NAME
+  );
+  expect(course, `seeded instructor course "${SEED.COURSE_NAME}" is present`).toBeTruthy();
+
+  const selected = normalizeCourse(course);
+  await selectCourse(page, selected, 'instructor');
+  return selected;
+}
+
+async function prepareSeededStudentCourse(page) {
+  await seedStudentJourneyCourse();
+
+  const response = await page.request.get('/api/student/courses');
+  expect(response.ok(), 'student can read /api/student/courses').toBe(true);
+  const body = await response.json();
+  const course = (body.courses || []).find(
+    (candidate) => (candidate.courseName || candidate.name) === SEED.COURSE_NAME
+  );
+  expect(course, `seeded student course "${SEED.COURSE_NAME}" is present`).toBeTruthy();
+
+  const selected = normalizeCourse(course);
+  await selectCourse(page, selected, 'student');
+  return selected;
 }
 
 async function gotoCoursePage(page, path, readyLocator) {
@@ -136,5 +177,7 @@ async function gotoCoursePage(page, path, readyLocator) {
 module.exports = {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
+  prepareSeededInstructorCourse,
+  prepareSeededStudentCourse,
   gotoCoursePage,
 };

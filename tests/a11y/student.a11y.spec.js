@@ -1,10 +1,12 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
-const { FACULTY_AUTH_FILE } = require('../e2e/auth');
+const { FACULTY_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('../e2e/auth');
+const { SEED } = require('../e2e/seed');
 const {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
+  prepareSeededStudentCourse,
 } = require('./authenticated-helper');
 
 // MANUAL: verify quiz timers and feedback announcements with a screen reader,
@@ -73,3 +75,83 @@ test.describe('Accessibility: authenticated student pages', () => {
     await expectNoA11yViolations(page);
   });
 });
+
+test.describe('Accessibility: seeded student quiz states', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
+  test.use({ storageState: BIO_STUDENT_AUTH_FILE });
+
+  async function startSeededQuiz(page) {
+    await prepareSeededStudentCourse(page);
+    await page.goto('/quiz');
+
+    await expect(page.getByRole('heading', { name: 'Available Quizzes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    await expect(page.getByText(new RegExp(`1 of ${SEED.QUESTION_COUNT}`))).toBeVisible();
+  }
+
+  async function answerCurrentQuestionCorrectly(page) {
+    const correctOption = page.getByRole('button', {
+      name: new RegExp(SEED.CORRECT_OPTION_TEXTS.map(escapeRegExp).join('|')),
+    });
+    await correctOption.first().click();
+    await expect(page.getByText('Correct!')).toBeVisible();
+  }
+
+  async function answerAllCorrectly(page) {
+    for (let index = 0; index < SEED.QUESTION_COUNT; index += 1) {
+      await answerCurrentQuestionCorrectly(page);
+      await page.getByRole('button', { name: /Next|Finish/ }).click();
+    }
+  }
+
+  test('seeded quiz list and first-question feedback state have no blocking axe violations', async ({
+    page,
+  }) => {
+    await prepareSeededStudentCourse(page);
+    await page.goto('/quiz');
+
+    await expect(page.getByRole('heading', { name: 'Pending Quizzes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start Quiz' })).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    await expect(page.getByRole('button', { name: SEED.CORRECT_OPTION_TEXTS[0] })).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await answerCurrentQuestionCorrectly(page);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await expectNoA11yViolations(page);
+  });
+
+  test('completion, retake list, and populated achievements states have no blocking axe violations', async ({
+    page,
+  }) => {
+    await startSeededQuiz(page);
+    await answerAllCorrectly(page);
+
+    await expect(page.getByRole('heading', { name: 'Quiz Complete!' })).toBeVisible();
+    await expect(page.getByText('100%')).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await page.getByRole('button', { name: 'Back to Quizzes' }).click();
+    await expect(page.getByRole('heading', { name: 'Completed Quizzes' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retake Quiz' })).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await page.goto('/achievements');
+    await expect(page.getByRole('heading', { name: 'My Achievements' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Quiz Completed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Perfect Score!' })).toBeVisible();
+    await expect(page.getByText(`Quiz: ${SEED.QUIZ_NAME}`).first()).toBeVisible();
+    await expectNoA11yViolations(page);
+  });
+});
+
+function escapeRegExp(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

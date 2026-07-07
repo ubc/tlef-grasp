@@ -1,11 +1,13 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
-const { FACULTY_AUTH_FILE } = require('../e2e/auth');
+const { FACULTY_AUTH_FILE, BIO_PROF2_AUTH_FILE } = require('../e2e/auth');
+const { SEED } = require('../e2e/seed');
 const {
   IDP_ENABLED,
   gotoCoursePage,
   prepareAuthenticatedCourse,
+  prepareSeededInstructorCourse,
 } = require('./authenticated-helper');
 
 // MANUAL: verify sidebar reading order, mobile drawer focus behavior, icon-only
@@ -136,4 +138,77 @@ test.describe('Accessibility: authenticated instructor pages', () => {
       await expect(trigger).toBeFocused();
     }
   );
+});
+
+test.describe('Accessibility: seeded instructor populated states', () => {
+  test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
+
+  test('seeded quiz card and export dialog have no blocking axe violations', async ({
+    page,
+  }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/quizzes');
+
+    await expect(page.getByRole('button', { name: 'Manage Quizzes' })).toBeVisible();
+    const quizCard = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: SEED.QUIZ_NAME }) })
+      .first();
+    await expect(quizCard.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    await expect(quizCard.getByRole('button', { name: 'Export' })).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await quizCard.getByRole('button', { name: 'Export' }).click();
+    await expect(page.getByText('Export Quiz')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Canvas \(QTI\)/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /CSV/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /JSON/ })).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+  });
+
+  test('seeded schedule edit dialog documents field-label violations', async ({
+    page,
+  }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/quizzes');
+
+    const quizCard = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: SEED.QUIZ_NAME }) })
+      .first();
+    await expect(quizCard.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+
+    await quizCard.getByRole('button', { name: /101\s+Active/ }).click();
+    await expect(page.getByText('Edit section schedule')).toBeVisible();
+    await expect(page.locator('input[type="datetime-local"]').first()).toBeVisible();
+    await expect(page.locator('input[type="datetime-local"]').nth(1)).toBeVisible();
+
+    // FINDINGS.md Accessibility: ScheduleModal date fields have visible labels
+    // that are not programmatically associated with their inputs yet.
+    await expectNoA11yViolations(page, {
+      include: '.fixed.inset-0',
+      disableRules: ['label'],
+    });
+  });
+
+  test('populated question bank table documents filter-label violations', async ({
+    page,
+  }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/question-bank');
+
+    await expect(page.getByRole('button', { name: 'Questions' })).toBeVisible();
+    await expect(page.getByText(/Michaelis constant|competitive inhibitor/i).first()).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Select all questions' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add New Question' })).toBeVisible();
+
+    await page.getByRole('checkbox', { name: 'Select all questions' }).check();
+    await expect(page.getByText(`${SEED.QUESTION_COUNT} questions selected`)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Approve$/ }).first()).toBeVisible();
+
+    // FINDINGS.md Accessibility: QuestionBank filter selects/search input have
+    // visible labels/placeholders but no programmatic names.
+    await expectNoA11yViolations(page, { disableRules: ['label'] });
+  });
 });
