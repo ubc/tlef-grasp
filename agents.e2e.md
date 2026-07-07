@@ -226,6 +226,25 @@ and a11y (model: BIOCBOT's `playwright.yml`). It must be independently runnable
   - `monocart-report/` (Monocart report — **required artifact**)
   - `test-results/` (traces/videos/screenshots) — `if: failure()`
 
+## Found a bug? Document it, don't fix it
+
+Same policy as BIOCBOT's `tests/e2e/FINDINGS.md`: writing tests **will** surface real
+app bugs and inconsistencies. When that happens, do **not** fix the app code in the
+same change, and do **not** relax the assertion to make the test green. Instead:
+
+1. Write the test asserting the **expected** (correct) behaviour and leave it failing.
+2. Record the discrepancy in the shared **`FINDINGS.md`** at the repo root, under the
+   **`## E2E`** section: what the test expected, what the app actually did, the spec
+   file and the app file(s) involved, and enough reproduction context to triage it
+   without re-running the suite.
+3. The failing test + the FINDINGS entry together prompt the real fix as its own
+   change. (If a failing test would block CI unacceptably, mark it `test.fixme()` with
+   a comment pointing at the FINDINGS entry — never delete or weaken it.)
+
+Create `FINDINGS.md` (sections `## E2E`, `## Unit`, `## Accessibility`) if it doesn't
+exist yet. Entries are removed only when the underlying bug is fixed and the test
+passes.
+
 ## How to validate that these tests are useful
 
 Before merging any E2E test, review it against all of these:

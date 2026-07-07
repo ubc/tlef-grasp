@@ -156,6 +156,24 @@ BIOCBOT's `unit.yml`). Independently runnable (`workflow_dispatch`), triggers on
 This workflow should be the fastest signal in CI (< 2 min); keep it that way — any
 test that needs Docker or network belongs in another layer.
 
+## Found a bug? Document it, don't fix it
+
+Same policy as BIOCBOT's `FINDINGS.md`: unit testing will surface real defects
+(wrong branch logic, inconsistent shapes between services, guards that don't guard).
+When it does, do **not** fix the app code in the same change, and do **not** bend the
+test to match the buggy behaviour. Instead:
+
+1. Write the test asserting the **expected** (correct) behaviour and leave it failing.
+2. Record the discrepancy in the shared **`FINDINGS.md`** at the repo root, under the
+   **`## Unit`** section: what was expected, what the code actually does, the test
+   file and the `src/` file(s) involved.
+3. The fix lands as its own change, at which point the entry is removed and the test
+   goes green. (If CI must stay green meanwhile, use `test.failing()` / `it.skip` with
+   a comment pointing at the FINDINGS entry — never delete or weaken the assertion.)
+
+Create `FINDINGS.md` (sections `## E2E`, `## Unit`, `## Accessibility`) if it doesn't
+exist yet.
+
 ## How to validate that these tests are useful
 
 Before merging any unit test, review it against all of these:

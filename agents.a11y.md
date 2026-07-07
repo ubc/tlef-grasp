@@ -131,6 +131,26 @@ BIOCBOT's `a11y.yml`). Independently runnable via `workflow_dispatch`; triggers 
 - Keep it non-blocking for local development: developers never need to run it before
   pushing; CI is the enforcement point.
 
+## Found a violation? Document it, don't fix it
+
+Same policy as BIOCBOT: scans **will** find real accessibility defects in the app.
+When they do, do **not** fix the component markup in the same change, and do **not**
+hide the violation with `disableRules` or by narrowing the scan. Instead:
+
+1. Keep the scan asserting the correct (violation-free) behaviour.
+2. Record each genuine violation in the shared **`FINDINGS.md`** at the repo root,
+   under the **`## Accessibility`** section: the axe rule ID and impact, the page and
+   state it occurs in, the offending element/selector, and the component file in
+   `client/src/` that owns it.
+3. The markup fix lands as its own change, then the entry is removed. For violations
+   that must temporarily not block CI, the blocking-impacts ratchet in `axe-helper.js`
+   is the sanctioned mechanism (moderate/minor already warn instead of fail) — a
+   `disableRules` entry is acceptable only with a comment pointing at the FINDINGS
+   entry.
+
+Create `FINDINGS.md` (sections `## E2E`, `## Unit`, `## Accessibility`) if it doesn't
+exist yet.
+
 ## How to validate that these tests are useful
 
 Before merging any a11y test, review it against all of these:
