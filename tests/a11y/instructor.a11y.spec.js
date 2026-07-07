@@ -43,7 +43,7 @@ const INSTRUCTOR_PAGES = [
   {
     path: '/question-review',
     name: 'question review',
-    ready: (page) => page.getByText(/No questions|Question Review|Review/i).first(),
+    ready: (page) => page.getByRole('heading', { name: 'Questions' }),
   },
   {
     path: '/quizzes',
@@ -76,7 +76,7 @@ test.describe('Accessibility: authenticated instructor pages', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
   test.use({ storageState: FACULTY_AUTH_FILE });
 
-  test('onboarding tabs and validation state have no blocking axe violations', async ({
+  test('onboarding tabs and setup form have no blocking axe violations', async ({
     page,
   }) => {
     await page.goto('/onboarding');
@@ -86,10 +86,9 @@ test.describe('Accessibility: authenticated instructor pages', () => {
 
     await page.getByRole('button', { name: 'New Course Setup' }).click();
     await expect(page.getByLabel('Campus')).toBeVisible();
-    await page.getByRole('button', { name: 'Create Course' }).click();
-    await expect(
-      page.getByText('Select a campus, academic period, and at least one section.')
-    ).toBeVisible();
+    await expect(page.getByLabel('Academic period')).toBeVisible();
+    await expect(page.getByText('Select an academic period to see your sections.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Course' })).toBeDisabled();
 
     await expectNoA11yViolations(page);
   });
