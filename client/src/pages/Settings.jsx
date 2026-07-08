@@ -280,6 +280,7 @@ export default function Settings() {
                     </td>
                     <td className="py-3 pr-4">
                       <select
+                        aria-label={`Default question type for ${level}`}
                         value={bloomPrimary[level]}
                         onChange={(event) =>
                           setBloomPrimary((prev) => ({

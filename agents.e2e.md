@@ -28,7 +28,7 @@ the session/auth stack together. They do **not** re-test pure logic (that's
 ```
 tests/
   e2e/
-    global-setup.js        # logs in once via SAML, saves storage state per role
+    saml.setup.js          # logs in once via SAML, saves storage state per role
     .auth/                 # saved sessions (git-ignored)
     landing.spec.js        # logged-out flows
     instructor-quizzes.spec.js
@@ -103,10 +103,10 @@ Git-ignore: `playwright-report/`, `monocart-report/`, `test-results/`, `tests/e2
 ## Authentication, test data, environment
 
 - **Login is real SAML** (passport-ubcshib → the `docker-simple-saml` IdP on :8080).
-  There is no dev bypass in `src/middleware/passport.js`. Follow FINANCEBOT's
-  `tests/e2e/global-setup.js`: drive the SP-initiated login (`/auth/…` → the
-  SimpleSAMLphp form → back to the app) once per role, save storage state to
-  `tests/e2e/.auth/<role>.json`. GRASP has three roles (`faculty`, `staff`,
+  There is no dev bypass in `src/middleware/passport.js`. `tests/e2e/saml.setup.js`
+  drives the SP-initiated login (`/auth/…` → the SimpleSAMLphp form → back to the
+  app) once per role after Playwright has started the web server, then saves storage
+  state to `tests/e2e/.auth/<role>.json`. GRASP has three roles (`faculty`, `staff`,
   `student` — see `src/utils/auth.js`); save one state per role you need.
 - Logged-out specs use the default context (no `storageState`). Logged-in specs opt in
   at the top of the file: `test.use({ storageState: FACULTY_AUTH_FILE })`.
@@ -166,7 +166,7 @@ lookups line up end to end. Use them for course-building journeys:
 
 Password == login name for every local IdP user. `tests/e2e/auth.js` exports a
 storage-state path per persona (`BIO_PROF2_AUTH_FILE`, `BIO_STUDENT_AUTH_FILE`, …) and
-`global-setup.js` logs each one in (env overrides `E2E_BIO_PROF2_USERNAME` etc., defaults
+`saml.setup.js` logs each one in (env overrides `E2E_BIO_PROF2_USERNAME` etc., defaults
 to the persona name). Co-taught sections (BIOC 302) can trip the "existing course shell"
 (409) path in onboarding — for a clean single-owner create, drive a section only that
 persona owns, or handle the 409 "Create anyway" branch.
@@ -174,18 +174,18 @@ persona owns, or handle the 409 "Create anyway" branch.
 ## Seeding (shared pre-seeded data)
 
 `tests/e2e/seed.js` builds the shared course the **student journey** consumes, so the
-student spec never depends on the instructor spec having run. `global-setup.js` calls
+student spec never depends on the instructor spec having run. `saml.setup.js` calls
 `seedStudentJourneyCourse()` **after** the SAML logins, and specs read it back.
 
 - **Order matters: log in first, then seed.** Passport upserts the `grasp_user` row on
   first login. The seed looks users up **by PUID** and wires course/section/quiz/question
-  data around them — it does *not* create users. So the persona logins in global-setup
+  data around them — it does *not* create users. So the persona logins in `saml.setup.js`
   must happen before the seed call (they do).
 - **Seed writes straight to MongoDB** (same collections the app uses), with **idempotent
   upserts on fixed keys** (`courseCode`, `seedKey`, quiz name), so re-running the suite
   never piles up duplicates. It follows the a11y suite's `seedCourseForUser` pattern.
 - **`MONGODB_URI` / `MONGODB_DB_NAME` must be in the seed process's env.** The seed runs
-  in the Playwright/global-setup Node process, which does **not** load `.env` (only the
+  in the Playwright setup-project Node process, which does **not** load `.env` (only the
   server does, via `dotenv`). Locally: `set -a && . ./.env && set +a` (or export them)
   before running the SAML suite. CI sets them as job env already.
 - **A published quiz is invisible to a student without BOTH:** (1) a
@@ -240,12 +240,12 @@ short-circuits the rest of that describe, which is what you want for a journey.
 ## What to test (priority order)
 
 1. **The login flow itself** (`auth.spec.js`) — the SAML round-trip must be a
-   first-class spec, not just plumbing hidden in global-setup: a logged-out user
+   first-class spec, not just plumbing hidden in setup: a logged-out user
    clicks the app's login entry point, is redirected to the IdP (the CWL stand-in),
    submits credentials on the SimpleSAMLphp form, lands back in the app
    authenticated with the right name/role visible; a wrong password stays on the IdP
    form; logout ends the session (a subsequent protected-page visit redirects to
-   login again). Global-setup *reuses* a saved session for the other specs, but this
+   login again). The SAML setup project *reuses* a saved session for the other specs, but this
    spec proves the journey works.
 2. **Auth gating**: logged-out user landing on a protected page is sent to login;
    student cannot reach instructor pages (`/users`, question generation); role-scoped
@@ -383,7 +383,7 @@ layer. What exists today:
   (→ `monocart-report/index.html`, also emits `index.json`).
 - **LLM/RAG stubs**: `tests/e2e/stubs/llm-stubs.js` + `tests/e2e/start-server-with-stubs.js`
   (module-loader swap; no prod edits — see "No real AI calls" above).
-- **Seeding**: `tests/e2e/seed.js` (`seedStudentJourneyCourse()`, called by global-setup;
+- **Seeding**: `tests/e2e/seed.js` (`seedStudentJourneyCourse()`, called by `saml.setup.js`;
   builds the shared BIOC 302 course + approved questions + published/scheduled quiz for
   the student journey; exports `SEED` constants the specs read back).
 - **Scripts** (root `package.json`): `start:test` (runs the server with
@@ -399,7 +399,7 @@ layer. What exists today:
     tab visible); a wrong password keeps them on the IdP form.
   - `tests/e2e/faculty-onboarding.spec.js` — demonstrates the storage-state
     pattern (`test.use({ storageState: FACULTY_AUTH_FILE })`) reusing the session
-    saved by global-setup.
+    saved by `saml.setup.js`.
   - `tests/e2e/role-gating.spec.js` — student/staff authenticated boundaries.
   - `tests/e2e/instructor-journey.spec.js` — the full instructor loop as `bio_prof2`
     (serial, shared page): onboarding course setup → text material → objective + question
@@ -408,9 +408,9 @@ layer. What exists today:
     seeded quiz: find it in Available Quizzes → take it answering correctly → see 100% →
     retry.
 - **Auth wiring**: `tests/e2e/auth.js` (per-role + per-persona storage-state paths) and
-  `tests/e2e/global-setup.js` (logs in faculty/staff/student **and** the `bio_prof2`/
+  `tests/e2e/saml.setup.js` (logs in faculty/staff/student **and** the `bio_prof2`/
   `bio_student`/`bio_student3` personas via the local IdP, saves one state each, then
-  calls `seedStudentJourneyCourse()`). Global-setup is wired in only when `E2E_SAML=1`.
+  calls `seedStudentJourneyCourse()`). The setup project is wired in only when `E2E_SAML=1`.
 - **CI**: `.github/workflows/e2e-tests.yml` runs the **full** suite against a real
   IdP (`E2E_SAML=1`). It clones [ubc/docker-simple-saml](https://github.com/ubc/docker-simple-saml)
   (pinned via `IDP_REF`, default `main`) into a sibling dir on the runner, brings
@@ -426,7 +426,7 @@ layer. What exists today:
   bind-mounted `cert/` dir; `SAML_CERT_PATH` points at that generated
   `cert/server.crt` (GRASP reads it at boot, which happens later). Runs a mongo:7
   service and `UBC_API_USE_MOCK=true`, then lets Playwright boot GRASP and log in
-  for real. `global-setup.js` logs the SAML endpoint status codes and, on
+  for real. `saml.setup.js` logs the SAML endpoint status codes and, on
   failure, dumps the final URL + page text + a screenshot to `test-results/`.
   `origin/main` of the IdP repo carries the `faculty:faculty` test user and the
   `tlef-grasp`→`:8052` SP registration. Uploads `playwright-report/` and

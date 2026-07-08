@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { STAFF_AUTH_FILE, STUDENT_AUTH_FILE } = require('./auth');
 
 // Authenticated role-boundary coverage. These specs reuse storage states saved
-// by global-setup and avoid course/LLM setup: they assert the route guards and
+// by saml.setup.js and avoid course/LLM setup: they assert the route guards and
 // role-scoped onboarding controls that should be stable regardless of DB data.
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 

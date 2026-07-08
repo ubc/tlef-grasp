@@ -77,6 +77,7 @@ export default function QuizScores() {
       {/* Controls */}
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <select
+          aria-label="Filter scores by quiz"
           value={selectedQuizId}
           onChange={(event) => {
             setSelectedQuizId(event.target.value);
@@ -98,6 +99,7 @@ export default function QuizScores() {
         </select>
         {courseSections.length > 0 && (
           <select
+            aria-label="Filter scores by section"
             value={sectionFilter}
             onChange={(event) => {
               setSectionFilter(event.target.value);

@@ -14,7 +14,7 @@ test.describe('Accessibility: dialogs and modal states', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
   test.use({ storageState: FACULTY_AUTH_FILE });
 
-  test('text material dialog open state has no untracked blocking axe violations', async ({
+  test('text material dialog open state has no blocking axe violations', async ({
     page,
   }) => {
     await prepareAuthenticatedCourse(page);
@@ -24,12 +24,7 @@ test.describe('Accessibility: dialogs and modal states', () => {
     await page.getByRole('button', { name: 'Text' }).click();
     await expect(page.getByText('Add Text Content')).toBeVisible();
 
-    // FINDINGS.md Accessibility: MaterialFormModal visible labels are not
-    // programmatically associated with the title/content fields yet.
-    await expectNoA11yViolations(page, {
-      include: '.fixed.inset-0',
-      disableRules: ['label'],
-    });
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
   });
 
   test('text material dialog closes with Escape', async ({ page }) => {
@@ -44,7 +39,7 @@ test.describe('Accessibility: dialogs and modal states', () => {
     await expectNoA11yViolations(page);
   });
 
-  test.fixme(
+  test(
     'text material dialog exposes dialog semantics and returns focus to the trigger',
     async ({ page }) => {
       await prepareAuthenticatedCourse(page);

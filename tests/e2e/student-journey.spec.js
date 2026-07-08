@@ -4,10 +4,10 @@ const { SEED } = require('./seed');
 
 // Full student journey for bio_student (a named IdP persona enrolled in the
 // seeded BIOC 302 section): log in, find the published quiz seeded by
-// global-setup, take it answering correctly, see the score, then retry it.
+// saml.setup.js, take it answering correctly, see the score, then retry it.
 //
 // The course + approved questions + published/open quiz are seeded once by
-// tests/e2e/seed.js (called from global-setup), so this spec never has to
+// tests/e2e/seed.js (called from saml.setup.js), so this spec never has to
 // create instructor-side data. It is opt-in (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 

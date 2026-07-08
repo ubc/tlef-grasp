@@ -50,7 +50,7 @@ export default function Calendar() {
               cell.current
                 ? "bg-primary font-semibold text-white"
                 : cell.otherMonth
-                  ? "text-gray-300"
+                  ? "text-gray-500"
                   : "text-ink"
             }`}
           >

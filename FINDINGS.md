@@ -59,9 +59,9 @@
 - Updated the accessibility GitHub Actions workflow to run against the same local docker-simple-saml IdP as E2E so authenticated scans run in CI.
 
 ### Issues Found
-- `label` (critical), Course Materials text-content modal: the "Document Title:" input and "Paste your text content:" textarea have visible labels that are not programmatically associated with their controls. The tracked scan in `tests/a11y/modals.a11y.spec.js` temporarily disables only the `label` rule for this scoped dialog scan. Owner: `client/src/pages/course-materials/MaterialModals.jsx`.
-- Modal semantics/focus management, Course Materials text-content modal: the shared modal does not expose `role="dialog"` / `aria-modal`, does not move focus into the dialog on open, and does not return focus to the trigger on close. Covered by `tests/a11y/modals.a11y.spec.js` as `test.fixme()` until the component fix lands. Owner: `client/src/components/ui/Modal.jsx`.
-- Mobile navigation keyboard focus, Dashboard mobile drawer: opening the drawer does not move focus to the drawer/close control, Escape does not close it, and focus is not restored to the trigger. Covered by `tests/a11y/instructor.a11y.spec.js` as `test.fixme()` until the component fix lands. Owners: `client/src/components/layout/AppLayout.jsx`, `client/src/components/layout/Sidebar.jsx`.
+- ~~`label` (critical), Course Materials text-content modal: the "Document Title:" input and "Paste your text content:" textarea have visible labels that are not programmatically associated with their controls.~~ RESOLVED: `MaterialFormModal` now associates every label via `htmlFor`/`id` (`useId`), and the scoped scan in `tests/a11y/modals.a11y.spec.js` no longer disables the `label` rule. Owner: `client/src/pages/course-materials/MaterialModals.jsx`.
+- ~~Modal semantics/focus management, Course Materials text-content modal: the shared modal does not expose `role="dialog"` / `aria-modal`, does not move focus into the dialog on open, and does not return focus to the trigger on close.~~ RESOLVED: the shared `Modal` now sets `role="dialog"`, `aria-modal`, `aria-labelledby` (title), focuses the Close button on open, and restores focus to the trigger on close — fixing every dialog app-wide. Now covered by a real (non-`fixme`) test in `tests/a11y/modals.a11y.spec.js`. Owner: `client/src/components/ui/Modal.jsx`.
+- ~~Mobile navigation keyboard focus, Dashboard mobile drawer: opening the drawer does not move focus to the drawer/close control, Escape does not close it, and focus is not restored to the trigger.~~ RESOLVED: the drawer now focuses its close control on open, closes on Escape, and restores focus to the trigger on close; the closed drawer is also `invisible` on mobile so its links leave the tab order and accessibility tree (previously they stayed focusable off-screen via `-translate-x-full`). Now covered by a real (non-`fixme`) test in `tests/a11y/instructor.a11y.spec.js`. Owners: `client/src/components/layout/AppLayout.jsx`, `client/src/components/layout/Sidebar.jsx`.
 
 ### Limitations
 - The suite does not automate real institutional SSO, hardcode real credentials, or commit cookies/tokens.
@@ -71,4 +71,3 @@
 ### TODOs
 - Add staff and real student storage states once `tests/e2e/global-setup.js` saves those roles.
 - Add populated-state scans for materials, objectives, quizzes, quiz scores, student quiz attempts, and generated question review once deterministic seed builders exist for those data shapes.
-- Remove the modal `label` rule exemption after `MaterialFormModal` associates labels with fields.

@@ -9,7 +9,7 @@ const baseURL = `http://localhost:${PORT}`;
 
 // SAML-authenticated specs are opt-in. They require the docker-simple-saml IdP
 // running locally and are enabled with E2E_SAML=1, which wires in the login
-// global-setup (see tests/e2e/global-setup.js). By default the suite runs only
+// setup project (see tests/e2e/saml.setup.js). By default the suite runs only
 // public / unauthenticated flows, which need no IdP and no stored session.
 const useSaml = process.env.E2E_SAML === '1';
 
@@ -26,10 +26,6 @@ module.exports = defineConfig({
   retries: process.env.CI ? 2 : 0,
   timeout: 30_000,
   expect: { timeout: 10_000 },
-
-  ...(useSaml
-    ? { globalSetup: require.resolve('./tests/e2e/global-setup.js') }
-    : {}),
 
   reporter: [
     ['list'],
@@ -52,7 +48,27 @@ module.exports = defineConfig({
     reducedMotion: 'reduce',
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: useSaml
+    ? [
+        {
+          name: 'saml-setup',
+          testMatch: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+        {
+          name: 'chromium',
+          dependencies: ['saml-setup'],
+          testIgnore: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+      ]
+    : [
+        {
+          name: 'chromium',
+          testIgnore: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+      ],
 
   // Playwright boots the app itself in CI (build the client, start the server).
   // Locally, if `npm run dev` is already serving :8052 it reuses that server for

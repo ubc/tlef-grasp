@@ -201,6 +201,7 @@ export default function CourseMaterials() {
       {/* Filter */}
       <div className="mb-6">
         <select
+          aria-label="Filter materials by type"
           value={typeFilter}
           onChange={(event) => setTypeFilter(event.target.value)}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"

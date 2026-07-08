@@ -4,13 +4,13 @@
 // and asserts on it. The STUDENT journey needs a course that already has
 // approved questions and a published, currently-open quiz — building that
 // through the UI every time would be slow and would couple the student spec to
-// the instructor spec. So global-setup calls seedStudentJourneyCourse() once,
+// the instructor spec. So saml.setup.js calls seedStudentJourneyCourse() once,
 // writing directly to MongoDB (same collections the app uses), and the student
 // spec reuses it. Everything is upserted against fixed keys, so re-running the
 // suite is idempotent and never piles up duplicate courses/quizzes.
 //
 // The bio_* user records themselves are created by the real SAML logins in
-// global-setup (passport upserts grasp_user on first login); this seed only
+// saml.setup.js (passport upserts grasp_user on first login); this seed only
 // wires course/section/quiz data around those users, looked up by the PUIDs the
 // local IdP and the FakeAcademicAPI seed share.
 
@@ -81,7 +81,7 @@ async function getUserByPuid(db, puid) {
  * call on every suite run. Returns a small summary the specs can log.
  *
  * Prereq: bio_prof2 / bio_student / bio_student3 have logged in at least once
- * (global-setup does this) so their grasp_user rows exist.
+ * (saml.setup.js does this) so their grasp_user rows exist.
  */
 async function seedStudentJourneyCourse() {
   const uri = process.env.MONGODB_URI;

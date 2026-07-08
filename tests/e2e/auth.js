@@ -5,7 +5,7 @@
 //   const { FACULTY_AUTH_FILE } = require('./auth');
 //   test.use({ storageState: FACULTY_AUTH_FILE });
 //
-// The files are produced by tests/e2e/global-setup.js when the suite is run
+// The files are produced by tests/e2e/saml.setup.js when the suite is run
 // with E2E_SAML=1, and are git-ignored (tests/e2e/.auth/).
 const path = require('path');
 

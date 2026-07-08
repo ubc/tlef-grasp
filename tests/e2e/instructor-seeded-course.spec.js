@@ -80,8 +80,7 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await completedRow.click();
 
     await expect(page.getByText(/Review:/)).toBeVisible();
-    await expect(page.getByText('Score:')).toBeVisible();
-    await expect(page.getByText('100.0%')).toBeVisible();
+    await expect(page.getByText(/Score:\s*100\.0%/)).toBeVisible();
     await expect(
       page.getByText(`${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT} correct`)
     ).toBeVisible();

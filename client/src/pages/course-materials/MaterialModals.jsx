@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import Modal from "../../components/ui/Modal";
 
 const inputClass =
@@ -24,6 +24,8 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
   );
 
   const isText = kind === "text-add" || kind === "text-edit";
+  const titleFieldId = useId();
+  const contentFieldId = useId();
 
   return (
     <Modal
@@ -47,10 +49,11 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
         </>
       }
     >
-      <label className="mb-1 block text-sm font-semibold text-ink">
+      <label htmlFor={titleFieldId} className="mb-1 block text-sm font-semibold text-ink">
         Document Title:
       </label>
       <input
+        id={titleFieldId}
         type="text"
         value={title}
         onChange={(event) => setTitle(event.target.value)}
@@ -60,12 +63,13 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
 
       {isText && (
         <>
-          <label className="mt-4 mb-1 block text-sm font-semibold text-ink">
+          <label htmlFor={contentFieldId} className="mt-4 mb-1 block text-sm font-semibold text-ink">
             {kind === "text-add"
               ? "Paste your text content:"
               : "Edit your text content:"}
           </label>
           <textarea
+            id={contentFieldId}
             rows={kind === "text-add" ? 10 : 15}
             value={content}
             onChange={(event) => setContent(event.target.value)}
@@ -77,8 +81,9 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
 
       {kind === "link-edit" && (
         <>
-          <label className="mt-4 mb-1 block text-sm font-semibold text-ink">URL:</label>
+          <label htmlFor={contentFieldId} className="mt-4 mb-1 block text-sm font-semibold text-ink">URL:</label>
           <input
+            id={contentFieldId}
             type="url"
             value={content}
             onChange={(event) => setContent(event.target.value)}

@@ -116,7 +116,7 @@ test.describe('Accessibility: authenticated instructor pages', () => {
     await expectNoA11yViolations(page);
   });
 
-  test.fixme(
+  test(
     'mobile navigation drawer moves focus inside and closes with Escape',
     async ({ page }) => {
       await prepareAuthenticatedCourse(page);

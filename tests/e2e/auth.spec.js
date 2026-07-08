@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 // The SAML login round-trip is a first-class spec, not just plumbing hidden in
-// global-setup. It drives the SP-initiated login through the local
+// SAML setup. It drives the SP-initiated login through the local
 // docker-simple-saml IdP for real, so it is opt-in: it runs only with
 // E2E_SAML=1 (IdP up). It uses the default, logged-out context — no
 // storageState — because proving the journey works is the whole point.
