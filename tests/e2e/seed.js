@@ -272,6 +272,8 @@ module.exports = {
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,
     QUESTION_COUNT: SEED_QUESTIONS.length,
+    // Seeded question titles in insertion order, for question-bank assertions.
+    QUESTION_TITLES: SEED_QUESTIONS.map((q) => q.title),
     // The correct option letter for every seeded question is "A" — the student
     // spec relies on this to answer correctly without reading answer keys.
     CORRECT_OPTION_LETTER: 'A',
