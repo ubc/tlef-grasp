@@ -52,6 +52,12 @@ module.exports = defineConfig({
     ? [
         {
           name: 'saml-setup',
+          // Pin to where saml.setup.js actually lives. The a11y config reuses
+          // these projects but overrides the top-level testDir to ./tests/a11y,
+          // so without an explicit testDir here the setup project would look for
+          // *.setup.js under tests/a11y, find nothing, and never write the
+          // .auth/*.json storage states the authenticated scans depend on.
+          testDir: './tests/e2e',
           testMatch: /.*\.setup\.js/,
           use: { ...devices['Desktop Chrome'] },
         },
