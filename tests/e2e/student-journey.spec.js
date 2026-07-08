@@ -81,7 +81,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
       page.getByRole('heading', { name: SEED.QUIZ_NAME })
     ).toBeVisible();
 
-    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
 
     // Quiz taking view: header shows the quiz title and the first question.
     await expect(
@@ -95,7 +95,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
   }) => {
     await selectSeededCourse(page);
     await page.goto('/quiz');
-    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
 
     await answerAllCorrectly(page);

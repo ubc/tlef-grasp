@@ -16,7 +16,7 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(
       page.getByRole('heading', { name: 'My Sections' })
     ).toBeVisible();
-    await expect(page.getByText(SEED.COURSE_NAME)).toBeVisible();
+    await expect(page.getByRole('main').getByText(SEED.COURSE_NAME)).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Linked sections' })
     ).toBeVisible();
@@ -68,7 +68,11 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(
       page.getByRole('heading', { name: 'Quiz Scores' })
     ).toBeVisible();
-    await page.getByRole('combobox').first().selectOption({ label: SEED.QUIZ_NAME });
+    await page
+      .getByRole('main')
+      .getByRole('combobox')
+      .first()
+      .selectOption({ label: SEED.QUIZ_NAME });
 
     const completedRow = page.getByRole('row').filter({ hasText: '100.0%' }).first();
     await expect(completedRow).toBeVisible();

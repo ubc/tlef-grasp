@@ -16,7 +16,7 @@ test.describe('Student dashboard navigation (authenticated)', () => {
     await page.goto('/student-dashboard');
 
     await expect(page.getByText(/Role:\s*Student/)).toBeVisible();
-    await expect(page.getByText(SEED.COURSE_NAME)).toBeVisible();
+    await expect(page.getByRole('main').getByText(SEED.COURSE_NAME)).toBeVisible();
     await expect(page.getByRole('link', { name: 'My Quizzes' }).first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'Achievements' }).first()).toBeVisible();
 

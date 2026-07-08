@@ -193,9 +193,11 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
 
     // Locate the journey's quiz card.
     const card = page
+      .getByRole('main')
       .locator('div')
       .filter({ has: page.getByRole('heading', { name: QUIZ_NAME }) })
-      .first();
+      .filter({ hasText: 'Delivery Format' })
+      .last();
     await expect(card.getByRole('heading', { name: QUIZ_NAME })).toBeVisible();
 
     // Schedule the (single owned) section with a release/expire window so the
@@ -204,7 +206,7 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(
       page.getByRole('heading', { name: 'Schedule a section' })
     ).toBeVisible();
-    await page.locator('select').first().selectOption({ index: 1 });
+    await page.locator('select').last().selectOption({ index: 1 });
 
     const release = page.locator('input[type="datetime-local"]').first();
     const expire = page.locator('input[type="datetime-local"]').nth(1);
