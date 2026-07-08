@@ -17,8 +17,8 @@ const ACHIEVEMENT_DISPLAY = {
 };
 
 const ICON_TYPE_CLASSES = {
-  completion: "bg-green-100 text-green-600",
-  perfect: "bg-yellow-100 text-yellow-600",
+  completion: "bg-green-100 text-green-800",
+  perfect: "bg-yellow-100 text-yellow-800",
   default: "bg-primary/10 text-primary",
 };
 

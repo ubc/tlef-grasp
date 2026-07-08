@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
@@ -100,6 +100,7 @@ function CourseSelector() {
         </div>
       ) : (
         <select
+          aria-label="Select a course"
           value={selectedCourse?.id || ""}
           onChange={handleChange}
           className="w-full cursor-pointer appearance-none rounded-lg border border-white/20 bg-white/10 px-3 py-2.5 text-sm font-medium text-white transition-all hover:border-white/30 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 [&>option]:bg-sidebar-from [&>option]:text-white"
@@ -117,6 +118,7 @@ function CourseSelector() {
 }
 
 export default function Sidebar({ open = false, onClose }) {
+  const closeButtonRef = useRef(null);
   const { isStudent, isFaculty } = useCurrentUser();
   const { can } = useCoInstructorAccess();
   const { currentRole, setCurrentRole, selectedCourse, setSelectedCourse } =
@@ -149,10 +151,16 @@ export default function Sidebar({ open = false, onClose }) {
     window.location.href = "/auth/logout";
   };
 
+  // When the drawer opens (mobile only — on desktop `open` stays false), move
+  // focus to its close control so keyboard users land inside the drawer.
+  useEffect(() => {
+    if (open) closeButtonRef.current?.focus();
+  }, [open]);
+
   return (
     <aside
-      className={`fixed top-0 left-0 z-[1000] h-screen w-[280px] overflow-y-auto bg-gradient-to-b from-sidebar-from to-sidebar-to text-white shadow-[2px_0_10px_rgba(0,0,0,0.1)] transition-transform duration-300 lg:translate-x-0 ${
-        open ? "translate-x-0" : "-translate-x-full"
+      className={`fixed top-0 left-0 z-[1000] h-screen w-[280px] overflow-y-auto bg-gradient-to-b from-sidebar-from to-sidebar-to text-white shadow-[2px_0_10px_rgba(0,0,0,0.1)] transition-transform duration-300 lg:visible lg:translate-x-0 ${
+        open ? "visible translate-x-0" : "invisible -translate-x-full"
       }`}
     >
       <nav className="flex h-full flex-col">
@@ -164,6 +172,7 @@ export default function Sidebar({ open = false, onClose }) {
               <span>GRASP</span>
             </div>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={onClose}
               aria-label="Close navigation menu"

@@ -9,7 +9,7 @@ const baseURL = `http://localhost:${PORT}`;
 
 // SAML-authenticated specs are opt-in. They require the docker-simple-saml IdP
 // running locally and are enabled with E2E_SAML=1, which wires in the login
-// global-setup (see tests/e2e/global-setup.js). By default the suite runs only
+// setup project (see tests/e2e/saml.setup.js). By default the suite runs only
 // public / unauthenticated flows, which need no IdP and no stored session.
 const useSaml = process.env.E2E_SAML === '1';
 
@@ -26,10 +26,6 @@ module.exports = defineConfig({
   retries: process.env.CI ? 2 : 0,
   timeout: 30_000,
   expect: { timeout: 10_000 },
-
-  ...(useSaml
-    ? { globalSetup: require.resolve('./tests/e2e/global-setup.js') }
-    : {}),
 
   reporter: [
     ['list'],
@@ -52,19 +48,51 @@ module.exports = defineConfig({
     reducedMotion: 'reduce',
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: useSaml
+    ? [
+        {
+          name: 'saml-setup',
+          // Pin to where saml.setup.js actually lives. The a11y config reuses
+          // these projects but overrides the top-level testDir to ./tests/a11y,
+          // so without an explicit testDir here the setup project would look for
+          // *.setup.js under tests/a11y, find nothing, and never write the
+          // .auth/*.json storage states the authenticated scans depend on.
+          testDir: './tests/e2e',
+          testMatch: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+        {
+          name: 'chromium',
+          dependencies: ['saml-setup'],
+          testIgnore: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+      ]
+    : [
+        {
+          name: 'chromium',
+          testIgnore: /.*\.setup\.js/,
+          use: { ...devices['Desktop Chrome'] },
+        },
+      ],
 
   // Playwright boots the app itself in CI (build the client, start the server).
   // Locally, if `npm run dev` is already serving :8052 it reuses that server for
   // faster iteration.
   //
-  // NOTE: `start:test` runs the server with NODE_ENV=test, NOT production. In
-  // production the session cookie is `secure` (session.js), which the browser
-  // refuses to store over plain http://localhost — so the SAML session never
-  // persists and every request 401s. Test mode keeps the cookie non-secure so
-  // authenticated E2E works over http. See agents.e2e.md.
+  // NOTE: the server runs with NODE_ENV=test, NOT production. In production
+  // the session cookie is `secure` (session.js), which the browser refuses to
+  // store over plain http://localhost — so the SAML session never persists and
+  // every request 401s. Test mode keeps the cookie non-secure so authenticated
+  // E2E works over http. See agents.e2e.md.
+  //
+  // start-server-with-stubs.js boots the same server with the LLM/RAG modules
+  // swapped for in-memory test stubs (no live LLM / Qdrant — hard rule). If a
+  // dev server is reused locally instead, LLM-touching specs would hit the
+  // real provider — run the suite with :8052 free so Playwright boots this one.
   webServer: {
-    command: 'npm run build && npm run start:test',
+    command:
+      'npm run build && cross-env NODE_ENV=test node tests/e2e/start-server-with-stubs.js',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

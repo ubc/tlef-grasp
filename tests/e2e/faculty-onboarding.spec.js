@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { FACULTY_AUTH_FILE } = require('./auth');
 
 // Demonstrates the storage-state pattern the rest of the authenticated suite
-// will use: global-setup.js logs in once as faculty and saves the session, then
+// will use: saml.setup.js logs in once as faculty and saves the session, then
 // specs opt in per file with `test.use({ storageState })` instead of logging in
 // again. Opt-in (E2E_SAML=1) because it depends on that saved session.
 const IDP_ENABLED = process.env.E2E_SAML === '1';

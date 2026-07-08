@@ -114,4 +114,21 @@ describe('co-instructor permission utilities', () => {
       error: "You don't have permission to perform this action in this course.",
     });
   });
+
+  it('returns true without writing a response when the express guard allows access', async () => {
+    const status = jest.fn().mockReturnThis();
+    const json = jest.fn();
+
+    await expect(
+      assertCoInstructorPermission(
+        { user: { _id: 'owner-1' } },
+        { status, json },
+        'course-1',
+        PERMISSION_KEYS.CREATE_QUIZ
+      )
+    ).resolves.toBe(true);
+
+    expect(status).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+  });
 });

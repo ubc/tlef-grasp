@@ -1,9 +1,8 @@
 name: Accessibility Tests
 
 # Playwright + axe accessibility tests. This workflow stays separate from unit
-# and E2E workflows, and currently covers public/unauthenticated surfaces only.
-# It does not automate real SSO; authenticated a11y coverage should wait for the
-# safe local SAML IdP storage-state setup to be enabled in CI.
+# and E2E workflows, but uses the same local docker-simple-saml IdP as E2E so
+# authenticated page and modal scans run in CI.
 
 on:
   push:
@@ -35,18 +34,55 @@ jobs:
           --health-retries 5
 
     env:
+      IDP_REPO: https://github.com/ubc/docker-simple-saml.git
+      IDP_REF: main
+      IDP_DIR: ${{ github.workspace }}/../docker-simple-saml
       TLEF_GRASP_PORT: 8052
       NODE_ENV: test
       SESSION_SECRET: ci-a11y-secret
       MONGODB_URI: mongodb://localhost:27017
       MONGODB_DB_NAME: tlef_grasp_a11y
+      SAML_ENVIRONMENT: LOCAL
       SAML_ISSUER: http://localhost:8052
       SAML_CALLBACK_URL: http://localhost:8052/auth/saml/callback
-      SAML_CERT_PATH: ${{ github.workspace }}/.ci/saml-dummy.crt
+      SAML_CERT_PATH: ${{ github.workspace }}/../docker-simple-saml/cert/server.crt
+      E2E_SAML: '1'
+      E2E_USERNAME: faculty
+      E2E_PASSWORD: faculty
       UBC_API_USE_MOCK: 'true'
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Clone docker-simple-saml IdP
+        run: git clone --depth 1 --branch "$IDP_REF" "$IDP_REPO" "$IDP_DIR"
+
+      - name: Publish the IdP on :8080
+        run: |
+          cat > "$IDP_DIR/docker-compose.override.yml" <<'YAML'
+          services:
+            saml-idp:
+              ports:
+                - '8080:80'
+          YAML
+
+      - name: Start the IdP
+        working-directory: ${{ env.IDP_DIR }}
+        run: docker compose up -d --build
+
+      - name: Wait for the IdP to be ready
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sSf -o /dev/null "http://localhost:8080/simplesaml/saml2/idp/metadata.php"; then
+              echo "IdP is up"; exit 0
+            fi
+            echo "waiting for IdP ($i)..."; sleep 3
+          done
+          echo "IdP did not become ready"; exit 1
+
+      - name: Make the IdP private key readable by Apache/PHP
+        working-directory: ${{ env.IDP_DIR }}
+        run: docker compose exec -T saml-idp chmod 0644 /var/www/simplesamlphp/cert/server.pem
 
       - uses: actions/setup-node@v4
         with:
@@ -65,16 +101,13 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Generate throwaway SAML cert (boot-only, not a real cert)
-        run: |
-          mkdir -p .ci
-          openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout .ci/saml-dummy.key \
-            -out .ci/saml-dummy.crt \
-            -days 1 -subj "/CN=grasp-ci-a11y"
-
       - name: Run accessibility tests
         run: npm run test:a11y
+
+      - name: Dump IdP logs on failure
+        if: failure()
+        working-directory: ${{ env.IDP_DIR }}
+        run: docker compose logs --no-color || true
 
       - name: Upload accessibility report
         if: ${{ !cancelled() }}

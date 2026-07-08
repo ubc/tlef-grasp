@@ -1,13 +1,25 @@
 const { test, expect } = require('@playwright/test');
 
 // The SAML login round-trip is a first-class spec, not just plumbing hidden in
-// global-setup. It drives the SP-initiated login through the local
+// SAML setup. It drives the SP-initiated login through the local
 // docker-simple-saml IdP for real, so it is opt-in: it runs only with
 // E2E_SAML=1 (IdP up). It uses the default, logged-out context — no
 // storageState — because proving the journey works is the whole point.
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 const USERNAME = process.env.E2E_USERNAME || 'faculty';
 const PASSWORD = process.env.E2E_PASSWORD || 'faculty';
+
+async function loginThroughIdp(page, username = USERNAME, password = PASSWORD) {
+  await page.goto('/auth/ubcshib');
+
+  await page.waitForURL(/:8080\//);
+  await page.getByLabel('Login Name').fill(username);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+
+  await page.waitForURL('/onboarding');
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
+}
 
 test.describe('SAML login round-trip', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
@@ -38,6 +50,24 @@ test.describe('SAML login round-trip', () => {
     await expect(
       page.getByRole('link', { name: /log in with cwl/i })
     ).toHaveCount(0);
+  });
+
+  test('logout clears the GRASP session and protected routes require login again', async ({
+    page,
+  }) => {
+    await loginThroughIdp(page);
+
+    await page.getByRole('button', { name: /sign out/i }).click();
+    await page.waitForURL(/(:8080\/|\/$)/);
+
+    // The local session is cleared before the SAML SLO redirect. Even if the
+    // browser is still parked on the IdP logout page, a protected app route
+    // must behave like a fresh logged-out visit.
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL('/');
+    await expect(
+      page.getByRole('link', { name: /log in with cwl/i })
+    ).toBeVisible();
   });
 
   test('a wrong password keeps the user on the IdP login form', async ({ page }) => {

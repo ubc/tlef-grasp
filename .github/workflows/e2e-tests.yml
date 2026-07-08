@@ -46,6 +46,22 @@ jobs:
       # in job-level env and makes the whole workflow file invalid.
       IDP_DIR: ${{ github.workspace }}/../docker-simple-saml
 
+      # The instructor journey creates a course from a real UBC section, so the
+      # onboarding wizard needs the academic API. We run FakeAcademicAPI (its
+      # seed shares PUIDs with the IdP's bio_* users) in mock mode — never the
+      # real Mulesoft API. Pinned like the IdP.
+      #
+      # FakeAcademicAPI is a PRIVATE repo (not an npm package), so GITHUB_TOKEN
+      # for this repo cannot clone it. We check it out with a read-only deploy
+      # key stored in the FAKE_API_DEPLOY_KEY secret (public half added as a
+      # deploy key on ubc/FakeAcademicAPI). No credentials are committed.
+      #
+      # It lives in a subdir of the checkout, NOT a `../` sibling like the IdP:
+      # actions/checkout refuses any `path:` outside $GITHUB_WORKSPACE, and it
+      # needs actions/checkout for the ssh-key support.
+      FAKE_API_REF: main
+      FAKE_API_DIR: ${{ github.workspace }}/academic-api-fake
+
       # GRASP (the SAML SP) is registered upstream for :8052 — keep it there.
       TLEF_GRASP_PORT: 8052
       SESSION_SECRET: ci-e2e-secret
@@ -67,8 +83,16 @@ jobs:
       E2E_USERNAME: faculty
       E2E_PASSWORD: faculty
 
-      # Never hit the real UBC academic API from CI.
+      # Never hit the real UBC academic API from CI — the onboarding flow talks
+      # to the FakeAcademicAPI stood up below (creds match its docker-compose).
       UBC_API_USE_MOCK: 'true'
+      UBC_API_MOCK_BASE_URL: http://localhost:3689
+      UBC_API_CLIENT_ID: mock-client
+      UBC_API_CLIENT_SECRET: mock-secret
+      UBC_API_ENV: dev
+
+      # LLM/RAG are stubbed in-process by tests/e2e/start-server-with-stubs.js
+      # (Playwright boots the server with it), so no Qdrant/Ollama/OpenAI here.
 
     steps:
       - uses: actions/checkout@v4
@@ -113,6 +137,41 @@ jobs:
         # enforces them.) Relax the key so www-data can read it.
         run: docker compose exec -T saml-idp chmod 0644 /var/www/simplesamlphp/cert/server.pem
 
+      # --- Stand up the FakeAcademicAPI (mock UBC course API) -
+      # Private repo → checked out with a read-only deploy key (FAKE_API_DEPLOY_KEY
+      # secret), not GITHUB_TOKEN. `path` must be inside the workspace.
+      - name: Validate FakeAcademicAPI deploy key secret
+        env:
+          FAKE_API_DEPLOY_KEY: ${{ secrets.FAKE_API_DEPLOY_KEY }}
+        run: |
+          if [ -z "$FAKE_API_DEPLOY_KEY" ]; then
+            echo "::error::FAKE_API_DEPLOY_KEY is not available to this workflow. Add it as a repository secret on ubc/tlef-grasp, not as an environment secret or on another repo."
+            exit 1
+          fi
+
+      - name: Checkout FakeAcademicAPI
+        uses: actions/checkout@v4
+        with:
+          repository: ubc/FakeAcademicAPI
+          ref: ${{ env.FAKE_API_REF }}
+          path: academic-api-fake
+          ssh-key: ${{ secrets.FAKE_API_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Start the FakeAcademicAPI
+        working-directory: ${{ env.FAKE_API_DIR }}
+        run: docker compose up -d --build
+
+      - name: Wait for the FakeAcademicAPI to be ready
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sSf -o /dev/null "http://localhost:3689/health"; then
+              echo "FakeAcademicAPI is up"; exit 0
+            fi
+            echo "waiting for FakeAcademicAPI ($i)..."; sleep 3
+          done
+          echo "FakeAcademicAPI did not become ready"; exit 1
+
       # --- GRASP + Playwright ---
       - uses: actions/setup-node@v4
         with:
@@ -141,6 +200,11 @@ jobs:
       - name: Dump IdP logs on failure
         if: failure()
         working-directory: ${{ env.IDP_DIR }}
+        run: docker compose logs --no-color || true
+
+      - name: Dump FakeAcademicAPI logs on failure
+        if: failure()
+        working-directory: ${{ env.FAKE_API_DIR }}
         run: docker compose logs --no-color || true
 
       - name: Upload Playwright HTML report

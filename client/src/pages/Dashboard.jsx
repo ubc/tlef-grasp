@@ -74,7 +74,7 @@ function InstructionStep({ number, title, badge, children, info = false }) {
             </span>
           )}
         </h4>
-        <div className="space-y-2 text-sm leading-relaxed text-gray-600 [&_a]:text-primary [&_a]:underline-offset-2 hover:[&_a]:underline [&_strong]:text-ink">
+        <div className="space-y-2 text-sm leading-relaxed text-gray-600 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_strong]:text-ink">
           {children}
         </div>
       </div>

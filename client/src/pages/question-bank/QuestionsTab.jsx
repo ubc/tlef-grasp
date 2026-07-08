@@ -40,8 +40,9 @@ function FiltersPanel({ filters, setFilter, quizzes, objectiveOptions, bloomLeve
     <div className="mb-5 rounded-2xl bg-white p-5 shadow-sm">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
-          <label className="mb-1 block text-xs font-semibold text-muted">Quiz</label>
+          <label htmlFor="qbank-filter-quiz" className="mb-1 block text-xs font-semibold text-muted">Quiz</label>
           <select
+            id="qbank-filter-quiz"
             value={filters.quiz}
             onChange={(event) => setFilter("quiz", event.target.value)}
             className={selectClass}
@@ -55,10 +56,11 @@ function FiltersPanel({ filters, setFilter, quizzes, objectiveOptions, bloomLeve
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-muted">
+          <label htmlFor="qbank-filter-objective" className="mb-1 block text-xs font-semibold text-muted">
             Learning Objectives
           </label>
           <select
+            id="qbank-filter-objective"
             value={filters.objective}
             onChange={(event) => setFilter("objective", event.target.value)}
             className={selectClass}
@@ -72,10 +74,11 @@ function FiltersPanel({ filters, setFilter, quizzes, objectiveOptions, bloomLeve
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-muted">
+          <label htmlFor="qbank-filter-bloom" className="mb-1 block text-xs font-semibold text-muted">
             Bloom Levels
           </label>
           <select
+            id="qbank-filter-bloom"
             value={filters.bloom}
             onChange={(event) => setFilter("bloom", event.target.value)}
             className={selectClass}
@@ -89,8 +92,9 @@ function FiltersPanel({ filters, setFilter, quizzes, objectiveOptions, bloomLeve
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-muted">Status</label>
+          <label htmlFor="qbank-filter-status" className="mb-1 block text-xs font-semibold text-muted">Status</label>
           <select
+            id="qbank-filter-status"
             value={filters.status}
             onChange={(event) => setFilter("status", event.target.value)}
             className={selectClass}

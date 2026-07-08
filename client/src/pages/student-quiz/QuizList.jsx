@@ -84,12 +84,12 @@ function QuizListCard({ quiz, completed, onStart }) {
       {(completed || hasPerfect) && (
         <div className="mb-4 flex flex-wrap gap-3 text-xs font-medium">
           {completed && (
-            <span className="text-green-600">
+            <span className="text-green-800">
               <i className="fas fa-check-circle mr-1" /> Completed
             </span>
           )}
           {hasPerfect && (
-            <span className="text-yellow-600">
+            <span className="text-yellow-800">
               <i className="fas fa-star mr-1" /> Perfect Score
             </span>
           )}

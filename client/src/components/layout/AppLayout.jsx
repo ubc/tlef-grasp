@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 
@@ -23,6 +23,10 @@ export default function AppLayout() {
   const { pathname } = useLocation();
   // Below lg the sidebar is an off-canvas drawer toggled from the top bar
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const triggerRef = useRef(null);
+  // Tracks whether the drawer was open so we only restore focus on a real
+  // open->close transition (never on desktop, where it stays closed).
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     const title = PAGE_TITLES[pathname];
@@ -34,11 +38,30 @@ export default function AppLayout() {
     setSidebarOpen(false);
   }, [pathname]);
 
+  // Drawer keyboard/focus handling: Escape closes it, and closing returns focus
+  // to the hamburger trigger it was opened from.
+  useEffect(() => {
+    if (!sidebarOpen) {
+      if (wasOpenRef.current) {
+        triggerRef.current?.focus();
+        wasOpenRef.current = false;
+      }
+      return;
+    }
+    wasOpenRef.current = true;
+    const handleKey = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [sidebarOpen]);
+
   return (
     <div className="min-h-screen">
       {/* Mobile top bar */}
       <header className="sticky top-0 z-[900] flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 lg:hidden">
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => setSidebarOpen(true)}
           aria-label="Open navigation menu"

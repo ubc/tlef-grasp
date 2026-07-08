@@ -243,6 +243,7 @@ export default function MySections() {
             <button
               type="button"
               role="switch"
+              aria-label="Sync students"
               aria-checked={syncStudents}
               onClick={() => setSyncStudents((v) => !v)}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${

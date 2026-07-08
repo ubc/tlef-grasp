@@ -1,10 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 // Generic centered modal with backdrop. Closes on backdrop click and Escape.
 export default function Modal({ open, onClose, title, children, footer, wide = false }) {
+  const titleId = useId();
+  const closeButtonRef = useRef(null);
+
   useEffect(() => {
     if (!open) return;
+    // Move focus into the dialog on open and restore it to whatever was focused
+    // (typically the trigger) when the dialog closes.
+    const previouslyFocused = document.activeElement;
+    closeButtonRef.current?.focus();
+
     const handleKey = (event) => {
       if (event.key === "Escape") onClose?.();
     };
@@ -13,6 +21,7 @@ export default function Modal({ open, onClose, title, children, footer, wide = f
     return () => {
       document.removeEventListener("keydown", handleKey);
       document.body.style.overflow = "";
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
   }, [open, onClose]);
 
@@ -26,13 +35,17 @@ export default function Modal({ open, onClose, title, children, footer, wide = f
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${
           wide ? "max-w-3xl" : "max-w-md"
         }`}
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h3 className="text-lg font-semibold text-ink">{title}</h3>
+          <h3 id={titleId} className="text-lg font-semibold text-ink">{title}</h3>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-gray-100 hover:text-ink"
