@@ -47,18 +47,23 @@ export default function ObjectivesStep({
     );
   };
 
-  // Persist a group's full objective record (name, materials, granular list)
+  // Persist a group's full objective record (name, materials, granular list).
+  // Granulars removed from this page are only detached, never deleted: the
+  // server treats any granular missing from this payload as a deletion, so
+  // detached items must keep riding along in every save (#41).
   const saveObjectiveToDatabase = async (group) => {
     if (!group?.objectiveId || !course?.id) return;
-    const granularObjectives = group.items.map((item) => {
-      const granularObj = {
-        text: item.text,
-        bloomTaxonomies: item.bloom || [],
-        questionCount: item.count,
-      };
-      if (item.granularId) granularObj.id = item.granularId;
-      return granularObj;
-    });
+    const granularObjectives = [...group.items, ...(group.detachedItems || [])].map(
+      (item) => {
+        const granularObj = {
+          text: item.text,
+          bloomTaxonomies: item.bloom || [],
+          questionCount: item.count,
+        };
+        if (item.granularId) granularObj.id = item.granularId;
+        return granularObj;
+      }
+    );
 
     try {
       const data = await api.put(`/api/objective/${group.objectiveId}`, {
@@ -226,9 +231,18 @@ export default function ObjectivesStep({
     });
   };
 
+  // Remove a granular from this page only. Saved granulars move to
+  // detachedItems so they survive future saves in the database (#41);
+  // never-saved ones (no granularId) are simply dropped.
   const deleteItem = (group, item) => {
     updateGroup(group.id, (g) => {
-      const updated = { ...g, items: g.items.filter((i) => i.id !== item.id) };
+      const updated = {
+        ...g,
+        items: g.items.filter((i) => i.id !== item.id),
+        detachedItems: item.granularId
+          ? [...(g.detachedItems || []), item]
+          : g.detachedItems || [],
+      };
       saveObjectiveToDatabase(updated);
       return updated;
     });

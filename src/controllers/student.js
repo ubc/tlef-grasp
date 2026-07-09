@@ -9,6 +9,24 @@ const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
 
+// A student who started a quiz inside its window keeps access to their
+// in-progress attempt after the window closes: recorded answers exist (answers
+// are only recordable while the quiz is open) but no final score has been
+// saved yet. Lets them resume/submit so started-in-time progress is never lost.
+const hasUnsubmittedAttempt = async (userId, quizId) => {
+  const db = await databaseService.connect();
+  const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+  const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+  const existingScore = await db
+    .collection("grasp_quiz_score")
+    .findOne({ userId: userIdObj, quizId: quizIdObj });
+  if (existingScore) return false;
+  const attempt = await db
+    .collection("grasp_student_attempt")
+    .findOne({ userId: userIdObj, quizId: quizIdObj });
+  return Boolean(attempt);
+};
+
 // Resolve whether a student may access a quiz right now, based on the
 // release/expire window of the section(s) they belong to. Students with no
 // section assignment, or whose section has no schedule for this quiz, are
@@ -44,6 +62,11 @@ const resolveStudentQuizAccess = async (quiz, user) => {
     };
   }
   if (window.reason === "expired") {
+    // Grace path: the student started during the window but the quiz expired
+    // before they finished — let them resume and submit their attempt (#37).
+    if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
+      return { success: true, expiredGrace: true };
+    }
     return { success: false, status: 403, message: "This quiz has expired and is no longer available." };
   }
   return { success: false, status: 403, message: "This quiz has not been scheduled for your section yet." };
@@ -150,6 +173,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         data: {
           quizId: quizId,
           title: quiz.name || "Quiz",
+          disablePreviousNavigation: quiz.disablePreviousNavigation === true,
           course: "",
           duration: 0,
           questions: [],
@@ -329,6 +353,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         quizId: quizId,
         title: quiz.name || "Quiz",
         course: courseName,
+        disablePreviousNavigation: quiz.disablePreviousNavigation === true,
         duration: 0,
         questions: transformedQuestions,
         previousAnswers,

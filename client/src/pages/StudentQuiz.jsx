@@ -126,6 +126,14 @@ export default function StudentQuiz() {
     question?.calculationLoadError;
   const isLast = currentIndex === quizData.questions.length - 1;
   const isPrivileged = role === "administrator" || role === "faculty";
+  const disablePreviousNavigation = quizData.disablePreviousNavigation === true;
+  const previousDisabled = currentIndex === 0 || disablePreviousNavigation;
+  const previousTitle =
+    currentIndex === 0
+      ? "No previous question"
+      : disablePreviousNavigation
+        ? "Previous questions are disabled for this quiz"
+        : undefined;
 
   const rawStem = (question.stem || "").trim();
   const isGenericFibStem =
@@ -270,7 +278,8 @@ export default function StudentQuiz() {
       <div className="mt-6 flex items-center justify-between gap-4">
         <button
           type="button"
-          disabled={currentIndex === 0}
+          disabled={previousDisabled}
+          title={previousTitle}
           onClick={() => setCurrentIndex((i) => i - 1)}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-40"
         >
@@ -280,6 +289,8 @@ export default function StudentQuiz() {
         <div className="flex flex-wrap justify-center gap-2">
           {quizData.questions.map((q, index) => {
             const fd = feedback[q.id];
+            const backwardJumpDisabled =
+              disablePreviousNavigation && index < currentIndex;
             let dotClass = "bg-gray-200";
             if (fd) {
               dotClass =
@@ -294,11 +305,18 @@ export default function StudentQuiz() {
               <button
                 key={q.id || index}
                 type="button"
+                disabled={backwardJumpDisabled}
                 onClick={() => setCurrentIndex(index)}
+                title={
+                  backwardJumpDisabled
+                    ? "Previous questions are disabled for this quiz"
+                    : undefined
+                }
                 aria-label={`Go to question ${index + 1}`}
+                aria-disabled={backwardJumpDisabled}
                 className={`h-3 w-3 rounded-full transition-all ${dotClass} ${
                   index === currentIndex ? "ring-2 ring-primary ring-offset-2" : ""
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-40`}
               />
             );
           })}

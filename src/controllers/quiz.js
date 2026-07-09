@@ -8,6 +8,10 @@ const { isUserInCourse } = require('../services/user-course');
 const { isFaculty, isStudent } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 
+function isBooleanIfPresent(value) {
+  return value === undefined || typeof value === "boolean";
+}
+
 /**
  * Get all quizzes for a course
  */
@@ -130,7 +134,15 @@ const getQuizByIdHandler = async (req, res) => {
  */
 const createQuizHandler = async (req, res) => {
   try {
-    const { courseId, name, description, deliveryFormat, questionIds, newQuestions } = req.body;
+    const {
+      courseId,
+      name,
+      description,
+      deliveryFormat,
+      disablePreviousNavigation,
+      questionIds,
+      newQuestions
+    } = req.body;
 
     if (!courseId || !name || !deliveryFormat) {
       return res.status(400).json({
@@ -146,6 +158,13 @@ const createQuizHandler = async (req, res) => {
       });
     }
 
+    if (!isBooleanIfPresent(disablePreviousNavigation)) {
+      return res.status(400).json({
+        success: false,
+        error: "disablePreviousNavigation must be a boolean.",
+      });
+    }
+
     if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
@@ -154,7 +173,8 @@ const createQuizHandler = async (req, res) => {
     const quiz = await quizService.createQuiz(courseId, {
       name,
       description,
-      deliveryFormat
+      deliveryFormat,
+      disablePreviousNavigation
     });
     
     const quizId = quiz._id.toString();
@@ -194,12 +214,19 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, deliveryFormat } = req.body;
+    const { name, description, published, deliveryFormat, disablePreviousNavigation } = req.body;
 
     if (deliveryFormat !== undefined && deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
       return res.status(400).json({
         success: false,
         error: "Invalid deliveryFormat. Must be 'all-approved' or 'spaced-3phase'."
+      });
+    }
+
+    if (!isBooleanIfPresent(disablePreviousNavigation)) {
+      return res.status(400).json({
+        success: false,
+        error: "disablePreviousNavigation must be a boolean."
       });
     }
 
@@ -217,7 +244,8 @@ const updateQuizHandler = async (req, res) => {
       name,
       description,
       published,
-      deliveryFormat
+      deliveryFormat,
+      disablePreviousNavigation
     });
     
     if (result.matchedCount === 0) {

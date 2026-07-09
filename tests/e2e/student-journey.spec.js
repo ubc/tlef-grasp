@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_STUDENT_AUTH_FILE } = require('./auth');
-const { SEED } = require('./seed');
+const { SEED, resetSeededQuizAttemptState } = require('./seed');
 
 // Full student journey for bio_student (a named IdP persona enrolled in the
 // seeded BIOC 302 section): log in, find the published quiz seeded by
@@ -88,6 +88,51 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
       page.getByRole('heading', { name: SEED.QUIZ_NAME })
     ).toBeVisible();
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
+  });
+
+  test('resumes at the first unanswered question after a reload (#36)', async ({
+    page,
+  }) => {
+    // Answer restoration only applies to an unsubmitted first attempt, so wipe
+    // any score/answers other specs (dashboard, quiz summary) left on the
+    // seeded quiz before starting — otherwise this test depends on spec order.
+    await resetSeededQuizAttemptState();
+
+    await selectSeededCourse(page);
+    await page.goto('/quiz');
+    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await expect(page.getByText(/1 of \d+/)).toBeVisible();
+
+    // Answer only the first question, then simulate an accidental reload.
+    const correctOption = page.getByRole('button', {
+      name: new RegExp(SEED.CORRECT_OPTION_TEXTS.map(escapeRegExp).join('|')),
+    });
+    await correctOption.first().click();
+    await expect(page.getByText('Correct!')).toBeVisible();
+    await page.goto('/quiz');
+
+    // Re-entering the quiz restores the recorded answer and lands on the
+    // first unanswered question instead of question 1.
+    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await expect(page.getByText(/2 of \d+/)).toBeVisible();
+
+    // Going back shows question 1 already answered correctly.
+    await page.getByRole('button', { name: 'Previous' }).click();
+    await expect(page.getByText(/1 of \d+/)).toBeVisible();
+    await expect(page.getByText('Correct!')).toBeVisible();
+    await page.getByRole('button', { name: /Next/ }).click();
+
+    // Finish the attempt so the rest of the journey starts from a clean,
+    // completed state (the restored q1 answer counts toward the score).
+    for (let i = 0; i < SEED.QUESTION_COUNT - 1; i++) {
+      await correctOption.first().click();
+      await expect(page.getByText('Correct!')).toBeVisible();
+      await page.getByRole('button', { name: /Next|Finish/ }).click();
+    }
+    await expect(
+      page.getByRole('heading', { name: 'Quiz Complete!' })
+    ).toBeVisible();
+    await expect(page.getByText('100%')).toBeVisible();
   });
 
   test('completes the quiz correctly and sees a perfect score', async ({
