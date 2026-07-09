@@ -10,12 +10,14 @@ const btnPrimary =
 
 const MODAL_TITLES = {
   "text-add": "Add Text Content",
+  "link-add": "Add URL",
   "text-edit": "Edit Textbook",
   "pdf-edit": "Edit PDF",
   "link-edit": "Edit Link",
+  "file-edit": "Edit Material",
 };
 
-// Add/edit form for text, PDF and link materials. Mount it only while open —
+// Add/edit form for text, link and uploaded-file materials. Mount it only while open —
 // the form state initializes from the material being edited.
 export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
   const [title, setTitle] = useState(material?.documentTitle || "");
@@ -24,6 +26,7 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
   );
 
   const isText = kind === "text-add" || kind === "text-edit";
+  const isLink = kind === "link-add" || kind === "link-edit";
   const titleFieldId = useId();
   const contentFieldId = useId();
 
@@ -79,7 +82,7 @@ export function MaterialFormModal({ kind, material, busy, onClose, onSubmit }) {
         </>
       )}
 
-      {kind === "link-edit" && (
+      {isLink && (
         <>
           <label htmlFor={contentFieldId} className="mt-4 mb-1 block text-sm font-semibold text-ink">URL:</label>
           <input

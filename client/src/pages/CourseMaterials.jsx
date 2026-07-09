@@ -4,11 +4,15 @@ import {
   useCourseMaterials,
   useUploadMaterials,
   useAddTextMaterial,
+  useAddLinkMaterial,
   useUpdateMaterial,
   useRefetchLinkMaterial,
   useDeleteMaterial,
 } from "../hooks/useMaterials";
-import { filterSupportedDocuments } from "../lib/materials";
+import {
+  filterSupportedDocuments,
+  getUploadValidationMessage,
+} from "../lib/materials";
 import { useToast } from "../components/ui/Toast";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import UploadSection from "./course-materials/UploadSection";
@@ -17,6 +21,16 @@ import {
   MaterialFormModal,
   DeleteMaterialModal,
 } from "./course-materials/MaterialModals";
+
+const validateUrl = (content) => {
+  if (!content) return "Please enter a URL";
+  try {
+    new URL(content);
+    return null;
+  } catch {
+    return "Please enter a valid URL";
+  }
+};
 
 // Maps the modal kind to the /api/material/update payload it produces.
 const EDIT_CONFIG = {
@@ -32,11 +46,17 @@ const EDIT_CONFIG = {
     buildData: () => ({}),
     validate: () => null,
   },
+  "file-edit": {
+    documentType: "file",
+    successMessage: "Material updated successfully",
+    buildData: () => ({}),
+    validate: () => null,
+  },
   "link-edit": {
     documentType: "link",
     successMessage: "Link updated successfully",
     buildData: (content) => ({ url: content }),
-    validate: (content) => (content ? null : "Please enter a URL"),
+    validate: validateUrl,
   },
 };
 
@@ -47,7 +67,7 @@ export default function CourseMaterials() {
 
   const [showUpload, setShowUpload] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
-  // { kind: 'text-add' | 'text-edit' | 'pdf-edit' | 'link-edit' | 'delete', material? }
+  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete', material? }
   const [modal, setModal] = useState(null);
   const autoShownRef = useRef(false);
 
@@ -63,7 +83,8 @@ export default function CourseMaterials() {
 
   const filteredMaterials = materials.filter(
     (material) =>
-      typeFilter === "all" || (material.fileType || "").includes(typeFilter)
+      typeFilter === "all" ||
+      (material.fileType || "").toLowerCase().includes(typeFilter)
   );
 
   /* ------------------------------ Mutations ------------------------------ */
@@ -87,6 +108,16 @@ export default function CourseMaterials() {
       showToast("Text content added", "success");
     },
     onError: () => showToast("Error adding text content. Please try again.", "error"),
+  });
+
+  const addLinkMutation = useAddLinkMaterial(selectedCourse, {
+    onSuccess: () => {
+      setModal(null);
+      setShowUpload(false);
+      showToast("URL content added", "success");
+    },
+    onError: (error) =>
+      showToast(error.message || "Error adding URL content. Please try again.", "error"),
   });
 
   const updateMutation = useUpdateMaterial(courseId, {
@@ -116,13 +147,13 @@ export default function CourseMaterials() {
 
   /* ------------------------------- Handlers ------------------------------ */
 
-  const handleFiles = (rawFiles) => {
-    const { validFiles, hasInvalid } = filterSupportedDocuments(Array.from(rawFiles));
+  const handleFiles = (rawFiles, expectedType = null) => {
+    const { validFiles, hasInvalid } = filterSupportedDocuments(
+      Array.from(rawFiles),
+      expectedType
+    );
     if (hasInvalid) {
-      showToast(
-        "PDF, DOC, and DOCX are the only supported file formats at this time. Additional file formats will be supported soon.",
-        "error"
-      );
+      showToast(getUploadValidationMessage(expectedType), "error");
     }
     if (validFiles.length === 0) return;
     if (!selectedCourse) {
@@ -137,6 +168,10 @@ export default function CourseMaterials() {
 
   const handleModalSubmit = ({ title, content }) => {
     if (modal.kind === "text-add") {
+      if (!title) {
+        showToast("Please enter a document title", "error");
+        return;
+      }
       if (!content) {
         showToast("Please enter some content", "error");
         return;
@@ -146,6 +181,26 @@ export default function CourseMaterials() {
         return;
       }
       addTextMutation.mutate({ documentTitle: title, textContent: content });
+      return;
+    }
+
+    if (modal.kind === "link-add") {
+      const validationError = validateUrl(content);
+      if (validationError) {
+        showToast(validationError, "error");
+        return;
+      }
+      if (!selectedCourse) {
+        showToast("Please select a course first", "error");
+        return;
+      }
+      showToast("Fetching URL content...", "info");
+      addLinkMutation.mutate({ documentTitle: title, url: content });
+      return;
+    }
+
+    if (modal.kind.endsWith("-edit") && !title) {
+      showToast("Please enter a document title", "error");
       return;
     }
 
@@ -192,9 +247,17 @@ export default function CourseMaterials() {
 
       {showUpload && (
         <UploadSection
+          open={showUpload}
           uploading={uploadMutation.isPending}
+          onClose={() => setShowUpload(false)}
           onFiles={handleFiles}
-          onAddText={() => setModal({ kind: "text-add" })}
+          onAddContent={(contentType) => {
+            setShowUpload(false);
+            // "url" → "link-add" is currently unreachable: the URL tile is
+            // disabled in UploadSection for privacy reasons. Existing link
+            // materials keep their edit/refetch flows.
+            setModal({ kind: contentType === "url" ? "link-add" : "text-add" });
+          }}
         />
       )}
 
@@ -209,6 +272,8 @@ export default function CourseMaterials() {
           <option value="all">All Types</option>
           <option value="pdf">PDF</option>
           <option value="text">Textbook</option>
+          <option value="word">Word Document</option>
+          <option value="presentation">PowerPoint</option>
           <option value="link">Link</option>
         </select>
       </div>
@@ -240,7 +305,11 @@ export default function CourseMaterials() {
         <MaterialFormModal
           kind={modal.kind}
           material={modal.material}
-          busy={addTextMutation.isPending || updateMutation.isPending}
+          busy={
+            addTextMutation.isPending ||
+            addLinkMutation.isPending ||
+            updateMutation.isPending
+          }
           onClose={() => setModal(null)}
           onSubmit={handleModalSubmit}
         />

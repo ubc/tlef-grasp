@@ -92,6 +92,49 @@ export function useAddTextMaterial(course, options) {
   });
 }
 
+export function useAddLinkMaterial(course, options) {
+  const courseId = course?.id;
+  const invalidate = useInvalidateMaterials(courseId);
+  return useMutation({
+    mutationFn: async ({ documentTitle, url }) => {
+      const sourceId = `${courseId}-${Date.now()}-${Math.random()}`;
+      const fetchData = await api.post("/api/material/fetch-url-content", { url });
+      if (!fetchData.success || !fetchData.content) {
+        throw new Error("No content retrieved from URL");
+      }
+
+      const title = documentTitle || fetchData.title || url;
+      await api.post("/api/rag-llm/add-document", {
+        content: fetchData.content,
+        metadata: {
+          source: url,
+          type: "url",
+          course: course.name,
+          courseId,
+          sourceId,
+          documentTitle: title,
+        },
+        courseId,
+      });
+      return api.post("/api/material/save", {
+        sourceId,
+        courseId,
+        materialData: {
+          fileType: "link",
+          fileSize: new Blob([fetchData.content]).size,
+          fileContent: url,
+          documentTitle: title,
+        },
+      });
+    },
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 export function useUpdateMaterial(courseId, options) {
   const invalidate = useInvalidateMaterials(courseId);
   return useMutation({

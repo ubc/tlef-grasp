@@ -119,6 +119,29 @@ describe('generateStructured', () => {
     );
   });
 
+  it('passes image MIME types through for OpenAI image prompts', async () => {
+    mockGetLLMProvider.mockReturnValue('openai');
+    const sendMessage = jest.fn().mockResolvedValue({
+      content: '{"answer":"openai"}',
+      usage: {},
+    });
+    mockGetLLMInstance.mockResolvedValue({ sendMessage });
+
+    await generateStructured({
+      prompt: 'Return JSON',
+      schema,
+      images: [{ data: 'jpeg-b64', mimeType: 'image/jpeg' }],
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      [
+        { type: 'text', text: 'Return JSON' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,jpeg-b64' } },
+      ],
+      {}
+    );
+  });
+
   it('uses conversation APIs and derives total usage when providers omit it', async () => {
     mockGetLLMProvider.mockReturnValue('openai');
     const sendConversation = jest.fn().mockResolvedValue({

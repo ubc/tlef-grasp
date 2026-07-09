@@ -1,11 +1,15 @@
 const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, getMaterialBySourceId } = require('../services/material');
 const { isUserInCourse } = require('../services/user-course');
 const { getCourseById } = require('../services/course');
+const settingsService = require('../services/settings');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
 const { parsePdf } = require('../utils/pdf-parser');
 const { parseDocx } = require('../utils/docx-parser');
+const { parsePptx } = require('../utils/pptx-parser');
+
+const TITLE_ONLY_UPDATE_TYPES = new Set(['pdf', 'file']);
 
 const saveMaterialHandler = async (req, res) => {
     try {
@@ -114,10 +118,10 @@ const updateMaterialHandler = async (req, res) => {
             if (!documentData.textContent) {
                 return res.status(400).json({ error: "documentData.textContent is required for text type" });
             }
-        } else if (documentType === 'pdf') {
-            // PDFs only need documentTitle update, no documentData required
+        } else if (TITLE_ONLY_UPDATE_TYPES.has(documentType)) {
+            // Uploaded files only need documentTitle updates here, no documentData required.
         } else {
-            return res.status(400).json({ error: "Invalid documentType. Must be 'link', 'text', or 'pdf'" });
+            return res.status(400).json({ error: "Invalid documentType. Must be 'link', 'text', 'pdf', or 'file'" });
         }
 
         // Use provided documentTitle or fall back to existing one
@@ -251,16 +255,15 @@ const updateMaterialHandler = async (req, res) => {
             materialContent = documentData.textContent;
             materialType = "text";
             materialSource = "";
-        } else if (documentType === 'pdf') {
-            // For PDFs, we only update documentTitle, no content changes
-            // Get existing content from the material (PDFs are not re-processed)
+        } else if (TITLE_ONLY_UPDATE_TYPES.has(documentType)) {
+            // For uploaded files, we only update documentTitle, no content changes.
             materialContent = existingMaterial.fileContent || "";
             materialType = "file";
             materialSource = existingMaterial.documentTitle || "";
         }
 
-        // Step 1: Delete from vector database (RAG) - skip for PDFs (only updating title)
-        if (documentType !== 'pdf') {
+        // Step 1: Delete from vector database (RAG) - skip uploaded files when only updating title.
+        if (!TITLE_ONLY_UPDATE_TYPES.has(documentType)) {
             try {
                 await ragService.deleteDocumentFromRAG(sourceId, materialCourseId);
                 console.log("✅ Deleted from vector database");
@@ -311,7 +314,7 @@ const updateMaterialHandler = async (req, res) => {
             });
             console.log("✅ Re-saved to MongoDB");
         } else {
-            // For PDFs, only update documentTitle in MongoDB (no RAG changes needed)
+            // For uploaded files, only update documentTitle in MongoDB (no RAG changes needed).
             // Note: RAG metadata will retain the old title until material is re-processed
             const db = await databaseService.connect();
             const collection = db.collection("grasp_material");
@@ -319,7 +322,7 @@ const updateMaterialHandler = async (req, res) => {
                 { sourceId: sourceId },
                 { $set: { documentTitle: updatedDocumentTitle || null } }
             );
-            console.log("✅ Updated PDF documentTitle in MongoDB");
+            console.log("✅ Updated uploaded file documentTitle in MongoDB");
         }
 
         res.json({ success: true, message: "Material updated successfully" });
@@ -589,6 +592,7 @@ const uploadFileHandler = async (req, res) => {
         const fileName = file.originalname.toLowerCase();
         let content = "";
         let tokenUsage = 0;
+        let storedFileType = file.mimetype;
         
         console.log(`Processing uploaded file: ${fileName} (${file.size} bytes)`);
 
@@ -596,16 +600,33 @@ const uploadFileHandler = async (req, res) => {
             const parsed = await parsePdf(file.buffer);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
+            storedFileType = "application/pdf";
         } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
             const parsed = await parseDocx(file.buffer);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
+            storedFileType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || fileName.endsWith(".pptx")) {
+            let powerPointPrompt;
+            try {
+                const settings = await settingsService.getSettings(courseId);
+                powerPointPrompt = settings?.prompts?.powerPointImageDescription;
+            } catch (settingsError) {
+                console.error("Error getting PowerPoint extraction prompt:", settingsError);
+            }
+            const parsed = await parsePptx(file.buffer, file.originalname, powerPointPrompt);
+            content = parsed.content;
+            tokenUsage = parsed.tokenUsage || 0;
+            storedFileType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
         } else if (file.mimetype === "text/plain" || fileName.endsWith(".txt")) {
             content = file.buffer.toString('utf8');
+            storedFileType = "text/plain";
         } else if (file.mimetype === "application/msword" || fileName.endsWith(".doc")) {
-             return res.status(400).json({ error: "DOC files are not fully supported for content extraction. Please convert to DOCX or PDF." });
+             return res.status(400).json({ error: "DOC files are not fully supported for content extraction. Please convert to DOCX, PDF, or PPTX." });
+        } else if (file.mimetype === "application/vnd.ms-powerpoint" || fileName.endsWith(".ppt")) {
+             return res.status(400).json({ error: "PPT files are not fully supported for content extraction. Please convert to PPTX." });
         } else {
-            return res.status(400).json({ error: "Unsupported file type" });
+            return res.status(400).json({ error: "Unsupported file type. Supported file types are PDF, DOCX, PPTX, and TXT." });
         }
         
         if (!content || content.trim().length === 0) {
@@ -640,7 +661,7 @@ const uploadFileHandler = async (req, res) => {
 
         // Save to Database
         await saveMaterial(actualSourceId, courseId, {
-            fileType: file.mimetype,
+            fileType: storedFileType,
             fileSize: file.size,
             fileContent: content, // Save extracted text
             documentTitle: documentTitle || file.originalname,

@@ -14,6 +14,28 @@ test.describe('Accessibility: dialogs and modal states', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
   test.use({ storageState: FACULTY_AUTH_FILE });
 
+  test('upload modal method selection and file step have no blocking axe violations', async ({
+    page,
+  }) => {
+    await prepareAuthenticatedCourse(page);
+    await page.goto('/course-materials');
+
+    await expect(page.getByRole('heading', { name: 'Course Materials' })).toBeVisible();
+
+    // Step 1: method selection (file vs text; the URL path is intentionally
+    // absent for privacy reasons).
+    const uploadFileTile = page.getByRole('button', { name: 'Upload File' });
+    await expect(uploadFileTile).toBeVisible();
+    await expect(page.getByRole('button', { name: 'URL' })).toHaveCount(0);
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+
+    // Step 2: the file drop zone with the supported-format hint.
+    await uploadFileTile.click();
+    await expect(page.getByRole('button', { name: 'Choose file' })).toBeVisible();
+    await expect(page.getByText('Supported formats:')).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+  });
+
   test('text material dialog open state has no blocking axe violations', async ({
     page,
   }) => {
@@ -45,8 +67,19 @@ test.describe('Accessibility: dialogs and modal states', () => {
       await prepareAuthenticatedCourse(page);
       await page.goto('/course-materials');
 
-      const trigger = page.getByRole('button', { name: 'Text' });
+      // The Text tile lives inside the Upload Materials modal and unmounts
+      // when the text dialog opens, so focus cannot return to it. The focus
+      // contract is with the persistent page button that started the chain:
+      // close the auto-opened upload modal, then reopen it from the trigger
+      // so the restore chain (upload modal → text dialog → trigger) is real.
+      const trigger = page.getByRole('button', { name: 'Upload Materials' });
+      await expect(page.getByRole('dialog', { name: 'Upload Materials' })).toBeVisible();
+      await page.keyboard.press('Escape');
+
       await trigger.focus();
+      await page.keyboard.press('Enter');
+      const textTile = page.getByRole('button', { name: 'Text' });
+      await textTile.focus();
       await page.keyboard.press('Enter');
 
       // See FINDINGS.md Accessibility: Modal lacks dialog role/focus management.

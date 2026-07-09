@@ -56,6 +56,9 @@ test.describe('Instructor course settings (seeded course)', () => {
 
     const promptField = page.getByLabel('Question Generation Prompt');
     await expect(promptField).toBeVisible();
+    await expect(
+      page.getByLabel('PowerPoint Image Extraction Prompt')
+    ).toBeVisible();
 
     // Reset-to-default fills the editor from the server-provided defaults;
     // nothing is saved unless Save All Changes is clicked (it isn't here).

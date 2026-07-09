@@ -69,6 +69,39 @@ test.describe('Instructor course materials lifecycle (seeded course)', () => {
     ).toBeVisible();
   }
 
+  test('upload modal offers file upload and text entry, with no URL option', async () => {
+    await page.goto('/course-materials', { waitUntil: 'networkidle' });
+
+    const uploadFileTile = page.getByRole('button', { name: 'Upload File' });
+    if (!(await uploadFileTile.isVisible())) {
+      await page.getByRole('button', { name: 'Upload Materials' }).click();
+    }
+
+    // Step 1: exactly two entry points — file upload and pasted text. The URL
+    // path is disabled for privacy reasons and must not be offered.
+    await expect(uploadFileTile).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Text' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'URL' })).toHaveCount(0);
+
+    // Step 2: choosing file upload reveals the drop zone and tells the user
+    // which formats are accepted. Scope to the dialog — the page's type
+    // filter dropdown also contains a "PowerPoint" option.
+    const dialog = page.getByRole('dialog', { name: 'Upload Materials' });
+    await uploadFileTile.click();
+    await expect(dialog.getByRole('button', { name: 'Choose file' })).toBeVisible();
+    await expect(dialog.getByText('Supported formats:')).toBeVisible();
+    await expect(dialog.getByText('PowerPoint')).toBeVisible();
+
+    // Back returns to the method selection.
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(uploadFileTile).toBeVisible();
+
+    // Close the modal so the next test starts from a clean page. (Escape,
+    // because both the X and the footer button have the name "Close".)
+    await page.keyboard.press('Escape');
+    await expect(uploadFileTile).toBeHidden();
+  });
+
   test('rejects empty text content with a validation message', async () => {
     await openAddTextModal();
 
@@ -83,7 +116,19 @@ test.describe('Instructor course materials lifecycle (seeded course)', () => {
     ).toBeVisible();
   });
 
+  test('rejects text content without a document title', async () => {
+    await page.getByPlaceholder('Enter document title...').fill('   ');
+    await page.getByPlaceholder('Paste your text content here...').fill(BODY);
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByText('Please enter a document title')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Add Text Content' })
+    ).toBeVisible();
+  });
+
   test('creates a text material', async () => {
+    await page.getByPlaceholder('Enter document title...').fill(TITLE);
     await page.getByPlaceholder('Paste your text content here...').fill(BODY);
     await page.getByRole('button', { name: 'Save' }).click();
 
@@ -116,6 +161,11 @@ test.describe('Instructor course materials lifecycle (seeded course)', () => {
     await expect(
       page.getByRole('heading', { name: 'Edit Textbook' })
     ).toBeVisible();
+    await page.getByPlaceholder('Enter document title...').fill('   ');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Please enter a document title')).toBeVisible();
+
+    await page.getByPlaceholder('Enter document title...').fill(TITLE);
     await page.getByPlaceholder('Paste your text content here...').fill(EDITED_BODY);
     await page.getByRole('button', { name: 'Save' }).click();
 

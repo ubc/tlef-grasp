@@ -2,12 +2,18 @@ import { getMaterialTypeMeta } from "../../lib/materials";
 import { formatFileSize } from "../../lib/format";
 
 export default function MaterialCard({ material, onEdit, onRefetch, onDelete }) {
-  const fileType = material.fileType || "";
+  const fileType = (material.fileType || "").toLowerCase();
   const meta = getMaterialTypeMeta(fileType);
   const isText = fileType.includes("text");
   const isPdf = fileType.includes("pdf");
+  const isWord = fileType.includes("word") || fileType.includes("docx");
+  const isPowerPoint =
+    fileType.includes("presentation") ||
+    fileType.includes("powerpoint") ||
+    fileType.includes("pptx");
   const isLink = fileType === "link";
-  const editKind = isText ? "text-edit" : isPdf ? "pdf-edit" : "link-edit";
+  const isUploadedFile = isPdf || isWord || isPowerPoint;
+  const editKind = isText ? "text-edit" : isLink ? "link-edit" : "file-edit";
 
   return (
     <div className="flex flex-col rounded-2xl bg-white p-5 shadow-sm">
@@ -35,7 +41,7 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete }) 
       {material.sourceId && (
         <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
           <div className="flex gap-2">
-            {(isText || isPdf || isLink) && (
+            {(isText || isUploadedFile || isLink) && (
               <button
                 type="button"
                 onClick={() => onEdit(editKind, material)}

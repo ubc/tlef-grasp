@@ -30,6 +30,10 @@ describe('settings service', () => {
       mockSettingsCollection([
         { name: 'prompt_question_generation', value: 'Custom question prompt' },
         {
+          name: 'prompt_powerpoint_image_description',
+          value: 'Custom PowerPoint prompt',
+        },
+        {
           name: 'bloom_type_preferences',
           value: JSON.stringify({ Remember: ['multiple-choice'] }),
         },
@@ -44,6 +48,7 @@ describe('settings service', () => {
           questionGeneration: 'Custom question prompt',
           objectiveGenerationAuto: DEFAULT_PROMPTS.objectiveGenerationAuto,
           objectiveGenerationManual: DEFAULT_PROMPTS.objectiveGenerationManual,
+          powerPointImageDescription: 'Custom PowerPoint prompt',
         },
         bloomTypePreferences: { Remember: ['multiple-choice'] },
         coInstructorPermissions: { settings: false, createQuiz: true },
@@ -88,6 +93,7 @@ describe('settings service', () => {
           prompts: {
             questionGeneration: 'Updated question prompt',
             objectiveGenerationAuto: 'Updated objective prompt',
+            powerPointImageDescription: 'Updated PowerPoint prompt',
           },
           bloomTypePreferences: { Create: ['open-ended'] },
           coInstructorPermissions: { settings: false },
@@ -121,6 +127,23 @@ describe('settings service', () => {
               $set: {
                 name: 'prompt_objective_generation_auto',
                 value: 'Updated objective prompt',
+                courseId: 'course-1',
+                updatedAt: expect.any(Date),
+              },
+            },
+            upsert: true,
+          },
+        },
+        {
+          updateOne: {
+            filter: {
+              name: 'prompt_powerpoint_image_description',
+              courseId: 'course-1',
+            },
+            update: {
+              $set: {
+                name: 'prompt_powerpoint_image_description',
+                value: 'Updated PowerPoint prompt',
                 courseId: 'course-1',
                 updatedAt: expect.any(Date),
               },
