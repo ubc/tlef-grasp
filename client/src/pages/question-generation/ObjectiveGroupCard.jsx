@@ -85,27 +85,38 @@ function GranularItemRow({
         )}
       </div>
 
-      {/* Count stepper */}
-      <div className="flex shrink-0 items-center gap-1.5 self-start pt-1">
-        <button
-          type="button"
-          disabled={item.count <= Math.max(2, item.bloom.length)}
-          onClick={() => onChangeCount(-1)}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
-        >
-          <i className="fas fa-minus text-xs" />
-        </button>
-        <span className="w-6 text-center text-sm font-semibold text-ink">
-          {item.count}
+      {/* Count stepper: how many questions to generate for this objective */}
+      <div className="flex shrink-0 flex-col items-center gap-1 self-start pt-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+          Questions
         </span>
-        <button
-          type="button"
-          disabled={item.count >= 9}
-          onClick={() => onChangeCount(1)}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
-        >
-          <i className="fas fa-plus text-xs" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="Decrease questions to generate for this objective"
+            disabled={item.count <= Math.max(2, item.bloom.length)}
+            onClick={() => onChangeCount(-1)}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
+          >
+            <i className="fas fa-minus text-xs" />
+          </button>
+          <span
+            className="w-6 text-center text-sm font-semibold text-ink"
+            title="Number of questions to generate for this objective"
+            aria-label={`${item.count} questions to generate for this objective`}
+          >
+            {item.count}
+          </span>
+          <button
+            type="button"
+            aria-label="Increase questions to generate for this objective"
+            disabled={item.count >= 9}
+            onClick={() => onChangeCount(1)}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
+          >
+            <i className="fas fa-plus text-xs" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -252,7 +263,7 @@ export default function ObjectiveGroupCard({
               <i className="fas fa-plus" /> Add Granular Objective
             </button>
             <span className="text-xs text-muted">
-              Total questions: {totalCount}
+              Total questions to generate: {totalCount}
             </span>
           </div>
         </div>

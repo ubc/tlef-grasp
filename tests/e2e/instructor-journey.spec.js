@@ -139,6 +139,28 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
 
     // The saved objective group is now rendered as an editable card on step 1.
     await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
+
+    // Issue #31: the per-objective number must read clearly as "how many
+    // questions to generate". The stepper now carries a "Questions" caption,
+    // accessible +/- controls, and the card totals them explicitly.
+    await expect(page.getByText('Questions', { exact: true }).first()).toBeVisible();
+    await expect(
+      page
+        .getByRole('button', {
+          name: 'Increase questions to generate for this objective',
+        })
+        .first()
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole('button', {
+          name: 'Decrease questions to generate for this objective',
+        })
+        .first()
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Total questions to generate:\s*\d+/).first()
+    ).toBeVisible();
   });
 
   test('generates questions and saves them into a new quiz', async () => {
