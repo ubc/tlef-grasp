@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_STUDENT_AUTH_FILE } = require('./auth');
-const { SEED } = require('./seed');
+const { SEED, resetSeededQuizAttemptState } = require('./seed');
 
 // Full student journey for bio_student (a named IdP persona enrolled in the
 // seeded BIOC 302 section): log in, find the published quiz seeded by
@@ -93,6 +93,11 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
   test('resumes at the first unanswered question after a reload (#36)', async ({
     page,
   }) => {
+    // Answer restoration only applies to an unsubmitted first attempt, so wipe
+    // any score/answers other specs (dashboard, quiz summary) left on the
+    // seeded quiz before starting — otherwise this test depends on spec order.
+    await resetSeededQuizAttemptState();
+
     await selectSeededCourse(page);
     await page.goto('/quiz');
     await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();

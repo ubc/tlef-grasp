@@ -265,8 +265,50 @@ async function seedStudentJourneyCourse() {
   }
 }
 
+/**
+ * Delete bio_student's recorded answers and saved score for the seeded quiz.
+ *
+ * The first-attempt resume flow (issue #36) only restores answers while no
+ * score row exists, and /check's first-answer-wins rule skips re-recording
+ * answered questions — so any earlier spec (dashboard, quiz summary) or prior
+ * run that completed the seeded quiz would make a resume test start from a
+ * "already submitted" state. Calling this first makes the test deterministic
+ * regardless of spec order.
+ */
+async function resetSeededQuizAttemptState() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is required to reset seeded quiz attempt state');
+
+  const client = new MongoClient(uri, {
+    connectTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 8000,
+  });
+  await client.connect();
+
+  try {
+    const db = client.db(process.env.MONGODB_DB_NAME || 'grasp_db');
+    const student = await getUserByPuid(db, BIO_STUDENT_PUID);
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    const quiz = course
+      ? await db.collection('grasp_quiz').findOne({ courseId: course._id, name: QUIZ_NAME })
+      : null;
+    if (!student || !quiz) {
+      throw new Error(
+        'resetSeededQuizAttemptState: seeded user/quiz missing — saml.setup.js must run first'
+      );
+    }
+
+    const filter = { userId: student._id, quizId: quiz._id };
+    await db.collection('grasp_student_attempt').deleteMany(filter);
+    await db.collection('grasp_quiz_score').deleteMany(filter);
+  } finally {
+    await client.close();
+  }
+}
+
 module.exports = {
   seedStudentJourneyCourse,
+  resetSeededQuizAttemptState,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,
