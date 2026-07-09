@@ -9,9 +9,7 @@ name: E2E Tests
 
 on:
   push:
-    # `testing` is here so this branch gets CI feedback while the workflow is
-    # being iterated on — remove it before merging to main.
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
