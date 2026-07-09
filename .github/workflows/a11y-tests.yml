@@ -6,9 +6,7 @@ name: Accessibility Tests
 
 on:
   push:
-    # `testing` is here so this branch gets CI feedback while the workflows are
-    # being iterated on — remove it before merging to main.
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
