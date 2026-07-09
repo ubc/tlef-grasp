@@ -152,6 +152,56 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // is enabled, i.e. at least one question exists.
     const toStep3 = page.getByRole('button', { name: 'Add to Quiz' });
     await expect(toStep3).toBeEnabled({ timeout: 60_000 });
+
+    // Regression for issue #43: while reviewing a freshly generated MCQ the
+    // instructor must be able to change *which* option is the correct answer,
+    // not just the option text. The correct-answer radios used to be disabled
+    // here. Find the first MCQ card, flip its correct answer, save, and confirm
+    // the new choice sticks.
+    const correctRadiosFor = (letter) =>
+      page.getByRole('radio', {
+        name: `Mark option ${letter} as the correct answer`,
+      });
+    const editButtons = page.getByRole('button', { name: 'Edit' });
+    const editCount = await editButtons.count();
+    let flippedAnMcq = false;
+    for (let i = 0; i < editCount && !flippedAnMcq; i++) {
+      // Only one card is ever in edit mode at a time (we cancel/save before the
+      // next), so the aria-labelled radios below can be matched page-wide.
+      await editButtons.nth(i).click();
+      const radios = page.getByRole('radio', {
+        name: /^Mark option .* as the correct answer$/,
+      });
+      if ((await radios.count()) < 2) {
+        // Not an MCQ (fill-in-the-blank / calculation / open-ended). Move on.
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        continue;
+      }
+
+      // Pick a different option than the one currently marked correct.
+      const total = await radios.count();
+      let checkedIdx = 0;
+      for (let r = 0; r < total; r++) {
+        if (await radios.nth(r).isChecked()) checkedIdx = r;
+      }
+      const targetIdx = (checkedIdx + 1) % total;
+      const targetLetter = (
+        await radios.nth(targetIdx).getAttribute('aria-label')
+      ).match(/^Mark option (.*) as the correct answer$/)[1];
+
+      await radios.nth(targetIdx).check();
+      await expect(correctRadiosFor(targetLetter)).toBeChecked();
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText('Question updated successfully')).toBeVisible();
+
+      // Re-open the same card and confirm the new correct answer persisted.
+      await editButtons.nth(i).click();
+      await expect(correctRadiosFor(targetLetter)).toBeChecked();
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      flippedAnMcq = true;
+    }
+    expect(flippedAnMcq).toBe(true);
+
     await toStep3.click();
 
     // Step 3: create a new quiz holding the generated questions.

@@ -145,12 +145,17 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
       updates.openEndedSampleAnswer = sample;
       updates.openEndedGradingCriteria = criteria;
     } else {
+      const optionKeys = Object.keys(draft.options);
+      if (optionKeys.length > 0 && !optionKeys.includes(draft.correctAnswer)) {
+        return showToast("Select which option is the correct answer", "error");
+      }
       updates.options = Object.fromEntries(
         Object.entries(draft.options).map(([key, opt]) => [
           key,
           { id: key, text: opt.text.trim(), feedback: opt.feedback.trim() },
         ])
       );
+      updates.correctAnswer = draft.correctAnswer;
     }
 
     updates.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -440,7 +445,9 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
           )}
           <div className="space-y-2">
             {Object.values(question.options || {}).map((option) => {
-              const isCorrect = option.id === question.correctAnswer;
+              const isCorrect = isEditing
+                ? option.id === draft.correctAnswer
+                : option.id === question.correctAnswer;
               return (
                 <div key={option.id}>
                   <div
@@ -452,9 +459,25 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
                       type="radio"
                       name={`q-${question.id}`}
                       checked={isCorrect}
-                      disabled
-                      readOnly
-                      className="mt-1 h-4 w-4 accent-success"
+                      disabled={!isEditing}
+                      readOnly={!isEditing}
+                      onChange={
+                        isEditing
+                          ? () =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                correctAnswer: option.id,
+                              }))
+                          : undefined
+                      }
+                      aria-label={
+                        isEditing
+                          ? `Mark option ${option.id} as the correct answer`
+                          : undefined
+                      }
+                      className={`mt-1 h-4 w-4 accent-success ${
+                        isEditing ? "cursor-pointer" : ""
+                      }`}
                     />
                     {isEditing ? (
                       <input
