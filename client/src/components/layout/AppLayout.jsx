@@ -10,6 +10,7 @@ const PAGE_TITLES = {
   "/question-review": "Question Review",
   "/quizzes": "Quizzes",
   "/quiz-scores": "Quiz Scores",
+  "/question-flags": "Student Question Flags",
   "/my-sections": "My Sections",
   "/users": "Users",
   "/settings": "Settings",
@@ -17,6 +18,7 @@ const PAGE_TITLES = {
   "/quiz": "My Quizzes",
   "/quiz-summary": "Quiz Summary",
   "/achievements": "Achievements",
+  "/my-question-flags": "My Flagged Questions",
 };
 
 export default function AppLayout() {

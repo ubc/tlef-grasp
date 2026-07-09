@@ -80,6 +80,44 @@ const QUESTION_REVIEW_SCHEMA = {
   required: ["ratings"],
 };
 
+// Open-ended answer grading: { pass, overallFeedback, criteria: [ { criterion, met, comment } ] }.
+// The judge decomposes the instructor's rubric into individual criteria so the
+// student gets per-criterion feedback, not just a verdict.
+const OPEN_ENDED_GRADING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    pass: { type: "boolean" },
+    overallFeedback: { type: "string" },
+    criteria: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          criterion: { type: "string" },
+          met: { type: "boolean" },
+          comment: { type: "string" },
+        },
+        required: ["criterion", "met", "comment"],
+      },
+    },
+  },
+  required: ["pass", "overallFeedback", "criteria"],
+};
+
+// Fill-in-the-blank LLM fallback (runs only after exact matching fails):
+// { correct, feedback }.
+const FILL_IN_THE_BLANK_GRADING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    correct: { type: "boolean" },
+    feedback: { type: "string" },
+  },
+  required: ["correct", "feedback"],
+};
+
 // Per-question-type schemas are co-located with their model + validation logic
 // in src/models/questions/*.js (each model's getJsonSchema()), so the shape and
 // the semantic checks that enforce it stay together.
@@ -88,4 +126,6 @@ module.exports = {
   OBJECTIVES_SCHEMA,
   IMAGE_DESCRIPTION_SCHEMA,
   QUESTION_REVIEW_SCHEMA,
+  OPEN_ENDED_GRADING_SCHEMA,
+  FILL_IN_THE_BLANK_GRADING_SCHEMA,
 };

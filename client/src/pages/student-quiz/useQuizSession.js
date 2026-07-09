@@ -60,6 +60,8 @@ export function useQuizSession({ onLoadError } = {}) {
         openEnded: prev.questionType === QUESTION_TYPES.OPEN_ENDED,
         sampleAnswer: prev.sampleAnswer || null,
         gradingCriteria: prev.gradingCriteria || null,
+        autoGraded: !!prev.aiGraded,
+        criteria: prev.aiCriteria || null,
         questionType: prev.questionType,
       };
     });
@@ -210,6 +212,8 @@ export function useQuizSession({ onLoadError } = {}) {
                 sampleAnswer: result.sampleAnswer,
                 gradingCriteria: result.gradingCriteria,
                 feedbackText: result.feedback,
+                autoGraded: !!result.autoGraded,
+                criteria: result.criteria || null,
                 questionType: type,
               }
             : {
@@ -233,8 +237,13 @@ export function useQuizSession({ onLoadError } = {}) {
   // Show a locally-computed score immediately, then replace it with the
   // server-authoritative result (which also awards achievements).
   const finishQuiz = async () => {
+    // Open-ended questions count once the LLM judge graded them; only those
+    // still awaiting manual grading (isCorrect null) are excluded from the
+    // local score, mirroring the server's isCorrect !== null filter.
     const gradedQuestions = quizData.questions.filter(
-      (q) => q.questionType !== QUESTION_TYPES.OPEN_ENDED
+      (q) =>
+        q.questionType !== QUESTION_TYPES.OPEN_ENDED ||
+        typeof feedback[q.id]?.isCorrect === "boolean"
     );
     const localTotal = gradedQuestions.length;
     const localCorrect = gradedQuestions.filter(

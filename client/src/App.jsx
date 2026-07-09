@@ -19,6 +19,7 @@ const QuestionBank = lazy(() => import("./pages/QuestionBank"));
 const QuestionReview = lazy(() => import("./pages/QuestionReview"));
 const Quizzes = lazy(() => import("./pages/Quizzes"));
 const QuizScores = lazy(() => import("./pages/QuizScores"));
+const QuestionFlags = lazy(() => import("./pages/QuestionFlags"));
 const MySections = lazy(() => import("./pages/MySections"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -26,6 +27,7 @@ const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const StudentQuiz = lazy(() => import("./pages/StudentQuiz"));
 const QuizSummary = lazy(() => import("./pages/QuizSummary"));
 const Achievements = lazy(() => import("./pages/Achievements"));
+const MyQuestionFlags = lazy(() => import("./pages/MyQuestionFlags"));
 
 function PageFallback() {
   return (
@@ -56,6 +58,7 @@ export default function App() {
               <Route element={<RequireRole min="staff" />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/quiz-scores" element={<QuizScores />} />
+                <Route path="/question-flags" element={<QuestionFlags />} />
                 <Route path="/my-sections" element={<MySections />} />
                 <Route path="/quizzes" element={<Quizzes />} />
                 <Route path="/question-review" element={<QuestionReview />} />
@@ -84,6 +87,7 @@ export default function App() {
               <Route path="/quiz" element={<StudentQuiz />} />
               <Route path="/quiz-summary" element={<QuizSummary />} />
               <Route path="/achievements" element={<Achievements />} />
+              <Route path="/my-question-flags" element={<MyQuestionFlags />} />
             </Route>
           </Route>
         </Route>

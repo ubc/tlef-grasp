@@ -336,6 +336,8 @@ const getQuizQuestionsHandler = async (req, res) => {
             sampleAnswer: attempt.sampleAnswer,
             gradingCriteria: attempt.gradingCriteria,
             feedbackText: attempt.feedbackText,
+            aiGraded: !!attempt.aiGraded,
+            aiCriteria: Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : null,
           };
           if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
             entry.selectedIndex = optionKeys.indexOf(attempt.selectedAnswer);

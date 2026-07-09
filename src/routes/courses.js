@@ -34,10 +34,10 @@ router.get("/:courseId/my-sections", coursesController.getMyCourseSectionsHandle
 // Get course by ID
 router.get("/:courseId", coursesController.getCourseByIdHandler);
 
-// Course settings (faculty only)
-router.get("/defaults/settings", requireRole(ROLES.FACULTY), settingsController.getDefaultSettingsHandler);
-router.get("/:courseId/settings", requireRole(ROLES.FACULTY), settingsController.getSettingsHandler);
-router.put("/:courseId/settings", requireRole(ROLES.FACULTY), express.json(), settingsController.updateSettingsHandler);
+// Course settings (faculty and staff)
+router.get("/defaults/settings", requireRole(ROLES.STAFF), settingsController.getDefaultSettingsHandler);
+router.get("/:courseId/settings", requireRole(ROLES.STAFF), settingsController.getSettingsHandler);
+router.put("/:courseId/settings", requireRole(ROLES.STAFF), express.json(), settingsController.updateSettingsHandler);
 
 // Get course materials
 router.get("/:courseId/materials", coursesController.getCourseMaterials);

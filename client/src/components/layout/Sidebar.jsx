@@ -15,6 +15,7 @@ const INSTRUCTOR_ITEMS = [
   { to: "/question-bank", icon: "fa-book", label: "Question Bank" },
   { to: "/quizzes", icon: "fa-clipboard-list", label: "Quizzes" },
   { to: "/quiz-scores", icon: "fa-chart-bar", label: "Quiz Scores" },
+  { to: "/question-flags", icon: "fa-flag", label: "Question Flags" },
 ];
 
 const INSTRUCTOR_MANAGEMENT_ITEMS = [
@@ -25,6 +26,7 @@ const STUDENT_ITEMS = [
   { to: "/student-dashboard", icon: "fa-home", label: "Dashboard" },
   { to: "/quiz", icon: "fa-list-check", label: "My Quizzes" },
   { to: "/achievements", icon: "fa-trophy", label: "Achievements" },
+  { to: "/my-question-flags", icon: "fa-flag", label: "My Flagged Questions" },
 ];
 
 function NavItem({ to, icon, label }) {

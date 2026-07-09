@@ -3,8 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { QUESTION_TYPES } from "../lib/constants";
 import { escapeHtml } from "../lib/format";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useAppStore } from "../stores/appStore";
 import { useToast } from "../components/ui/Toast";
 import RichText from "../components/RichText";
+import QuestionFlagControl from "../components/quiz/QuestionFlagControl";
 import QuizList from "./student-quiz/QuizList";
 import { useQuizSession } from "./student-quiz/useQuizSession";
 import {
@@ -40,7 +42,8 @@ function CalculationHint({ question }) {
 
 export default function StudentQuiz() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { role } = useCurrentUser();
+  const { role, isStudent } = useCurrentUser();
+  const currentRole = useAppStore((state) => state.currentRole);
   const showToast = useToast();
 
   const [view, setView] = useState(searchParams.get("quiz") ? "quiz" : "list");
@@ -218,9 +221,9 @@ export default function StudentQuiz() {
 
         {question.questionType === QUESTION_TYPES.OPEN_ENDED && (
           <p className="mb-4 text-sm text-muted">
-            This question is <strong>not auto-graded</strong>. After you submit, you
-            will see a <strong>sample answer</strong> and the{" "}
-            <strong>grading criteria</strong> for self-checking.
+            After you submit, your answer is <strong>graded by AI</strong> against
+            the question's criteria, with feedback. Your{" "}
+            <strong>instructor can review and change</strong> the grade.
           </p>
         )}
 
@@ -272,6 +275,9 @@ export default function StudentQuiz() {
         )}
 
         <FeedbackPanel feedback={questionFeedback} />
+        {(isStudent || currentRole === "student") && (
+          <QuestionFlagControl quizId={quizData.quizId} question={question} />
+        )}
       </div>
 
       {/* Navigation */}

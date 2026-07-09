@@ -16,6 +16,9 @@ const TYPE_LABELS = {
 function AttemptStatus({ attempt, graded }) {
   const isCorrect = graded?.isCorrect ?? attempt.isCorrect;
   const isOpenEnded = attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
+  // AI-graded and not yet confirmed/overridden by an instructor in this or a
+  // previous session.
+  const aiGrade = attempt.aiGraded && !attempt.gradedAt && !graded;
 
   if (isOpenEnded && isCorrect === null) {
     return (
@@ -28,12 +31,22 @@ function AttemptStatus({ attempt, graded }) {
     return (
       <span className="text-sm font-semibold text-success">
         <i className="fas fa-check-circle mr-1" /> Correct
+        {isOpenEnded && aiGrade && (
+          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            AI-graded
+          </span>
+        )}
       </span>
     );
   }
   return (
     <span className="text-sm font-semibold text-danger">
       <i className="fas fa-times-circle mr-1" /> Incorrect
+      {isOpenEnded && aiGrade && (
+        <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+          AI-graded
+        </span>
+      )}
       {!attempt.selectedAnswer &&
         attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
           <span className="ml-2 text-xs font-normal text-gray-400">
@@ -44,7 +57,8 @@ function AttemptStatus({ attempt, graded }) {
   );
 }
 
-function OpenEndedAttempt({ attempt, needsGrading, grading, onGrade }) {
+function OpenEndedAttempt({ attempt, needsGrading, canOverride, grading, onGrade }) {
+  const aiCriteria = Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : [];
   return (
     <div className="space-y-3 text-sm">
       <div>
@@ -55,6 +69,42 @@ function OpenEndedAttempt({ attempt, needsGrading, grading, onGrade }) {
           <em className="text-gray-400">Not recorded</em>
         )}
       </div>
+      {attempt.aiGraded && (attempt.feedbackText || aiCriteria.length > 0) && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <strong className="text-ink">
+            <i className="fas fa-robot mr-1.5 text-primary" /> AI Feedback
+          </strong>
+          {attempt.feedbackText && (
+            <p className="mt-1 whitespace-pre-wrap text-gray-600">
+              {attempt.feedbackText}
+            </p>
+          )}
+          {aiCriteria.length > 0 && (
+            <ul className="mt-2 space-y-1.5">
+              {aiCriteria.map((item, index) => (
+                <li key={index} className="flex items-start gap-2">
+                  <i
+                    className={`fas mt-0.5 ${
+                      item.met ? "fa-check text-success" : "fa-times text-danger"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="text-gray-600">
+                    <span className="font-semibold text-ink">
+                      {item.criterion}
+                      <span className="sr-only">
+                        {item.met ? " — met" : " — not met"}
+                      </span>
+                      {": "}
+                    </span>
+                    {item.comment}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="rounded-lg bg-page p-4">
         <div className="mb-2">
           <strong className="text-ink">Sample Answer:</strong>
@@ -73,24 +123,31 @@ function OpenEndedAttempt({ attempt, needsGrading, grading, onGrade }) {
           </p>
         </div>
       </div>
-      {needsGrading && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={grading}
-            onClick={() => onGrade(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-success/85 disabled:opacity-50"
-          >
-            <i className="fas fa-check" /> Mark Correct
-          </button>
-          <button
-            type="button"
-            disabled={grading}
-            onClick={() => onGrade(false)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-50"
-          >
-            <i className="fas fa-times" /> Mark Incorrect
-          </button>
+      {(needsGrading || canOverride) && (
+        <div>
+          {canOverride && (
+            <p className="mb-2 text-xs text-gray-500">
+              This answer was graded by AI. You can override the grade below.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={grading}
+              onClick={() => onGrade(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-success/85 disabled:opacity-50"
+            >
+              <i className="fas fa-check" /> Mark Correct
+            </button>
+            <button
+              type="button"
+              disabled={grading}
+              onClick={() => onGrade(false)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-50"
+            >
+              <i className="fas fa-times" /> Mark Incorrect
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -227,6 +284,14 @@ export default function StudentReviewModal({ review, onClose }) {
               const isOpenEnded = attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
               const effectiveCorrect = manual?.isCorrect ?? attempt.isCorrect;
               const needsGrading = isOpenEnded && effectiveCorrect === null;
+              // An AI grade can be overridden until an instructor confirms a
+              // grade (gradedAt server-side, `manual` within this session).
+              const canOverride =
+                isOpenEnded &&
+                effectiveCorrect !== null &&
+                attempt.aiGraded &&
+                !attempt.gradedAt &&
+                !manual;
               const isTextType =
                 attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
                 attempt.questionType === QUESTION_TYPES.CALCULATION;
@@ -260,6 +325,7 @@ export default function StudentReviewModal({ review, onClose }) {
                     <OpenEndedAttempt
                       attempt={attempt}
                       needsGrading={needsGrading}
+                      canOverride={canOverride}
                       grading={
                         gradeMutation.isPending &&
                         gradeMutation.variables?.questionId === attempt.questionId
