@@ -100,6 +100,24 @@ test.describe('Accessibility: authenticated instructor pages', () => {
     });
   }
 
+  test('co-instructor permissions tab has no blocking axe violations', async ({
+    page,
+  }) => {
+    // The owner-only permissions tab holds the switches and the Reset to
+    // Defaults control added for issue #33.
+    await gotoCoursePage(page, '/settings', (p) =>
+      p.getByRole('heading', { name: 'Settings' })
+    );
+    await page.getByRole('button', { name: 'Co-Instructor Permissions' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Co-Instructor Permissions' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Reset to Defaults' })
+    ).toBeVisible();
+    await expectNoA11yViolations(page);
+  });
+
   test('mobile navigation drawer open state has no blocking axe violations', async ({
     page,
   }) => {
