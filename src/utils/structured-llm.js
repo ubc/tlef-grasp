@@ -24,13 +24,20 @@ const { getLLMProvider, getLLMModel } = require("./llm-provider");
  * @param {Array}   [params.messages]     Multi-turn history [{ role, content }]. Takes precedence over prompt.
  * @param {object}   params.schema        JSON Schema the output must match.
  * @param {number}  [params.temperature]  Sampling temperature (default 0.4).
- * @param {string[]}[params.images]       Optional base64 PNG strings (no data-URL prefix) for vision.
+ * @param {Array<string|{data:string,mimeType:string}>}[params.images] Optional base64 images for vision.
  * @param {string}  [params.model]        Optional model override (defaults to the active LLM model).
  * @param {string}  [params.schemaName]   Name for the OpenAI json_schema (identifier chars only).
  * @returns {Promise<{ content: string, usage: { promptTokens: number, completionTokens: number, totalTokens: number } }>}
  */
 async function generateStructured({ prompt, messages = null, schema, temperature = 0.4, images = null, model = null, schemaName = "response" }) {
-  const hasImages = Array.isArray(images) && images.length > 0;
+  const normalizedImages = Array.isArray(images)
+    ? images.map((image) =>
+        typeof image === "string"
+          ? { data: image, mimeType: "image/png" }
+          : { data: image.data, mimeType: image.mimeType || "image/png" }
+      )
+    : [];
+  const hasImages = normalizedImages.length > 0;
 
   if (getLLMProvider() === "ollama") {
     const client = new Ollama({
@@ -41,7 +48,7 @@ async function generateStructured({ prompt, messages = null, schema, temperature
       ollamaMessages = messages;
     } else {
       const message = { role: "user", content: prompt };
-      if (hasImages) message.images = images;
+      if (hasImages) message.images = normalizedImages.map((image) => image.data);
       ollamaMessages = [message];
     }
     const response = await client.chat({
@@ -79,9 +86,9 @@ async function generateStructured({ prompt, messages = null, schema, temperature
     const payload = hasImages
       ? [
           { type: "text", text: prompt },
-          ...images.map((b64) => ({
+          ...normalizedImages.map((image) => ({
             type: "image_url",
-            image_url: { url: `data:image/png;base64,${b64}` },
+            image_url: { url: `data:${image.mimeType};base64,${image.data}` },
           })),
         ]
       : prompt;

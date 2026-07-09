@@ -71,10 +71,24 @@ const PROMPT_FIELDS = [
       ["{ragContext}", "Relevant content from materials to support sub-objective generation."],
     ],
   },
+  {
+    key: "powerPointImageDescription",
+    label: "PowerPoint Image Extraction Prompt",
+    rows: 8,
+    description:
+      "Used when PowerPoint uploads contain embedded images, charts, screenshots, or diagrams that need vision-model descriptions.",
+    variables: [
+      ["{slideNumber}", "The slide number containing the embedded image."],
+      ["{fileName}", "The embedded image filename from the PowerPoint archive, when available."],
+    ],
+  },
 ];
 
 const secondaryBtnClass =
   "inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-60";
+
+const buildPromptState = (source = {}) =>
+  Object.fromEntries(PROMPT_FIELDS.map((field) => [field.key, source[field.key] || ""]));
 
 export default function Settings() {
   const showToast = useToast();
@@ -86,11 +100,7 @@ export default function Settings() {
       BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
     )
   );
-  const [prompts, setPrompts] = useState({
-    questionGeneration: "",
-    objectiveGenerationAuto: "",
-    objectiveGenerationManual: "",
-  });
+  const [prompts, setPrompts] = useState(() => buildPromptState());
   // Co-instructor permission toggles (owner only). Default every feature to
   // enabled; the stored map only carries explicit restrictions.
   const [coInstructorPerms, setCoInstructorPerms] = useState(() =>
@@ -108,11 +118,7 @@ export default function Settings() {
   useEffect(() => {
     if (!settings) return;
     if (settings.prompts) {
-      setPrompts({
-        questionGeneration: settings.prompts.questionGeneration || "",
-        objectiveGenerationAuto: settings.prompts.objectiveGenerationAuto || "",
-        objectiveGenerationManual: settings.prompts.objectiveGenerationManual || "",
-      });
+      setPrompts(buildPromptState(settings.prompts));
     }
     if (settings.bloomTypePreferences) {
       setBloomPrimary((prev) => {
