@@ -95,4 +95,38 @@ test.describe('Instructor course settings (seeded course)', () => {
     await firstSwitch.click();
     await expect(firstSwitch).toHaveAttribute('aria-checked', before);
   });
+
+  test('owner can reset co-instructor permissions to defaults', async ({
+    page,
+  }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/settings');
+
+    await page
+      .getByRole('button', { name: 'Co-Instructor Permissions' })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: 'Co-Instructor Permissions' })
+    ).toBeVisible();
+
+    // Defaults grant full access (every switch on), so Reset starts disabled.
+    const reset = page.getByRole('button', { name: 'Reset to Defaults' });
+    await expect(reset).toBeDisabled();
+
+    // Turn a permission off: this diverges from defaults and enables Reset.
+    const firstSwitch = page.getByRole('switch').first();
+    await expect(firstSwitch).toHaveAttribute('aria-checked', 'true');
+    await firstSwitch.click();
+    await expect(firstSwitch).toHaveAttribute('aria-checked', 'false');
+    await expect(reset).toBeEnabled();
+
+    // Reset flips every switch back on and disables itself again. Never saved,
+    // so the stored permissions are untouched.
+    await reset.click();
+    await expect(firstSwitch).toHaveAttribute('aria-checked', 'true');
+    for (const sw of await page.getByRole('switch').all()) {
+      await expect(sw).toHaveAttribute('aria-checked', 'true');
+    }
+    await expect(reset).toBeDisabled();
+  });
 });

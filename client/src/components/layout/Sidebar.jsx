@@ -201,16 +201,6 @@ export default function Sidebar({ open = false, onClose }) {
               <i className="fas fa-cog text-lg text-white/90" />
             </Link>
           )}
-          <button
-            type="button"
-            className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
-            aria-label="Notifications"
-          >
-            <i className="fas fa-bell text-lg text-white/90" />
-            <span className="absolute -top-[5px] -right-[5px] flex h-5 w-5 items-center justify-center rounded-full bg-danger text-[11px] font-semibold">
-              9
-            </span>
-          </button>
         </div>
 
         {/* Course selector */}

@@ -207,6 +207,21 @@ export default function Settings() {
   const toggleCoInstructorPerm = (key) =>
     setCoInstructorPerms((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // Defaults grant co-instructors full access: every permission enabled.
+  const coInstructorPermsAtDefault = CO_INSTRUCTOR_PERMISSIONS.every(
+    (perm) => coInstructorPerms[perm.key] !== false
+  );
+
+  const handleResetCoInstructorPerms = () => {
+    setCoInstructorPerms(
+      Object.fromEntries(CO_INSTRUCTOR_PERMISSIONS.map((perm) => [perm.key, true]))
+    );
+    showToast(
+      "Co-instructor permissions restored to defaults — click Save All Changes to apply.",
+      "info"
+    );
+  };
+
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -475,6 +490,17 @@ export default function Settings() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleResetCoInstructorPerms}
+              disabled={coInstructorPermsAtDefault}
+              className={`${secondaryBtnClass} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <i className="fas fa-undo" /> Reset to Defaults
+            </button>
           </div>
         </section>
       )}
