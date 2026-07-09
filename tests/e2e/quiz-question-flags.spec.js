@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require("./auth");
 const { SEED } = require("./seed");
-const { selectSeededCourse } = require("./helpers");
+const { selectSeededCourse, startQuizFromList } = require("./helpers");
 
 const IDP_ENABLED = process.env.E2E_SAML === "1";
 
@@ -16,7 +16,7 @@ test.describe("Quiz question flags", () => {
     try {
       await selectSeededCourse(studentPage, { role: "student" });
       await studentPage.goto("/quiz");
-      await studentPage.getByRole("button", { name: /Start Quiz|Retake Quiz/ }).click();
+      await startQuizFromList(studentPage, SEED.QUIZ_NAME);
       await expect(studentPage.getByRole("heading", { name: SEED.QUIZ_NAME })).toBeVisible();
 
       await studentPage.getByRole("button", { name: "Report an issue with this question" }).click();
@@ -61,7 +61,7 @@ test.describe("Quiz question flags", () => {
       await selectSeededCourse(page, { role: "student" });
       await page.goto("/quiz");
       await expect(page.getByRole("link", { name: "My Flagged Questions" })).toBeVisible();
-      await page.getByRole("button", { name: /Start Quiz|Retake Quiz/ }).click();
+      await startQuizFromList(page, SEED.QUIZ_NAME);
 
       await page.getByRole("button", { name: "Report an issue with this question" }).click();
       await page.getByRole("radio", { name: "Other issue" }).check();

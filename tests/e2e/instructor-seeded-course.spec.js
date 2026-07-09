@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
 const { SEED } = require('./seed');
-const { selectSeededCourse, completeSeededQuiz } = require('./helpers');
+const { getQuizCard, selectSeededCourse, completeSeededQuiz } = require('./helpers');
 
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 
@@ -36,16 +36,15 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(
       page.getByRole('button', { name: 'Manage Quizzes' })
     ).toBeVisible();
+    const quizCard = getQuizCard(page, SEED.QUIZ_NAME);
+    await expect(quizCard).toBeVisible();
+    await expect(quizCard.getByText('100% Approved')).toBeVisible();
+    await expect(quizCard.getByText('Section schedule')).toBeVisible();
+    await expect(quizCard.getByRole('button', { name: /101\s+Active/ })).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: SEED.QUIZ_NAME })
-    ).toBeVisible();
-    await expect(page.getByText('100% Approved')).toBeVisible();
-    await expect(page.getByText('Section schedule')).toBeVisible();
-    await expect(page.getByRole('button', { name: /101\s+Active/ })).toBeVisible();
-    await expect(
-      page.getByRole('checkbox', { name: /Disable previous question/ })
+      quizCard.getByRole('checkbox', { name: /Disable previous question/ })
     ).not.toBeChecked();
-    await expect(page.getByRole('button', { name: 'Unpublish' })).toBeVisible();
+    await expect(quizCard.getByRole('button', { name: 'Unpublish' })).toBeVisible();
   });
 
   test('reviews a real student attempt in Quiz Scores', async ({

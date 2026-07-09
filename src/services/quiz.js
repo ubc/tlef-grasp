@@ -802,12 +802,20 @@ const saveStudentPerformance = async (performanceData) => {
 };
 
 /**
- * Grade an open-ended attempt and retroactively update mastery state.
- * Works on ungraded attempts (isCorrect === null) and on AI-graded attempts
- * (aiGraded, no gradedAt yet) — the instructor's grade overrides the LLM's.
- * A manual grade (gradedAt set) is final.
+ * Instructor grade/override for an attempt, with retroactive mastery update.
+ *
+ * Applies to the two LLM-touched question types:
+ *   - open-ended: ungraded (isCorrect === null, manual grading) OR AI-graded
+ *     and not yet finalized (aiGraded, no gradedAt) → the grade overrides the
+ *     LLM verdict.
+ *   - fill-in-the-blank: only when it went through the LLM rescue fallback
+ *     (aiGraded, no gradedAt). A plain exact-match FIB has aiGraded false and
+ *     is rejected — there is nothing to review.
+ *
+ * A manual grade (gradedAt set) is final. Other types (multiple-choice,
+ * calculation) are never gradable here and surface as "Attempt not found".
  */
-const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
+const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
     const db = await databaseService.connect();
 
     const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
@@ -820,11 +828,14 @@ const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
         userId: userIdObj,
         quizId: quizIdObj,
         questionId: questionIdObj,
-        questionType: 'open-ended'
+        questionType: { $in: ['open-ended', 'fill-in-the-blank'] }
     });
 
-    if (!attempt) throw new Error('Open-ended attempt not found');
+    if (!attempt) throw new Error('Attempt not found');
     const previousCorrect = attempt.isCorrect;
+    // An already-decided grade can only be changed while it is an unfinalized
+    // AI grade. This gates both an AI-graded open-ended verdict and an
+    // AI-rescued FIB answer, and rejects plain exact-match FIB (aiGraded false).
     if (previousCorrect !== null && (!attempt.aiGraded || attempt.gradedAt)) {
         throw new Error('Attempt has already been graded');
     }
@@ -1139,5 +1150,5 @@ module.exports = {
     getQuizScores,
     getStudentQuizAttempt,
     getUserScoresForCourse,
-    gradeOpenEndedAttempt
+    gradeAttempt
 };

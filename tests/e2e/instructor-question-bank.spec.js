@@ -35,14 +35,14 @@ test.describe('Instructor question bank (seeded course)', () => {
     // Every seeded question is Approved. Cell-scoped so the identical entries
     // in the filter dropdowns don't match.
     await expect(page.getByRole('cell', { name: 'Approved' })).toHaveCount(
-      SEED.QUESTION_COUNT
+      SEED.QUESTION_COUNT + SEED.AI_QUESTION_COUNT
     );
     // The "Associated GLO" column shows the PARENT objective name, which the
     // backend derives from each question's granularObjectiveId
     // (getQuestionsByCourseId maps granular → parent), not the granular text.
     await expect(
       page.getByRole('cell', { name: SEED.OBJECTIVE_NAME })
-    ).toHaveCount(SEED.QUESTION_COUNT);
+    ).toHaveCount(SEED.QUESTION_COUNT + SEED.AI_QUESTION_COUNT);
   });
 
   test('search narrows the table to matching questions', async ({ page }) => {

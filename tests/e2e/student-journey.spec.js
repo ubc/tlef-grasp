@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_STUDENT_AUTH_FILE } = require('./auth');
 const { SEED, resetSeededQuizAttemptState } = require('./seed');
+const { getQuizCard, startQuizFromList } = require('./helpers');
 
 // Full student journey for bio_student (a named IdP persona enrolled in the
 // seeded BIOC 302 section): log in, find the published quiz seeded by
@@ -81,7 +82,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
       page.getByRole('heading', { name: SEED.QUIZ_NAME })
     ).toBeVisible();
 
-    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
 
     // Quiz taking view: header shows the quiz title and the first question.
     await expect(
@@ -100,7 +101,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
 
     await selectSeededCourse(page);
     await page.goto('/quiz');
-    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
 
     // Answer only the first question, then simulate an accidental reload.
@@ -113,7 +114,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
 
     // Re-entering the quiz restores the recorded answer and lands on the
     // first unanswered question instead of question 1.
-    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByText(/2 of \d+/)).toBeVisible();
 
     // Going back shows question 1 already answered correctly.
@@ -140,7 +141,7 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
   }) => {
     await selectSeededCourse(page);
     await page.goto('/quiz');
-    await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
 
     await answerAllCorrectly(page);
@@ -161,7 +162,9 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
     await expect(
       page.getByRole('heading', { name: 'Completed Quizzes' })
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Retake Quiz' }).click();
+    await getQuizCard(page, SEED.QUIZ_NAME)
+      .getByRole('button', { name: 'Retake Quiz' })
+      .click();
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
     await answerAllCorrectly(page);
     await expect(

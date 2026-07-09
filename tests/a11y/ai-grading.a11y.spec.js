@@ -1,8 +1,9 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
-const { FACULTY_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('../e2e/auth');
+const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('../e2e/auth');
 const { SEED, resetSeededAiQuizAttemptState } = require('../e2e/seed');
+const { startQuizFromList } = require('../e2e/helpers');
 const {
   IDP_ENABLED,
   prepareSeededStudentCourse,
@@ -31,13 +32,7 @@ test.describe('Accessibility: AI-graded student feedback (issue #45)', () => {
   async function startAiQuiz(page) {
     await prepareSeededStudentCourse(page);
     await page.goto('/quiz');
-    const card = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: SEED.AI_QUIZ_NAME }) });
-    await card
-      .getByRole('button', { name: /Start Quiz|Retake Quiz/ })
-      .first()
-      .click();
+    await startQuizFromList(page, SEED.AI_QUIZ_NAME);
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
   }
 
@@ -102,10 +97,7 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
     const studentPage = await studentContext.newPage();
     await prepareSeededStudentCourse(studentPage);
     await studentPage.goto('/quiz');
-    const card = studentPage
-      .locator('div')
-      .filter({ has: studentPage.getByRole('heading', { name: SEED.AI_QUIZ_NAME }) });
-    await card.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).first().click();
+    await startQuizFromList(studentPage, SEED.AI_QUIZ_NAME);
     await expect(studentPage.getByText(/1 of \d+/)).toBeVisible();
 
     for (let i = 0; i < 2; i++) {
@@ -130,7 +122,7 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
     await studentContext.close();
 
     // Instructor opens the review modal.
-    const instructorPage = await browser.newPage({ storageState: FACULTY_AUTH_FILE });
+    const instructorPage = await browser.newPage({ storageState: BIO_PROF2_AUTH_FILE });
     await prepareSeededInstructorCourse(instructorPage);
     await instructorPage.goto('/quiz-scores');
     await instructorPage
@@ -151,7 +143,7 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
 
 test.describe('Accessibility: grading prompt settings (issue #45)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
-  test.use({ storageState: FACULTY_AUTH_FILE });
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
   test('Course Prompts tab with grading prompts has no blocking axe violations', async ({
     page,

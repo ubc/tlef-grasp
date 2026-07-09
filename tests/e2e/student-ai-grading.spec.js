@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
 const { SEED, resetSeededAiQuizAttemptState } = require('./seed');
-const { selectSeededCourse } = require('./helpers');
+const { selectSeededCourse, startQuizFromList } = require('./helpers');
 
 // LLM-graded question types (issue #45) end to end, against the seeded
 // AI-graded quiz (one open-ended + one fill-in-the-blank question in the BIOC
@@ -18,13 +18,7 @@ const ROLE_KEY = 'grasp-current-role';
 // Open the seeded AI-graded quiz from the student quiz list and land on Q1.
 async function startAiQuiz(page) {
   await page.goto('/quiz');
-  const card = page
-    .locator('div')
-    .filter({ has: page.getByRole('heading', { name: SEED.AI_QUIZ_NAME }) });
-  await card
-    .getByRole('button', { name: /Start Quiz|Retake Quiz/ })
-    .first()
-    .click();
+  await startQuizFromList(page, SEED.AI_QUIZ_NAME);
   await expect(page.getByText(/1 of \d+/)).toBeVisible();
 }
 

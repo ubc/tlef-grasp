@@ -16,9 +16,12 @@ const TYPE_LABELS = {
 function AttemptStatus({ attempt, graded }) {
   const isCorrect = graded?.isCorrect ?? attempt.isCorrect;
   const isOpenEnded = attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
+  const isReviewableAiType =
+    isOpenEnded || attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK;
   // AI-graded and not yet confirmed/overridden by an instructor in this or a
   // previous session.
-  const aiGrade = attempt.aiGraded && !attempt.gradedAt && !graded;
+  const aiGrade =
+    isReviewableAiType && attempt.aiGraded && !attempt.gradedAt && !graded;
 
   if (isOpenEnded && isCorrect === null) {
     return (
@@ -27,11 +30,13 @@ function AttemptStatus({ attempt, graded }) {
       </span>
     );
   }
+  // Only open-ended and AI-rescued fill-in-the-blank carry a reviewable AI
+  // grade; multiple-choice/calculation never set aiGraded.
   if (isCorrect) {
     return (
       <span className="text-sm font-semibold text-success">
         <i className="fas fa-check-circle mr-1" /> Correct
-        {isOpenEnded && aiGrade && (
+        {aiGrade && (
           <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
             AI-graded
           </span>
@@ -42,7 +47,7 @@ function AttemptStatus({ attempt, graded }) {
   return (
     <span className="text-sm font-semibold text-danger">
       <i className="fas fa-times-circle mr-1" /> Incorrect
-      {isOpenEnded && aiGrade && (
+      {aiGrade && (
         <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
           AI-graded
         </span>
@@ -57,8 +62,85 @@ function AttemptStatus({ attempt, graded }) {
   );
 }
 
-function OpenEndedAttempt({ attempt, needsGrading, canOverride, grading, onGrade }) {
+// AI feedback block: the judge's overall feedback plus any per-criterion
+// breakdown. Shared by open-ended and AI-rescued fill-in-the-blank attempts.
+function AiFeedback({ attempt }) {
   const aiCriteria = Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : [];
+  if (!attempt.aiGraded || (!attempt.feedbackText && aiCriteria.length === 0)) {
+    return null;
+  }
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <strong className="text-ink">
+        <i className="fas fa-robot mr-1.5 text-primary" /> AI Feedback
+      </strong>
+      {attempt.feedbackText && (
+        <p className="mt-1 whitespace-pre-wrap text-gray-600">
+          {attempt.feedbackText}
+        </p>
+      )}
+      {aiCriteria.length > 0 && (
+        <ul className="mt-2 space-y-1.5">
+          {aiCriteria.map((item, index) => (
+            <li key={index} className="flex items-start gap-2">
+              <i
+                className={`fas mt-0.5 ${
+                  item.met ? "fa-check text-success" : "fa-times text-danger"
+                }`}
+                aria-hidden="true"
+              />
+              <span className="text-gray-600">
+                <span className="font-semibold text-ink">
+                  {item.criterion}
+                  <span className="sr-only">
+                    {item.met ? " — met" : " — not met"}
+                  </span>
+                  {": "}
+                </span>
+                {item.comment}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Mark Correct / Mark Incorrect controls, shown when an attempt still needs a
+// grade or carries an overridable AI grade. Shared across attempt types.
+function GradeControls({ needsGrading, canOverride, grading, onGrade }) {
+  if (!needsGrading && !canOverride) return null;
+  return (
+    <div>
+      {canOverride && (
+        <p className="mb-2 text-xs text-gray-500">
+          This answer was graded by AI. You can override the grade below.
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={grading}
+          onClick={() => onGrade(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-success/85 disabled:opacity-50"
+        >
+          <i className="fas fa-check" /> Mark Correct
+        </button>
+        <button
+          type="button"
+          disabled={grading}
+          onClick={() => onGrade(false)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-50"
+        >
+          <i className="fas fa-times" /> Mark Incorrect
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OpenEndedAttempt({ attempt, needsGrading, canOverride, grading, onGrade }) {
   return (
     <div className="space-y-3 text-sm">
       <div>
@@ -69,42 +151,7 @@ function OpenEndedAttempt({ attempt, needsGrading, canOverride, grading, onGrade
           <em className="text-gray-400">Not recorded</em>
         )}
       </div>
-      {attempt.aiGraded && (attempt.feedbackText || aiCriteria.length > 0) && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-          <strong className="text-ink">
-            <i className="fas fa-robot mr-1.5 text-primary" /> AI Feedback
-          </strong>
-          {attempt.feedbackText && (
-            <p className="mt-1 whitespace-pre-wrap text-gray-600">
-              {attempt.feedbackText}
-            </p>
-          )}
-          {aiCriteria.length > 0 && (
-            <ul className="mt-2 space-y-1.5">
-              {aiCriteria.map((item, index) => (
-                <li key={index} className="flex items-start gap-2">
-                  <i
-                    className={`fas mt-0.5 ${
-                      item.met ? "fa-check text-success" : "fa-times text-danger"
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <span className="text-gray-600">
-                    <span className="font-semibold text-ink">
-                      {item.criterion}
-                      <span className="sr-only">
-                        {item.met ? " — met" : " — not met"}
-                      </span>
-                      {": "}
-                    </span>
-                    {item.comment}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      <AiFeedback attempt={attempt} />
       <div className="rounded-lg bg-page p-4">
         <div className="mb-2">
           <strong className="text-ink">Sample Answer:</strong>
@@ -123,38 +170,17 @@ function OpenEndedAttempt({ attempt, needsGrading, canOverride, grading, onGrade
           </p>
         </div>
       </div>
-      {(needsGrading || canOverride) && (
-        <div>
-          {canOverride && (
-            <p className="mb-2 text-xs text-gray-500">
-              This answer was graded by AI. You can override the grade below.
-            </p>
-          )}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={grading}
-              onClick={() => onGrade(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-success/85 disabled:opacity-50"
-            >
-              <i className="fas fa-check" /> Mark Correct
-            </button>
-            <button
-              type="button"
-              disabled={grading}
-              onClick={() => onGrade(false)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-50"
-            >
-              <i className="fas fa-times" /> Mark Incorrect
-            </button>
-          </div>
-        </div>
-      )}
+      <GradeControls
+        needsGrading={needsGrading}
+        canOverride={canOverride}
+        grading={grading}
+        onGrade={onGrade}
+      />
     </div>
   );
 }
 
-function TextAttempt({ attempt }) {
+function TextAttempt({ attempt, canOverride, grading, onGrade }) {
   return (
     <div className="space-y-2 text-sm">
       <div>
@@ -175,6 +201,15 @@ function TextAttempt({ attempt }) {
             <span className="text-success">{attempt.correctAnswer}</span>
           </div>
         )}
+      {/* AI feedback + override for a fill-in-the-blank answer that went
+          through the LLM rescue fallback. */}
+      <AiFeedback attempt={attempt} />
+      <GradeControls
+        needsGrading={false}
+        canOverride={canOverride}
+        grading={grading}
+        onGrade={onGrade}
+      />
     </div>
   );
 }
@@ -239,7 +274,9 @@ export default function StudentReviewModal({ review, onClose }) {
   const graded = attempts.filter(
     (a) => a.questionType !== QUESTION_TYPES.OPEN_ENDED
   );
-  const correctCount = graded.filter((a) => a.isCorrect).length;
+  const correctCount = graded.filter(
+    (a) => manualGrades[a.questionId]?.isCorrect ?? a.isCorrect
+  ).length;
   const pendingCount = openEnded.filter(
     (a) => (manualGrades[a.questionId]?.isCorrect ?? a.isCorrect) === null
   ).length;
@@ -266,7 +303,7 @@ export default function StudentReviewModal({ review, onClose }) {
             </span>
             {graded.length > 0 && (
               <span>
-                <strong>Auto-graded:</strong> {correctCount} / {graded.length} correct
+                <strong>Graded:</strong> {correctCount} / {graded.length} correct
               </span>
             )}
             {pendingCount > 0 && (
@@ -286,8 +323,11 @@ export default function StudentReviewModal({ review, onClose }) {
               const needsGrading = isOpenEnded && effectiveCorrect === null;
               // An AI grade can be overridden until an instructor confirms a
               // grade (gradedAt server-side, `manual` within this session).
+              // Applies to open-ended and AI-rescued fill-in-the-blank — the
+              // only types that set aiGraded.
               const canOverride =
-                isOpenEnded &&
+                (isOpenEnded ||
+                  attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) &&
                 effectiveCorrect !== null &&
                 attempt.aiGraded &&
                 !attempt.gradedAt &&
@@ -295,6 +335,11 @@ export default function StudentReviewModal({ review, onClose }) {
               const isTextType =
                 attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
                 attempt.questionType === QUESTION_TYPES.CALCULATION;
+              const isGrading =
+                gradeMutation.isPending &&
+                gradeMutation.variables?.questionId === attempt.questionId;
+              const onGrade = (isCorrect) =>
+                gradeMutation.mutate({ questionId: attempt.questionId, isCorrect });
 
               return (
                 <div
@@ -326,19 +371,16 @@ export default function StudentReviewModal({ review, onClose }) {
                       attempt={attempt}
                       needsGrading={needsGrading}
                       canOverride={canOverride}
-                      grading={
-                        gradeMutation.isPending &&
-                        gradeMutation.variables?.questionId === attempt.questionId
-                      }
-                      onGrade={(isCorrect) =>
-                        gradeMutation.mutate({
-                          questionId: attempt.questionId,
-                          isCorrect,
-                        })
-                      }
+                      grading={isGrading}
+                      onGrade={onGrade}
                     />
                   ) : isTextType ? (
-                    <TextAttempt attempt={attempt} />
+                    <TextAttempt
+                      attempt={attempt}
+                      canOverride={canOverride}
+                      grading={isGrading}
+                      onGrade={onGrade}
+                    />
                   ) : (
                     <McqAttempt attempt={attempt} />
                   )}

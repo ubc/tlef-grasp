@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test");
 const { expectNoA11yViolations } = require("./axe-helper");
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require("../e2e/auth");
 const { SEED } = require("../e2e/seed");
+const { startQuizFromList } = require("../e2e/helpers");
 const {
   IDP_ENABLED,
   prepareSeededInstructorCourse,
@@ -19,7 +20,7 @@ test.describe("Accessibility: quiz question flags", () => {
     try {
       await prepareSeededStudentCourse(page);
       await page.goto("/quiz");
-      await page.getByRole("button", { name: /Start Quiz|Retake Quiz/ }).click();
+      await startQuizFromList(page, SEED.QUIZ_NAME);
       await expect(page.getByRole("heading", { name: SEED.QUIZ_NAME })).toBeVisible();
 
       await page.getByRole("button", { name: "Report an issue with this question" }).click();

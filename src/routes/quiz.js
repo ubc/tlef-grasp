@@ -123,8 +123,9 @@ router.get("/:quizId/student/:userId/attempts", requireRole(ROLES.STAFF), quizCo
 
 /**
  * PUT /api/quiz/:quizId/student/:userId/grade
- * Grade an open-ended question for a student (Faculty only)
+ * Grade/override an open-ended or AI-graded fill-in-the-blank attempt for a
+ * student (Faculty only).
  */
-router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeOpenEndedHandler);
+router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeAttemptHandler);
 
 module.exports = router;

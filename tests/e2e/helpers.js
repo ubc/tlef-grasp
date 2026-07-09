@@ -51,10 +51,27 @@ async function answerSeededQuizCorrectly(page) {
   }
 }
 
+function getQuizCard(page, quizName) {
+  // The heading sits inside the card header, so its grandparent is the card
+  // containing the corresponding controls. Scoping controls to this card keeps
+  // the tests deterministic when a course has more than one published quiz.
+  return page
+    .getByRole('heading', { name: quizName, exact: true })
+    .locator('xpath=../..');
+}
+
+async function startQuizFromList(page, quizName) {
+  const quizCard = getQuizCard(page, quizName);
+  await expect(quizCard).toBeVisible();
+  await quizCard
+    .getByRole('button', { name: /Start Quiz|Retake Quiz/ })
+    .click();
+}
+
 async function completeSeededQuiz(page) {
   await page.goto('/quiz');
   await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
-  await page.getByRole('button', { name: /Start Quiz|Retake Quiz/ }).first().click();
+  await startQuizFromList(page, SEED.QUIZ_NAME);
   await expect(page.getByText(/1 of \d+/)).toBeVisible();
 
   await answerSeededQuizCorrectly(page);
@@ -72,5 +89,7 @@ function escapeRegExp(str) {
 module.exports = {
   selectSeededCourse,
   answerSeededQuizCorrectly,
+  getQuizCard,
+  startQuizFromList,
   completeSeededQuiz,
 };

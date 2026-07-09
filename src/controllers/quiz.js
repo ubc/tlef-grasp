@@ -1071,9 +1071,10 @@ const getStudentQuizAttemptHandler = async (req, res) => {
 };
 
 /**
- * Grade an open-ended question for a specific student (Faculty only)
+ * Grade/override an open-ended or AI-graded fill-in-the-blank attempt for a
+ * specific student (Faculty only).
  */
-const gradeOpenEndedHandler = async (req, res) => {
+const gradeAttemptHandler = async (req, res) => {
   try {
     const { quizId, userId } = req.params;
     const { questionId, isCorrect } = req.body;
@@ -1085,11 +1086,11 @@ const gradeOpenEndedHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: 'questionId is required' });
     }
 
-    const result = await quizService.gradeOpenEndedAttempt(userId, quizId, questionId, isCorrect);
+    const result = await quizService.gradeAttempt(userId, quizId, questionId, isCorrect);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Error grading open-ended attempt:', error);
-    const status = error.message === 'Open-ended attempt not found' ? 404
+    console.error('Error grading attempt:', error);
+    const status = error.message === 'Attempt not found' ? 404
       : error.message === 'Attempt has already been graded' ? 409
       : 500;
     res.status(status).json({ success: false, error: error.message });
@@ -1216,5 +1217,5 @@ module.exports = {
   checkQuestionAnswerHandler,
   getQuizScoresHandler,
   getStudentQuizAttemptHandler,
-  gradeOpenEndedHandler
+  gradeAttemptHandler
 };

@@ -9,7 +9,7 @@ const request = require('supertest');
 jest.mock('../../src/services/quiz', () => ({
   getQuizById: jest.fn(),
   saveStudentPerformance: jest.fn(),
-  gradeOpenEndedAttempt: jest.fn(),
+  gradeAttempt: jest.fn(),
 }));
 
 jest.mock('../../src/services/question', () => ({
@@ -311,7 +311,7 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
   const gradeUrl = '/api/quiz/quiz-1/student/student-1/grade';
 
   it('applies an instructor grade/override', async () => {
-    quizService.gradeOpenEndedAttempt.mockResolvedValue({
+    quizService.gradeAttempt.mockResolvedValue({
       score: 80,
       correctAnswers: 4,
       totalQuestions: 5,
@@ -328,7 +328,7 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
       correctAnswers: 4,
       totalQuestions: 5,
     });
-    expect(quizService.gradeOpenEndedAttempt).toHaveBeenCalledWith(
+    expect(quizService.gradeAttempt).toHaveBeenCalledWith(
       'student-1',
       'quiz-1',
       'question-1',
@@ -336,8 +336,48 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
     );
   });
 
+  it('overrides an AI-graded fill-in-the-blank attempt via the same endpoint', async () => {
+    quizService.gradeAttempt.mockResolvedValue({
+      score: 60,
+      correctAnswers: 3,
+      totalQuestions: 5,
+    });
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'fib-question-1', isCorrect: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.score).toBe(60);
+    expect(quizService.gradeAttempt).toHaveBeenCalledWith(
+      'student-1',
+      'quiz-1',
+      'fib-question-1',
+      false
+    );
+  });
+
+  it('rejects a non-boolean isCorrect', async () => {
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'question-1', isCorrect: 'yes' });
+
+    expect(res.status).toBe(400);
+    expect(quizService.gradeAttempt).not.toHaveBeenCalled();
+  });
+
+  it('maps a missing/ineligible attempt to 404', async () => {
+    quizService.gradeAttempt.mockRejectedValue(new Error('Attempt not found'));
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'mcq-question-1', isCorrect: true });
+
+    expect(res.status).toBe(404);
+  });
+
   it('maps an already-finalized grade to 409', async () => {
-    quizService.gradeOpenEndedAttempt.mockRejectedValue(
+    quizService.gradeAttempt.mockRejectedValue(
       new Error('Attempt has already been graded')
     );
 
