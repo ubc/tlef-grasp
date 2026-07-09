@@ -187,16 +187,22 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
       page.getByRole('heading', { name: 'My Achievements' })
     ).toBeVisible();
 
-    // The perfect run earlier in the journey awarded both achievement types,
-    // and the cards name the seeded quiz with the 100% score.
+    // The AI-graded quiz can also award these achievement types. Scope each
+    // assertion to the card for the original seeded quiz.
+    const seededQuizAchievement = page
+      .getByText(`Quiz: ${SEED.QUIZ_NAME}`, { exact: true })
+      .locator('xpath=..');
     await expect(
-      page.getByRole('heading', { name: 'Quiz Completed' })
+      seededQuizAchievement.filter({
+        has: page.getByRole('heading', { name: 'Quiz Completed' }),
+      })
     ).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: 'Perfect Score!' })
+      seededQuizAchievement.filter({
+        has: page.getByRole('heading', { name: 'Perfect Score!' }),
+      })
     ).toBeVisible();
-    await expect(page.getByText(`Quiz: ${SEED.QUIZ_NAME}`).first()).toBeVisible();
-    await expect(page.getByText('Score: 100%').first()).toBeVisible();
+    await expect(seededQuizAchievement.getByText('Score: 100%')).toBeVisible();
   });
 });
 

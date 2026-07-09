@@ -53,7 +53,17 @@ async function takeAiQuiz(page, { openEndedAnswer, fibAnswer }) {
       page.getByText(/Correct!|Incorrect\.|Graded by AI/).first()
     ).toBeVisible();
 
+    const completionResponse = i === 1
+      ? page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            /\/api\/student\/quizzes\/[^/]+\/submit$/.test(new URL(response.url()).pathname)
+        )
+      : null;
     await page.getByRole('button', { name: /Next|Finish/ }).click();
+    if (completionResponse) {
+      expect((await completionResponse).ok()).toBe(true);
+    }
   }
 }
 
@@ -85,8 +95,8 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
     // AI verdict, the AI-graded disclaimer, and the per-criterion breakdown.
     await expect(page.getByText('Correct!')).toBeVisible();
     await expect(page.getByText(/Graded by AI/)).toBeVisible();
-    await expect(page.getByText('States that apparent Km increases', { exact: false })).toBeVisible();
-    await expect(page.getByText('States that Vmax is unchanged', { exact: false })).toBeVisible();
+    await expect(page.getByText('Key concept coverage', { exact: false })).toBeVisible();
+    await expect(page.getByText('Accuracy', { exact: false })).toBeVisible();
   });
 
   test('open-ended answer that misses the criteria is graded incorrect', async ({
@@ -151,7 +161,7 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
       .fill(`the K m value ${SEED.AI_EQUIVALENT_MARKER}`);
     await page.getByRole('button', { name: 'Submit answer' }).click();
     await expect(page.getByText('Correct!')).toBeVisible();
-    await expect(page.getByText(/same concept using the common notation/)).toBeVisible();
+    await expect(page.getByText(/equivalent to the expected answer/)).toBeVisible();
   });
 });
 

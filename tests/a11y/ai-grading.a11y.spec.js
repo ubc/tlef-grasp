@@ -128,7 +128,17 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
       await expect(
         studentPage.getByText(/Correct!|Incorrect\./).first()
       ).toBeVisible();
+      const completionResponse = i === 1
+        ? studentPage.waitForResponse(
+            (response) =>
+              response.request().method() === 'POST' &&
+              /\/api\/student\/quizzes\/[^/]+\/submit$/.test(new URL(response.url()).pathname)
+          )
+        : null;
       await studentPage.getByRole('button', { name: /Next|Finish/ }).click();
+      if (completionResponse) {
+        expect((await completionResponse).ok()).toBe(true);
+      }
     }
     await expect(
       studentPage.getByRole('heading', { name: 'Quiz Complete!' })

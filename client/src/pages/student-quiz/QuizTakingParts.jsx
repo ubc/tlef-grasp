@@ -172,7 +172,7 @@ export function FeedbackPanel({ feedback }) {
             <i className={`fas ${pass ? "fa-check-circle" : "fa-times-circle"} mr-2`} />
             {pass ? "Correct!" : "Incorrect."}
           </div>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-gray-600">
             Graded by AI — your instructor can review and change this grade.
           </p>
           {feedback.feedbackText && (

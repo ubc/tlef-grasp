@@ -314,19 +314,7 @@ export default function QuestionGeneration() {
 
   const handleAddAllToBank = () => {
     const questions = questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) =>
-        lo.questions.map((question) => ({
-          title: question.title || question.stem || "",
-          stem: question.stem || question.title || "",
-          options: question.options || [],
-          correctAnswer: question.correctAnswer || 0,
-          bloom: question.bloom || question.bloomLevel || "Understand",
-          granularObjectiveId: question.granularObjectiveId || null,
-          by: question.createdBy || "system",
-          status: question.status || "Draft",
-          flagStatus: question.flagStatus || false,
-        }))
-      )
+      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
     );
 
     if (questions.length === 0) {
