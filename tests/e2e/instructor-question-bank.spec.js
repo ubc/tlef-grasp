@@ -29,25 +29,31 @@ test.describe('Instructor question bank (seeded course)', () => {
       page.getByRole('link', { name: 'Settings', exact: true })
     ).toBeVisible();
 
+    // The local database can contain other approved questions in this course.
+    // Scope count assertions to the original seeded quiz rather than assuming
+    // the course's entire question bank contains only seed data.
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
+
     for (const title of SEED.QUESTION_TITLES) {
       await expect(page.getByRole('cell', { name: title })).toBeVisible();
     }
     // Every seeded question is Approved. Cell-scoped so the identical entries
     // in the filter dropdowns don't match.
     await expect(page.getByRole('cell', { name: 'Approved' })).toHaveCount(
-      SEED.QUESTION_COUNT + SEED.AI_QUESTION_COUNT
+      SEED.QUESTION_COUNT
     );
     // The "Associated GLO" column shows the PARENT objective name, which the
     // backend derives from each question's granularObjectiveId
     // (getQuestionsByCourseId maps granular → parent), not the granular text.
     await expect(
       page.getByRole('cell', { name: SEED.OBJECTIVE_NAME })
-    ).toHaveCount(SEED.QUESTION_COUNT + SEED.AI_QUESTION_COUNT);
+    ).toHaveCount(SEED.QUESTION_COUNT);
   });
 
   test('search narrows the table to matching questions', async ({ page }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/question-bank');
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
     await expect(
       page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
     ).toBeVisible();
@@ -71,9 +77,12 @@ test.describe('Instructor question bank (seeded course)', () => {
       page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
     ).toBeVisible();
 
-    // All seeded questions are Approved, so filtering to Draft empties the table.
+    // Other local course questions may be drafts; the seeded Approved rows must
+    // still disappear when the Draft filter is selected.
     await page.getByLabel('Status').selectOption('Draft');
-    await expect(page.getByText('No questions available.')).toBeVisible();
+    await expect(
+      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+    ).toBeHidden();
 
     await page.getByLabel('Status').selectOption('Approved');
     await expect(

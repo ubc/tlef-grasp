@@ -22,12 +22,28 @@ async function startAiQuiz(page) {
   await expect(page.getByText(/1 of \d+/)).toBeVisible();
 }
 
+async function goToOpenEndedAiQuestion(page) {
+  const openEndedQuestion = page.getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true });
+  if (await openEndedQuestion.isVisible()) return;
+
+  // Mongo does not guarantee the order of the question documents returned for
+  // a quiz. If the fill-in-the-blank item is first, answer it and advance to
+  // the open-ended item rather than relying on insertion order.
+  await expect(page.getByText(SEED.AI_FIB_TITLE, { exact: true })).toBeVisible();
+  await page.getByLabel('Your answer').fill('placeholder');
+  await page.getByRole('button', { name: 'Submit answer' }).click();
+  await expect(page.getByText(/Correct!|Incorrect\./).first()).toBeVisible();
+  await page.getByRole('button', { name: /Next|Finish/ }).click();
+  await expect(openEndedQuestion).toBeVisible();
+}
+
 // Advance through the quiz answering both questions to reach the summary.
 // `openEndedAnswer` decides whether the AI judge passes the open-ended item.
 async function takeAiQuiz(page, { openEndedAnswer, fibAnswer }) {
   for (let i = 0; i < 2; i++) {
-    const heading = await page.getByRole('heading').allTextContents();
-    const onOpenEnded = heading.some((h) => h.includes(SEED.AI_OPEN_ENDED_TITLE));
+    const onOpenEnded = await page
+      .getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true })
+      .isVisible();
     const answer = onOpenEnded ? openEndedAnswer : fibAnswer;
 
     await page.getByLabel(onOpenEnded ? 'Your response' : 'Your answer').fill(answer);
@@ -56,11 +72,10 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
   }) => {
     await selectSeededCourse(page, { role: 'student' });
     await startAiQuiz(page);
+    await goToOpenEndedAiQuestion(page);
 
-    // Land on the open-ended question (quiz order is deterministic, but assert
-    // rather than assume) and submit a passing answer.
     await expect(
-      page.getByRole('heading', { name: SEED.AI_OPEN_ENDED_TITLE })
+      page.getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true })
     ).toBeVisible();
     await page
       .getByLabel('Your response')
@@ -70,8 +85,8 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
     // AI verdict, the AI-graded disclaimer, and the per-criterion breakdown.
     await expect(page.getByText('Correct!')).toBeVisible();
     await expect(page.getByText(/Graded by AI/)).toBeVisible();
-    await expect(page.getByText('Key concept coverage', { exact: false })).toBeVisible();
-    await expect(page.getByText('Accuracy', { exact: false })).toBeVisible();
+    await expect(page.getByText('States that apparent Km increases', { exact: false })).toBeVisible();
+    await expect(page.getByText('States that Vmax is unchanged', { exact: false })).toBeVisible();
   });
 
   test('open-ended answer that misses the criteria is graded incorrect', async ({
@@ -79,9 +94,10 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
   }) => {
     await selectSeededCourse(page, { role: 'student' });
     await startAiQuiz(page);
+    await goToOpenEndedAiQuestion(page);
 
     await expect(
-      page.getByRole('heading', { name: SEED.AI_OPEN_ENDED_TITLE })
+      page.getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true })
     ).toBeVisible();
     await page.getByLabel('Your response').fill('I am not sure.');
     await page.getByRole('button', { name: 'Submit answer' }).click();
@@ -97,14 +113,14 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
     await startAiQuiz(page);
 
     // Navigate to the fill-in-the-blank question.
-    if (!(await page.getByRole('heading', { name: SEED.AI_FIB_TITLE }).isVisible())) {
+    if (!(await page.getByText(SEED.AI_FIB_TITLE, { exact: true }).isVisible())) {
       // Submit a throwaway open-ended answer to advance.
       await page.getByLabel('Your response').fill('placeholder');
       await page.getByRole('button', { name: 'Submit answer' }).click();
       await page.getByRole('button', { name: /Next|Finish/ }).click();
     }
     await expect(
-      page.getByRole('heading', { name: SEED.AI_FIB_TITLE })
+      page.getByText(SEED.AI_FIB_TITLE, { exact: true })
     ).toBeVisible();
 
     // Exact canonical answer — graded correct by string match, no marker needed.
@@ -119,13 +135,13 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
     await selectSeededCourse(page, { role: 'student' });
     await startAiQuiz(page);
 
-    if (!(await page.getByRole('heading', { name: SEED.AI_FIB_TITLE }).isVisible())) {
+    if (!(await page.getByText(SEED.AI_FIB_TITLE, { exact: true }).isVisible())) {
       await page.getByLabel('Your response').fill('placeholder');
       await page.getByRole('button', { name: 'Submit answer' }).click();
       await page.getByRole('button', { name: /Next|Finish/ }).click();
     }
     await expect(
-      page.getByRole('heading', { name: SEED.AI_FIB_TITLE })
+      page.getByText(SEED.AI_FIB_TITLE, { exact: true })
     ).toBeVisible();
 
     // A non-matching answer carrying the rescue marker: exact match fails, the
@@ -135,7 +151,7 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
       .fill(`the K m value ${SEED.AI_EQUIVALENT_MARKER}`);
     await page.getByRole('button', { name: 'Submit answer' }).click();
     await expect(page.getByText('Correct!')).toBeVisible();
-    await expect(page.getByText(/equivalent to the expected answer/)).toBeVisible();
+    await expect(page.getByText(/same concept using the common notation/)).toBeVisible();
   });
 });
 

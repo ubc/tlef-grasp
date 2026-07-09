@@ -3,6 +3,7 @@ const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
 const { FACULTY_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('../e2e/auth');
 const { SEED } = require('../e2e/seed');
+const { getQuizCard, startQuizFromList } = require('../e2e/helpers');
 const {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
@@ -87,7 +88,7 @@ test.describe('Accessibility: seeded student quiz states', () => {
 
     await expect(page.getByRole('heading', { name: 'Available Quizzes' })).toBeVisible();
     await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
-    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
     await expect(page.getByText(new RegExp(`1 of ${SEED.QUESTION_COUNT}`))).toBeVisible();
   }
@@ -115,10 +116,12 @@ test.describe('Accessibility: seeded student quiz states', () => {
 
     await expect(page.getByRole('heading', { name: 'Pending Quizzes' })).toBeVisible();
     await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start Quiz' })).toBeVisible();
+    await expect(
+      getQuizCard(page, SEED.QUIZ_NAME).getByRole('button', { name: 'Start Quiz' })
+    ).toBeVisible();
     await expectNoA11yViolations(page);
 
-    await page.getByRole('button', { name: 'Start Quiz' }).click();
+    await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
     await expect(page.getByRole('button', { name: SEED.CORRECT_OPTION_TEXTS[0] })).toBeVisible();
     await expectNoA11yViolations(page);
@@ -140,7 +143,9 @@ test.describe('Accessibility: seeded student quiz states', () => {
 
     await page.getByRole('button', { name: 'Back to Quizzes' }).click();
     await expect(page.getByRole('heading', { name: 'Completed Quizzes' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Retake Quiz' })).toBeVisible();
+    await expect(
+      getQuizCard(page, SEED.QUIZ_NAME).getByRole('button', { name: 'Retake Quiz' })
+    ).toBeVisible();
     await expectNoA11yViolations(page);
 
     await page.goto('/achievements');

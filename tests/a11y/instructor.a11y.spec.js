@@ -209,6 +209,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
   }) => {
     await prepareSeededInstructorCourse(page);
     await page.goto('/question-bank');
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
 
     await expect(page.getByRole('button', { name: 'Questions' })).toBeVisible();
     await expect(page.getByText(/Michaelis constant|competitive inhibitor/i).first()).toBeVisible();
@@ -216,9 +217,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await expect(page.getByRole('button', { name: 'Add New Question' })).toBeVisible();
 
     await page.getByRole('checkbox', { name: 'Select all questions' }).check();
-    await expect(
-      page.getByText(`${SEED.QUESTION_COUNT + SEED.AI_QUESTION_COUNT} questions selected`)
-    ).toBeVisible();
+    await expect(page.getByText(`${SEED.QUESTION_COUNT} questions selected`)).toBeVisible();
     await expect(page.getByRole('button', { name: /Approve$/ }).first()).toBeVisible();
 
     // FINDINGS.md Accessibility: QuestionBank filter selects/search input have

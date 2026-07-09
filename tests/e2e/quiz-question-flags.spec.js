@@ -43,6 +43,14 @@ test.describe("Quiz question flags", () => {
 
       const report = instructorPage.locator("article").filter({ hasText: reportComment });
       await report.getByRole("combobox").selectOption("reviewed");
+      // The default view intentionally contains only pending reports. A status
+      // update moves this report out of that list, so confirm it under Reviewed.
+      await expect(report).toHaveCount(0);
+      await instructorPage
+        .getByRole("main")
+        .getByRole("combobox")
+        .first()
+        .selectOption("reviewed");
       await expect(report.getByRole("combobox")).toHaveValue("reviewed");
     } finally {
       await instructorContext.close();

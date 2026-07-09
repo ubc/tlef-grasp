@@ -36,12 +36,25 @@ test.describe('Accessibility: AI-graded student feedback (issue #45)', () => {
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
   }
 
+  async function goToOpenEndedAiQuestion(page) {
+    const openEndedQuestion = page.getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true });
+    if (await openEndedQuestion.isVisible()) return;
+
+    await expect(page.getByText(SEED.AI_FIB_TITLE, { exact: true })).toBeVisible();
+    await page.getByLabel('Your answer').fill('placeholder');
+    await page.getByRole('button', { name: 'Submit answer' }).click();
+    await expect(page.getByText(/Correct!|Incorrect\./).first()).toBeVisible();
+    await page.getByRole('button', { name: /Next|Finish/ }).click();
+    await expect(openEndedQuestion).toBeVisible();
+  }
+
   test('open-ended AI verdict + per-criterion feedback has no blocking axe violations', async ({
     page,
   }) => {
     await startAiQuiz(page);
+    await goToOpenEndedAiQuestion(page);
     await expect(
-      page.getByRole('heading', { name: SEED.AI_OPEN_ENDED_TITLE })
+      page.getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true })
     ).toBeVisible();
 
     // Un-graded input state.
@@ -63,13 +76,13 @@ test.describe('Accessibility: AI-graded student feedback (issue #45)', () => {
   }) => {
     await startAiQuiz(page);
 
-    if (!(await page.getByRole('heading', { name: SEED.AI_FIB_TITLE }).isVisible())) {
+    if (!(await page.getByText(SEED.AI_FIB_TITLE, { exact: true }).isVisible())) {
       await page.getByLabel('Your response').fill('placeholder');
       await page.getByRole('button', { name: 'Submit answer' }).click();
       await page.getByRole('button', { name: /Next|Finish/ }).click();
     }
     await expect(
-      page.getByRole('heading', { name: SEED.AI_FIB_TITLE })
+      page.getByText(SEED.AI_FIB_TITLE, { exact: true })
     ).toBeVisible();
 
     await page
@@ -101,8 +114,9 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
     await expect(studentPage.getByText(/1 of \d+/)).toBeVisible();
 
     for (let i = 0; i < 2; i++) {
-      const headings = await studentPage.getByRole('heading').allTextContents();
-      const onOpenEnded = headings.some((h) => h.includes(SEED.AI_OPEN_ENDED_TITLE));
+      const onOpenEnded = await studentPage
+        .getByText(SEED.AI_OPEN_ENDED_TITLE, { exact: true })
+        .isVisible();
       if (onOpenEnded) {
         await studentPage
           .getByLabel('Your response')
