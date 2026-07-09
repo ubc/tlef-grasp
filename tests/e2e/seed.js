@@ -205,7 +205,13 @@ async function seedStudentJourneyCourse() {
     await db.collection('grasp_quiz').updateOne(
       { courseId, name: QUIZ_NAME },
       {
-        $set: { published: true, deliveryFormat: 'all-approved', description: 'Seeded quiz for the student E2E journey.', updatedAt: now },
+        $set: {
+          published: true,
+          deliveryFormat: 'all-approved',
+          disablePreviousNavigation: false,
+          description: 'Seeded quiz for the student E2E journey.',
+          updatedAt: now,
+        },
         $setOnInsert: { courseId, name: QUIZ_NAME, createdAt: now },
       },
       { upsert: true }

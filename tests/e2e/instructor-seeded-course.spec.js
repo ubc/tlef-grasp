@@ -42,6 +42,9 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(page.getByText('100% Approved')).toBeVisible();
     await expect(page.getByText('Section schedule')).toBeVisible();
     await expect(page.getByRole('button', { name: /101\s+Active/ })).toBeVisible();
+    await expect(
+      page.getByRole('checkbox', { name: /Disable previous question/ })
+    ).not.toBeChecked();
     await expect(page.getByRole('button', { name: 'Unpublish' })).toBeVisible();
   });
 

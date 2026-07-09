@@ -163,6 +163,59 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     ).toBeVisible();
   });
 
+  test('deleting a granular here only detaches it from the page (#41)', async () => {
+    // Regression for issue #41: the trash button beside a granular objective on
+    // the question-generation page must remove it from THIS page only. Real
+    // deletion lives in Question Bank → Learning Objectives; here the same
+    // click used to persist the removal and silently delete the granular from
+    // the objective in the database.
+    const courseId = await page.evaluate(
+      () =>
+        JSON.parse(window.sessionStorage.getItem('grasp-selected-course') || '{}')
+          .id
+    );
+    expect(courseId, 'active course is in sessionStorage').toBeTruthy();
+
+    // Snapshot the DB truth: granular counts per objective for this course.
+    const granularCounts = async () => {
+      const listRes = await page.request.get(`/api/objective/?courseId=${courseId}`);
+      expect(listRes.ok()).toBe(true);
+      const objectives = (await listRes.json()).objectives || [];
+      const counts = {};
+      for (const objective of objectives) {
+        const res = await page.request.get(
+          `/api/objective/${objective._id}/granular?courseId=${courseId}`
+        );
+        expect(res.ok()).toBe(true);
+        counts[objective._id] = ((await res.json()).objectives || []).length;
+      }
+      return counts;
+    };
+    const before = await granularCounts();
+    expect(Object.values(before).some((n) => n > 0)).toBe(true);
+
+    // Delete the first granular row; the click also fires the objective save
+    // (PUT), so wait for that round-trip before re-reading the DB.
+    const deleteButtons = page.getByRole('button', {
+      name: 'Delete granular objective from page',
+    });
+    const rowsBefore = await deleteButtons.count();
+    expect(rowsBefore).toBeGreaterThan(1); // keep ≥1 granular for the next steps
+    const [saveResponse] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/objective/') && r.request().method() === 'PUT'
+      ),
+      deleteButtons.first().click(),
+    ]);
+    expect(saveResponse.ok()).toBe(true);
+
+    // Gone from the page…
+    await expect(deleteButtons).toHaveCount(rowsBefore - 1);
+
+    // …but every objective still holds all of its granulars in the database.
+    expect(await granularCounts()).toEqual(before);
+  });
+
   test('generates questions and saves them into a new quiz', async () => {
     // Step 1 → 2: generate questions for the objective (stubbed).
     await page.getByRole('button', { name: 'Continue' }).click();

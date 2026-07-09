@@ -3,6 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
 
+// Where to resume a restored attempt: the first question without recorded
+// feedback, or the last question when everything is already answered.
+export function firstUnansweredIndex(questions = [], feedback = {}) {
+  if (questions.length === 0) return 0;
+  const index = questions.findIndex((q) => !feedback[q.id]);
+  return index === -1 ? questions.length - 1 : index;
+}
+
 // State machine for taking a quiz: loading questions (with draft restoration),
 // checking answers against the server, navigation and final submission.
 export function useQuizSession({ onLoadError } = {}) {
@@ -79,15 +87,19 @@ export function useQuizSession({ onLoadError } = {}) {
         questionsData.data?.previousAnswers || {}
       );
 
+      const questions = questionsData.data?.questions || [];
       setQuizData({
         quizId,
         title: quizMeta.quiz ? quizMeta.quiz.name : "Quiz",
         course: questionsData.data?.course || "Course",
-        questions: questionsData.data?.questions || [],
+        disablePreviousNavigation:
+          questionsData.data?.disablePreviousNavigation === true ||
+          quizMeta.quiz?.disablePreviousNavigation === true,
+        questions,
       });
       setAnswers(restoredAnswers);
       setFeedback(restoredFeedback);
-      setCurrentIndex(0);
+      setCurrentIndex(firstUnansweredIndex(questions, restoredFeedback));
       setStartTime(Date.now());
       return true;
     } catch (error) {

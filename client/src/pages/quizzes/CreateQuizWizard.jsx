@@ -60,6 +60,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
   const [selectedObjectives, setSelectedObjectives] = useState([]);
   const [quizName, setQuizName] = useState("");
   const [deliveryFormat, setDeliveryFormat] = useState("all-approved");
+  const [disablePreviousNavigation, setDisablePreviousNavigation] = useState(false);
 
   const { materials, isPending: materialsPending } = useCourseMaterials(courseId);
   const { objectives, isPending: objectivesPending } = useCourseObjectives(courseId);
@@ -83,6 +84,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
     onSuccess: () => {
       showToast("Quiz created successfully", "success");
       setQuizName("");
+      setDisablePreviousNavigation(false);
       setSelectedMaterials([]);
       setSelectedObjectives([]);
       setStep(1);
@@ -122,6 +124,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
       name,
       courseId,
       deliveryFormat,
+      disablePreviousNavigation,
       questionIds: matchedQuestions.map(getObjectId),
     });
   };
@@ -275,6 +278,25 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
               </label>
               <DeliveryFormatToggle value={deliveryFormat} onChange={setDeliveryFormat} />
             </div>
+
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={disablePreviousNavigation}
+                onChange={(event) =>
+                  setDisablePreviousNavigation(event.target.checked)
+                }
+                className="mt-1 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="block font-semibold text-ink">
+                  Disable previous question
+                </span>
+                <span className="block text-xs text-muted">
+                  Students cannot return to earlier questions while taking this quiz.
+                </span>
+              </span>
+            </label>
 
             <div className="rounded-xl bg-page p-5">
               <div className="flex items-center gap-4">

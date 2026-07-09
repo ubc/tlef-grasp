@@ -262,6 +262,7 @@ export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onRe
   const progress = totalQuestions > 0 ? (approvedQuestions / totalQuestions) * 100 : 0;
   const deliveryFormat =
     quiz.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved";
+  const disablePreviousNavigation = quiz.disablePreviousNavigation === true;
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm">
@@ -294,6 +295,33 @@ export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onRe
             }
           }}
         />
+      </div>
+
+      <div className="mb-5">
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={disablePreviousNavigation}
+            onChange={(event) =>
+              onUpdate(
+                quiz.id,
+                { disablePreviousNavigation: event.target.checked },
+                event.target.checked
+                  ? "Previous navigation disabled"
+                  : "Previous navigation enabled"
+              )
+            }
+            className="mt-1 h-4 w-4 accent-primary"
+          />
+          <span>
+            <span className="block font-semibold text-ink">
+              Disable previous question
+            </span>
+            <span className="block text-xs text-muted">
+              Students cannot return to earlier questions while taking this quiz.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="space-y-2">

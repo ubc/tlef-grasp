@@ -29,6 +29,7 @@ function GranularItemRow({
         <button
           type="button"
           title="Delete granular objective from page"
+          aria-label="Delete granular objective from page"
           onClick={onDelete}
           className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-danger/10 hover:text-danger"
         >
@@ -217,9 +218,15 @@ export default function ObjectiveGroupCard({
                 <button
                   type="button"
                   onClick={() =>
+                    // Page-only removal: saved granulars are detached (kept in
+                    // the DB via detachedItems), never deleted (#41).
                     onUpdateGroup((g) => ({
                       ...g,
                       items: g.items.filter((i) => !i.selected),
+                      detachedItems: [
+                        ...(g.detachedItems || []),
+                        ...g.items.filter((i) => i.selected && i.granularId),
+                      ],
                     }))
                   }
                   className="rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
