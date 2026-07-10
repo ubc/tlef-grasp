@@ -101,6 +101,22 @@ test.describe('Accessibility: authenticated instructor pages', () => {
     });
   }
 
+  test('dashboard course path is labelled, keyboard reachable, and has no blocking axe violations', async ({ page }) => {
+    await gotoCoursePage(page, '/dashboard', (p) =>
+      p.getByRole('heading', { name: /course progress|continue building your course|your course is ready|build your first quiz/i })
+    );
+
+    const path = page.getByRole('region');
+    await expect(path.getByRole('link', { name: /continue:|manage quizzes/i })).toBeVisible();
+    await expect(path.getByRole('link', { name: 'Upload' })).toBeVisible();
+    await expect(path.getByRole('link', { name: 'Publish' })).toBeVisible();
+
+    await path.getByRole('link', { name: 'Upload' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(path.getByRole('link', { name: 'Create objectives' })).toBeFocused();
+    await expectNoA11yViolations(page, { include: '[aria-labelledby="course-path-heading"]' });
+  });
+
   test('co-instructor permissions tab has no blocking axe violations', async ({
     page,
   }) => {

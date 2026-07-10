@@ -22,6 +22,8 @@ const MATERIAL_BODY =
   'Competitive inhibitors raise the apparent Km while leaving Vmax unchanged. ' +
   'At saturating substrate the rate approaches Vmax.';
 const QUIZ_NAME = `Instructor Journey Quiz ${RUN}`;
+const IRRELEVANT_MATERIAL_TITLE = `Unrelated Upload ${RUN}`;
+const INSTRUCTOR_OBJECTIVE = `Explain the role of enzymes in catalysis ${RUN}`;
 
 test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () => {
   test.describe.configure({ mode: 'serial' });
@@ -161,6 +163,31 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(
       page.getByText(/Total questions to generate:\s*\d+/).first()
     ).toBeVisible();
+  });
+
+  test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {
+    await navLink('Course Materials').click();
+    await page.getByRole('button', { name: 'Text' }).click();
+    await page.getByPlaceholder('Enter document title...').fill(IRRELEVANT_MATERIAL_TITLE);
+    await page.getByPlaceholder('Paste your text content here...').fill('[E2E_IRRELEVANT_MATERIAL]');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await navLink('Question Generation').click();
+    await page.getByRole('button', { name: 'Create Learning Objectives' }).click();
+    await page.getByRole('radio', { name: IRRELEVANT_MATERIAL_TITLE }).check();
+    await page.getByRole('button', { name: /Generate$/ }).click();
+
+    await expect(page.getByRole('alert')).toContainText('No learning objectives were created');
+    await expect(page.getByText(/couldn't find enough course-related content/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Save Selected/ })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Add Objective' }).click();
+    await page.getByPlaceholder('Enter a learning objective...').fill(INSTRUCTOR_OBJECTIVE);
+    await page.getByRole('button', { name: /Generate$/ }).click();
+
+    await expect(page.getByText(INSTRUCTOR_OBJECTIVE, { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Save Selected/ })).toBeEnabled();
+    await page.getByRole('button', { name: 'Cancel' }).click();
   });
 
   test('deleting a granular here only detaches it from the page (#41)', async () => {
@@ -345,5 +372,15 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // Publish it.
     await card.getByRole('button', { name: 'Publish' }).click();
     await expect(card.getByRole('button', { name: 'Unpublish' })).toBeVisible();
+  });
+
+  test('shows course-specific completion after publishing the quiz', async () => {
+    await navLink('Dashboard').click();
+    const path = page.getByRole('region', { name: 'Your course is ready' });
+    await expect(path.getByText('5 of 5 steps completed for this course.')).toBeVisible();
+    await expect(path.getByRole('link', { name: 'Manage quizzes' })).toBeVisible();
+    await expect(path.getByText('Completed', { exact: true })).toHaveCount(5);
+    await page.getByText('How GRASP works').click();
+    await expect(page.getByRole('link', { name: 'Upload course materials' })).toBeVisible();
   });
 });

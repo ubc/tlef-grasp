@@ -640,18 +640,24 @@ Include foundational concepts, practical applications, and assessment criteria.`
     }
 
     console.log("Retrieving RAG content from selected materials...");
-    const ragContext = await ragService.getRagContentFromMaterials(
+    let ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       searchQuery,
       200,
       courseId
     );
 
-    if (!ragContext || ragContext.trim().length === 0) {
+    if ((!ragContext || ragContext.trim().length === 0) && (!userObjectives || userObjectives.length === 0)) {
       return res.status(400).json({
         success: false,
         error: "No content found in selected materials. Please ensure materials have been processed.",
       });
+    }
+    if (!ragContext || ragContext.trim().length === 0) {
+      // Instructor-authored objectives remain useful even when an upload has no
+      // extractable text. The manual prompt is expressly prohibited from
+      // inventing material-derived additions.
+      ragContext = "No usable material content was retrieved. Preserve the instructor-provided objectives without adding content.";
     }
 
     // Determine which prompt to use (Auto vs Manual)
@@ -700,6 +706,17 @@ Include foundational concepts, practical applications, and assessment criteria.`
       // Validate the structure
       if (!objectivesData.objectives || !Array.isArray(objectivesData.objectives)) {
         throw new Error("Invalid response format: missing objectives array");
+      }
+
+      // With no instructor-supplied objectives, a negative relevance verdict is
+      // a successful outcome: do not turn unrelated uploads into fabricated LOs.
+      if ((!userObjectives || userObjectives.length === 0) && !objectivesData.materialIsRelevant) {
+        return res.status(422).json({
+          success: false,
+          code: "MATERIAL_NOT_RELEVANT",
+          error: "We couldn't find enough course-related content in this material to create learning objectives.",
+          details: objectivesData.relevanceReason || "Try another course material, or add your own learning objectives.",
+        });
       }
 
       // Clean and validate objectives

@@ -22,6 +22,7 @@ export function useQuestionBankData(courseId) {
           questionType: normalizeQuestionTypeKey(question.questionType || question.type),
           calculationFormula: question.calculationFormula,
           flagged: question.flagStatus || false,
+          flagReason: question.flagReason || "",
           published: question.published || false,
           status: question.status || "Draft",
           quizId: question.quizId ? toStringId(question.quizId) : null,

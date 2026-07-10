@@ -107,6 +107,26 @@ test.describe('Instructor question bank (seeded course)', () => {
     await firstTitleCell.getByRole('button', { name: /Flag$/ }).click();
     await expect(page.getByText('Question flagged successfully')).toBeVisible();
 
+    // A flagged question exposes an optional reason field with an explicit save
+    // action, so instructors do not need to click outside the field to persist it.
+    const reasonPlaceholder =
+      'Add a note explaining why this question is flagged…';
+    const reasonBox = firstTitleCell.getByPlaceholder(reasonPlaceholder);
+    await expect(reasonBox).toBeVisible();
+    await reasonBox.fill('Answer key looks wrong');
+    await firstTitleCell
+      .getByRole('button', {
+        name: `Save flag reason for ${SEED.QUESTION_TITLES[0]}`,
+      })
+      .click();
+    await expect(page.getByText('Flag reason saved')).toBeVisible();
+
+    // The saved reason survives a reload.
+    await page.reload();
+    await expect(page.getByPlaceholder(reasonPlaceholder)).toHaveValue(
+      'Answer key looks wrong'
+    );
+
     // The flagged-only filter keeps just the flagged question.
     await page.getByRole('checkbox', { name: 'Show flagged only' }).check();
     await expect(firstTitleCell).toBeVisible();

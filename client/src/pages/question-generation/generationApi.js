@@ -171,6 +171,8 @@ export function convertQuestionsToGroups(questions) {
         loCode: question.loCode || question.text,
         granularObjectiveId: question.granularObjectiveId,
         explanation: question.explanation,
+        flagStatus: question.flagStatus || false,
+        flagReason: question.flagReason || "",
       };
 
       let card;
@@ -330,6 +332,7 @@ export function buildQuestionPayload(question) {
     by: question.createdBy || "system",
     status: question.status || "Draft",
     flagStatus: question.flagStatus || false,
+    flagReason: question.flagStatus ? question.flagReason || "" : "",
   };
   if (qt === QUESTION_TYPES.CALCULATION) {
     payload.options = {};

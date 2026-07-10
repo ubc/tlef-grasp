@@ -27,6 +27,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [generated, setGenerated] = useState(null); // [{ name, granularObjectives }]
   const [selectedIndices, setSelectedIndices] = useState(new Set());
+  const [generationMessage, setGenerationMessage] = useState("");
 
   const { materials, isPending: materialsPending } = useCourseMaterials(course?.id);
 
@@ -47,6 +48,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
     }
     setGenerating(true);
     setGenerated(null);
+    setGenerationMessage("");
     try {
       const material = materials.find((m) => m.sourceId === selectedMaterial);
       const data = await api.post("/api/rag-llm/generate-learning-objectives", {
@@ -64,7 +66,9 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       showToast(`Generated ${data.objectives.length} learning objective(s)`, "success");
     } catch (error) {
       console.error("Error generating learning objectives:", error);
-      showToast(error.message || "Failed to generate learning objectives", "error");
+      const message = error.message || "Failed to generate learning objectives";
+      setGenerationMessage(message);
+      showToast(message, "error");
     } finally {
       setGenerating(false);
     }
@@ -337,6 +341,19 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           <div className="flex items-center gap-3 text-sky-900">
             <i className="fas fa-spinner fa-spin text-sky-600" />
             <span className="font-medium">Generating learning objectives...</span>
+          </div>
+        </div>
+      )}
+
+      {generationMessage && !generating && (
+        <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4" role="alert">
+          <div className="flex items-start gap-3 text-amber-950">
+            <i className="fas fa-circle-info mt-0.5 text-amber-700" aria-hidden="true" />
+            <div>
+              <p className="font-semibold">No learning objectives were created</p>
+              <p className="mt-1 text-sm">{generationMessage}</p>
+              <p className="mt-2 text-sm">Try another material or add your own objectives above; we will preserve them.</p>
+            </div>
           </div>
         </div>
       )}
