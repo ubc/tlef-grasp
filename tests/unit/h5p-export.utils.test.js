@@ -169,3 +169,81 @@ describe('H5P markup safety', () => {
     expect(content.questions[0].params.questions[0]).toContain('*mitochondrion*');
   });
 });
+
+describe('question images', () => {
+  const FILE_ID = '665f1f77bcf86cd799439011';
+  const imageRef = (overrides = {}) => ({
+    fileId: FILE_ID,
+    filename: 'cell diagram.png',
+    mimeType: 'image/png',
+    size: 1234,
+    caption: 'A plant cell',
+    ...overrides,
+  });
+  // fileId -> { src, mimeType } for images actually bundled into the package.
+  const bundledMap = () =>
+    new Map([[FILE_ID, { src: `images/${FILE_ID}-cell_diagram.png`, mimeType: 'image/png' }]]);
+
+  test('attaches the bundled stem image as the question media', () => {
+    const { manifest, content } = buildH5PPackage(
+      'Quiz',
+      [{ ...mcQuestion, stemImages: [imageRef()] }],
+      bundledMap()
+    );
+
+    const media = content.questions[0].params.media;
+    expect(media.type.library).toBe('H5P.Image 1.1');
+    expect(media.type.params.file).toEqual({
+      path: `images/${FILE_ID}-cell_diagram.png`,
+      mimeType: 'image/png',
+    });
+    expect(media.type.params.alt).toBe('A plant cell');
+    expect(manifest.preloadedDependencies).toContainEqual(H5P_LIBRARIES.image);
+  });
+
+  test('attaches media to fill-in-the-blank and essay questions too', () => {
+    const { content } = buildH5PPackage(
+      'Quiz',
+      [
+        { ...fibQuestion, stemImages: [imageRef()] },
+        { ...openQuestion, stemImage: imageRef() }, // legacy single-image field
+      ],
+      bundledMap()
+    );
+
+    expect(content.questions[0].params.media.type.library).toBe('H5P.Image 1.1');
+    expect(content.questions[1].params.media.type.library).toBe('H5P.Image 1.1');
+  });
+
+  test('uses only the first bundled image — H5P media holds a single item', () => {
+    const otherId = '665f1f77bcf86cd799439022';
+    const map = bundledMap();
+    map.set(otherId, { src: `images/${otherId}-second.png`, mimeType: 'image/png' });
+
+    const { content } = buildH5PPackage(
+      'Quiz',
+      [{ ...mcQuestion, stemImages: [imageRef(), imageRef({ fileId: otherId, filename: 'second.png' })] }],
+      map
+    );
+
+    expect(content.questions[0].params.media.type.params.file.path).toContain(FILE_ID);
+  });
+
+  test('skips media and the Image dependency when the image was not bundled', () => {
+    const { manifest, content } = buildH5PPackage(
+      'Quiz',
+      [{ ...mcQuestion, stemImages: [imageRef()] }],
+      new Map() // e.g. the file was missing from GridFS
+    );
+
+    expect(content.questions[0].params.media).toBeUndefined();
+    expect(manifest.preloadedDependencies).not.toContainEqual(H5P_LIBRARIES.image);
+  });
+
+  test('questions without images are unchanged', () => {
+    const { manifest, content } = buildH5PPackage('Quiz', [mcQuestion], bundledMap());
+
+    expect(content.questions[0].params.media).toBeUndefined();
+    expect(manifest.preloadedDependencies).not.toContainEqual(H5P_LIBRARIES.image);
+  });
+});

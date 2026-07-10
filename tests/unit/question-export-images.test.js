@@ -190,3 +190,90 @@ describe("QTI export with question images", () => {
     expect(assessmentXml).toContain("Which organelle is shown?");
   });
 });
+
+async function exportH5P(questions) {
+  const response = await request(buildApp())
+    .post("/question/export?format=h5p")
+    .send({ course: "BIOL 200", questions, quizName: "Midterm" });
+  const archive = archiver.instances[archiver.instances.length - 1];
+  const entry = (name) => archive.appended.find((e) => e.name === name);
+  return {
+    response,
+    archive,
+    manifest: entry("h5p.json") ? JSON.parse(entry("h5p.json").content) : null,
+    content: entry("content/content.json")
+      ? JSON.parse(entry("content/content.json").content)
+      : null,
+    imageEntries: (archive?.appended || []).filter((e) =>
+      e.name.startsWith("content/images/")
+    ),
+  };
+}
+
+describe("H5P export with question images", () => {
+  let consoleErrorSpy;
+  let consoleWarnSpy;
+
+  beforeAll(() => {
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    consoleErrorSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    archiver.instances.length = 0;
+    downloadImageBuffer.mockResolvedValue(IMAGE_BYTES);
+  });
+
+  it("bundles the image under content/images and wires it into the media block", async () => {
+    const { response, manifest, content, imageEntries } = await exportH5P([withImage()]);
+    const expectedName = `${FILE_ID}-cell_diagram.png`;
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/zip");
+    expect(downloadImageBuffer).toHaveBeenCalledWith(FILE_ID);
+
+    expect(imageEntries).toEqual([
+      expect.objectContaining({
+        name: `content/images/${expectedName}`,
+        content: IMAGE_BYTES,
+      }),
+    ]);
+    // content.json paths are relative to the content/ folder.
+    const media = content.questions[0].params.media;
+    expect(media.type.params.file.path).toBe(`images/${expectedName}`);
+    expect(media.type.params.alt).toBe("A plant cell");
+    expect(manifest.preloadedDependencies).toContainEqual({
+      machineName: "H5P.Image",
+      majorVersion: 1,
+      minorVersion: 1,
+    });
+  });
+
+  it("falls back to a text-only package when the image is missing from storage", async () => {
+    downloadImageBuffer.mockResolvedValue(null);
+
+    const { response, manifest, content, imageEntries } = await exportH5P([withImage()]);
+
+    expect(response.status).toBe(200);
+    expect(imageEntries).toEqual([]);
+    expect(content.questions[0].params.media).toBeUndefined();
+    expect(manifest.preloadedDependencies).not.toContainEqual(
+      expect.objectContaining({ machineName: "H5P.Image" })
+    );
+    expect(content.questions[0].params.question).toContain("Which organelle is shown?");
+  });
+
+  it("exports imageless quizzes without touching image storage", async () => {
+    const { response, imageEntries, content } = await exportH5P([mcqQuestion()]);
+
+    expect(response.status).toBe(200);
+    expect(downloadImageBuffer).not.toHaveBeenCalled();
+    expect(imageEntries).toEqual([]);
+    expect(content.questions[0].params.media).toBeUndefined();
+  });
+});

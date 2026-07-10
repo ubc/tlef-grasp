@@ -48,6 +48,13 @@ function getCorrectAnswerIndex(q) {
   return 0;
 }
 
+// Instructor-attached stem images as an array (handles the legacy
+// single-image field).
+function stemImagesOf(q) {
+  if (Array.isArray(q.stemImages)) return q.stemImages;
+  return q.stemImage ? [q.stemImage] : [];
+}
+
 // Acceptable answers for fill-in-the-blank, canonical answer first, de-duplicated.
 function getAcceptableAnswers(q) {
   const answers = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
@@ -67,4 +74,5 @@ module.exports = {
   getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
+  stemImagesOf,
 };

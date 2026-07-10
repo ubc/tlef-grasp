@@ -14,6 +14,7 @@ const {
   getOptionText,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
+  stemImagesOf,
 } = require('../utils/question-export-helpers');
 const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
 
@@ -340,7 +341,7 @@ const exportQuestionsHandler = async (req, res) => {
             error: "This quiz only contains calculation questions, which have no H5P equivalent. Use CSV or JSON instead."
           });
         }
-        return createH5PZipExport(res, course, h5pQuestions, quizName);
+        return await createH5PZipExport(res, course, h5pQuestions, quizName);
       }
       case 'qti':
       default: {
@@ -466,11 +467,6 @@ function generateCanvasId(prefix = 'g') {
  * Collect every instructor-attached image ref ({ fileId, filename, ... })
  * across the exported questions, de-duplicated by fileId.
  */
-function stemImagesOf(q) {
-  if (Array.isArray(q.stemImages)) return q.stemImages;
-  return q.stemImage ? [q.stemImage] : [];
-}
-
 function collectExportImageRefs(questions) {
   const refs = new Map();
   const add = (ref) => {
@@ -486,15 +482,14 @@ function collectExportImageRefs(questions) {
 
 /**
  * Download the export's images from GridFS and lay out their ZIP placement.
- * Canvas imports files under web_resources/ into course Files, and
- * $IMS-CC-FILEBASE$ in item HTML resolves to that root.
+ * `zipDir` is the archive folder the files land in; `imageSrc(name)` is the
+ * reference stored in the exported document for a bundled file.
  *
- * Returns { imageMap, imageFiles } where imageMap: fileId -> { src } (HTML
- * img src) and imageFiles: [{ buffer, zipPath, href }] for the archive and
- * manifest. Missing GridFS files are skipped so one lost image never fails
- * the whole export.
+ * Returns { imageMap, imageFiles } where imageMap: fileId -> { src, mimeType }
+ * and imageFiles: [{ buffer, zipPath, href }] for the archive and manifest.
+ * Missing GridFS files are skipped so one lost image never fails the export.
  */
-async function prepareExportImages(questions) {
+async function prepareExportImages(questions, { zipDir, imageSrc }) {
   const refs = collectExportImageRefs(questions);
   const imageMap = new Map();
   const imageFiles = [];
@@ -516,15 +511,34 @@ async function prepareExportImages(questions) {
     const name = `${fileId}-${safeName}`;
     imageFiles.push({
       buffer,
-      zipPath: `web_resources/grasp/${name}`,
-      href: `web_resources/grasp/${name}`,
+      zipPath: `${zipDir}/${name}`,
+      href: `${zipDir}/${name}`,
     });
     imageMap.set(fileId, {
-      src: `$IMS-CC-FILEBASE$/grasp/${encodeURIComponent(name)}`,
+      src: imageSrc(name),
+      mimeType: String(ref.mimeType || ''),
     });
   }
 
   return { imageMap, imageFiles };
+}
+
+// Canvas imports files under web_resources/ into course Files, and
+// $IMS-CC-FILEBASE$ in item HTML resolves to that root.
+function prepareQTIExportImages(questions) {
+  return prepareExportImages(questions, {
+    zipDir: 'web_resources/grasp',
+    imageSrc: (name) => `$IMS-CC-FILEBASE$/grasp/${encodeURIComponent(name)}`,
+  });
+}
+
+// H5P media files live under content/; content.json references them with
+// paths relative to that folder (filenames are already URL-safe).
+function prepareH5PExportImages(questions) {
+  return prepareExportImages(questions, {
+    zipDir: 'content/images',
+    imageSrc: (name) => `images/${name}`,
+  });
 }
 
 /**
@@ -533,10 +547,14 @@ async function prepareExportImages(questions) {
  * Content-only package — the target host must already have the referenced H5P
  * libraries installed.
  */
-function createH5PZipExport(res, course, questions, quizName) {
+async function createH5PZipExport(res, course, questions, quizName) {
   const title = quizName || course || 'Quiz';
   const safeName = String(title).replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase() || 'quiz';
   const filename = `${safeName}-${Date.now()}.h5p`;
+
+  // Fetch instructor-attached images from GridFS before any headers are
+  // sent, so failures here still return a clean JSON error.
+  const { imageMap, imageFiles } = await prepareH5PExportImages(questions);
 
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -550,9 +568,12 @@ function createH5PZipExport(res, course, questions, quizName) {
   });
   archive.pipe(res);
 
-  const { manifest, content } = buildH5PPackage(title, questions);
+  const { manifest, content } = buildH5PPackage(title, questions, imageMap);
   archive.append(JSON.stringify(manifest, null, 2), { name: 'h5p.json' });
   archive.append(JSON.stringify(content, null, 2), { name: 'content/content.json' });
+  for (const imageFile of imageFiles) {
+    archive.append(imageFile.buffer, { name: imageFile.zipPath });
+  }
   archive.finalize();
 }
 
@@ -568,7 +589,7 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
 
   // Fetch instructor-attached images from GridFS before any headers are
   // sent, so failures here still return a clean JSON error.
-  const { imageMap, imageFiles } = await prepareExportImages(questions);
+  const { imageMap, imageFiles } = await prepareQTIExportImages(questions);
 
   // Set headers for ZIP file
   res.setHeader('Content-Type', 'application/zip');

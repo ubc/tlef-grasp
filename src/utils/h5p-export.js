@@ -7,6 +7,7 @@ const {
   getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
+  stemImagesOf,
 } = require('./question-export-helpers');
 
 // H5P export: builds the two JSON documents of a .h5p package (a ZIP with
@@ -28,6 +29,7 @@ const H5P_LIBRARIES = {
   multiChoice: { machineName: 'H5P.MultiChoice', majorVersion: 1, minorVersion: 16 },
   blanks: { machineName: 'H5P.Blanks', majorVersion: 1, minorVersion: 14 },
   essay: { machineName: 'H5P.Essay', majorVersion: 1, minorVersion: 5 },
+  image: { machineName: 'H5P.Image', majorVersion: 1, minorVersion: 1 },
 };
 
 function libraryString(lib) {
@@ -71,19 +73,58 @@ function subContent(lib, params, title, contentType) {
   };
 }
 
+// A question's media block: the first bundled stem image, shown above the
+// task as an embedded H5P.Image. H5P question types hold a single media item,
+// so any additional attached images are not exported. `imageMap` maps a
+// bundled fileId to { src, mimeType } (src is relative to content/).
+function buildQuestionMedia(q, imageMap) {
+  const ref = stemImagesOf(q).find(
+    (r) => r && r.fileId && imageMap.get(String(r.fileId))
+  );
+  if (!ref) return null;
+
+  const entry = imageMap.get(String(ref.fileId));
+  const alt = String(ref.caption || ref.alt || '').trim();
+  return {
+    type: {
+      library: libraryString(H5P_LIBRARIES.image),
+      params: {
+        contentName: 'Image',
+        file: {
+          path: entry.src,
+          mimeType: entry.mimeType || String(ref.mimeType || ''),
+        },
+        alt,
+        // Images without a caption still convey question content, so they are
+        // never marked decorative; screen readers at least announce the file.
+        decorative: false,
+      },
+      subContentId: crypto.randomUUID(),
+      metadata: {
+        contentType: 'Image',
+        license: 'U',
+        title: (alt || 'Question image').slice(0, 80),
+      },
+    },
+    disableImageZooming: false,
+  };
+}
+
 // The whole package: { manifest, content } for h5p.json and content/content.json.
-function buildH5PPackage(quizName, questions) {
+function buildH5PPackage(quizName, questions, imageMap = new Map()) {
   const title = String(quizName || 'Quiz').trim() || 'Quiz';
   const exportable = filterH5PExportableQuestions(questions);
   const hasEssay = exportable.some((q) => isType(q, QUESTION_TYPES.OPEN_ENDED));
+  const hasImage = exportable.some((q) => buildQuestionMedia(q, imageMap) !== null);
 
-  // Essay is only declared as a dependency when actually used, so quizzes
-  // without open-ended questions import even on hubs lacking H5P.Essay.
+  // Essay and Image are only declared as dependencies when actually used, so
+  // quizzes without them import even on hubs lacking those libraries.
   const dependencies = [
     H5P_LIBRARIES.questionSet,
     H5P_LIBRARIES.multiChoice,
     H5P_LIBRARIES.blanks,
     ...(hasEssay ? [H5P_LIBRARIES.essay] : []),
+    ...(hasImage ? [H5P_LIBRARIES.image] : []),
   ];
 
   return {
@@ -100,12 +141,12 @@ function buildH5PPackage(quizName, questions) {
         minorVersion,
       })),
     },
-    content: buildQuestionSetContent(title, exportable),
+    content: buildQuestionSetContent(title, exportable, imageMap),
   };
 }
 
 // H5P.QuestionSet holding every exportable question.
-function buildQuestionSetContent(title, questions) {
+function buildQuestionSetContent(title, questions, imageMap) {
   return {
     introPage: {
       showIntroPage: true,
@@ -118,13 +159,15 @@ function buildQuestionSetContent(title, questions) {
     disableBackwardsNavigation: false,
     randomQuestions: false,
     questions: questions.map((q) => {
+      const media = buildQuestionMedia(q, imageMap);
+      const withMedia = (params) => (media ? { ...params, media } : params);
       if (isType(q, QUESTION_TYPES.FILL_IN_THE_BLANK)) {
-        return subContent(H5P_LIBRARIES.blanks, buildBlanksParams(q), getQuestionText(q), 'Fill in the Blanks');
+        return subContent(H5P_LIBRARIES.blanks, withMedia(buildBlanksParams(q)), getQuestionText(q), 'Fill in the Blanks');
       }
       if (isType(q, QUESTION_TYPES.OPEN_ENDED)) {
-        return subContent(H5P_LIBRARIES.essay, buildEssayParams(q), getQuestionText(q), 'Essay');
+        return subContent(H5P_LIBRARIES.essay, withMedia(buildEssayParams(q)), getQuestionText(q), 'Essay');
       }
-      return subContent(H5P_LIBRARIES.multiChoice, buildMultiChoiceParams(q), getQuestionText(q), 'Multiple Choice');
+      return subContent(H5P_LIBRARIES.multiChoice, withMedia(buildMultiChoiceParams(q)), getQuestionText(q), 'Multiple Choice');
     }),
     endGame: {
       showResultPage: true,
