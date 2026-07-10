@@ -17,7 +17,8 @@ export async function downloadQuizExport({ courseId, quiz, format }) {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  const extension = format === "csv" ? "csv" : format === "json" ? "json" : "zip";
+  const extension =
+    format === "csv" ? "csv" : format === "json" ? "json" : format === "h5p" ? "h5p" : "zip";
   link.download = `quiz-${quiz.name.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}.${extension}`;
   document.body.appendChild(link);
   link.click();

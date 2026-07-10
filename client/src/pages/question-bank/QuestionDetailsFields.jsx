@@ -18,10 +18,11 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
   return (
     <div className="space-y-4">
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qdf-title" className={labelClass}>
               Question title <span className="font-normal text-muted">(short label)</span>
             </label>
             <input
+              id="qdf-title"
               type="text"
               value={form.title}
               onChange={set("title")}
@@ -30,12 +31,13 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
             />
           </div>
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qdf-stem" className={labelClass}>
               {questionType === QUESTION_TYPES.CALCULATION
                 ? "Question template"
                 : "Question stem"}
             </label>
             <textarea
+              id="qdf-stem"
               rows={4}
               value={form.stem}
               onChange={set("stem")}
@@ -76,6 +78,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                       <input
                         type="radio"
                         name="wiz-correct-answer"
+                        aria-label={`Mark option ${option.id} as the correct answer`}
                         checked={form.correctAnswer === option.id}
                         onChange={() =>
                           setForm((prev) => ({ ...prev, correctAnswer: option.id }))
@@ -89,6 +92,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                     <div className="flex-1 space-y-1.5">
                       <input
                         type="text"
+                        aria-label={`Option ${option.id} text`}
                         value={option.text}
                         placeholder="Enter option text..."
                         onChange={(event) =>
@@ -102,6 +106,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                       />
                       <input
                         type="text"
+                        aria-label={`Option ${option.id} feedback`}
                         value={option.feedback}
                         placeholder="Feedback shown after submission (optional)..."
                         onChange={(event) =>
@@ -126,8 +131,11 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
           {questionType === QUESTION_TYPES.FILL_IN_THE_BLANK && (
             <>
               <div>
-                <label className={labelClass}>Correct answer</label>
+                <label htmlFor="qdf-fib-correct" className={labelClass}>
+                  Correct answer
+                </label>
                 <input
+                  id="qdf-fib-correct"
                   type="text"
                   value={form.fibCorrect}
                   onChange={set("fibCorrect")}
@@ -136,11 +144,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 />
               </div>
               <div>
-                <label className={labelClass}>
+                <label htmlFor="qdf-fib-acceptable" className={labelClass}>
                   Acceptable answers{" "}
                   <span className="font-normal text-muted">(one per line; optional)</span>
                 </label>
                 <textarea
+                  id="qdf-fib-acceptable"
                   rows={3}
                   value={form.fibAcceptable}
                   onChange={set("fibAcceptable")}
@@ -182,8 +191,11 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
               </div>
 
               <div>
-                <label className={labelClass}>Answer formula</label>
+                <label htmlFor="qdf-calc-formula" className={labelClass}>
+                  Answer formula
+                </label>
                 <input
+                  id="qdf-calc-formula"
                   type="text"
                   value={form.calcFormula}
                   onChange={set("calcFormula")}
@@ -255,6 +267,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                         className={`${inputClass} w-20`}
                       />
                       <select
+                        aria-label={`Variable ${index + 1} value type`}
                         value={variable.type}
                         onChange={(event) =>
                           setForm((prev) => {
@@ -310,8 +323,11 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
 
               <div className="flex flex-wrap gap-4">
                 <div className="min-w-36 flex-1">
-                  <label className={labelClass}>Answer decimal places</label>
+                  <label htmlFor="qdf-calc-decimals" className={labelClass}>
+                    Answer decimal places
+                  </label>
                   <input
+                    id="qdf-calc-decimals"
                     type="number"
                     min={0}
                     max={12}
@@ -324,10 +340,11 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                   </p>
                 </div>
                 <div className="min-w-36 flex-1">
-                  <label className={labelClass}>
+                  <label htmlFor="qdf-calc-tolerance" className={labelClass}>
                     Tolerance % <span className="font-normal text-muted">(optional)</span>
                   </label>
                   <input
+                    id="qdf-calc-tolerance"
                     type="number"
                     min={0}
                     max={100}
@@ -348,11 +365,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
           {questionType === QUESTION_TYPES.OPEN_ENDED && (
             <>
               <div>
-                <label className={labelClass}>
+                <label htmlFor="qdf-open-sample" className={labelClass}>
                   Sample answer{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
                 <textarea
+                  id="qdf-open-sample"
                   rows={5}
                   value={form.openSample}
                   onChange={set("openSample")}
@@ -361,11 +379,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 />
               </div>
               <div>
-                <label className={labelClass}>
+                <label htmlFor="qdf-open-criteria" className={labelClass}>
                   Grading criteria{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
                 <textarea
+                  id="qdf-open-criteria"
                   rows={5}
                   value={form.openCriteria}
                   onChange={set("openCriteria")}

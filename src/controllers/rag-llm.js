@@ -15,6 +15,7 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
+const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
 const settingsService = require('../services/settings');
 const QuestionFactory = require('../models/questions/QuestionFactory');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
@@ -280,7 +281,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds, count } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -376,11 +377,14 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // Determine question type for each bloom level using course settings
       const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
       const targetCount = parseInt(count) || bloomLevels.length || 1;
-      const questionTypeForIndex = (i) => {
-        const bl = bloomLevels[i % bloomLevels.length] || 'Understand';
-        const prefs = bloomTypePrefs[bl] || [QUESTION_TYPES.MULTIPLE_CHOICE];
-        return prefs[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
-      };
+      // When the caller pins a type (Question Bank wizard), honour it for every
+      // question; otherwise fall back to the course's Bloom→type preferences.
+      const questionTypeForIndex = (i) =>
+        resolveGenerationQuestionType({
+          requestedType: requestedQuestionType,
+          bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
+          bloomTypePreferences: bloomTypePrefs,
+        });
 
       // Build the first-turn prompt (includes full RAG context for prompt caching)
       const buildFirstPrompt = (bloomLevel, questionType) => {

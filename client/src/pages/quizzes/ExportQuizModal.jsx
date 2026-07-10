@@ -2,6 +2,7 @@ import Modal from "../../components/ui/Modal";
 
 const FORMATS = [
   { format: "qti", icon: "fa-file-archive", label: "Canvas (QTI)", note: "ZIP format for LMS" },
+  { format: "h5p", icon: "fa-cubes", label: "H5P", note: "Interactive quiz" },
   { format: "csv", icon: "fa-file-csv", label: "CSV", note: "Excel / Sheets" },
   { format: "json", icon: "fa-file-code", label: "JSON", note: "Raw Data" },
 ];
@@ -15,7 +16,7 @@ export default function ExportQuizModal({ quiz, onClose, onExport }) {
         Select a format to download your quiz questions.
       </p>
       <p className="mb-3 text-sm font-semibold text-ink">Select Format</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {FORMATS.map((option) => (
           <button
             key={option.format}

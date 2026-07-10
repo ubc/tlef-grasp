@@ -109,7 +109,8 @@ describe('gradeAttempt', () => {
       quizId: 'quiz-1',
       questionId: 'fib-question-1',
       questionType: { $in: ['open-ended', 'fill-in-the-blank'] },
-    });
+      isFirstAttempt: { $ne: false },
+    }, { sort: { createdAt: -1 } });
     expect(attemptCollection.updateOne).toHaveBeenCalledWith(
       { _id: 'attempt-1' },
       { $set: { isCorrect: false, gradedAt: expect.any(Date) } }
