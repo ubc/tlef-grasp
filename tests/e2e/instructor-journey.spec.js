@@ -95,9 +95,8 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await navLink('Course Materials').click();
     await expect(page).toHaveURL('/course-materials');
 
-    // The Text quick-add tile opens the "Add Text Content" modal. Its
-    // accessible name is icon-glyph + "Text", so exact matching would miss it;
-    // no other button on the page contains "Text".
+    // The current upload flow opens a modal first, then exposes the Text tile.
+    await page.getByRole('button', { name: 'Upload Materials' }).click();
     await page.getByRole('button', { name: 'Text' }).click();
     await expect(
       page.getByRole('heading', { name: 'Add Text Content' })
@@ -167,6 +166,7 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
 
   test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {
     await navLink('Course Materials').click();
+    await page.getByRole('button', { name: 'Upload Materials' }).click();
     await page.getByRole('button', { name: 'Text' }).click();
     await page.getByPlaceholder('Enter document title...').fill(IRRELEVANT_MATERIAL_TITLE);
     await page.getByPlaceholder('Paste your text content here...').fill('[E2E_IRRELEVANT_MATERIAL]');

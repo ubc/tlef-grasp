@@ -82,7 +82,9 @@ test.describe('Accessibility: authenticated student pages', () => {
 
     const progress = page.getByRole('region');
     await expect(progress.getByText('Student preview:')).toBeVisible();
-    await expect(progress.getByRole('link', { name: /find quizzes|complete a quiz|view achievements/i })).toBeVisible();
+    await expect(
+      progress.locator('ol').getByRole('link', { name: 'Find quizzes', exact: true })
+    ).toBeVisible();
     await expectNoA11yViolations(page, { include: '[aria-labelledby="learning-path-heading"]' });
   });
 });

@@ -108,10 +108,10 @@ test.describe('Accessibility: authenticated instructor pages', () => {
 
     const path = page.getByRole('region');
     await expect(path.getByRole('link', { name: /continue:|manage quizzes/i })).toBeVisible();
-    await expect(path.getByRole('link', { name: 'Upload' })).toBeVisible();
+    await expect(path.getByRole('link', { name: 'Upload', exact: true })).toBeVisible();
     await expect(path.getByRole('link', { name: 'Publish' })).toBeVisible();
 
-    await path.getByRole('link', { name: 'Upload' }).focus();
+    await path.getByRole('link', { name: 'Upload', exact: true }).focus();
     await page.keyboard.press('Tab');
     await expect(path.getByRole('link', { name: 'Create objectives' })).toBeFocused();
     await expectNoA11yViolations(page, { include: '[aria-labelledby="course-path-heading"]' });
