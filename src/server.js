@@ -20,6 +20,7 @@ const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
+const profileRoutes = require("./routes/profile");
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
@@ -159,6 +160,9 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
     });
   }
 });
+
+// Profile updates - all authenticated users may update only their own profile.
+app.use("/api/profile", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), profileRoutes);
 
 // SPA fallback: serve the React app for any non-API GET request
 app.use((req, res, next) => {
