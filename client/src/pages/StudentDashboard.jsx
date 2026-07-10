@@ -2,39 +2,10 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { useStudentCourses } from "../hooks/useCourses";
+import { useMyCourses, useStudentCourses } from "../hooks/useCourses";
 import { useStudentQuizList } from "../hooks/useStudentQuizzes";
 import { useMyAchievements } from "../hooks/useAchievements";
 import { useAppStore } from "../stores/appStore";
-
-function StepTip({ icon = "fa-lightbulb", children }) {
-  return (
-    <div className="mt-3 flex items-start gap-2 rounded-lg bg-primary/5 px-4 py-3 text-sm text-ink">
-      <i className={`fas ${icon} mt-0.5 text-primary`} />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-function InstructionStep({ number, title, children, info = false }) {
-  return (
-    <div
-      className={`flex gap-4 rounded-xl border p-5 ${
-        info ? "border-primary/30 bg-primary/5" : "border-gray-100 bg-white"
-      }`}
-    >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary font-bold text-white">
-        {number}
-      </div>
-      <div className="min-w-0 flex-1">
-        <h4 className="mb-2 text-base font-semibold text-ink">{title}</h4>
-        <div className="space-y-2 text-sm leading-relaxed text-gray-600 [&_a]:text-primary [&_a]:underline-offset-2 hover:[&_a]:underline [&_strong]:text-ink">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function NoCourseState({ greeting, dateLabel }) {
   return (
@@ -61,13 +32,38 @@ function NoCourseState({ greeting, dateLabel }) {
   );
 }
 
+function StudentGuide() {
+  return (
+    <details className="rounded-2xl bg-white shadow-sm">
+      <summary className="cursor-pointer list-none px-6 py-5 font-semibold text-ink marker:hidden">
+        <span className="flex items-center justify-between gap-4">
+          <span><i className="fas fa-circle-question mr-2 text-primary" aria-hidden="true" />How GRASP works</span>
+          <i className="fas fa-chevron-down text-sm text-muted" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="border-t border-gray-100 px-6 py-5 text-sm leading-relaxed text-gray-600">
+        <p className="mb-5">Use this guide whenever you need a refresher on learning with GRASP.</p>
+        <div className="space-y-5">
+          <div><h4 className="font-semibold text-ink">1. <Link to="/quiz">Take practice quizzes</Link></h4><p>Use instructor-created quizzes to test your understanding of course materials. You can take quizzes again to practise and improve.</p></div>
+          <div><h4 className="font-semibold text-ink">2. <Link to="/quiz">Review your answers</Link></h4><p>After a quiz, review which answers were correct, read feedback, and identify concepts to revisit.</p></div>
+          <div><h4 className="font-semibold text-ink">3. <Link to="/achievements">Track your progress</Link></h4><p>See your quiz completion history, progress over time, and milestones you have earned.</p></div>
+          <div className="rounded-lg bg-primary/5 p-4"><h4 className="font-semibold text-ink">Tips for success</h4><p>Practise regularly, retake quizzes when helpful, review course materials after difficult questions, and ask your instructor when you need clarification.</p></div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default function StudentDashboard() {
-  const { user } = useCurrentUser();
-  const { selectedCourse, setSelectedCourse } = useAppStore();
+  const { user, isStudent } = useCurrentUser();
+  const { selectedCourse, setSelectedCourse, currentRole } = useAppStore();
 
   // Always verify course access from the API so removed students lose access
   // immediately (mirrors legacy checkCourseAccess on this page).
-  const coursesQuery = useStudentCourses();
+  const studentCoursesQuery = useStudentCourses();
+  const instructorCoursesQuery = useMyCourses();
+  const instructorPreview = !isStudent && currentRole === "student";
+  const coursesQuery = instructorPreview ? instructorCoursesQuery : studentCoursesQuery;
   const courses = coursesQuery.courses;
   const hasCourse = courses.length > 0;
 
@@ -99,6 +95,36 @@ export default function StudentDashboard() {
   const completedCount = achievementsQuery.achievements.filter(
     (achievement) => achievement.type === "quiz_completed"
   ).length;
+  const progressLoading = quizzesQuery.isPending || achievementsQuery.isPending;
+  const learningSteps = [
+    {
+      title: "Find quizzes",
+      description: quizCount > 0 ? `${quizCount === 1 ? "1 quiz" : `${quizCount} quizzes`} available in this course.` : "Your instructor has not published a quiz yet.",
+      to: "/quiz",
+      icon: "fa-list-check",
+      complete: quizCount > 0,
+      status: quizCount > 0 ? "Ready" : "Waiting",
+    },
+    {
+      title: "Complete a quiz",
+      description: completedCount > 0 ? `${completedCount === 1 ? "1 quiz" : `${completedCount} quizzes`} completed.` : "Take an available quiz to begin tracking progress.",
+      to: "/quiz",
+      icon: "fa-circle-check",
+      complete: completedCount > 0,
+      status: completedCount > 0 ? "Completed" : "Not started",
+    },
+    {
+      title: "View achievements",
+      description: "Review your completed quizzes and earned milestones.",
+      to: "/achievements",
+      icon: "fa-trophy",
+      complete: completedCount > 0,
+      status: completedCount > 0 ? "Unlocked" : "Not started",
+    },
+  ];
+  const nextStep = learningSteps.find((step) => !step.complete) || learningSteps[2];
+  const completedSteps = learningSteps.filter((step) => step.complete).length;
+  const pathHeading = progressLoading ? "Learning progress" : completedCount > 0 ? "Keep learning" : quizCount > 0 ? "Ready to practise" : "Waiting for your first quiz";
 
   const greeting = user?.displayName ? `Hello, ${user.displayName}` : "Hello, Student";
   const dateLabel = new Date().toLocaleDateString("en-US", {
@@ -149,94 +175,28 @@ export default function StudentDashboard() {
           </div>
         </section>
 
-        <section>
-          <h3 className="mb-2 text-lg font-semibold text-ink">
-            Getting Started with GRASP
-          </h3>
-          <p className="mb-5 text-sm text-muted">
-            Welcome to GRASP! Here's how to get the most out of your learning
-            experience.
-          </p>
-
-          <div className="space-y-4">
-            <InstructionStep number="1" title={<Link to="/quiz">Take Practice Quizzes</Link>}>
-              <p>
-                Access quizzes created by your instructor to test your understanding of
-                course materials. Each quiz contains multiple-choice questions designed
-                to reinforce key concepts.
-              </p>
-              <StepTip>
-                Take quizzes multiple times to improve your understanding and track
-                your progress!
-              </StepTip>
-            </InstructionStep>
-
-            <InstructionStep number="2" title={<Link to="/quiz">Review Your Answers</Link>}>
-              <p>
-                After completing a quiz, review your answers to understand what you got
-                right and where you can improve. The system provides immediate feedback
-                on your responses.
-              </p>
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                <li>See which questions you answered correctly</li>
-                <li>Review explanations for each question</li>
-                <li>Identify areas that need more study</li>
-              </ul>
-            </InstructionStep>
-
-            <InstructionStep
-              number="3"
-              title={<Link to="/achievements">Track Your Progress</Link>}
-            >
-              <p>
-                Monitor your learning journey through the achievements system. Earn
-                badges and see your improvement over time as you complete more quizzes.
-              </p>
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                <li>View your quiz completion history</li>
-                <li>Track your scores across different topics</li>
-                <li>Earn achievements for milestones</li>
-              </ul>
-            </InstructionStep>
-
-            <InstructionStep
-              number={<i className="fas fa-star" />}
-              title="Tips for Success"
-              info
-            >
-              <ul className="space-y-1.5">
-                <li className="flex items-start gap-2">
-                  <i className="fas fa-clock mt-1 w-4 text-center text-primary" />
-                  <span>
-                    <strong>Practice regularly:</strong> Consistent practice helps
-                    reinforce learning
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <i className="fas fa-redo mt-1 w-4 text-center text-primary" />
-                  <span>
-                    <strong>Retake quizzes:</strong> Don't be afraid to retry quizzes to
-                    improve your score
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <i className="fas fa-book mt-1 w-4 text-center text-primary" />
-                  <span>
-                    <strong>Review materials:</strong> If you struggle with questions,
-                    review the related course content
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <i className="fas fa-comments mt-1 w-4 text-center text-primary" />
-                  <span>
-                    <strong>Ask questions:</strong> Reach out to your instructor if you
-                    need clarification
-                  </span>
-                </li>
-              </ul>
-            </InstructionStep>
+        <section aria-labelledby="learning-path-heading" className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 id="learning-path-heading" className="text-lg font-semibold text-ink">{pathHeading}</h3>
+              <p className="mt-1 text-sm text-muted">{progressLoading ? "Checking your progress in this course…" : `${completedSteps} of ${learningSteps.length} learning steps completed in this course.`}</p>
+            </div>
+            <Link to={nextStep.to} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">{nextStep.title}</Link>
           </div>
+          {instructorPreview && <p className="mt-4 rounded-lg bg-primary/5 px-4 py-3 text-sm text-ink"><strong>Student preview:</strong> this shows the student experience for the selected course. Your own quiz completions and achievements are not included.</p>}
+          <ol className="mt-6 grid gap-3 md:grid-cols-3">
+            {learningSteps.map((step, index) => (
+              <li key={step.title} className={`rounded-xl border p-4 ${step.complete ? "border-success/30 bg-success/5" : "border-gray-200"}`}>
+                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${step.complete ? "bg-success text-white" : "bg-primary/10 text-primary"}`}>{step.complete ? <i className="fas fa-check" aria-hidden="true" /> : index + 1}</span>
+                <i className={`fas ${step.icon} mt-4 block text-lg text-primary`} aria-hidden="true" />
+                <Link to={step.to} className="mt-2 block font-semibold text-ink underline-offset-2 hover:text-primary hover:underline">{step.title}</Link>
+                <p className="mt-1 text-sm leading-relaxed text-muted">{step.description}</p>
+                <p className={`mt-3 text-xs font-semibold ${step.complete ? "text-success" : "text-muted"}`}>{step.status}</p>
+              </li>
+            ))}
+          </ol>
         </section>
+        <StudentGuide />
       </div>
 
       {/* Right column */}

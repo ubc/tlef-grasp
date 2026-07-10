@@ -216,6 +216,9 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [editTarget, setEditTarget] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // Inline flag-reason drafts, keyed by question id and persisted on blur.
+  const [reasonDrafts, setReasonDrafts] = useState({});
+  const [savingReasonId, setSavingReasonId] = useState(null);
 
   // Staff cannot edit approved questions; faculty can edit everything
   const canEditQuestion = (question) =>
@@ -300,11 +303,49 @@ export default function QuestionsTab({ courseId, isFaculty }) {
 
   const toggleFlag = (question) => {
     const newFlag = !question.flagged;
+    // Unflagging clears the reason server-side; drop any local draft too.
+    if (!newFlag) {
+      setReasonDrafts((prev) => {
+        const next = { ...prev };
+        delete next[question.id];
+        return next;
+      });
+    }
     updateMutation.mutate({
       questionId: question.id,
       updates: { flagStatus: newFlag },
       successMessage: `Question ${newFlag ? "flagged" : "unflagged"} successfully`,
       errorMessage: "Failed to update question flag status",
+    });
+  };
+
+  const reasonValue = (question) =>
+    reasonDrafts[question.id] !== undefined
+      ? reasonDrafts[question.id]
+      : question.flagReason || "";
+
+  const setReasonDraft = (question, value) =>
+    setReasonDrafts((prev) => ({ ...prev, [question.id]: value }));
+
+  // Persist the reason on blur, only when it actually changed.
+  const saveReason = (question) => {
+    const draft = reasonDrafts[question.id];
+    if (draft === undefined) return;
+    const trimmed = draft.trim();
+    setReasonDrafts((prev) => {
+      const next = { ...prev };
+      delete next[question.id];
+      return next;
+    });
+    if (trimmed === (question.flagReason || "")) return;
+    setSavingReasonId(question.id);
+    updateMutation.mutate({
+      questionId: question.id,
+      updates: { flagReason: trimmed },
+      successMessage: trimmed ? "Flag reason saved" : "Flag reason cleared",
+      errorMessage: "Failed to save flag reason",
+    }, {
+      onSettled: () => setSavingReasonId(null),
     });
   };
 
@@ -612,6 +653,39 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                               </button>
                             ))}
                         </div>
+                        {question.flagged && (
+                          <div className="mt-2 max-w-md">
+                            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-danger">
+                              <i className="fas fa-flag text-[10px]" /> Flag reason
+                              <span className="font-normal text-muted">(optional)</span>
+                            </label>
+                            <div className="flex items-end gap-2">
+                              <textarea
+                                value={reasonValue(question)}
+                                onChange={(event) =>
+                                  setReasonDraft(question, event.target.value)
+                                }
+                                onBlur={() => saveReason(question)}
+                                rows={2}
+                                placeholder="Add a note explaining why this question is flagged…"
+                                className="min-w-0 flex-1 rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-xs text-ink placeholder:text-muted focus:border-danger focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                aria-label={`Save flag reason for ${question.title}`}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => saveReason(question)}
+                                disabled={
+                                  reasonDrafts[question.id] === undefined ||
+                                  savingReasonId === question.id
+                                }
+                                className="rounded-md bg-danger px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingReasonId === question.id ? "Saving…" : "Save"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className="border-b border-gray-100 px-4 py-3 text-sm text-muted">
                         {question.glo}

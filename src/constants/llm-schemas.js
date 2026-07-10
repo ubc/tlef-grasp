@@ -10,11 +10,16 @@
 
 const { BLOOM_LEVELS } = require("./app-constants");
 
-// Learning objectives: { objectives: [ { name, granularObjectives: [ { text, bloomTaxonomies } ] } ] }
+// Learning objectives: a relevance verdict plus { objectives: [ { name,
+// granularObjectives: [ { text, bloomTaxonomies } ] } ] }. The verdict makes
+// "there is no teachable content here" an explicit, schema-enforced answer
+// instead of inviting the model to invent plausible-sounding objectives.
 const OBJECTIVES_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    materialIsRelevant: { type: "boolean" },
+    relevanceReason: { type: "string" },
     objectives: {
       type: "array",
       items: {
@@ -42,7 +47,7 @@ const OBJECTIVES_SCHEMA = {
       },
     },
   },
-  required: ["objectives"],
+  required: ["materialIsRelevant", "relevanceReason", "objectives"],
 };
 
 // Image transcription/description for PDF visual content: { description }.

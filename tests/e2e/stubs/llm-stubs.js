@@ -94,6 +94,46 @@ function gradingStubFromPrompt(schema, prompt = '') {
 const structuredLlmStub = {
   generateStructured: async ({ schema, prompt }) => {
     const graded = gradingStubFromPrompt(schema, prompt);
+    // Objective generation needs two deterministic branches so browser tests
+    // can prove that unrelated uploads do not produce fabricated objectives.
+    if (schema?.properties?.materialIsRelevant) {
+      const irrelevant = prompt.includes('[E2E_IRRELEVANT_MATERIAL]');
+      const instructorObjectives = prompt.match(/User-Provided Objectives:\s*([\s\S]*?)\nCourse Materials Content:/)?.[1]
+        ?.split('\n')
+        .map((line) => line.replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean) || [];
+      if (instructorObjectives.length) {
+        return {
+          content: JSON.stringify({
+            materialIsRelevant: true,
+            relevanceReason: 'Instructor-provided objectives were preserved.',
+            objectives: instructorObjectives.map((text) => ({
+              name: text,
+              granularObjectives: [{ text, bloomTaxonomies: ['Understand'] }],
+            })),
+          }),
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+      }
+      if (irrelevant) {
+        return {
+          content: JSON.stringify({
+            materialIsRelevant: false,
+            relevanceReason: 'The material is marked as unrelated test content.',
+            objectives: [],
+          }),
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+      }
+      return {
+        content: JSON.stringify({
+          materialIsRelevant: true,
+          relevanceReason: 'The material contains course concepts.',
+          objectives: stubFromSchema(schema).objectives,
+        }),
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
     return {
       content: JSON.stringify(graded || stubFromSchema(schema)),
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },

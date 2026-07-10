@@ -75,6 +75,18 @@ test.describe('Accessibility: authenticated student pages', () => {
 
     await expectNoA11yViolations(page);
   });
+
+  test('instructor student preview keeps the selected course and labels the preview', async ({ page }) => {
+    await prepareStudentView(page);
+    await page.goto('/student-dashboard');
+
+    const progress = page.getByRole('region');
+    await expect(progress.getByText('Student preview:')).toBeVisible();
+    await expect(
+      progress.locator('ol').getByRole('link', { name: 'Find quizzes', exact: true })
+    ).toBeVisible();
+    await expectNoA11yViolations(page, { include: '[aria-labelledby="learning-path-heading"]' });
+  });
 });
 
 test.describe('Accessibility: seeded student quiz states', () => {

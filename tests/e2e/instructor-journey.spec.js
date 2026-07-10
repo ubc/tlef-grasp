@@ -22,6 +22,8 @@ const MATERIAL_BODY =
   'Competitive inhibitors raise the apparent Km while leaving Vmax unchanged. ' +
   'At saturating substrate the rate approaches Vmax.';
 const QUIZ_NAME = `Instructor Journey Quiz ${RUN}`;
+const IRRELEVANT_MATERIAL_TITLE = `Unrelated Upload ${RUN}`;
+const INSTRUCTOR_OBJECTIVE = `Explain the role of enzymes in catalysis ${RUN}`;
 
 test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () => {
   test.describe.configure({ mode: 'serial' });
@@ -89,14 +91,23 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   const navLink = (name) =>
     page.getByRole('navigation').getByRole('link', { name });
 
+  // Empty courses automatically open the upload modal; populated courses expose
+  // the header action instead. Both lead to the same Text upload tile.
+  const openTextUpload = async () => {
+    const textTile = page.getByRole('button', { name: 'Text' });
+    const openUpload = page.getByRole('button', { name: 'Upload Materials' });
+    await expect(textTile.or(openUpload)).toBeVisible();
+    if (!(await textTile.isVisible())) {
+      await openUpload.click();
+    }
+    await textTile.click();
+  };
+
   test('uploads a text material for the course', async () => {
     await navLink('Course Materials').click();
     await expect(page).toHaveURL('/course-materials');
 
-    // The Text quick-add tile opens the "Add Text Content" modal. Its
-    // accessible name is icon-glyph + "Text", so exact matching would miss it;
-    // no other button on the page contains "Text".
-    await page.getByRole('button', { name: 'Text' }).click();
+    await openTextUpload();
     await expect(
       page.getByRole('heading', { name: 'Add Text Content' })
     ).toBeVisible();
@@ -163,6 +174,30 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     ).toBeVisible();
   });
 
+  test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {
+    await navLink('Course Materials').click();
+    await openTextUpload();
+    await page.getByPlaceholder('Enter document title...').fill(IRRELEVANT_MATERIAL_TITLE);
+    await page.getByPlaceholder('Paste your text content here...').fill('[E2E_IRRELEVANT_MATERIAL]');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await navLink('Question Generation').click();
+    await page.getByRole('button', { name: 'Create Learning Objectives' }).click();
+    await page.getByRole('radio', { name: IRRELEVANT_MATERIAL_TITLE }).check();
+    await page.getByRole('button', { name: /Generate$/ }).click();
+
+    await expect(page.getByRole('alert')).toContainText('No learning objectives were created');
+    await expect(page.getByRole('button', { name: /Save Selected/ })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Add Objective' }).click();
+    await page.getByPlaceholder('Enter a learning objective...').fill(INSTRUCTOR_OBJECTIVE);
+    await page.getByRole('button', { name: /Generate$/ }).click();
+
+    await expect(page.getByText(INSTRUCTOR_OBJECTIVE, { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Save Selected/ })).toBeEnabled();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+  });
+
   test('deleting a granular here only detaches it from the page (#41)', async () => {
     // Regression for issue #41: the trash button beside a granular objective on
     // the question-generation page must remove it from THIS page only. Real
@@ -192,15 +227,32 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
       return counts;
     };
     const before = await granularCounts();
-    expect(Object.values(before).some((n) => n > 0)).toBe(true);
+    const [objectiveId, granularCount] = Object.entries(before).find(
+      ([, count]) => count > 1
+    ) || [];
+    expect(objectiveId, 'an objective with at least two granulars').toBeTruthy();
+
+    // Navigating away from Question Generation resets its in-memory selection.
+    // Re-add the persisted objective before testing the page-only removal.
+    const objectivesRes = await page.request.get(`/api/objective/?courseId=${courseId}`);
+    expect(objectivesRes.ok()).toBe(true);
+    const targetObjective = (await objectivesRes.json()).objectives.find(
+      (objective) => String(objective._id) === objectiveId
+    );
+    expect(targetObjective, 'persisted objective').toBeTruthy();
+    await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+    await page
+      .getByRole('button', { name: targetObjective.name, exact: true })
+      .click();
 
     // Delete the first granular row; the click also fires the objective save
     // (PUT), so wait for that round-trip before re-reading the DB.
     const deleteButtons = page.getByRole('button', {
       name: 'Delete granular objective from page',
     });
+    await expect(deleteButtons).toHaveCount(granularCount);
     const rowsBefore = await deleteButtons.count();
-    expect(rowsBefore).toBeGreaterThan(1); // keep ≥1 granular for the next steps
+    expect(rowsBefore).toBe(granularCount); // keep ≥1 granular for the next steps
     const [saveResponse] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().includes('/api/objective/') && r.request().method() === 'PUT'
@@ -345,5 +397,15 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // Publish it.
     await card.getByRole('button', { name: 'Publish' }).click();
     await expect(card.getByRole('button', { name: 'Unpublish' })).toBeVisible();
+  });
+
+  test('shows course-specific completion after publishing the quiz', async () => {
+    await navLink('Dashboard').click();
+    const path = page.getByRole('region', { name: 'Your course is ready' });
+    await expect(path.getByText('5 of 5 steps completed for this course.')).toBeVisible();
+    await expect(path.getByRole('link', { name: 'Manage quizzes' })).toBeVisible();
+    await expect(path.getByText('Completed', { exact: true })).toHaveCount(5);
+    await page.getByText('How GRASP works').click();
+    await expect(page.getByRole('link', { name: 'Upload course materials' })).toBeVisible();
   });
 });

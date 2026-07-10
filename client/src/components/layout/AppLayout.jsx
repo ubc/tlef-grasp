@@ -7,7 +7,6 @@ const PAGE_TITLES = {
   "/course-materials": "Course Materials",
   "/question-generation": "Question Generation",
   "/question-bank": "Question Bank",
-  "/question-review": "Question Review",
   "/quizzes": "Quizzes",
   "/quiz-scores": "Quiz Scores",
   "/question-flags": "Student Question Flags",

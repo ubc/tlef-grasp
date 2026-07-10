@@ -596,6 +596,24 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
         </div>
       )}
 
+      {/* Flag reason */}
+      {question.flagStatus && (
+        <div className="mt-4">
+          <label className="mb-1 flex items-center gap-1 text-xs font-medium text-red-600">
+            <i className="fas fa-flag text-[10px]" /> Flag reason
+            <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <textarea
+            value={question.flagReason || ""}
+            onChange={(event) => onChange({ flagReason: event.target.value })}
+            onBlur={onSaveDraft}
+            rows={2}
+            placeholder="Add a note explaining why this question is flagged…"
+            className="w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-red-400 focus:outline-none"
+          />
+        </div>
+      )}
+
       {/* Footer */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
         <div className="flex items-center gap-2">
@@ -633,9 +651,15 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
           <button
             type="button"
             onClick={() => {
-              onChange({ flagStatus: !question.flagStatus });
+              const nextFlag = !question.flagStatus;
+              // Unflagging discards any reason so it doesn't resurface on re-flag.
+              onChange(
+                nextFlag
+                  ? { flagStatus: true }
+                  : { flagStatus: false, flagReason: "" }
+              );
               showToast(
-                `Question ${!question.flagStatus ? "Flagged" : "Unflagged"}`,
+                `Question ${nextFlag ? "Flagged" : "Unflagged"}`,
                 "success"
               );
               onSaveDraft();

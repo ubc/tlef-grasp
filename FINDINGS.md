@@ -62,7 +62,7 @@
 - Added unauthenticated accessibility coverage for the public landing/login entry page and a protected-route redirect back to the login state.
 - Added keyboard focus coverage for the CWL sign-in link using an accessible role/name locator.
 - Added a separate GitHub Actions workflow for accessibility tests and a Playwright HTML report artifact.
-- Added authenticated instructor route scans for onboarding, Dashboard, Course Materials, Question Generation, Question Bank tabs, Question Review, Quizzes, Quiz Scores, My Sections, Users, and Settings.
+- Added authenticated instructor route scans for onboarding, Dashboard, Course Materials, Question Generation, Question Bank tabs, Quizzes, Quiz Scores, My Sections, Users, and Settings.
 - Added authenticated student-view route scans for Student Dashboard, Available Quizzes, Achievements, and the Quiz Summary error state.
 - Added a11y test data seeding for a minimal owned course when the SAML test user has no course, so course-gated page scans exercise the real app with real MongoDB state.
 - Added modal coverage for the Course Materials text-content dialog, including an Escape-close check and a scoped axe scan.

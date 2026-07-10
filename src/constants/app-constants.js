@@ -58,12 +58,13 @@ COURSE MATERIALS CONTENT:
 {ragContext}
 
 INSTRUCTIONS:
-1. Analyze the course materials and identify key topics, concepts, and learning outcomes.
-2. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
-3. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
-4. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-5. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
-6. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
+1. First decide whether the material contains enough course-related, teachable content to support learning objectives. If it does not (for example, it is a personal note, placeholder text, navigation, a receipt, or unrelated content), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives to satisfy the requested count.
+2. Only when materialIsRelevant is true, analyze the course materials and identify key topics, concepts, and learning outcomes.
+3. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
+4. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
+5. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
+6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
+7. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -95,7 +96,7 @@ IMPORTANT RULES:
 
 const OBJECTIVE_GENERATION_MANUAL_PROMPT = `Role: You are an expert Educational Content Designer specializing in curriculum alignment and Bloom’s Taxonomy.
 
-Task: Reorganize the user’s objectives into a meta/granular hierarchy, and fill in granular objectives only where a meta objective has none.
+Task: Reorganize the user’s objectives into a meta/granular hierarchy. The instructor’s objectives are authoritative, even if the selected material is sparse or unrelated.
 
 Input Data:
 Course Name: {courseName}
@@ -107,9 +108,10 @@ Strict Processing Rules:
 2. Hierarchy Mapping: Map all user-provided Granular objectives to the most relevant user-provided Meta objective.
 3. Orphan Policy: If a user-provided Granular objective does not fit any existing Meta objective, only then should you create a new Meta objective to house it.
 
-Generation Constraints (The "Gap-Fill" Rule):
-1. DO NOT generate new granular objectives for any Meta objective that already contains user-provided granular objectives.
-2. ONLY generate granular objectives if a Meta objective is "empty" (has no user-provided sub-objectives).
+Generation Constraints:
+1. Do not add, remove, replace, or broaden instructor-provided objectives. Use every supplied objective exactly once in the resulting hierarchy (apart from obvious grammar corrections).
+2. Do not create new objectives from the selected material. The material may inform hierarchy placement only.
+3. Set materialIsRelevant to true because the instructor has supplied the learning intent. Use relevanceReason to briefly state that the instructor-provided objectives were preserved.
 
 Syntax & Language:
 1. Action-Oriented:

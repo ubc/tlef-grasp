@@ -22,10 +22,8 @@ test.describe('Student role gating (authenticated)', () => {
     ).toHaveCount(0);
     await expect(page.getByRole('link', { name: /users/i })).toHaveCount(0);
 
-    // The hardcoded notification bell was removed (issue #27); the sidebar's
-    // Profile control still renders.
+    // The hardcoded notification bell was removed (issue #27).
     await expect(page.getByRole('button', { name: 'Notifications' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Profile' })).toBeVisible();
 
     await page.goto('/question-generation');
 

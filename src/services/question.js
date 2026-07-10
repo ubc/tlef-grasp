@@ -150,6 +150,9 @@ const saveQuestion = async (courseId, questionData) => {
             createdBy: questionData.by,
             status: questionData.status || "Draft",
             flagStatus: questionData.flagStatus || false,
+            flagReason: questionData.flagStatus
+                ? String(questionData.flagReason || "").trim()
+                : "",
             createdAt: new Date(),
         });
         
@@ -272,7 +275,15 @@ const updateQuestion = async (questionId, updateData) => {
         if (updateData.bloom !== undefined) update.bloom = updateData.bloom;
 
         if (updateData.status !== undefined) update.status = updateData.status;
-        if (updateData.flagStatus !== undefined) update.flagStatus = updateData.flagStatus;
+        if (updateData.flagStatus !== undefined) {
+            update.flagStatus = updateData.flagStatus;
+            // Clearing the flag also clears any stored reason.
+            if (!updateData.flagStatus) update.flagReason = "";
+        }
+        if (updateData.flagReason !== undefined) {
+            update.flagReason =
+                typeof updateData.flagReason === "string" ? updateData.flagReason.trim() : "";
+        }
         if (updateData.questionType !== undefined) update.questionType = updateData.questionType;
         if (updateData.type !== undefined && updateData.questionType === undefined) {
             update.questionType = updateData.type;
