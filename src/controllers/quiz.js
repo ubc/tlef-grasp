@@ -573,6 +573,7 @@ const getQuizQuestionsHandler = async (req, res) => {
               id: qid,
               question: built.rendered,
               questionType: QUESTION_TYPES.CALCULATION,
+              stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
               calculationToken: built.token,
               answerDecimalPlaces: built.answerDecimalPlaces,
               calculationAnswerTolerancePercent: tolerancePercent,
@@ -593,6 +594,7 @@ const getQuizQuestionsHandler = async (req, res) => {
               template ||
               "This calculation question could not be loaded. Please contact your instructor.",
             questionType: QUESTION_TYPES.CALCULATION,
+            stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
             calculationToken: null,
             answerDecimalPlaces: answerDec,
             calculationLoadError: true,

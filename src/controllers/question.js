@@ -5,6 +5,7 @@ const { getQuestionCourseId, getQuestion } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const quizService = require('../services/quiz');
+const { downloadImageBuffer } = require('../services/image');
 const { ObjectId } = require('mongodb');
 
 // Get questions for a course
@@ -288,7 +289,7 @@ const exportQuestionsHandler = async (req, res) => {
       case 'qti':
       default:
         // Canvas requires QTI in ZIP format
-        return createQTIZipExport(res, course, questions, quizName, quizDescription);
+        return await createQTIZipExport(res, course, questions, quizName, quizDescription);
     }
 
     res.setHeader('Content-Type', contentType);
@@ -344,24 +345,93 @@ function generateCanvasId(prefix = 'g') {
 }
 
 /**
+ * Collect every instructor-attached image ref ({ fileId, filename, ... })
+ * across the exported questions, de-duplicated by fileId.
+ */
+function stemImagesOf(q) {
+  if (Array.isArray(q.stemImages)) return q.stemImages;
+  return q.stemImage ? [q.stemImage] : [];
+}
+
+function collectExportImageRefs(questions) {
+  const refs = new Map();
+  const add = (ref) => {
+    if (ref && typeof ref === 'object' && ref.fileId && !refs.has(String(ref.fileId))) {
+      refs.set(String(ref.fileId), ref);
+    }
+  };
+  for (const q of questions) {
+    stemImagesOf(q).forEach(add);
+  }
+  return refs;
+}
+
+/**
+ * Download the export's images from GridFS and lay out their ZIP placement.
+ * Canvas imports files under web_resources/ into course Files, and
+ * $IMS-CC-FILEBASE$ in item HTML resolves to that root.
+ *
+ * Returns { imageMap, imageFiles } where imageMap: fileId -> { src } (HTML
+ * img src) and imageFiles: [{ buffer, zipPath, href }] for the archive and
+ * manifest. Missing GridFS files are skipped so one lost image never fails
+ * the whole export.
+ */
+async function prepareExportImages(questions) {
+  const refs = collectExportImageRefs(questions);
+  const imageMap = new Map();
+  const imageFiles = [];
+
+  for (const [fileId, ref] of refs) {
+    let buffer = null;
+    try {
+      buffer = await downloadImageBuffer(fileId);
+    } catch (error) {
+      console.error(`Failed to download image ${fileId} for export:`, error);
+    }
+    if (!buffer) {
+      console.warn(`Skipping missing question image in export: ${fileId}`);
+      continue;
+    }
+
+    const safeName =
+      String(ref.filename || 'image').replace(/[^A-Za-z0-9._-]/g, '_') || 'image';
+    const name = `${fileId}-${safeName}`;
+    imageFiles.push({
+      buffer,
+      zipPath: `web_resources/grasp/${name}`,
+      href: `web_resources/grasp/${name}`,
+    });
+    imageMap.set(fileId, {
+      src: `$IMS-CC-FILEBASE$/grasp/${encodeURIComponent(name)}`,
+    });
+  }
+
+  return { imageMap, imageFiles };
+}
+
+/**
  * Create QTI export as ZIP file (Canvas requires ZIP format with specific structure)
  */
-function createQTIZipExport(res, course, questions, quizName, quizDescription) {
+async function createQTIZipExport(res, course, questions, quizName, quizDescription) {
   const timestamp = Date.now();
   const filename = `questions-${course}-${timestamp}.zip`;
-  
+
   // Generate Canvas-compatible IDs
   const assessmentId = generateCanvasId('g');
-  
+
+  // Fetch instructor-attached images from GridFS before any headers are
+  // sent, so failures here still return a clean JSON error.
+  const { imageMap, imageFiles } = await prepareExportImages(questions);
+
   // Set headers for ZIP file
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  
+
   // Create archiver for ZIP
   const archive = archiver('zip', {
     zlib: { level: 9 } // Maximum compression
   });
-  
+
   // Handle errors
   archive.on('error', (err) => {
     console.error('Archive error:', err);
@@ -369,30 +439,34 @@ function createQTIZipExport(res, course, questions, quizName, quizDescription) {
       res.status(500).json({ error: 'Failed to create ZIP file' });
     }
   });
-  
+
   // Pipe archive data to response
   archive.pipe(res);
-  
+
   // Use quiz name for title, fallback to course name
   const title = quizName || course || 'Quiz';
-  
+
   // Generate QTI XML (Canvas format)
-  const qtiXml = createQTIExport(title, questions, assessmentId);
-  
+  const qtiXml = createQTIExport(title, questions, assessmentId, imageMap);
+
   // Create manifest (Canvas Common Cartridge format)
-  const { manifest, metaId } = createIMSManifest(course, assessmentId, timestamp);
-  
+  const { manifest, metaId } = createIMSManifest(course, assessmentId, timestamp, imageFiles);
+
   // Create assessment_meta.xml (Canvas requires this)
   const assessmentMeta = createAssessmentMeta(title, quizDescription, assessmentId, metaId, questions.length);
-  
+
   // Add files in Canvas structure:
   // - imsmanifest.xml at root
   // - {assessmentId}/{assessmentId}.xml (the QTI assessment)
   // - {assessmentId}/assessment_meta.xml (metadata)
+  // - web_resources/grasp/* (question images, imported into Canvas Files)
   archive.append(manifest, { name: 'imsmanifest.xml' });
   archive.append(qtiXml, { name: `${assessmentId}/${assessmentId}.xml` });
   archive.append(assessmentMeta, { name: `${assessmentId}/assessment_meta.xml` });
-  
+  for (const imageFile of imageFiles) {
+    archive.append(imageFile.buffer, { name: imageFile.zipPath });
+  }
+
   // Finalize the archive
   archive.finalize();
 }
@@ -494,7 +568,7 @@ function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, q
 /**
  * Create IMS Manifest XML file (Canvas Common Cartridge format)
  */
-function createIMSManifest(course, assessmentId, timestamp) {
+function createIMSManifest(course, assessmentId, timestamp, imageFiles = []) {
   const escapeXml = (text) => {
     if (!text) return '';
     return String(text)
@@ -504,11 +578,29 @@ function createIMSManifest(course, assessmentId, timestamp) {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
   };
-  
+
   const safeCourse = escapeXml(course || 'Quiz');
   const manifestId = generateCanvasId('g');
   const metaId = generateCanvasId('g');
-  
+
+  // Question images ship as webcontent resources the assessment depends on;
+  // Canvas copies them into course Files on import.
+  const imageResources = imageFiles.map((imageFile) => ({
+    id: generateCanvasId('g'),
+    href: imageFile.href,
+  }));
+  const imageDependenciesXml = imageResources
+    .map((r) => `\n      <dependency identifierref="${r.id}"/>`)
+    .join('');
+  const imageResourcesXml = imageResources
+    .map(
+      (r) => `
+    <resource identifier="${r.id}" type="webcontent" href="${escapeXml(r.href)}">
+      <file href="${escapeXml(r.href)}"/>
+    </resource>`
+    )
+    .join('');
+
   return {
     manifest: `<?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="${manifestId}" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1" xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource" xmlns:imsmd="http://www.imsglobal.org/xsd/imsmd_v1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 http://www.imsglobal.org/xsd/imscp_v1p1.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lomresource_v1p0.xsd http://www.imsglobal.org/xsd/imsmd_v1p2 http://www.imsglobal.org/xsd/imsmd_v1p2p2.xsd">
@@ -542,18 +634,18 @@ function createIMSManifest(course, assessmentId, timestamp) {
   <resources>
     <resource identifier="${assessmentId}" type="imsqti_xmlv1p2">
       <file href="${assessmentId}/${assessmentId}.xml"/>
-      <dependency identifierref="${metaId}"/>
+      <dependency identifierref="${metaId}"/>${imageDependenciesXml}
     </resource>
     <resource identifier="${metaId}" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="${assessmentId}/assessment_meta.xml">
       <file href="${assessmentId}/assessment_meta.xml"/>
-    </resource>
+    </resource>${imageResourcesXml}
   </resources>
 </manifest>`,
     metaId: metaId
   };
 }
 
-function createQTIExport(course, questions, assessmentId) {
+function createQTIExport(course, questions, assessmentId, imageMap = new Map()) {
   // Helper function to escape XML content (for attributes and plain text)
   const escapeXml = (text) => {
     if (!text) return '';
@@ -570,14 +662,39 @@ function createQTIExport(course, questions, assessmentId) {
   const escapeHtmlForQTI = (text) => {
     if (!text) return '';
     const textStr = String(text).trim();
-    
+
     // If content already contains HTML tags, just escape it
     if (/<[^>]+>/.test(textStr)) {
       return escapeXml(textStr);
     }
-    
+
     // For plain text, wrap in div/p tags like Canvas does
     return escapeXml(`<div><p>${textStr}</p></div>`);
+  };
+
+  // Build the escaped mattext body for the stem text plus its attached images.
+  // The <img> src uses $IMS-CC-FILEBASE$ so Canvas rewrites it to the imported
+  // course file. Renders the stem text followed by every bundled image; falls
+  // back to text-only when no images were bundled (e.g. missing from GridFS).
+  const buildHtmlWithImages = (text, imageRefs) => {
+    const bundled = (Array.isArray(imageRefs) ? imageRefs : [])
+      .map((ref) => ({ ref, entry: ref?.fileId ? imageMap.get(String(ref.fileId)) : null }))
+      .filter((x) => x.entry);
+    if (bundled.length === 0) return escapeHtmlForQTI(text);
+
+    const textHtml = String(text || '').trim()
+      ? `<p>${escapeXml(String(text).trim())}</p>`
+      : '';
+    const imgsHtml = bundled
+      .map(({ ref, entry }) => {
+        // Instructor caption doubles as alt text and a visible caption line.
+        const caption = escapeXml(ref.caption || ref.alt || '');
+        const captionHtml = caption ? `<p><em>${caption}</em></p>` : '';
+        return `<p><img src="${entry.src}" alt="${caption}"></p>${captionHtml}`;
+      })
+      .join('');
+    const html = `<div>${textHtml}${imgsHtml}</div>`;
+    return escapeXml(html);
   };
 
   // Sanitize course name for title (Canvas is sensitive to special characters)
@@ -601,12 +718,12 @@ function createQTIExport(course, questions, assessmentId) {
       const opt = q.options[key];
       return typeof opt === 'string' ? opt : (opt?.text || opt || '');
     };
-    
+
     let optA = getOption('A') || 'Option A';
     let optB = getOption('B') || 'Option B';
     let optC = getOption('C') || 'Option C';
     let optD = getOption('D') || 'Option D';
-    
+
     // Ensure all options have content (Canvas requires non-empty options)
     if (!optA.trim()) optA = 'Option A';
     if (!optB.trim()) optB = 'Option B';
@@ -671,7 +788,7 @@ function createQTIExport(course, questions, assessmentId) {
         </itemmetadata>
         <presentation>
           <material>
-            <mattext texttype="text/html">${escapeHtmlForQTI(questionText)}</mattext>
+            <mattext texttype="text/html">${buildHtmlWithImages(questionText, stemImagesOf(q))}</mattext>
           </material>
           <response_lid ident="${responseId}" rcardinality="Single">
             <render_choice>

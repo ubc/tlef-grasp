@@ -2,6 +2,8 @@ import { useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
+import QuestionImage from "../../components/QuestionImage";
+import QuestionImageField from "../../components/QuestionImageField";
 import { useToast } from "../../components/ui/Toast";
 
 const fieldLabel = "mb-1 block text-xs font-semibold text-muted";
@@ -31,6 +33,29 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
   const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
   const isMcq = !isFib && !isCalc && !isOpen;
 
+  // Coalesce the current array field with the legacy single-image field.
+  const stemImages =
+    question.stemImages || (question.stemImage ? [question.stemImage] : []);
+
+  // Shared stem-image editor/display, reused across every question type.
+  const stemImageEditor = (
+    <div>
+      <label className={fieldLabel}>Images (optional)</label>
+      <QuestionImageField
+        value={draft?.stemImages}
+        onChange={(images) => setDraft((prev) => ({ ...prev, stemImages: images }))}
+      />
+    </div>
+  );
+  const stemImageDisplay =
+    stemImages.length > 0 ? (
+      <div className="flex flex-wrap gap-2">
+        {stemImages.map((img) => (
+          <QuestionImage key={img.fileId} image={img} />
+        ))}
+      </div>
+    ) : null;
+
   // Duplicate-option detection for MCQs (legacy renderQuestionCard behavior)
   let reviewFlag = question.reviewFlag;
   let reviewIssue = question.reviewIssue;
@@ -49,6 +74,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
     setDraft({
       title: question.title || "",
       stem: question.stem || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
       correctAnswer: question.correctAnswer ?? "",
       acceptableAnswers: Array.isArray(question.acceptableAnswers)
         ? question.acceptableAnswers.join("\n")
@@ -66,7 +92,10 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
         ? Object.fromEntries(
             Object.entries(question.options).map(([key, opt]) => [
               key,
-              { text: opt.text || "", feedback: opt.feedback || "" },
+              {
+                text: opt.text || "",
+                feedback: opt.feedback || "",
+              },
             ])
           )
         : {},
@@ -152,11 +181,16 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
       updates.options = Object.fromEntries(
         Object.entries(draft.options).map(([key, opt]) => [
           key,
-          { id: key, text: opt.text.trim(), feedback: opt.feedback.trim() },
+          {
+            id: key,
+            text: opt.text.trim(),
+            feedback: opt.feedback.trim(),
+          },
         ])
       );
       updates.correctAnswer = draft.correctAnswer;
     }
+    updates.stemImages = draft.stemImages || [];
 
     updates.lastEdited = new Date().toISOString().slice(0, 16).replace("T", " ");
     onChange(updates);
@@ -260,6 +294,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
                 className={fieldInput}
               />
             </div>
+            {stemImageEditor}
             <div>
               <label className={fieldLabel}>Correct answer</label>
               <input
@@ -289,6 +324,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
             <FibBlock label="Question stem">
               <RichText text={escapeHtml(question.stem || "")} />
             </FibBlock>
+            {stemImageDisplay}
             <FibBlock label="Correct answer">
               <RichText text={escapeHtml(question.correctAnswer ?? "")} />
             </FibBlock>
@@ -313,6 +349,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
                 className={fieldInput}
               />
             </div>
+            {stemImageEditor}
             <div>
               <label className={fieldLabel}>Formula</label>
               <input
@@ -351,6 +388,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
             <FibBlock label="Template">
               <RichText text={escapeHtml(question.stem || "")} />
             </FibBlock>
+            {stemImageDisplay}
             <FibBlock label="Formula">
               <RichText text={escapeHtml(question.calculationFormula || "")} />
             </FibBlock>
@@ -391,6 +429,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
                 className={fieldInput}
               />
             </div>
+            {stemImageEditor}
             <div>
               <label className={fieldLabel}>
                 Sample answer <span className="font-normal">(shown after submit)</span>
@@ -419,6 +458,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
             <FibBlock label="Prompt">
               <RichText text={escapeHtml(question.stem || "")} />
             </FibBlock>
+            {stemImageDisplay}
             <FibBlock label="Sample answer">
               <RichText text={escapeHtml(question.openEndedSampleAnswer || "")} />
             </FibBlock>
@@ -431,17 +471,32 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
       {isMcq && (
         <div>
           {isEditing ? (
-            <textarea
-              rows={2}
-              value={draft.stem}
-              onChange={setField("stem")}
-              className={`${fieldInput} mb-3`}
-            />
+            <div className="mb-3 space-y-2">
+              <textarea
+                rows={2}
+                value={draft.stem}
+                onChange={setField("stem")}
+                className={fieldInput}
+              />
+              <QuestionImageField
+                value={draft.stemImages}
+                onChange={(images) =>
+                  setDraft((prev) => ({ ...prev, stemImages: images }))
+                }
+              />
+            </div>
           ) : (
-            <RichText
-              text={escapeHtml(question.stem)}
-              className="mb-3 text-sm text-ink"
-            />
+            <div className="mb-3">
+              <RichText
+                text={escapeHtml(question.stem)}
+                className="text-sm text-ink"
+              />
+              <div className="flex flex-wrap gap-2">
+                {stemImages.map((img) => (
+                  <QuestionImage key={img.fileId} image={img} />
+                ))}
+              </div>
+            </div>
           )}
           <div className="space-y-2">
             {Object.values(question.options || {}).map((option) => {

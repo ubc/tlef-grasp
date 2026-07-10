@@ -1,5 +1,6 @@
 import { QUESTION_TYPES } from "../../lib/constants";
 import { useToast } from "../../components/ui/Toast";
+import QuestionImageField from "../../components/QuestionImageField";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
@@ -59,6 +60,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 <code>{"{{m}}"}</code>. Every variable declared below must appear here.
               </p>
             )}
+            <div className="mt-2">
+              <QuestionImageField
+                value={form.stemImages}
+                onChange={(images) => setForm((prev) => ({ ...prev, stemImages: images }))}
+              />
+            </div>
           </div>
 
           {questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (

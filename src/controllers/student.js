@@ -199,6 +199,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
           questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
+          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,
@@ -211,6 +212,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
           question: fibMainText || questionText || "Question text not available",
           questionType: QUESTION_TYPES.OPEN_ENDED,
+          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
           options: {},
           learningObjectiveId: q.learningObjectiveId,
           granularObjectiveId: q.granularObjectiveId,
@@ -248,6 +250,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             id: qid,
             question: built.rendered,
             questionType: QUESTION_TYPES.CALCULATION,
+            stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
             calculationToken: built.token,
             answerDecimalPlaces: built.answerDecimalPlaces,
             calculationAnswerTolerancePercent: tolerancePercent,
@@ -268,6 +271,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             template ||
             "This calculation question could not be loaded. Please contact your instructor.",
           questionType: QUESTION_TYPES.CALCULATION,
+          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
           calculationToken: null,
           answerDecimalPlaces: answerDec,
           calculationLoadError: true,
@@ -278,21 +282,24 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
+      const optionText = (raw) =>
+        (raw && typeof raw === "object" ? raw.text ?? "" : raw ?? "").toString();
+
       let optionsObj = {};
       if (q.options && typeof q.options === 'object') {
         if (!Array.isArray(q.options)) {
           optionsObj = {
-            A: (q.options.A?.text || q.options.A || "").toString(),
-            B: (q.options.B?.text || q.options.B || "").toString(),
-            C: (q.options.C?.text || q.options.C || "").toString(),
-            D: (q.options.D?.text || q.options.D || "").toString()
+            A: optionText(q.options.A),
+            B: optionText(q.options.B),
+            C: optionText(q.options.C),
+            D: optionText(q.options.D)
           };
         } else {
           optionsObj = {
-            A: (q.options[0]?.text || q.options[0] || "").toString(),
-            B: (q.options[1]?.text || q.options[1] || "").toString(),
-            C: (q.options[2]?.text || q.options[2] || "").toString(),
-            D: (q.options[3]?.text || q.options[3] || "").toString()
+            A: optionText(q.options[0]),
+            B: optionText(q.options[1]),
+            C: optionText(q.options[2]),
+            D: optionText(q.options[3])
           };
         }
       }
@@ -301,6 +308,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+        stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
         options: optionsObj,
         learningObjectiveId: q.learningObjectiveId,
         granularObjectiveId: q.granularObjectiveId,

@@ -19,6 +19,7 @@ const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
+const imageRoutes = require("./routes/image");
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
@@ -111,6 +112,10 @@ app.use("/api/quiz", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), quizRou
 
 // Student routes - all authenticated users
 app.use("/api/student", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), studentRoutes);
+
+// Question images - reads for all authenticated users (students see images
+// while taking quizzes); uploads/deletes require staff (enforced per-route).
+app.use("/api/image", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), imageRoutes);
 
 // Achievement routes - all authenticated users
 app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), achievementRoutes);

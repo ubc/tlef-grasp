@@ -1,7 +1,65 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
+const { deleteImages, collectQuestionImageIds } = require('./image');
 const { ObjectId } = require('mongodb');
+
+const MAX_IMAGE_CAPTION_LENGTH = 300;
+
+/**
+ * Validate and whitelist an instructor-attached image reference before it is
+ * persisted on a question. Returns null for anything malformed. The instructor
+ * caption doubles as the image's alt text (`alt` is read for legacy refs).
+ */
+const sanitizeImageRef = (ref) => {
+    if (!ref || typeof ref !== "object") return null;
+    if (typeof ref.fileId !== "string" || !ObjectId.isValid(ref.fileId)) return null;
+
+    const rawCaption =
+        typeof ref.caption === "string"
+            ? ref.caption
+            : typeof ref.alt === "string"
+              ? ref.alt
+              : "";
+
+    return {
+        fileId: ref.fileId,
+        filename: typeof ref.filename === "string" ? ref.filename : "",
+        mimeType: typeof ref.mimeType === "string" ? ref.mimeType : "",
+        size: Number.isFinite(ref.size) ? ref.size : 0,
+        caption: rawCaption.slice(0, MAX_IMAGE_CAPTION_LENGTH),
+    };
+};
+
+/**
+ * Normalize a stem-image value (array, single ref, or legacy `stemImage`)
+ * into a clean array of validated refs.
+ */
+const sanitizeImageRefArray = (value) => {
+    const arr = Array.isArray(value) ? value : value ? [value] : [];
+    return arr.map(sanitizeImageRef).filter(Boolean);
+};
+
+/**
+ * Strip any per-option `image` field — images are only attached to the
+ * question stem now, not to individual options. Legacy option images are
+ * dropped on the next save.
+ */
+const sanitizeOptions = (options) => {
+    if (!options || typeof options !== "object" || Array.isArray(options)) return options;
+
+    const sanitized = {};
+    for (const key of Object.keys(options)) {
+        const option = options[key];
+        if (option && typeof option === "object" && !Array.isArray(option)) {
+            const { image, ...rest } = option;
+            sanitized[key] = rest;
+        } else {
+            sanitized[key] = option;
+        }
+    }
+    return sanitized;
+};
 
 const saveQuestion = async (courseId, questionData) => {
     try {
@@ -61,7 +119,8 @@ const saveQuestion = async (courseId, questionData) => {
         const question = await collection.insertOne({
             title: questionData.title,
             stem: questionData.stem,
-            options: questionData.options,
+            stemImages: sanitizeImageRefArray(questionData.stemImages ?? questionData.stemImage),
+            options: sanitizeOptions(questionData.options),
             correctAnswer: questionData.correctAnswer,
             questionType,
             acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
@@ -203,7 +262,12 @@ const updateQuestion = async (questionId, updateData) => {
         // Only update fields that are provided
         if (updateData.title !== undefined) update.title = updateData.title;
         if (updateData.stem !== undefined) update.stem = updateData.stem;
-        if (updateData.options !== undefined) update.options = updateData.options;
+        if (updateData.stemImages !== undefined || updateData.stemImage !== undefined) {
+            update.stemImages = sanitizeImageRefArray(updateData.stemImages ?? updateData.stemImage);
+            // Clear any legacy single-image field so it can't shadow the array.
+            update.stemImage = null;
+        }
+        if (updateData.options !== undefined) update.options = sanitizeOptions(updateData.options);
         if (updateData.correctAnswer !== undefined) update.correctAnswer = updateData.correctAnswer;
         if (updateData.bloom !== undefined) update.bloom = updateData.bloom;
 
@@ -264,8 +328,15 @@ const updateQuestion = async (questionId, updateData) => {
             update.calculationFormula !== undefined ||
             update.calculationVariables !== undefined ||
             update.questionType !== undefined;
+        const touchesImages =
+            update.stemImages !== undefined || update.options !== undefined;
+
+        // Fetch the existing doc once when either validation path needs it.
+        const existing = (touchesCalculation || touchesImages)
+            ? await collection.findOne({ _id: id })
+            : null;
+
         if (touchesCalculation) {
-            const existing = await collection.findOne({ _id: id });
             if (existing) {
                 const merged = { ...existing, ...update };
                 const qt = String(merged.questionType || merged.type || "")
@@ -296,7 +367,17 @@ const updateQuestion = async (questionId, updateData) => {
             { _id: id },
             { $set: update }
         );
-        
+
+        // Best-effort GridFS cleanup for images this update removed/replaced.
+        if (touchesImages && existing && result.acknowledged) {
+            const oldIds = collectQuestionImageIds(existing);
+            const newIds = new Set(collectQuestionImageIds({ ...existing, ...update }));
+            const removedIds = oldIds.filter((fileId) => !newIds.has(fileId));
+            if (removedIds.length > 0) {
+                await deleteImages(removedIds);
+            }
+        }
+
         return result;
     } catch (error) {
         console.error("Error updating question:", error);
@@ -312,13 +393,24 @@ const deleteQuestion = async (questionId) => {
         
         // Convert questionId to ObjectId if it's a string
         const id = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
-        
+
+        // Grab the doc first so its attached images can be cleaned up after.
+        const existing = await collection.findOne({ _id: id });
+
         // Delete all quiz-question relationships for this question
         await relationshipCollection.deleteMany({ questionId: id });
-        
+
         // Delete the question
         const result = await collection.deleteOne({ _id: id });
-        
+
+        // Best-effort GridFS cleanup of the question's attached images.
+        if (existing && result.deletedCount > 0) {
+            const imageIds = collectQuestionImageIds(existing);
+            if (imageIds.length > 0) {
+                await deleteImages(imageIds);
+            }
+        }
+
         return result;
     } catch (error) {
         console.error("Error deleting question:", error);

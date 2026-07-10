@@ -314,6 +314,7 @@ export function buildQuestionPayload(question) {
   const payload = {
     title: question.title || question.stem || "",
     stem: question.stem || question.title || "",
+    stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
     options: question.options || [],
     correctAnswer: question.correctAnswer ?? "",
     questionType: qt,

@@ -7,6 +7,7 @@ import { useAppStore } from "../stores/appStore";
 import { useToast } from "../components/ui/Toast";
 import RichText from "../components/RichText";
 import QuestionFlagControl from "../components/quiz/QuestionFlagControl";
+import QuestionImage from "../components/QuestionImage";
 import QuizList from "./student-quiz/QuizList";
 import { useQuizSession } from "./student-quiz/useQuizSession";
 import {
@@ -213,6 +214,14 @@ export default function StudentQuiz() {
             text={escapeHtml(question.stem)}
             className="mb-4 text-[1.05em] font-medium text-[#34495e]"
           />
+        )}
+
+        {(question.stemImages || (question.stemImage ? [question.stemImage] : [])).length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(question.stemImages || (question.stemImage ? [question.stemImage] : [])).map((img) => (
+              <QuestionImage key={img.fileId} image={img} />
+            ))}
+          </div>
         )}
 
         {question.questionType === QUESTION_TYPES.CALCULATION && !calcBroken && (

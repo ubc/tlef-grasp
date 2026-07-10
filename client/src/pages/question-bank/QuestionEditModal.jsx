@@ -4,6 +4,7 @@ import { normalizeQuestionTypeKey, QUESTION_TYPE_CHIP_CLASSES } from "../../lib/
 import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
+import QuestionImageField from "../../components/QuestionImageField";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none read-only:cursor-not-allowed read-only:bg-gray-100";
@@ -34,6 +35,7 @@ function buildFormState(question) {
       questionType: qType,
       title: question.title || question.stem || "",
       stem: question.stem || question.title || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
       correctAnswer: canonical,
       acceptableAnswers: acceptable.join("\n"),
     };
@@ -50,6 +52,7 @@ function buildFormState(question) {
       questionType: qType,
       title: question.title || "",
       stem: question.stem || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
       calculationFormula: (question.calculationFormula || "").trim(),
       calculationVariables: JSON.stringify(
         Array.isArray(question.calculationVariables)
@@ -70,6 +73,7 @@ function buildFormState(question) {
       questionType: qType,
       title: question.title || "",
       stem: question.stem || question.title || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
       openEndedSampleAnswer: String(question.openEndedSampleAnswer || "").trim(),
       openEndedGradingCriteria: String(question.openEndedGradingCriteria || "").trim(),
     };
@@ -100,6 +104,7 @@ function buildFormState(question) {
     questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
     title: question.title || question.stem || "",
     stem: question.stem || question.title || "",
+    stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
     options,
     correctAnswer: correct,
     originalOptions: question.options || {},
@@ -171,6 +176,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       updateData = {
         title,
         stem,
+        stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.CALCULATION,
         calculationFormula: formula,
         calculationVariables: variables,
@@ -196,6 +202,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       updateData = {
         title,
         stem,
+        stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.OPEN_ENDED,
         openEndedSampleAnswer: sample,
         openEndedGradingCriteria: criteria,
@@ -223,6 +230,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       updateData = {
         title,
         stem,
+        stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
         correctAnswer: correct,
         acceptableAnswers: acceptable,
@@ -248,10 +256,13 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
         } else {
           optionsObject[opt.id] = { text: opt.text.trim(), feedback: opt.feedback.trim() };
         }
+        // Options no longer carry images; drop any legacy per-option image.
+        delete optionsObject[opt.id].image;
       });
       updateData = {
         title: title || stem,
         stem: stem || title,
+        stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObject,
         correctAnswer: (form.correctAnswer || "A").toUpperCase(),
@@ -359,6 +370,18 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 Use <code>{"{{variableName}}"}</code> placeholders matching the
                 variables JSON below.
               </p>
+            )}
+            {((form.stemImages && form.stemImages.length > 0) || !readOnly) && (
+              <div className="mt-2">
+                <QuestionImageField
+                  value={form.stemImages}
+                  disabled={readOnly}
+                  courseId={courseId}
+                  onChange={(images) =>
+                    setForm((prev) => ({ ...prev, stemImages: images }))
+                  }
+                />
+              </div>
             )}
           </div>
 

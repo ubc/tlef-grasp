@@ -46,6 +46,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
   const [form, setForm] = useState({
     title: "",
     stem: "",
+    stemImages: [],
     options: DEFAULT_OPTIONS,
     correctAnswer: "A",
     fibCorrect: "",
@@ -195,6 +196,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     const payload = {
       title: form.title.trim(),
       stem: form.stem.trim(),
+      stemImages: form.stemImages || [],
       questionType,
       bloom,
       learningObjectiveId: metaObjectiveId,
