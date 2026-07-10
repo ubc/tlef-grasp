@@ -29,6 +29,12 @@ const QUIZ_NAME = 'BIOC 302 Practice Quiz (seeded)';
 const OBJECTIVE_NAME = 'Enzyme kinetics (seeded)';
 const GRANULAR_NAME = 'Interpret Michaelis–Menten parameters (seeded)';
 
+// A material linked to the parent objective. The Question Bank add-question
+// wizard only enables AI generation for an objective that has linked materials
+// (it retrieves context from them), so the AI-branch E2E spec needs this.
+const MATERIAL_TITLE = 'Enzyme kinetics lecture notes (seeded)';
+const MATERIAL_SOURCE_ID = 'e2e-bioc302-material-1';
+
 // Three approved multiple-choice questions, deterministic so the student spec
 // can answer a known-correct option. Keyed by `seedKey` for idempotent upserts.
 const SEED_QUESTIONS = [
@@ -208,6 +214,41 @@ async function seedStudentJourneyCourse() {
     const granular = await db
       .collection('grasp_objective')
       .findOne({ courseId, name: GRANULAR_NAME, parent: parentObjective._id });
+
+    // --- Material linked to the parent objective, enabling AI question
+    // generation in the add-question wizard (which needs an objective with
+    // materials to retrieve context from). ---
+    await db.collection('grasp_material').updateOne(
+      { courseId, sourceId: MATERIAL_SOURCE_ID },
+      {
+        $set: {
+          documentTitle: MATERIAL_TITLE,
+          fileType: 'text',
+          fileSize: 0,
+          fileContent:
+            'Michaelis–Menten kinetics: Km is the substrate concentration at half of Vmax; ' +
+            'Vmax is the maximum reaction velocity; a competitive inhibitor raises apparent Km.',
+          updatedAt: now,
+        },
+        $setOnInsert: { courseId, sourceId: MATERIAL_SOURCE_ID, createdAt: now },
+      },
+      { upsert: true }
+    );
+    const material = await db
+      .collection('grasp_material')
+      .findOne({ courseId, sourceId: MATERIAL_SOURCE_ID });
+
+    await db.collection('grasp_objective_material').updateOne(
+      { objectiveId: parentObjective._id, materialId: material._id },
+      {
+        $setOnInsert: {
+          objectiveId: parentObjective._id,
+          materialId: material._id,
+          createdAt: now,
+        },
+      },
+      { upsert: true }
+    );
 
     // --- Approved questions ---
     const questionIds = [];
@@ -471,6 +512,8 @@ module.exports = {
     QUIZ_NAME,
     OBJECTIVE_NAME,
     GRANULAR_NAME,
+    MATERIAL_TITLE,
+    MATERIAL_SOURCE_ID,
     BIO_PROF2_PUID,
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,

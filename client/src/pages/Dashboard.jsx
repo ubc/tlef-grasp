@@ -3,8 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
-import { useQuestions } from "../hooks/useQuestions";
-import { useAppStore } from "../stores/appStore";
+import { useCourseQuizQuestionFlags } from "../hooks/useQuizQuestionFlags";
+import { useAppStore, useSelectedCourseId } from "../stores/appStore";
 
 // `permission` gates a card for co-instructors (null = always shown), matching
 // the sidebar/route gating in useCoInstructorAccess.
@@ -17,8 +17,12 @@ const QUICK_START_CARDS = [
 
 function FlaggedQuestionsCard() {
   const navigate = useNavigate();
-  const { questions } = useQuestions();
-  const flaggedCount = questions.filter((q) => q.flagStatus === true).length;
+  const courseId = useSelectedCourseId();
+  const { flags } = useCourseQuizQuestionFlags(courseId);
+  // This dashboard card is an instructor to-do count: only student reports
+  // that have not yet been answered belong here. Question-bank flagStatus is
+  // a separate, authoring-time concern.
+  const flaggedCount = flags.filter((flag) => flag.status === "pending").length;
 
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm">
@@ -31,7 +35,7 @@ function FlaggedQuestionsCard() {
       {flaggedCount > 0 ? (
         <button
           type="button"
-          onClick={() => navigate("/question-bank?tab=overview&flagged=true")}
+          onClick={() => navigate("/question-flags")}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
         >
           <i className="fas fa-eye" />

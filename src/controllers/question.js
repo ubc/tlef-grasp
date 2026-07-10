@@ -6,6 +6,81 @@ const { isFaculty } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const quizService = require('../services/quiz');
 const { ObjectId } = require('mongodb');
+const { QUESTION_TYPES } = require('../constants/app-constants');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
+
+// --- Export helpers shared across CSV / QTI ---------------------------------
+
+// Canvas QTI question_type value for each of our internal question types.
+const QUESTION_TYPE_TO_QTI = {
+  [QUESTION_TYPES.MULTIPLE_CHOICE]: 'multiple_choice_question',
+  [QUESTION_TYPES.FILL_IN_THE_BLANK]: 'short_answer_question',
+  [QUESTION_TYPES.OPEN_ENDED]: 'essay_question',
+  [QUESTION_TYPES.CALCULATION]: 'numerical_question',
+};
+
+// Escape text for use in XML attributes / plain-text nodes.
+function escapeXml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Canvas expects HTML content escaped, wrapping bare text in div/p like Canvas does.
+function escapeHtmlForQTI(text) {
+  if (!text) return '';
+  const textStr = String(text).trim();
+  if (/<[^>]+>/.test(textStr)) {
+    return escapeXml(textStr);
+  }
+  return escapeXml(`<div><p>${textStr}</p></div>`);
+}
+
+// Wrap a value as a properly-escaped CSV field (double embedded quotes).
+function csvField(value) {
+  return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
+}
+
+// Resolve a question's internal type, defaulting to multiple-choice for legacy rows.
+function normalizeQuestionType(q) {
+  const t = String(q.questionType || q.type || '').toLowerCase().trim();
+  if (Object.values(QUESTION_TYPES).includes(t)) return t;
+  return QUESTION_TYPES.MULTIPLE_CHOICE;
+}
+
+// The student-facing question text. Multiple-choice keeps the prompt in `title`
+// (its `stem` is a generic "Select the best answer:"); the other types keep the
+// real prompt in `stem`.
+function getQuestionText(q) {
+  if (normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
+    return String(q.title || q.stem || q.text || q.question || '').trim();
+  }
+  return String(q.stem || q.question || q.text || q.title || '').trim();
+}
+
+// Options are stored as an object keyed A-D; values are strings or { text, feedback }.
+function getOptionText(q, key) {
+  if (!q.options || typeof q.options !== 'object') return '';
+  const opt = q.options[key];
+  if (typeof opt === 'string') return opt;
+  return (opt && (opt.text || '')) || '';
+}
+
+// Acceptable answers for fill-in-the-blank, canonical answer first, de-duplicated.
+function getAcceptableAnswers(q) {
+  const answers = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
+    .map((a) => String(a).trim())
+    .filter(Boolean);
+  const canonical = String(q.correctAnswer || '').trim();
+  if (canonical && !answers.some((a) => a.toLowerCase() === canonical.toLowerCase())) {
+    answers.unshift(canonical);
+  }
+  return answers;
+}
 
 // Get questions for a course
 const getQuestionsHandler = async (req, res) => {
@@ -301,33 +376,88 @@ const exportQuestionsHandler = async (req, res) => {
   }
 };
 
+// CSV export covers every question type with a shared, spreadsheet-friendly set
+// of columns. Columns that don't apply to a given type are left blank.
 function createCSVExport(course, questions) {
-  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level\n';
-  questions.forEach(q => {
-    // Options are always objects with keys A, B, C, D
-    const getOption = (key) => {
-      if (!q.options || typeof q.options !== 'object') return '';
-      const opt = q.options[key];
-      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
+  const headers = [
+    'Type',
+    'Question',
+    'Option A',
+    'Option B',
+    'Option C',
+    'Option D',
+    'Correct Answer',
+    'Acceptable Answers',
+    'Sample Answer',
+    'Grading Criteria',
+    'Formula',
+    'Bloom Level',
+  ];
+  let csv = `${headers.map(csvField).join(',')}\n`;
+
+  questions.forEach((q) => {
+    const type = normalizeQuestionType(q);
+    const row = {
+      type,
+      question: getQuestionText(q),
+      optA: '',
+      optB: '',
+      optC: '',
+      optD: '',
+      correctAnswer: '',
+      acceptableAnswers: '',
+      sampleAnswer: '',
+      gradingCriteria: '',
+      formula: '',
+      bloom: q.bloom || q.bloomLevel || '',
     };
-    
-    const optA = getOption('A');
-    const optB = getOption('B');
-    const optC = getOption('C');
-    const optD = getOption('D');
-    
-    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
-    let correctAnswerLetter = q.correctAnswer;
-    if (typeof q.correctAnswer === 'number') {
-      correctAnswerLetter = ['A', 'B', 'C', 'D'][q.correctAnswer] || 'A';
+
+    if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      row.optA = getOptionText(q, 'A');
+      row.optB = getOptionText(q, 'B');
+      row.optC = getOptionText(q, 'C');
+      row.optD = getOptionText(q, 'D');
+
+      // correctAnswer may be a letter (A-D) or a numeric index (0-3).
+      let letter = q.correctAnswer;
+      if (typeof letter === 'number') {
+        letter = ['A', 'B', 'C', 'D'][letter] || 'A';
+      }
+      letter = String(letter || '').toUpperCase();
+      row.correctAnswer = getOptionText(q, letter) || letter;
+    } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+      const acceptable = getAcceptableAnswers(q);
+      row.correctAnswer = String(q.correctAnswer || acceptable[0] || '');
+      row.acceptableAnswers = acceptable.join('; ');
+    } else if (type === QUESTION_TYPES.OPEN_ENDED) {
+      row.sampleAnswer = String(q.openEndedSampleAnswer || '');
+      row.gradingCriteria = String(q.openEndedGradingCriteria || '');
+    } else if (type === QUESTION_TYPES.CALCULATION) {
+      row.formula = String(q.calculationFormula || '');
+      const specs = Array.isArray(q.calculationVariables) ? q.calculationVariables : [];
+      if (specs.length > 0) {
+        row.acceptableAnswers = specs
+          .map((v) => `${v.name} ∈ [${v.min}, ${v.max}]`)
+          .join('; ');
+      }
     }
-    if (typeof correctAnswerLetter === 'string') {
-      correctAnswerLetter = correctAnswerLetter.toUpperCase();
-    }
-    const correctOpt = getOption(correctAnswerLetter);
-    
-    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}"\n`;
+
+    csv += [
+      row.type,
+      row.question,
+      row.optA,
+      row.optB,
+      row.optC,
+      row.optD,
+      row.correctAnswer,
+      row.acceptableAnswers,
+      row.sampleAnswer,
+      row.gradingCriteria,
+      row.formula,
+      row.bloom,
+    ].map(csvField).join(',') + '\n';
   });
+
   return csv;
 }
 
@@ -401,16 +531,6 @@ function createQTIZipExport(res, course, questions, quizName, quizDescription) {
  * Create assessment_meta.xml (Canvas-specific metadata file)
  */
 function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, questionCount) {
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
-  
   const safeQuizName = escapeXml(quizName || 'Quiz');
   const safeDescription = escapeXml(quizDescription || '');
   // Canvas expects description to be wrapped in <p> tags if it contains HTML
@@ -495,16 +615,6 @@ function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, q
  * Create IMS Manifest XML file (Canvas Common Cartridge format)
  */
 function createIMSManifest(course, assessmentId, timestamp) {
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
-  
   const safeCourse = escapeXml(course || 'Quiz');
   const manifestId = generateCanvasId('g');
   const metaId = generateCanvasId('g');
@@ -554,32 +664,6 @@ function createIMSManifest(course, assessmentId, timestamp) {
 }
 
 function createQTIExport(course, questions, assessmentId) {
-  // Helper function to escape XML content (for attributes and plain text)
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
-
-  // Helper function to escape HTML content for Canvas QTI
-  // Canvas expects HTML to be escaped, and wraps plain text in div/p tags
-  const escapeHtmlForQTI = (text) => {
-    if (!text) return '';
-    const textStr = String(text).trim();
-    
-    // If content already contains HTML tags, just escape it
-    if (/<[^>]+>/.test(textStr)) {
-      return escapeXml(textStr);
-    }
-    
-    // For plain text, wrap in div/p tags like Canvas does
-    return escapeXml(`<div><p>${textStr}</p></div>`);
-  };
-
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 
@@ -595,106 +679,116 @@ function createQTIExport(course, questions, assessmentId) {
     <section ident="root_section">`;
 
   questions.forEach((q, index) => {
-    // Options are always objects with keys A, B, C, D
-    const getOption = (key) => {
-      if (!q.options || typeof q.options !== 'object') return '';
-      const opt = q.options[key];
-      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
-    };
-    
-    let optA = getOption('A') || 'Option A';
-    let optB = getOption('B') || 'Option B';
-    let optC = getOption('C') || 'Option C';
-    let optD = getOption('D') || 'Option D';
-    
-    // Ensure all options have content (Canvas requires non-empty options)
-    if (!optA.trim()) optA = 'Option A';
-    if (!optB.trim()) optB = 'Option B';
-    if (!optC.trim()) optC = 'Option C';
-    if (!optD.trim()) optD = 'Option D';
-    
-    // Generate numeric IDs for response labels (Canvas uses numeric strings, not Canvas IDs)
-    // Canvas uses numeric IDs (can be 4+ digits) for answer choices
-    // Generate unique IDs for each answer to avoid conflicts
-    const generateNumericId = () => {
-      return String(Math.floor(Math.random() * 9000) + 1000);
-    };
-    const answerIdA = generateNumericId();
-    const answerIdB = generateNumericId();
-    const answerIdC = generateNumericId();
-    const answerIdD = generateNumericId();
-    const answerIds = [answerIdA, answerIdB, answerIdC, answerIdD];
-    
-    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
-    let correctAnswerIndex = 0;
-    if (typeof q.correctAnswer === 'number') {
-      correctAnswerIndex = q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0;
-    } else if (typeof q.correctAnswer === 'string') {
-      const upper = q.correctAnswer.toUpperCase();
-      correctAnswerIndex = ['A', 'B', 'C', 'D'].indexOf(upper);
-      if (correctAnswerIndex === -1) correctAnswerIndex = 0;
-    }
-    const correctAnswerId = answerIds[correctAnswerIndex];
-    
-    let questionText = q.text || q.title || q.stem || '';
-    // Ensure question has text (Canvas requires non-empty question text)
-    if (!questionText.trim()) {
-      questionText = `Question ${index + 1}`;
-    }
-    
-    // Generate Canvas-compatible IDs
-    const questionId = generateCanvasId('g');
-    const assessmentQuestionId = generateCanvasId('g');
-    const responseId = `response${index + 1}`;
-    
-    qti += `
-      <item ident="${questionId}" title="Question">
+    qti += createQTIItem(q, index);
+  });
+
+  qti += `
+    </section>
+  </assessment>
+</questestinterop>`;
+
+  return qti;
+}
+
+// Dispatch a single question to the appropriate Canvas QTI item builder.
+function createQTIItem(q, index) {
+  const type = normalizeQuestionType(q);
+  let questionText = getQuestionText(q);
+  if (!questionText.trim()) {
+    questionText = `Question ${index + 1}`;
+  }
+
+  switch (type) {
+    case QUESTION_TYPES.FILL_IN_THE_BLANK:
+      return buildShortAnswerItem(q, questionText);
+    case QUESTION_TYPES.OPEN_ENDED:
+      return buildEssayItem(q, questionText);
+    case QUESTION_TYPES.CALCULATION:
+      return buildCalculationItem(q, questionText);
+    case QUESTION_TYPES.MULTIPLE_CHOICE:
+    default:
+      return buildMultipleChoiceItem(q, index, questionText);
+  }
+}
+
+// Shared <itemmetadata> block. `extraFields` lets a type add fields like
+// original_answer_ids while keeping the common ones consistent.
+function qtiItemMetadata(qtiType, assessmentQuestionId, extraFields = '') {
+  return `
         <itemmetadata>
           <qtimetadata>
             <qtimetadatafield>
               <fieldlabel>question_type</fieldlabel>
-              <fieldentry>multiple_choice_question</fieldentry>
+              <fieldentry>${qtiType}</fieldentry>
             </qtimetadatafield>
             <qtimetadatafield>
               <fieldlabel>points_possible</fieldlabel>
               <fieldentry>1.0</fieldentry>
-            </qtimetadatafield>
-            <qtimetadatafield>
-              <fieldlabel>original_answer_ids</fieldlabel>
-              <fieldentry>${answerIds.join(',')}</fieldentry>
-            </qtimetadatafield>
+            </qtimetadatafield>${extraFields}
             <qtimetadatafield>
               <fieldlabel>assessment_question_identifierref</fieldlabel>
               <fieldentry>${assessmentQuestionId}</fieldentry>
             </qtimetadatafield>
           </qtimetadata>
-        </itemmetadata>
+        </itemmetadata>`;
+}
+
+function buildMultipleChoiceItem(q, index, questionText) {
+  let optA = getOptionText(q, 'A') || 'Option A';
+  let optB = getOptionText(q, 'B') || 'Option B';
+  let optC = getOptionText(q, 'C') || 'Option C';
+  let optD = getOptionText(q, 'D') || 'Option D';
+
+  // Canvas requires non-empty options.
+  if (!optA.trim()) optA = 'Option A';
+  if (!optB.trim()) optB = 'Option B';
+  if (!optC.trim()) optC = 'Option C';
+  if (!optD.trim()) optD = 'Option D';
+
+  // Canvas uses numeric string IDs (4+ digits) for answer choices.
+  const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
+  const answerIds = [generateNumericId(), generateNumericId(), generateNumericId(), generateNumericId()];
+
+  // correctAnswer may be a letter (A-D) or a numeric index (0-3).
+  let correctAnswerIndex = 0;
+  if (typeof q.correctAnswer === 'number') {
+    correctAnswerIndex = q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0;
+  } else if (typeof q.correctAnswer === 'string') {
+    correctAnswerIndex = ['A', 'B', 'C', 'D'].indexOf(q.correctAnswer.toUpperCase());
+    if (correctAnswerIndex === -1) correctAnswerIndex = 0;
+  }
+  const correctAnswerId = answerIds[correctAnswerIndex];
+
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = `response${index + 1}`;
+  const options = [optA, optB, optC, optD];
+
+  const choices = answerIds
+    .map(
+      (id, i) => `
+              <response_label ident="${id}">
+                <material>
+                  <mattext texttype="text/plain">${escapeXml(options[i])}</mattext>
+                </material>
+              </response_label>`
+    )
+    .join('');
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${answerIds.join(',')}</fieldentry>
+            </qtimetadatafield>`;
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('multiple_choice_question', assessmentQuestionId, extraFields)}
         <presentation>
           <material>
             <mattext texttype="text/html">${escapeHtmlForQTI(questionText)}</mattext>
           </material>
           <response_lid ident="${responseId}" rcardinality="Single">
-            <render_choice>
-              <response_label ident="${answerIdA}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optA)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdB}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optB)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdC}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optC)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdD}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optD)}</mattext>
-                </material>
-              </response_label>
+            <render_choice>${choices}
             </render_choice>
           </response_lid>
         </presentation>
@@ -710,14 +804,259 @@ function createQTIExport(course, questions, assessmentId) {
           </respcondition>
         </resprocessing>
       </item>`;
-  });
+}
 
-  qti += `
-    </section>
-  </assessment>
-</questestinterop>`;
+// Fill-in-the-blank -> Canvas "short answer" question. Every acceptable answer
+// becomes a case-insensitive varequal; matching any of them scores full marks.
+function buildShortAnswerItem(q, questionText) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = 'response1';
 
-  return qti;
+  let answers = getAcceptableAnswers(q);
+  if (answers.length === 0) answers = ['answer'];
+
+  const conditions = answers
+    .map((a) => `              <varequal respident="${responseId}" case="No">${escapeXml(a)}</varequal>`)
+    .join('\n');
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('short_answer_question', assessmentQuestionId)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${escapeHtmlForQTI(questionText)}</mattext>
+          </material>
+          <response_str ident="${responseId}" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+${conditions}
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+}
+
+// Open-ended -> Canvas "essay" question (manually graded). Sample answer and
+// grading criteria are attached as general feedback so instructors keep them.
+function buildEssayItem(q, questionText) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = 'response1';
+
+  const sample = String(q.openEndedSampleAnswer || '').trim();
+  const criteria = String(q.openEndedGradingCriteria || '').trim();
+  const feedbackParts = [];
+  if (sample) feedbackParts.push(`Sample answer: ${sample}`);
+  if (criteria) feedbackParts.push(`Grading criteria: ${criteria}`);
+  const hasFeedback = feedbackParts.length > 0;
+
+  const feedbackDisplay = hasFeedback
+    ? `
+            <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>`
+    : '';
+  const feedbackBlock = hasFeedback
+    ? `
+        <itemfeedback ident="general_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'))}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>`
+    : '';
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('essay_question', assessmentQuestionId)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${escapeHtmlForQTI(questionText)}</mattext>
+          </material>
+          <response_str ident="${responseId}" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="Yes">
+            <conditionvar>
+              <other/>
+            </conditionvar>${feedbackDisplay}
+          </respcondition>
+        </resprocessing>${feedbackBlock}
+      </item>`;
+}
+
+// Calculation -> Canvas "Formula" question (calculated_question). Canvas's
+// parameterized model matches ours: variable ranges + formula + tolerance, plus
+// a pool of pre-generated value sets (<var_sets>) that Canvas draws from per
+// student attempt. We generate that pool with the same sampling/evaluation code
+// GRASP uses to grade, so Canvas grades identically. The XML shape mirrors what
+// Canvas itself emits for Classic Quizzes (lib/cc/qti/qti_items.rb) and what
+// its QTI importer parses back (qti_exporter/lib/qti/calculated_interaction.rb).
+const CALCULATION_EXPORT_VAR_SETS = 20;
+
+function buildCalculationItem(q, questionText) {
+  const specs = (Array.isArray(q.calculationVariables) ? q.calculationVariables : [])
+    .filter((s) => CalculationQuestion.sanitizeVariableName(s));
+  const formula = String(q.calculationFormula || '');
+  const template = String(q.stem || q.title || questionText || '');
+  let decimals = parseInt(q.calculationAnswerDecimals, 10);
+  if (!Number.isFinite(decimals)) decimals = 2;
+  decimals = Math.max(0, Math.min(12, decimals));
+  const tol = Number(q.calculationAnswerTolerancePercent);
+
+  const varSets = generateCalculationVarSets({ specs, formula, decimals });
+  if (varSets.length === 0) {
+    // Sampling failed (bad formula/variables) — degrade to an essay item that
+    // still shows the problem so the instructor can fix it in Canvas.
+    const specDesc = specs.map((v) => `${v.name} ∈ [${v.min}, ${v.max}]`).join(', ');
+    const fallbackText = `${questionText}${formula ? `\n\nFormula: ${formula}` : ''}${specDesc ? `\nVariables: ${specDesc}` : ''}`;
+    return buildEssayItem(
+      { openEndedSampleAnswer: '', openEndedGradingCriteria: '' },
+      fallbackText
+    );
+  }
+
+  // Canvas formula questions write placeholders as [x]; ours are {{x}}.
+  const canvasText = CalculationQuestion.normalizePlaceholders(template, specs)
+    .replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, '[$1]');
+
+  // Percent tolerance maps directly ("2%"). With no tolerance configured GRASP
+  // grades by rounding to the displayed decimals; an absolute margin of half an
+  // ulp at that precision reproduces that behaviour in Canvas.
+  const answerTolerance = Number.isFinite(tol) && tol > 0
+    ? `${tol}%`
+    : String(0.5 * Math.pow(10, -decimals));
+
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = 'response1';
+
+  const varsXml = specs
+    .map((spec) => {
+      const name = escapeXml(CalculationQuestion.sanitizeVariableName(spec));
+      const scale = spec.integerOnly === true
+        ? 0
+        : Math.max(0, Math.min(8, parseInt(spec.decimals, 10) || 0));
+      return `
+              <var name="${name}" scale="${scale}">
+                <min>${escapeXml(spec.min)}</min>
+                <max>${escapeXml(spec.max)}</max>
+              </var>`;
+    })
+    .join('');
+
+  const varSetsXml = varSets
+    .map(({ values, answer }) => {
+      const specByName = {};
+      specs.forEach((s) => { specByName[CalculationQuestion.sanitizeVariableName(s)] = s; });
+      const valueNodes = Object.entries(values)
+        .map(([name, value]) => `
+                <var name="${escapeXml(name)}">${escapeXml(CalculationQuestion.formatVariableForTemplate(value, specByName[name]))}</var>`)
+        .join('');
+      const ident = String(Math.floor(Math.random() * 90000) + 10000);
+      return `
+              <var_set ident="${ident}">${valueNodes}
+                <answer>${escapeXml(answer)}</answer>
+              </var_set>`;
+    })
+    .join('');
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('calculated_question', assessmentQuestionId)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${escapeHtmlForQTI(canvasText)}</mattext>
+          </material>
+          <response_str ident="${responseId}" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition title="correct">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+          <respcondition title="incorrect">
+            <conditionvar>
+              <not>
+                <other/>
+              </not>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">0</setvar>
+          </respcondition>
+        </resprocessing>
+        <itemproc_extension>
+          <calculated>
+            <answer_tolerance>${escapeXml(answerTolerance)}</answer_tolerance>
+            <formulas decimal_places="${decimals}">
+              <formula>${escapeXml(toCanvasFormula(formula))}</formula>
+            </formulas>
+            <vars>${varsXml}
+            </vars>
+            <var_sets>${varSetsXml}
+            </var_sets>
+          </calculated>
+        </itemproc_extension>
+      </item>`;
+}
+
+// Canvas's formula engine uses lowercase pi/e for its math constants; expr-eval
+// canonicalizes them to PI/E. Variables can't be named pi/e (reserved), so a
+// bare word-boundary rewrite is safe.
+function toCanvasFormula(formula) {
+  return String(formula || '')
+    .replace(/\bPI\b/g, 'pi')
+    .replace(/\bE\b/g, 'e');
+}
+
+// Pre-generate the pool of {values -> answer} sets Canvas draws from. Answers
+// are computed by the same evaluator that grades student attempts in GRASP.
+// De-duplicates identical draws; small discrete ranges simply yield fewer sets.
+function generateCalculationVarSets({ specs, formula, decimals }) {
+  if (!Array.isArray(specs) || specs.length === 0 || !String(formula).trim()) {
+    return [];
+  }
+  const sets = [];
+  const seen = new Set();
+  const maxAttempts = CALCULATION_EXPORT_VAR_SETS * 10;
+  for (let i = 0; i < maxAttempts && sets.length < CALCULATION_EXPORT_VAR_SETS; i++) {
+    try {
+      const values = CalculationQuestion.generateVariableValues(specs);
+      const key = JSON.stringify(values);
+      if (seen.has(key)) continue;
+      const answer = CalculationQuestion.evaluateCalculationFormula(formula, values);
+      seen.add(key);
+      sets.push({ values, answer: CalculationQuestion.roundToDecimals(answer, decimals) });
+    } catch (e) {
+      // Singular draw (e.g. division by zero) — try another; anything else
+      // (bad formula) won't improve with retries.
+      if (CalculationQuestion.isRetryableCalculationDrawError(e)) continue;
+      break;
+    }
+  }
+  return sets;
 }
 
 module.exports = {
@@ -727,5 +1066,9 @@ module.exports = {
   updateQuestionHandler,
   updateQuestionStatusHandler,
   deleteQuestionHandler,
-  exportQuestionsHandler
+  exportQuestionsHandler,
+  // Exported for unit testing of the export logic.
+  createCSVExport,
+  createQTIExport,
+  createQTIItem,
 };

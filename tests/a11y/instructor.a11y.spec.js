@@ -224,4 +224,43 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     // visible labels/placeholders but no programmatic names.
     await expectNoA11yViolations(page, { disableRules: ['label'] });
   });
+
+  test('add-question wizard AI branch has no blocking axe violations', async ({
+    page,
+  }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/question-bank');
+
+    await page.getByRole('button', { name: 'Add New Question' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Select Question Type' })
+    ).toBeVisible();
+    // The wizard is a self-contained modal; scope scans to it so the page's
+    // known filter-label findings don't mask regressions inside the wizard.
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+
+    // Step 1 → 2: type, then objective + Bloom (labels are associated).
+    await page.getByRole('button', { name: /Multiple Choice/ }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page
+      .getByLabel('Meta Learning Objective')
+      .selectOption({ label: SEED.OBJECTIVE_NAME });
+    await page
+      .getByLabel('Granular Learning Objective')
+      .selectOption({ label: SEED.GRANULAR_NAME });
+    await page.getByLabel("Bloom's Taxonomy Level").selectOption('Understand');
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // Step 3: the manual-vs-AI source choice (new decision UI).
+    await expect(
+      page.getByRole('heading', { name: 'Choose How to Create' })
+    ).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+
+    // Step 4: the AI-drafted, editable Details fields.
+    await page.getByRole('button', { name: /Generate with AI/ }).click();
+    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await expect(page.getByText('AI-drafted', { exact: false })).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+  });
 });

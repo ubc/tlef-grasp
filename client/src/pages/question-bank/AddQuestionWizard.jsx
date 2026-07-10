@@ -3,6 +3,8 @@ import { QUESTION_TYPES, BLOOM_LEVELS } from "../../lib/constants";
 import { getObjectId } from "../../lib/utils";
 import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useSaveQuestions } from "../../hooks/useQuestions";
+import { useSelectedCourse } from "../../stores/appStore";
+import { generateWizardQuestion } from "../question-generation/generationApi";
 import Modal from "../../components/ui/Modal";
 import QuestionDetailsFields from "./QuestionDetailsFields";
 import { useToast } from "../../components/ui/Toast";
@@ -12,12 +14,13 @@ const inputClass =
 const labelClass = "mb-1 block text-sm font-semibold text-ink";
 const hintClass = "mt-1 text-xs text-muted";
 
-const STEP_LABELS = { 1: "Type", 2: "Details", 3: "Objective", 4: "Finish" };
+const STEP_LABELS = { 1: "Type", 2: "Objective", 3: "Source", 4: "Details", 5: "Finish" };
 const STEP_TITLES = {
   1: "Select Question Type",
-  2: "Fill in Question Details",
-  3: "Associate Learning Objective",
-  4: "Review & Save",
+  2: "Associate Learning Objective",
+  3: "Choose How to Create",
+  4: "Fill in Question Details",
+  5: "Review & Save",
 };
 
 const QUESTION_TYPE_CARDS = [
@@ -36,34 +39,58 @@ const DEFAULT_OPTIONS = [
 
 const DEFAULT_VAR = { name: "", min: "1", max: "10", type: "integer" };
 
+const EMPTY_FORM = {
+  title: "",
+  stem: "",
+  options: DEFAULT_OPTIONS,
+  correctAnswer: "A",
+  fibCorrect: "",
+  fibAcceptable: "",
+  calcFormula: "",
+  calcVars: [DEFAULT_VAR],
+  calcDecimals: "2",
+  calcTolerance: "",
+  openSample: "",
+  openCriteria: "",
+};
+
 export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
   const showToast = useToast();
+  const selectedCourse = useSelectedCourse();
   const { objectives: detailedObjectives, isPending: objectivesLoading } =
     useDetailedObjectives(courseId);
 
   const [step, setStep] = useState(1);
   const [questionType, setQuestionType] = useState(null);
-  const [form, setForm] = useState({
-    title: "",
-    stem: "",
-    options: DEFAULT_OPTIONS,
-    correctAnswer: "A",
-    fibCorrect: "",
-    fibAcceptable: "",
-    calcFormula: "",
-    calcVars: [DEFAULT_VAR],
-    calcDecimals: "2",
-    calcTolerance: "",
-    openSample: "",
-    openCriteria: "",
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [metaObjectiveId, setMetaObjectiveId] = useState("");
   const [granularObjectiveId, setGranularObjectiveId] = useState("");
   const [bloom, setBloom] = useState("");
   const [approve, setApprove] = useState(false);
   const [quizId, setQuizId] = useState("");
 
+  // Source of question details: manual authoring or AI generation.
+  const [source, setSource] = useState("manual");
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState(null);
+  const [aiGenerated, setAiGenerated] = useState(false);
+  const [reviewFlag, setReviewFlag] = useState(false);
+  const [reviewIssue, setReviewIssue] = useState("");
+
   const selectedObjective = detailedObjectives.find((o) => o.id === metaObjectiveId);
+  const selectedGranular = selectedObjective?.granular?.find(
+    (g) => getObjectId(g) === granularObjectiveId
+  );
+  // AI generation retrieves context from the objective's linked materials.
+  const aiAvailable = (selectedObjective?.materialIds?.length || 0) > 0;
+
+  // Any change to the inputs that feed generation invalidates a prior AI draft.
+  const resetGeneratedDraft = () => {
+    setAiGenerated(false);
+    setReviewFlag(false);
+    setReviewIssue("");
+    setGenerationError(null);
+  };
 
   const validateStep = () => {
     if (step === 1) {
@@ -75,6 +102,41 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     }
 
     if (step === 2) {
+      if (!metaObjectiveId) {
+        showToast("Please select a meta learning objective", "error");
+        return false;
+      }
+      if (!granularObjectiveId) {
+        showToast("Please select a granular learning objective", "error");
+        return false;
+      }
+      if (!bloom) {
+        showToast("Please select a Bloom's taxonomy level", "error");
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 3) {
+      if (source === "ai" && !aiAvailable) {
+        showToast(
+          "This objective has no linked materials — choose manual entry or link materials first",
+          "error"
+        );
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 4) {
+      if (generating) {
+        showToast("Please wait for AI generation to finish", "error");
+        return false;
+      }
+      if (source === "ai" && generationError) {
+        showToast("Generation failed — retry or switch to manual entry", "error");
+        return false;
+      }
       if (!form.title.trim()) {
         showToast("Question title is required", "error");
         return false;
@@ -160,22 +222,6 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
       return true;
     }
 
-    if (step === 3) {
-      if (!metaObjectiveId) {
-        showToast("Please select a meta learning objective", "error");
-        return false;
-      }
-      if (!granularObjectiveId) {
-        showToast("Please select a granular learning objective", "error");
-        return false;
-      }
-      if (!bloom) {
-        showToast("Please select a Bloom's taxonomy level", "error");
-        return false;
-      }
-      return true;
-    }
-
     return true;
   };
 
@@ -190,6 +236,38 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     },
   });
   const saving = saveMutation.isPending;
+
+  const runGeneration = async () => {
+    if (!selectedObjective || !selectedGranular) return;
+    setGenerating(true);
+    setGenerationError(null);
+    setReviewFlag(false);
+    setReviewIssue("");
+    try {
+      const result = await generateWizardQuestion({
+        course: selectedCourse,
+        metaObjectiveId,
+        metaObjectiveText: selectedObjective.name,
+        materialIds: selectedObjective.materialIds || [],
+        granularObjectiveId,
+        granularObjectiveText:
+          selectedGranular.name || selectedGranular.text || "",
+        bloom,
+        questionType,
+      });
+      setForm(result.form);
+      setReviewFlag(result.reviewFlag);
+      setReviewIssue(result.reviewIssue);
+      setAiGenerated(true);
+    } catch (error) {
+      console.error("AI question generation failed:", error);
+      setGenerationError(
+        error.message || "Question generation failed. Please try again."
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const submit = () => {
     const payload = {
@@ -254,12 +332,29 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
 
   const advance = () => {
     if (!validateStep()) return;
-    if (step === 4) {
+    if (step === 5) {
       submit();
-    } else {
-      setStep(step + 1);
+      return;
     }
+    if (step === 3) {
+      setStep(4);
+      // Kick off AI generation the first time we enter Details for this config.
+      if (source === "ai" && !aiGenerated) {
+        runGeneration();
+      }
+      return;
+    }
+    setStep(step + 1);
   };
+
+  const nextLabel =
+    step === 5
+      ? saving
+        ? "Saving..."
+        : "Save Question"
+      : step === 3 && source === "ai"
+        ? "Generate"
+        : "Next";
 
   return (
     <Modal
@@ -287,20 +382,20 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           )}
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || generating}
             onClick={advance}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
           >
-            {saving ? "Saving..." : step === 4 ? "Save Question" : "Next"}
+            {nextLabel}
           </button>
         </>
       }
     >
       {/* Step indicator */}
       <div className="mb-6 flex items-center justify-center gap-2">
-        {[1, 2, 3, 4].map((s, index) => (
+        {[1, 2, 3, 4, 5].map((s, index) => (
           <div key={s} className="flex items-center gap-2">
-            {index > 0 && <div className="h-px w-4 bg-gray-200 md:w-8" />}
+            {index > 0 && <div className="h-px w-3 bg-gray-200 md:w-6" />}
             <div className="flex items-center gap-1.5">
               <span
                 className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
@@ -329,7 +424,10 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
             <button
               key={card.type}
               type="button"
-              onClick={() => setQuestionType(card.type)}
+              onClick={() => {
+                setQuestionType(card.type);
+                resetGeneratedDraft();
+              }}
               className={`flex flex-col items-center gap-1.5 rounded-xl border-2 p-5 text-center transition-colors ${
                 questionType === card.type
                   ? "border-primary bg-primary/5"
@@ -344,15 +442,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         </div>
       )}
 
-      {step === 2 && (
-        <QuestionDetailsFields
-          questionType={questionType}
-          form={form}
-          setForm={setForm}
-        />
-      )}
-
-      {step === 3 &&
+      {step === 2 &&
         (objectivesLoading ? (
           <div className="py-10 text-center text-muted">
             <i className="fas fa-spinner fa-spin mb-2 text-2xl text-primary" />
@@ -361,12 +451,16 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         ) : (
           <div className="space-y-4">
             <div>
-              <label className={labelClass}>Meta Learning Objective</label>
+              <label htmlFor="wiz-meta-objective" className={labelClass}>
+                Meta Learning Objective
+              </label>
               <select
+                id="wiz-meta-objective"
                 value={metaObjectiveId}
                 onChange={(event) => {
                   setMetaObjectiveId(event.target.value);
                   setGranularObjectiveId("");
+                  resetGeneratedDraft();
                 }}
                 className={inputClass}
               >
@@ -380,10 +474,16 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
             </div>
             {metaObjectiveId && (
               <div>
-                <label className={labelClass}>Granular Learning Objective</label>
+                <label htmlFor="wiz-granular-objective" className={labelClass}>
+                  Granular Learning Objective
+                </label>
                 <select
+                  id="wiz-granular-objective"
                   value={granularObjectiveId}
-                  onChange={(event) => setGranularObjectiveId(event.target.value)}
+                  onChange={(event) => {
+                    setGranularObjectiveId(event.target.value);
+                    resetGeneratedDraft();
+                  }}
                   className={inputClass}
                 >
                   {selectedObjective?.granular?.length ? (
@@ -405,10 +505,16 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
               </div>
             )}
             <div>
-              <label className={labelClass}>Bloom's Taxonomy Level</label>
+              <label htmlFor="wiz-bloom-level" className={labelClass}>
+                Bloom's Taxonomy Level
+              </label>
               <select
+                id="wiz-bloom-level"
                 value={bloom}
-                onChange={(event) => setBloom(event.target.value)}
+                onChange={(event) => {
+                  setBloom(event.target.value);
+                  resetGeneratedDraft();
+                }}
                 className={inputClass}
               >
                 <option value="">— Select a Bloom's level —</option>
@@ -422,7 +528,127 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           </div>
         ))}
 
-      {step === 4 && (
+      {step === 3 && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Author the question yourself, or let the AI draft it from your course
+            materials for you to review and edit.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSource("manual");
+                resetGeneratedDraft();
+              }}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border-2 p-5 text-center transition-colors ${
+                source === "manual"
+                  ? "border-primary bg-primary/5"
+                  : "border-gray-200 hover:border-primary/40"
+              }`}
+            >
+              <i className="fas fa-pen text-xl text-primary" />
+              <span className="font-semibold text-ink">Provide my own</span>
+              <span className="text-xs text-muted">Type the question and answers yourself</span>
+            </button>
+            <button
+              type="button"
+              disabled={!aiAvailable}
+              aria-disabled={!aiAvailable}
+              onClick={() => {
+                if (!aiAvailable) return;
+                setSource("ai");
+                resetGeneratedDraft();
+              }}
+              className={`flex flex-col items-center gap-1.5 rounded-xl border-2 p-5 text-center transition-colors ${
+                !aiAvailable
+                  ? "cursor-not-allowed border-gray-200 opacity-50"
+                  : source === "ai"
+                    ? "border-primary bg-primary/5"
+                    : "border-gray-200 hover:border-primary/40"
+              }`}
+            >
+              <i className="fas fa-magic text-xl text-primary" />
+              <span className="font-semibold text-ink">Generate with AI</span>
+              <span className="text-xs text-muted">
+                Draft it from your course materials
+              </span>
+            </button>
+          </div>
+          {!aiAvailable && (
+            <p className={`${hintClass} flex items-start gap-1.5`}>
+              <i className="fas fa-info-circle mt-0.5 text-warning" />
+              <span>
+                AI generation is unavailable because this learning objective has no
+                linked course materials. Link materials to the objective, or provide
+                the question yourself.
+              </span>
+            </p>
+          )}
+        </div>
+      )}
+
+      {step === 4 &&
+        (generating ? (
+          <div className="py-12 text-center text-muted">
+            <i className="fas fa-spinner fa-spin mb-3 text-3xl text-primary" />
+            <p className="font-medium text-ink">Generating your question…</p>
+            <p className="mt-1 text-xs">
+              Drafting a {questionType?.replace(/-/g, " ")} question from your course
+              materials and reviewing it for quality.
+            </p>
+          </div>
+        ) : source === "ai" && generationError ? (
+          <div className="py-10 text-center">
+            <i className="fas fa-exclamation-triangle mb-3 text-3xl text-danger" />
+            <p className="mb-1 font-medium text-ink">Couldn't generate a question</p>
+            <p className="mx-auto mb-5 max-w-md text-sm text-muted">
+              {generationError}
+            </p>
+            <button
+              type="button"
+              onClick={runGeneration}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
+            >
+              <i className="fas fa-redo" /> Try again
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {source === "ai" && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+                <span className="flex items-center gap-2 text-ink">
+                  <i className="fas fa-magic text-primary" />
+                  AI-drafted — review and edit before saving.
+                </span>
+                <button
+                  type="button"
+                  onClick={runGeneration}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-primary/40 bg-white px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  <i className="fas fa-redo" /> Regenerate
+                </button>
+              </div>
+            )}
+            {source === "ai" && reviewFlag && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 text-sm text-ink">
+                <i className="fas fa-flag mt-0.5 text-warning" />
+                <span>
+                  <strong>Quality review flagged this question.</strong>
+                  {reviewIssue ? ` ${reviewIssue}` : ""} Please review carefully before
+                  saving.
+                </span>
+              </div>
+            )}
+            <QuestionDetailsFields
+              questionType={questionType}
+              form={form}
+              setForm={setForm}
+            />
+          </div>
+        ))}
+
+      {step === 5 && (
         <div className="space-y-6">
           <div>
             <label className="flex cursor-pointer items-center gap-2.5">
@@ -441,10 +667,11 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
             </p>
           </div>
           <div>
-            <label className={labelClass}>
+            <label htmlFor="wiz-quiz" className={labelClass}>
               Add to a quiz <span className="font-normal text-muted">(optional)</span>
             </label>
             <select
+              id="wiz-quiz"
               value={quizId}
               onChange={(event) => setQuizId(event.target.value)}
               className={inputClass}

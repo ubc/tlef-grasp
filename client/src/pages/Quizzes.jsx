@@ -105,7 +105,7 @@ export default function Quizzes() {
                   updateMutation.mutate({ quizId, updates, successMessage })
                 }
                 onReview={(quizId) =>
-                  navigate(`/question-bank?quiz=${quizId}&status=Draft&tab=overview`)
+                  navigate(`/question-bank?quiz=${quizId}&tab=overview`)
                 }
                 onExport={setExportQuiz}
                 onDelete={setDeleteTarget}
