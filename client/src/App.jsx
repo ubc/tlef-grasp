@@ -22,6 +22,7 @@ const QuestionFlags = lazy(() => import("./pages/QuestionFlags"));
 const MySections = lazy(() => import("./pages/MySections"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Profile = lazy(() => import("./pages/Profile"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const StudentQuiz = lazy(() => import("./pages/StudentQuiz"));
 const QuizSummary = lazy(() => import("./pages/QuizSummary"));
@@ -49,6 +50,7 @@ export default function App() {
           {/* Student dashboard works without a course (shows a no-course state) */}
           <Route element={<AppLayout />}>
             <Route path="/student-dashboard" element={<StudentDashboard />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
 
           <Route element={<RequireOnboarded />}>

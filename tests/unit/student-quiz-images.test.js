@@ -30,6 +30,9 @@ jest.mock("../../src/services/course", () => ({
 jest.mock("../../src/services/database", () => ({
   connect: jest.fn(),
 }));
+jest.mock("../../src/services/quiz-session", () => ({
+  getOrCreateSession: jest.fn(),
+}));
 
 const quizService = require("../../src/services/quiz");
 const quizScheduleService = require("../../src/services/quiz-schedule");
@@ -37,6 +40,7 @@ const CalculationQuestion = require("../../src/models/questions/CalculationQuest
 const { isStudent } = require("../../src/utils/auth");
 const { getCourseById } = require("../../src/services/course");
 const databaseService = require("../../src/services/database");
+const quizSessionService = require("../../src/services/quiz-session");
 const studentRouter = require("../../src/routes/student");
 
 const USER_ID = new ObjectId().toString();
@@ -82,6 +86,11 @@ describe("student quiz questions include stem images", () => {
 
   beforeEach(() => {
     isStudent.mockResolvedValue(true);
+    quizSessionService.getOrCreateSession.mockResolvedValue({
+      startedAt: new Date("2026-07-10T12:00:00.000Z"),
+      expiresAt: new Date("2026-07-10T13:00:00.000Z"),
+      timeLimitMinutes: 60,
+    });
     quizService.getQuizById.mockResolvedValue({
       _id: new ObjectId(QUIZ_ID),
       name: "Midterm Review",

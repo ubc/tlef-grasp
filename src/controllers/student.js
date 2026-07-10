@@ -8,6 +8,7 @@ const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const databaseService = require('../services/database');
+const quizSessionService = require('../services/quiz-session');
 
 // A student who started a quiz inside its window keeps access to their
 // in-progress attempt after the window closes: recorded answers exist (answers
@@ -24,7 +25,13 @@ const hasUnsubmittedAttempt = async (userId, quizId) => {
   const attempt = await db
     .collection("grasp_student_attempt")
     .findOne({ userId: userIdObj, quizId: quizIdObj });
-  return Boolean(attempt);
+  if (attempt) return true;
+
+  // A timed session can expire before the student submits an answer. Keep it
+  // reachable long enough for the client to perform its automatic zero-score
+  // submission instead of silently abandoning that started attempt.
+  const session = await quizSessionService.getSession(userId, quizId);
+  return Boolean(session && !session.submittedAt);
 };
 
 // Resolve whether a student may access a quiz right now, based on the
@@ -37,7 +44,7 @@ const resolveStudentQuizAccess = async (quiz, user) => {
 
   // Instructors (staff/faculty/admins) aren't enrolled in a section — let them
   // open any published quiz regardless of the per-section schedule.
-  if (!(await isStudent(user))) return { success: true };
+  if (!(await isStudent(user))) return { success: true, scheduledExpiresAt: null };
 
   const userId = user._id || user.id;
   const studentSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, quiz.courseId);
@@ -52,7 +59,9 @@ const resolveStudentQuizAccess = async (quiz, user) => {
   const rows = await quizScheduleService.getSchedulesForQuiz(quiz._id.toString());
   const window = quizScheduleService.resolveWindow(rows, studentSectionIds, new Date());
 
-  if (window.accessibleNow) return { success: true };
+  if (window.accessibleNow) {
+    return { success: true, scheduledExpiresAt: window.expireDate || null };
+  }
 
   if (window.reason === "not-yet") {
     return {
@@ -65,7 +74,11 @@ const resolveStudentQuizAccess = async (quiz, user) => {
     // Grace path: the student started during the window but the quiz expired
     // before they finished — let them resume and submit their attempt (#37).
     if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
-      return { success: true, expiredGrace: true };
+      return {
+        success: true,
+        expiredGrace: true,
+        scheduledExpiresAt: window.expireDate || null,
+      };
     }
     return { success: false, status: 403, message: "This quiz has expired and is no longer available." };
   }
@@ -122,12 +135,19 @@ const startQuizHandler = async (req, res) => {
     }
 
     const sessionId = `session_${Date.now()}_${quizId}`;
+    const userId = req.user._id || req.user.id;
+    const session = await quizSessionService.getOrCreateSession(userId, quiz, {
+      scheduledExpiresAt: accessibility.scheduledExpiresAt,
+    });
 
     res.json({
       success: true,
       data: {
         quizId: quizId,
         sessionId: sessionId,
+        startedAt: session.startedAt,
+        expiresAt: session.expiresAt,
+        timeLimitMinutes: session.timeLimitMinutes,
         message: "Quiz started successfully",
       },
     });
@@ -165,6 +185,11 @@ const getQuizQuestionsHandler = async (req, res) => {
 
     // Get personalized questions for the student
     const userId = req.user._id || req.user.id;
+    // A questions request is also a valid start action (for bookmarked/direct
+    // student URLs), but it never resets an existing session's deadline.
+    const session = await quizSessionService.getOrCreateSession(userId, quiz, {
+      scheduledExpiresAt: accessibility.scheduledExpiresAt,
+    });
     const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
 
     if (!questions || questions.length === 0) {
@@ -176,6 +201,9 @@ const getQuizQuestionsHandler = async (req, res) => {
           disablePreviousNavigation: quiz.disablePreviousNavigation === true,
           course: "",
           duration: 0,
+          startedAt: session.startedAt,
+          expiresAt: session.expiresAt,
+          timeLimitMinutes: session.timeLimitMinutes,
           questions: [],
         },
         message: "No approved questions available for this quiz",
@@ -369,6 +397,9 @@ const getQuizQuestionsHandler = async (req, res) => {
         course: courseName,
         disablePreviousNavigation: quiz.disablePreviousNavigation === true,
         duration: 0,
+        startedAt: session.startedAt,
+        expiresAt: session.expiresAt,
+        timeLimitMinutes: session.timeLimitMinutes,
         questions: transformedQuestions,
         previousAnswers,
       },
@@ -402,13 +433,13 @@ const submitQuizHandler = async (req, res) => {
     const db = await databaseService.connect();
     const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
     const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+    const session = await quizSessionService.getSession(userId, quizId);
+    const authoritativeTimeSpent = session?.startedAt
+      ? Math.max(0, Date.now() - new Date(session.startedAt).getTime())
+      : timeSpent;
 
     // Compute score from server-recorded attempts (recorded at /check time)
     const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
-
-    if (attempts.length === 0) {
-      return res.status(400).json({ success: false, message: "No answers recorded for this quiz." });
-    }
 
     const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
     const totalQuestions = gradedAttempts.length;
@@ -430,9 +461,10 @@ const submitQuizHandler = async (req, res) => {
           score: score ?? 0,
           correctAnswers,
           totalQuestions,
-          timeSpent
+          timeSpent: authoritativeTimeSpent
         });
       }
+      await quizSessionService.markSubmitted(userId, quizId);
     } catch (performanceError) {
       console.error("Error recording score or awarding achievements:", performanceError);
     }
@@ -445,7 +477,7 @@ const submitQuizHandler = async (req, res) => {
         score,
         correctAnswers,
         totalQuestions,
-        timeSpent,
+        timeSpent: authoritativeTimeSpent,
         submittedAt: new Date().toISOString(),
         newAchievements,
       },

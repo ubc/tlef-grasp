@@ -21,6 +21,9 @@ const createQuiz = async (courseId, quizData) => {
             published: false,
             deliveryFormat: quizData.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved",
             disablePreviousNavigation: quizData.disablePreviousNavigation === true,
+            timeLimitMinutes: Number.isInteger(Number(quizData.timeLimitMinutes)) && Number(quizData.timeLimitMinutes) > 0
+                ? Number(quizData.timeLimitMinutes)
+                : 60,
             // Availability is configured per section in grasp_quiz_section_schedule.
             createdAt: new Date(),
             updatedAt: new Date()

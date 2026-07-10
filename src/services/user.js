@@ -47,6 +47,48 @@ async function getUserByPuid(puid) {
 }
 
 /**
+ * Update the profile fields a user is allowed to manage themselves.
+ * Identity and role fields remain managed by IAM and are intentionally not
+ * accepted here.
+ *
+ * @param {Object} user - Authenticated user from the session
+ * @param {Object} profile - Editable profile fields
+ * @returns {Promise<Object|null>} Updated user document
+ */
+async function updateUserProfile(user, profile) {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user");
+        const { ObjectId } = require('mongodb');
+
+        const userId = user?._id || user?.id;
+        const filter = userId && ObjectId.isValid(String(userId))
+            ? { _id: new ObjectId(String(userId)) }
+            : { puid: user?.puid };
+
+        if (!filter.puid && !filter._id) {
+            throw new Error("Authenticated user identity is required");
+        }
+
+        await collection.updateOne(
+            filter,
+            {
+                $set: {
+                    displayName: profile.displayName,
+                    email: profile.email,
+                    updatedAt: new Date(),
+                },
+            }
+        );
+
+        return collection.findOne(filter);
+    } catch (error) {
+        console.error("Error updating user profile:", error);
+        throw error;
+    }
+}
+
+/**
  * Get user IDs that are in a specific course
  * @param {Object} db - Database connection
  * @param {string|ObjectId} courseId - Course ID
@@ -157,6 +199,7 @@ async function getStudentsNotInCourse(courseId) {
 module.exports = {
     createOrUpdateUser,
     getUserByPuid,
+    updateUserProfile,
     getStaffUsersNotInCourse,
     getStudentsNotInCourse,
 };

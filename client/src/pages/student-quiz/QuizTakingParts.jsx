@@ -3,7 +3,7 @@ import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
 
-export function Timer({ startTime }) {
+export function Timer({ expiresAt, onExpire }) {
   const [, forceTick] = useState(0);
 
   useEffect(() => {
@@ -11,14 +11,22 @@ export function Timer({ startTime }) {
     return () => clearInterval(interval);
   }, []);
 
-  const totalSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  const remainingSeconds = expiresAt
+    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000))
+    : 0;
+
+  useEffect(() => {
+    if (remainingSeconds === 0 && expiresAt) onExpire?.();
+  }, [expiresAt, onExpire, remainingSeconds]);
+
+  const hours = String(Math.floor(remainingSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((remainingSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(remainingSeconds % 60).padStart(2, "0");
 
   return (
     <span>
       <i className="fas fa-clock mr-1" />
-      {minutes}:{seconds}
+      Time remaining: {hours}:{minutes}:{seconds}
     </span>
   );
 }

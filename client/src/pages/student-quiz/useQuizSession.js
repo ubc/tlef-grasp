@@ -25,6 +25,7 @@ export function useQuizSession({ onLoadError } = {}) {
   const [submitting, setSubmitting] = useState(false);
   const [completion, setCompletion] = useState(null);
   const [achievementToasts, setAchievementToasts] = useState([]);
+  const [timeExpired, setTimeExpired] = useState(false);
 
   const reset = () => {
     setQuizData(null);
@@ -32,6 +33,7 @@ export function useQuizSession({ onLoadError } = {}) {
     setFeedback({});
     setCompletion(null);
     setStartTime(null);
+    setTimeExpired(false);
     queryClient.invalidateQueries({ queryKey: ["student-quiz-list"] });
   };
 
@@ -72,14 +74,15 @@ export function useQuizSession({ onLoadError } = {}) {
     setLoading(true);
     setCompletion(null);
     try {
-      const [quizMeta, questionsData] = await Promise.all([
+      const [quizMeta, startData, questionsData] = await Promise.all([
         api.get(`/api/quiz/${quizId}`),
+        api.post(`/api/student/quizzes/${quizId}/start`),
         api.get(`/api/student/quizzes/${quizId}/questions`, {
           headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
         }),
       ]);
 
-      if (!quizMeta.success || !questionsData.success) {
+      if (!quizMeta.success || !startData.success || !questionsData.success) {
         throw new Error(
           questionsData.message || quizMeta.message || "Failed to load quiz"
         );
@@ -97,12 +100,18 @@ export function useQuizSession({ onLoadError } = {}) {
         disablePreviousNavigation:
           questionsData.data?.disablePreviousNavigation === true ||
           quizMeta.quiz?.disablePreviousNavigation === true,
+        startedAt: questionsData.data?.startedAt || startData.data?.startedAt,
+        expiresAt: questionsData.data?.expiresAt || startData.data?.expiresAt,
+        timeLimitMinutes:
+          questionsData.data?.timeLimitMinutes || startData.data?.timeLimitMinutes || 60,
         questions,
       });
       setAnswers(restoredAnswers);
       setFeedback(restoredFeedback);
       setCurrentIndex(firstUnansweredIndex(questions, restoredFeedback));
-      setStartTime(Date.now());
+      setStartTime(
+        new Date(questionsData.data?.startedAt || startData.data?.startedAt).getTime()
+      );
       return true;
     } catch (error) {
       console.error("Error starting quiz:", error);
@@ -286,6 +295,12 @@ export function useQuizSession({ onLoadError } = {}) {
     }
   };
 
+  const expireQuiz = () => {
+    if (timeExpired || completion) return;
+    setTimeExpired(true);
+    finishQuiz();
+  };
+
   return {
     quizData,
     loading,
@@ -297,11 +312,13 @@ export function useQuizSession({ onLoadError } = {}) {
     completion,
     achievementToasts,
     startTime,
+    timeExpired,
     startQuiz,
     restartQuiz,
     selectMcqAnswer,
     submitTextAnswer,
     finishQuiz,
+    expireQuiz,
     reset,
   };
 }

@@ -186,17 +186,26 @@ export default function Sidebar({ open = false, onClose }) {
         </div>
 
         {/* User controls */}
-        {!isStudent && can("settings") && (
-          <div className="mb-[25px] flex justify-center border-b border-white/10 px-[25px] pb-[25px]">
+        <div className="mb-[25px] flex justify-center gap-3 border-b border-white/10 px-[25px] pb-[25px]">
+          <Link
+            to="/profile"
+            className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
+            aria-label="Profile"
+            title="Profile"
+          >
+            <i className="fas fa-user-circle text-lg text-white/90" />
+          </Link>
+          {!isStudent && can("settings") && (
             <Link
               to="/settings"
               className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
               aria-label="Settings"
+              title="Settings"
             >
               <i className="fas fa-cog text-lg text-white/90" />
             </Link>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Course selector */}
         <div className="mb-[25px]">

@@ -63,7 +63,6 @@ export default function StudentQuiz() {
     submitting,
     completion,
     achievementToasts,
-    startTime,
   } = session;
 
   const backToList = () => {
@@ -175,7 +174,7 @@ export default function StudentQuiz() {
               {currentIndex + 1} of {quizData.questions.length}
             </span>
             <span className="text-gray-300">|</span>
-            <Timer startTime={startTime} />
+            <Timer expiresAt={quizData.expiresAt} onExpire={session.expireQuiz} />
           </div>
         </div>
       </div>

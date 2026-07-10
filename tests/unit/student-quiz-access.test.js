@@ -46,12 +46,19 @@ jest.mock('../../src/services/database', () => ({
   connect: jest.fn(),
 }));
 
+jest.mock('../../src/services/quiz-session', () => ({
+  getOrCreateSession: jest.fn(),
+  getSession: jest.fn(),
+  markSubmitted: jest.fn(),
+}));
+
 const quizService = require('../../src/services/quiz');
 const quizScheduleService = require('../../src/services/quiz-schedule');
 const { isStudent } = require('../../src/utils/auth');
 const achievementService = require('../../src/services/achievement');
 const { getCourseById } = require('../../src/services/course');
 const databaseService = require('../../src/services/database');
+const quizSessionService = require('../../src/services/quiz-session');
 const studentRouter = require('../../src/routes/student');
 
 const USER_ID = new ObjectId().toString();
@@ -287,4 +294,11 @@ describe('student quiz access past the expiry window (#37)', () => {
       expect(res.body.message).toMatch(/expired/i);
     });
   });
+  quizSessionService.getOrCreateSession.mockResolvedValue({
+    startedAt: new Date('2026-01-01T00:00:00Z'),
+    expiresAt: new Date('2026-01-01T01:00:00Z'),
+    timeLimitMinutes: 60,
+  });
+  quizSessionService.getSession.mockResolvedValue(null);
+  quizSessionService.markSubmitted.mockResolvedValue({});
 });

@@ -106,6 +106,7 @@ class DatabaseService {
       // 3. Quiz Score: Tracks the score of the FIRST attempt per student per quiz
       await this.db.collection("grasp_quiz_score").createIndex({ userId: 1, quizId: 1 }, { unique: true });
       await this.db.collection("grasp_quiz_score").createIndex({ courseId: 1 });
+      await this.db.collection("grasp_quiz_session").createIndex({ userId: 1, quizId: 1 }, { unique: true });
 
       // --- Per-Section Quiz Scheduling ---
       await this.db.collection("grasp_quiz_section_schedule").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });

@@ -13,6 +13,7 @@ const PAGE_TITLES = {
   "/my-sections": "My Sections",
   "/users": "Users",
   "/settings": "Settings",
+  "/profile": "Profile",
   "/student-dashboard": "Dashboard",
   "/quiz": "My Quizzes",
   "/quiz-summary": "Quiz Summary",
