@@ -11,14 +11,6 @@ const CalculationQuestion = require('../models/questions/CalculationQuestion');
 
 // --- Export helpers shared across CSV / QTI ---------------------------------
 
-// Canvas QTI question_type value for each of our internal question types.
-const QUESTION_TYPE_TO_QTI = {
-  [QUESTION_TYPES.MULTIPLE_CHOICE]: 'multiple_choice_question',
-  [QUESTION_TYPES.FILL_IN_THE_BLANK]: 'short_answer_question',
-  [QUESTION_TYPES.OPEN_ENDED]: 'essay_question',
-  [QUESTION_TYPES.CALCULATION]: 'numerical_question',
-};
-
 // Escape text for use in XML attributes / plain-text nodes.
 function escapeXml(text) {
   if (text === null || text === undefined) return '';
@@ -68,6 +60,16 @@ function getOptionText(q, key) {
   const opt = q.options[key];
   if (typeof opt === 'string') return opt;
   return (opt && (opt.text || '')) || '';
+}
+
+// Calculation questions are excluded from QTI export until the
+// calculated_question output is verified against a live Canvas import
+// (issue #46). The builder (buildCalculationItem) is complete and unit-tested —
+// re-enable by removing this filter. CSV and JSON exports still include them.
+function filterQTIExportableQuestions(questions) {
+  return questions.filter(
+    (q) => normalizeQuestionType(q) !== QUESTION_TYPES.CALCULATION
+  );
 }
 
 // Acceptable answers for fill-in-the-blank, canonical answer first, de-duplicated.
@@ -361,9 +363,16 @@ const exportQuestionsHandler = async (req, res) => {
         filename = `questions-${course}-${Date.now()}.json`;
         break;
       case 'qti':
-      default:
+      default: {
         // Canvas requires QTI in ZIP format
-        return createQTIZipExport(res, course, questions, quizName, quizDescription);
+        const qtiQuestions = filterQTIExportableQuestions(questions);
+        if (qtiQuestions.length === 0) {
+          return res.status(400).json({
+            error: "This quiz only contains calculation questions, which are not yet supported in Canvas (QTI) export. Use CSV or JSON instead."
+          });
+        }
+        return createQTIZipExport(res, course, qtiQuestions, quizName, quizDescription);
+      }
     }
 
     res.setHeader('Content-Type', contentType);
@@ -663,7 +672,8 @@ function createIMSManifest(course, assessmentId, timestamp) {
   };
 }
 
-function createQTIExport(course, questions, assessmentId) {
+function createQTIExport(course, allQuestions, assessmentId) {
+  const questions = filterQTIExportableQuestions(allQuestions);
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 
@@ -960,10 +970,11 @@ function buildCalculationItem(q, questionText) {
     })
     .join('');
 
+  const specByName = {};
+  specs.forEach((s) => { specByName[CalculationQuestion.sanitizeVariableName(s)] = s; });
+
   const varSetsXml = varSets
     .map(({ values, answer }) => {
-      const specByName = {};
-      specs.forEach((s) => { specByName[CalculationQuestion.sanitizeVariableName(s)] = s; });
       const valueNodes = Object.entries(values)
         .map(([name, value]) => `
                 <var name="${escapeXml(name)}">${escapeXml(CalculationQuestion.formatVariableForTemplate(value, specByName[name]))}</var>`)

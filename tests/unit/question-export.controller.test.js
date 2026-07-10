@@ -214,18 +214,25 @@ describe('createQTIItem', () => {
 });
 
 describe('createQTIExport', () => {
-  test('emits one <item> per question across mixed types', () => {
+  test('emits one <item> per supported question across mixed types', () => {
     const xml = createQTIExport('Mixed Quiz', [
       mcQuestion,
       fibQuestion,
       openQuestion,
       calcQuestion,
     ]);
-    expect((xml.match(/<item /g) || []).length).toBe(4);
+    expect((xml.match(/<item /g) || []).length).toBe(3);
     expect(xml).toContain('multiple_choice_question');
     expect(xml).toContain('short_answer_question');
     expect(xml).toContain('essay_question');
-    expect(xml).toContain('calculated_question');
     expect(xml).toContain('</questestinterop>');
+  });
+
+  // Calculation export to Canvas is built and tested (see createQTIItem specs
+  // above) but disabled pending a live Canvas import verification (issue #46).
+  test('excludes calculation questions until verified against live Canvas', () => {
+    const xml = createQTIExport('Mixed Quiz', [mcQuestion, calcQuestion]);
+    expect((xml.match(/<item /g) || []).length).toBe(1);
+    expect(xml).not.toContain('calculated_question');
   });
 });
