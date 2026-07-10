@@ -20,11 +20,10 @@ test.describe('Instructor question bank (seeded course)', () => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/question-bank');
 
-    // The hardcoded notification bell was removed (issue #27); the instructor
-    // sidebar keeps its Profile and Settings controls. Exact match targets the
-    // round Settings icon (aria-label "Settings"), not the "  Settings" nav row.
+    // The hardcoded notification bell was removed (issue #27). Exact match
+    // targets the round Settings icon (aria-label "Settings"), not the
+    // "  Settings" nav row.
     await expect(page.getByRole('button', { name: 'Notifications' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Profile' })).toBeVisible();
     await expect(
       page.getByRole('link', { name: 'Settings', exact: true })
     ).toBeVisible();

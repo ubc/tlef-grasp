@@ -233,9 +233,8 @@ short-circuits the rest of that describe, which is what you want for a journey.
   `Create Learning Objectives` → pick the material → `Generate` → `Save Selected` (all
   stubbed). Then `Continue` → questions generate (stubbed) → `Add to Quiz` → name the quiz
   → `Save to Quiz` → success modal → `Go to Question Bank`.
-- **Approval lives in the Question Bank, not `QuestionReview.jsx`.** `QuestionReview.jsx`
-  is a legacy port that operates on hardcoded sample data (no API) — don't drive real
-  approval through it. Use the Question Bank `QuestionsTab` bulk **Approve** (faculty only).
+- **Approval lives in the Question Bank.** Use the Question Bank `QuestionsTab` bulk
+  **Approve** action (faculty only).
 
 ## What to test (priority order)
 
@@ -251,7 +250,7 @@ short-circuits the rest of that describe, which is what you want for a journey.
    student cannot reach instructor pages (`/users`, question generation); role-scoped
    nav renders correctly.
 3. **Core instructor loop**: onboarding/setup wizard → course + section creation →
-   material upload → objectives → question review/bank → quiz assembly + scheduling.
+   material upload → objectives → question bank → quiz assembly + scheduling.
 4. **Core student loop**: student dashboard → take a quiz (`StudentQuiz`) → answers are
    accepted/validated → score appears in quiz scores/achievements.
 5. **Error states**: invalid form submissions show validation messages; API failures

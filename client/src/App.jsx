@@ -16,7 +16,6 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const CourseMaterials = lazy(() => import("./pages/CourseMaterials"));
 const QuestionGeneration = lazy(() => import("./pages/QuestionGeneration"));
 const QuestionBank = lazy(() => import("./pages/QuestionBank"));
-const QuestionReview = lazy(() => import("./pages/QuestionReview"));
 const Quizzes = lazy(() => import("./pages/Quizzes"));
 const QuizScores = lazy(() => import("./pages/QuizScores"));
 const QuestionFlags = lazy(() => import("./pages/QuestionFlags"));
@@ -61,7 +60,6 @@ export default function App() {
                 <Route path="/question-flags" element={<QuestionFlags />} />
                 <Route path="/my-sections" element={<MySections />} />
                 <Route path="/quizzes" element={<Quizzes />} />
-                <Route path="/question-review" element={<QuestionReview />} />
 
                 {/* Areas the course owner can hide from co-instructors */}
                 <Route element={<RequirePermission permission="courseMaterials" />}>

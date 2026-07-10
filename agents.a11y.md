@@ -69,7 +69,7 @@ Its load-bearing details, all of which apply here:
 ## What to scan (priority order)
 
 1. **Every routed page** in `client/src/pages/` (Landing, Dashboard, Onboarding,
-   CourseMaterials, QuestionBank, QuestionGeneration, QuestionReview, Quizzes,
+   CourseMaterials, QuestionBank, QuestionGeneration, Quizzes,
    QuizScores, QuizSummary, MySections, Users, Settings, Achievements,
    StudentDashboard, StudentQuiz) — in its default authenticated state for the
    appropriate role (`test.use({ storageState: … })` per file, same as E2E).

@@ -186,15 +186,8 @@ export default function Sidebar({ open = false, onClose }) {
         </div>
 
         {/* User controls */}
-        <div className="mb-[25px] flex justify-center gap-[15px] border-b border-white/10 px-[25px] pb-[25px]">
-          <button
-            type="button"
-            className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
-            aria-label="Profile"
-          >
-            <i className="fas fa-user text-lg text-white/90" />
-          </button>
-          {!isStudent && can("settings") && (
+        {!isStudent && can("settings") && (
+          <div className="mb-[25px] flex justify-center border-b border-white/10 px-[25px] pb-[25px]">
             <Link
               to="/settings"
               className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
@@ -202,8 +195,8 @@ export default function Sidebar({ open = false, onClose }) {
             >
               <i className="fas fa-cog text-lg text-white/90" />
             </Link>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Course selector */}
         <div className="mb-[25px]">

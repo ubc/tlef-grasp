@@ -91,13 +91,23 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   const navLink = (name) =>
     page.getByRole('navigation').getByRole('link', { name });
 
+  // Empty courses automatically open the upload modal; populated courses expose
+  // the header action instead. Both lead to the same Text upload tile.
+  const openTextUpload = async () => {
+    const textTile = page.getByRole('button', { name: 'Text' });
+    const openUpload = page.getByRole('button', { name: 'Upload Materials' });
+    await expect(textTile.or(openUpload)).toBeVisible();
+    if (!(await textTile.isVisible())) {
+      await openUpload.click();
+    }
+    await textTile.click();
+  };
+
   test('uploads a text material for the course', async () => {
     await navLink('Course Materials').click();
     await expect(page).toHaveURL('/course-materials');
 
-    // The current upload flow opens a modal first, then exposes the Text tile.
-    await page.getByRole('button', { name: 'Upload Materials' }).click();
-    await page.getByRole('button', { name: 'Text' }).click();
+    await openTextUpload();
     await expect(
       page.getByRole('heading', { name: 'Add Text Content' })
     ).toBeVisible();
@@ -166,8 +176,7 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
 
   test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {
     await navLink('Course Materials').click();
-    await page.getByRole('button', { name: 'Upload Materials' }).click();
-    await page.getByRole('button', { name: 'Text' }).click();
+    await openTextUpload();
     await page.getByPlaceholder('Enter document title...').fill(IRRELEVANT_MATERIAL_TITLE);
     await page.getByPlaceholder('Paste your text content here...').fill('[E2E_IRRELEVANT_MATERIAL]');
     await page.getByRole('button', { name: 'Save' }).click();

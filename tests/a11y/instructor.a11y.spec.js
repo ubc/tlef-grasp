@@ -42,11 +42,6 @@ const INSTRUCTOR_PAGES = [
     ready: (page) => page.getByRole('button', { name: 'Learning Objectives' }),
   },
   {
-    path: '/question-review',
-    name: 'question review',
-    ready: (page) => page.getByRole('heading', { name: 'Questions' }),
-  },
-  {
     path: '/quizzes',
     name: 'quizzes',
     ready: (page) => page.getByRole('button', { name: 'Manage Quizzes' }),

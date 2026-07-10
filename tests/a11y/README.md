@@ -14,7 +14,7 @@ the same way the E2E workflow does.
 
 - Public landing/login entry page and logged-out protected-route redirect.
 - Authenticated instructor pages: onboarding, Dashboard, Course Materials,
-  Question Generation, Question Bank tabs, Question Review, Quizzes, Quiz Scores,
+  Question Generation, Question Bank tabs, Quizzes, Quiz Scores,
   My Sections, Users, and Settings.
 - Authenticated student-view pages: Student Dashboard, Available Quizzes,
   Achievements, and Quiz Summary error state.
