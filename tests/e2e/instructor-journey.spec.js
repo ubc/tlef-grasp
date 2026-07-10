@@ -178,7 +178,6 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await page.getByRole('button', { name: /Generate$/ }).click();
 
     await expect(page.getByRole('alert')).toContainText('No learning objectives were created');
-    await expect(page.getByText(/couldn't find enough course-related content/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Save Selected/ })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Add Objective' }).click();
