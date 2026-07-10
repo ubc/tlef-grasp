@@ -8,6 +8,7 @@ const {
   IDP_ENABLED,
   prepareSeededStudentCourse,
   prepareSeededInstructorCourse,
+  selectSeededInstructorCourse,
 } = require('./authenticated-helper');
 
 // Accessibility scans for the LLM-grading UI (issue #45): the student's
@@ -145,9 +146,16 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
     ).toBeVisible();
     await studentContext.close();
 
-    // Instructor opens the review modal.
-    const instructorPage = await browser.newPage({ storageState: BIO_PROF2_AUTH_FILE });
-    await prepareSeededInstructorCourse(instructorPage);
+    // Instructor opens the review modal. Select the seeded course WITHOUT
+    // re-seeding — re-seeding wipes the attempt the student just submitted, so
+    // the score row would show "Not Taken" and never render.
+    // A dedicated context (not browser.newPage) is required: axe-core rejects
+    // pages on the default context.
+    const instructorContext = await browser.newContext({
+      storageState: BIO_PROF2_AUTH_FILE,
+    });
+    const instructorPage = await instructorContext.newPage();
+    await selectSeededInstructorCourse(instructorPage);
     await instructorPage.goto('/quiz-scores');
     await instructorPage
       .getByLabel('Filter scores by quiz')
@@ -161,7 +169,7 @@ test.describe('Accessibility: instructor review modal with AI grade (issue #45)'
     ).toBeVisible();
 
     await expectNoA11yViolations(instructorPage, { include: '[role="dialog"]' });
-    await instructorPage.close();
+    await instructorContext.close();
   });
 });
 

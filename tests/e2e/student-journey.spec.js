@@ -202,7 +202,16 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
         has: page.getByRole('heading', { name: 'Perfect Score!' }),
       })
     ).toBeVisible();
-    await expect(seededQuizAchievement.getByText('Score: 100%')).toBeVisible();
+    // Both the "Quiz Completed" and "Perfect Score!" cards for this quiz render
+    // a "Score: 100%" line, so scope the assertion to a single card to avoid a
+    // strict-mode violation.
+    await expect(
+      seededQuizAchievement
+        .filter({
+          has: page.getByRole('heading', { name: 'Perfect Score!' }),
+        })
+        .getByText('Score: 100%')
+    ).toBeVisible();
   });
 });
 
