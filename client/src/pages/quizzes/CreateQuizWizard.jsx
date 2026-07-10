@@ -61,6 +61,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
   const [quizName, setQuizName] = useState("");
   const [deliveryFormat, setDeliveryFormat] = useState("all-approved");
   const [disablePreviousNavigation, setDisablePreviousNavigation] = useState(false);
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(60);
 
   const { materials, isPending: materialsPending } = useCourseMaterials(courseId);
   const { objectives, isPending: objectivesPending } = useCourseObjectives(courseId);
@@ -85,6 +86,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
       showToast("Quiz created successfully", "success");
       setQuizName("");
       setDisablePreviousNavigation(false);
+      setTimeLimitMinutes(60);
       setSelectedMaterials([]);
       setSelectedObjectives([]);
       setStep(1);
@@ -125,6 +127,7 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
       courseId,
       deliveryFormat,
       disablePreviousNavigation,
+      timeLimitMinutes,
       questionIds: matchedQuestions.map(getObjectId),
     });
   };
@@ -270,6 +273,20 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
               Availability is set per section after creation — open the quiz on the
               Manage Quizzes tab and use “Schedule per section”. Until a section is
               scheduled, the quiz is visible to no one.
+            </div>
+
+            <div>
+              <label htmlFor="new-quiz-time-limit" className="mb-1 block text-sm font-semibold text-ink">
+                Time limit (minutes)
+              </label>
+              <input
+                id="new-quiz-time-limit"
+                type="number"
+                min="1"
+                value={timeLimitMinutes}
+                onChange={(event) => setTimeLimitMinutes(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-primary focus:outline-none"
+              />
             </div>
 
             <div>

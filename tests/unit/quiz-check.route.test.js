@@ -21,6 +21,11 @@ jest.mock('../../src/services/answer-grading', () => ({
   gradeFillInTheBlankAnswer: jest.fn(),
 }));
 
+jest.mock('../../src/services/quiz-session', () => ({
+  getSession: jest.fn(),
+  isExpired: jest.fn(),
+}));
+
 jest.mock('../../src/middleware/auth', () => ({
   requireRole: () => (_req, _res, next) => next(),
   requirePageRole: () => (_req, _res, next) => next(),
@@ -29,6 +34,7 @@ jest.mock('../../src/middleware/auth', () => ({
 const quizService = require('../../src/services/quiz');
 const { getQuestion } = require('../../src/services/question');
 const answerGrading = require('../../src/services/answer-grading');
+const quizSessionService = require('../../src/services/quiz-session');
 const quizRouter = require('../../src/routes/quiz');
 
 function buildApp(user = { _id: 'user-1' }) {
@@ -79,6 +85,8 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
     jest.clearAllMocks();
     quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1' });
     quizService.saveStudentPerformance.mockResolvedValue({});
+    quizSessionService.getSession.mockResolvedValue(null);
+    quizSessionService.isExpired.mockReturnValue(false);
   });
 
   describe('open-ended questions', () => {
@@ -188,6 +196,21 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       expect(res.status).toBe(400);
       expect(answerGrading.gradeOpenEndedAnswer).not.toHaveBeenCalled();
     });
+  });
+
+  it('refuses answers after the server-side quiz deadline', async () => {
+    quizSessionService.getSession.mockResolvedValue({
+      expiresAt: new Date(Date.now() - 1_000),
+    });
+    quizSessionService.isExpired.mockReturnValue(true);
+
+    const res = await request(buildApp())
+      .post(checkUrl)
+      .send({ answerText: 'Too late' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('QUIZ_TIME_EXPIRED');
+    expect(getQuestion).not.toHaveBeenCalled();
   });
 
   describe('fill-in-the-blank questions', () => {

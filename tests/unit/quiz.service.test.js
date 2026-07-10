@@ -27,6 +27,7 @@ describe('quiz service settings', () => {
     expect(collection.insertOne).toHaveBeenCalledWith(
       expect.objectContaining({
         disablePreviousNavigation: false,
+        timeLimitMinutes: 60,
       })
     );
   });
@@ -59,6 +60,18 @@ describe('quiz service settings', () => {
       })
     );
     expect(update).not.toHaveProperty('name');
+  });
+
+  it('stores a configured time limit', async () => {
+    await quizService.createQuiz('course-1', {
+      name: 'Timed Quiz',
+      deliveryFormat: 'all-approved',
+      timeLimitMinutes: 90,
+    });
+
+    expect(collection.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({ timeLimitMinutes: 90 })
+    );
   });
 });
 

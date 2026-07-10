@@ -9,6 +9,7 @@ const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty, isStudent } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const quizSessionService = require('../services/quiz-session');
 
 function isBooleanIfPresent(value) {
   return value === undefined || typeof value === "boolean";
@@ -252,6 +253,7 @@ const createQuizHandler = async (req, res) => {
       description,
       deliveryFormat,
       disablePreviousNavigation,
+      timeLimitMinutes,
       questionIds,
       newQuestions
     } = req.body;
@@ -277,6 +279,13 @@ const createQuizHandler = async (req, res) => {
       });
     }
 
+    if (timeLimitMinutes !== undefined && (!Number.isInteger(Number(timeLimitMinutes)) || Number(timeLimitMinutes) <= 0)) {
+      return res.status(400).json({
+        success: false,
+        error: "timeLimitMinutes must be a positive whole number.",
+      });
+    }
+
     if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, courseId)) {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
@@ -286,7 +295,8 @@ const createQuizHandler = async (req, res) => {
       name,
       description,
       deliveryFormat,
-      disablePreviousNavigation
+      disablePreviousNavigation,
+      timeLimitMinutes: timeLimitMinutes === undefined ? undefined : Number(timeLimitMinutes)
     });
     
     const quizId = quiz._id.toString();
@@ -326,7 +336,7 @@ const createQuizHandler = async (req, res) => {
 const updateQuizHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
-    const { name, description, published, deliveryFormat, disablePreviousNavigation } = req.body;
+    const { name, description, published, deliveryFormat, disablePreviousNavigation, timeLimitMinutes } = req.body;
 
     if (deliveryFormat !== undefined && deliveryFormat !== "all-approved" && deliveryFormat !== "spaced-3phase") {
       return res.status(400).json({
@@ -340,6 +350,10 @@ const updateQuizHandler = async (req, res) => {
         success: false,
         error: "disablePreviousNavigation must be a boolean."
       });
+    }
+
+    if (timeLimitMinutes !== undefined && (!Number.isInteger(Number(timeLimitMinutes)) || Number(timeLimitMinutes) <= 0)) {
+      return res.status(400).json({ success: false, error: "timeLimitMinutes must be a positive whole number." });
     }
 
     // Get existing quiz to check current values
@@ -357,7 +371,8 @@ const updateQuizHandler = async (req, res) => {
       description,
       published,
       deliveryFormat,
-      disablePreviousNavigation
+      disablePreviousNavigation,
+      timeLimitMinutes: timeLimitMinutes === undefined ? undefined : Number(timeLimitMinutes)
     });
     
     if (result.matchedCount === 0) {
@@ -708,6 +723,19 @@ const checkQuestionAnswerHandler = async (req, res) => {
     const { quizId, questionId } = req.params;
     const { selectedIndex, answerText } = req.body;
     const userId = req.user?._id || req.user?.id;
+
+    // The UI submits automatically at expiry, but this server-side check is
+    // authoritative and prevents delayed requests from recording new answers.
+    if (userId) {
+      const session = await quizSessionService.getSession(userId, quizId);
+      if (quizSessionService.isExpired(session)) {
+        return res.status(409).json({
+          success: false,
+          code: "QUIZ_TIME_EXPIRED",
+          error: "The time limit for this quiz has expired. Your saved answers are being submitted.",
+        });
+      }
+    }
 
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);

@@ -263,6 +263,9 @@ export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onRe
   const deliveryFormat =
     quiz.deliveryFormat === "spaced-3phase" ? "spaced-3phase" : "all-approved";
   const disablePreviousNavigation = quiz.disablePreviousNavigation === true;
+  const timeLimitMinutes = Number.isInteger(Number(quiz.timeLimitMinutes)) && Number(quiz.timeLimitMinutes) > 0
+    ? Number(quiz.timeLimitMinutes)
+    : 60;
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm">
@@ -294,6 +297,27 @@ export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onRe
               onUpdate(quiz.id, { deliveryFormat: value }, "Delivery format updated");
             }
           }}
+        />
+      </div>
+
+      <div className="mb-5">
+        <label htmlFor={`quiz-time-limit-${quiz.id}`} className="mb-1 block text-xs font-semibold text-muted">
+          Time limit (minutes)
+        </label>
+        <input
+          id={`quiz-time-limit-${quiz.id}`}
+          type="number"
+          min="1"
+          defaultValue={timeLimitMinutes}
+          onBlur={(event) => {
+            const value = Number(event.target.value);
+            if (Number.isInteger(value) && value > 0 && value !== timeLimitMinutes) {
+              onUpdate(quiz.id, { timeLimitMinutes: value }, "Time limit updated");
+            } else {
+              event.target.value = timeLimitMinutes;
+            }
+          }}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
         />
       </div>
 
