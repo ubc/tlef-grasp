@@ -7,7 +7,14 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const quizService = require('../services/quiz');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const CalculationQuestion = require('../models/questions/CalculationQuestion');
+const {
+  normalizeQuestionType,
+  getQuestionText,
+  getOptionText,
+  getCorrectAnswerIndex,
+  getAcceptableAnswers,
+} = require('../utils/question-export-helpers');
+const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
 
 // --- Export helpers shared across CSV / QTI ---------------------------------
 
@@ -37,51 +44,14 @@ function csvField(value) {
   return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
 }
 
-// Resolve a question's internal type, defaulting to multiple-choice for legacy rows.
-function normalizeQuestionType(q) {
-  const t = String(q.questionType || q.type || '').toLowerCase().trim();
-  if (Object.values(QUESTION_TYPES).includes(t)) return t;
-  return QUESTION_TYPES.MULTIPLE_CHOICE;
-}
-
-// The student-facing question text. Multiple-choice keeps the prompt in `title`
-// (its `stem` is a generic "Select the best answer:"); the other types keep the
-// real prompt in `stem`.
-function getQuestionText(q) {
-  if (normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
-    return String(q.title || q.stem || q.text || q.question || '').trim();
-  }
-  return String(q.stem || q.question || q.text || q.title || '').trim();
-}
-
-// Options are stored as an object keyed A-D; values are strings or { text, feedback }.
-function getOptionText(q, key) {
-  if (!q.options || typeof q.options !== 'object') return '';
-  const opt = q.options[key];
-  if (typeof opt === 'string') return opt;
-  return (opt && (opt.text || '')) || '';
-}
-
-// Calculation questions are excluded from QTI export until the
-// calculated_question output is verified against a live Canvas import
-// (issue #46). The builder (buildCalculationItem) is complete and unit-tested —
-// re-enable by removing this filter. CSV and JSON exports still include them.
+// Calculation questions have no QTI export: they were cut from the Canvas
+// export (issue #46) because their parameterized model needs verification
+// against a live Canvas import before we ship it. CSV and JSON still include
+// them as data.
 function filterQTIExportableQuestions(questions) {
   return questions.filter(
     (q) => normalizeQuestionType(q) !== QUESTION_TYPES.CALCULATION
   );
-}
-
-// Acceptable answers for fill-in-the-blank, canonical answer first, de-duplicated.
-function getAcceptableAnswers(q) {
-  const answers = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
-    .map((a) => String(a).trim())
-    .filter(Boolean);
-  const canonical = String(q.correctAnswer || '').trim();
-  if (canonical && !answers.some((a) => a.toLowerCase() === canonical.toLowerCase())) {
-    answers.unshift(canonical);
-  }
-  return answers;
 }
 
 // Get questions for a course
@@ -362,6 +332,15 @@ const exportQuestionsHandler = async (req, res) => {
         contentType = 'application/json';
         filename = `questions-${course}-${Date.now()}.json`;
         break;
+      case 'h5p': {
+        const h5pQuestions = filterH5PExportableQuestions(questions);
+        if (h5pQuestions.length === 0) {
+          return res.status(400).json({
+            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use CSV or JSON instead."
+          });
+        }
+        return createH5PZipExport(res, course, h5pQuestions, quizName);
+      }
       case 'qti':
       default: {
         // Canvas requires QTI in ZIP format
@@ -480,6 +459,35 @@ function generateCanvasId(prefix = 'g') {
     id += chars[Math.floor(Math.random() * chars.length)];
   }
   return id;
+}
+
+/**
+ * Create H5P export: a .h5p package (ZIP with h5p.json + content/content.json).
+ * The package shape depends on the question mix (see utils/h5p-export.js).
+ * Content-only package — the target host must already have the referenced H5P
+ * libraries installed.
+ */
+function createH5PZipExport(res, course, questions, quizName) {
+  const title = quizName || course || 'Quiz';
+  const safeName = String(title).replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase() || 'quiz';
+  const filename = `${safeName}-${Date.now()}.h5p`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('H5P archive error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to create H5P file' });
+    }
+  });
+  archive.pipe(res);
+
+  const { manifest, content } = buildH5PPackage(title, questions);
+  archive.append(JSON.stringify(manifest, null, 2), { name: 'h5p.json' });
+  archive.append(JSON.stringify(content, null, 2), { name: 'content/content.json' });
+  archive.finalize();
 }
 
 /**
@@ -714,7 +722,9 @@ function createQTIItem(q, index) {
     case QUESTION_TYPES.OPEN_ENDED:
       return buildEssayItem(q, questionText);
     case QUESTION_TYPES.CALCULATION:
-      return buildCalculationItem(q, questionText);
+      // No QTI representation shipped; filtered out upstream. Guard against
+      // direct calls so a calc question can never masquerade as another type.
+      return '';
     case QUESTION_TYPES.MULTIPLE_CHOICE:
     default:
       return buildMultipleChoiceItem(q, index, questionText);
@@ -759,15 +769,7 @@ function buildMultipleChoiceItem(q, index, questionText) {
   const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
   const answerIds = [generateNumericId(), generateNumericId(), generateNumericId(), generateNumericId()];
 
-  // correctAnswer may be a letter (A-D) or a numeric index (0-3).
-  let correctAnswerIndex = 0;
-  if (typeof q.correctAnswer === 'number') {
-    correctAnswerIndex = q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0;
-  } else if (typeof q.correctAnswer === 'string') {
-    correctAnswerIndex = ['A', 'B', 'C', 'D'].indexOf(q.correctAnswer.toUpperCase());
-    if (correctAnswerIndex === -1) correctAnswerIndex = 0;
-  }
-  const correctAnswerId = answerIds[correctAnswerIndex];
+  const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
 
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
@@ -908,166 +910,6 @@ function buildEssayItem(q, questionText) {
           </respcondition>
         </resprocessing>${feedbackBlock}
       </item>`;
-}
-
-// Calculation -> Canvas "Formula" question (calculated_question). Canvas's
-// parameterized model matches ours: variable ranges + formula + tolerance, plus
-// a pool of pre-generated value sets (<var_sets>) that Canvas draws from per
-// student attempt. We generate that pool with the same sampling/evaluation code
-// GRASP uses to grade, so Canvas grades identically. The XML shape mirrors what
-// Canvas itself emits for Classic Quizzes (lib/cc/qti/qti_items.rb) and what
-// its QTI importer parses back (qti_exporter/lib/qti/calculated_interaction.rb).
-const CALCULATION_EXPORT_VAR_SETS = 20;
-
-function buildCalculationItem(q, questionText) {
-  const specs = (Array.isArray(q.calculationVariables) ? q.calculationVariables : [])
-    .filter((s) => CalculationQuestion.sanitizeVariableName(s));
-  const formula = String(q.calculationFormula || '');
-  const template = String(q.stem || q.title || questionText || '');
-  let decimals = parseInt(q.calculationAnswerDecimals, 10);
-  if (!Number.isFinite(decimals)) decimals = 2;
-  decimals = Math.max(0, Math.min(12, decimals));
-  const tol = Number(q.calculationAnswerTolerancePercent);
-
-  const varSets = generateCalculationVarSets({ specs, formula, decimals });
-  if (varSets.length === 0) {
-    // Sampling failed (bad formula/variables) — degrade to an essay item that
-    // still shows the problem so the instructor can fix it in Canvas.
-    const specDesc = specs.map((v) => `${v.name} ∈ [${v.min}, ${v.max}]`).join(', ');
-    const fallbackText = `${questionText}${formula ? `\n\nFormula: ${formula}` : ''}${specDesc ? `\nVariables: ${specDesc}` : ''}`;
-    return buildEssayItem(
-      { openEndedSampleAnswer: '', openEndedGradingCriteria: '' },
-      fallbackText
-    );
-  }
-
-  // Canvas formula questions write placeholders as [x]; ours are {{x}}.
-  const canvasText = CalculationQuestion.normalizePlaceholders(template, specs)
-    .replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, '[$1]');
-
-  // Percent tolerance maps directly ("2%"). With no tolerance configured GRASP
-  // grades by rounding to the displayed decimals; an absolute margin of half an
-  // ulp at that precision reproduces that behaviour in Canvas.
-  const answerTolerance = Number.isFinite(tol) && tol > 0
-    ? `${tol}%`
-    : String(0.5 * Math.pow(10, -decimals));
-
-  const questionId = generateCanvasId('g');
-  const assessmentQuestionId = generateCanvasId('g');
-  const responseId = 'response1';
-
-  const varsXml = specs
-    .map((spec) => {
-      const name = escapeXml(CalculationQuestion.sanitizeVariableName(spec));
-      const scale = spec.integerOnly === true
-        ? 0
-        : Math.max(0, Math.min(8, parseInt(spec.decimals, 10) || 0));
-      return `
-              <var name="${name}" scale="${scale}">
-                <min>${escapeXml(spec.min)}</min>
-                <max>${escapeXml(spec.max)}</max>
-              </var>`;
-    })
-    .join('');
-
-  const specByName = {};
-  specs.forEach((s) => { specByName[CalculationQuestion.sanitizeVariableName(s)] = s; });
-
-  const varSetsXml = varSets
-    .map(({ values, answer }) => {
-      const valueNodes = Object.entries(values)
-        .map(([name, value]) => `
-                <var name="${escapeXml(name)}">${escapeXml(CalculationQuestion.formatVariableForTemplate(value, specByName[name]))}</var>`)
-        .join('');
-      const ident = String(Math.floor(Math.random() * 90000) + 10000);
-      return `
-              <var_set ident="${ident}">${valueNodes}
-                <answer>${escapeXml(answer)}</answer>
-              </var_set>`;
-    })
-    .join('');
-
-  return `
-      <item ident="${questionId}" title="Question">${qtiItemMetadata('calculated_question', assessmentQuestionId)}
-        <presentation>
-          <material>
-            <mattext texttype="text/html">${escapeHtmlForQTI(canvasText)}</mattext>
-          </material>
-          <response_str ident="${responseId}" rcardinality="Single">
-            <render_fib fibtype="Decimal">
-              <response_label ident="answer1"/>
-            </render_fib>
-          </response_str>
-        </presentation>
-        <resprocessing>
-          <outcomes>
-            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
-          </outcomes>
-          <respcondition title="correct">
-            <conditionvar>
-              <other/>
-            </conditionvar>
-            <setvar action="Set" varname="SCORE">100</setvar>
-          </respcondition>
-          <respcondition title="incorrect">
-            <conditionvar>
-              <not>
-                <other/>
-              </not>
-            </conditionvar>
-            <setvar action="Set" varname="SCORE">0</setvar>
-          </respcondition>
-        </resprocessing>
-        <itemproc_extension>
-          <calculated>
-            <answer_tolerance>${escapeXml(answerTolerance)}</answer_tolerance>
-            <formulas decimal_places="${decimals}">
-              <formula>${escapeXml(toCanvasFormula(formula))}</formula>
-            </formulas>
-            <vars>${varsXml}
-            </vars>
-            <var_sets>${varSetsXml}
-            </var_sets>
-          </calculated>
-        </itemproc_extension>
-      </item>`;
-}
-
-// Canvas's formula engine uses lowercase pi/e for its math constants; expr-eval
-// canonicalizes them to PI/E. Variables can't be named pi/e (reserved), so a
-// bare word-boundary rewrite is safe.
-function toCanvasFormula(formula) {
-  return String(formula || '')
-    .replace(/\bPI\b/g, 'pi')
-    .replace(/\bE\b/g, 'e');
-}
-
-// Pre-generate the pool of {values -> answer} sets Canvas draws from. Answers
-// are computed by the same evaluator that grades student attempts in GRASP.
-// De-duplicates identical draws; small discrete ranges simply yield fewer sets.
-function generateCalculationVarSets({ specs, formula, decimals }) {
-  if (!Array.isArray(specs) || specs.length === 0 || !String(formula).trim()) {
-    return [];
-  }
-  const sets = [];
-  const seen = new Set();
-  const maxAttempts = CALCULATION_EXPORT_VAR_SETS * 10;
-  for (let i = 0; i < maxAttempts && sets.length < CALCULATION_EXPORT_VAR_SETS; i++) {
-    try {
-      const values = CalculationQuestion.generateVariableValues(specs);
-      const key = JSON.stringify(values);
-      if (seen.has(key)) continue;
-      const answer = CalculationQuestion.evaluateCalculationFormula(formula, values);
-      seen.add(key);
-      sets.push({ values, answer: CalculationQuestion.roundToDecimals(answer, decimals) });
-    } catch (e) {
-      // Singular draw (e.g. division by zero) — try another; anything else
-      // (bad formula) won't improve with retries.
-      if (CalculationQuestion.isRetryableCalculationDrawError(e)) continue;
-      break;
-    }
-  }
-  return sets;
 }
 
 module.exports = {

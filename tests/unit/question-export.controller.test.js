@@ -135,71 +135,11 @@ describe('createQTIItem', () => {
     expect(xml).toContain('Grading criteria');
   });
 
-  test('calculation produces a parameterized calculated_question (Canvas Formula)', () => {
+  // Calculation questions have no QTI representation (cut from Canvas export,
+  // issue #46); the dispatcher must emit nothing rather than misrepresent them.
+  test('calculation produces no QTI item', () => {
     const xml = createQTIItem(calcQuestion, 0);
-    expect(xml).toContain('calculated_question');
-    // Placeholders must be converted from {{m}} to Canvas's [m] syntax.
-    expect(xml).not.toContain('{{m}}');
-    expect(xml).toContain('[m]');
-    expect(xml).toContain('[v]');
-    // Formula, variable ranges, and the pre-generated solution pool.
-    expect(xml).toContain('<formula>0.5 * m * v^2</formula>');
-    expect(xml).toContain('<var name="m" scale="0">');
-    expect(xml).toContain('<var name="v" scale="0">');
-    expect(xml).toContain('<var_sets>');
-    const varSetCount = (xml.match(/<var_set ident=/g) || []).length;
-    expect(varSetCount).toBeGreaterThan(0);
-    expect(varSetCount).toBeLessThanOrEqual(20);
-  });
-
-  test('calculation var_set answers are consistent with the formula', () => {
-    const xml = createQTIItem(calcQuestion, 0);
-    // Parse every var_set and recompute 0.5 * m * v^2 from its values.
-    const varSetRe = /<var_set ident="\d+">([\s\S]*?)<\/var_set>/g;
-    let match;
-    let checked = 0;
-    while ((match = varSetRe.exec(xml)) !== null) {
-      const block = match[1];
-      const m = Number(block.match(/<var name="m">([^<]+)<\/var>/)[1]);
-      const v = Number(block.match(/<var name="v">([^<]+)<\/var>/)[1]);
-      const answer = Number(block.match(/<answer>([^<]+)<\/answer>/)[1]);
-      expect(answer).toBeCloseTo(0.5 * m * v * v, 2);
-      checked += 1;
-    }
-    expect(checked).toBeGreaterThan(0);
-  });
-
-  test('calculation percent tolerance is exported as a percent margin', () => {
-    const xml = createQTIItem({ ...calcQuestion, calculationAnswerTolerancePercent: 2 }, 0);
-    expect(xml).toContain('<answer_tolerance>2%</answer_tolerance>');
-  });
-
-  test('calculation without tolerance exports a half-ulp absolute margin', () => {
-    const xml = createQTIItem(calcQuestion, 0);
-    expect(xml).toContain('<answer_tolerance>0.005</answer_tolerance>');
-  });
-
-  test('calculation formula constants are lowercased for Canvas (PI -> pi)', () => {
-    const circle = {
-      questionType: QUESTION_TYPES.CALCULATION,
-      stem: 'Area of a circle with radius {{r}}?',
-      calculationFormula: 'PI * r^2',
-      calculationVariables: [{ name: 'r', min: 1, max: 5, integerOnly: true }],
-      calculationAnswerDecimals: 2,
-    };
-    const xml = createQTIItem(circle, 0);
-    expect(xml).toContain('<formula>pi * r^2</formula>');
-  });
-
-  test('calculation with an unsamplable formula falls back to an essay item', () => {
-    const broken = {
-      questionType: QUESTION_TYPES.CALCULATION,
-      stem: 'Compute something.',
-      calculationFormula: '',
-      calculationVariables: [],
-    };
-    const xml = createQTIItem(broken, 0);
-    expect(xml).toContain('essay_question');
+    expect(xml).toBe('');
   });
 
   test('legacy rows with no questionType default to multiple choice', () => {
@@ -228,9 +168,7 @@ describe('createQTIExport', () => {
     expect(xml).toContain('</questestinterop>');
   });
 
-  // Calculation export to Canvas is built and tested (see createQTIItem specs
-  // above) but disabled pending a live Canvas import verification (issue #46).
-  test('excludes calculation questions until verified against live Canvas', () => {
+  test('excludes calculation questions (no Canvas export for them)', () => {
     const xml = createQTIExport('Mixed Quiz', [mcQuestion, calcQuestion]);
     expect((xml.match(/<item /g) || []).length).toBe(1);
     expect(xml).not.toContain('calculated_question');
