@@ -824,12 +824,19 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
 
     const attemptCollection = db.collection('grasp_student_attempt');
 
-    const attempt = await attemptCollection.findOne({
-        userId: userIdObj,
-        quizId: quizIdObj,
-        questionId: questionIdObj,
-        questionType: { $in: ['open-ended', 'fill-in-the-blank'] }
-    });
+    // The instructor review endpoint only exposes first-attempt records. Match
+    // that same record here so an older retained/legacy attempt cannot cause a
+    // spurious "already graded" conflict for the answer currently on screen.
+    const attempt = await attemptCollection.findOne(
+        {
+            userId: userIdObj,
+            quizId: quizIdObj,
+            questionId: questionIdObj,
+            questionType: { $in: ['open-ended', 'fill-in-the-blank'] },
+            isFirstAttempt: { $ne: false },
+        },
+        { sort: { createdAt: -1 } }
+    );
 
     if (!attempt) throw new Error('Attempt not found');
     const previousCorrect = attempt.isCorrect;

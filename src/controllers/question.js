@@ -7,6 +7,53 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const quizService = require('../services/quiz');
 const { downloadImageBuffer } = require('../services/image');
 const { ObjectId } = require('mongodb');
+const { QUESTION_TYPES } = require('../constants/app-constants');
+const {
+  normalizeQuestionType,
+  getQuestionText,
+  getOptionText,
+  getCorrectAnswerIndex,
+  getAcceptableAnswers,
+} = require('../utils/question-export-helpers');
+const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
+
+// --- Export helpers shared across CSV / QTI ---------------------------------
+
+// Escape text for use in XML attributes / plain-text nodes.
+function escapeXml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Canvas expects HTML content escaped, wrapping bare text in div/p like Canvas does.
+function escapeHtmlForQTI(text) {
+  if (!text) return '';
+  const textStr = String(text).trim();
+  if (/<[^>]+>/.test(textStr)) {
+    return escapeXml(textStr);
+  }
+  return escapeXml(`<div><p>${textStr}</p></div>`);
+}
+
+// Wrap a value as a properly-escaped CSV field (double embedded quotes).
+function csvField(value) {
+  return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
+}
+
+// Calculation questions have no QTI export: they were cut from the Canvas
+// export (issue #46) because their parameterized model needs verification
+// against a live Canvas import before we ship it. CSV and JSON still include
+// them as data.
+function filterQTIExportableQuestions(questions) {
+  return questions.filter(
+    (q) => normalizeQuestionType(q) !== QUESTION_TYPES.CALCULATION
+  );
+}
 
 // Get questions for a course
 const getQuestionsHandler = async (req, res) => {
@@ -286,10 +333,26 @@ const exportQuestionsHandler = async (req, res) => {
         contentType = 'application/json';
         filename = `questions-${course}-${Date.now()}.json`;
         break;
+      case 'h5p': {
+        const h5pQuestions = filterH5PExportableQuestions(questions);
+        if (h5pQuestions.length === 0) {
+          return res.status(400).json({
+            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use CSV or JSON instead."
+          });
+        }
+        return createH5PZipExport(res, course, h5pQuestions, quizName);
+      }
       case 'qti':
-      default:
+      default: {
         // Canvas requires QTI in ZIP format
-        return await createQTIZipExport(res, course, questions, quizName, quizDescription);
+        const qtiQuestions = filterQTIExportableQuestions(questions);
+        if (qtiQuestions.length === 0) {
+          return res.status(400).json({
+            error: "This quiz only contains calculation questions, which are not yet supported in Canvas (QTI) export. Use CSV or JSON instead."
+          });
+        }
+        return await createQTIZipExport(res, course, qtiQuestions, quizName, quizDescription);
+      }
     }
 
     res.setHeader('Content-Type', contentType);
@@ -302,33 +365,88 @@ const exportQuestionsHandler = async (req, res) => {
   }
 };
 
+// CSV export covers every question type with a shared, spreadsheet-friendly set
+// of columns. Columns that don't apply to a given type are left blank.
 function createCSVExport(course, questions) {
-  let csv = 'Question,Option A,Option B,Option C,Option D,Correct Answer,Bloom Level\n';
-  questions.forEach(q => {
-    // Options are always objects with keys A, B, C, D
-    const getOption = (key) => {
-      if (!q.options || typeof q.options !== 'object') return '';
-      const opt = q.options[key];
-      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
+  const headers = [
+    'Type',
+    'Question',
+    'Option A',
+    'Option B',
+    'Option C',
+    'Option D',
+    'Correct Answer',
+    'Acceptable Answers',
+    'Sample Answer',
+    'Grading Criteria',
+    'Formula',
+    'Bloom Level',
+  ];
+  let csv = `${headers.map(csvField).join(',')}\n`;
+
+  questions.forEach((q) => {
+    const type = normalizeQuestionType(q);
+    const row = {
+      type,
+      question: getQuestionText(q),
+      optA: '',
+      optB: '',
+      optC: '',
+      optD: '',
+      correctAnswer: '',
+      acceptableAnswers: '',
+      sampleAnswer: '',
+      gradingCriteria: '',
+      formula: '',
+      bloom: q.bloom || q.bloomLevel || '',
     };
-    
-    const optA = getOption('A');
-    const optB = getOption('B');
-    const optC = getOption('C');
-    const optD = getOption('D');
-    
-    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
-    let correctAnswerLetter = q.correctAnswer;
-    if (typeof q.correctAnswer === 'number') {
-      correctAnswerLetter = ['A', 'B', 'C', 'D'][q.correctAnswer] || 'A';
+
+    if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      row.optA = getOptionText(q, 'A');
+      row.optB = getOptionText(q, 'B');
+      row.optC = getOptionText(q, 'C');
+      row.optD = getOptionText(q, 'D');
+
+      // correctAnswer may be a letter (A-D) or a numeric index (0-3).
+      let letter = q.correctAnswer;
+      if (typeof letter === 'number') {
+        letter = ['A', 'B', 'C', 'D'][letter] || 'A';
+      }
+      letter = String(letter || '').toUpperCase();
+      row.correctAnswer = getOptionText(q, letter) || letter;
+    } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+      const acceptable = getAcceptableAnswers(q);
+      row.correctAnswer = String(q.correctAnswer || acceptable[0] || '');
+      row.acceptableAnswers = acceptable.join('; ');
+    } else if (type === QUESTION_TYPES.OPEN_ENDED) {
+      row.sampleAnswer = String(q.openEndedSampleAnswer || '');
+      row.gradingCriteria = String(q.openEndedGradingCriteria || '');
+    } else if (type === QUESTION_TYPES.CALCULATION) {
+      row.formula = String(q.calculationFormula || '');
+      const specs = Array.isArray(q.calculationVariables) ? q.calculationVariables : [];
+      if (specs.length > 0) {
+        row.acceptableAnswers = specs
+          .map((v) => `${v.name} ∈ [${v.min}, ${v.max}]`)
+          .join('; ');
+      }
     }
-    if (typeof correctAnswerLetter === 'string') {
-      correctAnswerLetter = correctAnswerLetter.toUpperCase();
-    }
-    const correctOpt = getOption(correctAnswerLetter);
-    
-    csv += `"${q.text || q.title || q.stem || ''}","${optA}","${optB}","${optC}","${optD}","${correctOpt}","${q.bloomLevel || q.bloom || ''}"\n`;
+
+    csv += [
+      row.type,
+      row.question,
+      row.optA,
+      row.optB,
+      row.optC,
+      row.optD,
+      row.correctAnswer,
+      row.acceptableAnswers,
+      row.sampleAnswer,
+      row.gradingCriteria,
+      row.formula,
+      row.bloom,
+    ].map(csvField).join(',') + '\n';
   });
+
   return csv;
 }
 
@@ -410,6 +528,35 @@ async function prepareExportImages(questions) {
 }
 
 /**
+ * Create H5P export: a .h5p package (ZIP with h5p.json + content/content.json).
+ * The package shape depends on the question mix (see utils/h5p-export.js).
+ * Content-only package — the target host must already have the referenced H5P
+ * libraries installed.
+ */
+function createH5PZipExport(res, course, questions, quizName) {
+  const title = quizName || course || 'Quiz';
+  const safeName = String(title).replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase() || 'quiz';
+  const filename = `${safeName}-${Date.now()}.h5p`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (err) => {
+    console.error('H5P archive error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to create H5P file' });
+    }
+  });
+  archive.pipe(res);
+
+  const { manifest, content } = buildH5PPackage(title, questions);
+  archive.append(JSON.stringify(manifest, null, 2), { name: 'h5p.json' });
+  archive.append(JSON.stringify(content, null, 2), { name: 'content/content.json' });
+  archive.finalize();
+}
+
+/**
  * Create QTI export as ZIP file (Canvas requires ZIP format with specific structure)
  */
 async function createQTIZipExport(res, course, questions, quizName, quizDescription) {
@@ -475,16 +622,6 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
  * Create assessment_meta.xml (Canvas-specific metadata file)
  */
 function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, questionCount) {
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
-  
   const safeQuizName = escapeXml(quizName || 'Quiz');
   const safeDescription = escapeXml(quizDescription || '');
   // Canvas expects description to be wrapped in <p> tags if it contains HTML
@@ -569,16 +706,6 @@ function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, q
  * Create IMS Manifest XML file (Canvas Common Cartridge format)
  */
 function createIMSManifest(course, assessmentId, timestamp, imageFiles = []) {
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
-
   const safeCourse = escapeXml(course || 'Quiz');
   const manifestId = generateCanvasId('g');
   const metaId = generateCanvasId('g');
@@ -645,58 +772,33 @@ function createIMSManifest(course, assessmentId, timestamp, imageFiles = []) {
   };
 }
 
-function createQTIExport(course, questions, assessmentId, imageMap = new Map()) {
-  // Helper function to escape XML content (for attributes and plain text)
-  const escapeXml = (text) => {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  };
+// Build the escaped mattext body for the stem text plus its attached images.
+// The <img> src uses $IMS-CC-FILEBASE$ so Canvas rewrites it to the imported
+// course file. Renders the stem text followed by every bundled image; falls
+// back to text-only when no images were bundled (e.g. missing from GridFS).
+function buildHtmlWithImages(text, imageRefs, imageMap) {
+  const bundled = (Array.isArray(imageRefs) ? imageRefs : [])
+    .map((ref) => ({ ref, entry: ref?.fileId ? imageMap?.get(String(ref.fileId)) : null }))
+    .filter((x) => x.entry);
+  if (bundled.length === 0) return escapeHtmlForQTI(text);
 
-  // Helper function to escape HTML content for Canvas QTI
-  // Canvas expects HTML to be escaped, and wraps plain text in div/p tags
-  const escapeHtmlForQTI = (text) => {
-    if (!text) return '';
-    const textStr = String(text).trim();
+  const textHtml = String(text || '').trim()
+    ? `<p>${escapeXml(String(text).trim())}</p>`
+    : '';
+  const imgsHtml = bundled
+    .map(({ ref, entry }) => {
+      // Instructor caption doubles as alt text and a visible caption line.
+      const caption = escapeXml(ref.caption || ref.alt || '');
+      const captionHtml = caption ? `<p><em>${caption}</em></p>` : '';
+      return `<p><img src="${entry.src}" alt="${caption}"></p>${captionHtml}`;
+    })
+    .join('');
+  const html = `<div>${textHtml}${imgsHtml}</div>`;
+  return escapeXml(html);
+}
 
-    // If content already contains HTML tags, just escape it
-    if (/<[^>]+>/.test(textStr)) {
-      return escapeXml(textStr);
-    }
-
-    // For plain text, wrap in div/p tags like Canvas does
-    return escapeXml(`<div><p>${textStr}</p></div>`);
-  };
-
-  // Build the escaped mattext body for the stem text plus its attached images.
-  // The <img> src uses $IMS-CC-FILEBASE$ so Canvas rewrites it to the imported
-  // course file. Renders the stem text followed by every bundled image; falls
-  // back to text-only when no images were bundled (e.g. missing from GridFS).
-  const buildHtmlWithImages = (text, imageRefs) => {
-    const bundled = (Array.isArray(imageRefs) ? imageRefs : [])
-      .map((ref) => ({ ref, entry: ref?.fileId ? imageMap.get(String(ref.fileId)) : null }))
-      .filter((x) => x.entry);
-    if (bundled.length === 0) return escapeHtmlForQTI(text);
-
-    const textHtml = String(text || '').trim()
-      ? `<p>${escapeXml(String(text).trim())}</p>`
-      : '';
-    const imgsHtml = bundled
-      .map(({ ref, entry }) => {
-        // Instructor caption doubles as alt text and a visible caption line.
-        const caption = escapeXml(ref.caption || ref.alt || '');
-        const captionHtml = caption ? `<p><em>${caption}</em></p>` : '';
-        return `<p><img src="${entry.src}" alt="${caption}"></p>${captionHtml}`;
-      })
-      .join('');
-    const html = `<div>${textHtml}${imgsHtml}</div>`;
-    return escapeXml(html);
-  };
-
+function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map()) {
+  const questions = filterQTIExportableQuestions(allQuestions);
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 
@@ -712,106 +814,113 @@ function createQTIExport(course, questions, assessmentId, imageMap = new Map()) 
     <section ident="root_section">`;
 
   questions.forEach((q, index) => {
-    // Options are always objects with keys A, B, C, D
-    const getOption = (key) => {
-      if (!q.options || typeof q.options !== 'object') return '';
-      const opt = q.options[key];
-      return typeof opt === 'string' ? opt : (opt?.text || opt || '');
-    };
+    qti += createQTIItem(q, index, imageMap);
+  });
 
-    let optA = getOption('A') || 'Option A';
-    let optB = getOption('B') || 'Option B';
-    let optC = getOption('C') || 'Option C';
-    let optD = getOption('D') || 'Option D';
+  qti += `
+    </section>
+  </assessment>
+</questestinterop>`;
 
-    // Ensure all options have content (Canvas requires non-empty options)
-    if (!optA.trim()) optA = 'Option A';
-    if (!optB.trim()) optB = 'Option B';
-    if (!optC.trim()) optC = 'Option C';
-    if (!optD.trim()) optD = 'Option D';
-    
-    // Generate numeric IDs for response labels (Canvas uses numeric strings, not Canvas IDs)
-    // Canvas uses numeric IDs (can be 4+ digits) for answer choices
-    // Generate unique IDs for each answer to avoid conflicts
-    const generateNumericId = () => {
-      return String(Math.floor(Math.random() * 9000) + 1000);
-    };
-    const answerIdA = generateNumericId();
-    const answerIdB = generateNumericId();
-    const answerIdC = generateNumericId();
-    const answerIdD = generateNumericId();
-    const answerIds = [answerIdA, answerIdB, answerIdC, answerIdD];
-    
-    // Handle correctAnswer as letter (A, B, C, D) or number (0, 1, 2, 3)
-    let correctAnswerIndex = 0;
-    if (typeof q.correctAnswer === 'number') {
-      correctAnswerIndex = q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0;
-    } else if (typeof q.correctAnswer === 'string') {
-      const upper = q.correctAnswer.toUpperCase();
-      correctAnswerIndex = ['A', 'B', 'C', 'D'].indexOf(upper);
-      if (correctAnswerIndex === -1) correctAnswerIndex = 0;
-    }
-    const correctAnswerId = answerIds[correctAnswerIndex];
-    
-    let questionText = q.text || q.title || q.stem || '';
-    // Ensure question has text (Canvas requires non-empty question text)
-    if (!questionText.trim()) {
-      questionText = `Question ${index + 1}`;
-    }
-    
-    // Generate Canvas-compatible IDs
-    const questionId = generateCanvasId('g');
-    const assessmentQuestionId = generateCanvasId('g');
-    const responseId = `response${index + 1}`;
-    
-    qti += `
-      <item ident="${questionId}" title="Question">
+  return qti;
+}
+
+// Dispatch a single question to the appropriate Canvas QTI item builder.
+function createQTIItem(q, index, imageMap) {
+  const type = normalizeQuestionType(q);
+  let questionText = getQuestionText(q);
+  if (!questionText.trim()) {
+    questionText = `Question ${index + 1}`;
+  }
+  // The question's stem text plus any bundled attached images, ready to drop
+  // into the item's <mattext> body.
+  const questionHtml = buildHtmlWithImages(questionText, stemImagesOf(q), imageMap);
+
+  switch (type) {
+    case QUESTION_TYPES.FILL_IN_THE_BLANK:
+      return buildShortAnswerItem(q, questionHtml);
+    case QUESTION_TYPES.OPEN_ENDED:
+      return buildEssayItem(q, questionHtml);
+    case QUESTION_TYPES.CALCULATION:
+      // No QTI representation shipped; filtered out upstream. Guard against
+      // direct calls so a calc question can never masquerade as another type.
+      return '';
+    case QUESTION_TYPES.MULTIPLE_CHOICE:
+    default:
+      return buildMultipleChoiceItem(q, index, questionHtml);
+  }
+}
+
+// Shared <itemmetadata> block. `extraFields` lets a type add fields like
+// original_answer_ids while keeping the common ones consistent.
+function qtiItemMetadata(qtiType, assessmentQuestionId, extraFields = '') {
+  return `
         <itemmetadata>
           <qtimetadata>
             <qtimetadatafield>
               <fieldlabel>question_type</fieldlabel>
-              <fieldentry>multiple_choice_question</fieldentry>
+              <fieldentry>${qtiType}</fieldentry>
             </qtimetadatafield>
             <qtimetadatafield>
               <fieldlabel>points_possible</fieldlabel>
               <fieldentry>1.0</fieldentry>
-            </qtimetadatafield>
-            <qtimetadatafield>
-              <fieldlabel>original_answer_ids</fieldlabel>
-              <fieldentry>${answerIds.join(',')}</fieldentry>
-            </qtimetadatafield>
+            </qtimetadatafield>${extraFields}
             <qtimetadatafield>
               <fieldlabel>assessment_question_identifierref</fieldlabel>
               <fieldentry>${assessmentQuestionId}</fieldentry>
             </qtimetadatafield>
           </qtimetadata>
-        </itemmetadata>
+        </itemmetadata>`;
+}
+
+function buildMultipleChoiceItem(q, index, questionHtml) {
+  let optA = getOptionText(q, 'A') || 'Option A';
+  let optB = getOptionText(q, 'B') || 'Option B';
+  let optC = getOptionText(q, 'C') || 'Option C';
+  let optD = getOptionText(q, 'D') || 'Option D';
+
+  // Canvas requires non-empty options.
+  if (!optA.trim()) optA = 'Option A';
+  if (!optB.trim()) optB = 'Option B';
+  if (!optC.trim()) optC = 'Option C';
+  if (!optD.trim()) optD = 'Option D';
+
+  // Canvas uses numeric string IDs (4+ digits) for answer choices.
+  const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
+  const answerIds = [generateNumericId(), generateNumericId(), generateNumericId(), generateNumericId()];
+
+  const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
+
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = `response${index + 1}`;
+  const options = [optA, optB, optC, optD];
+
+  const choices = answerIds
+    .map(
+      (id, i) => `
+              <response_label ident="${id}">
+                <material>
+                  <mattext texttype="text/plain">${escapeXml(options[i])}</mattext>
+                </material>
+              </response_label>`
+    )
+    .join('');
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${answerIds.join(',')}</fieldentry>
+            </qtimetadatafield>`;
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('multiple_choice_question', assessmentQuestionId, extraFields)}
         <presentation>
           <material>
-            <mattext texttype="text/html">${buildHtmlWithImages(questionText, stemImagesOf(q))}</mattext>
+            <mattext texttype="text/html">${questionHtml}</mattext>
           </material>
           <response_lid ident="${responseId}" rcardinality="Single">
-            <render_choice>
-              <response_label ident="${answerIdA}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optA)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdB}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optB)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdC}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optC)}</mattext>
-                </material>
-              </response_label>
-              <response_label ident="${answerIdD}">
-                <material>
-                  <mattext texttype="text/plain">${escapeXml(optD)}</mattext>
-                </material>
-              </response_label>
+            <render_choice>${choices}
             </render_choice>
           </response_lid>
         </presentation>
@@ -827,14 +936,100 @@ function createQTIExport(course, questions, assessmentId, imageMap = new Map()) 
           </respcondition>
         </resprocessing>
       </item>`;
-  });
+}
 
-  qti += `
-    </section>
-  </assessment>
-</questestinterop>`;
+// Fill-in-the-blank -> Canvas "short answer" question. Every acceptable answer
+// becomes a case-insensitive varequal; matching any of them scores full marks.
+function buildShortAnswerItem(q, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = 'response1';
 
-  return qti;
+  let answers = getAcceptableAnswers(q);
+  if (answers.length === 0) answers = ['answer'];
+
+  const conditions = answers
+    .map((a) => `              <varequal respident="${responseId}" case="No">${escapeXml(a)}</varequal>`)
+    .join('\n');
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('short_answer_question', assessmentQuestionId)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="${responseId}" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+${conditions}
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+}
+
+// Open-ended -> Canvas "essay" question (manually graded). Sample answer and
+// grading criteria are attached as general feedback so instructors keep them.
+function buildEssayItem(q, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const responseId = 'response1';
+
+  const sample = String(q.openEndedSampleAnswer || '').trim();
+  const criteria = String(q.openEndedGradingCriteria || '').trim();
+  const feedbackParts = [];
+  if (sample) feedbackParts.push(`Sample answer: ${sample}`);
+  if (criteria) feedbackParts.push(`Grading criteria: ${criteria}`);
+  const hasFeedback = feedbackParts.length > 0;
+
+  const feedbackDisplay = hasFeedback
+    ? `
+            <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>`
+    : '';
+  const feedbackBlock = hasFeedback
+    ? `
+        <itemfeedback ident="general_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'))}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>`
+    : '';
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('essay_question', assessmentQuestionId)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="${responseId}" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="Yes">
+            <conditionvar>
+              <other/>
+            </conditionvar>${feedbackDisplay}
+          </respcondition>
+        </resprocessing>${feedbackBlock}
+      </item>`;
 }
 
 module.exports = {
@@ -844,5 +1039,9 @@ module.exports = {
   updateQuestionHandler,
   updateQuestionStatusHandler,
   deleteQuestionHandler,
-  exportQuestionsHandler
+  exportQuestionsHandler,
+  // Exported for unit testing of the export logic.
+  createCSVExport,
+  createQTIExport,
+  createQTIItem,
 };

@@ -30,6 +30,9 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
           bloomLevels: granular.bloom || ["Understand"],
           materialIds: learningObjective.materialIds || [],
           count: granular.count,
+          // Optional: pin the generated type (Question Bank wizard). Omitted for
+          // the main pathway, where type is derived from Bloom preferences.
+          ...(granular.questionType ? { questionType: granular.questionType } : {}),
         });
 
         if (!response.success) {
@@ -346,4 +349,122 @@ export function buildQuestionPayload(question) {
     ).trim();
   }
   return payload;
+}
+
+/* ----------------- Question Bank add-question wizard helpers ----------------- */
+
+function calcVarToForm(variable) {
+  const form = {
+    name: variable.name || "",
+    min: String(variable.min ?? "1"),
+    max: String(variable.max ?? "10"),
+    type: "integer",
+  };
+  if (!variable.integerOnly && Number.isFinite(variable.decimals)) {
+    form.type = String(Math.max(1, Math.min(3, variable.decimals)));
+  }
+  return form;
+}
+
+// Map a generated question card (from convertQuestionsToGroups) into the shape
+// AddQuestionWizard's editable form expects, so an AI question can be reviewed
+// and tweaked in the same fields as a manually authored one.
+export function cardToWizardForm(card) {
+  const qt = card.questionType;
+  const form = {
+    title: card.title || "",
+    stem: card.stem || "",
+    options: [
+      { id: "A", text: "", feedback: "" },
+      { id: "B", text: "", feedback: "" },
+      { id: "C", text: "", feedback: "" },
+      { id: "D", text: "", feedback: "" },
+    ],
+    correctAnswer: "A",
+    fibCorrect: "",
+    fibAcceptable: "",
+    calcFormula: "",
+    calcVars: [{ name: "", min: "1", max: "10", type: "integer" }],
+    calcDecimals: "2",
+    calcTolerance: "",
+    openSample: "",
+    openCriteria: "",
+  };
+
+  if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
+    const opts = card.options || {};
+    form.options = ["A", "B", "C", "D"].map((id) => ({
+      id,
+      text: opts[id]?.text || "",
+      feedback: opts[id]?.feedback || "",
+    }));
+    form.correctAnswer =
+      card.correctAnswer && opts[card.correctAnswer] ? card.correctAnswer : "A";
+  } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+    form.fibCorrect = card.correctAnswer || card.acceptableAnswers?.[0] || "";
+    const rest = (card.acceptableAnswers || []).filter(
+      (answer) => answer && answer !== form.fibCorrect
+    );
+    form.fibAcceptable = rest.join("\n");
+  } else if (qt === QUESTION_TYPES.CALCULATION) {
+    form.calcFormula = card.calculationFormula || "";
+    const vars = Array.isArray(card.calculationVariables)
+      ? card.calculationVariables
+      : [];
+    if (vars.length) form.calcVars = vars.map(calcVarToForm);
+    form.calcDecimals = String(card.calculationAnswerDecimals ?? 2);
+    form.calcTolerance =
+      card.calculationAnswerTolerancePercent != null
+        ? String(card.calculationAnswerTolerancePercent)
+        : "";
+  } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
+    form.openSample = card.openEndedSampleAnswer || "";
+    form.openCriteria = card.openEndedGradingCriteria || "";
+  }
+  return form;
+}
+
+// Generate a single question for one granular objective, honouring the pinned
+// question type, then run the AI quality review. Returns the editable form plus
+// any review flag. Used by the Question Bank add-question wizard's AI branch.
+export async function generateWizardQuestion({
+  course,
+  metaObjectiveId,
+  metaObjectiveText,
+  materialIds,
+  granularObjectiveId,
+  granularObjectiveText,
+  bloom,
+  questionType,
+}) {
+  const objectiveGroups = [
+    {
+      objectiveId: metaObjectiveId,
+      title: metaObjectiveText,
+      materialIds: materialIds || [],
+      items: [
+        {
+          granularId: granularObjectiveId,
+          text: granularObjectiveText,
+          bloom: [bloom || "Understand"],
+          count: 1,
+          questionType,
+        },
+      ],
+    },
+  ];
+
+  const { questions } = await generateQuestions(course, objectiveGroups);
+  const groups = convertQuestionsToGroups(questions);
+  await reviewGeneratedQuestions(groups, course.id || course._id);
+
+  const card = groups[0]?.los?.[0]?.questions?.[0];
+  if (!card) {
+    throw new Error("The AI did not return a question. Please try again.");
+  }
+  return {
+    form: cardToWizardForm(card),
+    reviewFlag: !!card.reviewFlag,
+    reviewIssue: card.reviewIssue || "",
+  };
 }
