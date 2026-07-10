@@ -185,10 +185,14 @@ const getQuizQuestionsHandler = async (req, res) => {
     const transformedQuestions = questions.map((q, index) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
-      const fibMainText =
-        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK
-          ? (q.stem || q.title || "").trim()
-          : questionText;
+      // Fill-in-the-blank and open-ended store the actual prompt in `stem`;
+      // `title` is only a short topic label, so prefer `stem` for those types.
+      const stemFirstTypes =
+        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
+        questionType === QUESTION_TYPES.OPEN_ENDED;
+      const fibMainText = stemFirstTypes
+        ? (q.stem || q.title || "").trim()
+        : questionText;
 
       if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         return {
