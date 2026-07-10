@@ -227,15 +227,32 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
       return counts;
     };
     const before = await granularCounts();
-    expect(Object.values(before).some((n) => n > 0)).toBe(true);
+    const [objectiveId, granularCount] = Object.entries(before).find(
+      ([, count]) => count > 1
+    ) || [];
+    expect(objectiveId, 'an objective with at least two granulars').toBeTruthy();
+
+    // Navigating away from Question Generation resets its in-memory selection.
+    // Re-add the persisted objective before testing the page-only removal.
+    const objectivesRes = await page.request.get(`/api/objective/?courseId=${courseId}`);
+    expect(objectivesRes.ok()).toBe(true);
+    const targetObjective = (await objectivesRes.json()).objectives.find(
+      (objective) => String(objective._id) === objectiveId
+    );
+    expect(targetObjective, 'persisted objective').toBeTruthy();
+    await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+    await page
+      .getByRole('button', { name: targetObjective.name, exact: true })
+      .click();
 
     // Delete the first granular row; the click also fires the objective save
     // (PUT), so wait for that round-trip before re-reading the DB.
     const deleteButtons = page.getByRole('button', {
       name: 'Delete granular objective from page',
     });
+    await expect(deleteButtons).toHaveCount(granularCount);
     const rowsBefore = await deleteButtons.count();
-    expect(rowsBefore).toBeGreaterThan(1); // keep ≥1 granular for the next steps
+    expect(rowsBefore).toBe(granularCount); // keep ≥1 granular for the next steps
     const [saveResponse] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().includes('/api/objective/') && r.request().method() === 'PUT'
