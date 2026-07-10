@@ -135,9 +135,12 @@ function normalizeCourse(course) {
   };
 }
 
-async function prepareSeededInstructorCourse(page) {
-  await seedStudentJourneyCourse();
-
+// Look up the already-seeded course and select it as the instructor WITHOUT
+// re-seeding. seedStudentJourneyCourse() wipes the AI quiz's attempt/score
+// rows, so a flow where a student has just taken the quiz and the instructor
+// then reviews it must not re-seed — that would delete the attempt under the
+// instructor's feet (it would render as "Not Taken").
+async function selectSeededInstructorCourse(page) {
   const response = await page.request.get('/api/courses/my');
   expect(response.ok(), 'instructor can read /api/courses/my').toBe(true);
   const body = await response.json();
@@ -149,6 +152,11 @@ async function prepareSeededInstructorCourse(page) {
   const selected = normalizeCourse(course);
   await selectCourse(page, selected, 'instructor');
   return selected;
+}
+
+async function prepareSeededInstructorCourse(page) {
+  await seedStudentJourneyCourse();
+  return selectSeededInstructorCourse(page);
 }
 
 async function prepareSeededStudentCourse(page) {
@@ -178,6 +186,7 @@ module.exports = {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
   prepareSeededInstructorCourse,
+  selectSeededInstructorCourse,
   prepareSeededStudentCourse,
   gotoCoursePage,
 };

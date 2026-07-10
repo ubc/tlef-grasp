@@ -70,7 +70,42 @@ const SEED_QUESTIONS = [
   },
 ];
 
-const toId = (v) => (typeof v === 'string' && ObjectId.isValid(v) ? new ObjectId(v) : v);
+// --- AI-graded quiz (issue #45) --------------------------------------------
+// A second quiz in the SAME seeded BIOC 302 course, holding the LLM-graded
+// question types: one open-ended (judge → pass/fail + per-criterion feedback)
+// and one fill-in-the-blank (exact match, plus an LLM rescue fallback for
+// equivalent answers). It is a distinct quiz so the existing MCQ-only journey
+// specs, which target QUIZ_NAME, are unaffected.
+//
+// The E2E LLM stub (tests/e2e/stubs/llm-stubs.js) grades deterministically from
+// markers the spec types into the answer box: an open-ended answer containing
+// "[[e2e-pass]]" passes; a fill-in-the-blank answer containing
+// "[[e2e-equivalent]]" is rescued to correct. Anything else fails.
+const AI_QUIZ_NAME = 'BIOC 302 AI-Graded Quiz (seeded)';
+const AI_OPEN_ENDED_TITLE =
+  'Explain how a competitive inhibitor affects apparent Km and Vmax.';
+const AI_FIB_TITLE =
+  'The substrate concentration at half of Vmax is called the _________.';
+const AI_SEED_QUESTIONS = [
+  {
+    seedKey: 'e2e-bioc302-oe1',
+    questionType: 'open-ended',
+    title: AI_OPEN_ENDED_TITLE,
+    openEndedSampleAnswer:
+      'A competitive inhibitor raises the apparent Km because more substrate is needed to reach half of Vmax, while Vmax is unchanged since excess substrate outcompetes the inhibitor.',
+    openEndedGradingCriteria:
+      'States that apparent Km increases; states that Vmax is unchanged; explains why in terms of competition for the active site.',
+    bloom: 'Understand',
+  },
+  {
+    seedKey: 'e2e-bioc302-fib1',
+    questionType: 'fill-in-the-blank',
+    title: AI_FIB_TITLE,
+    correctAnswer: 'Michaelis constant',
+    acceptableAnswers: ['Michaelis constant', 'Km'],
+    bloom: 'Remember',
+  },
+];
 
 async function getUserByPuid(db, puid) {
   return db.collection('grasp_user').findOne({ puid });
@@ -253,12 +288,90 @@ async function seedStudentJourneyCourse() {
       { upsert: true }
     );
 
+    // --- AI-graded quiz (issue #45): open-ended + fill-in-the-blank questions
+    // in the same course, on the same section schedule. ---
+    const aiQuestionIds = [];
+    for (const q of AI_SEED_QUESTIONS) {
+      const base = {
+        title: q.title,
+        stem: q.title,
+        question: q.title,
+        questionType: q.questionType,
+        bloom: q.bloom,
+        granularObjectiveId: granular._id,
+        status: 'Approved',
+        flagStatus: false,
+        createdBy: 'e2e-seed',
+        updatedAt: now,
+      };
+      if (q.questionType === 'open-ended') {
+        base.openEndedSampleAnswer = q.openEndedSampleAnswer;
+        base.openEndedGradingCriteria = q.openEndedGradingCriteria;
+        base.options = null;
+      } else {
+        base.correctAnswer = q.correctAnswer;
+        base.acceptableAnswers = q.acceptableAnswers;
+        base.options = null;
+      }
+      await db.collection('grasp_question').updateOne(
+        { courseId, seedKey: q.seedKey },
+        { $set: base, $setOnInsert: { courseId, seedKey: q.seedKey, createdAt: now } },
+        { upsert: true }
+      );
+      const saved = await db.collection('grasp_question').findOne({ courseId, seedKey: q.seedKey });
+      aiQuestionIds.push(saved._id);
+    }
+
+    await db.collection('grasp_quiz').updateOne(
+      { courseId, name: AI_QUIZ_NAME },
+      {
+        $set: {
+          published: true,
+          deliveryFormat: 'all-approved',
+          disablePreviousNavigation: false,
+          description: 'Seeded AI-graded quiz for the LLM grading E2E flow (issue #45).',
+          updatedAt: now,
+        },
+        $setOnInsert: { courseId, name: AI_QUIZ_NAME, createdAt: now },
+      },
+      { upsert: true }
+    );
+    const aiQuiz = await db.collection('grasp_quiz').findOne({ courseId, name: AI_QUIZ_NAME });
+
+    for (const questionId of aiQuestionIds) {
+      await db.collection('grasp_quiz_question').updateOne(
+        { quizId: aiQuiz._id, questionId },
+        { $setOnInsert: { quizId: aiQuiz._id, questionId, createdAt: now } },
+        { upsert: true }
+      );
+    }
+
+    for (const coll of [
+      'grasp_student_attempt',
+      'grasp_student_performance',
+      'grasp_quiz_score',
+      'grasp_achievement',
+    ]) {
+      await db.collection(coll).deleteMany({ quizId: aiQuiz._id });
+    }
+
+    await db.collection('grasp_quiz_section_schedule').updateOne(
+      { quizId: aiQuiz._id, courseSectionId: section._id },
+      {
+        $set: { releaseDate, expireDate, updatedAt: now },
+        $setOnInsert: { quizId: aiQuiz._id, courseSectionId: section._id, createdAt: now },
+      },
+      { upsert: true }
+    );
+
     return {
       courseId: courseId.toString(),
       courseName: course.courseName,
       quizId: quiz._id.toString(),
       quizName: QUIZ_NAME,
       questionCount: questionIds.length,
+      aiQuizId: aiQuiz._id.toString(),
+      aiQuizName: AI_QUIZ_NAME,
     };
   } finally {
     await client.close();
@@ -306,9 +419,51 @@ async function resetSeededQuizAttemptState() {
   }
 }
 
+/**
+ * Delete the given student's recorded answers, score, and mastery for the
+ * seeded AI-graded quiz (issue #45). The AI-grading specs take that quiz and
+ * then have the instructor grade/override open-ended answers, so each run must
+ * start from a clean, un-taken state regardless of spec order or prior runs.
+ *
+ * @param {string} puid - PUID of the student to reset (defaults to bio_student).
+ */
+async function resetSeededAiQuizAttemptState(puid = BIO_STUDENT_PUID) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is required to reset seeded AI quiz attempt state');
+
+  const client = new MongoClient(uri, {
+    connectTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 8000,
+  });
+  await client.connect();
+
+  try {
+    const db = client.db(process.env.MONGODB_DB_NAME || 'grasp_db');
+    const student = await getUserByPuid(db, puid);
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    const quiz = course
+      ? await db.collection('grasp_quiz').findOne({ courseId: course._id, name: AI_QUIZ_NAME })
+      : null;
+    if (!student || !quiz) {
+      throw new Error(
+        'resetSeededAiQuizAttemptState: seeded user/quiz missing — saml.setup.js must run first'
+      );
+    }
+
+    const filter = { userId: student._id, quizId: quiz._id };
+    await db.collection('grasp_student_attempt').deleteMany(filter);
+    await db.collection('grasp_student_performance').deleteMany(filter);
+    await db.collection('grasp_quiz_score').deleteMany(filter);
+    await db.collection('grasp_achievement').deleteMany(filter);
+  } finally {
+    await client.close();
+  }
+}
+
 module.exports = {
   seedStudentJourneyCourse,
   resetSeededQuizAttemptState,
+  resetSeededAiQuizAttemptState,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,
@@ -320,6 +475,7 @@ module.exports = {
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,
     QUESTION_COUNT: SEED_QUESTIONS.length,
+    AI_QUESTION_COUNT: AI_SEED_QUESTIONS.length,
     // Seeded question titles in insertion order, for question-bank assertions.
     QUESTION_TITLES: SEED_QUESTIONS.map((q) => q.title),
     // The correct option letter for every seeded question is "A" — the student
@@ -327,5 +483,12 @@ module.exports = {
     CORRECT_OPTION_LETTER: 'A',
     // Correct option text per seeded question (option A of each), in quiz order.
     CORRECT_OPTION_TEXTS: SEED_QUESTIONS.map((q) => q.options.A.text),
+    // AI-graded quiz (issue #45): distinct quiz in the same course.
+    AI_QUIZ_NAME,
+    AI_OPEN_ENDED_TITLE,
+    AI_FIB_TITLE,
+    // Markers the E2E LLM stub keys on for a deterministic passing verdict.
+    AI_PASS_MARKER: '[[e2e-pass]]',
+    AI_EQUIVALENT_MARKER: '[[e2e-equivalent]]',
   },
 };

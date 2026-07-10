@@ -82,6 +82,32 @@ const PROMPT_FIELDS = [
       ["{fileName}", "The embedded image filename from the PowerPoint archive, when available."],
     ],
   },
+  {
+    key: "openEndedGrading",
+    label: "Open-Ended Answer Grading Prompt",
+    rows: 12,
+    description:
+      "Used when the AI grades a student's open-ended answer against the question's grading criteria and sample answer. Returns a pass/fail verdict with per-criterion feedback; instructors can override the grade in Quiz Scores.",
+    variables: [
+      ["{question}", "The open-ended question shown to the student."],
+      ["{studentAnswer}", "The student's submitted answer."],
+      ["{gradingCriteria}", "The grading criteria/rubric from the question."],
+      ["{sampleAnswer}", "The sample strong answer from the question."],
+    ],
+  },
+  {
+    key: "fillInTheBlankGrading",
+    label: "Fill-in-the-Blank Fallback Grading Prompt",
+    rows: 12,
+    description:
+      "Used only when a fill-in-the-blank answer does not exactly match an accepted answer. The AI decides whether the answer is equivalent (synonym, alternate notation) and writes brief feedback; it can only upgrade an answer to correct, never downgrade an exact match.",
+    variables: [
+      ["{question}", "The fill-in-the-blank question with its blank."],
+      ["{studentAnswer}", "The student's submitted answer."],
+      ["{correctAnswer}", "The canonical correct answer."],
+      ["{acceptableAnswers}", "Instructor-provided acceptable alternatives."],
+    ],
+  },
 ];
 
 const secondaryBtnClass =

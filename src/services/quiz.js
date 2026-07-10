@@ -167,6 +167,7 @@ const deleteQuiz = async (quizId) => {
         await db.collection("grasp_student_performance").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_section_schedule").deleteMany({ quizId: qid });
+        await db.collection("grasp_quiz_question_flag").deleteMany({ quizId: qid });
 
         const result = await collection.deleteOne({ _id: qid });
         
@@ -724,6 +725,8 @@ const saveStudentPerformance = async (performanceData) => {
             sampleAnswer: performanceData.sampleAnswer || null,
             gradingCriteria: performanceData.gradingCriteria || null,
             feedbackText: performanceData.feedbackText || null,
+            aiGraded: !!performanceData.aiGraded,
+            aiCriteria: Array.isArray(performanceData.aiCriteria) ? performanceData.aiCriteria : null,
             questionType: performanceData.questionType || null,
             isFirstAttempt: true,
             createdAt: new Date()
@@ -799,10 +802,20 @@ const saveStudentPerformance = async (performanceData) => {
 };
 
 /**
- * Grade an open-ended attempt and retroactively update mastery state.
- * Only works on ungraded (isCorrect === null) open-ended attempts.
+ * Instructor grade/override for an attempt, with retroactive mastery update.
+ *
+ * Applies to the two LLM-touched question types:
+ *   - open-ended: ungraded (isCorrect === null, manual grading) OR AI-graded
+ *     and not yet finalized (aiGraded, no gradedAt) → the grade overrides the
+ *     LLM verdict.
+ *   - fill-in-the-blank: only when it went through the LLM rescue fallback
+ *     (aiGraded, no gradedAt). A plain exact-match FIB has aiGraded false and
+ *     is rejected — there is nothing to review.
+ *
+ * A manual grade (gradedAt set) is final. Other types (multiple-choice,
+ * calculation) are never gradable here and surface as "Attempt not found".
  */
-const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
+const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
     const db = await databaseService.connect();
 
     const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
@@ -815,11 +828,17 @@ const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
         userId: userIdObj,
         quizId: quizIdObj,
         questionId: questionIdObj,
-        questionType: 'open-ended'
+        questionType: { $in: ['open-ended', 'fill-in-the-blank'] }
     });
 
-    if (!attempt) throw new Error('Open-ended attempt not found');
-    if (attempt.isCorrect !== null) throw new Error('Attempt has already been graded');
+    if (!attempt) throw new Error('Attempt not found');
+    const previousCorrect = attempt.isCorrect;
+    // An already-decided grade can only be changed while it is an unfinalized
+    // AI grade. This gates both an AI-graded open-ended verdict and an
+    // AI-rescued FIB answer, and rejects plain exact-match FIB (aiGraded false).
+    if (previousCorrect !== null && (!attempt.aiGraded || attempt.gradedAt)) {
+        throw new Error('Attempt has already been graded');
+    }
 
     // Step 1: Update isCorrect on the attempt record
     await attemptCollection.updateOne(
@@ -844,12 +863,41 @@ const gradeOpenEndedAttempt = async (userId, quizId, questionId, isCorrect) => {
 
         const existingMastery = await performanceCollection.findOne(query);
 
-        // Skip if another question for this LO already updated mastery in this quiz session
-        const alreadyUpdatedThisSession = existingMastery?.lastQuizIdSeen?.toString() === quizId.toString();
-        if (!alreadyUpdatedThisSession) {
+        if (previousCorrect === null) {
+            // First grade for this attempt. Skip if another question for this LO
+            // already updated mastery in this quiz session.
+            const alreadyUpdatedThisSession = existingMastery?.lastQuizIdSeen?.toString() === quizId.toString();
+            if (!alreadyUpdatedThisSession) {
+                const updateFields = {
+                    $set: {
+                        lastQuizIdSeen: quizIdObj,
+                        updatedAt: new Date(),
+                        needsRemediation: !isCorrect
+                    }
+                };
+
+                if (!isCorrect) {
+                    updateFields.$set.remediationBloomLevel = attempt.bloom;
+                    updateFields.$set.timesCorrect = 0;
+                } else {
+                    updateFields.$inc = { timesCorrect: 1 };
+                    const currentBloomIdx = BLOOM_ORDER.indexOf(attempt.bloom);
+                    const storedBloomIdx = existingMastery ? BLOOM_ORDER.indexOf(existingMastery.highestBloomPassed) : -1;
+                    if (currentBloomIdx > storedBloomIdx) {
+                        updateFields.$set.highestBloomPassed = attempt.bloom;
+                    }
+                }
+
+                await performanceCollection.updateOne(query, updateFields, { upsert: true });
+            }
+        } else if (previousCorrect !== !!isCorrect) {
+            // Instructor override flips an AI grade whose mastery effect was
+            // already applied by saveStudentPerformance — re-apply the same
+            // rules with the corrected verdict. highestBloomPassed cannot be
+            // safely lowered (we don't know its pre-AI value), so a
+            // correct→incorrect flip leaves it in place.
             const updateFields = {
                 $set: {
-                    lastQuizIdSeen: quizIdObj,
                     updatedAt: new Date(),
                     needsRemediation: !isCorrect
                 }
@@ -1047,6 +1095,10 @@ const getStudentQuizAttempt = async (quizId, userId) => {
                 createdAt: attempt.createdAt,
                 openEndedSampleAnswer: questionData.openEndedSampleAnswer || null,
                 openEndedGradingCriteria: questionData.openEndedGradingCriteria || null,
+                feedbackText: attempt.feedbackText || null,
+                aiGraded: !!attempt.aiGraded,
+                aiCriteria: Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : null,
+                gradedAt: attempt.gradedAt || null,
             };
         }).filter(a => a !== null);
     } catch (error) {
@@ -1098,5 +1150,5 @@ module.exports = {
     getQuizScores,
     getStudentQuizAttempt,
     getUserScoresForCourse,
-    gradeOpenEndedAttempt
+    gradeAttempt
 };

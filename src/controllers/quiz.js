@@ -2,6 +2,8 @@ const quizService = require("../services/quiz");
 const quizScheduleService = require("../services/quiz-schedule");
 const sectionService = require("../services/course-section");
 const questionService = require("../services/question");
+const answerGradingService = require("../services/answer-grading");
+const questionFlagService = require("../services/quiz-question-flag");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
@@ -11,6 +13,116 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 function isBooleanIfPresent(value) {
   return value === undefined || typeof value === "boolean";
 }
+
+const FLAG_REASONS = new Set(["unclear", "incorrect", "inappropriate", "typo", "other"]);
+const FLAG_STATUSES = new Set(["pending", "reviewed", "resolved", "dismissed"]);
+
+const getRequestUserId = (req) => req.user?._id || req.user?.id;
+
+async function canAccessCourse(req, courseId) {
+  return (await isFaculty(req.user)) || (await isUserInCourse(getRequestUserId(req), courseId));
+}
+
+/**
+ * Create or update the current learner's report for one quiz question.
+ * Instructors using the student preview can submit a test report under their
+ * own account; regular student reports retain the same data shape.
+ */
+const saveStudentQuestionFlagHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { questionId, reason, comment = "", questionText = "" } = req.body || {};
+
+    if (!questionId || !FLAG_REASONS.has(reason)) {
+      return res.status(400).json({
+        success: false,
+        error: "questionId and a valid flag reason are required",
+      });
+    }
+    if (typeof comment !== "string" || comment.length > 2000) {
+      return res.status(400).json({ success: false, error: "comment must be at most 2000 characters" });
+    }
+    if (typeof questionText !== "string" || questionText.length > 10000) {
+      return res.status(400).json({ success: false, error: "questionText must be at most 10000 characters" });
+    }
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
+    if (!(await canAccessCourse(req, quiz.courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    if (!(await questionFlagService.questionBelongsToQuiz(quizId, questionId))) {
+      return res.status(400).json({ success: false, error: "Question does not belong to this quiz" });
+    }
+
+    const flag = await questionFlagService.saveStudentFlag({
+      courseId: quiz.courseId,
+      quizId,
+      questionId,
+      studentId: getRequestUserId(req),
+      reason,
+      comment: comment.trim(),
+      questionText: questionText.trim(),
+    });
+    res.status(201).json({ success: true, flag });
+  } catch (error) {
+    console.error("Error saving student question flag:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+const getMyQuestionFlagsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.query;
+    if (!courseId) return res.status(400).json({ success: false, error: "courseId is required" });
+    if (!(await canAccessCourse(req, courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const flags = await questionFlagService.getStudentFlags(courseId, getRequestUserId(req));
+    res.json({ success: true, flags });
+  } catch (error) {
+    console.error("Error fetching student question flags:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+const getCourseQuestionFlagsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    if (!(await canAccessCourse(req, courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const flags = await questionFlagService.getCourseFlags(courseId);
+    res.json({ success: true, flags });
+  } catch (error) {
+    console.error("Error fetching course question flags:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+const updateQuestionFlagStatusHandler = async (req, res) => {
+  try {
+    const { flagId } = req.params;
+    const { status } = req.body || {};
+    if (!FLAG_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, error: "Invalid flag status" });
+    }
+    const flag = await questionFlagService.getFlagById(flagId);
+    if (!flag) return res.status(404).json({ success: false, error: "Flag not found" });
+    if (!(await canAccessCourse(req, flag.courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const updatedFlag = await questionFlagService.updateFlagStatus(
+      flagId,
+      status,
+      getRequestUserId(req)
+    );
+    res.json({ success: true, flag: updatedFlag });
+  } catch (error) {
+    console.error("Error updating question flag status:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
 
 /**
  * Get all quizzes for a course
@@ -707,6 +819,24 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: "This open-ended question is missing a sample answer. Ask your instructor to fix it in the question bank.",
         });
       }
+
+      // LLM judge: rubric + sample → { pass, overallFeedback, per-criterion }.
+      // On failure the attempt degrades to the pre-LLM behavior — saved
+      // ungraded (isCorrect: null) for manual grading in the review modal.
+      let grading = null;
+      try {
+        const quiz = await quizService.getQuizById(quizId);
+        grading = await answerGradingService.gradeOpenEndedAnswer({
+          courseId: quiz ? quiz.courseId : null,
+          question: String(question.question || question.stem || ""),
+          studentAnswer: String(answerText).trim(),
+          sampleAnswer: sample,
+          gradingCriteria: criteria,
+        });
+      } catch (e) {
+        console.error('[check] Open-ended LLM grading failed — leaving attempt for manual grading:', e);
+      }
+
       if (userId && quizId) {
         quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
@@ -714,17 +844,21 @@ const checkQuestionAnswerHandler = async (req, res) => {
           granularObjectiveId: question.granularObjectiveId,
           bloom: question.bloom,
           questionType: QUESTION_TYPES.OPEN_ENDED,
-          isCorrect: null,
+          isCorrect: grading ? grading.pass : null,
           selectedAnswer: String(answerText).trim(),
           sampleAnswer: sample,
           gradingCriteria: criteria || null,
+          feedbackText: grading ? grading.overallFeedback : null,
+          aiGraded: !!grading,
+          aiCriteria: grading ? grading.criteria : null,
         }).catch(e => console.error('[check] Failed to record attempt:', e));
       }
       res.json({
         success: true,
-        isCorrect: null,
-        autoGraded: false,
-        feedback: "",
+        isCorrect: grading ? grading.pass : null,
+        autoGraded: !!grading,
+        feedback: grading ? grading.overallFeedback : "",
+        criteria: grading ? grading.criteria : null,
         openEnded: true,
         sampleAnswer: sample,
         gradingCriteria: criteria || null,
@@ -763,8 +897,33 @@ const checkQuestionAnswerHandler = async (req, res) => {
         }
       }
       const normalizedAcceptable = [...variants].map((a) => normalizeFib(a)).filter(Boolean);
-      const isCorrect = normalizedAcceptable.length > 0 && normalizedAcceptable.some((a) => a === given);
+      let isCorrect = normalizedAcceptable.length > 0 && normalizedAcceptable.some((a) => a === given);
       const canonical = trimmedCanonical;
+
+      // LLM fallback (rescue only): an exact match never reaches the LLM and is
+      // never downgraded. On mismatch the judge may flip the answer to correct
+      // (equivalent meaning/notation) and always returns student-facing
+      // feedback. On LLM failure the exact-match verdict stands.
+      let feedback = isCorrect ? "Correct." : "";
+      let aiGraded = false;
+      if (!isCorrect && given && normalizedAcceptable.length > 0) {
+        try {
+          const quiz = await quizService.getQuizById(quizId);
+          const rescue = await answerGradingService.gradeFillInTheBlankAnswer({
+            courseId: quiz ? quiz.courseId : null,
+            question: String(question.question || question.stem || ""),
+            studentAnswer: String(answerText).trim(),
+            correctAnswer: canonical,
+            acceptableAnswers: Array.isArray(question.acceptableAnswers) ? question.acceptableAnswers : [],
+          });
+          aiGraded = true;
+          if (rescue.correct) isCorrect = true;
+          if (rescue.feedback) feedback = rescue.feedback;
+        } catch (e) {
+          console.error('[check] Fill-in-the-blank LLM fallback failed — keeping exact-match result:', e);
+        }
+      }
+
       if (userId && quizId) {
         quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
@@ -776,12 +935,15 @@ const checkQuestionAnswerHandler = async (req, res) => {
           selectedAnswer: String(answerText).trim(),
           correctAnswer: isCorrect ? canonical : null,
           correctOptionText: canonical || null,
+          feedbackText: aiGraded ? feedback : null,
+          aiGraded,
         }).catch(e => console.error('[check] Failed to record attempt:', e));
       }
       res.json({
         success: true,
         isCorrect,
-        feedback: isCorrect ? "Correct." : "",
+        feedback,
+        aiGraded,
         correctAnswer: isCorrect ? canonical : null,
         correctOptionText: canonical || null,
       });
@@ -909,9 +1071,10 @@ const getStudentQuizAttemptHandler = async (req, res) => {
 };
 
 /**
- * Grade an open-ended question for a specific student (Faculty only)
+ * Grade/override an open-ended or AI-graded fill-in-the-blank attempt for a
+ * specific student (Faculty only).
  */
-const gradeOpenEndedHandler = async (req, res) => {
+const gradeAttemptHandler = async (req, res) => {
   try {
     const { quizId, userId } = req.params;
     const { questionId, isCorrect } = req.body;
@@ -923,11 +1086,11 @@ const gradeOpenEndedHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: 'questionId is required' });
     }
 
-    const result = await quizService.gradeOpenEndedAttempt(userId, quizId, questionId, isCorrect);
+    const result = await quizService.gradeAttempt(userId, quizId, questionId, isCorrect);
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('Error grading open-ended attempt:', error);
-    const status = error.message === 'Open-ended attempt not found' ? 404
+    console.error('Error grading attempt:', error);
+    const status = error.message === 'Attempt not found' ? 404
       : error.message === 'Attempt has already been graded' ? 409
       : 500;
     res.status(status).json({ success: false, error: error.message });
@@ -1037,6 +1200,10 @@ module.exports = {
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,
+  saveStudentQuestionFlagHandler,
+  getMyQuestionFlagsHandler,
+  getCourseQuestionFlagsHandler,
+  updateQuestionFlagStatusHandler,
   getQuizSchedulesHandler,
   updateQuizSchedulesHandler,
   getMyScoresHandler,
@@ -1050,5 +1217,5 @@ module.exports = {
   checkQuestionAnswerHandler,
   getQuizScoresHandler,
   getStudentQuizAttemptHandler,
-  gradeOpenEndedHandler
+  gradeAttemptHandler
 };

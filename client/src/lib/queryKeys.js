@@ -23,6 +23,8 @@ export const queryKeys = {
   quizSchedules: (quizId) => ["quiz-schedules", quizId],
   quizScores: (quizId) => ["quiz-scores", quizId],
   quizStudentAttempts: (quizId, userId) => ["quiz-attempts", quizId, userId],
+  myQuizQuestionFlags: (courseId) => ["quiz-question-flags", "mine", courseId],
+  courseQuizQuestionFlags: (courseId) => ["quiz-question-flags", "course", courseId],
   studentQuizList: (courseId) => ["student-quiz-list", courseId],
   studentQuizResults: (quizId) => ["quiz-results", quizId],
 

@@ -42,9 +42,11 @@ export function TextAnswerInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question.id]);
 
+  // isCorrect null = awaiting manual grading (neutral); AI-graded open-ended
+  // answers carry a boolean and tint like any other graded answer.
   const borderClass = !answered
     ? "border-gray-200"
-    : feedback.openEnded || feedback.isCorrect === null
+    : feedback.isCorrect === null
       ? "border-primary/50 bg-primary/5"
       : feedback.isCorrect
         ? "border-success/60 bg-success/5"
@@ -146,7 +148,6 @@ export function McqOptions({ question, answers, feedback, submitting, onSelect }
 export function FeedbackPanel({ feedback }) {
   if (!feedback) return null;
 
-  // Open-ended: not auto-graded — show sample answer and criteria
   if (
     feedback.openEnded ||
     (feedback.questionType === QUESTION_TYPES.OPEN_ENDED && feedback.isCorrect === null)
@@ -154,6 +155,71 @@ export function FeedbackPanel({ feedback }) {
     const sample = feedback.sampleAnswer != null ? String(feedback.sampleAnswer).trim() : "";
     const criteria =
       feedback.gradingCriteria != null ? String(feedback.gradingCriteria).trim() : "";
+    const graded = typeof feedback.isCorrect === "boolean";
+
+    // Open-ended, LLM-graded: verdict + overall feedback + per-criterion
+    // breakdown, plus the sample answer for comparison.
+    if (graded) {
+      const pass = feedback.isCorrect;
+      const aiCriteria = Array.isArray(feedback.criteria) ? feedback.criteria : [];
+      return (
+        <div
+          className={`mt-5 rounded-xl border p-5 ${
+            pass ? "border-success/40 bg-success/5" : "border-danger/40 bg-danger/5"
+          }`}
+        >
+          <div className={`font-semibold ${pass ? "text-success" : "text-danger"}`}>
+            <i className={`fas ${pass ? "fa-check-circle" : "fa-times-circle"} mr-2`} />
+            {pass ? "Correct!" : "Incorrect."}
+          </div>
+          <p className="mt-1 text-xs text-gray-600">
+            Graded by AI — your instructor can review and change this grade.
+          </p>
+          {feedback.feedbackText && (
+            <RichText
+              text={escapeHtml(feedback.feedbackText)}
+              className="mt-2 text-sm text-gray-600"
+            />
+          )}
+          {aiCriteria.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {aiCriteria.map((item, index) => (
+                <li key={index} className="flex items-start gap-2 text-sm">
+                  <i
+                    className={`fas mt-0.5 ${
+                      item.met ? "fa-check text-success" : "fa-times text-danger"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="text-gray-700">
+                    <span className="font-semibold text-ink">
+                      {item.criterion}
+                      <span className="sr-only">
+                        {item.met ? " — met" : " — not met"}
+                      </span>
+                      {": "}
+                    </span>
+                    {item.comment}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {sample && (
+            <div className="mt-3">
+              <div className="text-sm font-semibold text-ink">Sample answer</div>
+              <RichText
+                text={escapeHtml(sample)}
+                className="mt-1 text-sm whitespace-pre-wrap text-gray-600"
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Open-ended, not auto-graded (LLM unavailable) — show sample answer and
+    // criteria for self-assessment; the instructor grades it manually.
     return (
       <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-5">
         <div className="mb-2 font-semibold text-ink">

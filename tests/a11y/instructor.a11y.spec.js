@@ -3,6 +3,7 @@ const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
 const { FACULTY_AUTH_FILE, BIO_PROF2_AUTH_FILE } = require('../e2e/auth');
 const { SEED } = require('../e2e/seed');
+const { getQuizCard } = require('../e2e/helpers');
 const {
   IDP_ENABLED,
   gotoCoursePage,
@@ -168,11 +169,8 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await page.goto('/quizzes');
 
     await expect(page.getByRole('button', { name: 'Manage Quizzes' })).toBeVisible();
-    const quizCard = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: SEED.QUIZ_NAME }) })
-      .first();
-    await expect(quizCard.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    const quizCard = getQuizCard(page, SEED.QUIZ_NAME);
+    await expect(quizCard).toBeVisible();
     await expect(quizCard.getByRole('button', { name: 'Export' })).toBeVisible();
     await expectNoA11yViolations(page);
 
@@ -190,11 +188,8 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await prepareSeededInstructorCourse(page);
     await page.goto('/quizzes');
 
-    const quizCard = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: SEED.QUIZ_NAME }) })
-      .first();
-    await expect(quizCard.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+    const quizCard = getQuizCard(page, SEED.QUIZ_NAME);
+    await expect(quizCard).toBeVisible();
 
     await quizCard.getByRole('button', { name: /101\s+Active/ }).click();
     await expect(page.getByText('Edit section schedule')).toBeVisible();
@@ -214,6 +209,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
   }) => {
     await prepareSeededInstructorCourse(page);
     await page.goto('/question-bank');
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
 
     await expect(page.getByRole('button', { name: 'Questions' })).toBeVisible();
     await expect(page.getByText(/Michaelis constant|competitive inhibitor/i).first()).toBeVisible();

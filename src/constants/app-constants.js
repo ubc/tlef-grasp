@@ -176,6 +176,46 @@ CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question l
 
 You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
 
+const OPEN_ENDED_GRADING_PROMPT = `You are an automated grader for a university course. Grade the student's answer to an open-ended question.
+
+QUESTION:
+{question}
+
+GRADING CRITERIA (rubric):
+{gradingCriteria}
+
+SAMPLE STRONG ANSWER (one valid response — NOT the only valid response):
+{sampleAnswer}
+
+STUDENT'S ANSWER:
+{studentAnswer}
+
+INSTRUCTIONS:
+1. Break the grading criteria into individual criteria and judge each one separately. For each, set "met" and write a 1-2 sentence "comment" explaining why, addressed directly to the student ("you").
+2. The student's answer does not need to resemble the sample answer. Credit any valid approach that satisfies the criteria.
+3. Be lenient with spelling, grammar, and phrasing when the meaning is clear. Judge substance, not style.
+4. Set "pass" to true only if the answer satisfies the essential criteria. A partially correct answer that misses a core concept does not pass.
+5. "overallFeedback": 2-4 sentences addressed to the student summarizing what they did well and what is missing or incorrect. Do not simply restate the sample answer.`;
+
+const FILL_IN_THE_BLANK_GRADING_PROMPT = `You are an automated grader for a university course. A student answered a fill-in-the-blank question and their answer did NOT exactly match any accepted answer. Decide whether it is nonetheless equivalent to an accepted answer.
+
+QUESTION (the blank is shown as _________):
+{question}
+
+EXPECTED ANSWER:
+{correctAnswer}
+
+OTHER ACCEPTED ANSWERS (instructor-provided):
+{acceptableAnswers}
+
+STUDENT'S ANSWER:
+{studentAnswer}
+
+INSTRUCTIONS:
+1. Set "correct" to true ONLY if the student's answer expresses the same meaning as an accepted answer — a synonym, alternate notation, minor spelling error with clear meaning, or a longer phrasing that contains the accepted answer's meaning without contradicting it.
+2. Set "correct" to false if the answer names a different concept, is only partially right, or is too vague to distinguish from a wrong answer.
+3. "feedback": 1-2 sentences addressed directly to the student ("you"). If correct, briefly confirm why their phrasing is acceptable. If incorrect, explain what kind of answer was expected WITHOUT revealing the expected answer itself.`;
+
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
 const QUESTION_TYPES = {
@@ -190,6 +230,8 @@ const DEFAULT_PROMPTS = {
   objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
   objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT,
   powerPointImageDescription: POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
+  openEndedGrading: OPEN_ENDED_GRADING_PROMPT,
+  fillInTheBlankGrading: FILL_IN_THE_BLANK_GRADING_PROMPT,
 };
 
 // Default mapping from Bloom's level to ordered question-type preferences.
@@ -209,6 +251,8 @@ module.exports = {
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,
   POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
+  OPEN_ENDED_GRADING_PROMPT,
+  FILL_IN_THE_BLANK_GRADING_PROMPT,
   BLOOM_LEVELS,
   QUESTION_TYPES,
   DEFAULT_PROMPTS,

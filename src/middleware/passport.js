@@ -107,6 +107,8 @@ passport.serializeUser((user, done) => {
 	const userObj = {
 		...user,
 		_id: user._id ? user._id.toString() : user._id,
+		// Alias so controllers can use either req.user.id or req.user._id
+		id: user._id ? user._id.toString() : user._id,
 		nameID: user.nameID,
 		nameIDFormat: user.nameIDFormat,
 		nameIDNameQualifier: user.nameIDNameQualifier,
@@ -120,7 +122,11 @@ passport.serializeUser((user, done) => {
 // Deserialize user from session
 // Runs on EVERY authenticated request
 passport.deserializeUser((user, done) => {
-	// User is already stored in session from serializeUser
+	// User is already stored in session from serializeUser.
+	// Backfill the id alias for sessions created before it was added.
+	if (user && !user.id && user._id) {
+		user.id = user._id;
+	}
 	done(null, user);
 });
 

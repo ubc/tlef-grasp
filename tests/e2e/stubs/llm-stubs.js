@@ -47,12 +47,58 @@ function stubFromSchema(schema, key = 'value', enumIndex = 0) {
   }
 }
 
+// Deterministic verdicts for the answer-grading judges (issue #45), recognized
+// by their schema shape. The generic stubFromSchema would always return false
+// booleans, so specs could never exercise a passing grade. Instead the verdict
+// is controlled by markers the test types into the student answer box:
+//   [[e2e-pass]]       → open-ended judge returns pass: true
+//   [[e2e-equivalent]] → fill-in-the-blank fallback returns correct: true
+// Any other answer fails. The markers are distinctive enough that seeded
+// question/rubric text can never contain them by accident.
+function gradingStubFromPrompt(schema, prompt = '') {
+  const props = schema?.properties || {};
+  if (props.pass && props.criteria && props.overallFeedback) {
+    const pass = prompt.includes('[[e2e-pass]]');
+    return {
+      pass,
+      overallFeedback: pass
+        ? 'Stub judge: your answer meets the grading criteria.'
+        : 'Stub judge: your answer is missing key concepts.',
+      criteria: [
+        {
+          criterion: 'Key concept coverage',
+          met: pass,
+          comment: pass ? 'You covered the key concepts.' : 'You did not cover the key concepts.',
+        },
+        {
+          criterion: 'Accuracy',
+          met: pass,
+          comment: pass ? 'Your statements are accurate.' : 'Your statements are inaccurate.',
+        },
+      ],
+    };
+  }
+  if (props.correct && props.feedback && !props.pass) {
+    const correct = prompt.includes('[[e2e-equivalent]]');
+    return {
+      correct,
+      feedback: correct
+        ? 'Stub judge: your phrasing is equivalent to the expected answer.'
+        : 'Stub judge: your answer is not equivalent to the expected answer.',
+    };
+  }
+  return null;
+}
+
 // Replaces src/utils/structured-llm.js — same contract as generateStructured().
 const structuredLlmStub = {
-  generateStructured: async ({ schema }) => ({
-    content: JSON.stringify(stubFromSchema(schema)),
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-  }),
+  generateStructured: async ({ schema, prompt }) => {
+    const graded = gradingStubFromPrompt(schema, prompt);
+    return {
+      content: JSON.stringify(graded || stubFromSchema(schema)),
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    };
+  },
 };
 
 // Replaces src/services/llm.js — reports ready; nothing in the stubbed flows

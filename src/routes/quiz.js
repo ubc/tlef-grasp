@@ -33,6 +33,21 @@ router.get(
 
 router.get("/my-scores", quizController.getMyScoresHandler);
 
+/** Quiz-question reports submitted by students, separate from bank flagStatus. */
+router.get("/flags/mine", quizController.getMyQuestionFlagsHandler);
+router.get(
+  "/flags/course/:courseId",
+  requireRole(ROLES.STAFF),
+  quizController.getCourseQuestionFlagsHandler
+);
+router.put(
+  "/flags/:flagId/status",
+  requireRole(ROLES.STAFF),
+  express.json(),
+  quizController.updateQuestionFlagStatusHandler
+);
+router.post("/:quizId/flags", express.json(), quizController.saveStudentQuestionFlagHandler);
+
 /**
  * GET /api/quiz/:quizId/schedules
  * Per-section release/expire schedule for a quiz (instructors).
@@ -108,9 +123,9 @@ router.get("/:quizId/student/:userId/attempts", requireRole(ROLES.STAFF), quizCo
 
 /**
  * PUT /api/quiz/:quizId/student/:userId/grade
- * Grade an open-ended question for a student (Faculty only)
+ * Grade/override an open-ended or AI-graded fill-in-the-blank attempt for a
+ * student (Faculty only).
  */
-router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeOpenEndedHandler);
+router.put("/:quizId/student/:userId/grade", requireRole(ROLES.FACULTY), express.json(), quizController.gradeAttemptHandler);
 
 module.exports = router;
-
