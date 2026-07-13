@@ -102,11 +102,12 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(completedRow.getByText(`${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT}`)).toBeVisible();
     await completedRow.click();
 
-    await expect(page.getByText(/Review:/)).toBeVisible();
-    await expect(page.getByText(/Score:\s*100\.0%/)).toBeVisible();
-    await expect(
-      page.getByText(`${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT} correct`)
-    ).toBeVisible();
-    await expect(page.getByText(SEED.CORRECT_OPTION_TEXTS[0])).toBeVisible();
+    const reviewDialog = page.getByRole('dialog', { name: /Review:/ });
+    await expect(reviewDialog).toBeVisible();
+    await expect(reviewDialog).toContainText(/Score:\s*100\.0%/);
+    await expect(reviewDialog).toContainText(
+      `Correct: ${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT}`
+    );
+    await expect(reviewDialog.getByText(SEED.CORRECT_OPTION_TEXTS[0])).toBeVisible();
   });
 });
