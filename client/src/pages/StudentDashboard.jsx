@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useMyCourses, useStudentCourses } from "../hooks/useCourses";
 import { useStudentQuizList } from "../hooks/useStudentQuizzes";
+import { useQuizCalendar } from "../hooks/useQuizzes";
 import { useMyAchievements } from "../hooks/useAchievements";
 import { useAppStore } from "../stores/appStore";
 
@@ -82,8 +83,12 @@ export default function StudentDashboard() {
   }, [coursesQuery.isPending, coursesQuery.isError, hasCourse, selectedCourse?.id]);
 
   const courseId = selectedCourse?.id;
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
   const quizzesQuery = useStudentQuizList(hasCourse ? courseId : null);
+  const calendarQuery = useQuizCalendar(courseId, calendarMonth, {
+    enabled: !!courseId && hasCourse,
+  });
   const achievementsQuery = useMyAchievements(courseId, {
     enabled: !!courseId && hasCourse,
   });
@@ -203,7 +208,13 @@ export default function StudentDashboard() {
       <div className="space-y-6">
         <section className="rounded-2xl bg-white p-6 shadow-sm">
           <h3 className="mb-4 text-lg font-semibold text-ink">Calendar</h3>
-          <Calendar />
+          <Calendar
+            events={calendarQuery.events}
+            audience="student"
+            month={calendarMonth}
+            onMonthChange={setCalendarMonth}
+            loading={calendarQuery.isPending}
+          />
         </section>
 
         <section className="rounded-2xl bg-white p-6 shadow-sm">

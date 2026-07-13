@@ -31,6 +31,9 @@ router.get(
   quizController.getStudentQuizOverviewHandler
 );
 
+/** Quiz release/deadline events scoped to the current viewer. */
+router.get("/course/:courseId/calendar", quizController.getQuizCalendarHandler);
+
 router.get("/my-scores", quizController.getMyScoresHandler);
 
 /** Quiz-question reports submitted by students, separate from bank flagStatus. */

@@ -43,7 +43,9 @@ test.describe("Accessibility: quiz question flags", () => {
       await prepareSeededInstructorCourse(page);
       await page.goto("/question-flags");
       await expect(page.getByRole("heading", { name: "Student Question Flags" })).toBeVisible();
-      await expect(page.getByLabel("Status")).toBeVisible();
+      await expect(
+        page.getByRole("combobox", { name: "Status", exact: true })
+      ).toBeVisible();
       await expectNoA11yViolations(page);
     } finally {
       await context.close();

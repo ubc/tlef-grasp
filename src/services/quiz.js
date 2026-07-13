@@ -191,8 +191,20 @@ const addQuestionsToQuiz = async (quizId, questionIds) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_quiz_question");
-        
-        const docs = questionIds.map(qId => ({
+
+        // Orphaned questions (their objective was deleted) can never enter a quiz.
+        const idObjs = questionIds
+            .filter(qId => ObjectId.isValid(qId))
+            .map(qId => new ObjectId(qId));
+        const orphaned = idObjs.length > 0
+            ? await db.collection("grasp_question")
+                .find({ _id: { $in: idObjs }, orphaned: true }, { projection: { _id: 1 } })
+                .toArray()
+            : [];
+        const orphanedIds = new Set(orphaned.map(q => String(q._id)));
+        const allowedQuestionIds = questionIds.filter(qId => !orphanedIds.has(String(qId)));
+
+        const docs = allowedQuestionIds.map(qId => ({
             quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId,
             questionId: ObjectId.isValid(qId) ? new ObjectId(qId) : qId,
             createdAt: new Date()
@@ -843,18 +855,25 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
 
     if (!attempt) throw new Error('Attempt not found');
     const previousCorrect = attempt.isCorrect;
+    const requestedCorrect = !!isCorrect;
+    const isIdempotentRetry = Boolean(attempt.gradedAt) && previousCorrect === requestedCorrect;
     // An already-decided grade can only be changed while it is an unfinalized
     // AI grade. This gates both an AI-graded open-ended verdict and an
     // AI-rescued FIB answer, and rejects plain exact-match FIB (aiGraded false).
-    if (previousCorrect !== null && (!attempt.aiGraded || attempt.gradedAt)) {
+    // Repeating the same finalized manual grade is allowed: a legacy E11000
+    // could occur after the attempt was marked graded but before mastery/score
+    // were updated, and the retry must be able to finish that interrupted work.
+    if (previousCorrect !== null && (!attempt.aiGraded || attempt.gradedAt) && !isIdempotentRetry) {
         throw new Error('Attempt has already been graded');
     }
 
     // Step 1: Update isCorrect on the attempt record
-    await attemptCollection.updateOne(
-        { _id: attempt._id },
-        { $set: { isCorrect: !!isCorrect, gradedAt: new Date() } }
-    );
+    if (!isIdempotentRetry) {
+        await attemptCollection.updateOne(
+            { _id: attempt._id },
+            { $set: { isCorrect: requestedCorrect, gradedAt: new Date() } }
+        );
+    }
 
     // Step 2: Retroactive mastery update — only if this was the student's first encounter
     const loIdentifier = attempt.learningObjectiveId || attempt.granularObjectiveId;
@@ -873,7 +892,7 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
 
         const existingMastery = await performanceCollection.findOne(query);
 
-        if (previousCorrect === null) {
+        if (previousCorrect === null || (isIdempotentRetry && !existingMastery)) {
             // First grade for this attempt. Skip if another question for this LO
             // already updated mastery in this quiz session.
             const alreadyUpdatedThisSession = existingMastery?.lastQuizIdSeen?.toString() === quizId.toString();
@@ -882,11 +901,11 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
                     $set: {
                         lastQuizIdSeen: quizIdObj,
                         updatedAt: new Date(),
-                        needsRemediation: !isCorrect
+                        needsRemediation: !requestedCorrect
                     }
                 };
 
-                if (!isCorrect) {
+                if (!requestedCorrect) {
                     updateFields.$set.remediationBloomLevel = attempt.bloom;
                     updateFields.$set.timesCorrect = 0;
                 } else {
@@ -900,7 +919,7 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
 
                 await performanceCollection.updateOne(query, updateFields, { upsert: true });
             }
-        } else if (previousCorrect !== !!isCorrect) {
+        } else if (previousCorrect !== requestedCorrect) {
             // Instructor override flips an AI grade whose mastery effect was
             // already applied by saveStudentPerformance — re-apply the same
             // rules with the corrected verdict. highestBloomPassed cannot be
@@ -909,11 +928,11 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
             const updateFields = {
                 $set: {
                     updatedAt: new Date(),
-                    needsRemediation: !isCorrect
+                    needsRemediation: !requestedCorrect
                 }
             };
 
-            if (!isCorrect) {
+            if (!requestedCorrect) {
                 updateFields.$set.remediationBloomLevel = attempt.bloom;
                 updateFields.$set.timesCorrect = 0;
             } else {
@@ -933,7 +952,13 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
     const allAttempts = await attemptCollection.find({ userId: userIdObj, quizId: quizIdObj }).toArray();
     const gradedAttempts = allAttempts.filter(a => a.isCorrect !== null);
     const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
-    const totalQuestions = gradedAttempts.length;
+    // Keep the denominator recorded at submit time (all served questions); a
+    // regrade must not shrink it back to only the questions that were answered.
+    const scoreRecord = await db.collection('grasp_quiz_score').findOne({ userId: userIdObj, quizId: quizIdObj });
+    const storedTotal = Number(scoreRecord?.totalQuestions);
+    const totalQuestions = Number.isInteger(storedTotal) && storedTotal > 0
+        ? Math.max(storedTotal, gradedAttempts.length)
+        : gradedAttempts.length;
     const updatedScore = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
     await db.collection('grasp_quiz_score').updateOne(

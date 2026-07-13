@@ -1,5 +1,6 @@
 const quizService = require("../services/quiz");
 const quizScheduleService = require("../services/quiz-schedule");
+const quizCalendarService = require("../services/quiz-calendar");
 const sectionService = require("../services/course-section");
 const questionService = require("../services/question");
 const answerGradingService = require("../services/answer-grading");
@@ -219,6 +220,86 @@ const getStudentQuizOverviewHandler = async (req, res) => {
     res.json({ success: true, quizzes: overview });
   } catch (error) {
     console.error("Error building student quiz overview:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Role-aware quiz calendar. Students receive only published windows for their
+ * enrolled sections; instructors receive schedules for sections they own.
+ */
+const getQuizCalendarHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const range = quizCalendarService.parseCalendarRange(req.query.from, req.query.to);
+    if (range.error) {
+      return res.status(400).json({ success: false, error: range.error });
+    }
+    if (!(await canAccessCourse(req, courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
+    const userId = getRequestUserId(req);
+    const studentAudience = await isStudent(req.user);
+    const allQuizzes = await quizService.getQuizzesByCourse(courseId);
+    const quizzes = studentAudience
+      ? allQuizzes.filter((quiz) => quiz.published === true)
+      : allQuizzes;
+
+    const sections = studentAudience
+      ? await sectionService.getCourseSections(courseId)
+      : await sectionService.getSectionsOwnedByUser(courseId, userId);
+    const sectionIds = studentAudience
+      ? await quizScheduleService.getStudentSectionObjectIds(userId, courseId)
+      : sections.map((section) => section._id.toString());
+
+    if (sectionIds.length === 0 || quizzes.length === 0) {
+      const unscheduledQuizzes = studentAudience
+        ? []
+        : quizzes.filter((quiz) => quiz.published === true).map((quiz) => ({
+            id: String(quiz._id || quiz.id),
+            name: quiz.name || "Unnamed Quiz",
+          }));
+      return res.json({
+        success: true,
+        audience: studentAudience ? "student" : "instructor",
+        events: [],
+        unscheduledQuizzes,
+      });
+    }
+
+    const quizIds = quizzes.map((quiz) => String(quiz._id || quiz.id));
+    const schedulesByQuiz = await quizScheduleService.getSchedulesForQuizzes(quizIds, sectionIds);
+    const completedQuizIds = studentAudience
+      ? await quizService.getUserScoresForCourse(userId, courseId)
+      : [];
+    const sectionsById = new Map(sections.map((section) => [section._id.toString(), section]));
+    const events = quizCalendarService.buildCalendarEvents({
+      quizzes,
+      schedulesByQuiz,
+      sectionsById,
+      completedQuizIds,
+      audience: studentAudience ? "student" : "instructor",
+      from: range.from,
+      to: range.to,
+    });
+
+    const scheduledQuizIds = new Set(schedulesByQuiz.keys());
+    const unscheduledQuizzes = studentAudience
+      ? []
+      : quizzes
+          .filter((quiz) => quiz.published === true)
+          .filter((quiz) => !scheduledQuizIds.has(String(quiz._id || quiz.id)))
+          .map((quiz) => ({ id: String(quiz._id || quiz.id), name: quiz.name || "Unnamed Quiz" }));
+
+    res.json({
+      success: true,
+      audience: studentAudience ? "student" : "instructor",
+      events,
+      unscheduledQuizzes,
+    });
+  } catch (error) {
+    console.error("Error fetching quiz calendar:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1230,6 +1311,7 @@ module.exports = {
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,
+  getQuizCalendarHandler,
   saveStudentQuestionFlagHandler,
   getMyQuestionFlagsHandler,
   getCourseQuestionFlagsHandler,

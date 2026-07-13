@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -7,7 +7,7 @@ import { useCourseQuizQuestionFlags } from "../hooks/useQuizQuestionFlags";
 import { useCourseMaterials } from "../hooks/useMaterials";
 import { useCourseObjectives } from "../hooks/useObjectives";
 import { useQuestions } from "../hooks/useQuestions";
-import { useCourseQuizzes } from "../hooks/useQuizzes";
+import { useCourseQuizzes, useQuizCalendar } from "../hooks/useQuizzes";
 import { useAppStore, useSelectedCourseId } from "../stores/appStore";
 
 // `permission` gates a card for co-instructors (null = always shown), matching
@@ -82,10 +82,12 @@ export default function Dashboard() {
   const { can } = useCoInstructorAccess();
   const currentRole = useAppStore((state) => state.currentRole);
   const courseId = useSelectedCourseId();
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const { materials, isPending: materialsPending } = useCourseMaterials(courseId);
   const { objectives, isPending: objectivesPending } = useCourseObjectives(courseId);
   const { questions, isPending: questionsPending } = useQuestions(courseId);
   const { quizzes, isPending: quizzesPending } = useCourseQuizzes(courseId);
+  const calendarQuery = useQuizCalendar(courseId, calendarMonth);
   const quickStartCards = QUICK_START_CARDS.filter(
     (card) => !card.permission || can(card.permission)
   );
@@ -173,7 +175,23 @@ export default function Dashboard() {
       <div className="space-y-6">
         <section className="rounded-2xl bg-white p-6 shadow-sm">
           <h3 className="mb-4 text-lg font-semibold text-ink">Calendar</h3>
-          <Calendar />
+          <Calendar
+            events={calendarQuery.events}
+            audience="instructor"
+            month={calendarMonth}
+            onMonthChange={setCalendarMonth}
+            loading={calendarQuery.isPending}
+          />
+          {calendarQuery.unscheduledQuizzes.length > 0 && (
+            <div className="mt-4 rounded-lg bg-warning/10 p-3 text-xs text-ink">
+              <p className="font-semibold text-warning">
+                {calendarQuery.unscheduledQuizzes.length} published {calendarQuery.unscheduledQuizzes.length === 1 ? "quiz has" : "quizzes have"} no schedule for your sections
+              </p>
+              <Link to="/quizzes" className="mt-1 inline-flex font-semibold text-primary underline-offset-2 hover:underline">
+                Schedule quizzes
+              </Link>
+            </div>
+          )}
         </section>
         <FlaggedQuestionsCard />
       </div>

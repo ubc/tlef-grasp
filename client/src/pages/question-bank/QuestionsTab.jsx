@@ -688,7 +688,16 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                         )}
                       </td>
                       <td className="border-b border-gray-100 px-4 py-3 text-sm text-muted">
-                        {question.glo}
+                        {question.orphaned ? (
+                          <span
+                            title="The learning objective this question was generated from has been deleted. This question can no longer be added to quizzes."
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
+                          >
+                            <i className="fas fa-unlink text-[10px]" /> Objective deleted
+                          </span>
+                        ) : (
+                          question.glo
+                        )}
                       </td>
                       <td className="border-b border-gray-100 px-4 py-3 whitespace-nowrap">
                         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">

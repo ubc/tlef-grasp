@@ -268,17 +268,13 @@ export default function StudentReviewModal({ review, onClose }) {
     onError: (error) => console.error("Grading error:", error),
   });
 
-  const openEnded = attempts.filter(
-    (a) => a.questionType === QUESTION_TYPES.OPEN_ENDED
-  );
-  const graded = attempts.filter(
-    (a) => a.questionType !== QUESTION_TYPES.OPEN_ENDED
-  );
-  const correctCount = graded.filter(
-    (a) => manualGrades[a.questionId]?.isCorrect ?? a.isCorrect
+  const effectiveCorrect = (attempt) =>
+    manualGrades[attempt.questionId]?.isCorrect ?? attempt.isCorrect;
+  const correctCount = attempts.filter(
+    (a) => effectiveCorrect(a) === true
   ).length;
-  const pendingCount = openEnded.filter(
-    (a) => (manualGrades[a.questionId]?.isCorrect ?? a.isCorrect) === null
+  const pendingCount = attempts.filter(
+    (a) => effectiveCorrect(a) === null
   ).length;
 
   return (
@@ -301,11 +297,9 @@ export default function StudentReviewModal({ review, onClose }) {
                 {currentScore !== null ? `${Number(currentScore).toFixed(1)}%` : "—"}
               </span>
             </span>
-            {graded.length > 0 && (
-              <span>
-                <strong>Graded:</strong> {correctCount} / {graded.length} correct
-              </span>
-            )}
+            <span>
+              <strong>Correct:</strong> {correctCount} / {attempts.length}
+            </span>
             {pendingCount > 0 && (
               <span className="rounded-full bg-warning/15 px-3 py-1 text-xs font-semibold text-warning">
                 <i className="fas fa-pencil-alt mr-1" /> {pendingCount} open-ended —

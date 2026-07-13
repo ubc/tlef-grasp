@@ -86,6 +86,7 @@ describe('gradeAttempt', () => {
       updateOne: jest.fn().mockResolvedValue({ matchedCount: 1, modifiedCount: 1 }),
     };
     scoreCollection = {
+      findOne: jest.fn().mockResolvedValue(null),
       updateOne: jest.fn().mockResolvedValue({ matchedCount: 1, modifiedCount: 1 }),
     };
     databaseService.connect.mockResolvedValue({
@@ -131,6 +132,95 @@ describe('gradeAttempt', () => {
     expect(scoreCollection.updateOne).toHaveBeenCalledWith(
       { userId: 'student-1', quizId: 'quiz-1' },
       { $set: { score: 0, correctAnswers: 0, totalQuestions: 1 } }
+    );
+  });
+
+  // Issue #65: the score denominator is the number of questions served at
+  // submit time, not the number answered. A regrade recalculation must keep
+  // the stored totalQuestions instead of shrinking it to the attempt count.
+  it('keeps the stored totalQuestions when regrading a partially answered quiz', async () => {
+    const attempt = {
+      _id: 'attempt-1',
+      userId: 'student-1',
+      quizId: 'quiz-1',
+      questionId: 'oe-question-1',
+      questionType: 'open-ended',
+      isCorrect: null,
+      aiGraded: true,
+      isFirstAttempt: false,
+    };
+    attemptCollection.findOne.mockResolvedValue(attempt);
+    attemptCollection.find.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue([{ ...attempt, isCorrect: true }]),
+    });
+    scoreCollection.findOne.mockResolvedValue({
+      userId: 'student-1',
+      quizId: 'quiz-1',
+      totalQuestions: 10,
+    });
+
+    await expect(
+      quizService.gradeAttempt('student-1', 'quiz-1', 'oe-question-1', true)
+    ).resolves.toEqual({ score: 10, correctAnswers: 1, totalQuestions: 10 });
+
+    expect(scoreCollection.updateOne).toHaveBeenCalledWith(
+      { userId: 'student-1', quizId: 'quiz-1' },
+      { $set: { score: 10, correctAnswers: 1, totalQuestions: 10 } }
+    );
+  });
+
+  it('finishes an idempotent retry after a manual grade was only partially saved', async () => {
+    const attempt = {
+      _id: 'attempt-1',
+      userId: 'student-1',
+      courseId: 'course-1',
+      quizId: 'quiz-1',
+      questionId: 'oe-question-1',
+      questionType: 'open-ended',
+      granularObjectiveId: 'granular-3',
+      learningObjectiveId: null,
+      bloom: 'Understand',
+      isCorrect: true,
+      aiGraded: true,
+      gradedAt: new Date('2026-07-13T12:00:00Z'),
+      isFirstAttempt: true,
+    };
+    const performanceCollection = {
+      findOne: jest.fn().mockResolvedValue(null),
+      updateOne: jest.fn().mockResolvedValue({ upsertedCount: 1 }),
+    };
+    attemptCollection.findOne.mockResolvedValue(attempt);
+    attemptCollection.find.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue([attempt]),
+    });
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) => {
+        if (name === 'grasp_student_attempt') return attemptCollection;
+        if (name === 'grasp_student_performance') return performanceCollection;
+        if (name === 'grasp_quiz_score') return scoreCollection;
+        throw new Error(`Unexpected collection: ${name}`);
+      }),
+    });
+
+    await expect(
+      quizService.gradeAttempt('student-1', 'quiz-1', 'oe-question-1', true)
+    ).resolves.toEqual({ score: 100, correctAnswers: 1, totalQuestions: 1 });
+
+    // The attempt was already finalized before the original E11000, so the
+    // retry repairs the missing mastery/score without rewriting the attempt.
+    expect(attemptCollection.updateOne).not.toHaveBeenCalled();
+    expect(performanceCollection.updateOne).toHaveBeenCalledWith(
+      {
+        userId: 'student-1',
+        courseId: 'course-1',
+        learningObjectiveId: null,
+        granularObjectiveId: 'granular-3',
+      },
+      expect.objectContaining({
+        $set: expect.objectContaining({ needsRemediation: false }),
+        $inc: { timesCorrect: 1 },
+      }),
+      { upsert: true }
     );
   });
 

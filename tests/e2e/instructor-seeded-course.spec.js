@@ -47,6 +47,27 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(quizCard.getByRole('button', { name: 'Unpublish' })).toBeVisible();
   });
 
+  test('shows section schedule events on the dashboard calendar', async ({ page }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/dashboard');
+
+    const calendar = page.getByLabel('Quiz calendar');
+    const eventDays = calendar.getByRole('button', { name: /quiz events?/ });
+    await expect(eventDays.first()).toBeVisible();
+    const eventDayCount = await eventDays.count();
+    for (let index = 0; index < eventDayCount; index += 1) {
+      await eventDays.nth(index).click();
+      if (await calendar.getByText(SEED.QUIZ_NAME).count()) break;
+    }
+
+    const quizEvent = calendar.locator('li').filter({ hasText: SEED.QUIZ_NAME });
+    await expect(quizEvent).toContainText('101');
+    await quizEvent.getByRole('link', { name: 'Manage schedule' }).click();
+
+    await expect(page).toHaveURL(/\/quizzes\?quiz=/);
+    await expect(getQuizCard(page, SEED.QUIZ_NAME)).toBeVisible();
+  });
+
   test('reviews a real student attempt in Quiz Scores', async ({
     browser,
     page,
@@ -81,11 +102,12 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(completedRow.getByText(`${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT}`)).toBeVisible();
     await completedRow.click();
 
-    await expect(page.getByText(/Review:/)).toBeVisible();
-    await expect(page.getByText(/Score:\s*100\.0%/)).toBeVisible();
-    await expect(
-      page.getByText(`${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT} correct`)
-    ).toBeVisible();
-    await expect(page.getByText(SEED.CORRECT_OPTION_TEXTS[0])).toBeVisible();
+    const reviewDialog = page.getByRole('dialog', { name: /Review:/ });
+    await expect(reviewDialog).toBeVisible();
+    await expect(reviewDialog).toContainText(/Score:\s*100\.0%/);
+    await expect(reviewDialog).toContainText(
+      `Correct: ${SEED.QUESTION_COUNT} / ${SEED.QUESTION_COUNT}`
+    );
+    await expect(reviewDialog.getByText(SEED.CORRECT_OPTION_TEXTS[0])).toBeVisible();
   });
 });
