@@ -1,5 +1,6 @@
 const databaseService = require('./database');
 const objectiveMaterialService = require('./objective-material');
+const questionService = require('./question');
 const { ObjectId } = require('mongodb');
 
 /**
@@ -360,6 +361,9 @@ const updateObjective = async (objectiveId, updateData) => {
       if (granularToDelete.length > 0) {
         const deleteIds = granularToDelete.map(id => ObjectId.isValid(id) ? new ObjectId(id) : id);
         await collection.deleteMany({ _id: { $in: deleteIds }, parent: id });
+        // Questions generated from the removed granular objectives would be
+        // left pointing at nothing — flag them and pull them out of quizzes.
+        await questionService.orphanQuestionsByObjectiveIds(deleteIds);
       }
     }
     
@@ -390,14 +394,27 @@ const deleteObjective = async (objectiveId) => {
     
     // Convert string ID to ObjectId if needed
     const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
-    
+
+    // Capture the granular ids before deleting so the questions generated
+    // from them can be orphaned afterwards.
+    const granulars = await collection
+      .find({ parent: id }, { projection: { _id: 1 } })
+      .toArray();
+
     // 1. Delete all granular objectives associated with this parent
     await collection.deleteMany({ parent: id });
-    
+
     // 2. Delete the parent objective
     const result = await collection.deleteOne({ _id: id });
+
+    // 3. Flag questions generated from the deleted objectives and remove
+    // them from every quiz so they can no longer be served or re-added.
+    await questionService.orphanQuestionsByObjectiveIds([
+      ...granulars.map((g) => g._id),
+      id,
+    ]);
     
-    // 3. Remove material associations
+    // 4. Remove material associations
     try {
       await objectiveMaterialService.updateObjectiveMaterialRelations(id.toString(), []);
     } catch (err) {

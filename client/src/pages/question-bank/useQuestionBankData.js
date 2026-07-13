@@ -21,6 +21,7 @@ export function useQuestionBankData(courseId) {
           bloom: question.bloom || question.bloomLevel || "Understand",
           questionType: normalizeQuestionTypeKey(question.questionType || question.type),
           calculationFormula: question.calculationFormula,
+          orphaned: question.orphaned || false,
           flagged: question.flagStatus || false,
           flagReason: question.flagReason || "",
           published: question.published || false,

@@ -37,6 +37,22 @@ test.describe('Student dashboard navigation (authenticated)', () => {
       page.getByRole('heading', { name: SEED.QUIZ_NAME })
     ).toBeVisible();
   });
+
+  test('shows scheduled quiz events and starts an open quiz from the calendar', async ({ page }) => {
+    await selectSeededCourse(page, { role: 'student' });
+    await page.goto('/student-dashboard');
+
+    const calendar = page.getByLabel('Quiz calendar');
+    await expect(calendar.getByRole('button', { name: 'Previous month' })).toBeVisible();
+    await expect(calendar.getByRole('button', { name: 'Next month' })).toBeVisible();
+
+    const quizEvent = calendar.locator('li').filter({ hasText: SEED.QUIZ_NAME });
+    await expect(quizEvent).toContainText('Available now');
+    await quizEvent.getByRole('link', { name: /Start quiz|Retake quiz/ }).click();
+
+    await expect(page).toHaveURL(/\/quiz(?:\?|$)/);
+    await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
+  });
 });
 
 test.describe('Instructor student preview (authenticated)', () => {

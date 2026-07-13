@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useSelectedCourseId } from "../stores/appStore";
 import {
   useQuizzesWithQuestions,
@@ -23,6 +23,7 @@ const TABS = [
 
 export default function Quizzes() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const showToast = useToast();
   const courseId = useSelectedCourseId();
 
@@ -40,6 +41,15 @@ export default function Quizzes() {
   // Scheduling is limited to the sections this instructor owns (owner included),
   // so the schedule picker only offers their own sections.
   const { sections } = useMyCourseSections(courseId);
+  const targetQuizId = searchParams.get("quiz");
+
+  useEffect(() => {
+    if (isPending || !targetQuizId) return;
+    document.getElementById(`quiz-${targetQuizId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [isPending, targetQuizId]);
 
   const updateMutation = useUpdateQuiz(courseId, {
     onSuccess: (data, { successMessage }) => {
@@ -96,20 +106,25 @@ export default function Quizzes() {
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
             {quizzes.map((quiz) => (
-              <QuizCard
+              <div
                 key={quiz.id}
-                quiz={quiz}
-                courseId={courseId}
-                sections={sections}
-                onUpdate={(quizId, updates, successMessage) =>
-                  updateMutation.mutate({ quizId, updates, successMessage })
-                }
-                onReview={(quizId) =>
-                  navigate(`/question-bank?quiz=${quizId}&tab=overview`)
-                }
-                onExport={setExportQuiz}
-                onDelete={setDeleteTarget}
-              />
+                id={`quiz-${quiz.id}`}
+                className={`scroll-mt-8 rounded-2xl ${targetQuizId === quiz.id ? "ring-2 ring-primary ring-offset-2" : ""}`}
+              >
+                <QuizCard
+                  quiz={quiz}
+                  courseId={courseId}
+                  sections={sections}
+                  onUpdate={(quizId, updates, successMessage) =>
+                    updateMutation.mutate({ quizId, updates, successMessage })
+                  }
+                  onReview={(quizId) =>
+                    navigate(`/question-bank?quiz=${quizId}&tab=overview`)
+                  }
+                  onExport={setExportQuiz}
+                  onDelete={setDeleteTarget}
+                />
+              </div>
             ))}
           </div>
         )

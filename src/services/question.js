@@ -77,6 +77,24 @@ const saveQuestion = async (courseId, questionData) => {
                 ? new ObjectId(questionData.granularObjectiveId) 
                 : questionData.granularObjectiveId;
         }
+
+        // The granular objective is the authoritative source of its parent.
+        // Persist both IDs so single-question grading paths do not have to rely
+        // on list-only enrichment to recover the meta learning objective.
+        let learningObjectiveIdObj = questionData.learningObjectiveId
+            ? (ObjectId.isValid(questionData.learningObjectiveId)
+                ? new ObjectId(questionData.learningObjectiveId)
+                : questionData.learningObjectiveId)
+            : null;
+        if (granularObjectiveIdObj) {
+            const granularObjective = await db.collection("grasp_objective").findOne(
+                { _id: granularObjectiveIdObj, courseId: courseIdObj },
+                { projection: { parent: 1 } }
+            );
+            if (granularObjective?.parent && granularObjective.parent !== 0) {
+                learningObjectiveIdObj = granularObjective.parent;
+            }
+        }
         
         const questionType =
             questionData.questionType ||
@@ -146,6 +164,7 @@ const saveQuestion = async (courseId, questionData) => {
             calculationAnswerTolerancePercent,
             bloom: questionData.bloom,
             courseId: courseIdObj,
+            learningObjectiveId: learningObjectiveIdObj,
             granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
             status: questionData.status || "Draft",
@@ -242,6 +261,15 @@ const getQuestion = async (questionId) => {
         const id = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
         
         const question = await collection.findOne({ _id: id });
+        if (question && !question.learningObjectiveId && question.granularObjectiveId) {
+            const granularObjective = await db.collection("grasp_objective").findOne(
+                { _id: question.granularObjectiveId },
+                { projection: { parent: 1 } }
+            );
+            if (granularObjective?.parent && granularObjective.parent !== 0) {
+                question.learningObjectiveId = granularObjective.parent;
+            }
+        }
         return question;
     } catch (error) {
         console.error("Error getting question:", error);
@@ -429,6 +457,40 @@ const deleteQuestion = async (questionId) => {
     }
 };
 
+/**
+ * Mark every question generated from the given (now-deleted) granular
+ * objectives as orphaned and pull them out of all quizzes. The question docs
+ * are kept so the question bank can show what happened; orphaned questions
+ * can never be (re)added to a quiz.
+ * @param {Array<string|ObjectId>} granularObjectiveIds
+ * @returns {Promise<{orphanedCount: number, removedFromQuizzes: number}>}
+ */
+const orphanQuestionsByObjectiveIds = async (granularObjectiveIds) => {
+    const ids = (granularObjectiveIds || [])
+        .filter((id) => id != null)
+        .map((id) => (ObjectId.isValid(id) ? new ObjectId(id) : id));
+    if (ids.length === 0) return { orphanedCount: 0, removedFromQuizzes: 0 };
+
+    const db = await databaseService.connect();
+    const questions = await db.collection("grasp_question")
+        .find({ granularObjectiveId: { $in: ids } }, { projection: { _id: 1 } })
+        .toArray();
+    if (questions.length === 0) return { orphanedCount: 0, removedFromQuizzes: 0 };
+
+    const questionIds = questions.map((q) => q._id);
+    const [updateResult, mappingResult] = await Promise.all([
+        db.collection("grasp_question").updateMany(
+            { _id: { $in: questionIds } },
+            { $set: { orphaned: true, orphanedAt: new Date(), updatedAt: new Date() } }
+        ),
+        db.collection("grasp_quiz_question").deleteMany({ questionId: { $in: questionIds } }),
+    ]);
+    return {
+        orphanedCount: updateResult.modifiedCount,
+        removedFromQuizzes: mappingResult.deletedCount,
+    };
+};
+
 const getQuestionCourseId = async (questionId) => {
     try {
         const db = await databaseService.connect();
@@ -452,4 +514,5 @@ module.exports = {
     deleteQuestion,
     getQuestion,
     getQuestionCourseId,
+    orphanQuestionsByObjectiveIds,
 };

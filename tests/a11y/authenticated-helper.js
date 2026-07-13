@@ -90,19 +90,8 @@ async function getCurrentUser(page) {
 }
 
 async function getOrSeedCourse(page) {
-  const coursesResponse = await page.request.get('/api/courses/my');
-  expect(coursesResponse.ok(), 'authenticated a11y user can read /api/courses/my').toBe(
-    true
-  );
-  const body = await coursesResponse.json();
-  const existing = (body.courses || [])[0];
-  if (existing) {
-    return {
-      id: String(existing._id || existing.id),
-      name: existing.courseName || existing.name || 'Selected Course',
-    };
-  }
-
+  // Always use the per-user accessibility course. Picking the first course
+  // makes owner-only UI depend on unrelated local database ordering.
   const user = await getCurrentUser(page);
   return seedCourseForUser(user);
 }

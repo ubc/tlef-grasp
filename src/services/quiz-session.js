@@ -57,6 +57,20 @@ async function getSession(userId, quizId) {
   return db.collection("grasp_quiz_session").findOne({ userId: userIdObj, quizId: quizIdObj });
 }
 
+// Locks in how many questions the student was served. Only the first
+// recording counts: personalized (spaced-3phase) selections can differ on
+// re-fetch, but the score denominator must match the quiz as first delivered.
+async function recordQuestionCount(userId, quizId, questionCount) {
+  const count = Number(questionCount);
+  if (!Number.isInteger(count) || count <= 0) return;
+  const db = await databaseService.connect();
+  const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
+  await db.collection("grasp_quiz_session").updateOne(
+    { userId: userIdObj, quizId: quizIdObj, questionCount: { $exists: false } },
+    { $set: { questionCount: count } }
+  );
+}
+
 async function markSubmitted(userId, quizId) {
   const db = await databaseService.connect();
   const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
@@ -75,6 +89,7 @@ module.exports = {
   quizTimeLimitMinutes,
   getOrCreateSession,
   getSession,
+  recordQuestionCount,
   markSubmitted,
   isExpired,
 };

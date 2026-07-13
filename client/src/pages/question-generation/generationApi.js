@@ -169,6 +169,7 @@ export function convertQuestionsToGroups(questions) {
         by: question.by || "System",
         metaCode: question.metaCode || metaCode,
         loCode: question.loCode || question.text,
+        learningObjectiveId: question.learningObjectiveId,
         granularObjectiveId: question.granularObjectiveId,
         explanation: question.explanation,
         flagStatus: question.flagStatus || false,
@@ -240,7 +241,6 @@ export function convertQuestionsToGroups(questions) {
           options: normalizeOptions(question.options),
           correctAnswer: question.correctAnswer,
           acceptableAnswers: [],
-          learningObjectiveId: question.learningObjectiveId,
         };
       }
 
@@ -328,6 +328,7 @@ export function buildQuestionPayload(question) {
       : [],
     bloom: question.bloom || question.bloomLevel || "Understand",
     difficulty: question.difficulty || "medium",
+    learningObjectiveId: question.learningObjectiveId || null,
     granularObjectiveId: question.granularObjectiveId || null,
     by: question.createdBy || "system",
     status: question.status || "Draft",

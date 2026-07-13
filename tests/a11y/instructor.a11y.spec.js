@@ -173,6 +173,24 @@ test.describe('Accessibility: seeded instructor populated states', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
   test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
+  test('section-aware dashboard calendar has no blocking axe violations', async ({ page }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/dashboard');
+
+    const calendar = page.getByLabel('Quiz calendar');
+    const eventDays = calendar.getByRole('button', { name: /quiz events?/ });
+    await expect(eventDays.first()).toBeVisible();
+    const eventDayCount = await eventDays.count();
+    for (let index = 0; index < eventDayCount; index += 1) {
+      await eventDays.nth(index).click();
+      if (await calendar.getByText(SEED.QUIZ_NAME).count()) break;
+    }
+    await expect(calendar.getByText(SEED.QUIZ_NAME).first()).toBeVisible();
+    await expect(calendar.getByText(/101/).first()).toBeVisible();
+    await expect(calendar.getByRole('link', { name: 'Manage schedule' }).first()).toBeVisible();
+    await expectNoA11yViolations(page, { include: '[aria-label="Quiz calendar"]' });
+  });
+
   test('seeded quiz card and export dialog have no blocking axe violations', async ({
     page,
   }) => {

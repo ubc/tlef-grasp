@@ -12,10 +12,16 @@ const { selectSeededCourse } = require('./helpers');
 // sync can enrich a student's name to their IdP givenName + surname. A clean
 // CI DB shows emails; a locally-synced DB shows "Bruno/Bennett Student". So the
 // student rows are matched by a regex accepting EITHER rendering, and the
-// instructor (never part of a synced roster) stays on the email.
-const PROF_NAME = 'bio_prof2@ubc.ca';
+// Instructor names may also be enriched by a roster sync, so the stable
+// identity for that row is the current-user badge rather than display text.
 const STUDENT_ROW = /bio_student@student\.ubc\.ca|Bruno Student/;
-const STUDENT3_ROW = /bio_student3@student\.ubc\.ca|Bennett Student/;
+const STUDENT3_ROW = /bio_student3@student\.ubc\.ca|Bennett Student|student_benji/;
+
+function currentUserRow(page) {
+  return page.getByRole('row').filter({
+    has: page.getByText('You', { exact: true }),
+  });
+}
 
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 
@@ -34,7 +40,7 @@ test.describe('Instructor course users (seeded course)', () => {
     // exact text matches: the role badge is exactly "Faculty"/"Student", while
     // the name cells contain "student" as a substring — exact avoids matching
     // those.
-    const profRow = page.getByRole('row').filter({ hasText: PROF_NAME });
+    const profRow = currentUserRow(page);
     await expect(profRow.getByText('You', { exact: true })).toBeVisible();
     await expect(profRow.getByText('Faculty', { exact: true })).toBeVisible();
 
@@ -51,7 +57,7 @@ test.describe('Instructor course users (seeded course)', () => {
   }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/users');
-    await expect(page.getByRole('row').filter({ hasText: PROF_NAME })).toBeVisible();
+    await expect(currentUserRow(page)).toBeVisible();
 
     // Filter to section 101: both students stay, the instructor (who has no
     // section membership) drops out.
@@ -63,12 +69,12 @@ test.describe('Instructor course users (seeded course)', () => {
       page.getByRole('row').filter({ hasText: STUDENT3_ROW })
     ).toBeVisible();
     await expect(
-      page.getByRole('row').filter({ hasText: PROF_NAME })
+      currentUserRow(page)
     ).toBeHidden();
 
     await page.getByLabel('Section:').selectOption({ label: 'All Sections' });
     await expect(
-      page.getByRole('row').filter({ hasText: PROF_NAME })
+      currentUserRow(page)
     ).toBeVisible();
   });
 

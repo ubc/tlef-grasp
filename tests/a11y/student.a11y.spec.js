@@ -143,6 +143,23 @@ test.describe('Accessibility: seeded student quiz states', () => {
     await expectNoA11yViolations(page);
   });
 
+  test('quiz calendar events and month controls are keyboard accessible', async ({ page }) => {
+    await prepareSeededStudentCourse(page);
+    await page.goto('/student-dashboard');
+
+    const calendar = page.getByLabel('Quiz calendar');
+    const previous = calendar.getByRole('button', { name: 'Previous month' });
+    const next = calendar.getByRole('button', { name: 'Next month' });
+    await previous.focus();
+    await expect(previous).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(next).toBeFocused();
+
+    await expect(calendar.getByText(SEED.QUIZ_NAME).first()).toBeVisible();
+    await expect(calendar.getByRole('link', { name: /Start quiz|Retake quiz/ }).first()).toBeVisible();
+    await expectNoA11yViolations(page, { include: '[aria-label="Quiz calendar"]' });
+  });
+
   test('completion, retake list, and populated achievements states have no blocking axe violations', async ({
     page,
   }) => {
@@ -162,8 +179,8 @@ test.describe('Accessibility: seeded student quiz states', () => {
 
     await page.goto('/achievements');
     await expect(page.getByRole('heading', { name: 'My Achievements' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Quiz Completed' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Perfect Score!' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Quiz Completed' }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Perfect Score!' }).first()).toBeVisible();
     await expect(page.getByText(`Quiz: ${SEED.QUIZ_NAME}`).first()).toBeVisible();
     await expectNoA11yViolations(page);
   });

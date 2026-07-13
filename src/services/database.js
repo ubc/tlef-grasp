@@ -98,9 +98,33 @@ class DatabaseService {
       await this.db.collection("grasp_student_attempt").createIndex({ userId: 1, quizId: 1 });
       await this.db.collection("grasp_student_attempt").createIndex({ isFirstAttempt: 1 });
 
-      // 2. Mastery State: Tracks current level/status per LO (One record per student per LO)
-      await this.db.collection("grasp_student_performance").createIndex({ userId: 1, courseId: 1, learningObjectiveId: 1 }, { unique: true });
-      await this.db.collection("grasp_student_performance").createIndex({ userId: 1, courseId: 1, granularObjectiveId: 1 });
+      // 2. Mastery State: Tracks current level/status per objective.
+      //
+      // A granular-only row has learningObjectiveId=null. A normal unique
+      // compound index treats that null as a value, so the second granular
+      // objective for the same student/course used to fail with E11000. Use
+      // partial unique indexes so each objective namespace is unique only when
+      // its identifier is actually present. createOrReplaceIndex also upgrades
+      // the legacy indexes in existing databases at startup.
+      const performanceCollection = this.db.collection("grasp_student_performance");
+      await this.createOrReplaceIndex(
+        performanceCollection,
+        { userId: 1, courseId: 1, learningObjectiveId: 1 },
+        {
+          name: "userId_1_courseId_1_learningObjectiveId_1",
+          unique: true,
+          partialFilterExpression: { learningObjectiveId: { $type: "objectId" } },
+        }
+      );
+      await this.createOrReplaceIndex(
+        performanceCollection,
+        { userId: 1, courseId: 1, granularObjectiveId: 1 },
+        {
+          name: "userId_1_courseId_1_granularObjectiveId_1",
+          unique: true,
+          partialFilterExpression: { granularObjectiveId: { $type: "objectId" } },
+        }
+      );
       await this.db.collection("grasp_student_performance").createIndex({ needsRemediation: 1 });
     
       // 3. Quiz Score: Tracks the score of the FIRST attempt per student per quiz
@@ -120,6 +144,23 @@ class DatabaseService {
       console.log("✅ MongoDB collections initialized");
     } catch (error) {
       console.error("❌ Error initializing collections:", error);
+    }
+  }
+
+  async createOrReplaceIndex(collection, keys, options) {
+    try {
+      await collection.createIndex(keys, options);
+    } catch (error) {
+      // MongoDB reports IndexOptionsConflict when an index with this generated
+      // name already exists with the old options. Replace only that known
+      // index; propagate duplicate-data and other migration failures.
+      const isKnownIndexConflict = [85, 86].includes(error?.code)
+        || ["IndexOptionsConflict", "IndexKeySpecsConflict"].includes(error?.codeName);
+      if (!isKnownIndexConflict) {
+        throw error;
+      }
+      await collection.dropIndex(options.name);
+      await collection.createIndex(keys, options);
     }
   }
 

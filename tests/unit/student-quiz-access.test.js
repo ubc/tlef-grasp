@@ -49,6 +49,7 @@ jest.mock('../../src/services/database', () => ({
 jest.mock('../../src/services/quiz-session', () => ({
   getOrCreateSession: jest.fn(),
   getSession: jest.fn(),
+  recordQuestionCount: jest.fn(),
   markSubmitted: jest.fn(),
 }));
 
@@ -158,6 +159,14 @@ describe('student quiz access past the expiry window (#37)', () => {
     achievementService.awardQuizAchievements.mockResolvedValue([]);
     quizService.saveQuizScore.mockResolvedValue({});
     getCourseById.mockResolvedValue({ courseName: 'BIOL 200' });
+    quizSessionService.getOrCreateSession.mockResolvedValue({
+      startedAt: new Date('2026-01-01T00:00:00Z'),
+      expiresAt: new Date('2026-01-01T01:00:00Z'),
+      timeLimitMinutes: 60,
+    });
+    quizSessionService.getSession.mockResolvedValue(null);
+    quizSessionService.recordQuestionCount.mockResolvedValue(undefined);
+    quizSessionService.markSubmitted.mockResolvedValue({});
   });
 
   describe('POST /student/quizzes/:quizId/submit', () => {
@@ -294,11 +303,63 @@ describe('student quiz access past the expiry window (#37)', () => {
       expect(res.body.message).toMatch(/expired/i);
     });
   });
-  quizSessionService.getOrCreateSession.mockResolvedValue({
-    startedAt: new Date('2026-01-01T00:00:00Z'),
-    expiresAt: new Date('2026-01-01T01:00:00Z'),
-    timeLimitMinutes: 60,
+
+  // Issue #65: a student who runs out of time is scored against every question
+  // they were served, not just the ones they managed to answer.
+  describe('score denominator (#65)', () => {
+    it('scores a timed-out submission out of the full served question count', async () => {
+      mockOpenWindow();
+      mockDb({
+        scoreDoc: null,
+        attemptDocs: [
+          mcqAttempt({ isCorrect: true }),
+          mcqAttempt({ isCorrect: false, selectedAnswer: 'B' }),
+        ],
+      });
+      quizSessionService.getSession.mockResolvedValue({
+        startedAt: new Date(Date.now() - 60000),
+        expiresAt: new Date(),
+        timeLimitMinutes: 60,
+        questionCount: 10,
+      });
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        score: 10,
+        correctAnswers: 1,
+        totalQuestions: 10,
+      });
+      expect(quizService.saveQuizScore).toHaveBeenCalledWith(
+        expect.objectContaining({ score: 10, correctAnswers: 1, totalQuestions: 10 })
+      );
+    });
+
+    it('records the served question count when questions are delivered', async () => {
+      mockOpenWindow();
+      mockDb({ scoreDoc: null, attemptDocs: [] });
+      quizService.getQuizQuestionsForStudent.mockResolvedValue([
+        {
+          _id: new ObjectId(),
+          title: 'What is 2 + 2?',
+          questionType: 'multiple-choice',
+          options: { A: '4', B: '5', C: '6', D: '7' },
+        },
+      ]);
+
+      const res = await request(buildApp()).get(
+        `/student/quizzes/${QUIZ_ID}/questions`
+      );
+
+      expect(res.status).toBe(200);
+      expect(quizSessionService.recordQuestionCount).toHaveBeenCalledWith(
+        USER_ID,
+        QUIZ_ID,
+        1
+      );
+    });
   });
-  quizSessionService.getSession.mockResolvedValue(null);
-  quizSessionService.markSubmitted.mockResolvedValue({});
 });

@@ -51,4 +51,29 @@ describe('quiz session service', () => {
     expect(session.expiresAt).toEqual(scheduledExpiresAt);
     expect(session.scheduledExpiresAt).toEqual(scheduledExpiresAt);
   });
+
+  describe('recordQuestionCount', () => {
+    it('records the served question count only when not already set', async () => {
+      const collection = { updateOne: jest.fn().mockResolvedValue({}) };
+      databaseService.connect.mockResolvedValue({ collection: jest.fn(() => collection) });
+
+      await quizSessionService.recordQuestionCount('student-1', 'quiz-1', 10);
+
+      expect(collection.updateOne).toHaveBeenCalledWith(
+        { userId: 'student-1', quizId: 'quiz-1', questionCount: { $exists: false } },
+        { $set: { questionCount: 10 } }
+      );
+    });
+
+    it('ignores invalid counts', async () => {
+      const collection = { updateOne: jest.fn() };
+      databaseService.connect.mockResolvedValue({ collection: jest.fn(() => collection) });
+
+      await quizSessionService.recordQuestionCount('student-1', 'quiz-1', 0);
+      await quizSessionService.recordQuestionCount('student-1', 'quiz-1', null);
+      await quizSessionService.recordQuestionCount('student-1', 'quiz-1', 'ten');
+
+      expect(collection.updateOne).not.toHaveBeenCalled();
+    });
+  });
 });

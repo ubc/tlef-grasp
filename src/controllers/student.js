@@ -192,6 +192,14 @@ const getQuizQuestionsHandler = async (req, res) => {
     });
     const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
 
+    if (questions && questions.length > 0) {
+      try {
+        await quizSessionService.recordQuestionCount(userId, quizId, questions.length);
+      } catch (countErr) {
+        console.error('[Student] Failed to record served question count:', countErr);
+      }
+    }
+
     if (!questions || questions.length === 0) {
       return res.json({
         success: true,
@@ -442,7 +450,14 @@ const submitQuizHandler = async (req, res) => {
     const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
 
     const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
-    const totalQuestions = gradedAttempts.length;
+    // The denominator is the number of questions the student was served, not
+    // just the ones they answered — a timed-out student who answered 6 of 10
+    // scores out of 10. Sessions created before the count was recorded fall
+    // back to the graded-attempt count.
+    const servedCount = Number(session?.questionCount);
+    const totalQuestions = Number.isInteger(servedCount) && servedCount > 0
+      ? Math.max(servedCount, gradedAttempts.length)
+      : gradedAttempts.length;
     const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 

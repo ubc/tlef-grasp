@@ -40,6 +40,35 @@ function useInvalidateQuizzes(courseId) {
     queryClient.invalidateQueries({
       queryKey: queryKeys.quizzesWithQuestions(courseId),
     });
+    queryClient.invalidateQueries({ queryKey: ["quiz-calendar", courseId] });
+  };
+}
+
+function calendarGridRange(month) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const mondayOffset = (first.getDay() + 6) % 7;
+  const from = new Date(first);
+  from.setDate(first.getDate() - mondayOffset);
+  const to = new Date(from);
+  to.setDate(from.getDate() + 42);
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+export function useQuizCalendar(courseId, month, { enabled = true } = {}) {
+  const { from, to } = calendarGridRange(month);
+  const query = useQuery({
+    queryKey: queryKeys.quizCalendar(courseId, from, to),
+    queryFn: () =>
+      api.get(
+        `/api/quiz/course/${courseId}/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      ),
+    enabled: !!courseId && enabled,
+  });
+
+  return {
+    ...query,
+    events: query.data?.events || [],
+    unscheduledQuizzes: query.data?.unscheduledQuizzes || [],
   };
 }
 
@@ -100,6 +129,7 @@ export function useUpdateQuizSchedules(courseId, quizId, options) {
     onSuccess: (...args) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.quizSchedules(quizId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.quizzesWithQuestions(courseId) });
+      queryClient.invalidateQueries({ queryKey: ["quiz-calendar", courseId] });
       options?.onSuccess?.(...args);
     },
   });
