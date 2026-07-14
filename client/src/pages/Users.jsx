@@ -6,6 +6,7 @@ import {
   useRemoveUserFromCourse,
 } from "../hooks/useUsers";
 import { useMyCourseSections } from "../hooks/useSections";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -60,6 +61,8 @@ export default function Users() {
   const showToast = useToast();
   const { user: currentUser, isFaculty } = useCurrentUser();
   const courseId = useSelectedCourseId();
+  // Only the course owner (or an app administrator) may remove instructors.
+  const { fullAccess } = useCoInstructorAccess();
 
   const PAGE_SIZE = 10;
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -160,6 +163,10 @@ export default function Users() {
                       affiliation: user.affiliation || user.user?.affiliation,
                     });
                     const isCurrentUser = userId === currentUserId;
+                    const canRemove =
+                      isFaculty &&
+                      !isCurrentUser &&
+                      (role !== "faculty" || fullAccess);
 
                     return (
                       <tr key={userId} className="hover:bg-gray-50">
@@ -188,7 +195,7 @@ export default function Users() {
                           </td>
                         )}
                         <td className={tableCellClass}>
-                          {isFaculty && !isCurrentUser ? (
+                          {canRemove ? (
                             <button
                               type="button"
                               title="Remove from course"

@@ -1,8 +1,9 @@
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse } = require('../services/user-course');
-const { getStaffUsersNotInCourse, getStudentsNotInCourse } = require('../services/user');
+const { getStaffUsersNotInCourse, getStudentsNotInCourse, getUserById } = require('../services/user');
 const { getCourseById } = require('../services/course');
 const { getSectionsOwnedByUser } = require('../services/course-section');
 const { isFaculty, parseAffiliations } = require('../utils/auth');
+const { isCourseManager } = require('../utils/co-instructor-permissions');
 
 const getCourseUsersHandler = async (req, res) => {
   try {
@@ -281,9 +282,19 @@ const removeUserFromCourseHandler = async (req, res) => {
 
     // Check if user is in course
     if (!(await isUserInCourse(userId, courseId))) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        error: "User is not in this course" 
+        error: "User is not in this course"
+      });
+    }
+
+    // Only the course owner (or an app administrator) may remove another
+    // instructor; co-instructors can only remove non-instructor users.
+    const targetUser = await getUserById(userId);
+    if (targetUser && (await isFaculty(targetUser)) && !(await isCourseManager(req.user, courseId))) {
+      return res.status(403).json({
+        success: false,
+        error: "Only the course owner can remove other instructors"
       });
     }
 

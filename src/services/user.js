@@ -46,6 +46,23 @@ async function getUserByPuid(puid) {
     }
 }
 
+async function getUserById(userId) {
+    try {
+        const db = await databaseService.connect();
+        const { ObjectId } = require('mongodb');
+
+        const collection = db.collection("grasp_user");
+        const filter = userId && ObjectId.isValid(String(userId))
+            ? { _id: new ObjectId(String(userId)) }
+            : { _id: userId };
+        const user = await collection.findOne(filter);
+        return user;
+    } catch (error) {
+        console.error("Error getting user by ID:", error);
+        throw error;
+    }
+}
+
 /**
  * Update the profile fields a user is allowed to manage themselves.
  * Identity and role fields remain managed by IAM and are intentionally not
@@ -199,6 +216,7 @@ async function getStudentsNotInCourse(courseId) {
 module.exports = {
     createOrUpdateUser,
     getUserByPuid,
+    getUserById,
     updateUserProfile,
     getStaffUsersNotInCourse,
     getStudentsNotInCourse,
