@@ -1,5 +1,5 @@
 const settingsService = require('../services/settings');
-const { isUserInCourse } = require('../services/user-course');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, isCourseManager, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 
 /**
@@ -10,6 +10,9 @@ const getSettingsHandler = async (req, res) => {
         const { courseId } = req.params;
         if (!courseId) {
             return res.status(400).json({ success: false, error: 'Course ID is required' });
+        }
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+            return res.status(403).json({ success: false, error: 'Staff access is not granted in this course' });
         }
         const settings = await settingsService.getSettings(courseId);
         res.json({
@@ -34,8 +37,8 @@ const updateSettingsHandler = async (req, res) => {
         if (!courseId) {
             return res.status(400).json({ success: false, error: 'Course ID is required' });
         }
-        if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
-            return res.status(403).json({ success: false, error: 'User is not in course' });
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+            return res.status(403).json({ success: false, error: 'Staff access is not granted in this course' });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.SETTINGS))) return;
         const updateData = { ...req.body };

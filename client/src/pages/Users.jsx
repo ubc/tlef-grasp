@@ -4,6 +4,8 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import {
   useCourseUsers,
   useRemoveUserFromCourse,
+  usePromoteToTa,
+  useDemoteToStudent,
 } from "../hooks/useUsers";
 import { useMyCourseSections } from "../hooks/useSections";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
@@ -15,6 +17,7 @@ import { LoadingRow } from "../components/ui/states";
 function RoleBadge({ role }) {
   const config = {
     faculty: { icon: "fa-graduation-cap", label: "Faculty", classes: "bg-purple-100 text-purple-700" },
+    ta: { icon: "fa-chalkboard-teacher", label: "TA", classes: "bg-amber-100 text-amber-700" },
     staff: { icon: "fa-user-tie", label: "Staff", classes: "bg-blue-100 text-blue-700" },
     student: { icon: "fa-user-graduate", label: "Student", classes: "bg-green-100 text-green-700" },
   }[role];
@@ -68,6 +71,8 @@ export default function Users() {
   const [sectionFilter, setSectionFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [removeTarget, setRemoveTarget] = useState(null);
+  // { userId, displayName, action: 'promote' | 'demote' }
+  const [roleChangeTarget, setRoleChangeTarget] = useState(null);
 
   const { users: courseUsers, isPending: courseUsersPending } =
     useCourseUsers(courseId);
@@ -95,6 +100,28 @@ export default function Users() {
     onError: (error) =>
       showToast(error.message || "Failed to remove user from course", "error"),
   });
+
+  const promoteMutation = usePromoteToTa(courseId, {
+    onSuccess: () =>
+      showToast(
+        "User promoted to TA. The change applies on their next login.",
+        "success"
+      ),
+    onError: (error) =>
+      showToast(error.message || "Failed to promote user to TA", "error"),
+  });
+
+  const demoteMutation = useDemoteToStudent(courseId, {
+    onSuccess: () =>
+      showToast(
+        "TA demoted to student. The change applies on their next login.",
+        "success"
+      ),
+    onError: (error) =>
+      showToast(error.message || "Failed to demote TA", "error"),
+  });
+
+  const roleChangePending = promoteMutation.isPending || demoteMutation.isPending;
 
   const currentUserId = String(currentUser?._id || currentUser?.id || "");
 
@@ -148,7 +175,7 @@ export default function Users() {
                     {courseSections.length > 0 && (
                       <th className={tableHeadClass}>Sections</th>
                     )}
-                    <th className={`${tableHeadClass} w-32`}>Actions</th>
+                    <th className={`${tableHeadClass} w-64`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,15 +185,24 @@ export default function Users() {
                     );
                     const displayName =
                       user.displayName || user.user?.displayName || "Unknown User";
-                    const role = getUserRole({
-                      ...user,
-                      affiliation: user.affiliation || user.user?.affiliation,
-                    });
+                    // Prefer the course-scoped role resolved by the server
+                    // (distinguishes TAs); fall back to global affiliations.
+                    const role =
+                      user.courseRole ||
+                      getUserRole({
+                        ...user,
+                        affiliation: user.affiliation || user.user?.affiliation,
+                      });
                     const isCurrentUser = userId === currentUserId;
                     const canRemove =
                       isFaculty &&
                       !isCurrentUser &&
                       (role !== "faculty" || fullAccess);
+                    const canChangeCourseRole =
+                      isFaculty &&
+                      !isCurrentUser &&
+                      (role === "student" || role === "ta");
+                    const showActions = canChangeCourseRole || canRemove;
 
                     return (
                       <tr key={userId} className="hover:bg-gray-50">
@@ -195,15 +231,45 @@ export default function Users() {
                           </td>
                         )}
                         <td className={tableCellClass}>
-                          {canRemove ? (
-                            <button
-                              type="button"
-                              title="Remove from course"
-                              onClick={() => setRemoveTarget({ userId, displayName })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
-                            >
-                              <i className="fas fa-user-minus" /> Remove
-                            </button>
+                          {showActions ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {canChangeCourseRole && role === "student" && (
+                                <button
+                                  type="button"
+                                  title="Promote to TA"
+                                  disabled={roleChangePending}
+                                  onClick={() =>
+                                    setRoleChangeTarget({ userId, displayName, action: "promote" })
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/85 disabled:opacity-50"
+                                >
+                                  <i className="fas fa-arrow-up" /> Promote to TA
+                                </button>
+                              )}
+                              {canChangeCourseRole && role === "ta" && (
+                                <button
+                                  type="button"
+                                  title="Demote to Student"
+                                  disabled={roleChangePending}
+                                  onClick={() =>
+                                    setRoleChangeTarget({ userId, displayName, action: "demote" })
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600/85 disabled:opacity-50"
+                                >
+                                  <i className="fas fa-arrow-down" /> Demote to Student
+                                </button>
+                              )}
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  title="Remove from course"
+                                  onClick={() => setRemoveTarget({ userId, displayName })}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
+                                >
+                                  <i className="fas fa-user-minus" /> Remove
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-muted">-</span>
                           )}
@@ -256,6 +322,26 @@ export default function Users() {
           </>
         )}
       </section>
+
+      <ConfirmModal
+        open={!!roleChangeTarget}
+        onClose={() => setRoleChangeTarget(null)}
+        onConfirm={() => {
+          const { userId, action } = roleChangeTarget;
+          (action === "promote" ? promoteMutation : demoteMutation).mutate(userId);
+        }}
+        title={
+          roleChangeTarget?.action === "promote"
+            ? "Promote to TA"
+            : "Demote to Student"
+        }
+        message={
+          roleChangeTarget?.action === "promote"
+            ? `Promote ${roleChangeTarget?.displayName || "this user"} to TA for this course? They keep their student role and gain TA access on their next login.`
+            : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed on their next login.`
+        }
+        confirmLabel="Confirm"
+      />
 
       <ConfirmModal
         open={!!removeTarget}

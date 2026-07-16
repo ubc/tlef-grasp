@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const usersController = require('../controllers/users');
 
+// Resolve the current user's effective role in the selected course.
+router.get("/course/:courseId/access", usersController.getCourseAccessHandler);
+
 // Get all users in a course
 router.get("/course/:courseId", usersController.getCourseUsersHandler);
 
@@ -19,5 +22,11 @@ router.post("/course/:courseId/add", express.json(), usersController.addUserToCo
 
 // Remove a user from a course
 router.delete("/course/:courseId/remove/:userId", usersController.removeUserFromCourseHandler);
+
+// Promote a student in the course to TA
+router.post("/course/:courseId/promote", express.json(), usersController.promoteUserToTaHandler);
+
+// Demote a TA in the course back to student
+router.post("/course/:courseId/demote", express.json(), usersController.demoteTaToStudentHandler);
 
 module.exports = router;

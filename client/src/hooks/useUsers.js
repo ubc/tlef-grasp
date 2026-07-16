@@ -42,6 +42,32 @@ export function useAddUserToCourse(courseId, options) {
   });
 }
 
+export function usePromoteToTa(courseId, options) {
+  const invalidate = useInvalidateUserLists(courseId);
+  return useMutation({
+    mutationFn: (userId) =>
+      api.post(`/api/users/course/${courseId}/promote`, { userId }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
+export function useDemoteToStudent(courseId, options) {
+  const invalidate = useInvalidateUserLists(courseId);
+  return useMutation({
+    mutationFn: (userId) =>
+      api.post(`/api/users/course/${courseId}/demote`, { userId }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 export function useRemoveUserFromCourse(courseId, options) {
   const invalidate = useInvalidateUserLists(courseId);
   return useMutation({

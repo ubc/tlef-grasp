@@ -20,6 +20,9 @@ jest.mock("../../src/utils/auth", () => ({
   isFaculty: jest.fn(),
   isStudent: jest.fn(),
 }));
+jest.mock("../../src/utils/course-access", () => ({
+  hasStaffAccessInCourse: jest.fn(),
+}));
 jest.mock("../../src/middleware/auth", () => ({
   requireRole: () => (_req, _res, next) => next(),
 }));
@@ -28,6 +31,7 @@ jest.mock("../../src/services/answer-grading", () => ({}));
 const quizService = require("../../src/services/quiz");
 const flagService = require("../../src/services/quiz-question-flag");
 const { isFaculty, isStudent } = require("../../src/utils/auth");
+const { hasStaffAccessInCourse } = require("../../src/utils/course-access");
 const { isUserInCourse } = require("../../src/services/user-course");
 const quizRouter = require("../../src/routes/quiz");
 
@@ -52,6 +56,7 @@ describe("quiz question flag routes", () => {
     jest.clearAllMocks();
     isStudent.mockResolvedValue(true);
     isFaculty.mockResolvedValue(false);
+    hasStaffAccessInCourse.mockResolvedValue(false);
     isUserInCourse.mockResolvedValue(true);
     quizService.getQuizById.mockResolvedValue({ _id: QUIZ_ID, courseId: COURSE_ID });
   });
@@ -97,6 +102,7 @@ describe("quiz question flag routes", () => {
   it("lets an instructor retrieve and update course reports", async () => {
     isStudent.mockResolvedValue(false);
     isFaculty.mockResolvedValue(true);
+    hasStaffAccessInCourse.mockResolvedValue(true);
     const flags = [{ _id: "flag-1", status: "pending", questionText: "Question text" }];
     flagService.getCourseFlags.mockResolvedValue(flags);
     flagService.getFlagById.mockResolvedValue({ _id: "flag-1", courseId: COURSE_ID });
@@ -116,6 +122,17 @@ describe("quiz question flag routes", () => {
       "reviewed",
       "instructor-1"
     );
+  });
+
+  it("blocks a promoted TA from reading reports in a different course", async () => {
+    isStudent.mockResolvedValue(false);
+    hasStaffAccessInCourse.mockResolvedValue(false);
+
+    const response = await request(buildApp({ _id: "ta-1" }))
+      .get(`/api/quiz/flags/course/${COURSE_ID}`);
+
+    expect(response.status).toBe(403);
+    expect(flagService.getCourseFlags).not.toHaveBeenCalled();
   });
 
   it("lets an instructor using student preview submit and read their own test report", async () => {

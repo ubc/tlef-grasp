@@ -234,6 +234,7 @@ const getCourseUsers = async (courseId) => {
                     _id: 1,
                     userId: 1,
                     courseId: 1,
+                    courseRole: 1,
                     // Include all user fields at top level for easier access
                     puid: "$user.puid",
                     displayName: "$user.displayName",
@@ -301,6 +302,95 @@ const getCourseUserIds = async (courseId) => {
         return courseUsers.map(cu => cu.userId);
     } catch (error) {
         console.error("Error getting course user IDs:", error);
+        throw error;
+    }
+};
+
+/**
+ * Get the membership document linking a user to a course (or null).
+ * The document may carry a courseRole (currently only 'ta') describing a
+ * course-scoped designation on top of the user's global affiliations.
+ * @param {string|ObjectId} userId - User ID
+ * @param {string|ObjectId} courseId - Course ID
+ * @returns {Promise<Object|null>} Membership document or null
+ */
+const getUserCourseMembership = async (userId, courseId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+        const courseIdObj = typeof courseId === 'string' && ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+        return collection.findOne({
+            $or: [
+                { userId: userIdObj, courseId: courseIdObj },
+                { userId: userId, courseId: courseId },
+                { userId: String(userId), courseId: String(courseId) }
+            ]
+        });
+    } catch (error) {
+        console.error("Error getting user course membership:", error);
+        throw error;
+    }
+};
+
+/**
+ * Set or clear the course-scoped role on a membership document.
+ * @param {string|ObjectId} userId - User ID
+ * @param {string|ObjectId} courseId - Course ID
+ * @param {string|null} courseRole - Role to set (e.g. 'ta'), or null to clear
+ * @returns {Promise} Update result
+ */
+const setUserCourseRole = async (userId, courseId, courseRole) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+        const courseIdObj = typeof courseId === 'string' && ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+        const filter = {
+            $or: [
+                { userId: userIdObj, courseId: courseIdObj },
+                { userId: userId, courseId: courseId },
+                { userId: String(userId), courseId: String(courseId) }
+            ]
+        };
+        const update = courseRole
+            ? { $set: { courseRole } }
+            : { $unset: { courseRole: '' } };
+        return collection.updateOne(filter, update);
+    } catch (error) {
+        console.error("Error setting user course role:", error);
+        throw error;
+    }
+};
+
+/**
+ * Count how many courses a user holds the 'ta' course role in.
+ * Used to decide whether a demotion should also revoke the promoted staff
+ * affiliation (only when this drops to zero).
+ * @param {string|ObjectId} userId - User ID
+ * @returns {Promise<number>} Number of TA memberships
+ */
+const countTaMemberships = async (userId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+
+        return collection.countDocuments({
+            courseRole: 'ta',
+            $or: [
+                { userId: userIdObj },
+                { userId: userId },
+                { userId: String(userId) }
+            ]
+        });
+    } catch (error) {
+        console.error("Error counting TA memberships:", error);
         throw error;
     }
 };
@@ -393,5 +483,8 @@ module.exports = {
     deleteUserCourseByCourseID,
     deleteUserCourse,
     isUserInCourse,
+    getUserCourseMembership,
+    setUserCourseRole,
+    countTaMemberships,
     getStudentCourses,
 };

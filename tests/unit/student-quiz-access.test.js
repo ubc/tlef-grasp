@@ -20,8 +20,8 @@ jest.mock('../../src/services/quiz-schedule', () => ({
   resolveWindow: jest.fn(),
 }));
 
-jest.mock('../../src/utils/auth', () => ({
-  isStudent: jest.fn(),
+jest.mock('../../src/utils/course-access', () => ({
+  hasStaffAccessInCourse: jest.fn(),
 }));
 
 jest.mock('../../src/models/questions/CalculationQuestion', () => ({
@@ -55,7 +55,7 @@ jest.mock('../../src/services/quiz-session', () => ({
 
 const quizService = require('../../src/services/quiz');
 const quizScheduleService = require('../../src/services/quiz-schedule');
-const { isStudent } = require('../../src/utils/auth');
+const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
 const achievementService = require('../../src/services/achievement');
 const { getCourseById } = require('../../src/services/course');
 const databaseService = require('../../src/services/database');
@@ -154,7 +154,7 @@ describe('student quiz access past the expiry window (#37)', () => {
   });
 
   beforeEach(() => {
-    isStudent.mockResolvedValue(true);
+    hasStaffAccessInCourse.mockResolvedValue(false);
     quizService.getQuizById.mockResolvedValue(publishedQuiz());
     achievementService.awardQuizAchievements.mockResolvedValue([]);
     quizService.saveQuizScore.mockResolvedValue({});

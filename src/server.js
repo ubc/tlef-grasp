@@ -121,8 +121,9 @@ app.use("/api/image", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), imageR
 // Achievement routes - all authenticated users
 app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), achievementRoutes);
 
-// Users management - faculty only
-app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), userRoutes);
+// Course user roster - staff and TAs may read; mutating handlers enforce
+// faculty-only access themselves. Promoted TA access is checked per course.
+app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRoutes);
 
 // UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
 app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);

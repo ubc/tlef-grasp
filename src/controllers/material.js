@@ -1,5 +1,5 @@
 const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, getMaterialBySourceId } = require('../services/material');
-const { isUserInCourse } = require('../services/user-course');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
 const settingsService = require('../services/settings');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
@@ -16,7 +16,7 @@ const saveMaterialHandler = async (req, res) => {
         const { sourceId, courseId, materialData } = req.body;
         const userId = req.user.id;
 
-        if (!await isUserInCourse(userId, courseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
@@ -39,7 +39,7 @@ const deleteMaterialHandler = async (req, res) => {
             return res.status(404).json({ error: "Course current material attached to not found" });
         }
 
-        if (!await isUserInCourse(userId, courseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
@@ -64,7 +64,7 @@ const getCourseMaterialsHandler = async (req, res) => {
         const { courseId } = req.params;
         const userId = req.user.id;
     
-        if (!await isUserInCourse(userId, courseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
 
@@ -104,7 +104,7 @@ const updateMaterialHandler = async (req, res) => {
             return res.status(400).json({ error: "Course ID is required" });
         }
 
-        if (!await isUserInCourse(userId, materialCourseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, materialCourseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, materialCourseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
@@ -352,7 +352,7 @@ const refetchMaterialHandler = async (req, res) => {
             return res.status(400).json({ error: "Course ID is required" });
         }
 
-        if (!await isUserInCourse(userId, materialCourseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, materialCourseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, materialCourseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
@@ -584,7 +584,7 @@ const uploadFileHandler = async (req, res) => {
             return res.status(400).json({ error: "courseId is required" });
         }
 
-        if (!await isUserInCourse(userId, courseId)) {
+        if (!(await hasStaffAccessInCourse(req.user, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
