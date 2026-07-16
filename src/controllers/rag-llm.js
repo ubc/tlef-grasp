@@ -9,8 +9,7 @@ const { ObjectId } = require('mongodb');
 
 // Import services
 const { getMaterialCourseId } = require('../services/material');
-const { isUserInCourse } = require('../services/user-course');
-const { isFaculty } = require('../utils/auth');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
@@ -556,7 +555,7 @@ const deleteDocumentHandler = async (req, res) => {
       return res.status(404).json({ error: "Course current material attached to not found" });
     }
 
-    if (!await isFaculty(req.user) && !await isUserInCourse(userId, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
 
@@ -610,7 +609,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
 
     // Check user permissions
-    if (!await isFaculty(req.user) && !await isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({
         success: false,
         error: "User is not in course",

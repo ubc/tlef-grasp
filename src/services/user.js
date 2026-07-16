@@ -105,6 +105,77 @@ async function updateUserProfile(user, profile) {
     }
 }
 
+async function getUserById(userId) {
+    try {
+        const db = await databaseService.connect();
+        const { ObjectId } = require('mongodb');
+        const collection = db.collection("grasp_user");
+        const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
+            ? new ObjectId(userId)
+            : userId;
+        return collection.findOne({ _id: idObj });
+    } catch (error) {
+        console.error("Error getting user by id:", error);
+        throw error;
+    }
+}
+
+/**
+ * Grant the staff affiliation as part of a TA promotion. The student
+ * affiliation is untouched, and staffViaTaPromotion records that the staff
+ * affiliation was granted by us (not by SAML), so demotion knows it is safe
+ * to remove it again.
+ * @param {string|ObjectId} userId - User ID
+ */
+async function grantPromotedStaffAffiliation(userId) {
+    try {
+        const db = await databaseService.connect();
+        const { ObjectId } = require('mongodb');
+        const collection = db.collection("grasp_user");
+        const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
+            ? new ObjectId(userId)
+            : userId;
+        return collection.updateOne(
+            { _id: idObj },
+            {
+                $addToSet: { affiliation: 'staff' },
+                $set: { staffViaTaPromotion: true, updatedAt: new Date() },
+            }
+        );
+    } catch (error) {
+        console.error("Error granting promoted staff affiliation:", error);
+        throw error;
+    }
+}
+
+/**
+ * Remove the staff affiliation that was granted by a TA promotion. Only used
+ * when the user is no longer a TA in any course; never called for users whose
+ * staff affiliation came from SAML.
+ * @param {string|ObjectId} userId - User ID
+ */
+async function revokePromotedStaffAffiliation(userId) {
+    try {
+        const db = await databaseService.connect();
+        const { ObjectId } = require('mongodb');
+        const collection = db.collection("grasp_user");
+        const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
+            ? new ObjectId(userId)
+            : userId;
+        return collection.updateOne(
+            { _id: idObj },
+            {
+                $pull: { affiliation: 'staff' },
+                $unset: { staffViaTaPromotion: '' },
+                $set: { updatedAt: new Date() },
+            }
+        );
+    } catch (error) {
+        console.error("Error revoking promoted staff affiliation:", error);
+        throw error;
+    }
+}
+
 /**
  * Get user IDs that are in a specific course
  * @param {Object} db - Database connection
@@ -217,6 +288,8 @@ module.exports = {
     createOrUpdateUser,
     getUserByPuid,
     getUserById,
+    grantPromotedStaffAffiliation,
+    revokePromotedStaffAffiliation,
     updateUserProfile,
     getStaffUsersNotInCourse,
     getStudentsNotInCourse,

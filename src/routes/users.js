@@ -20,4 +20,10 @@ router.post("/course/:courseId/add", express.json(), usersController.addUserToCo
 // Remove a user from a course
 router.delete("/course/:courseId/remove/:userId", usersController.removeUserFromCourseHandler);
 
+// Promote a student in the course to TA
+router.post("/course/:courseId/promote", express.json(), usersController.promoteUserToTaHandler);
+
+// Demote a TA in the course back to student
+router.post("/course/:courseId/demote", express.json(), usersController.demoteTaToStudentHandler);
+
 module.exports = router;

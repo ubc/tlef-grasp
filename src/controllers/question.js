@@ -1,6 +1,6 @@
 const archiver = require('archiver');
 const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('../services/question');
-const { isUserInCourse } = require('../services/user-course');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getQuestionCourseId, getQuestion } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
@@ -69,7 +69,7 @@ const getQuestionsHandler = async (req, res) => {
     }
 
     // Check if user is in course
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ 
         success: false,
         error: "User is not in course" 
@@ -98,7 +98,7 @@ const getQuestionByIdHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ 
         success: false,
         error: "User is not in course" 
@@ -136,7 +136,7 @@ const saveQuestionHandler = async (req, res) => {
       return res.status(400).json({ error: "Course ID is required" });
     }
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
@@ -182,7 +182,7 @@ const updateQuestionHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
@@ -228,7 +228,7 @@ const updateQuestionStatusHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
@@ -273,7 +273,7 @@ const deleteQuestionHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
-    if (!isUserInCourse(req.user.id, courseId)) {
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
