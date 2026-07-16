@@ -32,6 +32,7 @@ export const queryKeys = {
   achievements: (courseId) => ["achievements", "my", courseId],
 
   courseUsers: (courseId) => ["course-users", courseId],
+  courseAccess: (courseId) => ["course-access", courseId],
   availableUsers: (courseId) => ["available-users", courseId],
 
   courseSettings: (courseId) => ["course-settings", courseId],

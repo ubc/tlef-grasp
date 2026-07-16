@@ -32,14 +32,18 @@ jest.mock('../../src/services/quiz-session', () => ({}));
 jest.mock('../../src/utils/auth', () => ({
   ROLES: { FACULTY: 'faculty', STAFF: 'staff', STUDENT: 'student' },
   isFaculty: jest.fn(),
-  isStudent: jest.fn(),
+}));
+
+jest.mock('../../src/utils/course-access', () => ({
+  hasStaffAccessInCourse: jest.fn(),
 }));
 
 const quizService = require('../../src/services/quiz');
 const scheduleService = require('../../src/services/quiz-schedule');
 const sectionService = require('../../src/services/course-section');
 const { isUserInCourse } = require('../../src/services/user-course');
-const { isFaculty, isStudent } = require('../../src/utils/auth');
+const { isFaculty } = require('../../src/utils/auth');
+const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
 const quizRouter = require('../../src/routes/quiz');
 
 const FROM = '2026-07-01T00:00:00.000Z';
@@ -60,7 +64,7 @@ describe('GET /api/quiz/course/:courseId/calendar', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     isFaculty.mockResolvedValue(false);
-    isStudent.mockResolvedValue(true);
+    hasStaffAccessInCourse.mockResolvedValue(false);
     isUserInCourse.mockResolvedValue(true);
     quizService.getUserScoresForCourse.mockResolvedValue([]);
   });
@@ -100,7 +104,7 @@ describe('GET /api/quiz/course/:courseId/calendar', () => {
 
   it('returns owned-section events and published unscheduled quizzes to an instructor', async () => {
     isFaculty.mockResolvedValue(true);
-    isStudent.mockResolvedValue(false);
+    hasStaffAccessInCourse.mockResolvedValue(true);
     quizService.getQuizzesByCourse.mockResolvedValue([
       { _id: 'scheduled', name: 'Scheduled Quiz', published: true },
       { _id: 'unscheduled', name: 'Needs Schedule', published: true },

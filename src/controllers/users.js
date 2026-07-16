@@ -1,9 +1,9 @@
 const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse, getUserCourseMembership, setUserCourseRole, countTaMemberships } = require('../services/user-course');
 const { getStaffUsersNotInCourse, getStudentsNotInCourse, getUserById, grantPromotedStaffAffiliation, revokePromotedStaffAffiliation } = require('../services/user');
-const { getCourseById } = require('../services/course');
 const { getSectionsOwnedByUser } = require('../services/course-section');
 const { isFaculty, parseAffiliations } = require('../utils/auth');
-const { TA_COURSE_ROLE, resolveCourseRole } = require('../utils/course-access');
+const { TA_COURSE_ROLE, hasStaffAccessInCourse, resolveCourseRole } = require('../utils/course-access');
+const { isCourseManager } = require('../utils/co-instructor-permissions');
 
 /**
  * Shared guard for TA promotion/demotion: the requester must be faculty (an
@@ -145,6 +145,37 @@ const demoteTaToStudentHandler = async (req, res) => {
   }
 };
 
+/**
+ * Resolve the authenticated user's effective role in one course. Promoted TAs
+ * are staff only where their membership carries courseRole "ta"; in their
+ * other courses they remain students.
+ */
+const getCourseAccessHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user?._id || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "User not authenticated" });
+    }
+
+    const membership = await getUserCourseMembership(userId, courseId);
+    if (!membership) {
+      return res.status(403).json({ success: false, error: "User is not in course" });
+    }
+
+    const userIsFaculty = await isFaculty(req.user);
+    const hasStaffAccess = await hasStaffAccessInCourse(req.user, courseId);
+    const role = hasStaffAccess
+      ? resolveCourseRole(req.user, membership, userIsFaculty)
+      : "student";
+
+    return res.json({ success: true, hasStaffAccess, role });
+  } catch (error) {
+    console.error("Error resolving course access:", error);
+    return res.status(500).json({ success: false, error: "Failed to resolve course access" });
+  }
+};
+
 const getCourseUsersHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -160,13 +191,19 @@ const getCourseUsersHandler = async (req, res) => {
 
     console.log("Checking if user is in course:", { userId, courseId, userIdType: typeof userId, courseIdType: typeof courseId });
 
-    // Check if user is in course
-    const userInCourse = await isUserInCourse(userId, courseId);
-    if (!userInCourse) {
-      console.log("User is not in course");
+    if (!(await isUserInCourse(userId, courseId))) {
+      return res.status(403).json({
+        success: false,
+        error: "User is not in course"
+      });
+    }
+
+    // This page is available to faculty, genuine staff, and promoted TAs in
+    // this course. A promoted TA must not inherit access in another course.
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ 
         success: false,
-        error: "User is not in course" 
+        error: "Staff access is not granted in this course"
       });
     }
 
@@ -461,6 +498,7 @@ const removeUserFromCourseHandler = async (req, res) => {
 };
 
 module.exports = {
+  getCourseAccessHandler,
   getCourseUsersHandler,
   getStaffUsersNotInCourseHandler,
   getStudentsNotInCourseHandler,

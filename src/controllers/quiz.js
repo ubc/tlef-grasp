@@ -8,7 +8,8 @@ const questionFlagService = require("../services/quiz-question-flag");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
 const { isUserInCourse } = require('../services/user-course');
-const { isFaculty, isStudent } = require('../utils/auth');
+const { isFaculty } = require('../utils/auth');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const quizSessionService = require('../services/quiz-session');
 
@@ -91,8 +92,8 @@ const getMyQuestionFlagsHandler = async (req, res) => {
 const getCourseQuestionFlagsHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
-    if (!(await canAccessCourse(req, courseId))) {
-      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
     const flags = await questionFlagService.getCourseFlags(courseId);
     res.json({ success: true, flags });
@@ -111,8 +112,8 @@ const updateQuestionFlagStatusHandler = async (req, res) => {
     }
     const flag = await questionFlagService.getFlagById(flagId);
     if (!flag) return res.status(404).json({ success: false, error: "Flag not found" });
-    if (!(await canAccessCourse(req, flag.courseId))) {
-      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    if (!(await hasStaffAccessInCourse(req.user, flag.courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
     const updatedFlag = await questionFlagService.updateFlagStatus(
       flagId,
@@ -132,7 +133,13 @@ const updateQuestionFlagStatusHandler = async (req, res) => {
 const getQuizzesByCourseHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const quizzes = await quizService.getQuizzesByCourse(courseId);
+    if (!(await canAccessCourse(req, courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const allQuizzes = await quizService.getQuizzesByCourse(courseId);
+    const quizzes = await hasStaffAccessInCourse(req.user, courseId)
+      ? allQuizzes
+      : allQuizzes.filter((quiz) => quiz.published === true);
     res.json({ success: true, quizzes });
   } catch (error) {
     console.error("Error fetching quizzes:", error);
@@ -147,6 +154,9 @@ const getQuizzesByCourseHandler = async (req, res) => {
 const getQuizzesByCourseWithQuestionsHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
+    }
     const quizzes = await quizService.getQuizzesByCourseWithQuestions(courseId);
     res.json({ success: true, quizzes });
   } catch (error) {
@@ -168,7 +178,7 @@ const getStudentQuizOverviewHandler = async (req, res) => {
       .filter((quiz) => quiz.published === true);
 
     let active;
-    if (!(await isStudent(req.user))) {
+    if (await hasStaffAccessInCourse(req.user, courseId)) {
       // Instructors (staff/faculty/admins) aren't enrolled in a section — let
       // them preview every published quiz regardless of the per-section schedule.
       active = published;
@@ -240,7 +250,7 @@ const getQuizCalendarHandler = async (req, res) => {
     }
 
     const userId = getRequestUserId(req);
-    const studentAudience = await isStudent(req.user);
+    const studentAudience = !(await hasStaffAccessInCourse(req.user, courseId));
     const allQuizzes = await quizService.getQuizzesByCourse(courseId);
     const quizzes = studentAudience
       ? allQuizzes.filter((quiz) => quiz.published === true)
@@ -1128,8 +1138,8 @@ const getQuizScoresHandler = async (req, res) => {
     const quiz = await quizService.getQuizById(quizId);
     if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
 
-    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
-      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    if (!(await hasStaffAccessInCourse(req.user, quiz.courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
 
     let scores = await quizService.getQuizScores(quizId);
@@ -1164,8 +1174,8 @@ const getStudentQuizAttemptHandler = async (req, res) => {
     const quiz = await quizService.getQuizById(quizId);
     if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
 
-    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
-      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    if (!(await hasStaffAccessInCourse(req.user, quiz.courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
 
     const attempts = await quizService.getStudentQuizAttempt(quizId, userId);

@@ -1,5 +1,6 @@
 import { useSelectedCourseId } from "../stores/appStore";
 import { useCurrentUser } from "./useCurrentUser";
+import { useCourseAccess } from "./useCourseAccess";
 import { useCourse } from "./useSections";
 import { useCourseSettings } from "./useCourseSettings";
 
@@ -12,11 +13,12 @@ import { useCourseSettings } from "./useCourseSettings";
 // allow everything, so the owner never sees their own nav flicker away.
 export function useCoInstructorAccess() {
   const courseId = useSelectedCourseId();
-  const { user, isFaculty } = useCurrentUser();
+  const { user } = useCurrentUser();
+  const { hasStaffAccess } = useCourseAccess();
 
-  // Only instructors are subject to (or need) these lookups. Skip the queries
-  // for students, who also render the sidebar.
-  const enabled = !!isFaculty;
+  // Only people with instructor access in this course need these lookups.
+  // This includes TAs in their promoted course, but not in their other courses.
+  const enabled = hasStaffAccess;
   const { course, isPending: coursePending } = useCourse(courseId, { enabled });
   const { settings, isPending: settingsPending } = useCourseSettings(courseId, {
     enabled,

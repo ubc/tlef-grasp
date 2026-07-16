@@ -40,6 +40,7 @@ jest.mock('../../src/services/course-section', () => ({
 
 const userCourseService = require('../../src/services/user-course');
 const userService = require('../../src/services/user');
+const courseSectionService = require('../../src/services/course-section');
 const usersRouter = require('../../src/routes/users');
 
 const COURSE_ID = 'course-1';
@@ -66,9 +67,77 @@ function buildApp(user) {
 
 const promoteUrl = `/api/users/course/${COURSE_ID}/promote`;
 const demoteUrl = `/api/users/course/${COURSE_ID}/demote`;
+const accessUrl = `/api/users/course/${COURSE_ID}/access`;
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+describe('GET /api/users/course/:courseId/access', () => {
+  it('grants instructor access in the course where the user is a TA', async () => {
+    userCourseService.getUserCourseMembership.mockResolvedValue({
+      userId: 'ta-1',
+      courseId: COURSE_ID,
+      courseRole: 'ta',
+    });
+
+    const res = await request(buildApp(taUser)).get(accessUrl);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      hasStaffAccess: true,
+      role: 'ta',
+    });
+  });
+
+  it('resolves the same promoted account as a student in another course', async () => {
+    userCourseService.getUserCourseMembership.mockResolvedValue({
+      userId: 'ta-1',
+      courseId: COURSE_ID,
+    });
+    userService.getUserById.mockResolvedValue(taUser);
+
+    const res = await request(buildApp(taUser)).get(accessUrl);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      hasStaffAccess: false,
+      role: 'student',
+    });
+  });
+});
+
+describe('GET /api/users/course/:courseId', () => {
+  it('lets a TA view the Users page roster in their TA course', async () => {
+    userCourseService.isUserInCourse.mockResolvedValue(true);
+    userCourseService.getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
+    userCourseService.getCourseUsers.mockResolvedValue([
+      { userId: 'ta-1', courseRole: 'ta', user: taUser, sections: [] },
+    ]);
+    courseSectionService.getSectionsOwnedByUser.mockResolvedValue([]);
+
+    const res = await request(buildApp(taUser)).get(`/api/users/course/${COURSE_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.users).toHaveLength(1);
+    expect(res.body.users[0].courseRole).toBe('ta');
+  });
+
+  it('blocks a promoted TA from viewing another course roster as staff', async () => {
+    userCourseService.isUserInCourse.mockResolvedValue(true);
+    userCourseService.getUserCourseMembership.mockResolvedValue({
+      userId: 'ta-1',
+      courseId: COURSE_ID,
+    });
+    userService.getUserById.mockResolvedValue(taUser);
+
+    const res = await request(buildApp(taUser)).get(`/api/users/course/${COURSE_ID}`);
+
+    expect(res.status).toBe(403);
+    expect(userCourseService.getCourseUsers).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/users/course/:courseId/promote', () => {

@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const usersController = require('../controllers/users');
 
+// Resolve the current user's effective role in the selected course.
+router.get("/course/:courseId/access", usersController.getCourseAccessHandler);
+
 // Get all users in a course
 router.get("/course/:courseId", usersController.getCourseUsersHandler);
 

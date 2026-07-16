@@ -1,7 +1,7 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
 const quizScheduleService = require('../services/quiz-schedule');
-const { isStudent } = require('../utils/auth');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
@@ -42,9 +42,11 @@ const resolveStudentQuizAccess = async (quiz, user) => {
   if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
   if (!quiz.published) return { success: false, status: 403, message: "This quiz is not available. Only published quizzes can be accessed." };
 
-  // Instructors (staff/faculty/admins) aren't enrolled in a section — let them
-  // open any published quiz regardless of the per-section schedule.
-  if (!(await isStudent(user))) return { success: true, scheduledExpiresAt: null };
+  // Instructors aren't enrolled in a section. Promoted TAs only receive this
+  // preview bypass in their TA course; elsewhere they follow student windows.
+  if (await hasStaffAccessInCourse(user, quiz.courseId)) {
+    return { success: true, scheduledExpiresAt: null };
+  }
 
   const userId = user._id || user.id;
   const studentSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, quiz.courseId);

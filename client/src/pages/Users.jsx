@@ -198,6 +198,11 @@ export default function Users() {
                       isFaculty &&
                       !isCurrentUser &&
                       (role !== "faculty" || fullAccess);
+                    const canChangeCourseRole =
+                      isFaculty &&
+                      !isCurrentUser &&
+                      (role === "student" || role === "ta");
+                    const showActions = canChangeCourseRole || canRemove;
 
                     return (
                       <tr key={userId} className="hover:bg-gray-50">
@@ -226,9 +231,9 @@ export default function Users() {
                           </td>
                         )}
                         <td className={tableCellClass}>
-                          {isFaculty && !isCurrentUser ? (
+                          {showActions ? (
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {role === "student" && (
+                              {canChangeCourseRole && role === "student" && (
                                 <button
                                   type="button"
                                   title="Promote to TA"
@@ -241,7 +246,7 @@ export default function Users() {
                                   <i className="fas fa-arrow-up" /> Promote to TA
                                 </button>
                               )}
-                              {role === "ta" && (
+                              {canChangeCourseRole && role === "ta" && (
                                 <button
                                   type="button"
                                   title="Demote to Student"
@@ -254,14 +259,16 @@ export default function Users() {
                                   <i className="fas fa-arrow-down" /> Demote to Student
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                title="Remove from course"
-                                onClick={() => setRemoveTarget({ userId, displayName })}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
-                              >
-                                <i className="fas fa-user-minus" /> Remove
-                              </button>
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  title="Remove from course"
+                                  onClick={() => setRemoveTarget({ userId, displayName })}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
+                                >
+                                  <i className="fas fa-user-minus" /> Remove
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <span className="text-muted">-</span>

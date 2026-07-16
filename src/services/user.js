@@ -105,21 +105,6 @@ async function updateUserProfile(user, profile) {
     }
 }
 
-async function getUserById(userId) {
-    try {
-        const db = await databaseService.connect();
-        const { ObjectId } = require('mongodb');
-        const collection = db.collection("grasp_user");
-        const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
-            ? new ObjectId(userId)
-            : userId;
-        return collection.findOne({ _id: idObj });
-    } catch (error) {
-        console.error("Error getting user by id:", error);
-        throw error;
-    }
-}
-
 /**
  * Grant the staff affiliation as part of a TA promotion. The student
  * affiliation is untouched, and staffViaTaPromotion records that the staff

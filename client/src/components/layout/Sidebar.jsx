@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
+import { useCourseAccess } from "../../hooks/useCourseAccess";
 import { useMyCourses } from "../../hooks/useCourses";
 import { useCoInstructorAccess } from "../../hooks/useCoInstructorAccess";
 import { useAppStore } from "../../stores/appStore";
@@ -121,15 +122,17 @@ function CourseSelector() {
 
 export default function Sidebar({ open = false, onClose }) {
   const closeButtonRef = useRef(null);
-  const { isStudent, isFaculty } = useCurrentUser();
+  const { isStudent } = useCurrentUser();
+  const { hasStaffAccess, role: courseRole } = useCourseAccess();
   const { can } = useCoInstructorAccess();
   const { currentRole, setCurrentRole, selectedCourse, setSelectedCourse } =
     useAppStore();
   const navigate = useNavigate();
   const showToast = useToast();
 
-  // Students can only ever see the student view
-  const viewingStudent = isStudent || currentRole === "student";
+  // Promoted TAs can only use the instructor view in the course where they
+  // hold the TA membership role.
+  const viewingStudent = !hasStaffAccess || currentRole === "student";
   // Students without a course only get the Dashboard link (legacy behavior)
   const studentItems =
     isStudent && !selectedCourse ? STUDENT_ITEMS.slice(0, 1) : STUDENT_ITEMS;
@@ -195,7 +198,7 @@ export default function Sidebar({ open = false, onClose }) {
           >
             <i className="fas fa-user-circle text-lg text-white/90" />
           </Link>
-          {!isStudent && can("settings") && (
+          {hasStaffAccess && can("settings") && (
             <Link
               to="/settings"
               className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
@@ -229,7 +232,7 @@ export default function Sidebar({ open = false, onClose }) {
                 {INSTRUCTOR_MANAGEMENT_ITEMS.map((item) => (
                   <NavItem key={item.to} {...item} />
                 ))}
-                {isFaculty && (
+                {hasStaffAccess && (
                   <NavItem to="/users" icon="fa-users" label="Users" />
                 )}
                 {can("settings") && (
@@ -242,7 +245,7 @@ export default function Sidebar({ open = false, onClose }) {
 
         {/* Role switch + sign out */}
         <div className="mt-auto border-t border-white/10 p-[25px]">
-          {!isStudent && (
+          {hasStaffAccess && (
             <button
               type="button"
               onClick={handleRoleSwitch}
@@ -253,7 +256,7 @@ export default function Sidebar({ open = false, onClose }) {
             </button>
           )}
           <div className="text-center text-xs text-white/70">
-            {isStudent ? (
+            {!hasStaffAccess ? (
               <span>
                 Role: <strong className="font-semibold text-white/90">Student</strong>
               </span>
@@ -261,7 +264,7 @@ export default function Sidebar({ open = false, onClose }) {
               <span>
                 Viewing:{" "}
                 <strong className="font-semibold text-white/90">
-                  {viewingStudent ? "Student" : "Instructor"}
+                  {viewingStudent ? "Student" : courseRole === "ta" ? "TA" : "Instructor"}
                 </strong>
               </span>
             )}

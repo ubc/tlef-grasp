@@ -1,9 +1,10 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useCourseAccess } from "../hooks/useCourseAccess";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { useAppStore } from "../stores/appStore";
 
-const ROLE_RANK = { student: 1, staff: 2, faculty: 3 };
+const ROLE_RANK = { student: 1, ta: 2, staff: 2, faculty: 3 };
 
 export function FullPageSpinner() {
   return (
@@ -44,10 +45,13 @@ export function RequireOnboarded() {
 // Requires the user's actual role to be at least `min` ("student" | "staff" | "faculty").
 // Students landing on instructor pages get bounced to their dashboard (legacy behavior).
 export function RequireRole({ min }) {
-  const { role, isStudent } = useCurrentUser();
+  const { isStudent } = useCurrentUser();
+  const { role, isLoading } = useCourseAccess();
+
+  if (isLoading) return <FullPageSpinner />;
 
   if ((ROLE_RANK[role] || 0) < ROLE_RANK[min]) {
-    return <Navigate to={isStudent ? "/student-dashboard" : "/dashboard"} replace />;
+    return <Navigate to={isStudent || role === "student" ? "/student-dashboard" : "/dashboard"} replace />;
   }
   return <Outlet />;
 }

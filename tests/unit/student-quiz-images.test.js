@@ -14,8 +14,8 @@ jest.mock("../../src/services/quiz-schedule", () => ({
   getSchedulesForQuiz: jest.fn(),
   resolveWindow: jest.fn(),
 }));
-jest.mock("../../src/utils/auth", () => ({
-  isStudent: jest.fn(),
+jest.mock("../../src/utils/course-access", () => ({
+  hasStaffAccessInCourse: jest.fn(),
 }));
 jest.mock("../../src/models/questions/CalculationQuestion", () => ({
   resolveCalculationDisplayTemplate: jest.fn(),
@@ -37,7 +37,7 @@ jest.mock("../../src/services/quiz-session", () => ({
 const quizService = require("../../src/services/quiz");
 const quizScheduleService = require("../../src/services/quiz-schedule");
 const CalculationQuestion = require("../../src/models/questions/CalculationQuestion");
-const { isStudent } = require("../../src/utils/auth");
+const { hasStaffAccessInCourse } = require("../../src/utils/course-access");
 const { getCourseById } = require("../../src/services/course");
 const databaseService = require("../../src/services/database");
 const quizSessionService = require("../../src/services/quiz-session");
@@ -85,7 +85,7 @@ describe("student quiz questions include stem images", () => {
   });
 
   beforeEach(() => {
-    isStudent.mockResolvedValue(true);
+    hasStaffAccessInCourse.mockResolvedValue(false);
     quizSessionService.getOrCreateSession.mockResolvedValue({
       startedAt: new Date("2026-07-10T12:00:00.000Z"),
       expiresAt: new Date("2026-07-10T13:00:00.000Z"),

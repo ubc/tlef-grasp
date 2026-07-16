@@ -62,6 +62,7 @@ export default function App() {
                 <Route path="/question-flags" element={<QuestionFlags />} />
                 <Route path="/my-sections" element={<MySections />} />
                 <Route path="/quizzes" element={<Quizzes />} />
+                <Route path="/users" element={<Users />} />
 
                 {/* Areas the course owner can hide from co-instructors */}
                 <Route element={<RequirePermission permission="courseMaterials" />}>
@@ -76,11 +77,6 @@ export default function App() {
                 <Route element={<RequirePermission permission="settings" />}>
                   <Route path="/settings" element={<Settings />} />
                 </Route>
-              </Route>
-
-              {/* Faculty-only pages */}
-              <Route element={<RequireRole min="faculty" />}>
-                <Route path="/users" element={<Users />} />
               </Route>
 
               {/* Student pages (all authenticated users) */}
