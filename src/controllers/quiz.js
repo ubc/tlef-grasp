@@ -1110,8 +1110,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         isCorrect,
         selectedAnswer: selectedKey,
-        correctAnswer: isCorrect ? correctAnswerLetter : null,
-        correctOptionText: isCorrect ? correctOptionText : null,
+        correctAnswer: correctAnswerLetter,
+        correctOptionText,
         feedbackText: feedback,
       }).catch(e => console.error('[check] Failed to record attempt:', e));
     }
@@ -1119,8 +1119,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       success: true,
       isCorrect,
       feedback,
-      correctAnswer: isCorrect ? correctAnswerLetter : null,
-      correctOptionText: isCorrect ? correctOptionText : null
+      correctAnswer: correctAnswerLetter,
+      correctOptionText
     });
   } catch (error) {
     console.error("Error checking question answer:", error);

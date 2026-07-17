@@ -70,6 +70,21 @@ const fibQuestion = {
   bloom: 'Remember',
 };
 
+const mcqQuestion = {
+  _id: 'question-1',
+  questionType: 'multiple-choice',
+  question: 'Which organelle produces most of the cell\'s ATP?',
+  options: {
+    A: { text: 'Chloroplast', feedback: 'Chloroplasts photosynthesize.' },
+    B: { text: 'Mitochondrion', feedback: 'Correct — cellular respiration.' },
+    C: { text: 'Ribosome', feedback: 'Ribosomes build proteins.' },
+    D: { text: 'Nucleus', feedback: 'The nucleus stores DNA.' },
+  },
+  correctAnswer: 'B',
+  learningObjectiveId: 'lo-1',
+  bloom: 'Remember',
+};
+
 describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   let consoleErrorSpy;
 
@@ -312,6 +327,59 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       expect(res.status).toBe(200);
       expect(res.body.isCorrect).toBe(false);
       expect(answerGrading.gradeFillInTheBlankAnswer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multiple-choice questions', () => {
+    it('reveals the correct answer on a wrong selection and persists it', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        isCorrect: false,
+        feedback: 'Chloroplasts photosynthesize.',
+        correctAnswer: 'B',
+        correctOptionText: 'Mitochondrion',
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isCorrect: false,
+          selectedAnswer: 'A',
+          correctAnswer: 'B',
+          correctOptionText: 'Mitochondrion',
+        })
+      );
+    });
+
+    it('returns the correct answer fields on a right selection', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 1 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        isCorrect: true,
+        feedback: 'Correct — cellular respiration.',
+        correctAnswer: 'B',
+        correctOptionText: 'Mitochondrion',
+      });
+    });
+
+    it('rejects a missing selectedIndex', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp()).post(checkUrl).send({});
+
+      expect(res.status).toBe(400);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
     });
   });
 });

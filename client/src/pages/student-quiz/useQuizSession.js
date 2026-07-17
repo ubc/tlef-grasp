@@ -175,6 +175,7 @@ export function useQuizSession({ onLoadError } = {}) {
           correctAnswer: result.correctAnswer,
           feedbackText: result.feedback,
           correctOptionText: result.correctOptionText,
+          questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         },
       }));
     } catch (error) {

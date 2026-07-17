@@ -277,13 +277,17 @@ export function FeedbackPanel({ feedback }) {
     );
   }
 
-  const isTextType =
+  const isMcq = feedback.questionType === QUESTION_TYPES.MULTIPLE_CHOICE;
+  const revealType =
+    isMcq ||
     feedback.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
     feedback.questionType === QUESTION_TYPES.CALCULATION;
-  const reveal =
-    isTextType &&
-    feedback.correctOptionText != null &&
-    String(feedback.correctOptionText).trim() !== "";
+  const correctText =
+    feedback.correctOptionText != null ? String(feedback.correctOptionText).trim() : "";
+  const reveal = revealType && correctText !== "";
+  const revealText = isMcq && feedback.correctAnswer
+    ? `${feedback.correctAnswer}) ${correctText}`
+    : correctText;
 
   return (
     <div className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-5">
@@ -293,7 +297,7 @@ export function FeedbackPanel({ feedback }) {
       </div>
       {reveal && (
         <RichText
-          text={`The correct answer is ${escapeHtml(String(feedback.correctOptionText).trim())}.`}
+          text={`The correct answer is ${escapeHtml(revealText)}.`}
           className="mt-2 text-sm text-gray-600"
         />
       )}
