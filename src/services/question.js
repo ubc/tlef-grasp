@@ -252,6 +252,58 @@ const getQuestions = async (courseId) => {
     }
 };
 
+/**
+ * Return the assessment text of every active question already attached to one
+ * granular objective. Generation uses this list both as prompt context and as
+ * an exact-duplicate guard.
+ */
+const getQuestionTextsByGranularObjective = async (courseId, granularObjectiveId) => {
+    if (!courseId || !granularObjectiveId) return [];
+
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_question");
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    const granularObjectiveIdObj = ObjectId.isValid(granularObjectiveId)
+        ? new ObjectId(granularObjectiveId)
+        : granularObjectiveId;
+
+    const questions = await collection.find(
+        {
+            courseId: courseIdObj,
+            granularObjectiveId: granularObjectiveIdObj,
+            orphaned: { $ne: true },
+        },
+        {
+            projection: {
+                question: 1,
+                title: 1,
+                stem: 1,
+                questionType: 1,
+                type: 1,
+            },
+        }
+    ).toArray();
+
+    return questions
+        .map((question) => {
+            if (typeof question.question === "string" && question.question.trim()) {
+                return question.question.trim();
+            }
+
+            const questionType = String(
+                question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE
+            ).toLowerCase();
+            const preferred = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
+                ? question.title
+                : question.stem;
+            const fallback = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
+                ? question.stem
+                : question.title;
+            return String(preferred || fallback || "").trim();
+        })
+        .filter(Boolean);
+};
+
 const getQuestion = async (questionId) => {
     try {
         const db = await databaseService.connect();
@@ -510,6 +562,7 @@ const getQuestionCourseId = async (questionId) => {
 module.exports = {
     saveQuestion,
     getQuestions,
+    getQuestionTextsByGranularObjective,
     updateQuestion,
     deleteQuestion,
     getQuestion,

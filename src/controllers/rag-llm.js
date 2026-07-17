@@ -16,7 +16,13 @@ const { generateStructured } = require('../utils/structured-llm');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
 const settingsService = require('../services/settings');
+const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
+const {
+  buildExistingQuestionsContext,
+  getGeneratedQuestionText,
+  normalizeQuestionText,
+} = require('../utils/question-generation');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
 
 // Pricing per 1M tokens (input / output) for known models
@@ -280,13 +286,14 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveId, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
     console.log("Course Name:", courseName);
     console.log("Learning Objective ID:", learningObjectiveId);
     console.log("Learning Objective Text:", learningObjectiveText);
+    console.log("Granular Learning Objective ID:", granularLearningObjectiveId);
     console.log("Granular Learning Objective Text:", granularLearningObjectiveText);
     console.log("Bloom Levels:", bloomLevels);
     console.log("Requested Count:", count);
@@ -332,6 +339,13 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     // Fetch settings for prompt
     const settings = await settingsService.getSettings(courseId);
     const promptTemplate = settings?.prompts?.questionGeneration || DEFAULT_PROMPTS.questionGeneration;
+    const existingQuestionTexts = granularLearningObjectiveId
+      ? await questionService.getQuestionTextsByGranularObjective(
+          courseId,
+          granularLearningObjectiveId
+        )
+      : [];
+    const existingQuestionsContext = buildExistingQuestionsContext(existingQuestionTexts);
 
     // Prepare RAG search query
     const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
@@ -387,14 +401,22 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
       // Build the first-turn prompt (includes full RAG context for prompt caching)
       const buildFirstPrompt = (bloomLevel, questionType) => {
-        const filled = promptTemplate
+        let filled = promptTemplate
           .replace('{courseName}', courseName || '')
           .replace('{learningObjectiveText}', learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{questionType}', questionType || '')
           .replace('{ragContext}', ragContext || '')
-          .replace('{existingQuestionsContext}', '').replace('{typeSpecificInstructions}', QuestionFactory.getModel(questionType).getPromptInstruction());
+          .replace(
+            '{typeSpecificInstructions}',
+            QuestionFactory.getModel(questionType).getPromptInstruction()
+          );
+        if (filled.includes('{existingQuestionsContext}')) {
+          filled = filled.split('{existingQuestionsContext}').join(existingQuestionsContext);
+        } else if (existingQuestionsContext) {
+          filled = `${filled}\n\n${existingQuestionsContext}`;
+        }
         return filled;
       };
 
@@ -404,6 +426,9 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       const maxRetries = 3;
       // Conversation history of successful turns for context (enables prompt caching)
       const conversationHistory = [];
+      const seenQuestionTexts = new Set(
+        existingQuestionTexts.map(normalizeQuestionText).filter(Boolean)
+      );
 
       for (let i = 0; i < targetCount; i++) {
         const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
@@ -457,13 +482,26 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             if (!responseContent) throw new Error("Empty response from LLM");
 
             const parsed = safeJsonParse(responseContent);
-            questionData = QuestionFactory.getModel(currentQuestionType).validateAndNormalize(parsed);
+            const candidateQuestion = QuestionFactory
+              .getModel(currentQuestionType)
+              .validateAndNormalize(parsed);
+
+            const normalizedQuestionText = normalizeQuestionText(
+              getGeneratedQuestionText(candidateQuestion)
+            );
+            if (normalizedQuestionText && seenQuestionTexts.has(normalizedQuestionText)) {
+              throw new Error(
+                "Generated question duplicates a question already used for this granular objective"
+              );
+            }
+            questionData = candidateQuestion;
 
             console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
 
             // Save to conversation history so subsequent questions have context
             conversationHistory.push({ role: 'user', content: turnPrompt });
             conversationHistory.push({ role: 'assistant', content: responseContent });
+            if (normalizedQuestionText) seenQuestionTexts.add(normalizedQuestionText);
 
             break; // Success
 

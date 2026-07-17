@@ -105,7 +105,27 @@ export default function Calendar({
     for (const event of events) {
       const key = dateKey(event.eventAt);
       if (!map.has(key)) map.set(key, []);
-      map.get(key).push(event);
+      const dayEvents = map.get(key);
+      if (dayEvents.some((candidate) => candidate.id === event.id)) continue;
+
+      // Availability is a synthetic "today" entry. When the quiz also opens
+      // or closes today, keep the real schedule event instead of rendering a
+      // second card for the same quiz. Do this in the browser's timezone so a
+      // UTC date boundary cannot reintroduce the duplicate.
+      const sameQuiz = (candidate) => candidate.quizId === event.quizId;
+      if (
+        event.type === "availability" &&
+        dayEvents.some((candidate) => sameQuiz(candidate) && candidate.type !== "availability")
+      ) {
+        continue;
+      }
+      if (event.type !== "availability") {
+        const availabilityIndex = dayEvents.findIndex(
+          (candidate) => sameQuiz(candidate) && candidate.type === "availability"
+        );
+        if (availabilityIndex !== -1) dayEvents.splice(availabilityIndex, 1);
+      }
+      dayEvents.push(event);
     }
     return map;
   }, [events]);
