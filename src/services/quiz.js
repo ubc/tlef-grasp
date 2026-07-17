@@ -1143,9 +1143,27 @@ const getStudentQuizAttempt = async (quizId, userId) => {
 };
 
 /**
+ * Whether the student has completed their graded attempt of a quiz (a
+ * grasp_quiz_score row exists). Gates practice-mode answer checks: practice
+ * must not be honored during the graded attempt, or a student could probe
+ * questions for the revealed correct answer without recording anything.
+ */
+const hasCompletedQuiz = async (userId, quizId) => {
+    const db = await databaseService.connect();
+    const existing = await db.collection("grasp_quiz_score").findOne(
+        {
+            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId,
+        },
+        { projection: { _id: 1 } }
+    );
+    return !!existing;
+};
+
+/**
  * Get all scores for a specific user in a course
- * @param {string} userId 
- * @param {string} courseId 
+ * @param {string} userId
+ * @param {string} courseId
  * @returns {Promise<Array>} Array of quiz IDs the user has completed
  */
 const getUserScoresForCourse = async (userId, courseId) => {
@@ -1185,5 +1203,6 @@ module.exports = {
     getQuizScores,
     getStudentQuizAttempt,
     getUserScoresForCourse,
+    hasCompletedQuiz,
     gradeAttempt
 };

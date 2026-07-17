@@ -817,7 +817,13 @@ const checkQuestionAnswerHandler = async (req, res) => {
     // Practice rounds re-attempt previously-wrong questions for learning only:
     // they are graded for feedback but never persisted, so they can't affect
     // the score, mastery, or achievements, and aren't bound by the deadline.
-    const practice = req.body.practice === true;
+    // Only honored after the graded attempt is complete — otherwise a student
+    // could send practice checks during the graded attempt to probe for the
+    // revealed correct answer without recording anything.
+    const practice =
+      req.body.practice === true &&
+      !!userId &&
+      (await quizService.hasCompletedQuiz(userId, quizId));
 
     // The UI submits automatically at expiry, but this server-side check is
     // authoritative and prevents delayed requests from recording new answers.

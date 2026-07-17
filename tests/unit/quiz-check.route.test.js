@@ -9,6 +9,7 @@ const request = require('supertest');
 jest.mock('../../src/services/quiz', () => ({
   getQuizById: jest.fn(),
   saveStudentPerformance: jest.fn(),
+  hasCompletedQuiz: jest.fn(),
   gradeAttempt: jest.fn(),
 }));
 
@@ -100,6 +101,8 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
     jest.clearAllMocks();
     quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1' });
     quizService.saveStudentPerformance.mockResolvedValue({});
+    // Default: the graded attempt is not complete, so practice is not honored.
+    quizService.hasCompletedQuiz.mockResolvedValue(false);
     quizSessionService.getSession.mockResolvedValue(null);
     quizSessionService.isExpired.mockReturnValue(false);
   });
@@ -384,6 +387,11 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   });
 
   describe('practice mode (practice: true)', () => {
+    beforeEach(() => {
+      // Practice is only honored once the graded attempt is complete.
+      quizService.hasCompletedQuiz.mockResolvedValue(true);
+    });
+
     it('grades an MCQ answer but does not persist it', async () => {
       getQuestion.mockResolvedValue(mcqQuestion);
 
@@ -429,6 +437,44 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       // A real attempt would 409 here; practice grades normally.
       expect(res.status).toBe(200);
       expect(res.body.isCorrect).toBe(true);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('practice flag during the graded attempt (no score yet)', () => {
+    // Answer probing: sending practice: true before completing the graded
+    // attempt must behave exactly like a real check — recorded and
+    // deadline-bound — or a student could learn the revealed correct answer
+    // without committing to an attempt row (first-answer-wins would then let
+    // them re-answer correctly for real).
+    it('ignores the flag and records the attempt', async () => {
+      quizService.hasCompletedQuiz.mockResolvedValue(false);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0, practice: true });
+
+      expect(res.status).toBe(200);
+      expect(quizService.hasCompletedQuiz).toHaveBeenCalledWith('user-1', 'quiz-1');
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({ isCorrect: false, selectedAnswer: 'A' })
+      );
+    });
+
+    it('still enforces the quiz deadline', async () => {
+      quizService.hasCompletedQuiz.mockResolvedValue(false);
+      quizSessionService.getSession.mockResolvedValue({
+        expiresAt: new Date(Date.now() - 1_000),
+      });
+      quizSessionService.isExpired.mockReturnValue(true);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 1, practice: true });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('QUIZ_TIME_EXPIRED');
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
     });
   });
