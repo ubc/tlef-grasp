@@ -95,6 +95,26 @@ describe('quiz calendar service', () => {
     expect(events.every((event) => event.published === false)).toBe(true);
   });
 
+  it('does not add an availability duplicate when a quiz opens today', () => {
+    const events = buildCalendarEvents({
+      quizzes: [{ _id: 'quiz-1', name: 'Practice Quiz', published: true }],
+      schedulesByQuiz: new Map([
+        ['quiz-1', [{
+          courseSectionId: 'section-1',
+          releaseDate: '2026-07-13T08:00:00.000Z',
+          expireDate: '2026-07-20T23:00:00.000Z',
+        }]],
+      ]),
+      audience: 'student',
+      from: FROM,
+      to: TO,
+      now: NOW,
+    });
+
+    expect(events.map((event) => event.type)).toEqual(['release', 'deadline']);
+    expect(events.filter((event) => event.quizId === 'quiz-1')).toHaveLength(2);
+  });
+
   it('excludes release and deadline points outside the requested range', () => {
     const events = buildCalendarEvents({
       quizzes: [{ _id: 'quiz-1', name: 'Practice Quiz', published: true }],

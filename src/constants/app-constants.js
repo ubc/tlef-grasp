@@ -12,6 +12,8 @@ BACKGROUND COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
 
+{existingQuestionsContext}
+
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
 - Understand: explain, paraphrase, or classify in own words (explain,

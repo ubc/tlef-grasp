@@ -32,6 +32,11 @@ const windowStatus = (releaseDate, expireDate, now = new Date()) => {
 
 const isWithinRange = (date, from, to) => date >= from && date < to;
 
+const isSameUtcDay = (a, b) =>
+  a.getUTCFullYear() === b.getUTCFullYear()
+  && a.getUTCMonth() === b.getUTCMonth()
+  && a.getUTCDate() === b.getUTCDate();
+
 /**
  * Convert quiz availability windows into the small, answer-free event contract
  * used by both dashboards.
@@ -97,6 +102,8 @@ const buildCalendarEvents = ({
         audience === "student" &&
         windowStatus(release, deadline, now) === "open" &&
         isWithinRange(now, from, to) &&
+        !isSameUtcDay(release, now) &&
+        !isSameUtcDay(deadline, now) &&
         !seenAvailableQuizIds.has(quizId)
       ) {
         seenAvailableQuizIds.add(quizId);

@@ -64,6 +64,7 @@ class DatabaseService {
         // Legacy compound index didn't exist — fine.
       }
       await this.db.collection("grasp_question").createIndex({ questionTitle: 1 });
+      await this.db.collection("grasp_question").createIndex({ courseId: 1, granularObjectiveId: 1 });
       await this.db.collection("grasp_user_course").createIndex({ userId: 1, courseId: 1 }, { unique: true });
       await this.db.collection("grasp_material").createIndex({ sourceId: 1 }, { unique: true });
       await this.db.collection("grasp_objective").createIndex({ parent: 1 });

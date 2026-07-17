@@ -26,6 +26,7 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
           courseName: course.name || course.courseName || "",
           learningObjectiveId: learningObjective.objectiveId,
           learningObjectiveText: learningObjective.title,
+          granularLearningObjectiveId: granular.granularId,
           granularLearningObjectiveText: granular.text,
           bloomLevels: granular.bloom || ["Understand"],
           materialIds: learningObjective.materialIds || [],
