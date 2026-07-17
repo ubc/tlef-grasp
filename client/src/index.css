@@ -22,6 +22,7 @@
   --color-ink: #2c3e50;
   --color-muted: #5c6b73;
   --color-page: #f5f5f5;
+  --color-surface-border: #b8c1ca;
 }
 
 @layer base {
@@ -41,6 +42,15 @@
 
   button:disabled {
     cursor: not-allowed;
+  }
+}
+
+@layer components {
+  /* White cards sit on a near-white page background, so a shadow alone does
+     not provide a clear enough edge. Keep the treatment centralized so cards,
+     tables, filter panels, and empty states share the same visual boundary. */
+  :where(.rounded-xl, .rounded-2xl).bg-white.shadow-sm {
+    border: 1px solid var(--color-surface-border);
   }
 }
 

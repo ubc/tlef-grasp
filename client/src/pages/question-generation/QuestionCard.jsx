@@ -219,7 +219,7 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
     : [];
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-xl border border-surface-border bg-white p-5 shadow-sm">
       {/* Header */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">

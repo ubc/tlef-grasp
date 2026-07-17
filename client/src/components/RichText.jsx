@@ -86,7 +86,7 @@ export default function RichText({ text, className = "", as: Tag = "div" }) {
   return (
     <Tag
       ref={ref}
-      className={className}
+      className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${className}`}
       dangerouslySetInnerHTML={{ __html: parseSmilesTags(text ?? "") }}
     />
   );
