@@ -1,5 +1,5 @@
 const { expect } = require('@playwright/test');
-const { SEED } = require('./seed');
+const { SEED, resetSeededQuizAttemptState } = require('./seed');
 
 const COURSE_KEY = 'grasp-selected-course';
 const ROLE_KEY = 'grasp-current-role';
@@ -69,6 +69,11 @@ async function startQuizFromList(page, quizName) {
 }
 
 async function completeSeededQuiz(page) {
+  // Only the first attempt is graded ("Quiz Complete!" + score); any later run
+  // is an ungraded practice round. Wipe whatever attempt state earlier specs
+  // or previous runs left so this attempt is the graded one.
+  await resetSeededQuizAttemptState();
+
   await page.goto('/quiz');
   await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
   await startQuizFromList(page, SEED.QUIZ_NAME);

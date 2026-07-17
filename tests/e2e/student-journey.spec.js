@@ -139,6 +139,11 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
   test('completes the quiz correctly and sees a perfect score', async ({
     page,
   }) => {
+    // Only the first attempt is graded — later runs are ungraded practice with
+    // no score — so wipe the attempt the previous test recorded to make this
+    // run the graded one.
+    await resetSeededQuizAttemptState();
+
     await selectSeededCourse(page);
     await page.goto('/quiz');
     await startQuizFromList(page, SEED.QUIZ_NAME);
@@ -167,9 +172,13 @@ test.describe('Student journey: bio_student takes the seeded quiz', () => {
       .click();
     await expect(page.getByText(/1 of \d+/)).toBeVisible();
     await answerAllCorrectly(page);
+
+    // A retake after a graded attempt is an ungraded practice round: practice
+    // heading, no score tile.
     await expect(
-      page.getByRole('heading', { name: 'Quiz Complete!' })
+      page.getByRole('heading', { name: 'Practice Round Complete' })
     ).toBeVisible();
+    await expect(page.getByText('Score:')).toHaveCount(0);
 
     // Restart returns to the first question of a fresh attempt.
     await page.getByRole('button', { name: 'Restart Quiz' }).click();
