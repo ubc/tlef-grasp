@@ -116,6 +116,9 @@ export function useQuizSession({ onLoadError } = {}) {
       setStartTime(
         new Date(questionsData.data?.startedAt || startData.data?.startedAt).getTime()
       );
+      // Only the first graded attempt counts; a student who already has a
+      // recorded score is retaking for practice (ungraded, no score shown).
+      setPracticeMode(questionsData.data?.alreadyCompleted === true);
       return true;
     } catch (error) {
       console.error("Error starting quiz:", error);
@@ -144,6 +147,11 @@ export function useQuizSession({ onLoadError } = {}) {
       setFeedback({});
       setCurrentIndex(0);
       setStartTime(Date.now());
+      // A restart always follows a completed attempt, so it's practice.
+      setPracticeMode(true);
+      // Drop any achievement toast lingering from the graded attempt — a
+      // practice round earns nothing.
+      setAchievementToasts([]);
     } catch (error) {
       console.error("Error fetching quiz questions for retake:", error);
       onLoadError?.("Could not start quiz retake. Please try again.");
@@ -271,6 +279,8 @@ export function useQuizSession({ onLoadError } = {}) {
     setTimeExpired(false);
     setStartTime(Date.now());
     setPracticeMode(true);
+    // Drop any achievement toast lingering from the graded attempt.
+    setAchievementToasts([]);
   };
 
   // Show a locally-computed score immediately, then replace it with the

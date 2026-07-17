@@ -366,13 +366,17 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
     }
 
-    // Load previously recorded answers for first-attempt resumption
+    // Load previously recorded answers for first-attempt resumption. A student
+    // who already has a recorded score has completed their graded attempt, so
+    // any further run is practice (the client renders it ungraded).
     let previousAnswers = {};
+    let alreadyCompleted = false;
     try {
       const db = await databaseService.connect();
       const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
       const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
       const existingScore = await db.collection("grasp_quiz_score").findOne({ userId: userIdObj, quizId: quizIdObj });
+      alreadyCompleted = !!existingScore;
       if (!existingScore) {
         const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
         const optionKeys = ['A', 'B', 'C', 'D'];
@@ -412,6 +416,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         timeLimitMinutes: session.timeLimitMinutes,
         questions: transformedQuestions,
         previousAnswers,
+        alreadyCompleted,
       },
       message: "Quiz questions retrieved successfully",
     });

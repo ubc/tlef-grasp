@@ -341,7 +341,9 @@ export function CompletionScreen({
             : "You have completed all questions."}
         </p>
 
-        <div className="my-8 grid grid-cols-3 gap-4">
+        {/* Practice rounds report the current session only and omit the score,
+            since they don't count toward the grade. */}
+        <div className={`my-8 grid gap-4 ${practice ? "grid-cols-2" : "grid-cols-3"}`}>
           <div className="rounded-xl bg-page p-4">
             <div className="text-sm text-muted">Correct Answers:</div>
             <div className="text-2xl font-bold text-ink">{correct}</div>
@@ -350,12 +352,14 @@ export function CompletionScreen({
             <div className="text-sm text-muted">Total Questions:</div>
             <div className="text-2xl font-bold text-ink">{total}</div>
           </div>
-          <div className="rounded-xl bg-page p-4">
-            <div className="text-sm text-muted">Score:</div>
-            <div className="text-2xl font-bold text-ink">
-              {score === null ? (openEndedCount > 0 ? "—" : "0%") : `${score}%`}
+          {!practice && (
+            <div className="rounded-xl bg-page p-4">
+              <div className="text-sm text-muted">Score:</div>
+              <div className="text-2xl font-bold text-ink">
+                {score === null ? (openEndedCount > 0 ? "—" : "0%") : `${score}%`}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {(newAchievements.length > 0 || hasPerfectBadge) && (
