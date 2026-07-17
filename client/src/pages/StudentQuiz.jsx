@@ -63,6 +63,7 @@ export default function StudentQuiz() {
     submitting,
     completion,
     achievementToasts,
+    practiceMode,
   } = session;
 
   const backToList = () => {
@@ -110,12 +111,17 @@ export default function StudentQuiz() {
   }
 
   if (completion) {
+    const wrongCount = quizData
+      ? quizData.questions.filter((q) => feedback[q.id]?.isCorrect === false).length
+      : 0;
     return (
       <CompletionScreen
         completion={completion}
         achievementToasts={achievementToasts}
         onRestart={session.restartQuiz}
         onBackToList={backToList}
+        onPracticeWrong={session.startPracticeWrong}
+        wrongCount={wrongCount}
       />
     );
   }
@@ -174,7 +180,14 @@ export default function StudentQuiz() {
               {currentIndex + 1} of {quizData.questions.length}
             </span>
             <span className="text-gray-300">|</span>
-            <Timer expiresAt={quizData.expiresAt} onExpire={session.expireQuiz} />
+            {practiceMode ? (
+              <span className="font-medium text-primary">
+                <i className="fas fa-dumbbell mr-1" />
+                Practice (not graded)
+              </span>
+            ) : (
+              <Timer expiresAt={quizData.expiresAt} onExpire={session.expireQuiz} />
+            )}
           </div>
         </div>
       </div>

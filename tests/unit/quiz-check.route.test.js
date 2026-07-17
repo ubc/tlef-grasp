@@ -382,6 +382,56 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
     });
   });
+
+  describe('practice mode (practice: true)', () => {
+    it('grades an MCQ answer but does not persist it', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0, practice: true });
+
+      expect(res.status).toBe(200);
+      // Same graded payload as a real attempt...
+      expect(res.body).toMatchObject({
+        success: true,
+        isCorrect: false,
+        correctAnswer: 'B',
+        correctOptionText: 'Mitochondrion',
+      });
+      // ...but nothing is recorded toward the grade.
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('grades a fill-in-the-blank answer without persisting it', async () => {
+      getQuestion.mockResolvedValue(fibQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: 'chloroplast', practice: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isCorrect).toBe(false);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('is not blocked by an expired quiz deadline', async () => {
+      quizSessionService.getSession.mockResolvedValue({
+        expiresAt: new Date(Date.now() - 1_000),
+      });
+      quizSessionService.isExpired.mockReturnValue(true);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 1, practice: true });
+
+      // A real attempt would 409 here; practice grades normally.
+      expect(res.status).toBe(200);
+      expect(res.body.isCorrect).toBe(true);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {

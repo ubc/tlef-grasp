@@ -316,16 +316,30 @@ export function CompletionScreen({
   achievementToasts,
   onRestart,
   onBackToList,
+  onPracticeWrong,
+  wrongCount = 0,
 }) {
-  const { correct, total, score, openEndedCount, newAchievements } = completion;
-  const hasPerfectBadge = score === 100 && total > 0;
+  const { correct, total, score, openEndedCount, newAchievements, practice } =
+    completion;
+  const hasPerfectBadge = !practice && score === 100 && total > 0;
+  const canPractice = wrongCount > 0 && typeof onPracticeWrong === "function";
 
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-8">
       <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
-        <i className="fas fa-trophy mb-4 text-5xl text-warning" />
-        <h2 className="text-2xl font-bold text-ink">Quiz Complete!</h2>
-        <p className="mt-1 text-muted">You have completed all questions.</p>
+        <i
+          className={`mb-4 text-5xl ${
+            practice ? "fas fa-dumbbell text-primary" : "fas fa-trophy text-warning"
+          }`}
+        />
+        <h2 className="text-2xl font-bold text-ink">
+          {practice ? "Practice Round Complete" : "Quiz Complete!"}
+        </h2>
+        <p className="mt-1 text-muted">
+          {practice
+            ? "Practice isn't counted toward your grade."
+            : "You have completed all questions."}
+        </p>
 
         <div className="my-8 grid grid-cols-3 gap-4">
           <div className="rounded-xl bg-page p-4">
@@ -365,11 +379,24 @@ export function CompletionScreen({
           </div>
         )}
 
-        <div className="flex justify-center gap-3">
+        <div className="flex flex-wrap justify-center gap-3">
+          {canPractice && (
+            <button
+              type="button"
+              onClick={onPracticeWrong}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
+            >
+              <i className="fas fa-dumbbell" /> Practice the {wrongCount} you missed
+            </button>
+          )}
           <button
             type="button"
             onClick={onRestart}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
+            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium transition-colors ${
+              canPractice
+                ? "border border-gray-300 bg-white text-ink hover:bg-gray-50"
+                : "bg-primary text-white hover:bg-primary-dark"
+            }`}
           >
             <i className="fas fa-redo" /> Restart Quiz
           </button>

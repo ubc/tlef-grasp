@@ -814,10 +814,14 @@ const checkQuestionAnswerHandler = async (req, res) => {
     const { quizId, questionId } = req.params;
     const { selectedIndex, answerText } = req.body;
     const userId = req.user?._id || req.user?.id;
+    // Practice rounds re-attempt previously-wrong questions for learning only:
+    // they are graded for feedback but never persisted, so they can't affect
+    // the score, mastery, or achievements, and aren't bound by the deadline.
+    const practice = req.body.practice === true;
 
     // The UI submits automatically at expiry, but this server-side check is
     // authoritative and prevents delayed requests from recording new answers.
-    if (userId) {
+    if (userId && !practice) {
       const session = await quizSessionService.getSession(userId, quizId);
       if (quizSessionService.isExpired(session)) {
         return res.status(409).json({
@@ -902,7 +906,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       const studentNum = CalculationQuestion.parseStudentNumericAnswer(answerText);
       const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
       const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
-      if (userId && quizId) {
+      if (userId && quizId && !practice) {
         quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
@@ -958,7 +962,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         console.error('[check] Open-ended LLM grading failed — leaving attempt for manual grading:', e);
       }
 
-      if (userId && quizId) {
+      if (userId && quizId && !practice) {
         quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
@@ -1045,7 +1049,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         }
       }
 
-      if (userId && quizId) {
+      if (userId && quizId && !practice) {
         quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
@@ -1101,7 +1105,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       ? (correctOptionObj.text || "")
       : (correctOptionObj || "");
 
-    if (userId && quizId) {
+    if (userId && quizId && !practice) {
       quizService.saveStudentPerformance({
         userId: String(userId), quizId: String(quizId), questionId: String(questionId),
         learningObjectiveId: question.learningObjectiveId,

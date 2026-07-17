@@ -26,6 +26,9 @@ export function useQuizSession({ onLoadError } = {}) {
   const [completion, setCompletion] = useState(null);
   const [achievementToasts, setAchievementToasts] = useState([]);
   const [timeExpired, setTimeExpired] = useState(false);
+  // Practice rounds re-attempt previously-wrong questions for learning only —
+  // graded for feedback but never persisted, so they never touch the score.
+  const [practiceMode, setPracticeMode] = useState(false);
 
   const reset = () => {
     setQuizData(null);
@@ -34,6 +37,7 @@ export function useQuizSession({ onLoadError } = {}) {
     setCompletion(null);
     setStartTime(null);
     setTimeExpired(false);
+    setPracticeMode(false);
     queryClient.invalidateQueries({ queryKey: ["student-quiz-list"] });
   };
 
@@ -151,7 +155,7 @@ export function useQuizSession({ onLoadError } = {}) {
   const checkAnswer = async (questionId, body) => {
     const result = await api.post(
       `/api/quiz/${quizData.quizId}/question/${questionId}/check`,
-      body,
+      { ...body, practice: practiceMode },
       { credentials: "same-origin" }
     );
     if (!result.success) {
@@ -244,6 +248,31 @@ export function useQuizSession({ onLoadError } = {}) {
     }
   };
 
+  // Start a practice round over the questions answered incorrectly in the
+  // just-finished round. Reuses the in-memory question objects (stem, options,
+  // calculationToken) filtered to the wrong set — no refetch. Practice is
+  // untimed and, via the `practice` flag on each check, never persisted.
+  const startPracticeWrong = () => {
+    if (!quizData) return;
+    const wrong = quizData.questions.filter(
+      (q) => feedback[q.id]?.isCorrect === false
+    );
+    if (wrong.length === 0) return;
+    setQuizData((prev) => ({
+      ...prev,
+      questions: wrong,
+      expiresAt: null,
+      timeLimitMinutes: null,
+    }));
+    setAnswers({});
+    setFeedback({});
+    setCurrentIndex(0);
+    setCompletion(null);
+    setTimeExpired(false);
+    setStartTime(Date.now());
+    setPracticeMode(true);
+  };
+
   // Show a locally-computed score immediately, then replace it with the
   // server-authoritative result (which also awards achievements).
   const finishQuiz = async () => {
@@ -269,7 +298,12 @@ export function useQuizSession({ onLoadError } = {}) {
       score: localScore,
       openEndedCount,
       newAchievements: [],
+      practice: practiceMode,
     });
+
+    // Practice rounds are never submitted — no score write, no achievements.
+    // The local tally above is all the student sees.
+    if (practiceMode) return;
 
     try {
       const timeSpent = startTime ? Date.now() - startTime : 0;
@@ -314,8 +348,10 @@ export function useQuizSession({ onLoadError } = {}) {
     achievementToasts,
     startTime,
     timeExpired,
+    practiceMode,
     startQuiz,
     restartQuiz,
+    startPracticeWrong,
     selectMcqAnswer,
     submitTextAnswer,
     finishQuiz,
