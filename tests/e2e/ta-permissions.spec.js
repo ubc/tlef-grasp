@@ -85,7 +85,14 @@ test.describe.serial('TA permissions (seeded course)', () => {
     const row = student3Row(page);
     await expect(row).toBeVisible();
     await row.getByRole('button', { name: /promote to ta/i }).click();
-    await page.getByRole('button', { name: 'Confirm' }).click();
+    const promotionResponse = await Promise.all([
+      page.waitForResponse((response) =>
+        response.url().includes(`/api/users/course/${courseId}/promote`) &&
+        response.request().method() === 'POST'
+      ),
+      page.getByRole('button', { name: 'Confirm' }).click(),
+    ]);
+    expect(promotionResponse[0].status(), 'TA promotion succeeds').toBe(200);
     await expect(row.getByText('TA', { exact: true })).toBeVisible();
 
     // Open the permissions editor and apply the Grader preset.
@@ -122,8 +129,10 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await page.goto('/auth/ubcshib');
       await page.getByLabel('Login Name').fill(TA_USERNAME);
       await page.getByLabel('Password').fill(TA_PASSWORD);
-      await page.getByRole('button', { name: 'Login', exact: true }).click();
-      await page.waitForURL(`${BASE_URL}/onboarding`, { timeout: 30_000 });
+      await Promise.all([
+        page.waitForURL(`${BASE_URL}/onboarding`, { timeout: 30_000 }),
+        page.getByRole('button', { name: 'Login', exact: true }).click(),
+      ]);
 
       await selectSeededCourse(page, { role: 'instructor' });
       await page.goto('/dashboard');
