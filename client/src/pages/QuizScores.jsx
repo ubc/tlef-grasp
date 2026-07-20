@@ -19,6 +19,8 @@ export default function QuizScores() {
   const [selectedQuizId, setSelectedQuizId] = useState("");
   const [search, setSearch] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
+  // Show only students who flagged at least one AI grade for review (issue #76).
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [review, setReview] = useState(null);
 
@@ -56,11 +58,12 @@ export default function QuizScores() {
       ) {
         return false;
       }
+      if (flaggedOnly && !(s.disputedCount > 0)) return false;
       if (!query) return true;
       const name = (s.studentName || "").toLowerCase();
       return name.includes(query);
     });
-  }, [scores, search, sectionFilter]);
+  }, [scores, search, sectionFilter, flaggedOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -68,7 +71,7 @@ export default function QuizScores() {
   const pageData = filtered.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
   const showSections = courseSections.length > 0;
-  const colCount = showSections ? 6 : 5;
+  const colCount = showSections ? 7 : 6;
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
@@ -127,6 +130,24 @@ export default function QuizScores() {
             className="w-full rounded-lg border border-gray-300 py-2 pr-3 pl-9 text-sm focus:border-primary focus:outline-none"
           />
         </div>
+        <label
+          className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            flaggedOnly
+              ? "border-danger bg-danger/10 text-danger"
+              : "border-gray-300 bg-white text-ink hover:bg-gray-50"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={flaggedOnly}
+            onChange={(event) => {
+              setFlaggedOnly(event.target.checked);
+              setPage(1);
+            }}
+            className="h-4 w-4 accent-danger"
+          />
+          <i className="fas fa-flag" aria-hidden="true" /> Flagged for review only
+        </label>
       </div>
 
       {/* Table */}
@@ -137,6 +158,7 @@ export default function QuizScores() {
               <tr>
                 <th className={headClass}>Student</th>
                 {showSections && <th className={headClass}>Sections</th>}
+                <th className={headClass}>Flagged</th>
                 <th className={headClass}>Score</th>
                 <th className={headClass}>Correct</th>
                 <th className={headClass}>Time Spent</th>
@@ -206,6 +228,21 @@ export default function QuizScores() {
                           )}
                         </td>
                       )}
+                      <td className={cellClass}>
+                        {item.disputedCount > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger"
+                            title={`${item.disputedCount} AI grade${
+                              item.disputedCount === 1 ? "" : "s"
+                            } the student flagged for review`}
+                          >
+                            <i className="fas fa-flag" aria-hidden="true" /> Needs review
+                            {item.disputedCount > 1 ? ` (${item.disputedCount})` : ""}
+                          </span>
+                        ) : (
+                          <span className="text-muted">-</span>
+                        )}
+                      </td>
                       <td className={cellClass}>
                         <ScoreBadge score={item.score} />
                       </td>

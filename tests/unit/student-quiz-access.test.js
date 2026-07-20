@@ -266,6 +266,36 @@ describe('student quiz access past the expiry window (#37)', () => {
       ).toMatchObject({ selectedAnswer: 'A', isCorrect: true, selectedIndex: 0 });
     });
 
+    // Issue #76: a student's accept/deny reaction to an AI grade must survive a
+    // reload, or a restored attempt silently reverts to the default (accept).
+    it('carries the student grade review through the previous-answers payload', async () => {
+      mockOpenWindow();
+      const attempt = mcqAttempt({
+        questionType: 'open-ended',
+        selectedAnswer: 'My open-ended answer',
+        isCorrect: true,
+        aiGraded: true,
+        studentGradeReview: 'deny',
+      });
+      mockDb({ scoreDoc: null, attemptDocs: [attempt] });
+      quizService.getQuizQuestionsForStudent.mockResolvedValue([
+        {
+          _id: attempt.questionId,
+          title: 'Explain the concept.',
+          questionType: 'open-ended',
+        },
+      ]);
+
+      const res = await request(buildApp()).get(
+        `/student/quizzes/${QUIZ_ID}/questions`
+      );
+
+      expect(res.status).toBe(200);
+      expect(
+        res.body.data.previousAnswers[attempt.questionId.toString()]
+      ).toMatchObject({ aiGraded: true, studentGradeReview: 'deny' });
+    });
+
     it('returns the per-quiz previous-navigation setting to the student UI', async () => {
       mockOpenWindow();
       const questionId = new ObjectId();

@@ -392,6 +392,9 @@ const getQuizQuestionsHandler = async (req, res) => {
             feedbackText: attempt.feedbackText,
             aiGraded: !!attempt.aiGraded,
             aiCriteria: Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : null,
+            // Preserve the student's accept/deny reaction across reloads (issue
+            // #76); without it a restored attempt reverts to the default accept.
+            studentGradeReview: attempt.studentGradeReview || null,
           };
           if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
             entry.selectedIndex = optionKeys.indexOf(attempt.selectedAnswer);

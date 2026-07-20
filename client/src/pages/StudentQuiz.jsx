@@ -295,7 +295,11 @@ export default function StudentQuiz() {
           />
         )}
 
-        <FeedbackPanel feedback={questionFeedback} />
+        <FeedbackPanel
+          feedback={questionFeedback}
+          questionId={questionId}
+          onGradeReview={practiceMode ? undefined : session.submitGradeReview}
+        />
         {(isStudent || currentRole === "student") && (
           <QuestionFlagControl quizId={quizData.quizId} question={question} />
         )}

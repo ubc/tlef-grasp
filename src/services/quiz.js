@@ -1022,6 +1022,61 @@ const gradeAttempt = async (userId, quizId, questionId, isCorrect) => {
     return { score: updatedScore, correctAnswers, totalQuestions };
 };
 
+const VALID_GRADE_REVIEWS = new Set(['accept', 'deny']);
+
+/**
+ * Record a student's reaction to an AI grade on one of their own attempts
+ * (issue #76). This is the mid-layer between AI auto-grading and instructor
+ * review: the student sees the AI verdict and either accepts it (the default)
+ * or denies it, which flags the attempt for the instructor to prioritize.
+ *
+ * The review never changes the grade itself — only a `studentGradeReview`
+ * marker on the attempt. Restricted to AI-graded, not-yet-finalized attempts:
+ *   - open-ended and AI-rescued fill-in-the-blank set aiGraded; a plain
+ *     exact-match FIB or an MCQ/calculation answer has no AI grade to react to.
+ *   - once an instructor confirms/overrides (gradedAt set) the grade is final
+ *     and the student's accept/deny is moot.
+ *
+ * @param {string} userId    The student (their own attempt only — callers must
+ *                           pass the authenticated user's id, never a param).
+ * @param {string} quizId
+ * @param {string} questionId
+ * @param {'accept'|'deny'} review
+ * @returns {Promise<{ studentGradeReview: 'accept'|'deny' }>}
+ * @throws 'Invalid grade review' | 'Attempt not found' |
+ *         'Attempt is not AI-graded' | 'Grade already finalized'
+ */
+const recordStudentGradeReview = async (userId, quizId, questionId, review) => {
+    if (!VALID_GRADE_REVIEWS.has(review)) {
+        throw new Error('Invalid grade review');
+    }
+
+    const db = await databaseService.connect();
+
+    const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+    const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+    const questionIdObj = ObjectId.isValid(questionId) ? new ObjectId(questionId) : questionId;
+
+    const attemptCollection = db.collection('grasp_student_attempt');
+    const attempt = await attemptCollection.findOne({
+        userId: userIdObj,
+        quizId: quizIdObj,
+        questionId: questionIdObj,
+        isFirstAttempt: { $ne: false },
+    });
+
+    if (!attempt) throw new Error('Attempt not found');
+    if (!attempt.aiGraded) throw new Error('Attempt is not AI-graded');
+    if (attempt.gradedAt) throw new Error('Grade already finalized');
+
+    await attemptCollection.updateOne(
+        { _id: attempt._id },
+        { $set: { studentGradeReview: review, studentGradeReviewAt: new Date() } }
+    );
+
+    return { studentGradeReview: review };
+};
+
 /**
  * Save quiz score for a student (First attempt only)
  * 
@@ -1092,10 +1147,29 @@ const getQuizScores = async (quizId) => {
         });
         
         // 3. Get all quiz scores for this quiz
+        const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
         const scores = await db.collection("grasp_quiz_score").find({
-            quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId
+            quizId: quizIdObj
         }).toArray();
-        
+
+        // 3b. Count AI grades each student denied and no instructor has yet
+        // finalized (issue #76). Surfaced per-row so instructors can spot which
+        // students flagged a grade for review.
+        const disputes = await db.collection("grasp_student_attempt").aggregate([
+            {
+                $match: {
+                    quizId: quizIdObj,
+                    studentGradeReview: "deny",
+                    gradedAt: { $exists: false },
+                    isFirstAttempt: { $ne: false },
+                },
+            },
+            { $group: { _id: "$userId", count: { $sum: 1 } } },
+        ]).toArray();
+        const disputedByUserId = new Map(
+            disputes.map((d) => [d._id.toString(), d.count])
+        );
+
         // 4. Map students to their scores
         const scoresByUserId = new Map(scores.map(s => [s.userId.toString(), s]));
         const result = studentsInCourse.map(student => {
@@ -1112,7 +1186,8 @@ const getQuizScores = async (quizId) => {
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
                 studentName: student.displayName || student.puid || 'Unknown Student',
                 studentEmail: student.email || '-',
-                sections: Array.isArray(student.sections) ? student.sections : []
+                sections: Array.isArray(student.sections) ? student.sections : [],
+                disputedCount: disputedByUserId.get(userStrId) || 0
             };
         });
         
@@ -1188,6 +1263,9 @@ const getStudentQuizAttempt = async (quizId, userId) => {
                 aiGraded: !!attempt.aiGraded,
                 aiCriteria: Array.isArray(attempt.aiCriteria) ? attempt.aiCriteria : null,
                 gradedAt: attempt.gradedAt || null,
+                // Student's reaction to the AI grade (issue #76): 'deny' flags
+                // the attempt so the instructor can prioritize it for review.
+                studentGradeReview: attempt.studentGradeReview || null,
             };
         }).filter(a => a !== null);
     } catch (error) {
@@ -1259,5 +1337,6 @@ module.exports = {
     getStudentQuizAttempt,
     getUserScoresForCourse,
     hasCompletedQuiz,
-    gradeAttempt
+    gradeAttempt,
+    recordStudentGradeReview
 };

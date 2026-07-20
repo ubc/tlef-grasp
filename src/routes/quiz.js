@@ -115,6 +115,17 @@ router.post("/:quizId/performance", quizController.recordPerformanceHandler);
 router.post("/:quizId/question/:questionId/check", checkLimiter, quizController.checkQuestionAnswerHandler);
 
 /**
+ * PUT /api/quiz/:quizId/question/:questionId/grade-review
+ * Record the current student's accept/deny reaction to the AI grade on their
+ * own attempt (issue #76). Acts only on the authenticated user's attempt.
+ */
+router.put(
+  "/:quizId/question/:questionId/grade-review",
+  express.json(),
+  quizController.recordGradeReviewHandler
+);
+
+/**
  * GET /api/quiz/:quizId/scores
  * Get scores for a quiz with student data (Instructors only)
  */
