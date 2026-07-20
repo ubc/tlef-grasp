@@ -11,6 +11,7 @@ const { ObjectId } = require('mongodb');
 const { getMaterialCourseId } = require('../services/material');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
@@ -306,6 +307,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     // Ensure we have either an objective ID or material IDs for RAG context
     if (!learningObjectiveId && (!materialIds || !Array.isArray(materialIds) || materialIds.length === 0)) {
@@ -654,6 +656,7 @@ const generateLearningObjectivesHandler = async (req, res) => {
       });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     // Get RAG instance for the course
     const ragInstance = await ragService.getOrCreateInstance(courseId);
@@ -895,6 +898,7 @@ const reviewQuestionsHandler = async (req, res) => {
       }
     }
     if (courseId && !(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
     const ratings = await rateQuestions(questions, courseName);

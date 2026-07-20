@@ -1,5 +1,6 @@
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
 
@@ -115,6 +116,7 @@ const createObjectiveHandler = async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -190,6 +192,7 @@ const updateObjectiveMaterials = async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     await updateObjectiveMaterialRelations(
       objectiveId,
@@ -218,6 +221,7 @@ const updateObjectiveHandler = async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     // Name is required if provided
     if (name !== undefined && (!name || !name.trim())) {
@@ -271,6 +275,7 @@ const deleteObjectiveHandler = async (req, res) => {
       return res.status(403).json({ error: "User is not in course" });
     }
     if (courseId && !(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     await deleteObjective(objectiveId);
 

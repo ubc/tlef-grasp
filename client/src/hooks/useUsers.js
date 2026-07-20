@@ -68,6 +68,22 @@ export function useDemoteToStudent(courseId, options) {
   });
 }
 
+export function useUpdateTaPermissions(courseId, options) {
+  const invalidate = useInvalidateUserLists(courseId);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, permissions }) =>
+      api.put(`/api/users/course/${courseId}/ta-permissions`, { userId, permissions }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      // The affected TA's own nav/guards read this query.
+      queryClient.invalidateQueries({ queryKey: queryKeys.courseAccess(courseId) });
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 export function useRemoveUserFromCourse(courseId, options) {
   const invalidate = useInvalidateUserLists(courseId);
   return useMutation({

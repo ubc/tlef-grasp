@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useCourseAccess } from "../hooks/useCourseAccess";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useTaAccess } from "../hooks/useTaAccess";
 import { useAppStore } from "../stores/appStore";
 
 const ROLE_RANK = { student: 1, ta: 2, staff: 2, faculty: 3 };
@@ -64,5 +65,17 @@ export function RequirePermission({ permission }) {
 
   if (isLoading) return <FullPageSpinner />;
   if (!can(permission)) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+// Requires the TA to hold the given capability for the selected course.
+// Faculty and genuine staff always pass. A restricted TA who reaches a gated
+// URL directly is bounced to their first still-allowed instructor page (or
+// their student dashboard when nothing is left).
+export function RequireTaPermission({ permission }) {
+  const { canTa, firstAllowedPath, isLoading } = useTaAccess();
+
+  if (isLoading) return <FullPageSpinner />;
+  if (!canTa(permission)) return <Navigate to={firstAllowedPath()} replace />;
   return <Outlet />;
 }

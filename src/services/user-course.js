@@ -235,6 +235,7 @@ const getCourseUsers = async (courseId) => {
                     userId: 1,
                     courseId: 1,
                     courseRole: 1,
+                    taPermissions: 1,
                     // Include all user fields at top level for easier access
                     puid: "$user.puid",
                     displayName: "$user.displayName",
@@ -368,6 +369,39 @@ const setUserCourseRole = async (userId, courseId, courseRole) => {
 };
 
 /**
+ * Replace the TA permission map on a membership document. Stored under
+ * taPermissions (key -> boolean); pass null to clear it (e.g. on demotion).
+ * @param {string|ObjectId} userId - User ID
+ * @param {string|ObjectId} courseId - Course ID
+ * @param {Object|null} permissions - Sanitized permission map, or null to clear
+ * @returns {Promise} Update result
+ */
+const setUserCourseTaPermissions = async (userId, courseId, permissions) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user_course");
+
+        const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
+        const courseIdObj = typeof courseId === 'string' && ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+        const filter = {
+            $or: [
+                { userId: userIdObj, courseId: courseIdObj },
+                { userId: userId, courseId: courseId },
+                { userId: String(userId), courseId: String(courseId) }
+            ]
+        };
+        const update = permissions
+            ? { $set: { taPermissions: permissions } }
+            : { $unset: { taPermissions: '' } };
+        return collection.updateOne(filter, update);
+    } catch (error) {
+        console.error("Error setting user course TA permissions:", error);
+        throw error;
+    }
+};
+
+/**
  * Count how many courses a user holds the 'ta' course role in.
  * Used to decide whether a demotion should also revoke the promoted staff
  * affiliation (only when this drops to zero).
@@ -485,6 +519,7 @@ module.exports = {
     isUserInCourse,
     getUserCourseMembership,
     setUserCourseRole,
+    setUserCourseTaPermissions,
     countTaMemberships,
     getStudentCourses,
 };

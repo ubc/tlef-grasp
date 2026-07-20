@@ -19,6 +19,7 @@ jest.mock('../../src/services/user-course', () => ({
   isUserInCourse: jest.fn(),
   getUserCourseMembership: jest.fn(),
   setUserCourseRole: jest.fn(),
+  setUserCourseTaPermissions: jest.fn(),
   countTaMemberships: jest.fn(),
 }));
 
@@ -65,6 +66,18 @@ function buildApp(user) {
   return app;
 }
 
+// Effective TA permission map when nothing has been restricted (the default).
+const FULL_TA_PERMISSIONS = {
+  dashboard: true,
+  courseMaterials: true,
+  questionGeneration: true,
+  questionBank: true,
+  quizzes: true,
+  quizScores: true,
+  questionFlags: true,
+  users: true,
+};
+
 const promoteUrl = `/api/users/course/${COURSE_ID}/promote`;
 const demoteUrl = `/api/users/course/${COURSE_ID}/demote`;
 const accessUrl = `/api/users/course/${COURSE_ID}/access`;
@@ -88,6 +101,7 @@ describe('GET /api/users/course/:courseId/access', () => {
       success: true,
       hasStaffAccess: true,
       role: 'ta',
+      taPermissions: FULL_TA_PERMISSIONS,
     });
   });
 
@@ -105,6 +119,7 @@ describe('GET /api/users/course/:courseId/access', () => {
       success: true,
       hasStaffAccess: false,
       role: 'student',
+      taPermissions: FULL_TA_PERMISSIONS,
     });
   });
 });

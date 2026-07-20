@@ -15,6 +15,10 @@ jest.mock("../../src/utils/co-instructor-permissions", () => ({
   assertCoInstructorPermission: jest.fn(),
   PERMISSION_KEYS: { QUESTION_BANK: "questionBank" },
 }));
+jest.mock("../../src/utils/ta-permissions", () => ({
+  assertTaPermission: jest.fn().mockResolvedValue(true),
+  TA_PERMISSION_KEYS: { QUESTION_BANK: "questionBank" },
+}));
 jest.mock("../../src/utils/auth", () => ({
   ROLES: { FACULTY: "faculty", STAFF: "staff", STUDENT: "student" },
 }));

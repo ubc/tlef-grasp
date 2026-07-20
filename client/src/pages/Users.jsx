@@ -6,7 +6,9 @@ import {
   useRemoveUserFromCourse,
   usePromoteToTa,
   useDemoteToStudent,
+  useUpdateTaPermissions,
 } from "../hooks/useUsers";
+import TaPermissionsModal from "./users/TaPermissionsModal";
 import { useMyCourseSections } from "../hooks/useSections";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { getUserRole } from "../lib/utils";
@@ -73,6 +75,8 @@ export default function Users() {
   const [removeTarget, setRemoveTarget] = useState(null);
   // { userId, displayName, action: 'promote' | 'demote' }
   const [roleChangeTarget, setRoleChangeTarget] = useState(null);
+  // { userId, displayName, taPermissions } — the TA whose permissions are open
+  const [permissionsTarget, setPermissionsTarget] = useState(null);
 
   const { users: courseUsers, isPending: courseUsersPending } =
     useCourseUsers(courseId);
@@ -119,6 +123,15 @@ export default function Users() {
       ),
     onError: (error) =>
       showToast(error.message || "Failed to demote TA", "error"),
+  });
+
+  const permissionsMutation = useUpdateTaPermissions(courseId, {
+    onSuccess: () => {
+      setPermissionsTarget(null);
+      showToast("TA permissions updated", "success");
+    },
+    onError: (error) =>
+      showToast(error.message || "Failed to update TA permissions", "error"),
   });
 
   const roleChangePending = promoteMutation.isPending || demoteMutation.isPending;
@@ -249,6 +262,22 @@ export default function Users() {
                               {canChangeCourseRole && role === "ta" && (
                                 <button
                                   type="button"
+                                  title="Edit TA permissions"
+                                  onClick={() =>
+                                    setPermissionsTarget({
+                                      userId,
+                                      displayName,
+                                      taPermissions: user.taPermissions,
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-600/85"
+                                >
+                                  <i className="fas fa-key" /> Permissions
+                                </button>
+                              )}
+                              {canChangeCourseRole && role === "ta" && (
+                                <button
+                                  type="button"
                                   title="Demote to Student"
                                   disabled={roleChangePending}
                                   onClick={() =>
@@ -341,6 +370,16 @@ export default function Users() {
             : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed on their next login.`
         }
         confirmLabel="Confirm"
+      />
+
+      <TaPermissionsModal
+        open={!!permissionsTarget}
+        ta={permissionsTarget}
+        onClose={() => setPermissionsTarget(null)}
+        saving={permissionsMutation.isPending}
+        onSave={(permissions) =>
+          permissionsMutation.mutate({ userId: permissionsTarget.userId, permissions })
+        }
       />
 
       <ConfirmModal

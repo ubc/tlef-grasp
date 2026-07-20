@@ -5,6 +5,7 @@ import {
   RequireOnboarded,
   RequireRole,
   RequirePermission,
+  RequireTaPermission,
 } from "./components/guards";
 import AppLayout from "./components/layout/AppLayout";
 import Landing from "./pages/Landing";
@@ -55,27 +56,48 @@ export default function App() {
 
           <Route element={<RequireOnboarded />}>
             <Route element={<AppLayout />}>
-              {/* Instructor pages (staff and faculty) */}
+              {/* Instructor pages (staff and faculty). TA-restrictable pages
+                  are additionally wrapped in RequireTaPermission, which only
+                  restricts promoted TAs per their instructor-set permission
+                  map. */}
               <Route element={<RequireRole min="staff" />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/quiz-scores" element={<QuizScores />} />
-                <Route path="/question-flags" element={<QuestionFlags />} />
+                <Route element={<RequireTaPermission permission="dashboard" />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                </Route>
+                <Route element={<RequireTaPermission permission="quizScores" />}>
+                  <Route path="/quiz-scores" element={<QuizScores />} />
+                </Route>
+                <Route element={<RequireTaPermission permission="questionFlags" />}>
+                  <Route path="/question-flags" element={<QuestionFlags />} />
+                </Route>
                 <Route path="/my-sections" element={<MySections />} />
-                <Route path="/quizzes" element={<Quizzes />} />
-                <Route path="/users" element={<Users />} />
+                <Route element={<RequireTaPermission permission="quizzes" />}>
+                  <Route path="/quizzes" element={<Quizzes />} />
+                </Route>
+                <Route element={<RequireTaPermission permission="users" />}>
+                  <Route path="/users" element={<Users />} />
+                </Route>
 
                 {/* Areas the course owner can hide from co-instructors */}
                 <Route element={<RequirePermission permission="courseMaterials" />}>
-                  <Route path="/course-materials" element={<CourseMaterials />} />
+                  <Route element={<RequireTaPermission permission="courseMaterials" />}>
+                    <Route path="/course-materials" element={<CourseMaterials />} />
+                  </Route>
                 </Route>
                 <Route element={<RequirePermission permission="questionGeneration" />}>
-                  <Route path="/question-generation" element={<QuestionGeneration />} />
+                  <Route element={<RequireTaPermission permission="questionGeneration" />}>
+                    <Route path="/question-generation" element={<QuestionGeneration />} />
+                  </Route>
                 </Route>
                 <Route element={<RequirePermission permission="questionBank" />}>
-                  <Route path="/question-bank" element={<QuestionBank />} />
+                  <Route element={<RequireTaPermission permission="questionBank" />}>
+                    <Route path="/question-bank" element={<QuestionBank />} />
+                  </Route>
                 </Route>
                 <Route element={<RequirePermission permission="settings" />}>
-                  <Route path="/settings" element={<Settings />} />
+                  <Route element={<RequireTaPermission permission="settings" />}>
+                    <Route path="/settings" element={<Settings />} />
+                  </Route>
                 </Route>
               </Route>
 

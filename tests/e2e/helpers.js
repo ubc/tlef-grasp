@@ -7,7 +7,10 @@ const ROLE_KEY = 'grasp-current-role';
 async function selectSeededCourse(page, { role }) {
   const endpoint = role === 'student' ? '/api/student/courses' : '/api/courses/my';
   const response = await page.request.get(endpoint);
-  expect(response.ok(), `${role} can read available courses`).toBe(true);
+  expect(
+    response.ok(),
+    `${role} can read available courses (HTTP ${response.status()}): ${await response.text()}`
+  ).toBe(true);
 
   const body = await response.json();
   const course = (body.courses || []).find(

@@ -30,6 +30,8 @@ export function useCourseAccess() {
     ...query,
     hasStaffAccess,
     role,
+    // Per-TA capability map resolved by the server (all-true for non-TAs).
+    taPermissions: query.data?.taPermissions || null,
     isLoading: needsCourseLookup && query.isPending,
   };
 }

@@ -1,9 +1,15 @@
-const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse, getUserCourseMembership, setUserCourseRole, countTaMemberships } = require('../services/user-course');
+const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse, getUserCourseMembership, setUserCourseRole, setUserCourseTaPermissions, countTaMemberships } = require('../services/user-course');
 const { getStaffUsersNotInCourse, getStudentsNotInCourse, getUserById, grantPromotedStaffAffiliation, revokePromotedStaffAffiliation } = require('../services/user');
 const { getSectionsOwnedByUser } = require('../services/course-section');
 const { isFaculty, parseAffiliations } = require('../utils/auth');
 const { TA_COURSE_ROLE, hasStaffAccessInCourse, resolveCourseRole } = require('../utils/course-access');
 const { isCourseManager } = require('../utils/co-instructor-permissions');
+const {
+  TA_PERMISSION_KEYS,
+  getEffectiveTaPermissions,
+  sanitizeTaPermissions,
+  assertTaPermission,
+} = require('../utils/ta-permissions');
 
 /**
  * Shared guard for TA promotion/demotion: the requester must be faculty (an
@@ -94,6 +100,9 @@ const promoteUserToTaHandler = async (req, res) => {
     }
 
     await setUserCourseRole(userId, courseId, TA_COURSE_ROLE);
+    // Fresh promotions start with full access (every permission enabled);
+    // the instructor can restrict individual capabilities afterwards.
+    await setUserCourseTaPermissions(userId, courseId, null);
     await grantPromotedStaffAffiliation(userId);
 
     res.json({
@@ -128,6 +137,8 @@ const demoteTaToStudentHandler = async (req, res) => {
     }
 
     await setUserCourseRole(userId, courseId, null);
+    // A later re-promotion starts from a clean (full-access) slate.
+    await setUserCourseTaPermissions(userId, courseId, null);
 
     const remainingTaCourses = await countTaMemberships(userId);
     const targetUser = await getUserById(userId);
@@ -142,6 +153,49 @@ const demoteTaToStudentHandler = async (req, res) => {
   } catch (error) {
     console.error("Error demoting TA to student:", error);
     res.status(500).json({ success: false, error: "Failed to demote TA" });
+  }
+};
+
+/**
+ * PUT /api/users/course/:courseId/ta-permissions
+ * Replace a TA's per-course permission map. Instructor-only (same guard as
+ * promotion/demotion); the target must currently be a TA in this course.
+ * Takes effect immediately — permissions are read from the membership on
+ * every request, not snapshotted into the session.
+ */
+const updateTaPermissionsHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { userId, permissions } = req.body || {};
+
+    const membership = await assertCanManageCourseRoles(req, res, courseId, userId);
+    if (!membership) return;
+
+    if (membership.courseRole !== TA_COURSE_ROLE) {
+      return res.status(400).json({
+        success: false,
+        error: "User is not a TA in this course",
+      });
+    }
+
+    const sanitized = sanitizeTaPermissions(permissions);
+    if (!sanitized) {
+      return res.status(400).json({
+        success: false,
+        error: "permissions must be an object of known permission keys with boolean values",
+      });
+    }
+
+    await setUserCourseTaPermissions(userId, courseId, sanitized);
+
+    res.json({
+      success: true,
+      message: "TA permissions updated",
+      permissions: getEffectiveTaPermissions(sanitized),
+    });
+  } catch (error) {
+    console.error("Error updating TA permissions:", error);
+    res.status(500).json({ success: false, error: "Failed to update TA permissions" });
   }
 };
 
@@ -169,7 +223,13 @@ const getCourseAccessHandler = async (req, res) => {
       ? resolveCourseRole(req.user, membership, userIsFaculty)
       : "student";
 
-    return res.json({ success: true, hasStaffAccess, role });
+    // TAs get their configured capability map; everyone else with staff
+    // access is unrestricted by this layer, so their map is all-true.
+    const taPermissions = getEffectiveTaPermissions(
+      role === "ta" ? membership.taPermissions : null
+    );
+
+    return res.json({ success: true, hasStaffAccess, role, taPermissions });
   } catch (error) {
     console.error("Error resolving course access:", error);
     return res.status(500).json({ success: false, error: "Failed to resolve course access" });
@@ -201,11 +261,12 @@ const getCourseUsersHandler = async (req, res) => {
     // This page is available to faculty, genuine staff, and promoted TAs in
     // this course. A promoted TA must not inherit access in another course.
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
         error: "Staff access is not granted in this course"
       });
     }
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.USERS))) return;
 
     console.log("Fetching course users for courseId:", courseId);
     const courseUsers = await getCourseUsers(courseId);
@@ -228,9 +289,14 @@ const getCourseUsersHandler = async (req, res) => {
       );
 
       // Instructors, TAs, and genuine staff are course-level members and
-      // visible to every instructor.
+      // visible to every instructor. TA rows carry their effective permission
+      // map so the Users page can prefill the permissions editor.
       if (courseRole !== "student") {
-        users.push({ ...courseUser, courseRole });
+        const row = { ...courseUser, courseRole };
+        if (courseRole === "ta") {
+          row.taPermissions = getEffectiveTaPermissions(courseUser.taPermissions);
+        }
+        users.push(row);
         continue;
       }
 
@@ -506,5 +572,6 @@ module.exports = {
   addUserToCourseHandler,
   removeUserFromCourseHandler,
   promoteUserToTaHandler,
-  demoteTaToStudentHandler
+  demoteTaToStudentHandler,
+  updateTaPermissionsHandler
 };

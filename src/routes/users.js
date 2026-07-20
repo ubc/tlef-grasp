@@ -29,4 +29,7 @@ router.post("/course/:courseId/promote", express.json(), usersController.promote
 // Demote a TA in the course back to student
 router.post("/course/:courseId/demote", express.json(), usersController.demoteTaToStudentHandler);
 
+// Replace a TA's per-course permission map
+router.put("/course/:courseId/ta-permissions", express.json(), usersController.updateTaPermissionsHandler);
+
 module.exports = router;

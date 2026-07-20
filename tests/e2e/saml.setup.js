@@ -76,9 +76,13 @@ test('save SAML sessions and seed authenticated e2e data', async ({
       await page.goto('/auth/ubcshib');
       await page.getByLabel('Login Name').fill(role.username);
       await page.getByLabel('Password').fill(role.password);
-      await page.getByRole('button', { name: 'Login', exact: true }).click();
-
-      await page.waitForURL(`${baseURL}/onboarding`, { timeout: 30_000 });
+      // Register the navigation waiter before clicking. The local IdP can
+      // complete this redirect quickly enough that waiting after the click
+      // intermittently misses it despite the page already being on onboarding.
+      await Promise.all([
+        page.waitForURL(`${baseURL}/onboarding`, { timeout: 30_000 }),
+        page.getByRole('button', { name: 'Login', exact: true }).click(),
+      ]);
       await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
 
       await context.storageState({ path: role.storageState });
