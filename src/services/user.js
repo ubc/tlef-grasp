@@ -106,6 +106,19 @@ async function updateUserProfile(user, profile) {
 }
 
 /**
+ * Normalize an affiliation value to an array. Stored shape varies:
+ * SAML logins persist a comma-separated string, roster syncs an array.
+ * @param {string|string[]|undefined} affiliation
+ * @returns {string[]}
+ */
+function normalizeAffiliations(affiliation) {
+    if (!affiliation) return [];
+    return Array.isArray(affiliation)
+        ? [...affiliation]
+        : String(affiliation).split(',').map((a) => a.trim()).filter(Boolean);
+}
+
+/**
  * Grant the staff affiliation as part of a TA promotion. The student
  * affiliation is untouched, and staffViaTaPromotion records that the staff
  * affiliation was granted by us (not by SAML), so demotion knows it is safe
@@ -120,11 +133,21 @@ async function grantPromotedStaffAffiliation(userId) {
         const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
             ? new ObjectId(userId)
             : userId;
+        // affiliation may be stored as a comma-separated string (SAML login)
+        // or an array (roster sync); normalize to an array before writing —
+        // $addToSet throws on non-array fields.
+        const user = await collection.findOne({ _id: idObj });
+        if (!user) return null;
+        const affiliations = normalizeAffiliations(user.affiliation);
+        if (!affiliations.includes('staff')) affiliations.push('staff');
         return collection.updateOne(
             { _id: idObj },
             {
-                $addToSet: { affiliation: 'staff' },
-                $set: { staffViaTaPromotion: true, updatedAt: new Date() },
+                $set: {
+                    affiliation: affiliations,
+                    staffViaTaPromotion: true,
+                    updatedAt: new Date(),
+                },
             }
         );
     } catch (error) {
@@ -147,12 +170,15 @@ async function revokePromotedStaffAffiliation(userId) {
         const idObj = typeof userId === 'string' && ObjectId.isValid(userId)
             ? new ObjectId(userId)
             : userId;
+        const user = await collection.findOne({ _id: idObj });
+        if (!user) return null;
+        const affiliations = normalizeAffiliations(user.affiliation)
+            .filter((affiliation) => affiliation !== 'staff');
         return collection.updateOne(
             { _id: idObj },
             {
-                $pull: { affiliation: 'staff' },
                 $unset: { staffViaTaPromotion: '' },
-                $set: { updatedAt: new Date() },
+                $set: { affiliation: affiliations, updatedAt: new Date() },
             }
         );
     } catch (error) {
