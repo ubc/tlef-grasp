@@ -1,6 +1,7 @@
 const { uploadImage, getImageStream, deleteImage } = require("../services/image");
 const { isUserInCourse } = require("../services/user-course");
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require("../utils/co-instructor-permissions");
+const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 
 // SVG is deliberately excluded: it can carry scripts (XSS vector).
 const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -53,6 +54,7 @@ const uploadImageHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_BANK))) return;
+        if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_BANK))) return;
 
         const image = await uploadImage(file.buffer, {
             filename: file.originalname,

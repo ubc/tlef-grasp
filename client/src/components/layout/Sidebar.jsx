@@ -5,9 +5,10 @@ import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useCourseAccess } from "../../hooks/useCourseAccess";
 import { useMyCourses } from "../../hooks/useCourses";
 import { useCoInstructorAccess } from "../../hooks/useCoInstructorAccess";
+import { useTaAccess } from "../../hooks/useTaAccess";
 import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
-import { PATH_PERMISSION } from "../../lib/permissions";
+import { PATH_PERMISSION, TA_PATH_PERMISSION } from "../../lib/permissions";
 
 const INSTRUCTOR_ITEMS = [
   { to: "/dashboard", icon: "fa-home", label: "Dashboard" },
@@ -125,6 +126,7 @@ export default function Sidebar({ open = false, onClose }) {
   const { isStudent } = useCurrentUser();
   const { hasStaffAccess, role: courseRole } = useCourseAccess();
   const { can } = useCoInstructorAccess();
+  const { canTa } = useTaAccess();
   const { currentRole, setCurrentRole, selectedCourse, setSelectedCourse } =
     useAppStore();
   const navigate = useNavigate();
@@ -137,11 +139,13 @@ export default function Sidebar({ open = false, onClose }) {
   const studentItems =
     isStudent && !selectedCourse ? STUDENT_ITEMS.slice(0, 1) : STUDENT_ITEMS;
 
-  // Hide instructor links a co-instructor isn't permitted to see. Items without
-  // a gating permission (Dashboard, Quizzes, Quiz Scores) are always shown.
+  // Hide instructor links a co-instructor isn't permitted to see, and links a
+  // TA's per-course permission map withholds (canTa is all-true for non-TAs).
   const instructorItems = INSTRUCTOR_ITEMS.filter((item) => {
     const permission = PATH_PERMISSION[item.to];
-    return !permission || can(permission);
+    if (permission && !can(permission)) return false;
+    const taPermission = TA_PATH_PERMISSION[item.to];
+    return !taPermission || canTa(taPermission);
   });
 
   const handleRoleSwitch = () => {
@@ -198,7 +202,7 @@ export default function Sidebar({ open = false, onClose }) {
           >
             <i className="fas fa-user-circle text-lg text-white/90" />
           </Link>
-          {hasStaffAccess && can("settings") && (
+          {hasStaffAccess && can("settings") && canTa("settings") && (
             <Link
               to="/settings"
               className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
@@ -232,10 +236,10 @@ export default function Sidebar({ open = false, onClose }) {
                 {INSTRUCTOR_MANAGEMENT_ITEMS.map((item) => (
                   <NavItem key={item.to} {...item} />
                 ))}
-                {hasStaffAccess && (
+                {hasStaffAccess && canTa("users") && (
                   <NavItem to="/users" icon="fa-users" label="Users" />
                 )}
-                {can("settings") && (
+                {can("settings") && canTa("settings") && (
                   <NavItem to="/settings" icon="fa-cog" label="Settings" />
                 )}
               </ul>

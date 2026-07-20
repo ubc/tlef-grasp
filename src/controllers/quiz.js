@@ -11,6 +11,7 @@ const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 const quizSessionService = require('../services/quiz-session');
 
 function isBooleanIfPresent(value) {
@@ -95,6 +96,7 @@ const getCourseQuestionFlagsHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_FLAGS))) return;
     const flags = await questionFlagService.getCourseFlags(courseId);
     res.json({ success: true, flags });
   } catch (error) {
@@ -115,6 +117,7 @@ const updateQuestionFlagStatusHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, flag.courseId))) {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
+    if (!(await assertTaPermission(req, res, flag.courseId, TA_PERMISSION_KEYS.QUESTION_FLAGS))) return;
     const updatedFlag = await questionFlagService.updateFlagStatus(
       flagId,
       status,
@@ -157,6 +160,7 @@ const getQuizzesByCourseWithQuestionsHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUIZZES))) return;
     const quizzes = await quizService.getQuizzesByCourseWithQuestions(courseId);
     res.json({ success: true, quizzes });
   } catch (error) {
@@ -1151,6 +1155,7 @@ const getQuizScoresHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, quiz.courseId))) {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
+    if (!(await assertTaPermission(req, res, quiz.courseId, TA_PERMISSION_KEYS.QUIZ_SCORES))) return;
 
     let scores = await quizService.getQuizScores(quizId);
     if (!scores) {
@@ -1187,6 +1192,7 @@ const getStudentQuizAttemptHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, quiz.courseId))) {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
+    if (!(await assertTaPermission(req, res, quiz.courseId, TA_PERMISSION_KEYS.QUIZ_SCORES))) return;
 
     const attempts = await quizService.getStudentQuizAttempt(quizId, userId);
     

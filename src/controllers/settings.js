@@ -1,6 +1,7 @@
 const settingsService = require('../services/settings');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, isCourseManager, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_SETTINGS_KEY } = require('../utils/ta-permissions');
 
 /**
  * Get application settings handler
@@ -41,6 +42,9 @@ const updateSettingsHandler = async (req, res) => {
             return res.status(403).json({ success: false, error: 'Staff access is not granted in this course' });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.SETTINGS))) return;
+        // TAs may never edit course settings — this is where their own
+        // permissions are managed, so allowing it would be self-escalation.
+        if (!(await assertTaPermission(req, res, courseId, TA_SETTINGS_KEY))) return;
         const updateData = { ...req.body };
         // Only the course owner / app admins may change the co-instructor
         // permission map itself — stop a co-instructor with Settings access from

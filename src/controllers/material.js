@@ -3,6 +3,7 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
 const settingsService = require('../services/settings');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
 const { parsePdf } = require('../utils/pdf-parser');
@@ -20,6 +21,7 @@ const saveMaterialHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+        if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         await saveMaterial(sourceId, courseId, materialData);
         res.json({ success: true, message: "Material saved successfully" });
@@ -43,6 +45,7 @@ const deleteMaterialHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+        if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         // Delete from RAG first
         try {
@@ -108,6 +111,7 @@ const updateMaterialHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, materialCourseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+        if (!(await assertTaPermission(req, res, materialCourseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         // Validate required fields based on document type
         if (documentType === 'link') {
@@ -356,6 +360,7 @@ const refetchMaterialHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, materialCourseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+        if (!(await assertTaPermission(req, res, materialCourseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         // Step 1: Delete from vector database (RAG)
         try {
@@ -588,6 +593,7 @@ const uploadFileHandler = async (req, res) => {
             return res.status(403).json({ error: "User is not in course" });
         }
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+        if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         const fileName = file.originalname.toLowerCase();
         let content = "";

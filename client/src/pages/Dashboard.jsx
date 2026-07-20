@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useTaAccess } from "../hooks/useTaAccess";
 import { useCourseQuizQuestionFlags } from "../hooks/useQuizQuestionFlags";
 import { useCourseMaterials } from "../hooks/useMaterials";
 import { useCourseObjectives } from "../hooks/useObjectives";
@@ -10,13 +11,14 @@ import { useQuestions } from "../hooks/useQuestions";
 import { useCourseQuizzes, useQuizCalendar } from "../hooks/useQuizzes";
 import { useAppStore, useSelectedCourseId } from "../stores/appStore";
 
-// `permission` gates a card for co-instructors (null = always shown), matching
-// the sidebar/route gating in useCoInstructorAccess.
+// `permission` gates a card for co-instructors (null = always shown) and
+// `taPermission` gates it for promoted TAs, matching the sidebar/route gating
+// in useCoInstructorAccess and useTaAccess.
 const QUICK_START_CARDS = [
-  { to: "/course-materials", icon: "fa-upload", label: "Upload Materials", permission: "courseMaterials" },
-  { to: "/question-generation", icon: "fa-wand-magic-sparkles", label: "Generate Questions", permission: "questionGeneration" },
-  { to: "/question-bank?tab=review", icon: "fa-book", label: "Quizzes", permission: "questionBank" },
-  { to: "/users", icon: "fa-users", label: "Users", permission: null },
+  { to: "/course-materials", icon: "fa-upload", label: "Upload Materials", permission: "courseMaterials", taPermission: "courseMaterials" },
+  { to: "/question-generation", icon: "fa-wand-magic-sparkles", label: "Generate Questions", permission: "questionGeneration", taPermission: "questionGeneration" },
+  { to: "/question-bank?tab=review", icon: "fa-book", label: "Quizzes", permission: "questionBank", taPermission: "questionBank" },
+  { to: "/users", icon: "fa-users", label: "Users", permission: null, taPermission: "users" },
 ];
 
 function FlaggedQuestionsCard() {
@@ -52,7 +54,20 @@ function FlaggedQuestionsCard() {
   );
 }
 
-function InstructorGuide() {
+// Course-building walkthrough. Steps a TA's permission map withholds are
+// dropped (and renumbered); the guide disappears entirely when none remain.
+const GUIDE_STEPS = [
+  { taPermission: "courseMaterials", to: "/course-materials", title: "Upload course materials", body: "Add PDFs, documents, slides, text, or links. GRASP processes them for question generation; you can also paste text directly." },
+  { taPermission: "questionGeneration", to: "/question-generation", title: "Create objectives and questions", body: "Create objectives manually, use existing ones, or generate them from relevant material. Then choose objectives and Bloom’s levels, generate questions, review them, and save them to a quiz." },
+  { taPermission: "questionBank", to: "/question-bank", title: "Review the question bank", body: "Edit questions, approve or return drafts, filter by objective or quiz, and flag items that need attention. Review progress is also available by quiz." },
+  { taPermission: "users", to: "/users", title: "Add course users", body: "Add students and staff before students need access to quizzes." },
+  { taPermission: "quizzes", to: "/quizzes", title: "Publish quizzes", body: "Approve the questions you want students to see, then publish and schedule the quiz for the appropriate section." },
+];
+
+function InstructorGuide({ canTa }) {
+  const steps = GUIDE_STEPS.filter((step) => canTa(step.taPermission));
+  if (steps.length === 0) return null;
+
   return (
     <details className="rounded-2xl bg-white shadow-sm">
       <summary className="cursor-pointer list-none px-6 py-5 font-semibold text-ink marker:hidden">
@@ -64,11 +79,9 @@ function InstructorGuide() {
       <div className="border-t border-gray-100 px-6 py-5 text-sm leading-relaxed text-gray-600">
         <p className="mb-5">Use this guide whenever you need a refresher on the course-building workflow.</p>
         <div className="space-y-5">
-          <div><h4 className="font-semibold text-ink">1. <Link to="/course-materials">Upload course materials</Link></h4><p>Add PDFs, documents, slides, text, or links. GRASP processes them for question generation; you can also paste text directly.</p></div>
-          <div><h4 className="font-semibold text-ink">2. <Link to="/question-generation">Create objectives and questions</Link></h4><p>Create objectives manually, use existing ones, or generate them from relevant material. Then choose objectives and Bloom’s levels, generate questions, review them, and save them to a quiz.</p></div>
-          <div><h4 className="font-semibold text-ink">3. <Link to="/question-bank">Review the question bank</Link></h4><p>Edit questions, approve or return drafts, filter by objective or quiz, and flag items that need attention. Review progress is also available by quiz.</p></div>
-          <div><h4 className="font-semibold text-ink">4. <Link to="/users">Add course users</Link></h4><p>Add students and staff before students need access to quizzes.</p></div>
-          <div><h4 className="font-semibold text-ink">5. <Link to="/quizzes">Publish quizzes</Link></h4><p>Approve the questions you want students to see, then publish and schedule the quiz for the appropriate section.</p></div>
+          {steps.map((step, index) => (
+            <div key={step.title}><h4 className="font-semibold text-ink">{index + 1}. <Link to={step.to}>{step.title}</Link></h4><p>{step.body}</p></div>
+          ))}
           <div className="rounded-lg bg-primary/5 p-4"><h4 className="font-semibold text-ink">Pro tips</h4><p>Use granular objectives for targeted questions, review AI output before publishing, and use flags to keep follow-up work visible.</p></div>
         </div>
       </div>
@@ -80,6 +93,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
   const { can } = useCoInstructorAccess();
+  const { canTa } = useTaAccess();
   const currentRole = useAppStore((state) => state.currentRole);
   const courseId = useSelectedCourseId();
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -89,7 +103,9 @@ export default function Dashboard() {
   const { quizzes, isPending: quizzesPending } = useCourseQuizzes(courseId);
   const calendarQuery = useQuizCalendar(courseId, calendarMonth);
   const quickStartCards = QUICK_START_CARDS.filter(
-    (card) => !card.permission || can(card.permission)
+    (card) =>
+      (!card.permission || can(card.permission)) &&
+      (!card.taPermission || canTa(card.taPermission))
   );
 
   // Faculty/staff viewing in student mode get the student dashboard (legacy behavior)
@@ -105,13 +121,15 @@ export default function Dashboard() {
     day: "numeric",
   });
   const progressLoading = materialsPending || objectivesPending || questionsPending || quizzesPending;
+  // Steps a TA's permission map withholds are dropped; the whole course-path
+  // section disappears when none remain (e.g. a grader-only TA).
   const courseSteps = [
-    { title: "Upload", description: "Add notes, slides, files, or links.", to: "/course-materials", icon: "fa-upload", complete: materials.length > 0 },
-    { title: "Create objectives", description: "Generate them from relevant material or add your own.", to: "/question-generation", icon: "fa-bullseye", complete: objectives.length > 0 },
-    { title: "Generate questions", description: "Choose objectives and review the AI draft.", to: "/question-generation", icon: "fa-wand-magic-sparkles", complete: questions.length > 0 },
-    { title: "Review", description: "Edit and approve questions in your bank.", to: "/question-bank", icon: "fa-clipboard-check", complete: questions.length > 0 && questions.every((question) => String(question.status || "").toLowerCase() === "approved") },
-    { title: "Publish", description: "Share an approved quiz with students.", to: "/quizzes", icon: "fa-paper-plane", complete: quizzes.some((quiz) => quiz.published) },
-  ];
+    { title: "Upload", description: "Add notes, slides, files, or links.", to: "/course-materials", icon: "fa-upload", taPermission: "courseMaterials", complete: materials.length > 0 },
+    { title: "Create objectives", description: "Generate them from relevant material or add your own.", to: "/question-generation", icon: "fa-bullseye", taPermission: "questionGeneration", complete: objectives.length > 0 },
+    { title: "Generate questions", description: "Choose objectives and review the AI draft.", to: "/question-generation", icon: "fa-wand-magic-sparkles", taPermission: "questionGeneration", complete: questions.length > 0 },
+    { title: "Review", description: "Edit and approve questions in your bank.", to: "/question-bank", icon: "fa-clipboard-check", taPermission: "questionBank", complete: questions.length > 0 && questions.every((question) => String(question.status || "").toLowerCase() === "approved") },
+    { title: "Publish", description: "Share an approved quiz with students.", to: "/quizzes", icon: "fa-paper-plane", taPermission: "quizzes", complete: quizzes.some((quiz) => quiz.published) },
+  ].filter((step) => canTa(step.taPermission));
   const completedSteps = courseSteps.filter((step) => step.complete).length;
   const nextStep = courseSteps.find((step) => !step.complete);
   const pathHeading = progressLoading ? "Course progress" : completedSteps === courseSteps.length ? "Your course is ready" : completedSteps > 0 ? "Continue building your course" : "Build your first quiz";
@@ -143,6 +161,7 @@ export default function Dashboard() {
           </div>
         </section>
 
+        {courseSteps.length > 0 && (
         <section aria-labelledby="course-path-heading" className="rounded-2xl bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -151,9 +170,9 @@ export default function Dashboard() {
             </div>
             {nextStep ? (
               <Link to={nextStep.to} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">Continue: {nextStep.title}</Link>
-            ) : (
+            ) : canTa("quizzes") ? (
               <Link to="/quizzes" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">Manage quizzes</Link>
-            )}
+            ) : null}
           </div>
           <ol className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {courseSteps.map((step, index) => (
@@ -168,7 +187,8 @@ export default function Dashboard() {
           </ol>
           <p className="mt-5 rounded-lg bg-primary/5 px-4 py-3 text-sm text-ink"><strong>Tip:</strong> AI only generates objectives from course-related content. If you already know your learning objectives, add them yourself and GRASP will preserve them.</p>
         </section>
-        <InstructorGuide />
+        )}
+        <InstructorGuide canTa={canTa} />
       </div>
 
       {/* Right column */}
@@ -182,7 +202,7 @@ export default function Dashboard() {
             onMonthChange={setCalendarMonth}
             loading={calendarQuery.isPending}
           />
-          {calendarQuery.unscheduledQuizzes.length > 0 && (
+          {canTa("quizzes") && calendarQuery.unscheduledQuizzes.length > 0 && (
             <div className="mt-4 rounded-lg bg-warning/10 p-3 text-xs text-ink">
               <p className="font-semibold text-warning">
                 {calendarQuery.unscheduledQuizzes.length} published {calendarQuery.unscheduledQuizzes.length === 1 ? "quiz has" : "quizzes have"} no schedule for your sections
@@ -193,7 +213,7 @@ export default function Dashboard() {
             </div>
           )}
         </section>
-        <FlaggedQuestionsCard />
+        {canTa("questionFlags") && <FlaggedQuestionsCard />}
       </div>
     </div>
   );

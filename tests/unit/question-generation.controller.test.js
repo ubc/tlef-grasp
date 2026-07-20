@@ -15,6 +15,10 @@ jest.mock('../../src/utils/co-instructor-permissions', () => ({
   assertCoInstructorPermission: jest.fn().mockResolvedValue(true),
   PERMISSION_KEYS: { QUESTION_GENERATION: 'questionGeneration' },
 }));
+jest.mock('../../src/utils/ta-permissions', () => ({
+  assertTaPermission: jest.fn().mockResolvedValue(true),
+  TA_PERMISSION_KEYS: { QUESTION_GENERATION: 'questionGeneration' },
+}));
 jest.mock('../../src/utils/llm-provider', () => ({
   getLLMModel: jest.fn(() => 'test-model'),
   getReviewModel: jest.fn(() => 'test-review-model'),
