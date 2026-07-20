@@ -1,5 +1,4 @@
-const { test, expect, request: apiRequest } = require('@playwright/test');
-const { BIO_PROF2_AUTH_FILE } = require('./auth');
+const { test, expect } = require('@playwright/test');
 const { selectSeededCourse } = require('./helpers');
 const { SEED } = require('./seed');
 
@@ -17,6 +16,8 @@ const BASE_URL = `http://localhost:${process.env.TLEF_GRASP_PORT || 8052}`;
 // Names may or may not have been enriched by a roster sync (see
 // instructor-users.spec.js), so match either rendering.
 const STUDENT3_ROW = /bio_student3@student\.ubc\.ca|Bennett Student|student_benji/;
+const INSTRUCTOR_USERNAME = process.env.E2E_BIO_PROF2_USERNAME || 'bio_prof2';
+const INSTRUCTOR_PASSWORD = process.env.E2E_BIO_PROF2_PASSWORD || 'bio_prof2';
 const TA_USERNAME = process.env.E2E_BIO_STUDENT3_USERNAME || 'bio_student3';
 const TA_PASSWORD = process.env.E2E_BIO_STUDENT3_PASSWORD || 'bio_student3';
 
@@ -26,53 +27,44 @@ function student3Row(page) {
   return page.getByRole('row').filter({ hasText: STUDENT3_ROW });
 }
 
-// Restore the seed state (bio_student3 = plain student) regardless of what a
-// previous run left behind. Runs before AND after the suite so a mid-run
-// failure can never poison the shared seeded course for other specs.
-async function demoteStudent3() {
-  const api = await apiRequest.newContext({
-    baseURL: BASE_URL,
-    storageState: BIO_PROF2_AUTH_FILE,
+async function login(page, username, password) {
+  // Do not reuse a saved app session: Mongo-backed sessions can legitimately
+  // disappear between the setup project and a retried test.
+  await page.context().clearCookies();
+  await page.goto('/auth/ubcshib');
+  await page.getByLabel('Login Name').fill(username);
+  await page.getByLabel('Password').fill(password);
+  await Promise.all([
+    page.waitForURL(/\/onboarding(?:\?.*)?$/i, { timeout: 30_000 }),
+    page.getByRole('button', { name: 'Login', exact: true }).click(),
+  ]);
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible();
+}
+
+// Restore the seed state using the current, freshly authenticated instructor
+// session. A failed run can therefore be rerun without stale TA state.
+async function demoteStudent3(api) {
+  const rosterRes = await api.get(`/api/users/course/${courseId}`);
+  expect(rosterRes.ok(), 'instructor can read the seeded roster').toBe(true);
+  const roster = await rosterRes.json();
+  const ta = (roster.users || []).find(
+    (member) =>
+      member.courseRole === 'ta' &&
+      (STUDENT3_ROW.test(member.email || '') ||
+        STUDENT3_ROW.test(member.displayName || ''))
+  );
+  if (!ta) return;
+  const demotion = await api.post(`/api/users/course/${courseId}/demote`, {
+    data: { userId: String(ta.userId) },
   });
-  try {
-    if (!courseId) {
-      const coursesRes = await api.get('/api/courses/my');
-      if (!coursesRes.ok()) return;
-      const { courses = [] } = await coursesRes.json();
-      const course = courses.find(
-        (candidate) => (candidate.courseName || candidate.name) === SEED.COURSE_NAME
-      );
-      if (!course) return;
-      courseId = String(course._id || course.id);
-    }
-    const rosterRes = await api.get(`/api/users/course/${courseId}`);
-    if (!rosterRes.ok()) return;
-    const roster = await rosterRes.json();
-    const ta = (roster.users || []).find(
-      (member) =>
-        member.courseRole === 'ta' &&
-        (STUDENT3_ROW.test(member.email || '') ||
-          STUDENT3_ROW.test(member.displayName || ''))
-    );
-    if (!ta) return;
-    await api.post(`/api/users/course/${courseId}/demote`, {
-      data: { userId: String(ta.userId) },
-    });
-  } finally {
-    await api.dispose();
-  }
+  expect(demotion.ok(), 'resetting the seeded TA succeeds').toBe(true);
 }
 
 test.describe.serial('TA permissions (seeded course)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
-  test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
-  test.beforeAll(async () => {
-    await demoteStudent3();
-  });
-
-  test.afterAll(async () => {
-    await demoteStudent3();
+  test.beforeEach(async ({ page }) => {
+    await login(page, INSTRUCTOR_USERNAME, INSTRUCTOR_PASSWORD);
   });
 
   test('instructor promotes a student and applies the Grader preset', async ({
@@ -80,6 +72,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
   }) => {
     const course = await selectSeededCourse(page, { role: 'instructor' });
     courseId = course.id;
+    await demoteStudent3(page.request);
     await page.goto('/users');
 
     const row = student3Row(page);
@@ -126,13 +119,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
     const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
     try {
-      await page.goto('/auth/ubcshib');
-      await page.getByLabel('Login Name').fill(TA_USERNAME);
-      await page.getByLabel('Password').fill(TA_PASSWORD);
-      await Promise.all([
-        page.waitForURL(`${BASE_URL}/onboarding`, { timeout: 30_000 }),
-        page.getByRole('button', { name: 'Login', exact: true }).click(),
-      ]);
+      await login(page, TA_USERNAME, TA_PASSWORD);
 
       await selectSeededCourse(page, { role: 'instructor' });
       await page.goto('/dashboard');
