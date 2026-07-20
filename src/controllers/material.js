@@ -5,9 +5,7 @@ const settingsService = require('../services/settings');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
-const { parsePdf } = require('../utils/pdf-parser');
-const { parseDocx } = require('../utils/docx-parser');
-const { parsePptx } = require('../utils/pptx-parser');
+const { parseInWorker } = require('../utils/parse-in-worker');
 
 const TITLE_ONLY_UPDATE_TYPES = new Set(['pdf', 'file']);
 
@@ -596,13 +594,16 @@ const uploadFileHandler = async (req, res) => {
         
         console.log(`Processing uploaded file: ${fileName} (${file.size} bytes)`);
 
+        // Parsing runs in a worker thread (parse-in-worker.js): OCR/layout
+        // analysis on a large file takes seconds of pure CPU, which would
+        // otherwise freeze every in-flight request on the event loop.
         if (file.mimetype === "application/pdf" || fileName.endsWith(".pdf")) {
-            const parsed = await parsePdf(file.buffer);
+            const parsed = await parseInWorker("pdf", file.buffer);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
             storedFileType = "application/pdf";
         } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
-            const parsed = await parseDocx(file.buffer);
+            const parsed = await parseInWorker("docx", file.buffer);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
             storedFileType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -614,7 +615,7 @@ const uploadFileHandler = async (req, res) => {
             } catch (settingsError) {
                 console.error("Error getting PowerPoint extraction prompt:", settingsError);
             }
-            const parsed = await parsePptx(file.buffer, file.originalname, powerPointPrompt);
+            const parsed = await parseInWorker("pptx", file.buffer, file.originalname, powerPointPrompt);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
             storedFileType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";

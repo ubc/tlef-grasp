@@ -209,8 +209,27 @@ const getStudentQuizOverviewHandler = async (req, res) => {
       }
     }
 
+    // The overview only needs counts. For all-approved quizzes (the default
+    // delivery format) the count is the same for every student, so it comes
+    // from two batched queries instead of loading full question documents per
+    // quiz. Only spaced-3phase quizzes run the personalized selection, whose
+    // per-phase counts genuinely differ per student.
+    const allApprovedIds = active
+      .filter((quiz) => quiz.deliveryFormat !== "spaced-3phase")
+      .map((quiz) => quiz._id.toString());
+    const approvedCounts = await quizService.getApprovedQuestionCountsForQuizzes(allApprovedIds);
+
     const overview = await Promise.all(
       active.map(async (quiz) => {
+        if (quiz.deliveryFormat !== "spaced-3phase") {
+          return {
+            ...quiz,
+            questionCount: approvedCounts.get(quiz._id.toString()) || 0,
+            phase1Count: 0,
+            phase2Count: 0,
+            phase3Count: 0,
+          };
+        }
         let questions = [];
         try {
           questions = await quizService.getQuizQuestionsForStudent(quiz._id.toString(), userId);
@@ -913,7 +932,9 @@ const checkQuestionAnswerHandler = async (req, res) => {
       const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
       const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
       if (userId && quizId && !practice) {
-        quizService.saveStudentPerformance({
+        // Awaited: if the attempt can't be persisted, fail the request so the
+        // client retries instead of showing a verdict that was never recorded.
+        await quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
@@ -923,7 +944,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
           selectedAnswer: String(answerText).trim(),
           correctAnswer: displayCorrect,
           correctOptionText: displayCorrect,
-        }).catch(e => console.error('[check] Failed to record attempt:', e));
+        });
       }
       res.json({
         success: true,
@@ -969,7 +990,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       }
 
       if (userId && quizId && !practice) {
-        quizService.saveStudentPerformance({
+        await quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
@@ -982,7 +1003,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
           feedbackText: grading ? grading.overallFeedback : null,
           aiGraded: !!grading,
           aiCriteria: grading ? grading.criteria : null,
-        }).catch(e => console.error('[check] Failed to record attempt:', e));
+        });
       }
       res.json({
         success: true,
@@ -1056,7 +1077,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       }
 
       if (userId && quizId && !practice) {
-        quizService.saveStudentPerformance({
+        await quizService.saveStudentPerformance({
           userId: String(userId), quizId: String(quizId), questionId: String(questionId),
           learningObjectiveId: question.learningObjectiveId,
           granularObjectiveId: question.granularObjectiveId,
@@ -1068,7 +1089,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
           correctOptionText: canonical || null,
           feedbackText: aiGraded ? feedback : null,
           aiGraded,
-        }).catch(e => console.error('[check] Failed to record attempt:', e));
+        });
       }
       res.json({
         success: true,
@@ -1112,7 +1133,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
       : (correctOptionObj || "");
 
     if (userId && quizId && !practice) {
-      quizService.saveStudentPerformance({
+      await quizService.saveStudentPerformance({
         userId: String(userId), quizId: String(quizId), questionId: String(questionId),
         learningObjectiveId: question.learningObjectiveId,
         granularObjectiveId: question.granularObjectiveId,
@@ -1123,7 +1144,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         correctAnswer: correctAnswerLetter,
         correctOptionText,
         feedbackText: feedback,
-      }).catch(e => console.error('[check] Failed to record attempt:', e));
+      });
     }
     res.json({
       success: true,

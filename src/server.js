@@ -1,6 +1,47 @@
 require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
+const cluster = require("node:cluster");
+const os = require("node:os");
+
+// --- Clustering ---
+// One Node process cannot serve a 2000-student quiz window: every request in
+// flight shares a single event loop. In production we fork one worker per CPU
+// core (capped — each worker loads sharp/parsers and holds its own Mongo
+// pool). Sessions live in MongoDB, so any worker can serve any request.
+// GRASP_WEB_CONCURRENCY overrides the count; dev/test stay single-process.
+const workerCount = (() => {
+  const explicit = parseInt(process.env.GRASP_WEB_CONCURRENCY, 10);
+  if (Number.isInteger(explicit) && explicit > 0) return explicit;
+  return process.env.NODE_ENV === "production"
+    ? Math.min(os.availableParallelism(), 4)
+    : 1;
+})();
+
+if (cluster.isPrimary && workerCount > 1) {
+  console.log(`Primary ${process.pid}: starting ${workerCount} workers`);
+  for (let i = 0; i < workerCount; i += 1) {
+    // Only the first worker creates/migrates indexes — concurrent
+    // createOrReplaceIndex drop/create calls would race across workers.
+    cluster.fork({ GRASP_SKIP_INDEX_INIT: i === 0 ? "" : "1" });
+  }
+  // Crash-loop guard: workers dying instantly (bad config, port in use) must
+  // not be respawned in a hot loop. Rapid consecutive exits abort the primary.
+  let rapidExits = 0;
+  let lastExitAt = 0;
+  cluster.on("exit", (worker, code, signal) => {
+    const now = Date.now();
+    rapidExits = now - lastExitAt < 10000 ? rapidExits + 1 : 1;
+    lastExitAt = now;
+    if (rapidExits >= 2 * workerCount) {
+      console.error(`Workers are crash-looping (${rapidExits} rapid exits) — shutting down`);
+      process.exit(1);
+    }
+    console.error(`Worker ${worker.process.pid} exited (${signal || code}) — restarting`);
+    cluster.fork({ GRASP_SKIP_INDEX_INIT: "1" });
+  });
+  return; // primary only supervises; workers run the app below
+}
 
 const express = require("express");
 const helmet = require("helmet");
@@ -24,6 +65,7 @@ const profileRoutes = require("./routes/profile");
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
+const { apiLimiter } = require('./middleware/rate-limit');
 
 const app = express();
 const port = process.env.TLEF_GRASP_PORT || 8070;
@@ -68,11 +110,24 @@ app.use(
     },
   })
 );
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Default body limit is deliberately small: parsing a huge JSON body blocks
+// the event loop for every request in flight. Material routes carry full
+// parsed document text, so they are excluded here and mount their own
+// express.json({ limit: "50mb" }) parser in routes/material.js — the global
+// parser must not touch them or its 1mb cap would reject the body first.
+const defaultJsonParser = express.json({ limit: '1mb' });
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/material')) return next();
+  return defaultJsonParser(req, res, next);
+});
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
+// After passport so the limiter can key by authenticated user instead of IP
+// (many students share campus NAT IPs). Tighter per-route limits live on the
+// LLM-backed answer-check route in routes/quiz.js.
+app.use('/api', apiLimiter);
 app.use(dbMiddleware);
 
 // Serve the built React client (client/dist). In development the client is
@@ -194,10 +249,16 @@ app.use((err, req, res, next) => {
   if (res.headersSent) {
     return next(err);
   }
+  // Oversized bodies (express.json/raw-body set status 413) and oversized
+  // multer uploads get a clear client error instead of a generic 500.
+  const tooLarge = err?.status === 413 || err?.code === 'LIMIT_FILE_SIZE';
   if (req.path.startsWith('/api/')) {
+    if (tooLarge) {
+      return res.status(413).json({ success: false, error: 'Request payload is too large' });
+    }
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
-  res.status(500).send('500: Internal Server Error');
+  res.status(tooLarge ? 413 : 500).send(tooLarge ? '413: Payload Too Large' : '500: Internal Server Error');
 });
 
 app.listen(port, async () => {

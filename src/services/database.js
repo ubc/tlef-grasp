@@ -35,7 +35,12 @@ class DatabaseService {
       
       console.log("✅ Successfully connected to MongoDB");
 
-      await this.initializeCollections();
+      // In cluster mode only the first worker builds/migrates indexes
+      // (server.js sets this flag when forking) — the createOrReplaceIndex
+      // drop/recreate path is not safe to run concurrently.
+      if (process.env.GRASP_SKIP_INDEX_INIT !== "1") {
+        await this.initializeCollections();
+      }
 
       return this.db;
     } catch (error) {
@@ -89,6 +94,25 @@ class DatabaseService {
       // --- Student Performance & Attempt Tracking ---
       
       // 1. Audit Log: Tracks every individual attempt
+      //
+      // First-answer-wins is enforced by this unique index: concurrent checks
+      // for the same user/quiz/question (double-click, retry, second tab) make
+      // the losing insert fail with E11000 instead of creating a duplicate
+      // attempt that would inflate the quiz score. Guarded separately because
+      // a pre-existing database with duplicate attempts would otherwise abort
+      // creation of every index below.
+      try {
+        await this.db.collection("grasp_student_attempt").createIndex(
+          { userId: 1, quizId: 1, questionId: 1 },
+          { unique: true }
+        );
+      } catch (error) {
+        console.error(
+          "❌ Could not create unique attempt index (duplicate attempts already exist?). " +
+          "Deduplicate grasp_student_attempt on (userId, quizId, questionId) and restart:",
+          error.message
+        );
+      }
       await this.db.collection("grasp_student_attempt").createIndex({ userId: 1 });
       await this.db.collection("grasp_student_attempt").createIndex({ quizId: 1 });
       await this.db.collection("grasp_student_attempt").createIndex({ questionId: 1 });

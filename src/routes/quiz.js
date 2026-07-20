@@ -3,6 +3,7 @@ const router = express.Router();
 const quizController = require("../controllers/quiz");
 const { requireRole } = require("../middleware/auth");
 const { ROLES } = require("../utils/auth");
+const { checkLimiter } = require("../middleware/rate-limit");
 
 /**
  * GET /api/quiz/course/:courseId
@@ -110,7 +111,8 @@ router.post("/:quizId/performance", quizController.recordPerformanceHandler);
  * POST /api/quiz/:quizId/question/:questionId/check
  * Check if a selected answer is correct (secure server-side validation)
  */
-router.post("/:quizId/question/:questionId/check", quizController.checkQuestionAnswerHandler);
+// checkLimiter: this endpoint can trigger a paid LLM grading call per request.
+router.post("/:quizId/question/:questionId/check", checkLimiter, quizController.checkQuestionAnswerHandler);
 
 /**
  * GET /api/quiz/:quizId/scores

@@ -14,6 +14,7 @@
 
 const settingsService = require("./settings");
 const { generateStructured } = require("../utils/structured-llm");
+const { gradingLimiter } = require("../utils/grading-limiter");
 const {
     OPEN_ENDED_GRADING_SCHEMA,
     FILL_IN_THE_BLANK_GRADING_SCHEMA,
@@ -67,12 +68,15 @@ const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleA
         gradingCriteria: gradingCriteria || "No explicit rubric provided — grade against the key concepts required by the question and demonstrated in the sample answer.",
     });
 
-    const { content } = await generateStructured({
+    // Limited: caps concurrent provider calls, times out hung ones, and
+    // retries 429s with backoff so a quiz-window burst doesn't silently
+    // convert a class's answers to manual grading.
+    const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: OPEN_ENDED_GRADING_SCHEMA,
         temperature: 0.1,
         schemaName: "open_ended_grading",
-    });
+    }));
 
     const result = JSON.parse(content);
     return {
@@ -113,12 +117,12 @@ const gradeFillInTheBlankAnswer = async ({ courseId, question, studentAnswer, co
         acceptableAnswers: alternatives.length > 0 ? alternatives.join("; ") : "(none)",
     });
 
-    const { content } = await generateStructured({
+    const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: FILL_IN_THE_BLANK_GRADING_SCHEMA,
         temperature: 0.1,
         schemaName: "fill_in_the_blank_grading",
-    });
+    }));
 
     const result = JSON.parse(content);
     return {

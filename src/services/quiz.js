@@ -258,6 +258,41 @@ const getQuizQuestions = async (quizId, approvedOnly = false) => {
     }
 };
 
+/**
+ * Approved-question counts for many quizzes in two queries (dashboard overview).
+ * Replaces one full getQuizQuestions load per quiz — the overview only needs
+ * counts, never question content.
+ * @param {Array<string>} quizIds
+ * @returns {Promise<Map<string, number>>} quizId -> approved question count
+ */
+const getApprovedQuestionCountsForQuizzes = async (quizIds) => {
+    const db = await databaseService.connect();
+    const ids = (quizIds || []).filter(id => ObjectId.isValid(id)).map(id => new ObjectId(id));
+    const counts = new Map();
+    if (ids.length === 0) return counts;
+
+    const mappings = await db.collection("grasp_quiz_question")
+        .find({ quizId: { $in: ids } })
+        .project({ quizId: 1, questionId: 1 })
+        .toArray();
+    if (mappings.length === 0) return counts;
+
+    const questionIds = [...new Set(mappings.map(m => String(m.questionId)))]
+        .map(id => new ObjectId(id));
+    const approved = await db.collection("grasp_question")
+        .find({ _id: { $in: questionIds }, status: "Approved" })
+        .project({ _id: 1 })
+        .toArray();
+    const approvedIds = new Set(approved.map(q => String(q._id)));
+
+    mappings.forEach(m => {
+        if (!approvedIds.has(String(m.questionId))) return;
+        const key = String(m.quizId);
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+};
+
 const BLOOM_ORDER = BLOOM_LEVELS;
 
 /**
@@ -333,12 +368,16 @@ const getPhase1Questions = async (quizId, userId) => {
     if (!bankQuestions || bankQuestions.length === 0) return [];
 
     const attemptCollection = db.collection("grasp_student_attempt");
+    // Bounded by course: a student's attempt history grows across every course
+    // and term, so an unbounded userId scan gets slower forever. Seen-question
+    // ranking only cares about this course anyway (uses the userId+courseId index).
     const userAttempts = await attemptCollection.find({
-        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId
+        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
     }).project({ questionId: 1 }).toArray();
     const seenQuestionIds = new Set(userAttempts.map(p => p.questionId.toString()));
 
-    const loIds = [...new Set(bankQuestions.map(q => 
+    const loIds = [...new Set(bankQuestions.map(q =>
         q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString()
     ).filter(Boolean))];
 
@@ -441,8 +480,10 @@ const getPhase2Questions = async (quizId, userId) => {
     if (remediationLOs.length === 0) return [];
 
     const attemptCollection = db.collection("grasp_student_attempt");
+    // Bounded by course — see the note in getPhase1Questions.
     const userAttempts = await attemptCollection.find({
-        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId
+        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
     }).project({ questionId: 1 }).toArray();
     const seenQuestionIds = new Set(userAttempts.map(p => p.questionId.toString()));
 
@@ -529,8 +570,10 @@ const getPhase3Questions = async (quizId, userId) => {
     const enrichedHistorical = await enrichQuestionsWithLO(historicalQuestions);
 
     const attemptCollection = db.collection("grasp_student_attempt");
+    // Bounded by course — see the note in getPhase1Questions.
     const userAttempts = await attemptCollection.find({
-        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId
+        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
     }).project({ questionId: 1 }).toArray();
     const seenQuestionIds = new Set(userAttempts.map(p => p.questionId.toString()));
 
@@ -746,7 +789,17 @@ const saveStudentPerformance = async (performanceData) => {
             isFirstAttempt: true,
             createdAt: new Date()
         };
-        const attemptResult = await attemptCollection.insertOne(attemptData);
+        let attemptResult;
+        try {
+            attemptResult = await attemptCollection.insertOne(attemptData);
+        } catch (error) {
+            // Unique (userId, quizId, questionId) index: a concurrent request
+            // already recorded this attempt — first answer wins, return it.
+            if (error?.code === 11000) {
+                return await attemptCollection.findOne({ userId: userIdObj, quizId: quizIdObj, questionId: questionIdObj });
+            }
+            throw error;
+        }
 
         if (loIdentifier && courseId && performanceData.isCorrect !== null) {
             const performanceCollection = db.collection("grasp_student_performance");
@@ -1044,9 +1097,10 @@ const getQuizScores = async (quizId) => {
         }).toArray();
         
         // 4. Map students to their scores
+        const scoresByUserId = new Map(scores.map(s => [s.userId.toString(), s]));
         const result = studentsInCourse.map(student => {
             const userStrId = student.userId.toString();
-            const scoreRecord = scores.find(s => s.userId.toString() === userStrId);
+            const scoreRecord = scoresByUserId.get(userStrId);
             
             return {
                 _id: scoreRecord ? scoreRecord._id : null,
@@ -1194,6 +1248,7 @@ module.exports = {
     addQuestionsToQuiz,
     getQuizQuestions,
     getQuizQuestionsForStudent,
+    getApprovedQuestionCountsForQuizzes,
     saveStudentPerformance,
     saveQuizScore,
     enrichQuestionsWithLO,
