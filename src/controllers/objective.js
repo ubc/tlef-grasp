@@ -1,7 +1,7 @@
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
-const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, deleteObjective } = require('../services/objective');
+const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
@@ -215,7 +215,7 @@ const updateObjectiveMaterials = async (req, res) => {
 const updateObjectiveHandler = async (req, res) => {
   try {
     const objectiveId = req.params.id;
-    const { name, granularObjectives, materialIds, courseId } = req.body;
+    const { name, granularObjectives, materialIds, courseId, questionAction } = req.body;
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
@@ -241,6 +241,9 @@ const updateObjectiveHandler = async (req, res) => {
     if (courseId !== undefined) {
       updateData.courseId = courseId;
     }
+    if (questionAction === 'delete' || questionAction === 'keep') {
+      updateData.questionAction = questionAction;
+    }
 
     const result = await updateObjective(objectiveId, updateData);
 
@@ -264,9 +267,36 @@ const updateObjectiveHandler = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/objective/:id/deletion-impact
+ * Report how many questions (and which quizzes) would be affected by deleting
+ * this learning objective, so the client can prompt the instructor first.
+ */
+const getObjectiveDeletionImpactHandler = async (req, res) => {
+  try {
+    const objectiveId = req.params.id;
+    const courseId = await getObjectiveCourseId(objectiveId);
+
+    if (courseId && !(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
+    const impact = await getObjectiveDeletionImpact(objectiveId);
+    res.json({ success: true, ...impact });
+  } catch (error) {
+    console.error('Error computing objective deletion impact:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to compute deletion impact',
+    });
+  }
+};
+
 const deleteObjectiveHandler = async (req, res) => {
   try {
     const objectiveId = req.params.id;
+    // Instructor's explicit choice for linked questions: 'delete' or 'keep'.
+    const questionAction = req.query.questionAction === 'delete' ? 'delete' : 'keep';
 
     // We still need to verify course permission for deletion.
     const courseId = await getObjectiveCourseId(objectiveId);
@@ -277,7 +307,7 @@ const deleteObjectiveHandler = async (req, res) => {
     if (courseId && !(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
-    await deleteObjective(objectiveId);
+    await deleteObjective(objectiveId, questionAction);
 
     res.json({
       success: true,
@@ -306,5 +336,6 @@ module.exports = {
   getObjectiveMaterials,
   updateObjectiveMaterials,
   updateObjectiveHandler,
+  getObjectiveDeletionImpactHandler,
   deleteObjectiveHandler
 };

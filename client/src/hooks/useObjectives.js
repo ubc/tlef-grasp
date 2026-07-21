@@ -35,6 +35,18 @@ export function useDetailedObjectives(courseId, { enabled = true } = {}) {
   return { ...query, objectives: query.data || [] };
 }
 
+// How many questions (and which quizzes) would be affected by deleting a
+// learning objective or granular objective. Used to prompt the instructor.
+export function useObjectiveDeletionImpact(objectiveId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["objectiveDeletionImpact", objectiveId],
+    queryFn: () => api.get(`/api/objective/${objectiveId}/deletion-impact`),
+    enabled: !!objectiveId && enabled,
+    staleTime: 0,
+    gcTime: 0,
+  });
+}
+
 export function useInvalidateObjectives(courseId) {
   const queryClient = useQueryClient();
   return () => {
@@ -72,8 +84,9 @@ export function useSaveObjective(courseId, options) {
 export function useDeleteObjective(courseId, options) {
   const invalidate = useInvalidateObjectives(courseId);
   return useMutation({
-    mutationFn: async (objectiveId) => {
-      const data = await api.delete(`/api/objective/${objectiveId}`);
+    mutationFn: async ({ objectiveId, questionAction } = {}) => {
+      const qs = questionAction ? `?questionAction=${questionAction}` : "";
+      const data = await api.delete(`/api/objective/${objectiveId}${qs}`);
       if (!data.success) {
         throw new Error(data.error || "Failed to delete objective");
       }
@@ -91,10 +104,11 @@ export function useDeleteObjective(courseId, options) {
 export function useUpdateGranularObjectives(courseId, options) {
   const invalidate = useInvalidateObjectives(courseId);
   return useMutation({
-    mutationFn: async ({ objectiveId, granularObjectives }) => {
+    mutationFn: async ({ objectiveId, granularObjectives, questionAction }) => {
       const data = await api.put(`/api/objective/${objectiveId}`, {
         granularObjectives,
         courseId,
+        ...(questionAction ? { questionAction } : {}),
       });
       if (!data.success) {
         throw new Error(data.error || "Failed to update objective");

@@ -1,16 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   useUpdateQuestion,
   useBulkUpdateQuestions,
   useBulkDeleteQuestions,
 } from "../../hooks/useQuestions";
+import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useToast } from "../../components/ui/Toast";
-import { ConfirmModal } from "../../components/ui/Modal";
+import Modal, { ConfirmModal } from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
 import {
   toStringId,
+  getObjectId,
   formatQuestionTypeLabel,
   QUESTION_TYPE_CHIP_CLASSES,
 } from "../../lib/utils";
@@ -182,10 +184,87 @@ function BulkActionBar({ selectedCount, busy, onAction, onDelete }) {
   );
 }
 
+// Attach a new learning objective to an orphaned question. Re-attaching clears
+// the orphaned state on the server and re-enables approval.
+function ReassignObjectiveModal({ open, question, objectives, onClose, onConfirm, isSubmitting }) {
+  const [granularId, setGranularId] = useState("");
+
+  useEffect(() => {
+    if (open) setGranularId("");
+  }, [open, question?.id]);
+
+  const hasOptions = objectives.some((o) => (o.granular || []).length > 0);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Attach Learning Objective"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!granularId || isSubmitting}
+            onClick={() => onConfirm(granularId)}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {isSubmitting ? "Attaching..." : "Attach & restore"}
+          </button>
+        </>
+      }
+    >
+      <p className="mb-3 text-sm text-ink">
+        This question has no learning objective attached. Pick a granular
+        objective to attach it to — the question will leave the orphaned state
+        and can be approved again.
+      </p>
+      {hasOptions ? (
+        <select
+          value={granularId}
+          onChange={(event) => setGranularId(event.target.value)}
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"
+        >
+          <option value="">Select a granular objective…</option>
+          {objectives.map((objective) => {
+            const granular = objective.granular || [];
+            if (granular.length === 0) return null;
+            return (
+              <optgroup key={objective.id} label={objective.name}>
+                {granular.map((g) => {
+                  const gId = getObjectId(g);
+                  return (
+                    <option key={gId} value={gId}>
+                      {g.name || g.text || "Unnamed granular objective"}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            );
+          })}
+        </select>
+      ) : (
+        <p className="rounded-lg border border-dashed border-gray-200 bg-page px-4 py-3 text-sm text-muted">
+          No granular objectives are available in this course. Create one in the
+          Objectives tab first, then attach this question to it.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 export default function QuestionsTab({ courseId, isFaculty }) {
   const showToast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const { questions, quizzes, objectives, isPending } = useQuestionBankData(courseId);
+  // Detailed objectives (with granular children) power the reassign picker.
+  const { objectives: detailedObjectives } = useDetailedObjectives(courseId);
 
   const filters = {
     quiz: searchParams.get("quiz") || "all",
@@ -214,6 +293,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [sort, setSort] = useState({ key: "title", dir: "asc" });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editTarget, setEditTarget] = useState(null);
+  const [reassignTarget, setReassignTarget] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   // Inline flag-reason drafts, keyed by question id and persisted on blur.
@@ -356,6 +436,17 @@ export default function QuestionsTab({ courseId, isFaculty }) {
       successMessage: `Question ${approve ? "approved" : "unapproved"} successfully`,
       errorMessage: "Failed to update question status",
     });
+  };
+
+  const confirmReassign = (granularObjectiveId) => {
+    if (!reassignTarget || !granularObjectiveId) return;
+    updateMutation.mutate({
+      questionId: reassignTarget.id,
+      updates: { granularObjectiveId },
+      successMessage: "Learning objective attached; question restored to Draft",
+      errorMessage: "Failed to attach learning objective",
+    });
+    setReassignTarget(null);
   };
 
   /* ----------------------------- Derived data ---------------------------- */
@@ -633,7 +724,16 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                             {canEdit ? "View/Edit" : "View Only"}
                           </button>
                           {isFaculty &&
-                            ((question.status || "").toLowerCase() === "approved" ? (
+                            (question.orphaned ? (
+                              <button
+                                type="button"
+                                title="This question has no learning objective. Attach one to enable approval."
+                                onClick={() => setReassignTarget(question)}
+                                className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-200"
+                              >
+                                <i className="fas fa-link" /> Attach objective
+                              </button>
+                            ) : (question.status || "").toLowerCase() === "approved" ? (
                               <button
                                 type="button"
                                 title="Unapprove Question"
@@ -750,6 +850,15 @@ export default function QuestionsTab({ courseId, isFaculty }) {
           onClose={() => setShowAddWizard(false)}
         />
       )}
+
+      <ReassignObjectiveModal
+        open={!!reassignTarget}
+        question={reassignTarget}
+        objectives={detailedObjectives}
+        onClose={() => setReassignTarget(null)}
+        onConfirm={confirmReassign}
+        isSubmitting={updateMutation.isPending}
+      />
 
       <ConfirmModal
         open={confirmBulkDelete}
