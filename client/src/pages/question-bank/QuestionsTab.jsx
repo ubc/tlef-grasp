@@ -611,7 +611,13 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const filtered = useMemo(() => {
     let result = [...questions];
     if (filters.quiz !== "all") {
-      result = result.filter((q) => toStringId(q.quizId) === filters.quiz);
+      const selectedQuiz = quizzes.find(
+        (quiz) => toStringId(quiz._id || quiz.id) === filters.quiz
+      );
+      const selectedQuestionIds = new Set(
+        (selectedQuiz?.questions || []).map(getObjectId)
+      );
+      result = result.filter((question) => selectedQuestionIds.has(question.id));
     }
     if (filters.objective !== "all") {
       result = result.filter((q) => String(q.objectiveId || "") === filters.objective);
@@ -640,7 +646,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
       });
     }
     return result;
-  }, [questions, filters.quiz, filters.objective, filters.bloom, filters.status, filters.flagged, filters.q]);
+  }, [questions, quizzes, filters.quiz, filters.objective, filters.bloom, filters.status, filters.flagged, filters.q]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {

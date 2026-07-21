@@ -66,9 +66,12 @@ export function useQuestionBankData(courseId) {
             const ids = new Set((quiz.questions || []).map(getObjectId));
             questions.forEach((question) => {
               if (ids.has(question.id)) {
-                question.quizId = getObjectId(quiz);
-                question.quizName = quiz.name;
-                question.isInPublishedQuiz = quiz.published || false;
+                const quizId = getObjectId(quiz);
+                if (!question.quizId) {
+                  question.quizId = quizId;
+                  question.quizName = quiz.name;
+                }
+                question.isInPublishedQuiz = question.isInPublishedQuiz || quiz.published || false;
               }
             });
           });

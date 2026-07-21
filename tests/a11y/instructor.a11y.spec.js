@@ -240,7 +240,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await page.goto('/question-bank');
     await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
 
-    await expect(page.getByRole('button', { name: 'Questions' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Questions', exact: true })).toBeVisible();
     await expect(page.getByText(/Michaelis constant|competitive inhibitor/i).first()).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Select all questions' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add New Question' })).toBeVisible();
