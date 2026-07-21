@@ -62,6 +62,7 @@ const getSectionStudents = async (courseId, sectionId) => {
         sectionId: 1,
         puid: '$user.puid',
         displayName: '$user.displayName',
+        legalName: '$user.legalName',
         email: '$user.email',
       },
     },

@@ -7,8 +7,9 @@
 const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
-const { createOrUpdateUser, getUserByPuid } = require('../services/user');
+const { createOrUpdateUser, getUserByPuid, updateUserLegalName } = require('../services/user');
 const { getUserRole, ROLES } = require('../utils/auth');
+const ubcApiService = require('../services/ubcApiService');
 
 // Valid affiliations that can access the application
 const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
@@ -47,6 +48,10 @@ passport.use(
 				profile.email ||
 				profile.nameID;
 
+			// CWL only reliably releases the email to this app (not a name), so the
+			// displayName seed falls back to the email. The authoritative legal
+			// name shown to instructors comes from the academic API during roster
+			// sync (see syncStudentsToCourse), not from CWL.
 			const displayName = profile.attributes?.displayName ||
 				profile.attributes?.cn ||
 				profile['urn:oid:2.16.840.1.113730.3.1.241'] ||
@@ -72,14 +77,36 @@ passport.use(
 			try {
 				let user = await getUserByPuid(ubcEduCwlPuid);
 
+				// CWL releases no usable name to this app, so enrich the
+				// authoritative legal name (and a nicer displayName seed) from
+				// the academic API. Best-effort and only when needed: skipped
+				// once a legal name is known, and never allowed to fail login.
+				let apiPerson = null;
+				if (!user || !user.legalName) {
+					try {
+						apiPerson = await ubcApiService.getPersonByPuid(ubcEduCwlPuid);
+					} catch (lookupError) {
+						console.warn('Academic API legal-name lookup failed:', lookupError.message);
+					}
+				}
+
 				if (null === user) {
 					await createOrUpdateUser({
-						displayName: displayName,
+						// Prefer the academic-API preferred name for the editable
+						// displayName seed; fall back to the CWL value (email).
+						displayName: apiPerson?.preferredName || displayName,
+						legalName: apiPerson?.legalName,
 						email: email,
 						affiliation: affiliations,
 						puid: ubcEduCwlPuid,
 					});
 					user = await getUserByPuid(ubcEduCwlPuid);
+				} else if (apiPerson?.legalName && user.legalName !== apiPerson.legalName) {
+					// Existing user missing a legal name (e.g. an instructor, or a
+					// student who logged in before this field existed): backfill it
+					// without touching their editable displayName.
+					await updateUserLegalName(ubcEduCwlPuid, apiPerson.legalName);
+					user = { ...user, legalName: apiPerson.legalName };
 				}
 
 				// Get user role for session

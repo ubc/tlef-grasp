@@ -20,7 +20,7 @@ const { isFaculty, isStaff } = require('../utils/auth');
 async function canUseEnrollmentCode(user) {
   return (await isFaculty(user)) || (await isStaff(user));
 }
-const { createOrUpdateUser, getUserByPuid } = require('../services/user');
+const { createOrUpdateUser, getUserByPuid, updateUserLegalName } = require('../services/user');
 const ubcApiService = require('../services/ubcApiService');
 const { buildCourseCode, campusDisplaySuffix } = require('../utils/slug');
 
@@ -182,10 +182,16 @@ async function syncStudentsToCourse(courseId, sectionIds, academicPeriod) {
           await createOrUpdateUser({
             puid: s.puid,
             displayName: s.displayName,
+            legalName: s.legalName,
             email: s.email,
             affiliation: ['student'],
           });
           user = await getUserByPuid(s.puid);
+        } else if (s.legalName && user.legalName !== s.legalName) {
+          // Backfill / refresh the authoritative legal name for a student who
+          // already existed (first logged in via CWL, or was synced before this
+          // field existed) without disturbing their editable displayName.
+          await updateUserLegalName(s.puid, s.legalName);
         }
         if (!user) continue;
 

@@ -196,8 +196,10 @@ export default function Users() {
                     const userId = String(
                       user.userId || user._id || user.user?._id || ""
                     );
+                    // Instructor roster: identify people by their authoritative
+                    // legal name, not the editable display name.
                     const displayName =
-                      user.displayName || user.user?.displayName || "Unknown User";
+                      user.legalName || user.user?.legalName || "Unknown User";
                     // Prefer the course-scoped role resolved by the server
                     // (distinguishes TAs); fall back to global affiliations.
                     const role =
