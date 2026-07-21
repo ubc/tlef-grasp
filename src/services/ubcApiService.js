@@ -115,16 +115,84 @@ class UbcApiService {
     const studentIds = [...studentSections.keys()];
     if (studentIds.length === 0) return [];
 
-    const persons = await this.module.getPersonsBy('student_id', studentIds);
+    // The toolkit's getPersonsBy collapses every name into a single
+    // preferredName and drops the person's Legal Name. We read the raw person
+    // records instead so we can keep BOTH: the preferred name (seeds the
+    // student-editable displayName) and the authoritative legal name (shown to
+    // instructors, issue #75).
+    const persons = await this.getRawPersonsBy('student_id', studentIds);
 
-    return persons.map((p) => ({
+    return persons.map((p) => reshapePerson(p, 'student_id')).map((p) => ({
       puid: p.puid,
-      id: p.ID,
+      id: p.id,
       displayName: p.preferredName,
+      legalName: p.legalName,
       email: p.email,
-      sectionIds: studentSections.has(p.ID) ? [...studentSections.get(p.ID)] : [],
+      sectionIds: studentSections.has(p.id) ? [...studentSections.get(p.id)] : [],
     }));
+  }
+
+  // A single person's names/email by PUID, reshaped to expose the legal name.
+  // Used to enrich a user's authoritative name at login (CWL releases no usable
+  // name to this app). Returns null when the person can't be resolved.
+  async getPersonByPuid(puid) {
+    if (!puid) return null;
+    const persons = await this.module.getPersonsByPuid(puid);
+    if (!Array.isArray(persons) || persons.length === 0) return null;
+    return reshapePerson(persons[0], 'puid');
+  }
+
+  // Raw person lookup by identifier, chunked to the API's batch limit. Returns
+  // unnormalised Person records so callers can read fields (like the Legal Name
+  // entry) that the toolkit's normalized shape discards.
+  async getRawPersonsBy(idType, ids = []) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const CHUNK_SIZE = 50;
+    const out = [];
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + CHUNK_SIZE);
+      const persons = await this.module.raw.getPersons({ [idType]: chunk });
+      if (Array.isArray(persons)) out.push(...persons);
+    }
+    return out;
   }
 }
 
+// Flatten a raw person record, keeping the preferred name (Preferred Name entry,
+// else the first available name) and the legal name (Legal Name entry) as
+// separate values. Mirrors the toolkit's email (Work, then Personal) and ID
+// resolution so the reshaped record is a superset of the normalized one.
+function reshapePerson(person, idType) {
+  const names = Array.isArray(person.personNames) ? person.personNames : [];
+  const joinName = (n) => (n ? `${n.givenName || ''} ${n.familyName || ''}`.trim() : '');
+  const preferred = names.find((n) => n.nameType === 'Preferred Name');
+  const legal = names.find((n) => n.nameType === 'Legal Name');
+
+  let id = person.puid;
+  if (idType === 'student_id') {
+    id = person.identifiers?.find((i) => i.identifierType === 'Student_ID')?.identifier || '';
+  } else if (idType === 'employee_id') {
+    id = person.identifiers?.find((i) => i.identifierType === 'Employee_ID')?.identifier || '';
+  }
+
+  let email = '';
+  let personalEmail = '';
+  for (const e of person.communicationChannels?.emails || []) {
+    if (e.channelType === 'Work') { email = e.emailAddress; break; }
+    if (e.channelType === 'Personal') personalEmail = e.emailAddress;
+  }
+
+  return {
+    puid: person.puid,
+    id,
+    // Preferred name if the person set one, otherwise the first available name
+    // (which, for a legal-name-only record, is the legal name).
+    preferredName: joinName(preferred) || joinName(names[0]),
+    legalName: joinName(legal),
+    email: email || personalEmail,
+  };
+}
+
 module.exports = new UbcApiService();
+// Exported for unit testing the name-splitting logic in isolation.
+module.exports.reshapePerson = reshapePerson;

@@ -9,20 +9,33 @@ async function createOrUpdateUser(userData) {
         const db = await databaseService.connect();
 
         const collection = db.collection("grasp_user");
-        const user = {
+        // Fields refreshed from the identity source on every upsert.
+        const set = {
             puid: userData.puid,
-            displayName: userData.displayName,
             email: userData.email,
             affiliation: userData.affiliation,
             updatedAt: new Date(),
         };
+        // legalName is the authoritative CWL/IAM name shown to instructors.
+        // Refresh it whenever the caller supplies one.
+        if (userData.legalName !== undefined) {
+            set.legalName = userData.legalName;
+        }
+
+        const setOnInsert = { registeredAt: new Date() };
+        // displayName is the student-editable preferred name: seed it when the
+        // user is first created, but never overwrite a student's later edits on
+        // re-login or roster re-sync.
+        if (userData.displayName !== undefined) {
+            setOnInsert.displayName = userData.displayName;
+        }
 
         // Use upsert to update existing user or create new one
         const result = await collection.updateOne(
             { puid: userData.puid },
             {
-                $set: user,
-                $setOnInsert: { registeredAt: new Date() }
+                $set: set,
+                $setOnInsert: setOnInsert,
             },
             { upsert: true }
         );
@@ -44,6 +57,39 @@ async function getUserByPuid(puid) {
         console.error("Error getting user by PUID:", error);
         throw error;
     }
+}
+
+/**
+ * Update a user's name fields directly by PUID. Kept separate from
+ * createOrUpdateUser so a returning login can refresh the authoritative legal
+ * name (and, when a displayName was never personalized, upgrade it) without
+ * touching email or affiliation (which may carry a TA promotion granted outside
+ * of SAML). Only the provided fields are written.
+ * @param {string} puid - CWL PUID
+ * @param {{ displayName?: string, legalName?: string }} names
+ */
+async function updateUserNames(puid, names = {}) {
+    try {
+        if (!puid) throw new Error("Puid is required");
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user");
+        const set = { updatedAt: new Date() };
+        if (names.displayName !== undefined) set.displayName = names.displayName;
+        if (names.legalName !== undefined) set.legalName = names.legalName;
+        return collection.updateOne({ puid }, { $set: set });
+    } catch (error) {
+        console.error("Error updating user names:", error);
+        throw error;
+    }
+}
+
+/**
+ * Refresh only the authoritative CWL/IAM legal name for an existing user.
+ * @param {string} puid - CWL PUID
+ * @param {string} legalName - Authoritative name from the identity provider
+ */
+function updateUserLegalName(puid, legalName) {
+    return updateUserNames(puid, { legalName });
 }
 
 async function getUserById(userId) {
@@ -299,6 +345,8 @@ module.exports = {
     createOrUpdateUser,
     getUserByPuid,
     getUserById,
+    updateUserLegalName,
+    updateUserNames,
     grantPromotedStaffAffiliation,
     revokePromotedStaffAffiliation,
     updateUserProfile,

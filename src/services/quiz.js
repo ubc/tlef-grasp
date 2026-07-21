@@ -1184,7 +1184,9 @@ const getQuizScores = async (quizId) => {
                 totalQuestions: scoreRecord ? scoreRecord.totalQuestions : null,
                 timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
-                studentName: student.displayName || student.puid || 'Unknown Student',
+                // Instructor grading view: show the student's authoritative legal
+                // name, not their editable display name.
+                studentName: student.legalName || student.puid || 'Unknown Student',
                 studentEmail: student.email || '-',
                 sections: Array.isArray(student.sections) ? student.sections : [],
                 disputedCount: disputedByUserId.get(userStrId) || 0

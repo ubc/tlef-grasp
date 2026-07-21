@@ -239,6 +239,7 @@ const getCourseUsers = async (courseId) => {
                     // Include all user fields at top level for easier access
                     puid: "$user.puid",
                     displayName: "$user.displayName",
+                    legalName: "$user.legalName",
                     email: "$user.email",
                     affiliation: "$user.affiliation",
                     registeredAt: "$user.registeredAt",
