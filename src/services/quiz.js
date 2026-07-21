@@ -222,6 +222,79 @@ const addQuestionsToQuiz = async (quizId, questionIds) => {
 };
 
 /**
+ * Add questions that already exist in the course question bank to a quiz.
+ * Unlike the generation path, this verifies that every question belongs to the
+ * quiz's course, is not orphaned, and has not already been added.
+ */
+const addExistingQuestionsToQuiz = async (quizId, courseId, questionIds) => {
+    const db = await databaseService.connect();
+    const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    const requestedIds = [...new Set((questionIds || []).map(String))]
+        .filter(ObjectId.isValid)
+        .map((id) => new ObjectId(id));
+
+    if (requestedIds.length === 0) {
+        return { insertedCount: 0, skippedCount: 0 };
+    }
+
+    const candidateQuestions = await db.collection("grasp_question")
+        .find({
+            _id: { $in: requestedIds },
+            courseId: courseIdObj,
+            orphaned: { $ne: true },
+        })
+        .project({ _id: 1, granularObjectiveId: 1 })
+        .toArray();
+    const granularIds = [...new Set(
+        candidateQuestions
+            .map((question) => question.granularObjectiveId)
+            .filter(Boolean)
+            .map(String)
+    )]
+        .filter(ObjectId.isValid)
+        .map((id) => new ObjectId(id));
+    const validGranularObjectives = granularIds.length > 0
+        ? await db.collection("grasp_objective")
+            .find({
+                _id: { $in: granularIds },
+                courseId: courseIdObj,
+                parent: { $ne: 0 },
+            })
+            .project({ _id: 1 })
+            .toArray()
+        : [];
+    const validGranularIds = new Set(validGranularObjectives.map((objective) => String(objective._id)));
+    const eligibleIds = candidateQuestions
+        .filter((question) => validGranularIds.has(String(question.granularObjectiveId)))
+        .map((question) => question._id);
+
+    const existingMappings = eligibleIds.length > 0
+        ? await db.collection("grasp_quiz_question")
+            .find({ quizId: quizIdObj, questionId: { $in: eligibleIds } })
+            .project({ questionId: 1 })
+            .toArray()
+        : [];
+    const existingIds = new Set(existingMappings.map((mapping) => String(mapping.questionId)));
+    const questionIdsToInsert = eligibleIds.filter((id) => !existingIds.has(String(id)));
+
+    if (questionIdsToInsert.length > 0) {
+        await db.collection("grasp_quiz_question").insertMany(
+            questionIdsToInsert.map((questionId) => ({
+                quizId: quizIdObj,
+                questionId,
+                createdAt: new Date(),
+            }))
+        );
+    }
+
+    return {
+        insertedCount: questionIdsToInsert.length,
+        skippedCount: requestedIds.length - questionIdsToInsert.length,
+    };
+};
+
+/**
  * Get all questions for a quiz (Instructors)
  * @param {string} quizId - The ID of the quiz
  * @param {boolean} approvedOnly - Whether to only return approved questions
@@ -1326,6 +1399,7 @@ module.exports = {
     updateQuiz,
     deleteQuiz,
     addQuestionsToQuiz,
+    addExistingQuestionsToQuiz,
     getQuizQuestions,
     getQuizQuestionsForStudent,
     getApprovedQuestionCountsForQuizzes,

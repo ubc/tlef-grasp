@@ -254,6 +254,20 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await expectNoA11yViolations(page, { disableRules: ['label'] });
   });
 
+  test('add-existing-questions dialog has no blocking axe violations', async ({ page }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/question-bank');
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
+    await page.getByRole('button', { name: 'Add Existing Questions' }).click();
+
+    const dialog = page.getByRole('dialog', {
+      name: `Add existing questions to ${SEED.QUIZ_NAME}`,
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Search questions')).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
+  });
+
   test('add-question wizard AI branch has no blocking axe violations', async ({
     page,
   }) => {

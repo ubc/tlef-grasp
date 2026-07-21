@@ -17,6 +17,7 @@ export function useQuestionBankData(courseId) {
           title: question.title || question.stem || "",
           stem: question.stem || question.title || "",
           objectiveId,
+          hasGranularObjective: Boolean(question.granularObjectiveId),
           glo: objectiveId || "",
           bloom: question.bloom || question.bloomLevel || "Understand",
           questionType: normalizeQuestionTypeKey(question.questionType || question.type),

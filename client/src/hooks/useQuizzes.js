@@ -108,6 +108,21 @@ export function useDeleteQuiz(courseId, options) {
   });
 }
 
+export function useAddExistingQuestionsToQuiz(courseId, options) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateQuizzes(courseId);
+  return useMutation({
+    mutationFn: ({ quizId, questionIds }) =>
+      api.post(`/api/quiz/${quizId}/existing-questions`, { questionIds }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.questionBank(courseId) });
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 // Per-section release/expire schedule for one quiz (instructor editor).
 export function useQuizSchedules(quizId, { enabled = true } = {}) {
   const query = useQuery({

@@ -4,6 +4,7 @@ jest.mock('../../src/services/database', () => ({
 
 const databaseService = require('../../src/services/database');
 const quizService = require('../../src/services/quiz');
+const { ObjectId } = require('mongodb');
 
 describe('quiz service settings', () => {
   let collection;
@@ -72,6 +73,78 @@ describe('quiz service settings', () => {
     expect(collection.insertOne).toHaveBeenCalledWith(
       expect.objectContaining({ timeLimitMinutes: 90 })
     );
+  });
+});
+
+describe('addExistingQuestionsToQuiz', () => {
+  it('adds only live, same-course questions with a valid granular objective and skips duplicates', async () => {
+    const courseId = new ObjectId();
+    const quizId = new ObjectId();
+    const newQuestionId = new ObjectId();
+    const existingQuestionId = new ObjectId();
+    const invalidQuestionId = new ObjectId();
+    const granularId = new ObjectId();
+
+    const questionCursor = {
+      project: jest.fn(),
+      toArray: jest.fn().mockResolvedValue([
+        { _id: newQuestionId, granularObjectiveId: granularId },
+        { _id: existingQuestionId, granularObjectiveId: granularId },
+      ]),
+    };
+    questionCursor.project.mockReturnValue(questionCursor);
+    const objectiveCursor = {
+      project: jest.fn(),
+      toArray: jest.fn().mockResolvedValue([{ _id: granularId }]),
+    };
+    objectiveCursor.project.mockReturnValue(objectiveCursor);
+    const mappingCursor = {
+      project: jest.fn(),
+      toArray: jest.fn().mockResolvedValue([{ questionId: existingQuestionId }]),
+    };
+    mappingCursor.project.mockReturnValue(mappingCursor);
+    const questionCollection = {
+      find: jest.fn().mockReturnValue(questionCursor),
+    };
+    const objectiveCollection = {
+      find: jest.fn().mockReturnValue(objectiveCursor),
+    };
+    const quizQuestionCollection = {
+      find: jest.fn().mockReturnValue(mappingCursor),
+      insertMany: jest.fn().mockResolvedValue({ insertedCount: 1 }),
+    };
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) => {
+        if (name === 'grasp_question') return questionCollection;
+        if (name === 'grasp_objective') return objectiveCollection;
+        if (name === 'grasp_quiz_question') return quizQuestionCollection;
+        throw new Error(`Unexpected collection: ${name}`);
+      }),
+    });
+
+    await expect(
+      quizService.addExistingQuestionsToQuiz(
+        quizId.toString(),
+        courseId.toString(),
+        [newQuestionId.toString(), existingQuestionId.toString(), invalidQuestionId.toString()]
+      )
+    ).resolves.toEqual({ insertedCount: 1, skippedCount: 2 });
+
+    expect(questionCollection.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        courseId,
+        orphaned: { $ne: true },
+      })
+    );
+    expect(objectiveCollection.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        courseId,
+        parent: { $ne: 0 },
+      })
+    );
+    expect(quizQuestionCollection.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({ quizId, questionId: newQuestionId, createdAt: expect.any(Date) }),
+    ]);
   });
 });
 
