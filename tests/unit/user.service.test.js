@@ -8,7 +8,7 @@ jest.mock('../../src/services/database', () => ({
 }));
 
 const databaseService = require('../../src/services/database');
-const { createOrUpdateUser, updateUserLegalName } = require('../../src/services/user');
+const { createOrUpdateUser, updateUserLegalName, updateUserNames } = require('../../src/services/user');
 
 describe('user service name fields', () => {
   let userCollection;
@@ -80,6 +80,31 @@ describe('user service name fields', () => {
 
     it('requires a puid', async () => {
       await expect(updateUserLegalName('', 'X')).rejects.toThrow('Puid is required');
+      expect(userCollection.updateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUserNames', () => {
+    it('writes only the name fields it was given (displayName upgrade)', async () => {
+      await updateUserNames('PUID-4', { displayName: 'Bianca Professor' });
+
+      const [filter, update] = userCollection.updateOne.mock.calls[0];
+      expect(filter).toEqual({ puid: 'PUID-4' });
+      expect(update.$set.displayName).toBe('Bianca Professor');
+      expect(update.$set).not.toHaveProperty('legalName');
+      expect(update.$set).not.toHaveProperty('email');
+    });
+
+    it('can update displayName and legalName together', async () => {
+      await updateUserNames('PUID-5', { displayName: 'Robbie Sage', legalName: 'Robin Sageata' });
+
+      const [, update] = userCollection.updateOne.mock.calls[0];
+      expect(update.$set.displayName).toBe('Robbie Sage');
+      expect(update.$set.legalName).toBe('Robin Sageata');
+    });
+
+    it('requires a puid', async () => {
+      await expect(updateUserNames('', { legalName: 'X' })).rejects.toThrow('Puid is required');
       expect(userCollection.updateOne).not.toHaveBeenCalled();
     });
   });

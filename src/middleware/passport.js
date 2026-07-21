@@ -7,7 +7,7 @@
 const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
-const { createOrUpdateUser, getUserByPuid, updateUserLegalName } = require('../services/user');
+const { createOrUpdateUser, getUserByPuid, updateUserNames } = require('../services/user');
 const { getUserRole, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
 
@@ -78,15 +78,18 @@ passport.use(
 				let user = await getUserByPuid(ubcEduCwlPuid);
 
 				// CWL releases no usable name to this app, so enrich the
-				// authoritative legal name (and a nicer displayName seed) from
-				// the academic API. Best-effort and only when needed: skipped
-				// once a legal name is known, and never allowed to fail login.
+				// authoritative legal name and the displayName from the academic
+				// API. Best-effort (never allowed to fail login) and only fetched
+				// when something still needs it: a missing legal name, or a
+				// displayName the user never personalized (still their email).
+				// A displayName the user actually chose is left untouched.
+				const displayNameNeverSet = user && (!user.displayName || user.displayName === user.email);
 				let apiPerson = null;
-				if (!user || !user.legalName) {
+				if (!user || !user.legalName || displayNameNeverSet) {
 					try {
 						apiPerson = await ubcApiService.getPersonByPuid(ubcEduCwlPuid);
 					} catch (lookupError) {
-						console.warn('Academic API legal-name lookup failed:', lookupError.message);
+						console.warn('Academic API name lookup failed:', lookupError.message);
 					}
 				}
 
@@ -101,12 +104,22 @@ passport.use(
 						puid: ubcEduCwlPuid,
 					});
 					user = await getUserByPuid(ubcEduCwlPuid);
-				} else if (apiPerson?.legalName && user.legalName !== apiPerson.legalName) {
-					// Existing user missing a legal name (e.g. an instructor, or a
-					// student who logged in before this field existed): backfill it
-					// without touching their editable displayName.
-					await updateUserLegalName(ubcEduCwlPuid, apiPerson.legalName);
-					user = { ...user, legalName: apiPerson.legalName };
+				} else if (apiPerson) {
+					// Existing user: backfill the legal name, and upgrade a
+					// never-personalized displayName (still the email fallback) to
+					// the proper academic-API name. A displayName the user actually
+					// chose (anything other than their email) is honored, not touched.
+					const updates = {};
+					if (apiPerson.legalName && user.legalName !== apiPerson.legalName) {
+						updates.legalName = apiPerson.legalName;
+					}
+					if (apiPerson.preferredName && displayNameNeverSet && user.displayName !== apiPerson.preferredName) {
+						updates.displayName = apiPerson.preferredName;
+					}
+					if (Object.keys(updates).length > 0) {
+						await updateUserNames(ubcEduCwlPuid, updates);
+						user = { ...user, ...updates };
+					}
 				}
 
 				// Get user role for session

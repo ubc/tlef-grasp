@@ -60,26 +60,36 @@ async function getUserByPuid(puid) {
 }
 
 /**
- * Refresh only the authoritative CWL/IAM legal name for an existing user.
- * Kept separate from createOrUpdateUser so a returning login can keep the
- * legal name fresh without touching the student's editable displayName, email,
- * or affiliation (which may carry a TA promotion granted outside of SAML).
+ * Update a user's name fields directly by PUID. Kept separate from
+ * createOrUpdateUser so a returning login can refresh the authoritative legal
+ * name (and, when a displayName was never personalized, upgrade it) without
+ * touching email or affiliation (which may carry a TA promotion granted outside
+ * of SAML). Only the provided fields are written.
  * @param {string} puid - CWL PUID
- * @param {string} legalName - Authoritative name from the identity provider
+ * @param {{ displayName?: string, legalName?: string }} names
  */
-async function updateUserLegalName(puid, legalName) {
+async function updateUserNames(puid, names = {}) {
     try {
         if (!puid) throw new Error("Puid is required");
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user");
-        return collection.updateOne(
-            { puid },
-            { $set: { legalName, updatedAt: new Date() } }
-        );
+        const set = { updatedAt: new Date() };
+        if (names.displayName !== undefined) set.displayName = names.displayName;
+        if (names.legalName !== undefined) set.legalName = names.legalName;
+        return collection.updateOne({ puid }, { $set: set });
     } catch (error) {
-        console.error("Error updating user legal name:", error);
+        console.error("Error updating user names:", error);
         throw error;
     }
+}
+
+/**
+ * Refresh only the authoritative CWL/IAM legal name for an existing user.
+ * @param {string} puid - CWL PUID
+ * @param {string} legalName - Authoritative name from the identity provider
+ */
+function updateUserLegalName(puid, legalName) {
+    return updateUserNames(puid, { legalName });
 }
 
 async function getUserById(userId) {
@@ -336,6 +346,7 @@ module.exports = {
     getUserByPuid,
     getUserById,
     updateUserLegalName,
+    updateUserNames,
     grantPromotedStaffAffiliation,
     revokePromotedStaffAffiliation,
     updateUserProfile,
