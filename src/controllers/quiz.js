@@ -588,6 +588,43 @@ const addQuizQuestionsHandler = async (req, res) => {
   }
 };
 
+/**
+ * Add existing question-bank questions to a quiz.
+ */
+const addExistingQuizQuestionsHandler = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { questionIds } = req.body || {};
+
+    if (!Array.isArray(questionIds) || questionIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "At least one existing question is required.",
+      });
+    }
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
+    }
+    if (!await isFaculty(req.user) && !await isUserInCourse(req.user._id || req.user.id, quiz.courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, quiz.courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
+
+    const result = await quizService.addExistingQuestionsToQuiz(
+      quizId,
+      quiz.courseId,
+      questionIds
+    );
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Error adding existing questions to quiz:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 
 function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "")
@@ -1402,6 +1439,7 @@ module.exports = {
   updateQuizHandler,
   deleteQuizHandler,
   addQuizQuestionsHandler,
+  addExistingQuizQuestionsHandler,
   getQuizQuestionsHandler,
   recordPerformanceHandler,
   checkQuestionAnswerHandler,

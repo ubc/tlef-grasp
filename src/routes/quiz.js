@@ -95,6 +95,16 @@ router.delete("/:quizId", requireRole(ROLES.FACULTY), quizController.deleteQuizH
 router.post("/:quizId/questions", requireRole(ROLES.FACULTY), quizController.addQuizQuestionsHandler);
 
 /**
+ * POST /api/quiz/:quizId/existing-questions
+ * Add already-saved course questions to a quiz.
+ */
+router.post(
+  "/:quizId/existing-questions",
+  requireRole(ROLES.FACULTY),
+  quizController.addExistingQuizQuestionsHandler
+);
+
+/**
  * GET /api/quiz/:quizId/questions
  * Get all questions in a quiz
  * Query params: approvedOnly (optional) - if true, only return approved questions (for students)

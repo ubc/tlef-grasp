@@ -240,7 +240,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await page.goto('/question-bank');
     await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
 
-    await expect(page.getByRole('button', { name: 'Questions' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Questions', exact: true })).toBeVisible();
     await expect(page.getByText(/Michaelis constant|competitive inhibitor/i).first()).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Select all questions' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add New Question' })).toBeVisible();
@@ -252,6 +252,20 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     // FINDINGS.md Accessibility: QuestionBank filter selects/search input have
     // visible labels/placeholders but no programmatic names.
     await expectNoA11yViolations(page, { disableRules: ['label'] });
+  });
+
+  test('add-existing-questions dialog has no blocking axe violations', async ({ page }) => {
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/question-bank');
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
+    await page.getByRole('button', { name: 'Add Existing Questions' }).click();
+
+    const dialog = page.getByRole('dialog', {
+      name: `Add existing questions to ${SEED.QUIZ_NAME}`,
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Search questions')).toBeVisible();
+    await expectNoA11yViolations(page, { include: '.fixed.inset-0' });
   });
 
   test('add-question wizard AI branch has no blocking axe violations', async ({

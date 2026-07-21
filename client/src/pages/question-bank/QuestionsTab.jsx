@@ -1,16 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   useUpdateQuestion,
   useBulkUpdateQuestions,
   useBulkDeleteQuestions,
 } from "../../hooks/useQuestions";
+import { useAddExistingQuestionsToQuiz } from "../../hooks/useQuizzes";
+import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useToast } from "../../components/ui/Toast";
-import { ConfirmModal } from "../../components/ui/Modal";
+import Modal, { ConfirmModal } from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
 import {
   toStringId,
+  getObjectId,
   formatQuestionTypeLabel,
   QUESTION_TYPE_CHIP_CLASSES,
 } from "../../lib/utils";
@@ -182,10 +185,223 @@ function BulkActionBar({ selectedCount, busy, onAction, onDelete }) {
   );
 }
 
+function AddExistingQuestionsModal({
+  open,
+  quiz,
+  questions,
+  questionIdsInQuiz,
+  onClose,
+  onAdd,
+  isSubmitting,
+}) {
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedIds(new Set());
+    setSearch("");
+  }, [open, quiz?.id, quiz?._id]);
+
+  const visibleQuestions = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return questions
+      .filter((question) => {
+        if (question.orphaned || !question.hasGranularObjective) return false;
+        if (!term) return true;
+        return [question.title, question.stem, question.glo, question.bloom]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term));
+      })
+      .sort(
+        (a, b) =>
+          Number(questionIdsInQuiz.has(a.id)) - Number(questionIdsInQuiz.has(b.id))
+      );
+  }, [questions, search, questionIdsInQuiz]);
+
+  const toggleQuestion = (questionId) => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      return next;
+    });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Add existing questions to ${quiz?.name || "quiz"}`}
+      wide
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0 || isSubmitting}
+            onClick={() => onAdd(Array.from(selectedIds))}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {isSubmitting
+              ? "Adding..."
+              : `Add ${selectedIds.size} question${selectedIds.size === 1 ? "" : "s"}`}
+          </button>
+        </>
+      }
+    >
+      <p className="mb-4 text-sm text-muted">
+        Choose from the existing questions in this course. Questions already in this quiz are unavailable.
+      </p>
+      <label htmlFor="existing-quiz-questions-search" className="mb-1 block text-sm font-semibold text-ink">
+        Search questions
+      </label>
+      <input
+        id="existing-quiz-questions-search"
+        type="search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search question text or learning objective..."
+        className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+      />
+      <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+        {visibleQuestions.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-gray-200 bg-page px-4 py-5 text-center text-sm text-muted">
+            No eligible questions found.
+          </p>
+        ) : (
+          visibleQuestions.map((question) => {
+            const alreadyAdded = questionIdsInQuiz.has(question.id);
+            const checked = selectedIds.has(question.id);
+            return (
+              <label
+                key={question.id}
+                className={`flex items-start gap-3 rounded-xl border p-3 ${
+                  alreadyAdded
+                    ? "cursor-not-allowed border-gray-200 bg-gray-50 opacity-60"
+                    : "cursor-pointer border-gray-200 hover:border-primary/40 hover:bg-primary/5"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={alreadyAdded}
+                  onChange={() => toggleQuestion(question.id)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="min-w-0 flex-1">
+                  <RichText
+                    as="span"
+                    text={escapeHtml(question.title || question.stem || "Untitled question")}
+                    className="block text-sm font-medium text-ink"
+                  />
+                  <span className="mt-1 block text-xs text-muted">
+                    {question.glo || "Learning objective unavailable"}
+                    {question.bloom ? ` · ${question.bloom}` : ""}
+                  </span>
+                </span>
+                {alreadyAdded && (
+                  <span className="shrink-0 rounded-full bg-gray-200 px-2 py-1 text-xs font-semibold text-muted">
+                    Already added
+                  </span>
+                )}
+              </label>
+            );
+          })
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// Attach a new learning objective to an orphaned question. Re-attaching clears
+// the orphaned state on the server and re-enables approval.
+function ReassignObjectiveModal({ open, question, objectives, onClose, onConfirm, isSubmitting }) {
+  const [granularId, setGranularId] = useState("");
+
+  useEffect(() => {
+    if (open) setGranularId("");
+  }, [open, question?.id]);
+
+  const hasOptions = objectives.some((o) => (o.granular || []).length > 0);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Attach Learning Objective"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!granularId || isSubmitting}
+            onClick={() => onConfirm(granularId)}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {isSubmitting ? "Attaching..." : "Attach & restore"}
+          </button>
+        </>
+      }
+    >
+      <p className="mb-3 text-sm text-ink">
+        This question has no learning objective attached. Pick a granular
+        objective to attach it to — the question will leave the orphaned state
+        and can be approved again.
+      </p>
+      {hasOptions ? (
+        <select
+          value={granularId}
+          onChange={(event) => setGranularId(event.target.value)}
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"
+        >
+          <option value="">Select a granular objective…</option>
+          {objectives.map((objective) => {
+            const granular = objective.granular || [];
+            if (granular.length === 0) return null;
+            return (
+              <optgroup key={objective.id} label={objective.name}>
+                {granular.map((g) => {
+                  const gId = getObjectId(g);
+                  return (
+                    <option key={gId} value={gId}>
+                      {g.name || g.text || "Unnamed granular objective"}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            );
+          })}
+        </select>
+      ) : (
+        <p className="rounded-lg border border-dashed border-gray-200 bg-page px-4 py-3 text-sm text-muted">
+          No granular objectives are available in this course. Create one in the
+          Objectives tab first, then attach this question to it.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 export default function QuestionsTab({ courseId, isFaculty }) {
   const showToast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const { questions, quizzes, objectives, isPending } = useQuestionBankData(courseId);
+  // Detailed objectives (with granular children) power the reassign picker.
+  const { objectives: detailedObjectives } = useDetailedObjectives(courseId);
 
   const filters = {
     quiz: searchParams.get("quiz") || "all",
@@ -214,7 +430,9 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [sort, setSort] = useState({ key: "title", dir: "asc" });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editTarget, setEditTarget] = useState(null);
+  const [reassignTarget, setReassignTarget] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false);
+  const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   // Inline flag-reason drafts, keyed by question id and persisted on blur.
   const [reasonDrafts, setReasonDrafts] = useState({});
@@ -256,6 +474,25 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   });
 
   const bulkBusy = bulkUpdateMutation.isPending || bulkDeleteMutation.isPending;
+
+  const activeQuiz = useMemo(
+    () => quizzes.find((quiz) => toStringId(quiz._id || quiz.id) === filters.quiz) || null,
+    [quizzes, filters.quiz]
+  );
+  const questionIdsInActiveQuiz = useMemo(
+    () => new Set((activeQuiz?.questions || []).map((question) => getObjectId(question))),
+    [activeQuiz]
+  );
+  const addExistingQuestionsMutation = useAddExistingQuestionsToQuiz(courseId, {
+    onSuccess: (data) => {
+      showToast(
+        `Added ${data.insertedCount} question${data.insertedCount === 1 ? "" : "s"} to the quiz`,
+        "success"
+      );
+      setShowAddExistingModal(false);
+    },
+    onError: (error) => showToast(error.message || "Failed to add questions to the quiz", "error"),
+  });
 
   const requireFaculty = (action) => {
     if (!isFaculty) {
@@ -358,12 +595,29 @@ export default function QuestionsTab({ courseId, isFaculty }) {
     });
   };
 
+  const confirmReassign = (granularObjectiveId) => {
+    if (!reassignTarget || !granularObjectiveId) return;
+    updateMutation.mutate({
+      questionId: reassignTarget.id,
+      updates: { granularObjectiveId },
+      successMessage: "Learning objective attached; question restored to Draft",
+      errorMessage: "Failed to attach learning objective",
+    });
+    setReassignTarget(null);
+  };
+
   /* ----------------------------- Derived data ---------------------------- */
 
   const filtered = useMemo(() => {
     let result = [...questions];
     if (filters.quiz !== "all") {
-      result = result.filter((q) => toStringId(q.quizId) === filters.quiz);
+      const selectedQuiz = quizzes.find(
+        (quiz) => toStringId(quiz._id || quiz.id) === filters.quiz
+      );
+      const selectedQuestionIds = new Set(
+        (selectedQuiz?.questions || []).map(getObjectId)
+      );
+      result = result.filter((question) => selectedQuestionIds.has(question.id));
     }
     if (filters.objective !== "all") {
       result = result.filter((q) => String(q.objectiveId || "") === filters.objective);
@@ -392,7 +646,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
       });
     }
     return result;
-  }, [questions, filters.quiz, filters.objective, filters.bloom, filters.status, filters.flagged, filters.q]);
+  }, [questions, quizzes, filters.quiz, filters.objective, filters.bloom, filters.status, filters.flagged, filters.q]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -475,6 +729,15 @@ export default function QuestionsTab({ courseId, isFaculty }) {
             >
               <i className="fas fa-plus" /> Add New Question
             </button>
+            {activeQuiz && (
+              <button
+                type="button"
+                onClick={() => setShowAddExistingModal(true)}
+                className="ml-3 inline-flex items-center gap-2 rounded-lg border border-primary px-4 py-2.5 font-medium text-primary transition-colors hover:bg-primary/5"
+              >
+                <i className="fas fa-plus" /> Add Existing Questions
+              </button>
+            )}
           </div>
           <BulkActionBar
             selectedCount={selectedIds.size}
@@ -633,7 +896,16 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                             {canEdit ? "View/Edit" : "View Only"}
                           </button>
                           {isFaculty &&
-                            ((question.status || "").toLowerCase() === "approved" ? (
+                            (question.orphaned ? (
+                              <button
+                                type="button"
+                                title="This question has no learning objective. Attach one to enable approval."
+                                onClick={() => setReassignTarget(question)}
+                                className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-200"
+                              >
+                                <i className="fas fa-link" /> Attach objective
+                              </button>
+                            ) : (question.status || "").toLowerCase() === "approved" ? (
                               <button
                                 type="button"
                                 title="Unapprove Question"
@@ -750,6 +1022,31 @@ export default function QuestionsTab({ courseId, isFaculty }) {
           onClose={() => setShowAddWizard(false)}
         />
       )}
+
+      <AddExistingQuestionsModal
+        open={showAddExistingModal}
+        quiz={activeQuiz}
+        questions={questions}
+        questionIdsInQuiz={questionIdsInActiveQuiz}
+        onClose={() => setShowAddExistingModal(false)}
+        onAdd={(questionIds) =>
+          activeQuiz &&
+          addExistingQuestionsMutation.mutate({
+            quizId: getObjectId(activeQuiz),
+            questionIds,
+          })
+        }
+        isSubmitting={addExistingQuestionsMutation.isPending}
+      />
+
+      <ReassignObjectiveModal
+        open={!!reassignTarget}
+        question={reassignTarget}
+        objectives={detailedObjectives}
+        onClose={() => setReassignTarget(null)}
+        onConfirm={confirmReassign}
+        isSubmitting={updateMutation.isPending}
+      />
 
       <ConfirmModal
         open={confirmBulkDelete}

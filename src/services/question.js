@@ -408,11 +408,46 @@ const updateQuestion = async (questionId, updateData) => {
         }
         if (updateData.granularObjectiveId !== undefined) {
             // Convert granularObjectiveId to ObjectId if it's a string
-            update.granularObjectiveId = updateData.granularObjectiveId 
-                ? (ObjectId.isValid(updateData.granularObjectiveId) 
-                    ? new ObjectId(updateData.granularObjectiveId) 
+            update.granularObjectiveId = updateData.granularObjectiveId
+                ? (ObjectId.isValid(updateData.granularObjectiveId)
+                    ? new ObjectId(updateData.granularObjectiveId)
                     : updateData.granularObjectiveId)
                 : null;
+        }
+
+        // Re-attaching a valid learning objective clears the orphaned state and
+        // re-enables approval; refresh the cached parent (meta LO) id too.
+        const reattaching =
+            updateData.granularObjectiveId !== undefined && update.granularObjectiveId != null;
+        if (reattaching) {
+            update.orphaned = false;
+            update.orphanedAt = null;
+            const granular = await db.collection("grasp_objective").findOne(
+                { _id: update.granularObjectiveId },
+                { projection: { parent: 1 } }
+            );
+            if (granular?.parent && granular.parent !== 0) {
+                update.learningObjectiveId = granular.parent;
+            }
+        }
+
+        // Guard: an orphaned question (no learning objective attached) cannot be
+        // approved until a new objective is re-attached in the same update.
+        const wantsApproval =
+            updateData.status !== undefined &&
+            String(updateData.status).toLowerCase() === "approved";
+        if (wantsApproval && !reattaching) {
+            const current = await collection.findOne(
+                { _id: id },
+                { projection: { orphaned: 1 } }
+            );
+            if (current?.orphaned) {
+                const err = new Error(
+                    "Cannot approve a question that has no learning objective attached."
+                );
+                err.code = "ORPHANED_APPROVAL_BLOCKED";
+                throw err;
+            }
         }
 
         const touchesCalculation =
@@ -510,17 +545,77 @@ const deleteQuestion = async (questionId) => {
 };
 
 /**
+ * Normalize a list of (granular) objective ids to ObjectIds, dropping nullish
+ * entries.
+ * @param {Array<string|ObjectId>} objectiveIds
+ * @returns {Array<ObjectId|string>}
+ */
+const normalizeObjectiveIds = (objectiveIds) =>
+    (objectiveIds || [])
+        .filter((id) => id != null)
+        .map((id) => (ObjectId.isValid(id) ? new ObjectId(id) : id));
+
+/**
+ * Summarize the questions that would be affected if the given granular
+ * objectives were deleted. Powers the pre-delete prompt shown to instructors so
+ * they can make an informed choice about the linked questions. Only live
+ * (non-orphaned) questions are counted — already-orphaned ones are not tied to
+ * these objectives any longer.
+ * @param {Array<string|ObjectId>} granularObjectiveIds
+ * @returns {Promise<{questionCount: number, approvedCount: number, inQuizCount: number, quizNames: string[]}>}
+ */
+const getLinkedQuestionsSummary = async (granularObjectiveIds) => {
+    const empty = { questionCount: 0, approvedCount: 0, inQuizCount: 0, quizNames: [] };
+    const ids = normalizeObjectiveIds(granularObjectiveIds);
+    if (ids.length === 0) return empty;
+
+    const db = await databaseService.connect();
+    const questions = await db.collection("grasp_question")
+        .find(
+            { granularObjectiveId: { $in: ids }, orphaned: { $ne: true } },
+            { projection: { _id: 1, status: 1 } }
+        )
+        .toArray();
+    if (questions.length === 0) return empty;
+
+    const questionIds = questions.map((q) => q._id);
+    const approvedCount = questions.filter(
+        (q) => String(q.status || "").toLowerCase() === "approved"
+    ).length;
+
+    const mappings = await db.collection("grasp_quiz_question")
+        .find({ questionId: { $in: questionIds } }, { projection: { quizId: 1, questionId: 1 } })
+        .toArray();
+    const inQuizQuestionIds = new Set(mappings.map((m) => m.questionId?.toString()).filter(Boolean));
+    const quizIds = [...new Set(mappings.map((m) => m.quizId?.toString()).filter(Boolean))]
+        .filter((idStr) => ObjectId.isValid(idStr))
+        .map((idStr) => new ObjectId(idStr));
+    const quizzes = quizIds.length > 0
+        ? await db.collection("grasp_quiz")
+            .find({ _id: { $in: quizIds } }, { projection: { name: 1 } })
+            .toArray()
+        : [];
+    const quizNames = quizzes.map((q) => q.name).filter(Boolean);
+
+    return {
+        questionCount: questions.length,
+        approvedCount,
+        inQuizCount: inQuizQuestionIds.size,
+        quizNames,
+    };
+};
+
+/**
  * Mark every question generated from the given (now-deleted) granular
  * objectives as orphaned and pull them out of all quizzes. The question docs
- * are kept so the question bank can show what happened; orphaned questions
- * can never be (re)added to a quiz.
+ * are kept so the question bank can show what happened; orphaned questions are
+ * forced back to Draft and can never be (re)approved or (re)added to a quiz
+ * until a new learning objective is attached.
  * @param {Array<string|ObjectId>} granularObjectiveIds
  * @returns {Promise<{orphanedCount: number, removedFromQuizzes: number}>}
  */
 const orphanQuestionsByObjectiveIds = async (granularObjectiveIds) => {
-    const ids = (granularObjectiveIds || [])
-        .filter((id) => id != null)
-        .map((id) => (ObjectId.isValid(id) ? new ObjectId(id) : id));
+    const ids = normalizeObjectiveIds(granularObjectiveIds);
     if (ids.length === 0) return { orphanedCount: 0, removedFromQuizzes: 0 };
 
     const db = await databaseService.connect();
@@ -533,12 +628,50 @@ const orphanQuestionsByObjectiveIds = async (granularObjectiveIds) => {
     const [updateResult, mappingResult] = await Promise.all([
         db.collection("grasp_question").updateMany(
             { _id: { $in: questionIds } },
-            { $set: { orphaned: true, orphanedAt: new Date(), updatedAt: new Date() } }
+            { $set: { orphaned: true, orphanedAt: new Date(), status: "Draft", updatedAt: new Date() } }
         ),
         db.collection("grasp_quiz_question").deleteMany({ questionId: { $in: questionIds } }),
     ]);
     return {
         orphanedCount: updateResult.modifiedCount,
+        removedFromQuizzes: mappingResult.deletedCount,
+    };
+};
+
+/**
+ * Permanently delete every question generated from the given (now-deleted)
+ * granular objectives, along with their quiz mappings and attached images. Used
+ * when an instructor explicitly chooses to delete the linked questions together
+ * with the learning objective.
+ * @param {Array<string|ObjectId>} granularObjectiveIds
+ * @returns {Promise<{deletedCount: number, removedFromQuizzes: number}>}
+ */
+const deleteQuestionsByObjectiveIds = async (granularObjectiveIds) => {
+    const ids = normalizeObjectiveIds(granularObjectiveIds);
+    if (ids.length === 0) return { deletedCount: 0, removedFromQuizzes: 0 };
+
+    const db = await databaseService.connect();
+    const questions = await db.collection("grasp_question")
+        .find({ granularObjectiveId: { $in: ids } })
+        .toArray();
+    if (questions.length === 0) return { deletedCount: 0, removedFromQuizzes: 0 };
+
+    const questionIds = questions.map((q) => q._id);
+    const [deleteResult, mappingResult] = await Promise.all([
+        db.collection("grasp_question").deleteMany({ _id: { $in: questionIds } }),
+        db.collection("grasp_quiz_question").deleteMany({ questionId: { $in: questionIds } }),
+    ]);
+
+    // Best-effort GridFS cleanup of any images attached to the deleted questions.
+    try {
+        const imageIds = questions.flatMap((q) => collectQuestionImageIds(q));
+        if (imageIds.length > 0) await deleteImages(imageIds);
+    } catch (err) {
+        console.warn("Could not clean up images for deleted questions:", err);
+    }
+
+    return {
+        deletedCount: deleteResult.deletedCount,
         removedFromQuizzes: mappingResult.deletedCount,
     };
 };
@@ -567,5 +700,7 @@ module.exports = {
     deleteQuestion,
     getQuestion,
     getQuestionCourseId,
+    getLinkedQuestionsSummary,
     orphanQuestionsByObjectiveIds,
+    deleteQuestionsByObjectiveIds,
 };

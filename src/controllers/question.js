@@ -219,6 +219,9 @@ const updateQuestionHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating question:", error);
+    if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: "Failed to update question" });
   }
 };
@@ -266,6 +269,9 @@ const updateQuestionStatusHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating question status:", error);
+    if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: "Failed to update question status" });
   }
 };

@@ -54,8 +54,17 @@ router.put('/:id/materials', express.json(), objectiveController.updateObjective
 router.put('/:id', express.json(), objectiveController.updateObjectiveHandler);
 
 /**
- * DELETE /api/objective/:id
- * Completely delete a learning objective and its granular objectives
+ * GET /api/objective/:id/deletion-impact
+ * Report how many linked questions (and which quizzes) would be affected by
+ * deleting this learning objective, so the client can prompt first.
+ */
+router.get('/:id/deletion-impact', objectiveController.getObjectiveDeletionImpactHandler);
+
+/**
+ * DELETE /api/objective/:id?questionAction=keep|delete
+ * Completely delete a learning objective and its granular objectives. The
+ * questionAction query param decides whether linked questions are deleted too
+ * or kept (orphaned as Draft).
  */
 router.delete('/:id', objectiveController.deleteObjectiveHandler);
 

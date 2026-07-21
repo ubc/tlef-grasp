@@ -302,6 +302,13 @@ async function seedStudentJourneyCourse() {
         { upsert: true }
       );
     }
+    // Keep the shared fixture canonical after a spec adds a question to the
+    // quiz. Without this, a later run could treat a previously added question
+    // as part of the seed and make the picker tests order-dependent.
+    await db.collection('grasp_quiz_question').deleteMany({
+      quizId: quiz._id,
+      questionId: { $nin: questionIds },
+    });
 
     // --- Reset attempt state from previous runs. Completion is persisted per
     // user+quiz (grasp_quiz_score & co.), and the student UI offers "Retake

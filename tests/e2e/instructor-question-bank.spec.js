@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_PROF2_AUTH_FILE } = require('./auth');
-const { SEED } = require('./seed');
+const { SEED, seedStudentJourneyCourse } = require('./seed');
 const { selectSeededCourse } = require('./helpers');
 
 // Question Bank browsing for bio_prof2 against the seeded BIOC 302 course:
@@ -87,6 +87,47 @@ test.describe('Instructor question bank (seeded course)', () => {
     await expect(
       page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
     ).toBeVisible();
+  });
+
+  test('adds a valid existing course question to a quiz and lists available questions first', async ({
+    page,
+  }) => {
+    // Reset the shared quiz before and after this write-producing test so no
+    // other seeded journey inherits the added question.
+    await seedStudentJourneyCourse();
+    try {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/question-bank');
+      await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
+
+      await page.getByRole('button', { name: 'Add Existing Questions' }).click();
+      const dialog = page.getByRole('dialog', {
+        name: `Add existing questions to ${SEED.QUIZ_NAME}`,
+      });
+      await expect(dialog).toBeVisible();
+
+      const questionCards = dialog.locator('label:has(input[type="checkbox"])');
+      const availableCard = questionCards.filter({ hasText: SEED.AI_OPEN_ENDED_TITLE });
+      const alreadyAddedCard = questionCards.filter({ hasText: SEED.QUESTION_TITLES[0] });
+      await expect(availableCard.getByRole('checkbox')).toBeEnabled();
+      await expect(alreadyAddedCard.getByRole('checkbox')).toBeDisabled();
+
+      const availableIndex = await availableCard.evaluate((card) =>
+        Array.from(card.parentElement.children).indexOf(card)
+      );
+      const alreadyAddedIndex = await alreadyAddedCard.evaluate((card) =>
+        Array.from(card.parentElement.children).indexOf(card)
+      );
+      expect(availableIndex).toBeLessThan(alreadyAddedIndex);
+
+      await availableCard.getByRole('checkbox').check();
+      await dialog.getByRole('button', { name: 'Add 1 question' }).click();
+      await expect(page.getByText('Added 1 question to the quiz')).toBeVisible();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('cell', { name: SEED.AI_OPEN_ENDED_TITLE })).toBeVisible();
+    } finally {
+      await seedStudentJourneyCourse();
+    }
   });
 
   test('flags a question and finds it with the flagged-only filter', async ({

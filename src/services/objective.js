@@ -308,9 +308,14 @@ const updateObjective = async (objectiveId, updateData) => {
       const granularToUpdate = [];
       
       updateData.granularObjectives.forEach((granular) => {
-        if (granular.id && ObjectId.isValid(granular.id)) {
+        // The client sends existing granulars straight from the API, so their
+        // identifier may arrive as `_id` (raw Mongo doc) or `id`. Accept either
+        // — otherwise every kept granular looks "new" and the diff below deletes
+        // and recreates them all, orphaning their questions. (Issue #82)
+        const existingId = granular.id || granular._id;
+        if (existingId && ObjectId.isValid(existingId)) {
           // Existing granular objective - update it
-          const granularId = new ObjectId(granular.id);
+          const granularId = new ObjectId(existingId);
           granularToKeep.push(granularId.toString());
           granularToUpdate.push({
             id: granularId,
@@ -361,9 +366,14 @@ const updateObjective = async (objectiveId, updateData) => {
       if (granularToDelete.length > 0) {
         const deleteIds = granularToDelete.map(id => ObjectId.isValid(id) ? new ObjectId(id) : id);
         await collection.deleteMany({ _id: { $in: deleteIds }, parent: id });
-        // Questions generated from the removed granular objectives would be
-        // left pointing at nothing — flag them and pull them out of quizzes.
-        await questionService.orphanQuestionsByObjectiveIds(deleteIds);
+        // Questions generated from the removed granular objectives would be left
+        // pointing at nothing. Honor the instructor's explicit choice: either
+        // delete them, or orphan them (kept as Draft) and pull them from quizzes.
+        if (updateData.questionAction === 'delete') {
+          await questionService.deleteQuestionsByObjectiveIds(deleteIds);
+        } else {
+          await questionService.orphanQuestionsByObjectiveIds(deleteIds);
+        }
       }
     }
     
@@ -383,20 +393,44 @@ const updateObjective = async (objectiveId, updateData) => {
 };
 
 /**
- * Delete a learning objective and its granular objectives
+ * Summarize the questions that would be affected by deleting a learning
+ * objective, so the UI can prompt the instructor before the destructive delete.
  * @param {string|ObjectId} objectiveId - The learning objective ID
+ * @returns {Promise<{questionCount: number, approvedCount: number, inQuizCount: number, quizNames: string[]}>}
  */
-const deleteObjective = async (objectiveId) => {
+const getObjectiveDeletionImpact = async (objectiveId) => {
+  const db = await databaseService.connect();
+  const collection = db.collection('grasp_objective');
+  const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
+
+  const granulars = await collection
+    .find({ parent: id }, { projection: { _id: 1 } })
+    .toArray();
+
+  return questionService.getLinkedQuestionsSummary([
+    ...granulars.map((g) => g._id),
+    id,
+  ]);
+};
+
+/**
+ * Delete a learning objective and its granular objectives.
+ * @param {string|ObjectId} objectiveId - The learning objective ID
+ * @param {'keep'|'delete'} questionAction - What to do with linked questions:
+ *   'keep' (default) orphans them and moves them to Draft; 'delete' removes them
+ *   permanently along with their quiz mappings.
+ */
+const deleteObjective = async (objectiveId, questionAction = 'keep') => {
   try {
     const db = await databaseService.connect();
     const collection = db.collection('grasp_objective');
     const { ObjectId } = require('mongodb');
-    
+
     // Convert string ID to ObjectId if needed
     const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
 
     // Capture the granular ids before deleting so the questions generated
-    // from them can be orphaned afterwards.
+    // from them can be handled afterwards.
     const granulars = await collection
       .find({ parent: id }, { projection: { _id: 1 } })
       .toArray();
@@ -407,12 +441,15 @@ const deleteObjective = async (objectiveId) => {
     // 2. Delete the parent objective
     const result = await collection.deleteOne({ _id: id });
 
-    // 3. Flag questions generated from the deleted objectives and remove
-    // them from every quiz so they can no longer be served or re-added.
-    await questionService.orphanQuestionsByObjectiveIds([
-      ...granulars.map((g) => g._id),
-      id,
-    ]);
+    // 3. Handle questions generated from the deleted objectives per the
+    // instructor's explicit choice: either delete them outright or orphan them
+    // (kept as Draft) and pull them from every quiz.
+    const affectedObjectiveIds = [...granulars.map((g) => g._id), id];
+    if (questionAction === 'delete') {
+      await questionService.deleteQuestionsByObjectiveIds(affectedObjectiveIds);
+    } else {
+      await questionService.orphanQuestionsByObjectiveIds(affectedObjectiveIds);
+    }
     
     // 4. Remove material associations
     try {
@@ -456,6 +493,7 @@ module.exports = {
   getObjectiveById,
   getObjectiveWithMaterials,
   updateObjective,
+  getObjectiveDeletionImpact,
   deleteObjective,
   getObjectiveCourseId,
 };

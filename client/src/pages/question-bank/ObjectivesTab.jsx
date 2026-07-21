@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getObjectId, getMaterialIcon } from "../../lib/utils";
 import {
   useDetailedObjectives,
   useSaveObjective,
   useDeleteObjective,
   useUpdateGranularObjectives,
+  useObjectiveDeletionImpact,
 } from "../../hooks/useObjectives";
 import { useCourseMaterials } from "../../hooks/useMaterials";
-import Modal, { ConfirmModal } from "../../components/ui/Modal";
+import Modal from "../../components/ui/Modal";
 import SearchableSelect from "../../components/ui/SearchableSelect";
 import { useToast } from "../../components/ui/Toast";
 
@@ -80,6 +81,166 @@ function GranularItem({ objective, granular, onUpdate, onDelete }) {
         </button>
       </div>
     </li>
+  );
+}
+
+// Delete confirmation that first checks for linked questions and, when any
+// exist, makes the instructor choose whether to delete them or keep them as
+// orphaned drafts. Works for both a whole learning objective and a single
+// granular objective (both are queried by id).
+function DeleteObjectiveModal({ open, target, onClose, onConfirm, isSubmitting }) {
+  const impactId =
+    target?.kind === "objective" ? target.objectiveId : target?.granularId;
+  const { data, isPending } = useObjectiveDeletionImpact(impactId, {
+    enabled: open && !!impactId,
+  });
+  const [questionAction, setQuestionAction] = useState("keep");
+
+  // Reset the choice each time a different target is opened.
+  useEffect(() => {
+    if (open) setQuestionAction("keep");
+  }, [open, impactId]);
+
+  const isObjective = target?.kind === "objective";
+  const impact = data || {};
+  const questionCount = impact.questionCount || 0;
+  const inQuizCount = impact.inQuizCount || 0;
+  const quizNames = impact.quizNames || [];
+  const hasLinkedQuestions = questionCount > 0;
+  const loading = isPending && !data;
+
+  const title = isObjective
+    ? "Delete Learning Objective"
+    : "Delete Granular Objective";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      wide={hasLinkedQuestions}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={loading || isSubmitting}
+            onClick={() => onConfirm(hasLinkedQuestions ? questionAction : "keep")}
+            className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-60"
+          >
+            {isSubmitting
+              ? "Deleting..."
+              : hasLinkedQuestions && questionAction === "delete"
+                ? "Delete objective & questions"
+                : "Delete"}
+          </button>
+        </>
+      }
+    >
+      {loading ? (
+        <p className="flex items-center gap-2 text-muted">
+          <i className="fas fa-spinner fa-spin" /> Checking for linked questions...
+        </p>
+      ) : !hasLinkedQuestions ? (
+        <p className="text-ink">
+          {isObjective
+            ? "Are you sure you want to delete this learning objective? This will also delete all associated granular objectives."
+            : "Are you sure you want to delete this granular objective?"}
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-ink">
+            {isObjective
+              ? "Deleting this learning objective will also delete its granular objectives."
+              : "Deleting this granular objective affects its questions."}{" "}
+            <strong>
+              {questionCount} question{questionCount === 1 ? "" : "s"}
+            </strong>{" "}
+            {questionCount === 1 ? "is" : "are"} attached
+            {inQuizCount > 0 && (
+              <>
+                {" "}
+                and{" "}
+                <strong>
+                  {inQuizCount} {inQuizCount === 1 ? "is" : "are"} currently in a
+                  quiz
+                </strong>
+              </>
+            )}
+            . Choose what should happen to{" "}
+            {questionCount === 1 ? "it" : "them"}:
+          </p>
+
+          {quizNames.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <i className="fas fa-triangle-exclamation mr-1.5" />
+              Affected {quizNames.length === 1 ? "quiz" : "quizzes"}:{" "}
+              {quizNames.join(", ")}
+            </div>
+          )}
+
+          <label
+            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
+              questionAction === "keep"
+                ? "border-primary bg-primary/5"
+                : "border-gray-200 hover:border-primary/40"
+            }`}
+          >
+            <input
+              type="radio"
+              name="questionAction"
+              value="keep"
+              checked={questionAction === "keep"}
+              onChange={() => setQuestionAction("keep")}
+              className="mt-1 h-4 w-4 accent-primary"
+            />
+            <span className="text-sm">
+              <span className="block font-semibold text-ink">
+                Keep the questions
+              </span>
+              <span className="block text-muted">
+                Questions are moved to <strong>Draft</strong> and removed from any
+                quizzes. They can't be approved until you attach a new learning
+                objective to them in the Questions tab.
+              </span>
+            </span>
+          </label>
+
+          <label
+            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
+              questionAction === "delete"
+                ? "border-danger bg-danger/5"
+                : "border-gray-200 hover:border-danger/40"
+            }`}
+          >
+            <input
+              type="radio"
+              name="questionAction"
+              value="delete"
+              checked={questionAction === "delete"}
+              onChange={() => setQuestionAction("delete")}
+              className="mt-1 h-4 w-4 accent-danger"
+            />
+            <span className="text-sm">
+              <span className="block font-semibold text-ink">
+                Delete the questions
+              </span>
+              <span className="block text-muted">
+                Permanently delete{" "}
+                {questionCount === 1 ? "this question" : "these questions"} along
+                with the objective. This cannot be undone.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -170,11 +331,12 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
   const handleDeleteObjective = (objectiveId) =>
     setDeleteTarget({ kind: "objective", objectiveId });
 
-  const updateGranularList = (objective, updatedList, successMessage) => {
+  const updateGranularList = (objective, updatedList, successMessage, questionAction) => {
     granularMutation.mutate({
       objectiveId: objective.id,
       granularObjectives: updatedList,
       successMessage,
+      questionAction,
     });
   };
 
@@ -202,17 +364,26 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
   const handleDeleteGranular = (objective, granularId) =>
     setDeleteTarget({ kind: "granular", objective, granularId });
 
-  const confirmDelete = () => {
+  const confirmDelete = (questionAction) => {
     if (!deleteTarget) return;
     if (deleteTarget.kind === "objective") {
-      deleteMutation.mutate(deleteTarget.objectiveId);
+      deleteMutation.mutate({
+        objectiveId: deleteTarget.objectiveId,
+        questionAction,
+      });
     } else {
       const { objective, granularId } = deleteTarget;
       const updatedList = objective.granular.filter(
         (g) => getObjectId(g) !== granularId
       );
-      updateGranularList(objective, updatedList, "Granular objective deleted");
+      updateGranularList(
+        objective,
+        updatedList,
+        "Granular objective deleted",
+        questionAction
+      );
     }
+    setDeleteTarget(null);
   };
 
   const materialOptions = [
@@ -505,22 +676,12 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
         </div>
       </Modal>
 
-      <ConfirmModal
+      <DeleteObjectiveModal
         open={!!deleteTarget}
+        target={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
-        title={
-          deleteTarget?.kind === "objective"
-            ? "Delete Learning Objective"
-            : "Delete Granular Objective"
-        }
-        message={
-          deleteTarget?.kind === "objective"
-            ? "Are you sure you want to delete this learning objective? This will also delete all associated granular objectives."
-            : "Are you sure you want to delete this granular objective?"
-        }
-        confirmLabel="Delete"
-        danger
+        isSubmitting={deleteMutation.isPending || granularMutation.isPending}
       />
     </div>
   );
