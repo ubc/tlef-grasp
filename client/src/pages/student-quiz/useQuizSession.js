@@ -69,6 +69,8 @@ export function useQuizSession({ onLoadError } = {}) {
         autoGraded: !!prev.aiGraded,
         criteria: prev.aiCriteria || null,
         questionType: prev.questionType,
+        // Accept/deny reaction the student already recorded (issue #76).
+        studentGradeReview: prev.studentGradeReview || null,
       };
     });
     return { restoredAnswers, restoredFeedback };
@@ -197,6 +199,34 @@ export function useQuizSession({ onLoadError } = {}) {
     }
   };
 
+  // Record the student's accept/deny reaction to an AI grade (issue #76). The
+  // default is accept, so the UI treats a missing value as accepted; this is
+  // only called when the student actively chooses. Optimistic: the button state
+  // flips immediately, and reverts if the server rejects the change. Practice
+  // answers are never persisted, so their grades are not reviewable.
+  const submitGradeReview = async (questionId, review) => {
+    if (practiceMode) return;
+    const previous = feedback[questionId]?.studentGradeReview ?? null;
+    if (previous === review) return;
+    setFeedback((prev) => ({
+      ...prev,
+      [questionId]: { ...prev[questionId], studentGradeReview: review },
+    }));
+    try {
+      const result = await api.put(
+        `/api/quiz/${quizData.quizId}/question/${questionId}/grade-review`,
+        { review }
+      );
+      if (!result.success) throw new Error(result.error || "Could not save your response.");
+    } catch (error) {
+      console.error("Error recording grade review:", error);
+      setFeedback((prev) => ({
+        ...prev,
+        [questionId]: { ...prev[questionId], studentGradeReview: previous },
+      }));
+    }
+  };
+
   // Returns an error message instead of submitting when validation fails.
   const submitTextAnswer = async (question, rawValue) => {
     const questionId = question.id;
@@ -244,6 +274,10 @@ export function useQuizSession({ onLoadError } = {}) {
                 correctAnswer: result.correctAnswer,
                 feedbackText: result.feedback,
                 correctOptionText: result.correctOptionText,
+                // A fill-in-the-blank rescued by the LLM fallback carries an AI
+                // grade the student can accept/deny (issue #76); a plain
+                // exact-match or a calculation answer does not.
+                autoGraded: !!result.aiGraded,
                 questionType: type,
               },
       }));
@@ -364,6 +398,7 @@ export function useQuizSession({ onLoadError } = {}) {
     startPracticeWrong,
     selectMcqAnswer,
     submitTextAnswer,
+    submitGradeReview,
     finishQuiz,
     expireQuiz,
     reset,

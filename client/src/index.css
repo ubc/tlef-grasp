@@ -8,17 +8,18 @@
 
   /* GRASP palette. Hues carried over from the legacy CSS but darkened so every
      token passes WCAG AA (>= 4.5:1) both as text on white/page backgrounds and
-     as a background behind white text. success/warning are also used as colored
-     text on their own /15 tint badges, so they are darkened enough to clear
-     4.5:1 there too. Verified ratios vs #fff:
-     primary 5.30, success 7.13, warning 7.09, danger 5.44, muted 5.52. */
+     as a background behind white text. success/warning/danger are also used as
+     colored text on their own /10 and /15 tint badges, so they are darkened
+     enough to clear 4.5:1 there too. Verified ratios vs #fff:
+     primary 5.30, success 7.13, warning 7.09, danger 7.19, muted 5.52.
+     danger on its own /15 tint: 5.61. */
   --color-primary: #2471a3;
   --color-primary-dark: #1b5a85;
   --color-sidebar-from: #2c3e50;
   --color-sidebar-to: #34495e;
   --color-success: #166534;
   --color-warning: #92400e;
-  --color-danger: #c0392b;
+  --color-danger: #a5281b;
   --color-ink: #2c3e50;
   --color-muted: #5c6b73;
   --color-page: #f5f5f5;

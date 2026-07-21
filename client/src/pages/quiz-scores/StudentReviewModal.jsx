@@ -13,6 +13,19 @@ const TYPE_LABELS = {
   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
 };
 
+// Badge shown when the student denied the AI grade and no instructor has
+// finalized it yet (issue #76) — flags the answer as needing review.
+function DisputedBadge({ attempt, graded }) {
+  if (attempt.studentGradeReview !== "deny" || attempt.gradedAt || graded) {
+    return null;
+  }
+  return (
+    <span className="ml-2 rounded-full bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger">
+      <i className="fas fa-flag mr-1" aria-hidden="true" /> Student disagreed — needs review
+    </span>
+  );
+}
+
 function AttemptStatus({ attempt, graded }) {
   const isCorrect = graded?.isCorrect ?? attempt.isCorrect;
   const isOpenEnded = attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
@@ -41,6 +54,7 @@ function AttemptStatus({ attempt, graded }) {
             AI-graded
           </span>
         )}
+        <DisputedBadge attempt={attempt} graded={graded} />
       </span>
     );
   }
@@ -52,6 +66,7 @@ function AttemptStatus({ attempt, graded }) {
           AI-graded
         </span>
       )}
+      <DisputedBadge attempt={attempt} graded={graded} />
       {!attempt.selectedAnswer &&
         attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
           <span className="ml-2 text-xs font-normal text-gray-400">

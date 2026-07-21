@@ -8,7 +8,13 @@ const asId = (value) =>
 
 const asString = (value) => (value == null ? value : value.toString());
 
-function serializeFlag(flag, quizzesById = new Map(), usersById = new Map()) {
+function serializeFlag(
+  flag,
+  quizzesById = new Map(),
+  usersById = new Map(),
+  questionsById = new Map()
+) {
+  const question = questionsById.get(asString(flag.questionId));
   return {
     ...flag,
     _id: asString(flag._id),
@@ -19,6 +25,12 @@ function serializeFlag(flag, quizzesById = new Map(), usersById = new Map()) {
     reviewedBy: asString(flag.reviewedBy),
     quizName: quizzesById.get(asString(flag.quizId)) || "Quiz",
     studentName: usersById.get(asString(flag.studentId)) || undefined,
+    // Current state of the underlying question in the bank, so instructors can
+    // act on it in-place from the flags page. Undefined if the question was
+    // deleted after the flag was filed.
+    questionExists: Boolean(question),
+    questionStatus: question ? question.status || "Draft" : undefined,
+    questionFlagged: question ? Boolean(question.flagStatus) : undefined,
   };
 }
 
@@ -33,6 +45,16 @@ async function enrichFlags(flags, { includeStudents = false } = {}) {
     .project({ name: 1 })
     .toArray();
   const quizzesById = new Map(quizzes.map((quiz) => [asString(quiz._id), quiz.name || "Quiz"]));
+
+  const questionIds = [
+    ...new Map(flags.map((flag) => [asString(flag.questionId), flag.questionId])).values(),
+  ];
+  const questions = await db
+    .collection("grasp_question")
+    .find({ _id: { $in: questionIds } })
+    .project({ status: 1, flagStatus: 1 })
+    .toArray();
+  const questionsById = new Map(questions.map((question) => [asString(question._id), question]));
 
   let usersById = new Map();
   if (includeStudents) {
@@ -52,7 +74,7 @@ async function enrichFlags(flags, { includeStudents = false } = {}) {
     );
   }
 
-  return flags.map((flag) => serializeFlag(flag, quizzesById, usersById));
+  return flags.map((flag) => serializeFlag(flag, quizzesById, usersById, questionsById));
 }
 
 async function questionBelongsToQuiz(quizId, questionId) {

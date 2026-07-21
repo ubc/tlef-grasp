@@ -153,8 +153,71 @@ export function McqOptions({ question, answers, feedback, submitting, onSelect }
   );
 }
 
-export function FeedbackPanel({ feedback }) {
+// Accept/Deny control for an AI grade (issue #76). Shown only for AI-graded
+// answers; the default is Accept, so a missing studentGradeReview reads as
+// accepted. Denying flags the attempt for the instructor to review.
+export function GradeReviewControl({ feedback, questionId, onGradeReview }) {
+  if (!onGradeReview || !feedback?.autoGraded) return null;
+
+  const review = feedback.studentGradeReview || "accept";
+  const denied = review === "deny";
+  const labelId = `grade-review-${questionId}`;
+
+  return (
+    <div className="mt-3 border-t border-gray-200 pt-3">
+      <p id={labelId} className="text-sm font-medium text-ink">
+        Do you agree with this AI grade?
+      </p>
+      <div
+        role="group"
+        aria-labelledby={labelId}
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        <button
+          type="button"
+          aria-pressed={!denied}
+          onClick={() => onGradeReview(questionId, "accept")}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors ${
+            !denied
+              ? "border-success bg-success/10 text-success"
+              : "border-gray-300 bg-white text-ink hover:bg-gray-50"
+          }`}
+        >
+          <i className="fas fa-check" aria-hidden="true" /> Accept
+        </button>
+        <button
+          type="button"
+          aria-pressed={denied}
+          onClick={() => onGradeReview(questionId, "deny")}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors ${
+            denied
+              ? "border-danger bg-danger/10 text-danger"
+              : "border-gray-300 bg-white text-ink hover:bg-gray-50"
+          }`}
+        >
+          <i className="fas fa-flag" aria-hidden="true" /> Deny
+        </button>
+      </div>
+      {denied && (
+        <p className="mt-2 text-xs font-medium text-danger" role="status">
+          <i className="fas fa-flag mr-1" aria-hidden="true" />
+          You flagged this grade for your instructor to review.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function FeedbackPanel({ feedback, questionId, onGradeReview }) {
   if (!feedback) return null;
+
+  const reviewControl = (
+    <GradeReviewControl
+      feedback={feedback}
+      questionId={questionId}
+      onGradeReview={onGradeReview}
+    />
+  );
 
   if (
     feedback.openEnded ||
@@ -222,6 +285,7 @@ export function FeedbackPanel({ feedback }) {
               />
             </div>
           )}
+          {reviewControl}
         </div>
       );
     }
@@ -273,6 +337,7 @@ export function FeedbackPanel({ feedback }) {
             className="mt-2 text-sm text-gray-600"
           />
         )}
+        {reviewControl}
       </div>
     );
   }
@@ -307,6 +372,7 @@ export function FeedbackPanel({ feedback }) {
           className="mt-2 text-sm text-gray-600"
         />
       )}
+      {reviewControl}
     </div>
   );
 }

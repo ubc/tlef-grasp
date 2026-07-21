@@ -11,6 +11,7 @@ jest.mock('../../src/services/quiz', () => ({
   saveStudentPerformance: jest.fn(),
   hasCompletedQuiz: jest.fn(),
   gradeAttempt: jest.fn(),
+  recordStudentGradeReview: jest.fn(),
 }));
 
 jest.mock('../../src/services/question', () => ({
@@ -571,6 +572,106 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
     const res = await request(buildApp())
       .put(gradeUrl)
       .send({ questionId: 'question-1', isCorrect: false });
+
+    expect(res.status).toBe(409);
+  });
+});
+
+// Student accept/deny of an AI grade (issue #76). userId comes from the
+// session, never the URL, so a student can only mark their own answer.
+describe('PUT /api/quiz/:quizId/question/:questionId/grade-review', () => {
+  let consoleErrorSpy;
+
+  beforeAll(() => {
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const reviewUrl = '/api/quiz/quiz-1/question/oe-question-1/grade-review';
+
+  it('records a denial against the authenticated student', async () => {
+    quizService.recordStudentGradeReview.mockResolvedValue({ studentGradeReview: 'deny' });
+
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'deny' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, studentGradeReview: 'deny' });
+    expect(quizService.recordStudentGradeReview).toHaveBeenCalledWith(
+      'student-1',
+      'quiz-1',
+      'oe-question-1',
+      'deny'
+    );
+  });
+
+  it('records an acceptance', async () => {
+    quizService.recordStudentGradeReview.mockResolvedValue({ studentGradeReview: 'accept' });
+
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'accept' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.studentGradeReview).toBe('accept');
+  });
+
+  it('rejects an unknown review value without calling the service', async () => {
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'maybe' });
+
+    expect(res.status).toBe(400);
+    expect(quizService.recordStudentGradeReview).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 when there is no authenticated user', async () => {
+    const res = await request(buildApp(null))
+      .put(reviewUrl)
+      .send({ review: 'deny' });
+
+    expect(res.status).toBe(401);
+    expect(quizService.recordStudentGradeReview).not.toHaveBeenCalled();
+  });
+
+  it('maps a missing attempt to 404', async () => {
+    quizService.recordStudentGradeReview.mockRejectedValue(new Error('Attempt not found'));
+
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'deny' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('maps a non-AI-graded attempt to 400', async () => {
+    quizService.recordStudentGradeReview.mockRejectedValue(
+      new Error('Attempt is not AI-graded')
+    );
+
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'deny' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('maps a finalized grade to 409', async () => {
+    quizService.recordStudentGradeReview.mockRejectedValue(
+      new Error('Grade already finalized')
+    );
+
+    const res = await request(buildApp({ _id: 'student-1' }))
+      .put(reviewUrl)
+      .send({ review: 'deny' });
 
     expect(res.status).toBe(409);
   });

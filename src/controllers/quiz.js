@@ -1256,6 +1256,37 @@ const gradeAttemptHandler = async (req, res) => {
 };
 
 /**
+ * Record the current student's accept/deny reaction to the AI grade on one of
+ * their own attempts (issue #76). The userId always comes from the session —
+ * never a param — so a student can only mark their own answers.
+ */
+const recordGradeReviewHandler = async (req, res) => {
+  try {
+    const { quizId, questionId } = req.params;
+    const { review } = req.body;
+    const userId = req.user?._id || req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    if (review !== 'accept' && review !== 'deny') {
+      return res.status(400).json({ success: false, error: "review must be 'accept' or 'deny'" });
+    }
+
+    const result = await quizService.recordStudentGradeReview(userId, quizId, questionId, review);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error recording student grade review:', error);
+    const status = error.message === 'Attempt not found' ? 404
+      : error.message === 'Attempt is not AI-graded' ? 400
+      : error.message === 'Grade already finalized' ? 409
+      : error.message === 'Invalid grade review' ? 400
+      : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Get all completed quiz IDs for the current student in a course
  */
 const getMyScoresHandler = async (req, res) => {
@@ -1376,5 +1407,6 @@ module.exports = {
   checkQuestionAnswerHandler,
   getQuizScoresHandler,
   getStudentQuizAttemptHandler,
-  gradeAttemptHandler
+  gradeAttemptHandler,
+  recordGradeReviewHandler
 };
