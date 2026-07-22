@@ -19,6 +19,8 @@ test.describe('Instructor add-question wizard: AI generation (issue #44)', () =>
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/question-bank');
     await page.getByRole('button', { name: 'Add New Question' }).click();
+    // The wizard now opens on an import-or-create choice; author path first.
+    await page.getByRole('button', { name: 'Create a Question' }).click();
     await expect(
       page.getByRole('heading', { name: 'Select Question Type' })
     ).toBeVisible();

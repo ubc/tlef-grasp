@@ -1,7 +1,24 @@
 const { test, expect } = require('@playwright/test');
+const { MongoClient } = require('mongodb');
 const { BIO_PROF2_AUTH_FILE } = require('./auth');
 const { SEED, seedStudentJourneyCourse } = require('./seed');
 const { selectSeededCourse } = require('./helpers');
+
+// Remove questions created by the import test so re-runs stay clean.
+async function deleteQuestionsByTitle(titles) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return;
+  const client = new MongoClient(uri, { connectTimeoutMS: 8000 });
+  await client.connect();
+  try {
+    await client
+      .db(process.env.MONGODB_DB_NAME || undefined)
+      .collection('grasp_question')
+      .deleteMany({ title: { $in: titles } });
+  } finally {
+    await client.close();
+  }
+}
 
 // Question Bank browsing for bio_prof2 against the seeded BIOC 302 course:
 // the questions table, its search/status filters, single-question flagging,
@@ -184,6 +201,152 @@ test.describe('Instructor question bank (seeded course)', () => {
 
     await page.getByRole('checkbox', { name: 'Show flagged only' }).uncheck();
     await expect(firstTitleCell).toBeVisible();
+  });
+
+  test('exports selected questions to CSV carrying the objective columns', async ({
+    page,
+  }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/question-bank');
+    // Scope to the seeded quiz so "select all" picks up only seeded rows, not
+    // other approved questions the local course may hold.
+    await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
+    await expect(
+      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+    ).toBeVisible();
+
+    await page.getByLabel('Select all questions').check();
+
+    await page.getByRole('button', { name: /Export$/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export Questions' });
+    await expect(dialog).toBeVisible();
+
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: /CSV/ }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.csv$/);
+
+    const stream = await download.createReadStream();
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const content = Buffer.concat(chunks).toString('utf-8');
+
+    // The four objective columns are present in the header...
+    expect(content).toContain('Meta Learning Objective');
+    expect(content).toContain('Granular Learning Objective');
+    expect(content).toContain('Meta LO ID');
+    expect(content).toContain('Granular LO ID');
+    // ...and the seeded questions carry their resolved objective names, with the
+    // meta (parent) and granular objectives in separate columns.
+    expect(content).toContain(SEED.OBJECTIVE_NAME);
+    expect(content).toContain(SEED.GRANULAR_NAME);
+
+    await expect(page.getByText(/Exported \d+ question/)).toBeVisible();
+  });
+
+  test('imports questions from JSON, gating each on a course objective', async ({
+    page,
+  }) => {
+    const stamp = Date.now();
+    const matchedTitle = `[[e2e-import]] Auto-matched MC ${stamp}`;
+    const unmatchedTitle = `[[e2e-import]] Needs-objective FIB ${stamp}`;
+    // Two questions: the first names the seeded granular objective (matched by
+    // name), the second names an objective that doesn't exist here (must be
+    // assigned before import is allowed).
+    const importFile = {
+      course: 'ignored-on-import',
+      questions: [
+        {
+          title: matchedTitle,
+          stem: 'Select the best answer:',
+          questionType: 'multiple-choice',
+          options: {
+            A: { text: 'Correct choice', feedback: '' },
+            B: { text: 'Wrong', feedback: '' },
+            C: { text: 'Wrong', feedback: '' },
+            D: { text: 'Wrong', feedback: '' },
+          },
+          correctAnswer: 'A',
+          bloom: 'Understand',
+          granularObjectiveId: 'deadbeefdeadbeefdeadbeef',
+          granularObjectiveName: SEED.GRANULAR_NAME,
+          learningObjectiveName: SEED.OBJECTIVE_NAME,
+        },
+        {
+          title: unmatchedTitle,
+          stem: 'The ______ has no matching objective.',
+          questionType: 'fill-in-the-blank',
+          correctAnswer: 'blank',
+          acceptableAnswers: ['blank'],
+          bloom: 'Remember',
+          granularObjectiveId: 'ffffffffffffffffffffffff',
+          granularObjectiveName: 'A Totally Unknown Objective 9Z',
+        },
+      ],
+    };
+
+    try {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/question-bank');
+
+      await page.getByRole('button', { name: 'Add New Question' }).click();
+      const choice = page.getByRole('dialog', { name: 'Add Questions' });
+      await expect(choice).toBeVisible();
+      await choice.getByRole('button', { name: 'Import Questions' }).click();
+
+      const dialog = page.getByRole('dialog', { name: 'Import Questions' });
+      await expect(dialog).toBeVisible();
+
+      await dialog.locator('input[type="file"]').setInputFiles({
+        name: `import-${stamp}.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(importFile)),
+      });
+
+      // Both rows render; one is matched, one still needs an objective, so the
+      // import button is gated.
+      await expect(dialog.getByText(matchedTitle)).toBeVisible();
+      await expect(dialog.getByText(unmatchedTitle)).toBeVisible();
+      await expect(dialog.getByText(/1 question.*need/)).toBeVisible();
+      const importButton = dialog.getByRole('button', { name: /Import 2 questions/ });
+      await expect(importButton).toBeDisabled();
+
+      // Assign the seeded objective to the unmatched question; import unlocks.
+      await dialog
+        .getByLabel('Learning objective for question 2')
+        .selectOption({ label: SEED.GRANULAR_NAME });
+      await expect(importButton).toBeEnabled();
+
+      await importButton.click();
+      await expect(page.getByText('Imported 2 questions')).toBeVisible();
+      await expect(dialog).toBeHidden();
+
+      // The imported questions now appear in the bank.
+      await expect(page.getByRole('cell', { name: matchedTitle })).toBeVisible();
+      await expect(page.getByRole('cell', { name: unmatchedTitle })).toBeVisible();
+
+      // Re-importing the very same file must not create duplicates: the first
+      // question already matches an objective, so it is rejected as a duplicate.
+      await page.getByRole('button', { name: 'Add New Question' }).click();
+      await page
+        .getByRole('dialog', { name: 'Add Questions' })
+        .getByRole('button', { name: 'Import Questions' })
+        .click();
+      const reDialog = page.getByRole('dialog', { name: 'Import Questions' });
+      await reDialog.locator('input[type="file"]').setInputFiles({
+        name: `reimport-${stamp}.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify({ questions: [importFile.questions[0]] })),
+      });
+      await reDialog
+        .getByRole('button', { name: /Import 1 question/ })
+        .click();
+      await expect(page.getByText(/already exist/i)).toBeVisible();
+      // Still exactly one copy of the matched question in the bank.
+      await expect(page.getByRole('cell', { name: matchedTitle })).toHaveCount(1);
+    } finally {
+      await deleteQuestionsByTitle([matchedTitle, unmatchedTitle]);
+    }
   });
 
   test('learning objectives tab shows the seeded objective hierarchy', async ({

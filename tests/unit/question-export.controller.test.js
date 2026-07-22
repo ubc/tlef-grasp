@@ -2,6 +2,8 @@ const {
   createCSVExport,
   createQTIExport,
   createQTIItem,
+  buildObjectivesSummary,
+  normalizeQuizMeta,
 } = require('../../src/controllers/question');
 const { QUESTION_TYPES } = require('../../src/constants/app-constants');
 
@@ -66,6 +68,38 @@ describe('createCSVExport', () => {
     expect(header).toContain('"Formula"');
   });
 
+  test('header includes the objective columns', () => {
+    const csv = createCSVExport('COURSE', []);
+    const header = csv.split('\n')[0];
+    expect(header).toContain('"Meta Learning Objective"');
+    expect(header).toContain('"Granular Learning Objective"');
+    expect(header).toContain('"Meta LO ID"');
+    expect(header).toContain('"Granular LO ID"');
+  });
+
+  test('row carries the resolved objective names and ids', () => {
+    // Names/ids are attached upstream by enrichQuestionsWithObjectives; the CSV
+    // builder just reads them off the question.
+    const enriched = {
+      ...mcQuestion,
+      learningObjectiveName: 'Understand photosynthesis',
+      granularObjectiveName: 'Identify gas exchange',
+      learningObjectiveId: '665f1a0000000000000000aa',
+      granularObjectiveId: '665f1b0000000000000000bb',
+    };
+    const row = createCSVExport('COURSE', [enriched]).trim().split('\n')[1];
+    expect(row).toContain('Understand photosynthesis');
+    expect(row).toContain('Identify gas exchange');
+    expect(row).toContain('665f1a0000000000000000aa');
+    expect(row).toContain('665f1b0000000000000000bb');
+  });
+
+  test('objective columns are blank when a question is unlinked', () => {
+    // mcQuestion has no objective fields; its four objective cells trail as empties.
+    const row = createCSVExport('COURSE', [mcQuestion]).trim().split('\n')[1];
+    expect(row.endsWith('"Understand","","","",""')).toBe(true);
+  });
+
   test('multiple-choice row resolves the correct option text', () => {
     const csv = createCSVExport('COURSE', [mcQuestion]);
     const row = csv.trim().split('\n')[1];
@@ -104,6 +138,89 @@ describe('createCSVExport', () => {
     const csv = createCSVExport('COURSE', [tricky]);
     const row = csv.trim().split('\n')[1];
     expect(row).toContain('""hello""');
+  });
+});
+
+describe('buildObjectivesSummary', () => {
+  test('groups distinct granular objectives under their meta objective', () => {
+    const summary = buildObjectivesSummary([
+      {
+        learningObjectiveId: 'meta1',
+        learningObjectiveName: 'Meta One',
+        granularObjectiveId: 'gran1',
+        granularObjectiveName: 'Granular One',
+      },
+      {
+        learningObjectiveId: 'meta1',
+        learningObjectiveName: 'Meta One',
+        granularObjectiveId: 'gran2',
+        granularObjectiveName: 'Granular Two',
+      },
+      // Duplicate granular — must not appear twice.
+      {
+        learningObjectiveId: 'meta1',
+        learningObjectiveName: 'Meta One',
+        granularObjectiveId: 'gran1',
+        granularObjectiveName: 'Granular One',
+      },
+    ]);
+    expect(summary).toHaveLength(1);
+    expect(summary[0].metaObjectiveId).toBe('meta1');
+    expect(summary[0].granularObjectives).toHaveLength(2);
+    expect(summary[0].granularObjectives.map((g) => g.id).sort()).toEqual(['gran1', 'gran2']);
+  });
+
+  test('surfaces granular objectives with no known parent under a null meta entry', () => {
+    const summary = buildObjectivesSummary([
+      { learningObjectiveId: null, granularObjectiveId: 'orphan', granularObjectiveName: 'Orphan' },
+    ]);
+    expect(summary).toHaveLength(1);
+    expect(summary[0].metaObjectiveId).toBeNull();
+    expect(summary[0].granularObjectives[0].id).toBe('orphan');
+  });
+
+  test('is empty when no questions carry objectives', () => {
+    expect(buildObjectivesSummary([{ title: 'no objective' }])).toEqual([]);
+  });
+});
+
+describe('normalizeQuizMeta', () => {
+  test('keeps whitelisted quiz settings and coerces them', () => {
+    const meta = normalizeQuizMeta({
+      name: 'Week 3 Quiz',
+      description: 'Enzymes',
+      deliveryFormat: 'spaced-3phase',
+      disablePreviousNavigation: true,
+      timeLimitMinutes: 45,
+      published: true,
+      createdAt: '2026-07-13T22:16:43.377Z',
+    });
+    expect(meta).toEqual({
+      name: 'Week 3 Quiz',
+      description: 'Enzymes',
+      deliveryFormat: 'spaced-3phase',
+      disablePreviousNavigation: true,
+      published: true,
+      timeLimitMinutes: 45,
+      createdAt: '2026-07-13T22:16:43.377Z',
+    });
+  });
+
+  test('falls back to safe defaults and drops an invalid time limit', () => {
+    const meta = normalizeQuizMeta({
+      name: 'Q',
+      deliveryFormat: 'nonsense',
+      timeLimitMinutes: 0,
+    });
+    expect(meta.deliveryFormat).toBe('all-approved');
+    expect(meta.disablePreviousNavigation).toBe(false);
+    expect(meta.published).toBe(false);
+    expect(meta).not.toHaveProperty('timeLimitMinutes');
+  });
+
+  test('returns null for a non-object', () => {
+    expect(normalizeQuizMeta(undefined)).toBeNull();
+    expect(normalizeQuizMeta('nope')).toBeNull();
   });
 });
 

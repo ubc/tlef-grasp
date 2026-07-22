@@ -275,6 +275,8 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await page.goto('/question-bank');
 
     await page.getByRole('button', { name: 'Add New Question' }).click();
+    // The wizard opens on an import-or-create choice; take the author path.
+    await page.getByRole('button', { name: 'Create a Question' }).click();
     await expect(
       page.getByRole('heading', { name: 'Select Question Type' })
     ).toBeVisible();

@@ -61,7 +61,66 @@ const sanitizeOptions = (options) => {
     return sanitized;
 };
 
-const saveQuestion = async (courseId, questionData) => {
+// Normalize free text for duplicate comparison: collapse whitespace, trim, lowercase.
+const normalizeText = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+// A stable signature of a question's answer content, so two questions that only
+// differ in whitespace/casing still count as the same. Multiple-choice compares
+// the option texts (keyed A–D) and the correct letter; the other types compare
+// their acceptable/correct answers.
+const answerSignature = (q) => {
+    const type = String(q.questionType || q.type || "").toLowerCase();
+    if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
+        const options = q.options && typeof q.options === "object" ? q.options : {};
+        const opts = Object.keys(options)
+            .sort()
+            .map((key) => {
+                const opt = options[key];
+                const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
+                return `${key}:${normalizeText(text)}`;
+            })
+            .join("|");
+        return `mc:${opts}#${normalizeText(q.correctAnswer)}`;
+    }
+    if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        const accept = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
+            .map(normalizeText)
+            .sort()
+            .join("|");
+        return `fib:${normalizeText(q.correctAnswer)}#${accept}`;
+    }
+    if (type === QUESTION_TYPES.CALCULATION) {
+        return `calc:${normalizeText(q.calculationFormula)}`;
+    }
+    return `oe:${normalizeText(q.openEndedSampleAnswer)}`;
+};
+
+// Find an existing question in the course that is a duplicate of `questionData`:
+// same type, same question text (title + stem), same answer content, and the
+// same granular learning-objective link. Returns the existing doc or null.
+const findDuplicateQuestion = async (db, courseIdObj, granularObjectiveIdObj, questionData) => {
+    const type = String(questionData.questionType || questionData.type || "").toLowerCase();
+    const candidates = await db.collection("grasp_question").find({
+        courseId: courseIdObj,
+        granularObjectiveId: granularObjectiveIdObj,
+        questionType: type,
+    }).toArray();
+
+    const title = normalizeText(questionData.title);
+    const stem = normalizeText(questionData.stem);
+    const signature = answerSignature(questionData);
+
+    return (
+        candidates.find(
+            (c) =>
+                normalizeText(c.title) === title &&
+                normalizeText(c.stem) === stem &&
+                answerSignature(c) === signature
+        ) || null
+    );
+};
+
+const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => {
     try {
         console.log("Saving question:", questionData);
         const db = await databaseService.connect();
@@ -134,6 +193,23 @@ const saveQuestion = async (courseId, questionData) => {
                 : "";
 
         const qtLower = String(questionType).toLowerCase();
+
+        // On import, refuse to create a question that already exists in the course
+        // (same text + options/answers + granular objective link).
+        if (dedupe) {
+            const duplicate = await findDuplicateQuestion(
+                db,
+                courseIdObj,
+                granularObjectiveIdObj,
+                { ...questionData, questionType }
+            );
+            if (duplicate) {
+                const error = new Error("A matching question already exists in this course.");
+                error.code = "DUPLICATE_QUESTION";
+                throw error;
+            }
+        }
+
         const question = await collection.insertOne({
             title: questionData.title,
             stem: questionData.stem,
@@ -703,4 +779,7 @@ module.exports = {
     getLinkedQuestionsSummary,
     orphanQuestionsByObjectiveIds,
     deleteQuestionsByObjectiveIds,
+    // Exported for unit testing of the import de-duplication logic.
+    answerSignature,
+    findDuplicateQuestion,
 };

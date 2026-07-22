@@ -18,6 +18,144 @@ const {
   stemImagesOf,
 } = require('../utils/question-export-helpers');
 const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
+const databaseService = require('../services/database');
+
+// --- Objective enrichment for export ----------------------------------------
+
+// Normalize any id-ish value (string, {$oid}, ObjectId) to an ObjectId, or null.
+function toObjectId(value) {
+  if (!value) return null;
+  if (value instanceof ObjectId) return value;
+  const str = typeof value === 'object' && value.$oid ? value.$oid : String(value);
+  return ObjectId.isValid(str) ? new ObjectId(str) : null;
+}
+
+// Questions arriving from the client carry only objective IDs (as strings over
+// JSON). We re-read grasp_objective so exported objective names are current even
+// if an objective was renamed since the question was authored. Each question is
+// returned with granular/meta objective IDs (as strings) and their names filled
+// in. The meta (parent) objective is taken from the question when present, else
+// derived from the granular objective's parent — the same rule the app uses on
+// save (see services/question.js).
+async function enrichQuestionsWithObjectives(questions) {
+  const db = await databaseService.connect();
+  const objectives = db.collection('grasp_objective');
+
+  // Collect the granular objective IDs referenced by the questions.
+  const granularIds = new Map();
+  questions.forEach((q) => {
+    const id = toObjectId(q.granularObjectiveId || q.objectiveId);
+    if (id) granularIds.set(id.toString(), id);
+  });
+
+  const granularDocs = granularIds.size
+    ? await objectives.find({ _id: { $in: Array.from(granularIds.values()) } }).toArray()
+    : [];
+
+  const granularById = new Map();
+  const parentIds = new Map();
+  granularDocs.forEach((o) => {
+    const parentStr = o.parent ? o.parent.toString() : null;
+    granularById.set(o._id.toString(), { name: o.name || '', parent: parentStr });
+    if (parentStr) {
+      const pid = toObjectId(parentStr);
+      if (pid) parentIds.set(parentStr, pid);
+    }
+  });
+
+  // Meta objectives may also be referenced directly on a question that has no
+  // granular link, so gather those too.
+  questions.forEach((q) => {
+    const id = toObjectId(q.learningObjectiveId);
+    if (id) parentIds.set(id.toString(), id);
+  });
+
+  const parentDocs = parentIds.size
+    ? await objectives.find({ _id: { $in: Array.from(parentIds.values()) } }).toArray()
+    : [];
+  const parentById = new Map();
+  parentDocs.forEach((o) => parentById.set(o._id.toString(), o.name || ''));
+
+  return questions.map((q) => {
+    const gId = toObjectId(q.granularObjectiveId || q.objectiveId);
+    const gStr = gId ? gId.toString() : null;
+    const gInfo = gStr ? granularById.get(gStr) : null;
+
+    let metaId = toObjectId(q.learningObjectiveId);
+    if (!metaId && gInfo && gInfo.parent) metaId = toObjectId(gInfo.parent);
+    const metaStr = metaId ? metaId.toString() : null;
+
+    return {
+      ...q,
+      granularObjectiveId: gStr,
+      granularObjectiveName: (gInfo && gInfo.name) || q.granularObjectiveName || '',
+      learningObjectiveId: metaStr,
+      learningObjectiveName: (metaStr && parentById.get(metaStr)) || q.learningObjectiveName || '',
+    };
+  });
+}
+
+// Quiz-level view of the objectives an export covers: the distinct meta
+// objectives, each with the granular children that actually appear among the
+// exported questions. Granular objectives whose parent could not be resolved are
+// grouped under a null-meta entry so nothing is silently dropped.
+function buildObjectivesSummary(enrichedQuestions) {
+  const metaMap = new Map();
+  const orphanGranulars = new Map();
+
+  enrichedQuestions.forEach((q) => {
+    const metaId = q.learningObjectiveId;
+    const gId = q.granularObjectiveId;
+    if (metaId) {
+      if (!metaMap.has(metaId)) {
+        metaMap.set(metaId, {
+          metaObjectiveId: metaId,
+          metaObjectiveName: q.learningObjectiveName || '',
+          granularObjectives: new Map(),
+        });
+      }
+      if (gId) {
+        metaMap.get(metaId).granularObjectives.set(gId, { id: gId, name: q.granularObjectiveName || '' });
+      }
+    } else if (gId) {
+      orphanGranulars.set(gId, { id: gId, name: q.granularObjectiveName || '' });
+    }
+  });
+
+  const summary = Array.from(metaMap.values()).map((m) => ({
+    metaObjectiveId: m.metaObjectiveId,
+    metaObjectiveName: m.metaObjectiveName,
+    granularObjectives: Array.from(m.granularObjectives.values()),
+  }));
+  if (orphanGranulars.size) {
+    summary.push({
+      metaObjectiveId: null,
+      metaObjectiveName: '',
+      granularObjectives: Array.from(orphanGranulars.values()),
+    });
+  }
+  return summary;
+}
+
+// Whitelist the quiz settings that are safe to round-trip on import, coercing
+// them to the same shapes createQuiz expects. Anything else the client sends
+// (ids, section schedules, timestamps we regenerate) is dropped.
+function normalizeQuizMeta(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  const out = {
+    name: typeof meta.name === 'string' ? meta.name : '',
+    description: typeof meta.description === 'string' ? meta.description : '',
+    deliveryFormat: meta.deliveryFormat === 'spaced-3phase' ? 'spaced-3phase' : 'all-approved',
+    disablePreviousNavigation: meta.disablePreviousNavigation === true,
+    published: meta.published === true,
+  };
+  const minutes = Number(meta.timeLimitMinutes);
+  if (Number.isInteger(minutes) && minutes > 0) out.timeLimitMinutes = minutes;
+  // Informational only — import stamps its own createdAt; kept so a human reading
+  // the file can see when the source quiz was made.
+  if (meta.createdAt) out.createdAt = meta.createdAt;
+  return out;
+}
 
 // --- Export helpers shared across CSV / QTI ---------------------------------
 
@@ -131,7 +269,7 @@ const getQuestionByIdHandler = async (req, res) => {
 // Save questions to question bank
 const saveQuestionHandler = async (req, res) => {
   try {
-    const { questions, courseId } = req.body;
+    const { questions, courseId, dedupe } = req.body;
 
     if (!courseId) {
       return res.status(400).json({ error: "Course ID is required" });
@@ -150,14 +288,31 @@ const saveQuestionHandler = async (req, res) => {
       return res.status(400).json({ error: "No questions provided to save" });
     }
 
+    // Import sets dedupe: reject questions that already exist in the course
+    // rather than creating duplicates.
     const savedQuestionIds = [];
+    let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
-        const questionResult = await saveQuestion(courseId, questionData);
+        const questionResult = await saveQuestion(courseId, questionData, { dedupe: dedupe === true });
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
-        console.error("Error saving individual question:", error);
+        if (error.code === "DUPLICATE_QUESTION") {
+          duplicateCount += 1;
+        } else {
+          console.error("Error saving individual question:", error);
+        }
       }
+    }
+
+    // When every question was a duplicate, surface that plainly rather than a
+    // generic failure.
+    if (savedQuestionIds.length === 0 && duplicateCount > 0) {
+      return res.status(409).json({
+        error: "Every question already exists in this course.",
+        savedCount: 0,
+        duplicateCount,
+      });
     }
 
     if (savedQuestionIds.length === 0) {
@@ -168,6 +323,7 @@ const saveQuestionHandler = async (req, res) => {
       success: true,
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
+      duplicateCount,
       questionIds: savedQuestionIds
     });
   } catch (error) {
@@ -317,8 +473,24 @@ const deleteQuestionHandler = async (req, res) => {
 // Export questions in various formats
 const exportQuestionsHandler = async (req, res) => {
   try {
-    const { course, summary, objectives, questions, quizName, quizDescription } = req.body;
+    const { course, summary, questionIds, quizName, quizDescription, quizMeta } = req.body;
     const format = req.query.format || 'qti';
+
+    // Two entry points: quiz export sends full question objects in `questions`;
+    // individual export from the bank sends `questionIds`, and we fetch the full,
+    // current docs from the database (the bank list carries only a slim shape).
+    let questions = req.body.questions;
+    if ((!questions || questions.length === 0) && Array.isArray(questionIds) && questionIds.length > 0) {
+      if (!course) {
+        return res.status(400).json({ error: "Course ID is required to export by question ID" });
+      }
+      if (!(await hasStaffAccessInCourse(req.user, course))) {
+        return res.status(403).json({ error: "User is not in course" });
+      }
+      const allQuestions = await getQuestions(course);
+      const wanted = new Set(questionIds.map((id) => String(id)));
+      questions = (allQuestions || []).filter((q) => wanted.has(String(q._id)));
+    }
 
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: "No questions provided for export" });
@@ -328,9 +500,16 @@ const exportQuestionsHandler = async (req, res) => {
     let contentType;
     let filename;
 
+    // CSV and JSON carry the objectives each question is linked to; resolve their
+    // current names/IDs from the database before writing them out.
+    const needsObjectives = format === 'csv' || format === 'json';
+    const enrichedQuestions = needsObjectives
+      ? await enrichQuestionsWithObjectives(questions)
+      : questions;
+
     switch (format) {
       case 'csv':
-        exportData = createCSVExport(course, questions);
+        exportData = createCSVExport(course, enrichedQuestions);
         contentType = 'text/csv';
         filename = `questions-${course}-${Date.now()}.csv`;
         break;
@@ -338,8 +517,13 @@ const exportQuestionsHandler = async (req, res) => {
         exportData = JSON.stringify({
           course,
           summary,
-          objectives,
-          questions,
+          // Quiz-level settings, present only for a quiz export, so the file can
+          // be re-imported as a working quiz (Phase 4).
+          ...(quizMeta ? { quiz: normalizeQuizMeta(quizMeta) } : {}),
+          // Objectives covered by this export, derived from the questions so the
+          // summary always agrees with the per-question links below.
+          objectives: buildObjectivesSummary(enrichedQuestions),
+          questions: enrichedQuestions,
           exportedAt: new Date().toISOString()
         }, null, 2);
         contentType = 'application/json';
@@ -393,6 +577,10 @@ function createCSVExport(course, questions) {
     'Grading Criteria',
     'Formula',
     'Bloom Level',
+    'Meta Learning Objective',
+    'Granular Learning Objective',
+    'Meta LO ID',
+    'Granular LO ID',
   ];
   let csv = `${headers.map(csvField).join(',')}\n`;
 
@@ -411,6 +599,10 @@ function createCSVExport(course, questions) {
       gradingCriteria: '',
       formula: '',
       bloom: q.bloom || q.bloomLevel || '',
+      metaObjective: q.learningObjectiveName || '',
+      granularObjective: q.granularObjectiveName || '',
+      metaObjectiveId: q.learningObjectiveId || '',
+      granularObjectiveId: q.granularObjectiveId || '',
     };
 
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
@@ -456,6 +648,10 @@ function createCSVExport(course, questions) {
       row.gradingCriteria,
       row.formula,
       row.bloom,
+      row.metaObjective,
+      row.granularObjective,
+      row.metaObjectiveId,
+      row.granularObjectiveId,
     ].map(csvField).join(',') + '\n';
   });
 
@@ -1076,4 +1272,6 @@ module.exports = {
   createCSVExport,
   createQTIExport,
   createQTIItem,
+  buildObjectivesSummary,
+  normalizeQuizMeta,
 };
