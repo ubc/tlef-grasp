@@ -20,6 +20,7 @@ import {
 import { useQuestionBankData } from "./useQuestionBankData";
 import QuestionEditModal from "./QuestionEditModal";
 import AddQuestionWizard from "./AddQuestionWizard";
+import { downloadQuestionsExport } from "../../lib/exports";
 
 const STATUS_PILL_CLASSES = {
   approved: "bg-green-100 text-green-700",
@@ -139,7 +140,7 @@ function FiltersPanel({ filters, setFilter, quizzes, objectiveOptions, bloomLeve
   );
 }
 
-function BulkActionBar({ selectedCount, busy, onAction, onDelete }) {
+function BulkActionBar({ selectedCount, busy, onAction, onDelete, onExport }) {
   const actionBtnClass =
     "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-40";
   return (
@@ -148,6 +149,14 @@ function BulkActionBar({ selectedCount, busy, onAction, onDelete }) {
         {selectedCount} question{selectedCount !== 1 ? "s" : ""} selected
       </span>
       <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={selectedCount === 0 || busy}
+          onClick={onExport}
+          className={actionBtnClass}
+        >
+          <i className="fas fa-file-export" /> Export
+        </button>
         <button
           type="button"
           disabled={selectedCount === 0 || busy}
@@ -434,6 +443,8 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
   // Inline flag-reason drafts, keyed by question id and persisted on blur.
   const [reasonDrafts, setReasonDrafts] = useState({});
   const [savingReasonId, setSavingReasonId] = useState(null);
@@ -536,6 +547,21 @@ export default function QuestionsTab({ courseId, isFaculty }) {
     if (!requireFaculty("delete questions")) return;
     if (selectedIds.size === 0) return;
     setConfirmBulkDelete(true);
+  };
+
+  const handleExport = async (format) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setExporting(true);
+    try {
+      await downloadQuestionsExport({ courseId, questionIds: ids, format });
+      setShowExportModal(false);
+      showToast(`Exported ${ids.length} question(s) as ${format.toUpperCase()}`, "success");
+    } catch {
+      showToast("Failed to export questions", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const toggleFlag = (question) => {
@@ -744,6 +770,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
             busy={bulkBusy}
             onAction={bulkUpdate}
             onDelete={bulkDelete}
+            onExport={() => setShowExportModal(true)}
           />
         </>
       )}
@@ -1057,6 +1084,39 @@ export default function QuestionsTab({ courseId, isFaculty }) {
         confirmLabel="Delete"
         danger
       />
+
+      <Modal
+        open={showExportModal}
+        onClose={() => (exporting ? null : setShowExportModal(false))}
+        title="Export Questions"
+      >
+        <p className="mb-4 text-sm text-muted">
+          Export the {selectedIds.size} selected question{selectedIds.size === 1 ? "" : "s"} — including
+          their learning objectives — in your chosen format.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => handleExport("csv")}
+            className="flex flex-col items-center gap-1 rounded-xl border border-gray-200 p-5 transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md disabled:opacity-50"
+          >
+            <i className="fas fa-file-csv mb-1 text-2xl text-primary" />
+            <span className="font-semibold text-ink">CSV</span>
+            <small className="text-muted">Excel / Sheets</small>
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => handleExport("json")}
+            className="flex flex-col items-center gap-1 rounded-xl border border-gray-200 p-5 transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md disabled:opacity-50"
+          >
+            <i className="fas fa-file-code mb-1 text-2xl text-primary" />
+            <span className="font-semibold text-ink">JSON</span>
+            <small className="text-muted">Raw Data</small>
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

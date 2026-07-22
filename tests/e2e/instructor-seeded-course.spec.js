@@ -47,6 +47,45 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(quizCard.getByRole('button', { name: 'Unpublish' })).toBeVisible();
   });
 
+  test('exports the seeded quiz to JSON with objectives and quiz settings', async ({
+    page,
+  }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/quizzes');
+
+    const quizCard = getQuizCard(page, SEED.QUIZ_NAME);
+    await expect(quizCard).toBeVisible();
+    await quizCard.getByRole('button', { name: 'Export' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Export Quiz' });
+    await expect(dialog).toBeVisible();
+
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: /JSON/ }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.json$/);
+
+    const stream = await download.createReadStream();
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+
+    // Quiz-level settings are carried so the file can be re-imported (Phase 4).
+    expect(parsed.quiz).toBeTruthy();
+    expect(parsed.quiz.name).toBe(SEED.QUIZ_NAME);
+    expect(parsed.quiz.deliveryFormat).toBe('all-approved');
+    expect(parsed.quiz.description).toContain('Seeded quiz');
+
+    // The objectives summary and per-question links are present.
+    const metaNames = parsed.objectives.map((o) => o.metaObjectiveName);
+    expect(metaNames).toContain(SEED.OBJECTIVE_NAME);
+    expect(parsed.questions.length).toBeGreaterThan(0);
+    for (const question of parsed.questions) {
+      expect(question).toHaveProperty('learningObjectiveName');
+      expect(question).toHaveProperty('granularObjectiveName');
+    }
+  });
+
   test('shows section schedule events on the dashboard calendar', async ({ page }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/dashboard');

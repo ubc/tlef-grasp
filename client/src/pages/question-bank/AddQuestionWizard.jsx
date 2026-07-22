@@ -7,6 +7,7 @@ import { useSelectedCourse } from "../../stores/appStore";
 import { generateWizardQuestion } from "../question-generation/generationApi";
 import Modal from "../../components/ui/Modal";
 import QuestionDetailsFields from "./QuestionDetailsFields";
+import ImportQuestionsModal from "./ImportQuestionsModal";
 import { useToast } from "../../components/ui/Toast";
 
 const inputClass =
@@ -61,6 +62,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
   const { objectives: detailedObjectives, isPending: objectivesLoading } =
     useDetailedObjectives(courseId);
 
+  // Before the create flow, the instructor chooses whether to author a new
+  // question or import questions from a file. null = choice not yet made.
+  const [mode, setMode] = useState(null);
   const [step, setStep] = useState(1);
   const [questionType, setQuestionType] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -358,6 +362,63 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         ? "Generate"
         : "Next";
 
+  // Import path: a self-contained modal, with Back returning to the choice.
+  if (mode === "import") {
+    return (
+      <ImportQuestionsModal
+        courseId={courseId}
+        onClose={onClose}
+        onBack={() => setMode(null)}
+      />
+    );
+  }
+
+  // Initial choice: author a new question, or import from a file.
+  if (mode === null) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title="Add Questions"
+        wide
+        footer={
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        }
+      >
+        <p className="mb-5 text-sm text-muted">
+          Create a new question from scratch (or with AI), or import questions from a GRASP
+          JSON export.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setMode("create")}
+            className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-gray-200 p-6 text-center transition-colors hover:border-primary/40"
+          >
+            <i className="fas fa-pen-to-square text-2xl text-primary" />
+            <span className="font-semibold text-ink">Create a Question</span>
+            <span className="text-xs text-muted">Author manually or generate with AI</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("import")}
+            className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-gray-200 p-6 text-center transition-colors hover:border-primary/40"
+          >
+            <i className="fas fa-file-import text-2xl text-primary" />
+            <span className="font-semibold text-ink">Import Questions</span>
+            <span className="text-xs text-muted">Upload a JSON export file</span>
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       open
@@ -373,15 +434,13 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           >
             Cancel
           </button>
-          {step > 1 && (
-            <button
-              type="button"
-              onClick={() => setStep(step - 1)}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
-            >
-              Back
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => (step > 1 ? setStep(step - 1) : setMode(null))}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+          >
+            Back
+          </button>
           <button
             type="button"
             disabled={saving || generating}
