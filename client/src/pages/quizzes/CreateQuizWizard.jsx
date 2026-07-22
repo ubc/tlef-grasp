@@ -7,6 +7,7 @@ import { toStringId, getObjectId } from "../../lib/utils";
 import { getMaterialTypeMeta } from "../../lib/materials";
 import { useToast } from "../../components/ui/Toast";
 import DeliveryFormatToggle from "../../components/DeliveryFormatToggle";
+import ImportQuizPanel from "./ImportQuizPanel";
 
 const WIZARD_STEPS = [
   { number: 1, label: "Select Materials" },
@@ -55,6 +56,9 @@ function StepIndicator({ step }) {
 
 export default function CreateQuizWizard({ courseId, onCreated }) {
   const showToast = useToast();
+  // Before building from materials, the instructor can choose to import a quiz
+  // from a file. null = choice not yet made.
+  const [mode, setMode] = useState(null);
   const [step, setStep] = useState(1);
   const [selectedMaterials, setSelectedMaterials] = useState([]);
   const [selectedObjectives, setSelectedObjectives] = useState([]);
@@ -132,6 +136,50 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
     });
   };
 
+  // Import path: a self-contained panel, with Back returning to the choice.
+  if (mode === "import") {
+    return (
+      <ImportQuizPanel
+        courseId={courseId}
+        onBack={() => setMode(null)}
+        onCreated={onCreated}
+      />
+    );
+  }
+
+  // Initial choice: build a quiz from course materials, or import one from a file.
+  if (mode === null) {
+    return (
+      <div className="rounded-2xl bg-white p-8 shadow-sm">
+        <h3 className="text-lg font-semibold text-ink">Create a New Quiz</h3>
+        <p className="mb-6 text-sm text-muted">
+          Build a quiz from your course materials and objectives, or import one from a GRASP
+          JSON export.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setMode("build")}
+            className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-gray-200 p-6 text-center transition-colors hover:border-primary/40"
+          >
+            <i className="fas fa-wand-magic-sparkles text-2xl text-primary" />
+            <span className="font-semibold text-ink">Build from Materials</span>
+            <span className="text-xs text-muted">Pick materials, objectives, and settings</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("import")}
+            className="flex flex-col items-center gap-1.5 rounded-xl border-2 border-gray-200 p-6 text-center transition-colors hover:border-primary/40"
+          >
+            <i className="fas fa-file-import text-2xl text-primary" />
+            <span className="font-semibold text-ink">Import a Quiz</span>
+            <span className="text-xs text-muted">Upload a JSON export file</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl bg-white p-8 shadow-sm">
       <StepIndicator step={step} />
@@ -181,7 +229,14 @@ export default function CreateQuizWizard({ courseId, onCreated }) {
               })
             )}
           </div>
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex justify-between">
+            <button
+              type="button"
+              onClick={() => setMode(null)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50"
+            >
+              <i className="fas fa-arrow-left" /> Back
+            </button>
             <button
               type="button"
               onClick={handleNextStep1}

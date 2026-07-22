@@ -269,7 +269,7 @@ const getQuestionByIdHandler = async (req, res) => {
 // Save questions to question bank
 const saveQuestionHandler = async (req, res) => {
   try {
-    const { questions, courseId } = req.body;
+    const { questions, courseId, dedupe } = req.body;
 
     if (!courseId) {
       return res.status(400).json({ error: "Course ID is required" });
@@ -288,14 +288,31 @@ const saveQuestionHandler = async (req, res) => {
       return res.status(400).json({ error: "No questions provided to save" });
     }
 
+    // Import sets dedupe: reject questions that already exist in the course
+    // rather than creating duplicates.
     const savedQuestionIds = [];
+    let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
-        const questionResult = await saveQuestion(courseId, questionData);
+        const questionResult = await saveQuestion(courseId, questionData, { dedupe: dedupe === true });
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
-        console.error("Error saving individual question:", error);
+        if (error.code === "DUPLICATE_QUESTION") {
+          duplicateCount += 1;
+        } else {
+          console.error("Error saving individual question:", error);
+        }
       }
+    }
+
+    // When every question was a duplicate, surface that plainly rather than a
+    // generic failure.
+    if (savedQuestionIds.length === 0 && duplicateCount > 0) {
+      return res.status(409).json({
+        error: "Every question already exists in this course.",
+        savedCount: 0,
+        duplicateCount,
+      });
     }
 
     if (savedQuestionIds.length === 0) {
@@ -306,6 +323,7 @@ const saveQuestionHandler = async (req, res) => {
       success: true,
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
+      duplicateCount,
       questionIds: savedQuestionIds
     });
   } catch (error) {

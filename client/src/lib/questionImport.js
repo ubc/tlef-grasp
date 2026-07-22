@@ -68,12 +68,18 @@ export function importQuestionLabel(question) {
   return String(question.title || question.stem || question.question || "").trim();
 }
 
+const VALID_STATUSES = ["Draft", "Approved", "Flagged"];
+
 // Map an imported question doc to the payload shape /api/question/save expects.
 // The meta objective is intentionally omitted — the server derives it from the
 // chosen granular's parent. Server-managed fields (_id, courseId, timestamps,
-// objective names) are dropped. Imported questions land as drafts for review.
-export function toSavePayload(question, granularObjectiveId) {
+// objective names) are dropped. Status defaults to "Draft" (bank import, so
+// imports get reviewed); pass { preserveStatus: true } to keep the file's own
+// status (quiz import, so an approved quiz round-trips into a working quiz).
+export function toSavePayload(question, granularObjectiveId, { preserveStatus = false } = {}) {
   const type = String(question.questionType || question.type || "").toLowerCase();
+  const status =
+    preserveStatus && VALID_STATUSES.includes(question.status) ? question.status : "Draft";
   const payload = {
     title: String(question.title || "").trim(),
     stem: String(question.stem || "").trim(),
@@ -81,7 +87,7 @@ export function toSavePayload(question, granularObjectiveId) {
     questionType: type,
     bloom: question.bloom || question.bloomLevel || "",
     granularObjectiveId,
-    status: "Draft",
+    status,
     options: question.options && typeof question.options === "object" ? question.options : {},
     correctAnswer: question.correctAnswer ?? "",
     acceptableAnswers: Array.isArray(question.acceptableAnswers)

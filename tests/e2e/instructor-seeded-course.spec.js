@@ -1,9 +1,30 @@
 const { test, expect } = require('@playwright/test');
+const { MongoClient } = require('mongodb');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
 const { SEED } = require('./seed');
 const { getQuizCard, selectSeededCourse, completeSeededQuiz } = require('./helpers');
 
 const IDP_ENABLED = process.env.E2E_SAML === '1';
+
+// Remove a quiz (and its question mappings + imported questions) created by the
+// quiz-import test so re-runs stay clean.
+async function deleteImportedQuiz(quizName, questionTitles) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return;
+  const client = new MongoClient(uri, { connectTimeoutMS: 8000 });
+  await client.connect();
+  try {
+    const db = client.db(process.env.MONGODB_DB_NAME || undefined);
+    const quizzes = await db.collection('grasp_quiz').find({ name: quizName }).toArray();
+    for (const quiz of quizzes) {
+      await db.collection('grasp_quiz_question').deleteMany({ quizId: quiz._id });
+      await db.collection('grasp_quiz').deleteOne({ _id: quiz._id });
+    }
+    await db.collection('grasp_question').deleteMany({ title: { $in: questionTitles } });
+  } finally {
+    await client.close();
+  }
+}
 
 test.describe('Instructor seeded course management (authenticated)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
@@ -83,6 +104,79 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     for (const question of parsed.questions) {
       expect(question).toHaveProperty('learningObjectiveName');
       expect(question).toHaveProperty('granularObjectiveName');
+    }
+  });
+
+  test('imports a whole quiz from JSON, restoring its settings and questions', async ({
+    page,
+  }) => {
+    const stamp = Date.now();
+    const quizName = `[[e2e-import]] Imported Quiz ${stamp}`;
+    const questionTitle = `[[e2e-import]] Imported quiz MC ${stamp}`;
+    const importFile = {
+      course: 'ignored-on-import',
+      quiz: {
+        name: quizName,
+        description: 'Imported via e2e',
+        deliveryFormat: 'all-approved',
+        disablePreviousNavigation: false,
+        timeLimitMinutes: 42,
+        published: false,
+      },
+      questions: [
+        {
+          title: questionTitle,
+          stem: 'Select the best answer:',
+          questionType: 'multiple-choice',
+          options: {
+            A: { text: 'Correct choice', feedback: '' },
+            B: { text: 'Wrong', feedback: '' },
+            C: { text: 'Wrong', feedback: '' },
+            D: { text: 'Wrong', feedback: '' },
+          },
+          correctAnswer: 'A',
+          bloom: 'Understand',
+          status: 'Approved',
+          granularObjectiveName: SEED.GRANULAR_NAME,
+          learningObjectiveName: SEED.OBJECTIVE_NAME,
+        },
+      ],
+    };
+
+    try {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/quizzes');
+      await page.getByRole('button', { name: 'Create New Quiz' }).click();
+
+      // The wizard opens on a build-or-import choice.
+      await expect(
+        page.getByRole('heading', { name: 'Create a New Quiz' })
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Import a Quiz' }).click();
+      await expect(page.getByRole('heading', { name: 'Import a Quiz' })).toBeVisible();
+
+      await page.locator('input[type="file"]').setInputFiles({
+        name: `quiz-${stamp}.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(importFile)),
+      });
+
+      // The quiz name is prefilled and the restored settings are shown.
+      await expect(page.getByLabel('Quiz Name')).toHaveValue(quizName);
+      await expect(page.getByText(/Restored settings: 42 min/)).toBeVisible();
+
+      // The single question matched the seeded objective by name, so import is
+      // immediately allowed.
+      const importButton = page.getByRole('button', { name: /Import Quiz/ });
+      await expect(importButton).toBeEnabled();
+      await importButton.click();
+
+      await expect(page.getByText(/Imported quiz with 1 question/)).toBeVisible();
+
+      // The new quiz shows in Manage Quizzes.
+      await expect(getQuizCard(page, quizName)).toBeVisible();
+    } finally {
+      await deleteImportedQuiz(quizName, [questionTitle]);
     }
   });
 

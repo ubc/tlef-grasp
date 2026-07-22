@@ -70,10 +70,10 @@ export function useUpdateQuestion(courseId, options) {
 export function useSaveQuestions(courseId, options) {
   const invalidate = useInvalidateQuestions(courseId);
   return useMutation({
-    mutationFn: ({ questions, quizId }) =>
+    mutationFn: ({ questions, quizId, dedupe }) =>
       quizId
         ? api.post(`/api/quiz/${quizId}/questions`, { courseId, questions })
-        : api.post("/api/question/save", { courseId, questions }),
+        : api.post("/api/question/save", { courseId, questions, dedupe }),
     ...options,
     onSuccess: (...args) => {
       invalidate();

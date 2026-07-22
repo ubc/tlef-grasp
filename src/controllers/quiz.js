@@ -421,14 +421,21 @@ const createQuizHandler = async (req, res) => {
       finalQuestionIds.push(...questionIds);
     }
 
-    // Create and attach new questions
+    // Create and attach new questions. These only arrive from quiz import, so
+    // de-duplicate against the course to avoid re-creating questions that are
+    // already there (same text + answers + granular objective).
+    let duplicateCount = 0;
     if (newQuestions && Array.isArray(newQuestions)) {
       for (const questionData of newQuestions) {
         try {
-          const questionResult = await questionService.saveQuestion(courseId, questionData);
+          const questionResult = await questionService.saveQuestion(courseId, questionData, { dedupe: true });
           finalQuestionIds.push(questionResult.insertedId.toString());
         } catch (error) {
-          console.error("Error saving new question during quiz creation:", error);
+          if (error.code === "DUPLICATE_QUESTION") {
+            duplicateCount += 1;
+          } else {
+            console.error("Error saving new question during quiz creation:", error);
+          }
         }
       }
     }
@@ -437,7 +444,12 @@ const createQuizHandler = async (req, res) => {
       await quizService.addQuestionsToQuiz(quizId, finalQuestionIds);
     }
 
-    res.status(201).json({ success: true, quiz, questionsAdded: finalQuestionIds.length });
+    res.status(201).json({
+      success: true,
+      quiz,
+      questionsAdded: finalQuestionIds.length,
+      duplicateCount,
+    });
   } catch (error) {
     console.error("Error creating quiz:", error);
     res.status(500).json({ success: false, error: error.message });

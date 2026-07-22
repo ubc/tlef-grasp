@@ -324,6 +324,26 @@ test.describe('Instructor question bank (seeded course)', () => {
       // The imported questions now appear in the bank.
       await expect(page.getByRole('cell', { name: matchedTitle })).toBeVisible();
       await expect(page.getByRole('cell', { name: unmatchedTitle })).toBeVisible();
+
+      // Re-importing the very same file must not create duplicates: the first
+      // question already matches an objective, so it is rejected as a duplicate.
+      await page.getByRole('button', { name: 'Add New Question' }).click();
+      await page
+        .getByRole('dialog', { name: 'Add Questions' })
+        .getByRole('button', { name: 'Import Questions' })
+        .click();
+      const reDialog = page.getByRole('dialog', { name: 'Import Questions' });
+      await reDialog.locator('input[type="file"]').setInputFiles({
+        name: `reimport-${stamp}.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify({ questions: [importFile.questions[0]] })),
+      });
+      await reDialog
+        .getByRole('button', { name: /Import 1 question/ })
+        .click();
+      await expect(page.getByText(/already exist/i)).toBeVisible();
+      // Still exactly one copy of the matched question in the bank.
+      await expect(page.getByRole('cell', { name: matchedTitle })).toHaveCount(1);
     } finally {
       await deleteQuestionsByTitle([matchedTitle, unmatchedTitle]);
     }
