@@ -65,7 +65,7 @@ INSTRUCTIONS:
 3. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
 4. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
 5. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
+6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes.
 7. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
 
 Bloom's level guidance (sample verbs in parentheses):
@@ -150,7 +150,32 @@ CORRECTNESS:
 - Do any distractors accidentally give a correct answer?
 - Are any two answer options identical or near-identical in text?
 - Note: blank feedback on the correct answer is intentional and is NOT a flag reason.
-- IMPORTANT: For questions involving mathematics, flag a correctness issue ONLY if you are highly confident there is an error. If you are uncertain whether the answer is correct, do NOT flag it — leave that judgment to the instructor.
+- IMPORTANT: This course may be in any discipline — mathematics, chemistry, physics,
+  biology, or a non-quantitative subject. Whatever the discipline, if the question
+  has a checkable, objective correct answer, you MUST independently recompute or
+  re-derive it in the reasoning field before judging, rather than judging whether it
+  sounds plausible. This includes: a numeric computation; a comparison of which of
+  two values, quantities, or outcomes is greater, favoured, or correct; whether
+  something satisfies a stated definition, condition, or rule; or a classification
+  against criteria given in the material. Show the actual recomputation or
+  derivation — the real numbers, substitution, or step-by-step reasoning — not just
+  a verdict. Only leave flagged false if your own re-derivation matches the stated
+  correctAnswer. Do not accept a claim as correct just because it sounds plausible
+  or uses correct-sounding terminology — re-derive it.
+- This re-derivation requirement applies to any checkable, objective claim, in any
+  discipline. For genuinely subjective judgment calls (see BLOOM LEVEL ACCURACY and
+  DISTRACTOR QUALITY below), it is still fine to leave flagged false when uncertain.
+- Before re-deriving anything, check whether the question explicitly states a
+  convention, definition, ordering, indexing, sign convention, unit, or setup
+  particular to that problem. If it does, your re-derivation MUST use that exact
+  stated convention — do not substitute a different one just because it is more
+  familiar or more common in general practice. Silently swapping to a different,
+  more familiar convention than the one the question actually stated produces a
+  different, non-comparable answer — that is a reviewer error, not a question
+  error. If your re-derivation disagrees with the stated correctAnswer, before
+  flagging, explicitly re-check in the reasoning field that you used the exact
+  convention/definition the question itself stated, not a default one from your
+  own training or general knowledge of the field.
 
 TOPIC ALIGNMENT:
 - Does the question content actually test the concept named in the learning objective?
@@ -179,6 +204,17 @@ Step 2 — Set flagged to true if you found any issue in Step 1. Describe it con
 CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question listed above — match each by its questionId.
 
 You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
+
+const QUESTION_FIX_PROMPT = `An independent quality reviewer examined the {questionType} question you generated above (beginning: "{questionExcerpt}") and flagged it:
+
+REVIEWER'S ISSUE: {issue}
+REVIEWER'S REASONING: {reasoning}
+
+Fix ONLY what is necessary to resolve this specific issue. Do not rewrite the question from scratch, and do not change any field the issue above does not implicate — if the issue is about one distractor's feedback, leave the stem, the other distractors, and their feedback exactly as they are; if the issue is about the stem or the correct answer, change only what is needed to correct it. Preserve the original question's topic, Bloom's Taxonomy level, and question type exactly.
+
+Before finalizing, independently re-verify that your corrected content is accurate — work through it a different way than you originally constructed the question.
+
+Respond with ONLY a single valid JSON object matching the same schema as before. No other text.`;
 
 const OPEN_ENDED_GRADING_PROMPT = `You are an automated grader for a university course. Grade the student's answer to an open-ended question.
 
@@ -252,6 +288,7 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
+  QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,
   POWERPOINT_IMAGE_DESCRIPTION_PROMPT,

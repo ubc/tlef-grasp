@@ -14,8 +14,15 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
     0
   );
   let generated = 0;
-  let totalPromptTokens = 0;
-  let totalCompletionTokens = 0;
+  const tokenTotals = {
+    generation: { promptTokens: 0, completionTokens: 0 },
+    review: { promptTokens: 0, completionTokens: 0 },
+    fix: { promptTokens: 0, completionTokens: 0 },
+  };
+  const addTokens = (bucket, usage) => {
+    bucket.promptTokens += usage?.promptTokens || 0;
+    bucket.completionTokens += usage?.completionTokens || 0;
+  };
   const allQuestions = [];
 
   for (const learningObjective of objectiveGroups) {
@@ -74,6 +81,10 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
             lastEdited: now(),
             by: "LLM + RAG System",
             explanation: questionData.explanation || "",
+            reviewFlag: questionData.reviewFlag || false,
+            reviewIssue: questionData.reviewIssue || "",
+            wasAutoFixed: questionData.wasAutoFixed || false,
+            autoFixReason: questionData.autoFixReason || "",
           };
 
           if (resolvedType === QUESTION_TYPES.CALCULATION) {
@@ -98,8 +109,9 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
 
         allQuestions.push(...questions);
         const tokenUsage = response.tokenUsage || {};
-        totalPromptTokens += tokenUsage.promptTokens || 0;
-        totalCompletionTokens += tokenUsage.completionTokens || 0;
+        addTokens(tokenTotals.generation, tokenUsage.generation);
+        addTokens(tokenTotals.review, tokenUsage.review);
+        addTokens(tokenTotals.fix, tokenUsage.fix);
         generated += questions.length;
         onProgress?.({ generated, total });
       } catch (error) {
@@ -115,8 +127,15 @@ export async function generateQuestions(course, objectiveGroups, onProgress) {
   return {
     questions: allQuestions,
     tokenUsage: {
-      promptTokens: totalPromptTokens,
-      completionTokens: totalCompletionTokens,
+      ...tokenTotals,
+      total: {
+        promptTokens:
+          tokenTotals.generation.promptTokens + tokenTotals.review.promptTokens + tokenTotals.fix.promptTokens,
+        completionTokens:
+          tokenTotals.generation.completionTokens +
+          tokenTotals.review.completionTokens +
+          tokenTotals.fix.completionTokens,
+      },
     },
   };
 }
@@ -175,6 +194,10 @@ export function convertQuestionsToGroups(questions) {
         explanation: question.explanation,
         flagStatus: question.flagStatus || false,
         flagReason: question.flagReason || "",
+        reviewFlag: question.reviewFlag || false,
+        reviewIssue: question.reviewIssue || "",
+        wasAutoFixed: question.wasAutoFixed || false,
+        autoFixReason: question.autoFixReason || "",
       };
 
       let card;
@@ -257,7 +280,12 @@ export function convertQuestionsToGroups(questions) {
   }));
 }
 
-// Run the AI quality review and annotate flagged questions in place.
+// Run the AI quality review and annotate flagged questions in place. Fresh
+// generation no longer calls this directly — review (and an automatic fix
+// attempt) now happens server-side inside generate-questions-with-rag, and
+// reviewFlag/reviewIssue arrive already populated on each question. Kept
+// exported for a future "re-review after manual instructor edit" flow, which
+// doesn't exist yet but is the natural fit for this endpoint.
 export async function reviewGeneratedQuestions(questionGroups, courseId) {
   const allQuestions = [];
   questionGroups.forEach((group) => {
@@ -461,7 +489,6 @@ export async function generateWizardQuestion({
 
   const { questions } = await generateQuestions(course, objectiveGroups);
   const groups = convertQuestionsToGroups(questions);
-  await reviewGeneratedQuestions(groups, course.id || course._id);
 
   const card = groups[0]?.los?.[0]?.questions?.[0];
   if (!card) {

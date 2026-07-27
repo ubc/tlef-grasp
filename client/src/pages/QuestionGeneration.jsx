@@ -13,7 +13,6 @@ import { useQuestionDraft } from "./question-generation/useQuestionDraft";
 import {
   generateQuestions,
   convertQuestionsToGroups,
-  reviewGeneratedQuestions,
   buildQuestionPayload,
 } from "./question-generation/generationApi";
 
@@ -197,21 +196,21 @@ export default function QuestionGeneration() {
       (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0),
       0
     );
-    setGenerationMessage(`Generating questions — 0 of ${totalExpected}`);
+    setGenerationMessage(
+      `Generating questions — 0 of ${totalExpected} (includes automatic quality review and fixes)`
+    );
 
     try {
       const { questions } = await generateQuestions(
         selectedCourse,
         objectiveGroups,
         ({ generated, total }) =>
-          setGenerationMessage(`Generating questions — ${generated} of ${total}`)
+          setGenerationMessage(
+            `Generating questions — ${generated} of ${total} (includes automatic quality review and fixes)`
+          )
       );
 
       const groups = convertQuestionsToGroups(questions);
-      setGenerationMessage(
-        `Reviewing ${questions.length} questions for quality — almost done…`
-      );
-      await reviewGeneratedQuestions(groups, courseId);
 
       setQuestionGroups(groups);
       questionGroupsRef.current = groups;

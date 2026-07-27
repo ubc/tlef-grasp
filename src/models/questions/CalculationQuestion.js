@@ -59,7 +59,7 @@ You must output a JSON object representing a parameterized question. The server 
 
 ### VARIABLE NAMING RULES (CRITICAL):
 - Use ONLY single-letter variable names: a, b, c, d, m, n, r, t, v, x, y, z.
-- Do NOT use words (e.g., "mass", "velocity", "radius", "time").
+- Do NOT use words (e.g., "mass", "population", "revenue", "time").
 - Names in \`calculationFormula\`, \`calculationVariables\`, and \`{{name}}\` placeholders in \`stem\` must be byte-for-byte identical.
 
 ### RULES (violations cause immediate rejection):
@@ -99,7 +99,7 @@ You must output a JSON object representing a parameterized question. The server 
 - The formula is non-trivial: confirm every variable affects the result (no variable cancels out).
 - The stem asks for a computable number, not a convergence/divergence label.
 
-Worked example (derive your own formula and variables from the course content): for "kinetic energy of an object of mass {{m}} kg at {{v}} m/s", the formula is "0.5 * m * v^2" with variables m and v, each appearing in both the stem (as {{m}}, {{v}}) and the formula.`;
+Worked example of the MECHANICS only (derive your own formula, stem, and variables from the actual course content — this is not a suggested topic): for a stem like "compute the result for {{a}} and {{b}}" where the underlying relationship doubles {{a}} and adds {{b}}, the formula is "2*a + b" with variables a and b, each appearing in both the stem (as {{a}}, {{b}}) and the formula.`;
     }
 
     static getRetrySuffix(attempt, lastError) {

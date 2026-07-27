@@ -24,7 +24,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
 
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
@@ -422,12 +422,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         return filled;
       };
 
-      const questionsData = [];
+      let questionsData = [];
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       const maxRetries = 3;
       // Conversation history of successful turns for context (enables prompt caching)
       const conversationHistory = [];
+      // conversationCutoffs[k] = conversationHistory.length immediately after
+      // questionsData[k]'s own turn was appended — the branch point the review-fix
+      // loop uses to continue that specific question's conversation for a fix,
+      // without re-sending or duplicating later questions' turns.
+      const conversationCutoffs = [];
       const seenQuestionTexts = new Set(
         existingQuestionTexts.map(normalizeQuestionText).filter(Boolean)
       );
@@ -484,6 +489,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             if (!responseContent) throw new Error("Empty response from LLM");
 
             const parsed = safeJsonParse(responseContent);
+            // Scramble here — on the raw parsed response, before anything (the
+            // conversation history, review, or the fix loop) ever sees a letter
+            // assignment. Scrambling later would desync whichever letter a
+            // reviewer's issue text names from what the instructor eventually
+            // sees, since nothing re-derives that text after a later shuffle.
+            scrambleMultipleChoiceOptions(parsed);
             const candidateQuestion = QuestionFactory
               .getModel(currentQuestionType)
               .validateAndNormalize(parsed);
@@ -500,9 +511,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
             console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
 
-            // Save to conversation history so subsequent questions have context
+            // Save to conversation history so subsequent questions have context.
+            // Store the scrambled version (not the raw responseContent) so the
+            // model's own history matches what review/fix later reason about.
             conversationHistory.push({ role: 'user', content: turnPrompt });
-            conversationHistory.push({ role: 'assistant', content: responseContent });
+            conversationHistory.push({ role: 'assistant', content: JSON.stringify(parsed) });
             if (normalizedQuestionText) seenQuestionTexts.add(normalizedQuestionText);
 
             break; // Success
@@ -523,36 +536,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         }
 
         if (questionData) {
-          // Programmatically scramble the generated options 
-          if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
-            const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
-            const optionValues = optionKeys.map(k => questionData.options[k]);
-
-            for (let j = optionValues.length - 1; j > 0; j--) {
-              const k = Math.floor(Math.random() * (j + 1));
-              [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
-            }
-
-            const originalCorrectValue = questionData.options[questionData.correctAnswer];
-            let newCorrectKey = questionData.correctAnswer;
-
-            for (let j = 0; j < optionKeys.length; j++) {
-              const key = optionKeys[j];
-              questionData.options[key] = optionValues[j];
-              if (optionValues[j] === originalCorrectValue) {
-                newCorrectKey = key;
-              }
-            }
-
-            const correctOptionLetter = questionData.correctAnswer;
-            questionData.correctAnswer = newCorrectKey;
-            console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
-          }
-
           // Add the bloom level to the question data so the UI knows which level it belongs to
           questionData.bloomLevel = currentBloomLevel;
 
           questionsData.push(questionData);
+          conversationCutoffs.push(conversationHistory.length);
         }
       }
 
@@ -563,11 +551,33 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
+      const reviewFixResult = await reviewAndFixQuestions(
+        questionsData,
+        courseName,
+        conversationHistory,
+        conversationCutoffs,
+        learningObjectiveText,
+        granularLearningObjectiveText
+      );
+      questionsData = reviewFixResult.questionsData;
+      const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
+
+      const generationTokens = { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
       res.json({
         success: true,
         questions: questionsData,
         method: "RAG + LLM Stateful Conversation",
-        tokenUsage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+        // Broken out by stage so cost attributable to the review-fix loop
+        // (review + fix) can be tracked separately from generation.
+        tokenUsage: {
+          generation: generationTokens,
+          review: reviewTokens,
+          fix: fixTokens,
+          total: {
+            promptTokens: generationTokens.promptTokens + reviewTokens.promptTokens + fixTokens.promptTokens,
+            completionTokens: generationTokens.completionTokens + reviewTokens.completionTokens + fixTokens.completionTokens,
+          },
+        },
       });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
@@ -869,7 +879,274 @@ async function rateQuestions(questions, courseName) {
     ratings = [ratings];
   }
   if (!Array.isArray(ratings)) throw new Error("Review response is not a JSON array");
-  return ratings;
+  return {
+    ratings,
+    usage: { promptTokens: usage?.promptTokens || 0, completionTokens: usage?.completionTokens || 0 },
+  };
+}
+
+function firstWords(text, count) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).slice(0, count).join(" ");
+}
+
+// Shuffle an MCQ's option lettering so the correct answer isn't always in
+// the same position. Must run immediately when a question (or a fix) is
+// produced — before it's pushed to conversation history or reviewed — and
+// never again after that. Scrambling later would desync whichever letter a
+// reviewer's issue text names (shown to the instructor via reviewIssue /
+// autoFixReason) from the lettering the instructor actually ends up seeing,
+// since nothing re-derives that text after a later shuffle.
+function scrambleMultipleChoiceOptions(questionData) {
+  if (!questionData.options || !questionData.correctAnswer || !questionData.options[questionData.correctAnswer]) {
+    return;
+  }
+  const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+  const optionValues = optionKeys.map(k => questionData.options[k]);
+
+  for (let j = optionValues.length - 1; j > 0; j--) {
+    const k = Math.floor(Math.random() * (j + 1));
+    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
+  }
+
+  const originalCorrectValue = questionData.options[questionData.correctAnswer];
+  let newCorrectKey = questionData.correctAnswer;
+
+  for (let j = 0; j < optionKeys.length; j++) {
+    const key = optionKeys[j];
+    questionData.options[key] = optionValues[j];
+    if (optionValues[j] === originalCorrectValue) {
+      newCorrectKey = key;
+    }
+  }
+
+  const correctOptionLetter = questionData.correctAnswer;
+  questionData.correctAnswer = newCorrectKey;
+  console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
+}
+
+// Attempt a single targeted-patch fix for one flagged question, branching off
+// its own slice of the original generation conversation. Never throws — a
+// failed attempt (validation never succeeds within maxRetries) resolves with
+// fixed: null so the caller can still account for the tokens spent and retry
+// in a later cycle rather than losing the question.
+async function attemptFix(questionData, rating, branchedHistory, maxRetries, temperature) {
+  const questionType = questionData.questionType || questionData.type;
+  const model = QuestionFactory.getModel(questionType);
+  const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
+
+  let lastError = null;
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  const localHistory = [];
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const turnPrompt = attempt === 1
+      ? QUESTION_FIX_PROMPT
+          .replace("{questionType}", questionType)
+          .replace("{questionExcerpt}", questionExcerpt)
+          .replace("{issue}", rating?.issue || "(no issue text provided)")
+          .replace("{reasoning}", rating?.reasoning || "(no reasoning provided)")
+      : model.getRetrySuffix(attempt, lastError);
+
+    const messages = [...branchedHistory, ...localHistory, { role: "user", content: turnPrompt }];
+    let responseContent = null;
+    try {
+      const response = await generateStructured({ messages, schema: model.getJsonSchema(), temperature });
+      totalPromptTokens += response.usage?.promptTokens || 0;
+      totalCompletionTokens += response.usage?.completionTokens || 0;
+      responseContent = response.content || "";
+      if (!responseContent) throw new Error("Empty response from LLM");
+
+      const parsed = safeJsonParse(responseContent);
+      // Scramble this fix's own output immediately too — same reasoning as
+      // in the generation loop: it must happen before this ever gets
+      // re-reviewed or shipped, and never again after.
+      scrambleMultipleChoiceOptions(parsed);
+      const fixed = model.validateAndNormalize(parsed);
+      return { fixed, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Review-fix: fix attempt ${attempt}/${maxRetries} failed for a ${questionType} question:`, error.message);
+      if (responseContent) {
+        localHistory.push({ role: "user", content: turnPrompt });
+        localHistory.push({ role: "assistant", content: responseContent });
+      }
+    }
+  }
+
+  return { fixed: null, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
+}
+
+// Apply a batch of review ratings onto questionsData (by request-scoped index
+// id) and return which of the given indices are still flagged. Mutates
+// questionsData in place for reviewFlag/reviewIssue, same as generation does
+// for bloomLevel elsewhere in this file.
+function applyRatings(questionsData, ratings, indices) {
+  const byIndex = new Map();
+  (ratings || []).forEach((r) => {
+    const idx = parseInt(r.questionId, 10);
+    if (Number.isInteger(idx)) byIndex.set(idx, r);
+  });
+  const stillFlagged = [];
+  for (const i of indices) {
+    const rating = byIndex.get(i);
+    if (rating && rating.flagged) {
+      questionsData[i].reviewFlag = true;
+      questionsData[i].reviewIssue = rating.issue || "";
+      stillFlagged.push(i);
+    } else {
+      questionsData[i].reviewFlag = false;
+      questionsData[i].reviewIssue = "";
+    }
+  }
+  return { byIndex, stillFlagged };
+}
+
+/**
+ * Bounded review→fix loop: review the freshly generated batch, and for
+ * whatever gets flagged, attempt a targeted-patch fix (branching off that
+ * question's own slice of the generation conversation) followed by a full
+ * independent re-review of just the fixed subset — up to MAX_CYCLES times.
+ * Whatever is still flagged after the cap ships to the instructor exactly as
+ * before this feature existed: not a new failure mode, just reached after
+ * more attempts. See the "Bounded Review→Fix Loop" plan for the full design
+ * rationale (review must stay independent; fixes must be targeted patches,
+ * not full regenerations; the loop bound is code-controlled, not model-decided).
+ */
+async function reviewAndFixQuestions(
+  questionsData,
+  courseName,
+  conversationHistory,
+  conversationCutoffs,
+  learningObjectiveText,
+  granularLearningObjectiveText
+) {
+  const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
+  const MAX_FIX_RETRIES = 2;
+  const FIX_TEMPERATURE = 0.3;
+
+  // Tallied across every rateQuestions() call (initial + all re-reviews) and
+  // every attemptFix() call (successful or not) in this loop, so the caller
+  // can report the review-fix loop's cost separately from generation's.
+  let reviewPromptTokens = 0;
+  let reviewCompletionTokens = 0;
+  let fixPromptTokens = 0;
+  let fixCompletionTokens = 0;
+  const tokenUsage = () => ({
+    review: { promptTokens: reviewPromptTokens, completionTokens: reviewCompletionTokens },
+    fix: { promptTokens: fixPromptTokens, completionTokens: fixCompletionTokens },
+  });
+
+  const forReview = (q, i) => ({
+    ...q,
+    id: String(i),
+    learningObjectiveText,
+    granularObjectiveText: granularLearningObjectiveText,
+  });
+
+  let ratings;
+  try {
+    const initialReview = await rateQuestions(questionsData.map(forReview), courseName);
+    ratings = initialReview.ratings;
+    reviewPromptTokens += initialReview.usage.promptTokens;
+    reviewCompletionTokens += initialReview.usage.completionTokens;
+  } catch (error) {
+    console.error("Review-fix loop: initial review failed, shipping questions unreviewed:", error.message);
+    return { questionsData, tokenUsage: tokenUsage() };
+  }
+
+  const allIndices = questionsData.map((_, i) => i);
+  const { byIndex: initialRatingByIndex, stillFlagged: initialFlagged } = applyRatings(questionsData, ratings, allIndices);
+  const initialFlaggedCount = initialFlagged.length;
+
+  let flagged = initialFlagged;
+  let issueByIndex = initialRatingByIndex;
+  const cycleLog = [];
+
+  for (let cycle = 1; cycle <= MAX_CYCLES && flagged.length > 0; cycle++) {
+    const results = await Promise.all(
+      flagged.map((i) =>
+        attemptFix(
+          questionsData[i],
+          issueByIndex.get(i),
+          conversationHistory.slice(0, conversationCutoffs[i]),
+          MAX_FIX_RETRIES,
+          FIX_TEMPERATURE
+        )
+      )
+    );
+
+    let cyclePromptTokens = 0;
+    let cycleCompletionTokens = 0;
+    const patched = [];
+    const failedToFix = [];
+
+    results.forEach((result, idx) => {
+      const i = flagged[idx];
+      cyclePromptTokens += result.promptTokens;
+      cycleCompletionTokens += result.completionTokens;
+
+      if (result.fixed) {
+        const preservedBloom = questionsData[i].bloomLevel;
+        const fixedIssueText = issueByIndex.get(i)?.issue || "an issue";
+        questionsData[i] = result.fixed;
+        questionsData[i].bloomLevel = preservedBloom;
+        questionsData[i].autoFixLastIssue = fixedIssueText;
+        patched.push(i);
+      } else {
+        failedToFix.push(i);
+      }
+    });
+
+    fixPromptTokens += cyclePromptTokens;
+    fixCompletionTokens += cycleCompletionTokens;
+    const fixModel = getLLMModel() || "unknown";
+    logCostSummary(`Question fix (cycle ${cycle}, ${patched.length}/${flagged.length} fixed)`, fixModel, cyclePromptTokens, cycleCompletionTokens);
+
+    let stillFlaggedAfterFix = [];
+    if (patched.length > 0) {
+      let reReviewRatings = [];
+      try {
+        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName);
+        reReviewRatings = reReview.ratings;
+        reviewPromptTokens += reReview.usage.promptTokens;
+        reviewCompletionTokens += reReview.usage.completionTokens;
+      } catch (error) {
+        console.error(`Review-fix loop: re-review failed in cycle ${cycle}, keeping fixed questions flagged as a precaution:`, error.message);
+        for (const i of patched) {
+          questionsData[i].reviewFlag = true;
+          questionsData[i].reviewIssue = questionsData[i].autoFixLastIssue || questionsData[i].reviewIssue || "";
+        }
+        stillFlaggedAfterFix = [...patched];
+      }
+      if (reReviewRatings.length) {
+        const { byIndex: reReviewByIndex, stillFlagged } = applyRatings(questionsData, reReviewRatings, patched);
+        for (const i of patched) {
+          if (!stillFlagged.includes(i)) {
+            questionsData[i].wasAutoFixed = true;
+            questionsData[i].autoFixReason = `Automatically fixed after an AI review found: ${questionsData[i].autoFixLastIssue || "an issue"}`;
+          }
+        }
+        issueByIndex = new Map([...issueByIndex, ...reReviewByIndex]);
+        stillFlaggedAfterFix = stillFlagged;
+      }
+    }
+
+    cycleLog.push(`cycle ${cycle} fixed ${patched.length - stillFlaggedAfterFix.length}/${flagged.length}`);
+    flagged = [...failedToFix, ...stillFlaggedAfterFix];
+  }
+
+  console.log(
+    `🔧 Review-fix loop: ${initialFlaggedCount} flagged initially` +
+      (cycleLog.length ? ` → ${cycleLog.join(" → ")}` : "") +
+      ` → ${flagged.length} flagged, ${cycleLog.length} cycle(s) used`
+  );
+
+  for (const q of questionsData) {
+    delete q.autoFixLastIssue;
+  }
+
+  return { questionsData, tokenUsage: tokenUsage() };
 }
 
 const reviewQuestionsHandler = async (req, res) => {
@@ -901,7 +1178,7 @@ const reviewQuestionsHandler = async (req, res) => {
     if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
-    const ratings = await rateQuestions(questions, courseName);
+    const { ratings } = await rateQuestions(questions, courseName);
 
     const results = [];
 
