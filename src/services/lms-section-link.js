@@ -2,6 +2,7 @@ const { ObjectId } = require('mongodb');
 const databaseService = require('./database');
 
 const CANVAS_PROVIDER = 'canvas';
+const MOODLE_PROVIDER = 'moodle';
 
 const toObjectId = (id) =>
   typeof id === 'string' && ObjectId.isValid(id) ? new ObjectId(id) : id;
@@ -35,13 +36,48 @@ async function setCanvasSectionLink(
   canvasSection,
   linkedBy
 ) {
+  return setSectionLmsLink(
+    courseId,
+    sectionId,
+    CANVAS_PROVIDER,
+    canvasCourse,
+    canvasSection,
+    linkedBy
+  );
+}
+
+async function setMoodleSectionLink(
+  courseId,
+  sectionId,
+  moodleCourse,
+  moodleGroup,
+  linkedBy
+) {
+  return setSectionLmsLink(
+    courseId,
+    sectionId,
+    MOODLE_PROVIDER,
+    moodleCourse,
+    moodleGroup,
+    linkedBy
+  );
+}
+
+async function setSectionLmsLink(
+  courseId,
+  sectionId,
+  provider,
+  externalCourse,
+  externalSection,
+  linkedBy
+) {
   const link = {
-    provider: CANVAS_PROVIDER,
-    externalCourseId: String(canvasCourse.id),
-    externalCourseName: String(canvasCourse.name || ''),
-    externalCourseCode: String(canvasCourse.code || ''),
-    externalSectionId: String(canvasSection.id),
-    externalSectionName: String(canvasSection.name || ''),
+    provider,
+    externalCourseId: String(externalCourse.id),
+    externalCourseName: String(externalCourse.name || ''),
+    externalCourseCode: String(externalCourse.code || ''),
+    externalSectionId: String(externalSection.id),
+    externalSectionName: String(externalSection.name || ''),
     linkedBy: toObjectId(linkedBy),
     linkedAt: new Date(),
   };
@@ -69,5 +105,6 @@ async function removeSectionLmsLink(courseId, sectionId) {
 module.exports = {
   getSectionLmsLink,
   setCanvasSectionLink,
+  setMoodleSectionLink,
   removeSectionLmsLink,
 };

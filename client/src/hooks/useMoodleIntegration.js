@@ -3,29 +3,25 @@ import { ApiError } from "../lib/api";
 import { lmsRequest, parseLmsResponse } from "../lib/lmsApi";
 import { queryKeys } from "../lib/queryKeys";
 
-function markCanvasDisconnected(queryClient, error) {
+function markMoodleDisconnected(queryClient, error) {
   if (error?.body?.connected !== false) return;
-  queryClient.setQueryData(queryKeys.canvasStatus, (current) => ({
+  queryClient.setQueryData(queryKeys.moodleStatus, (current) => ({
     ...current,
     configured: true,
     connected: false,
   }));
 }
 
-export function useCanvasStatus() {
+export function useMoodleStatus() {
   const query = useQuery({
-    queryKey: queryKeys.canvasStatus,
+    queryKey: queryKeys.moodleStatus,
     queryFn: async () => {
-      const response = await fetch("/api/lms/canvas/status");
+      const response = await fetch("/api/lms/moodle/status");
       const data = await parseLmsResponse(response);
 
-      // A missing deployment configuration is an expected feature-probe
-      // result, not an application error.
       if (response.status === 404 && data?.configured === false) {
         return { configured: false, connected: false };
       }
-      // Canvas's requireAuth middleware uses 401 to mean the GRASP session is
-      // valid but this user has no usable Canvas token.
       if (response.status === 401 && data?.connected === false) {
         return { configured: true, connected: false };
       }
@@ -35,7 +31,7 @@ export function useCanvasStatus() {
       }
       if (!response.ok) {
         throw new ApiError(
-          data?.error || `Canvas status failed with status ${response.status}`,
+          data?.error || `Moodle status failed with status ${response.status}`,
           response.status,
           data
         );
@@ -49,28 +45,68 @@ export function useCanvasStatus() {
     ...query,
     configured: query.data?.configured === true,
     connected: query.data?.connected === true,
-    canvasDomain: query.data?.canvasDomain || "",
+    moodleDomain: query.data?.moodleDomain || "",
   };
 }
 
 const sectionPath = (courseId, sectionId) =>
-  `/api/lms/canvas/courses/${encodeURIComponent(courseId)}/sections/${encodeURIComponent(sectionId)}`;
+  `/api/lms/moodle/courses/${encodeURIComponent(courseId)}/sections/${encodeURIComponent(sectionId)}`;
 
-export function useAvailableCanvasCourses(
+export function useConnectMoodle(options) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (token) =>
+      lmsRequest("/api/lms/moodle/auth/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      }),
+    ...options,
+    onSuccess: (data, ...args) => {
+      queryClient.setQueryData(queryKeys.moodleStatus, (current) => ({
+        ...current,
+        configured: true,
+        connected: true,
+      }));
+      options?.onSuccess?.(data, ...args);
+    },
+  });
+}
+
+export function useDisconnectMoodle(options) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      lmsRequest("/api/lms/moodle/auth/disconnect", { method: "POST" }),
+    ...options,
+    onSuccess: (...args) => {
+      queryClient.setQueryData(queryKeys.moodleStatus, (current) => ({
+        ...current,
+        configured: true,
+        connected: false,
+      }));
+      queryClient.removeQueries({ queryKey: ["moodle", "available-courses"] });
+      queryClient.removeQueries({ queryKey: ["moodle", "groups"] });
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
+export function useAvailableMoodleCourses(
   courseId,
   sectionId,
   { enabled = true } = {}
 ) {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: queryKeys.canvasAvailableCourses(courseId, sectionId),
+    queryKey: queryKeys.moodleAvailableCourses(courseId, sectionId),
     queryFn: async () => {
       try {
         return await lmsRequest(
           `${sectionPath(courseId, sectionId)}/available-courses`
         );
       } catch (error) {
-        markCanvasDisconnected(queryClient, error);
+        markMoodleDisconnected(queryClient, error);
         throw error;
       }
     },
@@ -80,39 +116,39 @@ export function useAvailableCanvasCourses(
   return { ...query, courses: query.data?.courses || [] };
 }
 
-export function useCanvasSections(
+export function useMoodleGroups(
   courseId,
   sectionId,
-  canvasCourseId,
+  moodleCourseId,
   { enabled = true } = {}
 ) {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: queryKeys.canvasSections(courseId, sectionId, canvasCourseId),
+    queryKey: queryKeys.moodleGroups(courseId, sectionId, moodleCourseId),
     queryFn: async () => {
       try {
         return await lmsRequest(
-          `${sectionPath(courseId, sectionId)}/canvas-courses/${encodeURIComponent(canvasCourseId)}/sections`
+          `${sectionPath(courseId, sectionId)}/moodle-courses/${encodeURIComponent(moodleCourseId)}/groups`
         );
       } catch (error) {
-        markCanvasDisconnected(queryClient, error);
+        markMoodleDisconnected(queryClient, error);
         throw error;
       }
     },
-    enabled: !!courseId && !!sectionId && !!canvasCourseId && enabled,
+    enabled: !!courseId && !!sectionId && !!moodleCourseId && enabled,
     retry: false,
   });
-  return { ...query, sections: query.data?.sections || [] };
+  return { ...query, groups: query.data?.groups || [] };
 }
 
-export function useLinkCanvasSection(courseId, sectionId, options) {
+export function useLinkMoodleSection(courseId, sectionId, options) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ canvasCourseId, canvasSectionId }) =>
+    mutationFn: ({ moodleCourseId, moodleGroupId }) =>
       lmsRequest(`${sectionPath(courseId, sectionId)}/link`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ canvasCourseId, canvasSectionId }),
+        body: JSON.stringify({ moodleCourseId, moodleGroupId }),
       }),
     ...options,
     onSuccess: (...args) => {
@@ -121,26 +157,8 @@ export function useLinkCanvasSection(courseId, sectionId, options) {
       options?.onSuccess?.(...args);
     },
     onError: (error, ...args) => {
-      markCanvasDisconnected(queryClient, error);
+      markMoodleDisconnected(queryClient, error);
       options?.onError?.(error, ...args);
-    },
-  });
-}
-
-export function useDisconnectCanvas(options) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      lmsRequest("/api/lms/canvas/auth/logout", { method: "POST" }),
-    ...options,
-    onSuccess: (...args) => {
-      queryClient.setQueryData(queryKeys.canvasStatus, (current) => ({
-        ...current,
-        configured: true,
-        connected: false,
-      }));
-      queryClient.removeQueries({ queryKey: ["canvas", "available-courses"] });
-      options?.onSuccess?.(...args);
     },
   });
 }

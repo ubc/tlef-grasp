@@ -63,6 +63,8 @@ const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
 const profileRoutes = require("./routes/profile");
 const { createCanvasRouter } = require('./routes/lms-canvas');
+const { createMoodleRouter } = require('./routes/lms-moodle');
+const lmsRoutes = require('./routes/lms');
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
@@ -184,6 +186,15 @@ app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRout
 // UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
 app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);
 
+// Provider-neutral LMS section-link operations remain available even when a
+// provider is disabled, so a stale link can always be removed.
+app.use(
+  "/api/lms",
+  ensureAuthenticatedAPI,
+  requireRole(ROLES.STAFF),
+  lmsRoutes
+);
+
 // Canvas OAuth and course linking. The router returns 404 for every endpoint
 // when any required CANVAS_* variable is absent, which lets the client hide
 // the integration completely on deployments where it is not configured.
@@ -192,6 +203,16 @@ app.use(
   ensureAuthenticatedAPI,
   requireRole(ROLES.STAFF),
   createCanvasRouter()
+);
+
+// Moodle uses a per-user pasted web-service token. Like Canvas, the router is
+// absent from the UI and returns 404 when its deployment configuration is not
+// present.
+app.use(
+  "/api/lms/moodle",
+  ensureAuthenticatedAPI,
+  requireRole(ROLES.STAFF),
+  createMoodleRouter()
 );
 
 // Current user endpoint - all authenticated users

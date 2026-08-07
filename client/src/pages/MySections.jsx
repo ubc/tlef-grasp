@@ -13,10 +13,10 @@ import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import CanvasSectionLinkModal from "../components/lms/CanvasSectionLinkModal";
-import {
-  useCanvasStatus,
-  useUnlinkLmsSection,
-} from "../hooks/useCanvasIntegration";
+import MoodleSectionLinkModal from "../components/lms/MoodleSectionLinkModal";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import { useMoodleStatus } from "../hooks/useMoodleIntegration";
+import { useUnlinkLmsSection } from "../hooks/useLmsSectionLink";
 
 // Convert a bare academic-period code (e.g. "2025W1") to a readable label.
 function prettyPeriod(section) {
@@ -53,12 +53,17 @@ export default function MySections() {
   const [syncStudents, setSyncStudents] = useState(false);
   const [recycleTarget, setRecycleTarget] = useState(null);
   const [canvasLinkTarget, setCanvasLinkTarget] = useState(null);
+  const [moodleLinkTarget, setMoodleLinkTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
   const canvasStatus = useCanvasStatus();
+  const moodleStatus = useMoodleStatus();
   const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
+  const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
   const showLmsColumn =
-    showCanvasIntegration || mySections.some((section) => !!section.lmsLink);
+    showCanvasIntegration ||
+    showMoodleIntegration ||
+    mySections.some((section) => !!section.lmsLink);
 
   // If sections are already linked, infer the academic period from them — no need
   // to ask. Prefer the viewer's own linked sections, but fall back to any section
@@ -383,7 +388,9 @@ export default function MySections() {
                               <i className="fas fa-link" />
                               {section.lmsLink?.provider === "canvas"
                                 ? "Change Canvas Link"
-                                : "Link Canvas"}
+                                : section.lmsLink
+                                  ? "Switch to Canvas"
+                                  : "Link Canvas"}
                             </button>
                           ) : (
                             <a
@@ -391,6 +398,29 @@ export default function MySections() {
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
                             >
                               <i className="fas fa-plug" /> Connect Canvas
+                            </a>
+                          )
+                        ) : null}
+                        {showMoodleIntegration ? (
+                          moodleStatus.connected ? (
+                            <button
+                              type="button"
+                              onClick={() => setMoodleLinkTarget(section)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+                            >
+                              <i className="fas fa-link" />
+                              {section.lmsLink?.provider === "moodle"
+                                ? "Change Moodle Link"
+                                : section.lmsLink
+                                  ? "Switch to Moodle"
+                                  : "Link Moodle"}
+                            </button>
+                          ) : (
+                            <a
+                              href="/settings?moodle=connect"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+                            >
+                              <i className="fas fa-plug" /> Connect Moodle
                             </a>
                           )
                         ) : null}
@@ -436,12 +466,19 @@ export default function MySections() {
         localSection={canvasLinkTarget}
         onLinked={() => showToast("Canvas section linked", "success")}
       />
+      <MoodleSectionLinkModal
+        open={!!moodleLinkTarget}
+        onClose={() => setMoodleLinkTarget(null)}
+        courseId={courseId}
+        localSection={moodleLinkTarget}
+        onLinked={() => showToast("Moodle group linked", "success")}
+      />
       <ConfirmModal
         open={!!unlinkTarget}
         onClose={() => setUnlinkTarget(null)}
         onConfirm={() => unlinkMutation.mutate(unlinkTarget.sectionId)}
         title="Remove LMS Section Link"
-        message="Remove this section's LMS link? Your personal Canvas connection will remain active."
+        message="Remove this section's LMS link? Your personal LMS connection will remain active."
         confirmLabel="Remove link"
         danger
       />

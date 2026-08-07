@@ -125,6 +125,83 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     });
   });
 
+  test('links an owned GRASP section to a Moodle course group', async ({
+    page,
+  }) => {
+    let submittedLink = null;
+    await page.route('**/api/lms/moodle/status', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          configured: true,
+          connected: true,
+          moodleDomain: 'moodle.example.test',
+        }),
+      })
+    );
+    await page.route(
+      '**/api/lms/moodle/courses/*/sections/*/available-courses',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            courses: [{ id: '84', name: 'Biology', code: 'BIOL 200' }],
+          }),
+        })
+    );
+    await page.route(
+      '**/api/lms/moodle/courses/*/sections/*/moodle-courses/*/groups',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            groups: [
+              { id: '701', name: 'Group A', courseId: '84' },
+              { id: '702', name: 'Group B', courseId: '84' },
+            ],
+          }),
+        })
+    );
+    await page.route(
+      '**/api/lms/moodle/courses/*/sections/*/link',
+      async (route) => {
+        submittedLink = route.request().postDataJSON();
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            link: {
+              provider: 'moodle',
+              externalCourseId: '84',
+              externalCourseName: 'Biology',
+              externalSectionId: '702',
+              externalSectionName: 'Group B',
+            },
+          }),
+        });
+      }
+    );
+
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/my-sections');
+    await page.getByRole('button', { name: 'Link Moodle' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Link to Moodle Course' });
+    await dialog.getByRole('radio', { name: /Biology/ }).check();
+    await dialog.getByRole('radio', { name: 'Group B' }).check();
+    await dialog.getByRole('button', { name: 'Link Course' }).click();
+
+    await expect(page.getByText('Moodle group linked')).toBeVisible();
+    expect(submittedLink).toEqual({
+      moodleCourseId: '84',
+      moodleGroupId: '702',
+    });
+  });
+
   test('shows the seeded quiz approval and active section schedule', async ({
     page,
   }) => {

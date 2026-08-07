@@ -16,7 +16,6 @@ jest.mock('../../src/services/course-section', () => ({
 
 jest.mock('../../src/services/lms-section-link', () => ({
   setCanvasSectionLink: jest.fn(),
-  removeSectionLmsLink: jest.fn(),
 }));
 
 const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
@@ -86,7 +85,6 @@ describe('Canvas LMS section routes', () => {
     isAppAdministrator.mockResolvedValue(false);
     getSectionsOwnedByUser.mockResolvedValue([{ sectionId: '101' }]);
     getCourseSections.mockResolvedValue([{ sectionId: '101' }]);
-    lmsSectionLinkService.removeSectionLmsLink.mockResolvedValue(true);
   });
 
   it('returns 404 for every Canvas endpoint when deployment config is absent', async () => {
@@ -255,16 +253,4 @@ describe('Canvas LMS section routes', () => {
     );
   });
 
-  it('removes a section link without requiring an active Canvas token', async () => {
-    const integration = createIntegration({ connected: false });
-
-    const response = await request(buildApp(integration))
-      .delete(`${sectionBase}/link`);
-
-    expect(response.status).toBe(204);
-    expect(lmsSectionLinkService.removeSectionLmsLink).toHaveBeenCalledWith(
-      'local-1',
-      '101'
-    );
-  });
 });

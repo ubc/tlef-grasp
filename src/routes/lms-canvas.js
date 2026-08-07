@@ -1,6 +1,7 @@
 const express = require('express');
 const { createCanvasIntegration } = require('../lms/canvas');
 const { createCanvasController } = require('../controllers/lms-canvas');
+const { requireOwnedSection } = require('../middleware/lms-section-access');
 
 function createCanvasRouter(integration = createCanvasIntegration()) {
   const router = express.Router();
@@ -36,29 +37,23 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
 
   router.get(
     '/courses/:courseId/sections/:sectionId/available-courses',
-    controller.requireOwnedSection,
+    requireOwnedSection,
     requireCanvasAuth,
     controller.listAvailableCourses
   );
   router.get(
     '/courses/:courseId/sections/:sectionId/canvas-courses/:canvasCourseId/sections',
-    controller.requireOwnedSection,
+    requireOwnedSection,
     requireCanvasAuth,
     controller.listCanvasSections
   );
   router.put(
     '/courses/:courseId/sections/:sectionId/link',
     express.json(),
-    controller.requireOwnedSection,
+    requireOwnedSection,
     requireCanvasAuth,
     controller.setSectionLink
   );
-  router.delete(
-    '/courses/:courseId/sections/:sectionId/link',
-    controller.requireOwnedSection,
-    controller.removeSectionLink
-  );
-
   // The package deliberately avoids exposing provider details. Send OAuth
   // failures back to Settings with a generic marker rather than rendering an
   // internal error or token-exchange response in the browser.

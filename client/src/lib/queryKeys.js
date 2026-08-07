@@ -53,6 +53,20 @@ export const queryKeys = {
     sectionId,
     canvasCourseId,
   ],
+  moodleStatus: ["moodle", "status"],
+  moodleAvailableCourses: (courseId, sectionId) => [
+    "moodle",
+    "available-courses",
+    courseId,
+    sectionId,
+  ],
+  moodleGroups: (courseId, sectionId, moodleCourseId) => [
+    "moodle",
+    "groups",
+    courseId,
+    sectionId,
+    moodleCourseId,
+  ],
 
   // UBC course-section integration
   ubcCampuses: ["ubc-campuses"],

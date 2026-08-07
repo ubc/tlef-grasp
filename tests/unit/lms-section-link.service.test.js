@@ -6,6 +6,7 @@ const databaseService = require('../../src/services/database');
 const {
   getSectionLmsLink,
   setCanvasSectionLink,
+  setMoodleSectionLink,
   removeSectionLmsLink,
 } = require('../../src/services/lms-section-link');
 
@@ -75,6 +76,37 @@ describe('LMS section-link persistence', () => {
         }),
       })
     );
+    expect(link).not.toHaveProperty('linkedBy');
+  });
+
+  it('stores a Moodle course and group using the provider-neutral link shape', async () => {
+    collection.updateOne.mockResolvedValue({ matchedCount: 1 });
+
+    const link = await setMoodleSectionLink(
+      COURSE_ID,
+      '102',
+      { id: '84', name: 'Moodle Biology', code: 'BIO-M' },
+      { id: '901', name: 'Tutorial Group A' },
+      USER_ID
+    );
+
+    expect(collection.updateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ sectionId: '102' }),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          lmsLink: expect.objectContaining({
+            provider: 'moodle',
+            externalCourseId: '84',
+            externalSectionId: '901',
+          }),
+        }),
+      })
+    );
+    expect(link).toEqual(expect.objectContaining({
+      provider: 'moodle',
+      externalCourseName: 'Moodle Biology',
+      externalSectionName: 'Tutorial Group A',
+    }));
     expect(link).not.toHaveProperty('linkedBy');
   });
 
