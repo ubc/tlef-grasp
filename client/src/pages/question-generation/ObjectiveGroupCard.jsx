@@ -126,6 +126,7 @@ function GranularItemRow({
 // One meta learning objective with its editable granular objectives.
 export default function ObjectiveGroupCard({
   group,
+  courseMaterials = [],
   showValidation,
   onUpdateGroup,
   onCommitTitle,
@@ -140,6 +141,14 @@ export default function ObjectiveGroupCard({
   const totalCount = group.items.reduce((sum, item) => sum + (item.count || 0), 0);
   const selectedCount = group.items.filter((i) => i.selected).length;
   const allSelected = group.items.length > 0 && group.items.every((i) => i.selected);
+
+  // Resolve the objective's material links to titles for display. Read-only:
+  // materials are attached in the Create Learning Objectives modal or the
+  // Question Bank, and written only by PUT /api/objective/:id/materials.
+  const attachedMaterials = (group.materialIds || []).map((sourceId) => {
+    const match = courseMaterials.find((m) => m.sourceId === sourceId);
+    return { sourceId, title: match?.documentTitle || match?.fileName || "Untitled material" };
+  });
 
   return (
     <div className="rounded-2xl bg-white shadow-sm">
@@ -177,6 +186,30 @@ export default function ObjectiveGroupCard({
 
       {group.isOpen && (
         <div className="p-4">
+          {attachedMaterials.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Materials
+              </span>
+              {attachedMaterials.map((material) => (
+                <span
+                  key={material.sourceId}
+                  title={material.title}
+                  className="inline-flex max-w-xs items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                >
+                  <i className="fas fa-file-lines" aria-hidden="true" />
+                  <span className="truncate">{material.title}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {attachedMaterials.length === 0 && (
+            <p className="mb-4 text-xs text-muted">
+              <i className="fas fa-circle-info mr-1" aria-hidden="true" />
+              No materials attached — questions cannot be generated from course
+              content until you attach one in the Question Bank.
+            </p>
+          )}
           {group.items.length === 0 && (
             <p className="mb-4 text-sm text-muted">No granular objectives yet</p>
           )}
