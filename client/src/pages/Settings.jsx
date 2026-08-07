@@ -8,6 +8,10 @@ import {
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import {
+  useCanvasStatus,
+  useDisconnectCanvas,
+} from "../hooks/useCanvasIntegration";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
@@ -119,8 +123,11 @@ const buildPromptState = (source = {}) =>
 export default function Settings() {
   const showToast = useToast();
   const courseId = useSelectedCourseId();
+  const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
 
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(
+    canvasReturnState ? "canvas" : "general"
+  );
   const [bloomPrimary, setBloomPrimary] = useState(() =>
     Object.fromEntries(
       BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
@@ -139,6 +146,14 @@ export default function Settings() {
   const defaultPrompts = defaults?.prompts || {};
   const codeQuery = useEnrollmentCode(courseId);
   const enrollmentCode = codeQuery.enrollmentCode;
+  const canvasStatus = useCanvasStatus();
+  const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
+
+  useEffect(() => {
+    if (!canvasStatus.isPending && !showCanvasIntegration && activeTab === "canvas") {
+      setActiveTab("general");
+    }
+  }, [activeTab, canvasStatus.isPending, showCanvasIntegration]);
 
   // Hydrate the form when settings arrive
   useEffect(() => {
@@ -178,6 +193,11 @@ export default function Settings() {
       showToast(data.message || "Invite code regenerated", "success"),
     onError: (error) =>
       showToast(error.message || "Failed to regenerate code", "error"),
+  });
+
+  const disconnectCanvasMutation = useDisconnectCanvas({
+    onSuccess: () => showToast("Canvas disconnected", "success"),
+    onError: (error) => showToast(error.message || "Failed to disconnect Canvas", "error"),
   });
 
   const handleSave = () => {
@@ -230,6 +250,9 @@ export default function Settings() {
   const tabs = [
     { id: "general", icon: "fa-cog", label: "Course Settings" },
     { id: "prompt", icon: "fa-terminal", label: "Course Prompts" },
+    ...(showCanvasIntegration
+      ? [{ id: "canvas", icon: "fa-chalkboard-teacher", label: "Canvas LMS" }]
+      : []),
     // Owner-only: control what co-instructors can access in this course.
     ...(isOwner
       ? [{ id: "permissions", icon: "fa-user-shield", label: "Co-Instructor Permissions" }]
@@ -258,22 +281,24 @@ export default function Settings() {
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saveMutation.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
-        >
-          {saveMutation.isPending ? (
-            <>
-              <i className="fas fa-spinner fa-spin" /> Saving...
-            </>
-          ) : (
-            <>
-              <i className="fas fa-save" /> Save All Changes
-            </>
-          )}
-        </button>
+        {activeTab !== "canvas" && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {saveMutation.isPending ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-save" /> Save All Changes
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -535,6 +560,74 @@ export default function Settings() {
             </button>
           </div>
         </section>
+      )}
+
+      {activeTab === "canvas" && showCanvasIntegration && (
+        <div>
+          <section className="rounded-2xl bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Canvas connection</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Connect your own UBC Canvas account. GRASP stores this connection per
+                  instructor and never shares your Canvas credentials with another user.
+                  After connecting, link each section you manage from My Sections.
+                </p>
+              </div>
+              {canvasStatus.connected && (
+                <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+                  <i className="fas fa-check-circle" /> Connected
+                </span>
+              )}
+            </div>
+
+            {canvasReturnState === "error" && (
+              <div className="mt-5 rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
+                Canvas could not complete the connection. Please try again or confirm
+                that the configured callback URI matches the Canvas Developer Key.
+              </div>
+            )}
+
+            {canvasStatus.isError ? (
+              <div className="mt-5 rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
+                {canvasStatus.error?.message || "Canvas connection status is unavailable."}
+              </div>
+            ) : canvasStatus.isPending ? (
+              <p className="mt-5 text-sm text-muted">
+                <i className="fas fa-spinner fa-spin mr-2" /> Checking Canvas connection…
+              </p>
+            ) : canvasStatus.connected ? (
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                {canvasStatus.canvasDomain && (
+                  <span className="text-sm text-muted">
+                    Connected to {canvasStatus.canvasDomain}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => disconnectCanvasMutation.mutate()}
+                  disabled={disconnectCanvasMutation.isPending}
+                  className={`${secondaryBtnClass} border-danger/40 text-danger hover:bg-danger/5`}
+                >
+                  {disconnectCanvasMutation.isPending ? (
+                    <><i className="fas fa-spinner fa-spin" /> Disconnecting…</>
+                  ) : (
+                    <><i className="fas fa-unlink" /> Disconnect Canvas</>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5">
+                <a
+                  href={`/api/lms/canvas/auth/login?returnTo=${encodeURIComponent("/settings?canvas=connected")}`}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
+                >
+                  <i className="fas fa-link" /> Connect Canvas
+                </a>
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
       <ConfirmModal

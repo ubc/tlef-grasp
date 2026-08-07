@@ -48,6 +48,83 @@ test.describe('Instructor seeded course management (authenticated)', () => {
     await expect(page.getByRole('button', { name: 'Recycle' })).toBeVisible();
   });
 
+  test('links an owned GRASP section to a Canvas course section', async ({
+    page,
+  }) => {
+    let submittedLink = null;
+    await page.route('**/api/lms/canvas/status', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          configured: true,
+          connected: true,
+          canvasDomain: 'canvas.example.test',
+        }),
+      })
+    );
+    await page.route(
+      '**/api/lms/canvas/courses/*/sections/*/available-courses',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            courses: [{ id: '42', name: 'Math', code: 'MATH 100' }],
+          }),
+        })
+    );
+    await page.route(
+      '**/api/lms/canvas/courses/*/sections/*/canvas-courses/*/sections',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            sections: [
+              { id: '501', name: 'Section 1', courseId: '42' },
+              { id: '502', name: 'Section 2', courseId: '42' },
+            ],
+          }),
+        })
+    );
+    await page.route(
+      '**/api/lms/canvas/courses/*/sections/*/link',
+      async (route) => {
+        submittedLink = route.request().postDataJSON();
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            link: {
+              provider: 'canvas',
+              externalCourseId: '42',
+              externalCourseName: 'Math',
+              externalSectionId: '502',
+              externalSectionName: 'Section 2',
+            },
+          }),
+        });
+      }
+    );
+
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/my-sections');
+    await page.getByRole('button', { name: 'Link Canvas' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Link to Canvas Course' });
+    await dialog.getByRole('radio', { name: /Math/ }).check();
+    await dialog.getByRole('radio', { name: 'Section 2' }).check();
+    await dialog.getByRole('button', { name: 'Link Course' }).click();
+
+    await expect(page.getByText('Canvas section linked')).toBeVisible();
+    expect(submittedLink).toEqual({
+      canvasCourseId: '42',
+      canvasSectionId: '502',
+    });
+  });
+
   test('shows the seeded quiz approval and active section schedule', async ({
     page,
   }) => {

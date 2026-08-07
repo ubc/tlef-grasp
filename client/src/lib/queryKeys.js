@@ -39,6 +39,21 @@ export const queryKeys = {
   settingsDefaults: ["course-settings-defaults"],
   enrollmentCode: (courseId) => ["enrollment-code", courseId],
 
+  canvasStatus: ["canvas", "status"],
+  canvasAvailableCourses: (courseId, sectionId) => [
+    "canvas",
+    "available-courses",
+    courseId,
+    sectionId,
+  ],
+  canvasSections: (courseId, sectionId, canvasCourseId) => [
+    "canvas",
+    "sections",
+    courseId,
+    sectionId,
+    canvasCourseId,
+  ],
+
   // UBC course-section integration
   ubcCampuses: ["ubc-campuses"],
   ubcAcademicPeriods: (campus) => ["ubc-academic-periods", campus],

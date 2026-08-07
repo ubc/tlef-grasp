@@ -62,6 +62,7 @@ const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
 const profileRoutes = require("./routes/profile");
+const { createCanvasRouter } = require('./routes/lms-canvas');
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
@@ -182,6 +183,16 @@ app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRout
 
 // UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
 app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);
+
+// Canvas OAuth and course linking. The router returns 404 for every endpoint
+// when any required CANVAS_* variable is absent, which lets the client hide
+// the integration completely on deployments where it is not configured.
+app.use(
+  "/api/lms/canvas",
+  ensureAuthenticatedAPI,
+  requireRole(ROLES.STAFF),
+  createCanvasRouter()
+);
 
 // Current user endpoint - all authenticated users
 app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), async (req, res) => {
