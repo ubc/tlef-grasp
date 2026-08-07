@@ -132,4 +132,96 @@ test.describe('Instructor course settings (seeded course)', () => {
     }
     await expect(reset).toBeDisabled();
   });
+
+  test('hides Canvas settings when the deployment is not configured', async ({
+    page,
+  }) => {
+    await page.route('**/api/lms/canvas/status', (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: false, connected: false }),
+      })
+    );
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: 'Canvas LMS' })).toHaveCount(0);
+  });
+
+  test('shows the instructor personal Canvas connection', async ({ page }) => {
+    await page.route('**/api/lms/canvas/status', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          configured: true,
+          connected: true,
+          canvasDomain: 'canvas.example.test',
+        }),
+      })
+    );
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'Canvas LMS' }).click();
+
+    await expect(page.getByText('Connected to canvas.example.test')).toBeVisible();
+    await expect(
+      page.getByText(/link each section you manage from My Sections/i)
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Disconnect Canvas' })
+    ).toBeVisible();
+  });
+
+  test('hides Moodle settings when the deployment is not configured', async ({
+    page,
+  }) => {
+    await page.route('**/api/lms/moodle/status', (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: false, connected: false }),
+      })
+    );
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: 'Moodle LMS' })).toHaveCount(0);
+  });
+
+  test('connects the instructor personal Moodle token', async ({ page }) => {
+    let submittedToken = null;
+    await page.route('**/api/lms/moodle/status', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: true, connected: false }),
+      })
+    );
+    await page.route('**/api/lms/moodle/auth/connect', async (route) => {
+      submittedToken = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          sitename: 'GRASP Moodle Test',
+          username: 'bio_prof2',
+        }),
+      });
+    });
+
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'Moodle LMS' }).click();
+    await page.getByLabel('Moodle web-service token').fill('personal-token');
+    await page.getByRole('button', { name: 'Connect Moodle' }).click();
+
+    await expect(page.getByText('Connected to GRASP Moodle Test')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Disconnect Moodle' })
+    ).toBeVisible();
+    expect(submittedToken).toEqual({ token: 'personal-token' });
+  });
 });
