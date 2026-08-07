@@ -136,9 +136,9 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
       page.getByRole('heading', { name: 'Generate Learning Objectives' })
     ).toBeVisible();
 
-    // The modal lists materials as radios (it carries no ARIA dialog role);
+    // The modal lists materials as checkboxes (it carries no ARIA dialog role);
     // the run-unique title picks this journey's material out of any leftovers.
-    await page.getByRole('radio', { name: MATERIAL_TITLE }).check();
+    await page.getByRole('checkbox', { name: MATERIAL_TITLE }).check();
     // Name ends-with match: the button is icon-glyph + "Generate" (exact
     // matching misses the glyph), and it must not match the modal heading.
     await page.getByRole('button', { name: /Generate$/ }).click();
@@ -183,7 +183,7 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
 
     await navLink('Question Generation').click();
     await page.getByRole('button', { name: 'Create Learning Objectives' }).click();
-    await page.getByRole('radio', { name: IRRELEVANT_MATERIAL_TITLE }).check();
+    await page.getByRole('checkbox', { name: IRRELEVANT_MATERIAL_TITLE }).check();
     await page.getByRole('button', { name: /Generate$/ }).click();
 
     await expect(page.getByRole('alert')).toContainText('No learning objectives were created');

@@ -98,8 +98,14 @@ const retrieveChunksPerMaterial = async (
   query,
   { totalLimit, scoreThreshold } = {}
 ) => {
+  // A duplicate id would otherwise issue two identical searches, get counted
+  // twice for quota purposes, and emit every chunk twice — halving the
+  // effective budget with duplicate content. Dedup once, up front, and use
+  // this list for the searches, the quota count, and the failure index below.
+  const uniqueSourceIds = [...new Set(sourceIds)];
+
   const settled = await Promise.allSettled(
-    sourceIds.map((sourceId) =>
+    uniqueSourceIds.map((sourceId) =>
       retrieveForSource(instance, sourceId, query, totalLimit, scoreThreshold)
     )
   );
@@ -108,7 +114,7 @@ const retrieveChunksPerMaterial = async (
   const perMaterialChunks = settled.map((outcome, index) => {
     if (outcome.status === 'rejected') {
       console.warn(
-        `⚠️ RAG search failed for material ${sourceIds[index]}:`,
+        `⚠️ RAG search failed for material ${uniqueSourceIds[index]}:`,
         outcome.reason?.message || outcome.reason
       );
       return [];
@@ -125,7 +131,7 @@ const retrieveChunksPerMaterial = async (
 
   const contributing = perMaterialChunks.filter((chunks) => chunks.length > 0).length;
   console.log(
-    `✅ Retrieved ${merged.length} chunks from ${contributing}/${sourceIds.length} materials (budget ${totalLimit}, threshold ${scoreThreshold ?? 'none'})`
+    `✅ Retrieved ${merged.length} chunks from ${contributing}/${uniqueSourceIds.length} materials (budget ${totalLimit}, threshold ${scoreThreshold ?? 'none'})`
   );
 
   return merged;

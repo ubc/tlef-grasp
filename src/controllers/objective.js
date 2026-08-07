@@ -2,7 +2,7 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
-const { updateObjectiveMaterialRelations, getMaterialsForObjective, MaterialCapExceededError } = require('../services/objective-material');
+const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
   try {
@@ -131,6 +131,12 @@ const createObjectiveHandler = async (req, res) => {
         error: 'Course ID is required',
       });
     }
+
+    // Validate the material cap before any write, so an over-cap request
+    // does not leave behind a parent objective (and its granular children)
+    // with no materials attached. Throws MaterialCapExceededError, caught
+    // below and mapped to the same 400 as updateObjectiveMaterialRelations.
+    assertWithinMaterialCap(materialIds);
 
     const result = await createObjective({
       name: name.trim(),

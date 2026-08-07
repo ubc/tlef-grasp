@@ -239,5 +239,6 @@ module.exports = {
   removeObjectiveMaterialRelation,
   removeAllRelationsForObjective,
   updateObjectiveMaterialRelations,
+  assertWithinMaterialCap,
   MaterialCapExceededError,
 };

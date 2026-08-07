@@ -245,7 +245,7 @@ const getObjectiveWithMaterials = async (objectiveId, courseId = null) => {
 /**
  * Update a learning objective
  * @param {string|ObjectId} objectiveId - The learning objective ID
- * @param {Object} updateData - { name: string, granularObjectives: Array<{id?: string, text: string}>, materialIds: Array<string> }
+ * @param {Object} updateData - { name: string, granularObjectives: Array<{id?: string, text: string}> }
  */
 const updateObjective = async (objectiveId, updateData) => {
   try {

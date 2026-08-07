@@ -16,8 +16,9 @@ function getMaterialTypeLabel(fileType) {
   return fileType;
 }
 
-// Modal that generates learning objectives from a selected material via the
-// RAG/LLM pipeline, with optional user-provided objectives to reorganize.
+// Modal that generates learning objectives from selected materials (up to
+// MAX_MATERIALS_PER_OBJECTIVE) via the RAG/LLM pipeline, with optional
+// user-provided objectives to reorganize.
 export default function AIGenerateModal({ course, onClose, onSaved }) {
   const showToast = useToast();
   const [customRows, setCustomRows] = useState([]);

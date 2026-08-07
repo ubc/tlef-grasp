@@ -192,6 +192,28 @@ describe('retrieveChunksPerMaterial', () => {
       retrieveChunksPerMaterial(instance, ['A', 'B'], 'query', { totalLimit: 50 })
     ).resolves.toEqual([]);
   });
+
+  it('deduplicates repeated sourceIds into one search per unique material', async () => {
+    const instance = fakeInstance({
+      A: chunksFrom('A', 10),
+      B: chunksFrom('B', 10),
+    });
+
+    const merged = await retrieveChunksPerMaterial(instance, ['A', 'A', 'B'], 'query', {
+      totalLimit: 50,
+    });
+
+    // Only one search per unique material, not one per array entry.
+    expect(instance.searches).toHaveLength(2);
+    expect(instance.searches.map((s) => s.sourceId).sort()).toEqual(['A', 'B']);
+
+    // A's chunks appear exactly once each — no doubled content from the
+    // duplicate sourceId, and no quota given away to a phantom third search.
+    const ids = sourceIdsOf(merged);
+    expect(ids.filter((id) => id === 'A')).toHaveLength(10);
+    expect(ids.filter((id) => id === 'B')).toHaveLength(10);
+    expect(merged).toHaveLength(20);
+  });
 });
 
 describe('formatChunksByMaterial', () => {
