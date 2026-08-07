@@ -690,10 +690,12 @@ Include foundational concepts, practical applications, and assessment criteria.`
     }
 
     console.log("Retrieving RAG content from selected materials...");
+    const objectiveRagLimit = parseInt(process.env.RAG_OBJECTIVE_CHUNK_LIMIT) || 200;
+
     let ragContext = await ragService.getRagContentFromMaterials(
       materialIds,
       searchQuery,
-      200,
+      objectiveRagLimit,
       courseId
     );
 

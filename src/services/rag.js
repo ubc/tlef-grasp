@@ -2,6 +2,10 @@
 // Handles all RAG initialization and provides helper functions
 const { getObjectiveWithMaterials } = require('./objective');
 const { getLLMProvider, getEmbeddingModel, getQdrantVectorSize } = require('../utils/llm-provider');
+const {
+  retrieveChunksPerMaterial,
+  formatChunksByMaterial,
+} = require('./rag-fanout');
 
 /** Qdrant collection vector size; must match the embedding model output. */
 function resolveQdrantVectorSize() {
@@ -223,36 +227,30 @@ class RAGService {
       throw new Error(`Objective with ID ${objectiveId} not found`);
     }
 
-    const filter = {
-      must: [{ key: "sourceId", match: { any: objective.materials.map((material) => material.sourceId) } }]
-    };
-
-    let ragChunks = await instance.retrieveContext(query, { limit, scoreThreshold, filter });
-
-    // Fallback: if threshold filtered everything out, retry without it
-    if (ragChunks.length === 0 && scoreThreshold !== undefined) {
-      console.log(`⚠️ Score threshold ${scoreThreshold} returned 0 chunks — retrying without threshold`);
-      ragChunks = await instance.retrieveContext(query, { limit, filter });
-    }
-
-    if (ragChunks && ragChunks.length > 0) {
-      const scores = ragChunks.map(c => c.score?.toFixed(3) || 'n/a');
-      console.log(`✅ Found ${ragChunks.length} relevant chunks from RAG (threshold: ${scoreThreshold ?? 'none'}, scores: ${scores.join(', ')})`);
-      const ragContext = ragChunks.map((chunk) => chunk.content).join("\n\n");
-      console.log("RAG context length:", ragContext.length);
-      return ragContext;
-    } else {
-      console.log("⚠️ No relevant chunks found in RAG");
+    const sourceIds = objective.materials.map((material) => material.sourceId);
+    if (sourceIds.length === 0) {
+      console.log("⚠️ Objective has no attached materials");
       return '';
     }
+
+    // One search per material, each guaranteed a share of `limit`, so a dense
+    // material cannot crowd out the others.
+    const chunks = await retrieveChunksPerMaterial(instance, sourceIds, query, {
+      totalLimit: limit,
+      scoreThreshold,
+    });
+
+    // Plain join, no per-material headers: the question-generation prompt has
+    // always received context in this shape.
+    return chunks.map((chunk) => chunk.content).join("\n\n");
   }
 
   /**
-   * Get RAG content from multiple materials by sourceIds
+   * Get RAG content from multiple materials by sourceIds, grouped by material.
    * @param {Array<string>} sourceIds - Array of material sourceIds
    * @param {string} query - Query string for RAG search
-   * @param {number} limit - Maximum number of chunks to retrieve (default: 100)
-   * @returns {Promise<string>} Combined RAG context from all materials
+   * @param {number} limit - Total chunk budget, split across the materials
+   * @returns {Promise<string>} Combined RAG context, grouped per material
    */
   async getRagContentFromMaterials(sourceIds, query = "course content", limit = 50, courseId = null, scoreThreshold = undefined) {
     const instance = await this.getOrCreateInstance(courseId);
@@ -264,45 +262,12 @@ class RAGService {
       throw new Error("At least one sourceId is required");
     }
 
-    // Use provided query for RAG search
-    const filter = { must: [{ key: "sourceId", match: { any: sourceIds } }] };
+    const chunks = await retrieveChunksPerMaterial(instance, sourceIds, query, {
+      totalLimit: limit,
+      scoreThreshold,
+    });
 
-    let ragChunks = await instance.retrieveContext(query, { limit, scoreThreshold, filter });
-
-    // Fallback: if threshold filtered everything out, retry without it
-    if (ragChunks.length === 0 && scoreThreshold !== undefined) {
-      console.log(`⚠️ Score threshold ${scoreThreshold} returned 0 chunks — retrying without threshold`);
-      ragChunks = await instance.retrieveContext(query, { limit, filter });
-    }
-
-    const scores = ragChunks.map(c => c.score?.toFixed(3) || 'n/a');
-    console.log(`✅ Found ${ragChunks.length} relevant chunks from ${sourceIds.length} materials (threshold: ${scoreThreshold ?? 'none'}, scores: ${scores.join(', ')})`);
-
-    if (ragChunks && ragChunks.length > 0) {
-      // Group chunks by sourceId
-      const chunksBySource = {};
-      ragChunks.forEach(chunk => {
-        const sid = chunk.metadata?.sourceId || 'Unknown';
-        if (!chunksBySource[sid]) {
-          chunksBySource[sid] = {
-            title: chunk.metadata?.documentTitle || chunk.metadata?.fileName || 'Unknown Source',
-            contents: []
-          };
-        }
-        chunksBySource[sid].contents.push(chunk.content);
-      });
-
-      // Format context grouped by material
-      const ragContext = Object.entries(chunksBySource).map(([sid, data]) => {
-        return `### MATERIAL: ${data.title} (SOURCE ID: ${sid})\n${data.contents.join('\n\n')}`;
-      }).join("\n\n---\n\n");
-
-      console.log(`✅ Processed RAG context from ${Object.keys(chunksBySource).length} materials`);
-      return ragContext;
-    } else {
-      console.log("⚠️ No relevant chunks found in RAG for selected materials");
-      return '';
-    }
+    return formatChunksByMaterial(chunks);
   }
 }
 
