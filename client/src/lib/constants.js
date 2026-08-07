@@ -31,3 +31,7 @@ export const BLOOM_LEVELS = [
   "Evaluate",
   "Create",
 ];
+
+// Mirrors MAX_MATERIALS_PER_OBJECTIVE in src/constants/app-constants.js.
+// The server rejects writes above this; the UI stops the instructor first.
+export const MAX_MATERIALS_PER_OBJECTIVE = 3;

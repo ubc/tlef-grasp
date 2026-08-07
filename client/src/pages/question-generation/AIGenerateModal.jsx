@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../../lib/api";
 import { escapeHtml, formatFileSize } from "../../lib/format";
 import { useCourseMaterials } from "../../hooks/useMaterials";
+import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
 import Modal from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { useToast } from "../../components/ui/Toast";
@@ -22,7 +23,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   const [customRows, setCustomRows] = useState([]);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
-  const [selectedMaterial, setSelectedMaterial] = useState(null);
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generated, setGenerated] = useState(null); // [{ name, granularObjectives }]
@@ -30,6 +31,16 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   const [generationMessage, setGenerationMessage] = useState("");
 
   const { materials, isPending: materialsPending } = useCourseMaterials(course?.id);
+
+  // Cap is enforced here as well as server-side so the instructor is stopped
+  // before a rejected save, not after.
+  const toggleMaterial = (sourceId) => {
+    setSelectedMaterialIds((prev) => {
+      if (prev.includes(sourceId)) return prev.filter((id) => id !== sourceId);
+      if (prev.length >= MAX_MATERIALS_PER_OBJECTIVE) return prev;
+      return [...prev, sourceId];
+    });
+  };
 
   const applyBulk = () => {
     const lines = bulkText
@@ -42,20 +53,25 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   };
 
   const handleGenerate = async () => {
-    if (!selectedMaterial) {
-      showToast("Please select a material", "warning");
+    if (selectedMaterialIds.length === 0) {
+      showToast("Please select at least one material", "warning");
       return;
     }
     setGenerating(true);
     setGenerated(null);
     setGenerationMessage("");
     try {
-      const material = materials.find((m) => m.sourceId === selectedMaterial);
+      const materialTitles = Object.fromEntries(
+        selectedMaterialIds.map((sourceId) => [
+          sourceId,
+          materials.find((m) => m.sourceId === sourceId)?.documentTitle || "",
+        ])
+      );
       const data = await api.post("/api/rag-llm/generate-learning-objectives", {
         courseId: course.id,
         courseName: course.name,
-        materialIds: [selectedMaterial],
-        materialTitles: { [selectedMaterial]: material?.documentTitle || "" },
+        materialIds: selectedMaterialIds,
+        materialTitles,
         userObjectives: customRows.map((r) => r.trim()).filter(Boolean),
       });
       if (!data.success || !data.objectives || data.objectives.length === 0) {
@@ -90,7 +106,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           const data = await api.post("/api/objective", {
             name: objective.name,
             courseId: course.id,
-            materialIds: [selectedMaterial],
+            materialIds: selectedMaterialIds,
             granularObjectives: objective.granularObjectives.map((go) => ({
               text: typeof go === "string" ? go : go.text,
               bloomTaxonomies: typeof go === "string" ? [] : go.bloomTaxonomies || [],
@@ -102,7 +118,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           savedGroups.push({
             objective: data.objective,
             granulars: data.granularObjectives,
-            materialIds: [selectedMaterial],
+            materialIds: selectedMaterialIds,
           });
         } catch (saveError) {
           console.error(`Error saving objective "${objective.name}":`, saveError);
@@ -144,7 +160,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           {!generated ? (
             <button
               type="button"
-              disabled={!selectedMaterial || generating}
+              disabled={selectedMaterialIds.length === 0 || generating}
               onClick={handleGenerate}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
             >
@@ -190,8 +206,8 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       }
     >
       <p className="mb-4 text-sm text-muted">
-        Select the course materials you want to use for generating learning objectives.
-        The AI will analyze the content and create relevant learning objectives. If you
+        Select up to {MAX_MATERIALS_PER_OBJECTIVE} course materials to generate
+        learning objectives from. The AI will analyze the content and create relevant learning objectives. If you
         provide your own learning objectives, the AI will reorganize them into a proper
         hierarchy rather than generating new ones (optional).
       </p>
@@ -286,11 +302,18 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       </div>
 
       {/* Material selection */}
-      <label className="mb-1 block font-semibold text-ink">Select Material:</label>
+      <label className="mb-1 block font-semibold text-ink">
+        Select Materials:
+      </label>
       <p className="mb-3 text-xs text-muted">
         <i className="fas fa-info-circle mr-1 text-primary" />
-        Select a course material to generate focused learning objectives from its
-        content.
+        Choose up to {MAX_MATERIALS_PER_OBJECTIVE} course materials. Each one is
+        searched separately, so every material you pick contributes to the
+        generated objectives.
+        <span className="ml-1 font-semibold text-ink">
+          {selectedMaterialIds.length} of {MAX_MATERIALS_PER_OBJECTIVE} selected
+          {selectedMaterialIds.length >= MAX_MATERIALS_PER_OBJECTIVE ? " (max)" : ""}
+        </span>
       </p>
       <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3">
         {materialsPending ? (
@@ -302,36 +325,41 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
             No materials available for this course. Please upload materials first.
           </div>
         ) : (
-          materials.map((material) => (
-            <label
-              key={material.sourceId}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
-                selectedMaterial === material.sourceId
-                  ? "border-primary bg-primary/5"
-                  : "border-gray-200 hover:border-primary/40"
-              }`}
-            >
-              <input
-                type="radio"
-                name="ai-material-selection"
-                checked={selectedMaterial === material.sourceId}
-                onChange={() => setSelectedMaterial(material.sourceId)}
-                className="h-4 w-4 accent-primary"
-              />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-ink">
-                  {material.documentTitle || "Untitled"}
+          materials.map((material) => {
+            const isSelected = selectedMaterialIds.includes(material.sourceId);
+            const atCap = selectedMaterialIds.length >= MAX_MATERIALS_PER_OBJECTIVE;
+            const disabled = !isSelected && atCap;
+            return (
+              <label
+                key={material.sourceId}
+                className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+                  isSelected
+                    ? "border-primary bg-primary/5"
+                    : "border-gray-200 hover:border-primary/40"
+                } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={disabled}
+                  onChange={() => toggleMaterial(material.sourceId)}
+                  className="h-4 w-4 accent-primary"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-ink">
+                    {material.documentTitle || "Untitled"}
+                  </div>
+                  <div className="flex gap-4 text-xs text-muted">
+                    <span>Type: {getMaterialTypeLabel(material.fileType)}</span>
+                    <span>Size: {formatFileSize(material.fileSize || 0)}</span>
+                    <span>
+                      Uploaded: {new Date(material.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex gap-4 text-xs text-muted">
-                  <span>Type: {getMaterialTypeLabel(material.fileType)}</span>
-                  <span>Size: {formatFileSize(material.fileSize || 0)}</span>
-                  <span>
-                    Uploaded: {new Date(material.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            </label>
-          ))
+              </label>
+            );
+          })
         )}
       </div>
 
