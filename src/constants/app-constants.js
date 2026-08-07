@@ -285,6 +285,15 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
   Create: [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
 };
 
+/**
+ * Maximum course materials an instructor can attach to one meta learning
+ * objective. A product guardrail rather than a technical limit: retrieval splits
+ * a fixed chunk budget across however many materials are attached, so raising
+ * this does not raise token cost. Objectives created before the cap existed may
+ * exceed it — reads tolerate that, writes do not.
+ */
+const MAX_MATERIALS_PER_OBJECTIVE = 3;
+
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
@@ -298,4 +307,5 @@ module.exports = {
   QUESTION_TYPES,
   DEFAULT_PROMPTS,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
+  MAX_MATERIALS_PER_OBJECTIVE,
 };

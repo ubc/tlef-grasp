@@ -2,7 +2,7 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
-const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
+const { updateObjectiveMaterialRelations, getMaterialsForObjective, MaterialCapExceededError } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
   try {
@@ -149,6 +149,13 @@ const createObjectiveHandler = async (req, res) => {
       granularObjectives: result.granular,
     });
   } catch (error) {
+    if (error.code === 'MATERIAL_CAP_EXCEEDED') {
+      return res.status(400).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
     console.error('Error creating objective:', error);
     res.status(500).json({
       success: false,
@@ -204,6 +211,13 @@ const updateObjectiveMaterials = async (req, res) => {
       message: 'Material relationships updated successfully',
     });
   } catch (error) {
+    if (error.code === 'MATERIAL_CAP_EXCEEDED') {
+      return res.status(400).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
     console.error('Error updating material relationships:', error);
     res.status(500).json({
       success: false,
