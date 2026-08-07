@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getObjectId, getMaterialIcon } from "../../lib/utils";
+import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
 import {
   useDetailedObjectives,
   useSaveObjective,
@@ -321,6 +322,13 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
       showToast("Please associate at least one course material", "error");
       return;
     }
+    if (selectedMaterialIds.length > MAX_MATERIALS_PER_OBJECTIVE) {
+      showToast(
+        `Select at most ${MAX_MATERIALS_PER_OBJECTIVE} course materials`,
+        "error"
+      );
+      return;
+    }
     saveMutation.mutate({
       objectiveId: objectiveModal.editingId,
       name,
@@ -629,8 +637,27 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
             Associated Course Materials <span className="text-danger">*</span>
           </label>
           <p className="mb-3 text-xs text-muted">
-            Select at least one material that covers this learning objective.
+            Select 1 to {MAX_MATERIALS_PER_OBJECTIVE} materials that cover this
+            learning objective.
+            <span className="ml-1 font-semibold text-ink">
+              {selectedMaterialIds.length} of {MAX_MATERIALS_PER_OBJECTIVE} selected
+              {selectedMaterialIds.length === MAX_MATERIALS_PER_OBJECTIVE ? " (max)" : ""}
+            </span>
           </p>
+          {/* Objectives created before the cap can exceed it. Ask the
+              instructor to trim rather than dropping links silently. */}
+          {selectedMaterialIds.length > MAX_MATERIALS_PER_OBJECTIVE && (
+            <div
+              role="alert"
+              className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+            >
+              <i className="fas fa-circle-info mr-1 text-amber-700" aria-hidden="true" />
+              This objective has {selectedMaterialIds.length} materials, above the
+              limit of {MAX_MATERIALS_PER_OBJECTIVE}. Remove{" "}
+              {selectedMaterialIds.length - MAX_MATERIALS_PER_OBJECTIVE} to save your
+              changes.
+            </div>
+          )}
           {courseMaterials.length === 0 ? (
             <p className="py-5 text-center text-sm text-muted">
               No course materials available.
@@ -649,6 +676,10 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
                     <input
                       type="checkbox"
                       checked={selectedMaterialIds.includes(id)}
+                      disabled={
+                        !selectedMaterialIds.includes(id) &&
+                        selectedMaterialIds.length >= MAX_MATERIALS_PER_OBJECTIVE
+                      }
                       onChange={() =>
                         setSelectedMaterialIds((prev) =>
                           prev.includes(id)
@@ -656,7 +687,7 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
                             : [...prev, id]
                         )
                       }
-                      className="h-4 w-4 accent-primary"
+                      className="h-4 w-4 accent-primary disabled:opacity-40"
                     />
                     <i
                       className={`${iconInfo.icon} w-5 text-center`}
