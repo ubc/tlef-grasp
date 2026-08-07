@@ -68,15 +68,26 @@ a one-constant change.
 
 ### 2. RAG fan-out and merge
 
-New method on `RAGService`:
+New method on `RAGService`, returning **chunks rather than formatted text**:
 
 ```js
-async getRagContentPerMaterial(sourceIds, query, { totalLimit, courseId, scoreThreshold })
+async retrieveChunksPerMaterial(sourceIds, query, { totalLimit, courseId, scoreThreshold })
 ```
+
+Returning chunks matters: the two existing consumers format differently, and
+that must not change. `getRagContentFromMaterials` emits the
+`### MATERIAL: …` grouped format, while `getLearningObjectiveRagContent`
+(question generation) emits a plain `\n\n` join with no headers. A single
+content-returning method would have silently added material headers to every
+question-generation prompt. Retrieval is shared; formatting stays with each
+caller.
 
 Behaviour:
 
-- Per-material quota is `Math.ceil(totalLimit / sourceIds.length)`.
+- Per-material quota is `floor(totalLimit / n)`, with the first `totalLimit % n`
+  materials granted one extra chunk so the quotas sum to *exactly* `totalLimit`
+  (200 across 3 materials → 67 / 67 / 66). A plain `ceil` would give 67 each and
+  overshoot the budget by one chunk.
 - One `retrieveContext` call per sourceId, each filtered to that single source
   (`{ must: [{ key: "sourceId", match: { any: [sid] } }] }`), issued
   concurrently.
@@ -92,17 +103,32 @@ Behaviour:
   second round of queries is needed — retrieval stays at exactly N searches.
   Merged context size stays stable whether the selected materials are dense or
   sparse.
-- Merge reuses the existing `### MATERIAL: <title> (SOURCE ID: <sid>)` grouping
-  format verbatim. The auto LO-generation prompt interpolates `{sourceIdsList}`
-  and expects that shape, so the prompt contract does not change.
+- The grouped-format helper is extracted as `formatChunksByMaterial(chunks)`,
+  reproducing the existing `### MATERIAL: <title> (SOURCE ID: <sid>)` output
+  verbatim. The auto LO-generation prompt interpolates `{sourceIdsList}` and
+  expects that shape, so the prompt contract does not change.
 
 `getRagContentFromMaterials` and `getLearningObjectiveRagContent` both delegate
-to the new method. The union-search path is removed rather than kept as a
-branch — one retrieval strategy, not two.
+to `retrieveChunksPerMaterial` for retrieval, then apply their own existing
+formatting. The union-search path is removed rather than kept as a branch — one
+retrieval strategy, not two.
 
-**Single-material equivalence:** with `n = 1`, quota is `ceil(total/1) = total`,
+**Single-material equivalence:** with `n = 1` the sole quota is `totalLimit`,
 producing one search with the same filter shape, limit, and threshold fallback
 as today. No single-material LO changes behaviour.
+
+**Placement.** Retrieval strategy is extracted into a new
+`src/services/rag-fanout.js` holding pure, instance-injected functions
+(`computeQuotas`, `retrieveForSource`, `mergePerMaterialChunks`,
+`retrieveChunksPerMaterial`, `formatChunksByMaterial`). `rag.js` is a singleton whose
+constructor dynamically imports the UBC GenAI Toolkit, and it cannot be
+`require`d under Jest at all — doing so fails with
+`ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` (verified experimentally, and the
+reason every existing test mocks the rag module wholesale). A separate
+dependency-free module is therefore the only way the quota, redistribution, and
+failure-isolation logic gets unit tested. `rag.js` keeps configuration and
+instance lifecycle, and becomes a thin caller whose own wiring is covered by the
+existing suite plus a manual smoke run rather than by new unit tests.
 
 ### 3. Retrieval budgets as environment variables
 
@@ -117,7 +143,26 @@ Both totals become configurable, with today's values as defaults:
 `RAG_CHUNK_LIMIT` and `RAG_SCORE_THRESHOLD` are read by code today but absent
 from `.env.example`. All three get documented there.
 
-### 4. UI
+### 4. Pre-existing bug: `PUT /api/objective/:id` drops `materialIds`
+
+Found while planning. `updateObjectiveHandler` destructures `materialIds` from
+the request body and never uses it — it is not copied into `updateData` and
+`updateObjective` does not touch material links. Meanwhile
+`ObjectivesStep.saveObjectiveToDatabase` sends `materialIds` in that body on
+every autosave, where it is silently discarded. The route's JSDoc documents the
+field as if it were honoured.
+
+Materials are only ever persisted by `POST /api/objective` and
+`PUT /api/objective/:id/materials`, which is why the cap guard in
+`objective-material.js` still covers every real write path.
+
+Resolution is to remove the misleading field rather than wire it up: wiring it
+would make wizard autosaves start rewriting material links as a side effect of
+editing a granular objective's text. The dead destructure, the JSDoc claim, and
+the client's unused payload field are deleted, with a comment pointing at
+`PUT /:id/materials` as the material write path.
+
+### 5. UI
 
 **`AIGenerateModal.jsx`** — `selectedMaterial` (string) becomes
 `selectedMaterialIds` (array); radio inputs become checkboxes. Unchecked rows
@@ -137,7 +182,7 @@ resolved by joining `group.materialIds` against `useCourseMaterials`. The
 instructor can see what questions will be generated from without introducing a
 third editing surface or save path.
 
-### 5. Error handling
+### 6. Error handling
 
 | Case | Behaviour |
 |---|---|
@@ -146,7 +191,7 @@ third editing surface or save path.
 | One `retrieveContext` rejects | Fan-out uses `Promise.allSettled`: the failure is logged, that material yields 0 chunks, generation proceeds. If every material rejects, the error propagates as today |
 | Zero materials selected | Unchanged — existing "At least one material must be selected" 400 |
 
-### 6. Testing
+### 7. Testing
 
 `tests/unit/rag-fanout.service.test.js`, against a stubbed RAG instance:
 
