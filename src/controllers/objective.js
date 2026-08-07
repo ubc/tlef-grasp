@@ -229,7 +229,11 @@ const updateObjectiveMaterials = async (req, res) => {
 const updateObjectiveHandler = async (req, res) => {
   try {
     const objectiveId = req.params.id;
-    const { name, granularObjectives, materialIds, courseId, questionAction } = req.body;
+    // Materials are deliberately not read here: they are written only by
+    // PUT /api/objective/:id/materials. Honouring them on this endpoint would
+    // make the wizard's autosave rewrite material links as a side effect of
+    // editing an objective's name or granular list.
+    const { name, granularObjectives, courseId, questionAction } = req.body;
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });

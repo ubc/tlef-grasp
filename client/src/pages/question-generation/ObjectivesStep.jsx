@@ -69,7 +69,6 @@ export default function ObjectivesStep({
       const data = await api.put(`/api/objective/${group.objectiveId}`, {
         name: group.title,
         courseId: course.id,
-        materialIds: group.materialIds || [],
         granularObjectives,
       });
       if (data.success && data.granularObjectives) {
