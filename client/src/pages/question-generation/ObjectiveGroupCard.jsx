@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { BLOOM_LEVELS } from "../../lib/constants";
 import AutoGrowTextarea from "./AutoGrowTextarea";
+import BloomTypePanel from "./BloomTypePanel";
 
 function GranularItemRow({
   item,
@@ -7,11 +9,33 @@ function GranularItemRow({
   onToggleSelected,
   onCommitText,
   onToggleBloom,
+  onRemoveBloom,
   onChangeCount,
+  onChangeTypeCount,
   onDelete,
 }) {
+  // Bloom levels whose type panel is currently open, in the order they were
+  // opened — panels stack underneath each other, newest at the bottom.
+  // Clicking an already-open level's chip closes just that one panel.
+  const [expandedBlooms, setExpandedBlooms] = useState([]);
+  const toggleBloomPanel = (level) =>
+    setExpandedBlooms((prev) =>
+      prev.includes(level) ? prev.filter((l) => l !== level) : [...prev, level]
+    );
+
   const showBloomValidation =
     showValidation && item.mode === "manual" && item.bloom.length === 0;
+
+  const questionTypes = item.questionTypes || [];
+  const isTyped = questionTypes.length > 0;
+  const typedTotal = questionTypes.reduce((sum, qt) => sum + qt.count, 0);
+  const levelTotal = (level) =>
+    questionTypes.filter((qt) => qt.bloomLevel === level).reduce((s, qt) => s + qt.count, 0);
+  const showTypeValidation =
+    showValidation &&
+    item.mode === "manual" &&
+    isTyped &&
+    item.bloom.some((level) => levelTotal(level) === 0);
 
   return (
     <div
@@ -58,25 +82,58 @@ function GranularItemRow({
           <div className="flex flex-wrap gap-1.5">
             {BLOOM_LEVELS.map((level) => {
               const isSelected = item.bloom.includes(level);
+              const total = levelTotal(level);
               return (
-                <button
+                <span
                   key={level}
-                  type="button"
-                  aria-checked={isSelected}
-                  disabled={item.mode === "auto"}
-                  onClick={() => onToggleBloom(level)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1 rounded-full py-1 pl-2.5 pr-1.5 text-xs font-medium transition-colors ${
                     isSelected
                       ? "bg-primary text-white"
                       : "bg-gray-100 text-muted hover:bg-gray-200"
-                  } disabled:opacity-50`}
+                  } ${item.mode === "auto" ? "opacity-50" : ""}`}
                 >
-                  {level}
-                </button>
+                  <button
+                    type="button"
+                    aria-checked={isSelected}
+                    aria-expanded={isSelected ? expandedBlooms.includes(level) : undefined}
+                    disabled={item.mode === "auto"}
+                    onClick={() => (isSelected ? toggleBloomPanel(level) : onToggleBloom(level))}
+                    className="disabled:cursor-not-allowed"
+                  >
+                    {level}
+                    {isSelected && isTyped && (
+                      <span className="ml-1 rounded-full bg-white/25 px-1.5">{total}</span>
+                    )}
+                  </button>
+                  {isSelected && item.mode !== "auto" && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${level}`}
+                      onClick={() => {
+                        setExpandedBlooms((prev) => prev.filter((l) => l !== level));
+                        onRemoveBloom(level);
+                      }}
+                      className="text-white/80 hover:text-white"
+                    >
+                      <i className="fas fa-times text-[9px]" />
+                    </button>
+                  )}
+                </span>
               );
             })}
           </div>
         </div>
+
+        {expandedBlooms
+          .filter((level) => item.bloom.includes(level))
+          .map((level) => (
+            <BloomTypePanel
+              key={level}
+              bloomLevel={level}
+              questionTypes={questionTypes.filter((qt) => qt.bloomLevel === level)}
+              onChangeCount={(type, delta) => onChangeTypeCount(level, type, delta)}
+            />
+          ))}
 
         {showBloomValidation && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-danger">
@@ -84,41 +141,63 @@ function GranularItemRow({
             <span>Please select at least one Bloom's Taxonomy level.</span>
           </div>
         )}
+        {showTypeValidation && (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-danger">
+            <i className="fas fa-exclamation-circle" />
+            <span>Please choose at least one question type for each selected Bloom level.</span>
+          </div>
+        )}
       </div>
 
-      {/* Count stepper: how many questions to generate for this objective */}
-      <div className="flex shrink-0 flex-col items-center gap-1 self-start pt-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-          Questions
-        </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            aria-label="Decrease questions to generate for this objective"
-            disabled={item.count <= Math.max(2, item.bloom.length)}
-            onClick={() => onChangeCount(-1)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
-          >
-            <i className="fas fa-minus text-xs" />
-          </button>
-          <span
-            className="w-6 text-center text-sm font-semibold text-ink"
-            title="Number of questions to generate for this objective"
-            aria-label={`${item.count} questions to generate for this objective`}
-          >
-            {item.count}
+      {/* Count: how many questions to generate for this objective. Typed items
+          (with a per-Bloom-level type breakdown) show a derived read-only
+          total; legacy items keep the manual +/- stepper. */}
+      {isTyped ? (
+        <div className="flex shrink-0 flex-col items-center gap-1 self-start pt-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Questions
           </span>
-          <button
-            type="button"
-            aria-label="Increase questions to generate for this objective"
-            disabled={item.count >= 9}
-            onClick={() => onChangeCount(1)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
+          <span
+            className="text-sm font-semibold text-ink"
+            title="Total across all Bloom levels' selected question types"
           >
-            <i className="fas fa-plus text-xs" />
-          </button>
+            {typedTotal}
+          </span>
         </div>
-      </div>
+      ) : (
+        <div className="flex shrink-0 flex-col items-center gap-1 self-start pt-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Questions
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label="Decrease questions to generate for this objective"
+              disabled={item.count <= Math.max(2, item.bloom.length)}
+              onClick={() => onChangeCount(-1)}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
+            >
+              <i className="fas fa-minus text-xs" />
+            </button>
+            <span
+              className="w-6 text-center text-sm font-semibold text-ink"
+              title="Number of questions to generate for this objective"
+              aria-label={`${item.count} questions to generate for this objective`}
+            >
+              {item.count}
+            </span>
+            <button
+              type="button"
+              aria-label="Increase questions to generate for this objective"
+              disabled={item.count >= 9}
+              onClick={() => onChangeCount(1)}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
+            >
+              <i className="fas fa-plus text-xs" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -131,7 +210,9 @@ export default function ObjectiveGroupCard({
   onCommitTitle,
   onCommitItemText,
   onToggleBloom,
+  onRemoveBloom,
   onChangeCount,
+  onChangeTypeCount,
   onDeleteItem,
   onAddGranular,
   onRequestDelete,
@@ -254,7 +335,11 @@ export default function ObjectiveGroupCard({
                 }
                 onCommitText={(value) => onCommitItemText(item, value)}
                 onToggleBloom={(level) => onToggleBloom(item, level)}
+                onRemoveBloom={(level) => onRemoveBloom(item, level)}
                 onChangeCount={(delta) => onChangeCount(item, delta)}
+                onChangeTypeCount={(bloomLevel, questionType, delta) =>
+                  onChangeTypeCount(item, bloomLevel, questionType, delta)
+                }
                 onDelete={() => onDeleteItem(item)}
               />
             ))}

@@ -94,6 +94,7 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
             granularObjectives: objective.granularObjectives.map((go) => ({
               text: typeof go === "string" ? go : go.text,
               bloomTaxonomies: typeof go === "string" ? [] : go.bloomTaxonomies || [],
+              questionTypes: typeof go === "string" ? [] : go.questionTypes || [],
             })),
           });
           if (!data.success) {

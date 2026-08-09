@@ -59,6 +59,7 @@ export default function ObjectivesStep({
           text: item.text,
           bloomTaxonomies: item.bloom || [],
           questionCount: item.count,
+          questionTypes: item.questionTypes || [],
         };
         if (item.granularId) granularObj.id = item.granularId;
         return granularObj;
@@ -124,22 +125,28 @@ export default function ObjectivesStep({
         title: objectiveName,
         isOpen: true,
         materialIds,
-        items: granularObjectives.map((granular, index) => ({
-          id: parseFloat(`${newGroupNumber}.${index + 1}`),
-          granularId: granular._id ? String(granular._id) : null,
-          text: granular.name,
-          bloom:
-            granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0
-              ? granular.bloomTaxonomies
-              : [],
-          minQuestions: 2,
-          count:
-            granular.questionCount ||
-            Math.max(2, granular.bloomTaxonomies?.length || 0),
-          mode: "manual",
-          level: 1,
-          selected: false,
-        })),
+        items: granularObjectives.map((granular, index) => {
+          const questionTypes = granular.questionTypes || [];
+          const typedTotal = questionTypes.reduce((sum, qt) => sum + (qt.count || 0), 0);
+          return {
+            id: parseFloat(`${newGroupNumber}.${index + 1}`),
+            granularId: granular._id ? String(granular._id) : null,
+            text: granular.name,
+            bloom:
+              granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0
+                ? granular.bloomTaxonomies
+                : [],
+            questionTypes,
+            minQuestions: 2,
+            count:
+              typedTotal > 0
+                ? typedTotal
+                : granular.questionCount || Math.max(2, granular.bloomTaxonomies?.length || 0),
+            mode: "manual",
+            level: 1,
+            selected: false,
+          };
+        }),
       };
       setObjectiveGroups((prev) => [...prev, newGroup]);
     } catch (error) {
@@ -159,17 +166,22 @@ export default function ObjectivesStep({
           title: objective.name,
           isOpen: true,
           materialIds,
-          items: (granulars || []).map((granular, gIdx) => ({
-            id: parseFloat(`${newGroupNumber}.${gIdx + 1}`),
-            granularId: String(granular._id),
-            text: granular.name,
-            bloom: granular.bloomTaxonomies || [],
-            minQuestions: 2,
-            count: 2,
-            mode: "manual",
-            level: 1,
-            selected: false,
-          })),
+          items: (granulars || []).map((granular, gIdx) => {
+            const questionTypes = granular.questionTypes || [];
+            const typedTotal = questionTypes.reduce((sum, qt) => sum + (qt.count || 0), 0);
+            return {
+              id: parseFloat(`${newGroupNumber}.${gIdx + 1}`),
+              granularId: String(granular._id),
+              text: granular.name,
+              bloom: granular.bloomTaxonomies || [],
+              questionTypes,
+              minQuestions: 2,
+              count: typedTotal > 0 ? typedTotal : 2,
+              mode: "manual",
+              level: 1,
+              selected: false,
+            };
+          }),
         });
       });
       return next;
@@ -177,18 +189,72 @@ export default function ObjectivesStep({
     invalidateObjectives();
   };
 
+  // Adds a Bloom level to the item's selection. Selected chips no longer
+  // deselect on click (click opens the per-type breakdown panel instead) —
+  // removal goes through removeBloomChip via the chip's × button.
   const toggleBloomChip = (group, item, level) => {
     if (item.mode !== "manual") return;
     updateGroup(group.id, (g) => {
       const items = g.items.map((i) => {
-        if (i.id !== item.id) return i;
-        const bloom = i.bloom.includes(level)
-          ? i.bloom.filter((b) => b !== level)
-          : [...i.bloom, level];
+        if (i.id !== item.id || i.bloom.includes(level)) return i;
+        const bloom = [...i.bloom, level];
         return { ...i, bloom, count: Math.max(i.count, bloom.length) };
       });
       const updated = { ...g, items };
       if (g.objectiveId) saveObjectiveToDatabase(updated);
+      return updated;
+    });
+  };
+
+  const removeBloomChip = (group, item, level) => {
+    if (item.mode !== "manual") return;
+    updateGroup(group.id, (g) => {
+      const items = g.items.map((i) => {
+        if (i.id !== item.id) return i;
+        const bloom = i.bloom.filter((b) => b !== level);
+        const questionTypes = (i.questionTypes || []).filter((qt) => qt.bloomLevel !== level);
+        const count =
+          questionTypes.length > 0
+            ? questionTypes.reduce((sum, qt) => sum + qt.count, 0)
+            : i.count;
+        return { ...i, bloom, questionTypes, count };
+      });
+      const updated = { ...g, items };
+      if (g.objectiveId) saveObjectiveToDatabase(updated);
+      return updated;
+    });
+  };
+
+  // Adjust the count for one (bloomLevel, questionType) pair on a granular
+  // item. Once an item has any questionTypes entry, its total question count
+  // is derived from these counts rather than the legacy manual stepper.
+  const changeTypeCount = (group, item, bloomLevel, questionType, delta) => {
+    updateGroup(group.id, (g) => {
+      const items = g.items.map((i) => {
+        if (i.id !== item.id) return i;
+        const existing = i.questionTypes || [];
+        const idx = existing.findIndex(
+          (qt) => qt.bloomLevel === bloomLevel && qt.questionType === questionType
+        );
+        let next;
+        if (idx === -1) {
+          if (delta <= 0) return i;
+          next = [...existing, { bloomLevel, questionType, count: 1 }];
+        } else {
+          const newCount = existing[idx].count + delta;
+          if (newCount <= 0) {
+            next = existing.filter((_, j) => j !== idx);
+          } else if (newCount > 3) {
+            return i;
+          } else {
+            next = existing.map((qt, j) => (j === idx ? { ...qt, count: newCount } : qt));
+          }
+        }
+        const count = next.reduce((sum, qt) => sum + qt.count, 0);
+        return { ...i, questionTypes: next, count };
+      });
+      const updated = { ...g, items };
+      saveObjectiveToDatabase(updated);
       return updated;
     });
   };
@@ -413,7 +479,11 @@ export default function ObjectivesStep({
               onCommitTitle={(value) => commitGroupTitle(group, value)}
               onCommitItemText={(item, value) => commitItemText(group, item, value)}
               onToggleBloom={(item, level) => toggleBloomChip(group, item, level)}
+              onRemoveBloom={(item, level) => removeBloomChip(group, item, level)}
               onChangeCount={(item, delta) => changeCount(group, item, delta)}
+              onChangeTypeCount={(item, bloomLevel, questionType, delta) =>
+                changeTypeCount(group, item, bloomLevel, questionType, delta)
+              }
               onDeleteItem={(item) => deleteItem(group, item)}
               onAddGranular={() => addNewGranular(group)}
               onRequestDelete={() => setDeleteTarget(group.id)}

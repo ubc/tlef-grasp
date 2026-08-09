@@ -287,7 +287,7 @@ const searchRagHandler = async (req, res) => {
 
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
-    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveId, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType } = req.body;
+    const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveId, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType, questionTypes } = req.body;
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -389,17 +389,37 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     });
 
     try {
-      // Determine question type for each bloom level using course settings
-      const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
-      const targetCount = parseInt(count) || bloomLevels.length || 1;
-      // When the caller pins a type (Question Bank wizard), honour it for every
-      // question; otherwise fall back to the course's Bloom→type preferences.
-      const questionTypeForIndex = (i) =>
-        resolveGenerationQuestionType({
-          requestedType: requestedQuestionType,
+      // Determine the (bloomLevel, questionType) work list for this granular
+      // objective. When the caller supplies explicit per-Bloom-level type
+      // counts (the objective-generation step's typed granular items), honour
+      // those exactly. Otherwise fall back to the legacy behaviour: round-robin
+      // bloomLevels for `count` questions, resolving type via the caller's
+      // pinned type (Question Bank wizard) or the course's Bloom→type
+      // preferences.
+      const validQuestionTypes = new Set(Object.values(QUESTION_TYPES));
+      let workItems = Array.isArray(questionTypes)
+        ? questionTypes
+            .filter((qt) => qt && BLOOM_LEVELS.includes(qt.bloomLevel) && validQuestionTypes.has(qt.questionType))
+            .flatMap((qt) =>
+              Array(Math.max(1, parseInt(qt.count, 10) || 1)).fill({
+                bloomLevel: qt.bloomLevel,
+                questionType: qt.questionType,
+              })
+            )
+        : [];
+
+      if (workItems.length === 0) {
+        const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
+        const targetCount = parseInt(count) || bloomLevels.length || 1;
+        workItems = Array.from({ length: targetCount }, (_, i) => ({
           bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
-          bloomTypePreferences: bloomTypePrefs,
-        });
+          questionType: resolveGenerationQuestionType({
+            requestedType: requestedQuestionType,
+            bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
+            bloomTypePreferences: bloomTypePrefs,
+          }),
+        }));
+      }
 
       // Build the first-turn prompt (includes full RAG context for prompt caching)
       const buildFirstPrompt = (bloomLevel, questionType) => {
@@ -432,9 +452,9 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         existingQuestionTexts.map(normalizeQuestionText).filter(Boolean)
       );
 
-      for (let i = 0; i < targetCount; i++) {
-        const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
-        const currentQuestionType = questionTypeForIndex(i);
+      for (let i = 0; i < workItems.length; i++) {
+        const currentBloomLevel = workItems[i].bloomLevel;
+        const currentQuestionType = workItems[i].questionType;
         let questionData = null;
         const currentQuestionHistory = [];
         let lastError = null;
@@ -464,7 +484,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
               { role: 'user', content: turnPrompt },
             ];
 
-            console.log(`Sending prompt to LLM (Q${i + 1}/${targetCount}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
+            console.log(`Sending prompt to LLM (Q${i + 1}/${workItems.length}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
             // question type. Low temperature for focused, well-formed questions.
@@ -560,7 +580,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       logCostSummary(`Question generation (${questionsData.length} questions)`, generationModel, totalPromptTokens, totalCompletionTokens);
 
       if (questionsData.length === 0) {
-        throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
+        throw new Error(`Failed to generate any valid questions after trying all ${workItems.length} requested question(s).`);
       }
 
       res.json({
@@ -735,7 +755,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
       throw new Error("Empty response from LLM");
     }
 
-    console.log("Response content:", responseContent.substring(0, 500));
+    console.log("Response content:", responseContent.substring(0, 1000));
 
     // Try to parse JSON response
     try {
@@ -775,7 +795,29 @@ Include foundational concepts, practical applications, and assessment criteria.`
                   const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
                   if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
                 }
-                return { text, bloomTaxonomies };
+
+                // Keep only entries whose bloomLevel survived the filter above
+                // and whose type/count are valid. Any Bloom level left with no
+                // valid entry gets a default type so the UI never shows an
+                // empty per-type breakdown for a selected level.
+                const validQuestionTypes = Object.values(QUESTION_TYPES);
+                const questionTypes = Array.isArray(go.questionTypes)
+                  ? go.questionTypes
+                      .filter((qt) => qt && bloomTaxonomies.includes(qt.bloomLevel) && validQuestionTypes.includes(qt.questionType))
+                      .map((qt) => ({
+                        bloomLevel: qt.bloomLevel,
+                        questionType: qt.questionType,
+                        count: Math.min(3, Math.max(1, parseInt(qt.count, 10) || 1)),
+                      }))
+                  : [];
+                bloomTaxonomies.forEach((level) => {
+                  if (!questionTypes.some((qt) => qt.bloomLevel === level)) {
+                    const fallbackType = (DEFAULT_BLOOM_TYPE_PREFERENCES[level] || [])[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
+                    questionTypes.push({ bloomLevel: level, questionType: fallbackType, count: 1 });
+                  }
+                });
+
+                return { text, bloomTaxonomies, questionTypes };
               }),
           };
         })
