@@ -33,7 +33,10 @@ repeatedly for an unchanged material.
 - Give objective generation a coverage artifact instead of a similarity ranking.
 - Pay the cost of reading a material once, not once per generation.
 - Work for materials larger than a context window.
-- Cover the existing corpus without a backfill script or re-uploads.
+- Make the summary **visible and repairable**, so a thin or wrong one is an
+  instructor-fixable problem rather than an invisible cause of bad objectives.
+- Never make a user wait on summarization inside a request they didn't
+  associate with it.
 
 ## Non-goals
 
@@ -41,7 +44,10 @@ repeatedly for an unchanged material.
   for content matching one specific granular objective — and it keeps the
   per-material fan-out unchanged.
 - Replacing `fileContent`. The outline is derived data, stored alongside it.
+- Editing outlines by hand. See §5.
 - Improving the chunker or chunk metadata. Separate concerns, separately scoped.
+- Trimming `fileContent` from the materials list payload. Real and adjacent, but
+  pre-existing and independent. See §10.
 
 ## Design
 
@@ -51,7 +57,8 @@ A **structured topic list**, not prose. The codebase already generates
 structured output against JSON schemas (`OBJECTIVES_SCHEMA`,
 `IMAGE_DESCRIPTION_SCHEMA`), and an enumerable topic list maps onto "generate
 objectives covering this material" far better than a paragraph, which would have
-to be re-parsed by the objective model to be useful.
+to be re-parsed by the objective model to be useful. It is also far easier for an
+instructor to skim, which §5 depends on.
 
 ```js
 {
@@ -67,7 +74,7 @@ Persisted on `grasp_material`:
 | `outline` | The parsed object above |
 | `outlineGeneratedAt` | When it was produced |
 | `outlineModel` | Model used, so a model change can invalidate |
-| `outlinePromptHash` | First 16 hex chars of the SHA-256 of the prompt template used (see invalidation) |
+| `outlinePromptHash` | First 16 hex chars of the SHA-256 of the prompt template used |
 
 `fileContent` is never modified and remains the source of truth, so a thin or
 wrong outline is always recoverable by regenerating.
@@ -77,33 +84,39 @@ wrong outline is always recoverable by regenerating.
 `src/services/material-outline.js` exposes:
 
 ```js
-getOrCreateOutline(sourceId)   // → outline object
+generateOutline(sourceId)   // → outline object; always (re)generates and stores
+getOutline(sourceId)        // → stored outline or null; never generates
 ```
 
-It returns the stored outline when present and valid, otherwise generates one
-from `fileContent`, stores it, and returns it. Invalidation, map-reduce
-batching, and persistence all live behind this one call, so both callers below
-are a single line each. The module depends on the database and the LLM, not on
-the RAG service.
+Splitting these two is deliberate and load-bearing. The single
+`getOrCreateOutline` of an earlier draft made it impossible to call the cheap
+read path without risking an expensive generation, which is precisely the trap
+that put a multi-second LLM call inside a user's objective-generation click.
+Generation is now only ever invoked explicitly.
 
-### 3. Two callers
+Invalidation, map-reduce batching, and persistence live behind these calls. The
+module depends on the database and the LLM, not on the RAG service.
+
+### 3. When outlines are created
 
 **At upload, best-effort.** After `saveMaterial` has stored `fileContent`, call
-`getOrCreateOutline` guarded so a failure logs and continues. The upload path
+`generateOutline` guarded so a failure logs and continues. The upload path
 already holds its request open through LiteParse OCR and, for PPTX, one vision
-call per slide, so it already tolerates long work — this is the right place for
-it. But losing a successfully parsed and stored material because its summary
-failed would be a bad trade, so the call must never propagate.
+call per slide, so it already tolerates long work and users already expect
+uploads to take a while. Losing a successfully parsed and stored material
+because its summary failed would be a bad trade, so the call must never
+propagate.
 
-**Lazily from objective generation.** When a selected material has no outline,
-generate it then. This is what covers the existing corpus with no backfill
-script and no re-uploads, and it also covers uploads whose summary step failed.
+**On explicit instructor request,** from the materials page (§5).
 
-Same function, two call sites. There is no second mechanism.
+**Never inside objective generation.** If an outline is missing there, the
+request falls back to retrieval (§6). Generating on demand in that request would
+mean every instructor's first objective generation on every pre-existing
+material was the slow one — not an edge case but the entire rollout experience.
 
 ### 4. Objective generation path
 
-For each of the ≤3 selected materials, get its outline and render one block,
+For each of the ≤3 selected materials, read its outline and render one block,
 joined by `\n\n---\n\n` exactly as the retrieval path joins material blocks
 today:
 
@@ -126,18 +139,66 @@ prompt contract does not change. No RAG call is made on this path.
 The `materialIsRelevant` gate needs no change. If a material is a receipt, its
 outline will describe a receipt and the objective model will still reject it.
 
-### 5. Fallback
+### 5. Materials page: view and regenerate
 
-If an outline cannot be obtained for **any** selected material, the whole
-request falls back to today's RAG retrieval path and logs the reason.
-Per-material fallback would mix outline and chunk context for marginal benefit;
-whole-request behaviour is predictable and easier to reason about when
-diagnosing a bad generation.
+Each material on the course materials page exposes its outline.
 
+- **Outline present:** a button opens a modal rendering the topic list and any
+  notes, read-only, with a **Regenerate** action.
+- **Outline absent:** the card flags it — this material will fall back to
+  retrieval for objective generation — and offers **Generate outline**.
+- **While generating:** the action shows progress and is disabled. A large
+  material takes a while; this is acceptable because the instructor pressed the
+  button, and a failure is recoverable by pressing it again rather than being a
+  mystery hang somewhere else.
+
+This replaces the backfill script an earlier draft needed. Instructors self-serve
+on the materials that matter to them, so there is no bulk LLM spend and no
+migration tooling.
+
+**Read-only, not editable.** Letting instructors hand-edit a topic list is
+tempting, but an edited outline is destroyed by the next regeneration, which
+then demands versioning and conflict rules. If an outline is wrong, regenerate
+it or fix the source material.
+
+**Why viewing matters.** The chief risk of summarizing is that a thin or skewed
+outline silently degrades every objective generated from it, with no signal to
+the instructor. Making it readable converts that from an invisible failure into
+an inspectable one: bad objectives → read the outline → regenerate or replace
+the material.
+
+### 6. Fallback
+
+If an outline is missing for **any** selected material, the whole request falls
+back to today's RAG retrieval path and logs the reason. Per-material fallback
+would mix outline and chunk context for marginal benefit; whole-request
+behaviour is predictable and easier to reason about when diagnosing a bad
+generation.
+
+This is not a degradation — it is exactly today's behaviour, so a material
+without an outline generates objectives no worse than it does now.
 `RAG_OBJECTIVE_CHUNK_LIMIT` therefore survives, and `.env.example` documents it
 as governing the fallback path only.
 
-### 6. Large materials
+### 7. API
+
+| Route | Purpose |
+|---|---|
+| `GET /api/material/:sourceId/outline` | Fetch the stored outline, or 404 when absent |
+| `POST /api/material/:sourceId/outline` | Generate or regenerate, returning the new outline |
+
+`GET /api/material/course/:courseId` gains a computed **`hasOutline`** boolean
+per material and **must not include the `outline` field itself**. The list is
+already oversized (§10); shipping every material's full topic list to render a
+button would repeat that mistake. The modal fetches one outline on demand.
+
+Both routes carry the same gating as other generation endpoints:
+`hasStaffAccessInCourse`, plus `assertCoInstructorPermission` and
+`assertTaPermission` under the existing `QUESTION_GENERATION` key. A dedicated
+permission key would be cleaner but requires a settings migration, which is not
+worth it for this.
+
+### 8. Large materials
 
 `fileContent` can exceed a context window. Three constants govern this, defined
 in `src/constants/app-constants.js`:
@@ -159,62 +220,95 @@ Above `OUTLINE_DIRECT_MAX_CHARS`, summarize by map-reduce:
 **Coverage is capped at `OUTLINE_MAX_BATCHES`.** Past that, summarization stops
 and the *code* — not the model — appends a deterministic sentence to `notes`
 naming how many characters of how many were covered, so the objective model
-knows its view is partial and the instructor can be told. A 500-page textbook is
-roughly 375,000 input tokens if summarized whole (about $0.90); the cap bounds a
-pathological upload without affecting anything of normal size.
+knows its view is partial and the instructor sees it in the modal. A 500-page
+textbook is roughly 375,000 input tokens if summarized whole (about $0.90); the
+cap bounds a pathological upload without affecting anything of normal size.
 
-### 7. Invalidation
+### 9. Invalidation
 
 - **Content changed:** the non-`TITLE_ONLY_UPDATE_TYPES` update path already
-  deletes and re-adds RAG documents; it clears `outline` in the same place.
-  Title-only edits do not invalidate.
+  deletes and re-adds RAG documents; it clears `outline` in the same place, so
+  the card shows the material as un-outlined until regenerated. Title-only edits
+  do not invalidate.
 - **Prompt changed:** the summarization prompt follows the existing
   `settings?.prompts?.X || DEFAULT_PROMPTS.X` pattern, so an instructor can edit
-  it. `outlinePromptHash` is compared on read and a mismatch regenerates.
-  Without this, editing the prompt would visibly do nothing — a confusing bug.
-- **Model changed:** `outlineModel` mismatch regenerates, for the same reason.
+  it. `outlinePromptHash` is compared on read; a mismatch reports the outline as
+  stale so it can be regenerated. Without this, editing the prompt would visibly
+  do nothing — a confusing bug.
+- **Model changed:** `outlineModel` mismatch reports stale, for the same reason.
+  Note this means switching `LLM_PROVIDER` between Ollama and OpenAI marks every
+  outline stale, which is intended: a summary from a small local model should not
+  silently back production objectives.
 
-### 8. Error handling
+Staleness marks, it does not auto-regenerate — consistent with §3.
+
+### 10. Adjacent, deliberately out of scope
+
+`getCourseMaterials` runs an unprojected `find()`, so the materials list ships
+every material's entire `fileContent` to the browser — the full parsed text of
+every PDF in the course, on every load of the materials page and now also
+wherever `useCourseMaterials` is used. The client only reads `fileContent` for
+**text** and **link** materials, where it is the pasted text or a URL and is
+tiny; for PDFs and uploaded files it is never read and is by far the largest.
+
+Stripping it for those types is a small contained fix, but it is pre-existing
+and unrelated to outlines. This spec only requires that `outline` not be added
+to that payload (§7).
+
+### 11. Error handling
 
 | Case | Behaviour |
 |---|---|
-| Summarization fails at upload | Logged, upload succeeds, outline stays absent; the lazy path retries on first use |
-| Summarization fails during objective generation | Whole request falls back to RAG retrieval |
-| `fileContent` is empty or missing | No outline; falls back to RAG, which reproduces today's behaviour including the existing "No content found" 400 |
-| Stored outline fails schema validation | Treated as absent and regenerated |
-| Material exceeds the batch cap | Partial outline, truncation recorded in `notes` |
+| Summarization fails at upload | Logged, upload succeeds, outline absent; the card flags it and offers generation |
+| Outline missing during objective generation | Whole request falls back to RAG retrieval; no generation attempted |
+| `POST outline` fails | 500 with a message the modal surfaces; nothing stored; button remains available to retry |
+| `fileContent` empty or missing | `POST outline` returns 400 — there is nothing to summarize; objective generation falls back to RAG, reproducing today's "No content found" 400 |
+| Stored outline fails schema validation | Reported as absent, so the card offers regeneration rather than rendering garbage |
+| Material exceeds the batch cap | Partial outline stored, truncation recorded in `notes` and visible in the modal |
+| `GET outline` for a material with none | 404, so the client can distinguish "none" from a transport failure |
 
-### 9. Testing
+### 12. Testing
 
 `tests/unit/material-outline.service.test.js`, with a mocked database and LLM:
 
-- cache hit: a second call does not re-invoke the LLM
-- absent outline generates, stores, and returns
+- `getOutline` never invokes the LLM, whether an outline exists or not
+- `generateOutline` stores outline, timestamp, model, and prompt hash
 - content update clears the stored outline
-- prompt-hash mismatch regenerates; matching hash does not
-- model mismatch regenerates
+- prompt-hash mismatch reports stale; matching hash does not
+- model mismatch reports stale
 - map-reduce batches oversized content and issues one consolidation call
-- batch cap produces a partial outline with truncation noted
-- malformed stored outline is treated as absent
-- generation failure propagates as a typed error the callers can distinguish
+- batch cap produces a partial outline with truncation noted in `notes`
+- malformed stored outline is reported as absent
+- empty `fileContent` is rejected rather than producing an empty outline
+
+`tests/unit/material-outline.route.test.js`:
+
+- `GET` returns the outline; 404 when absent
+- `POST` generates and returns; 400 on empty `fileContent`
+- both enforce staff access and the co-instructor/TA permission checks
+- the course materials list includes `hasOutline` and **excludes** `outline`
 
 `tests/unit/objective-generation-prompt.controller.test.js` (extending the
 existing file):
 
 - outlines present → prompt contains `### MATERIAL:` blocks and no RAG call is made
-- outline unavailable → falls back to RAG retrieval and still produces a prompt
-- prompt keeps carrying the sourceIds the auto prompt expects
+- an outline missing → falls back to RAG retrieval and still produces a prompt
+- objective generation never triggers outline generation
+- the prompt keeps carrying the sourceIds the auto prompt expects
 
 ## Consequences
 
-- Generation cost drops sharply after the first read of a material: roughly
-  50,000 input tokens per generation today, versus a few thousand to read a
-  cached outline. Break-even lands around the first or second generation, and
-  regenerating becomes roughly an order of magnitude cheaper.
+- Generation cost drops sharply once a material has an outline: roughly 50,000
+  input tokens per generation today, versus a few thousand to read a cached
+  outline. Regenerating objectives becomes roughly an order of magnitude
+  cheaper.
 - Objective quality is **expected** to improve, because coverage replaces an
   arbitrary similarity ranking. This is not measured. The case for the change
-  rests on amortized cost and removing a structural mismatch; treat quality as a
-  likely bonus rather than a claim.
+  rests on amortized cost, removing a structural mismatch, and making the
+  summary inspectable; treat quality as a likely bonus rather than a claim.
+- Rollout is gradual and instructor-driven. New uploads get outlines
+  automatically; existing materials keep behaving exactly as they do today until
+  someone presses the button. Nothing regresses and nothing needs migrating.
 - Multi-material objectives get simpler: three outlines are small and inherently
   balanced, so per-material quotas, crowd-out, and context truncation stop
   applying to this path entirely.
