@@ -232,3 +232,50 @@ describe('generateOutline', () => {
     expect(result.stale).toBe(false);
   });
 });
+
+describe('generateOutline with large materials', () => {
+  const BIG = 'x'.repeat(250000); // > OUTLINE_DIRECT_MAX_CHARS (100000)
+
+  it('summarizes in batches and consolidates once', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: BIG, outline: undefined })
+    );
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify(OUTLINE),
+      usage: {},
+    });
+
+    await generateOutline('src-1');
+
+    // 250000 chars / 80000 per batch = 4 batches, plus one consolidation call.
+    expect(mockGenerateStructured).toHaveBeenCalledTimes(5);
+
+    const consolidationPrompt =
+      mockGenerateStructured.mock.calls[4][0].prompt;
+    expect(consolidationPrompt).toContain('Topic A');
+  });
+
+  it('records truncation in notes when coverage is capped', async () => {
+    const huge = 'y'.repeat(80000 * 12); // 12 batches, cap is 8
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: huge, outline: undefined })
+    );
+
+    await generateOutline('src-1');
+
+    const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
+    expect(stored.notes).toContain(String(80000 * 8));
+    expect(stored.notes).toContain(String(80000 * 12));
+  });
+
+  it('does not append a truncation note when everything was covered', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: BIG, outline: undefined })
+    );
+
+    await generateOutline('src-1');
+
+    const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
+    expect(stored.notes).not.toContain('were not summarized');
+  });
+});

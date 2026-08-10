@@ -34,6 +34,21 @@ const CAPS = {
   maxChars: MAX_OUTLINE_CHARS,
 };
 
+/**
+ * Merges per-batch outlines into one. Kept local rather than instructor-editable:
+ * it is a mechanical merge step, not a summarization style choice.
+ */
+const CONSOLIDATION_PROMPT = `You are merging several partial outlines of the same course material into one coherent outline.
+
+PARTIAL OUTLINES:
+{partialOutlines}
+
+INSTRUCTIONS:
+1. Combine topics that describe the same subject into a single topic, merging their key points.
+2. Keep the order in which the topics first appear.
+3. Do not invent topics or key points that are not in the partial outlines.
+4. Leave notes as an empty string unless a partial outline reported a caveat worth keeping.`;
+
 /** Thrown when a material has no text to summarize. */
 class EmptyMaterialError extends Error {
   constructor(sourceId) {
@@ -103,6 +118,22 @@ const summarizeBatch = async (template, content) => {
   return JSON.parse(raw);
 };
 
+/** Merge per-batch outlines into one via a single consolidation call. */
+const consolidateOutlines = async (partials) => {
+  const rendered = partials
+    .map((partial, index) => `Partial outline ${index + 1}:\n${JSON.stringify(partial)}`)
+    .join('\n\n');
+
+  const { content: raw } = await generateStructured({
+    prompt: CONSOLIDATION_PROMPT.replace('{partialOutlines}', () => rendered),
+    schema: MATERIAL_OUTLINE_SCHEMA,
+    temperature: 0.2,
+    schemaName: 'material_outline',
+  });
+  if (!raw) throw new Error('Empty response from the consolidation model.');
+  return JSON.parse(raw);
+};
+
 /** Generate and store an outline, replacing whatever was there. */
 const generateOutline = async (sourceId) => {
   const material = await getMaterialBySourceId(sourceId);
@@ -124,10 +155,14 @@ const generateOutline = async (sourceId) => {
       material.fileContent,
       { batchChars: OUTLINE_BATCH_CHARS, maxBatches: OUTLINE_MAX_BATCHES }
     );
-    if (batches.length !== 1) {
-      throw new Error('Multi-batch summarization is not implemented yet.');
+    // Batches are summarized sequentially: each is a full-size LLM request,
+    // and running them concurrently would blow past the concurrency caps
+    // used elsewhere in the codebase for the same reason.
+    const partials = [];
+    for (const batch of batches) {
+      partials.push(await summarizeBatch(template, batch));
     }
-    raw = await summarizeBatch(template, batches[0]);
+    raw = partials.length === 1 ? partials[0] : await consolidateOutlines(partials);
     notes = [raw.notes || '', truncated ? truncationNote(coveredChars, totalChars) : '']
       .filter(Boolean)
       .join(' ');
