@@ -20,21 +20,27 @@ export default function OutlineModal({
   const [editing, setEditing] = useState(false);
   const [topics, setTopics] = useState([]);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     setTopics(outlineData?.outline?.topics || []);
     setEditing(false);
     setConfirmRegenerate(false);
+    setDirty(false);
   }, [outlineData]);
 
   const missing = isError || (!isPending && !outlineData);
   const edited = outlineData?.source === "edited";
+  const busy = saving || generating;
 
-  const updateTopic = (index, patch) =>
+  const updateTopic = (index, patch) => {
+    setDirty(true);
+    setConfirmRegenerate(false);
     setTopics((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+  };
 
   const requestRegenerate = () => {
-    if (edited && !confirmRegenerate) {
+    if ((edited || dirty) && !confirmRegenerate) {
       setConfirmRegenerate(true);
       return;
     }
@@ -53,7 +59,7 @@ export default function OutlineModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={generating || saving}
+            disabled={busy}
             className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
           >
             Close
@@ -61,8 +67,12 @@ export default function OutlineModal({
           {!missing && !editing && (
             <button
               type="button"
-              onClick={() => setEditing(true)}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50"
+              disabled={busy}
+              onClick={() => {
+                setConfirmRegenerate(false);
+                setEditing(true);
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
             >
               <i className="fas fa-pen mr-2" /> Edit
             </button>
@@ -70,7 +80,7 @@ export default function OutlineModal({
           {editing && (
             <button
               type="button"
-              disabled={saving}
+              disabled={busy}
               onClick={() => onSave({ sourceId: material.sourceId, outline: { topics } })}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
             >
@@ -79,7 +89,7 @@ export default function OutlineModal({
           )}
           <button
             type="button"
-            disabled={generating}
+            disabled={busy}
             onClick={requestRegenerate}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
           >
@@ -118,8 +128,7 @@ export default function OutlineModal({
           role="alert"
           className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
         >
-          You edited this outline. Regenerating replaces it and discards your
-          changes. Press Regenerate again to continue.
+          This outline has changes that regenerating will discard. Press Regenerate again to continue.
         </div>
       )}
 
@@ -175,7 +184,11 @@ export default function OutlineModal({
                 {editing && (
                   <button
                     type="button"
-                    onClick={() => setTopics((prev) => prev.filter((_, i) => i !== index))}
+                    onClick={() => {
+                      setDirty(true);
+                      setConfirmRegenerate(false);
+                      setTopics((prev) => prev.filter((_, i) => i !== index));
+                    }}
                     className="mt-2 text-xs text-danger underline"
                   >
                     Remove topic
@@ -189,7 +202,11 @@ export default function OutlineModal({
             <>
               <button
                 type="button"
-                onClick={() => setTopics((prev) => [...prev, { title: "", keyPoints: [] }])}
+                onClick={() => {
+                  setDirty(true);
+                  setConfirmRegenerate(false);
+                  setTopics((prev) => [...prev, { title: "", keyPoints: [] }]);
+                }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-primary bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"
               >
                 <i className="fas fa-plus" /> Add topic
