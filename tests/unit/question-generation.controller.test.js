@@ -28,6 +28,7 @@ jest.mock('../../src/utils/structured-llm', () => ({
   generateStructured: mockGenerateStructured,
 }));
 
+const ragService = require('../../src/services/rag');
 const { generateQuestionsWithRagHandler } = require('../../src/controllers/rag-llm');
 
 const makeMcq = (question, correctAnswer = 'A') => ({
@@ -247,5 +248,32 @@ describe('generateQuestionsWithRagHandler review-fix loop', () => {
     expect(payload.questions).toHaveLength(1);
     expect(payload.questions[0].reviewFlag).toBe(true);
     expect(payload.questions[0].wasAutoFixed).toBeFalsy();
+  });
+});
+
+describe('generateQuestionsWithRagHandler prompt interpolation', () => {
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetExistingQuestionTexts.mockResolvedValue([]);
+  });
+
+  // String.replace() interprets `$$`, `$&` and `` $` `` inside a replacement
+  // string. Calculation questions are generated from math-heavy material, so
+  // interpolating it as a plain string corrupted the LaTeX before the model
+  // ever saw it: "$$E = mc^2$$" arrived as "$E = mc^2$".
+  it('interpolates LaTeX from material and objective text verbatim', async () => {
+    const latexContext = 'From the deck: $$E = mc^2$$ and $& and $` literals.';
+    ragService.getLearningObjectiveRagContent.mockResolvedValueOnce(latexContext);
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+
+    const request = buildRequest();
+    request.body.learningObjectiveText = 'Explain $$F = ma$$';
+    await generateQuestionsWithRagHandler(request, buildResponse());
+
+    const prompt = mockGenerateStructured.mock.calls[0][0].messages[0].content;
+    expect(prompt).toContain(latexContext);
+    expect(prompt).toContain('Explain $$F = ma$$');
   });
 });

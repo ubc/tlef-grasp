@@ -26,6 +26,15 @@ const {
 } = require('../utils/question-generation');
 const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
 
+/**
+ * Objective-generation context size that warrants a warning. Not a limit:
+ * RAG_OBJECTIVE_CHUNK_LIMIT already bounds the context (that many chunks, each
+ * capped at 1000 chars by the chunker), so at the default of 200 the context
+ * tops out around 200k chars. Exceeding this means the limit was raised well
+ * past its default, which is worth surfacing rather than silently trimming.
+ */
+const OBJECTIVE_CONTEXT_WARN_CHARS = 300000;
+
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
   'gpt-4o': { input: 2.50, output: 10.00 },
@@ -402,17 +411,21 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         });
 
       // Build the first-turn prompt (includes full RAG context for prompt caching)
+      // Content-bearing values are substituted via replacer functions: a plain
+      // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
+      // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
+      // at the model corrupted.
       const buildFirstPrompt = (bloomLevel, questionType) => {
         let filled = promptTemplate
-          .replace('{courseName}', courseName || '')
-          .replace('{learningObjectiveText}', learningObjectiveText || '')
-          .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
+          .replace('{courseName}', () => courseName || '')
+          .replace('{learningObjectiveText}', () => learningObjectiveText || '')
+          .replace('{granularLearningObjectiveText}', () => granularLearningObjectiveText || '')
           .replace('{bloomLevel}', bloomLevel || '')
           .replace('{questionType}', questionType || '')
-          .replace('{ragContext}', ragContext || '')
+          .replace('{ragContext}', () => ragContext || '')
           .replace(
             '{typeSpecificInstructions}',
-            QuestionFactory.getModel(questionType).getPromptInstruction()
+            () => QuestionFactory.getModel(questionType).getPromptInstruction()
           );
         if (filled.includes('{existingQuestionsContext}')) {
           filled = filled.split('{existingQuestionsContext}').join(existingQuestionsContext);
@@ -712,23 +725,38 @@ Include foundational concepts, practical applications, and assessment criteria.`
       ragContext = "No usable material content was retrieved. Preserve the instructor-provided objectives without adding content.";
     }
 
+    // Context size is bounded by RAG_OBJECTIVE_CHUNK_LIMIT alone: the merge
+    // keeps at most that many chunks and the chunker caps each at 1000 chars.
+    // This warns rather than truncates — a prompt this large means the limit was
+    // set unusually high, and silently cutting the context would hide that while
+    // also deleting whichever materials sort last.
+    if (ragContext.length > OBJECTIVE_CONTEXT_WARN_CHARS) {
+      console.warn(
+        `⚠️ Objective-generation context is ${ragContext.length} chars from ${materialIds.length} material(s) — check RAG_OBJECTIVE_CHUNK_LIMIT (currently ${objectiveRagLimit}).`
+      );
+    }
+
     // Determine which prompt to use (Auto vs Manual)
     let promptTemplate;
     let fullPrompt;
 
+    // Content-bearing values are substituted via replacer functions: a plain
+    // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
+    // LaTeX in course material ("$$E = mc^2$$") would arrive at the model
+    // corrupted.
     if (userObjectives && userObjectives.length > 0) {
       promptTemplate = settings?.prompts?.objectiveGenerationManual || DEFAULT_PROMPTS.objectiveGenerationManual;
       const userList = userObjectives.map((obj) => `   - ${obj}`).join('\n');
       fullPrompt = promptTemplate
-        .replace('{courseName}', courseName || "Course")
-        .replace('{userObjectivesList}', userList)
-        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{courseName}', () => courseName || "Course")
+        .replace('{userObjectivesList}', () => userList)
+        .replace('{ragContext}', () => ragContext);
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
-        .replace('{courseName}', courseName || "Course")
-        .replace('{sourceIdsList}', materialIds.join(', '))
-        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{courseName}', () => courseName || "Course")
+        .replace('{sourceIdsList}', () => materialIds.join(', '))
+        .replace('{ragContext}', () => ragContext);
     }
 
     // Lower temperature for faithful, well-structured objectives. Schema-
