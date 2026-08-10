@@ -1,4 +1,4 @@
-const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, getMaterialBySourceId } = require('../services/material');
+const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
 const settingsService = require('../services/settings');
@@ -322,6 +322,10 @@ const updateMaterialHandler = async (req, res) => {
                 documentTitle: updatedDocumentTitle || null,
             });
             console.log("✅ Re-saved to MongoDB");
+
+            // The stored outline described text that no longer exists. This
+            // discards instructor edits too, which the edit UI warns about.
+            await clearMaterialOutline(sourceId);
         } else {
             // For uploaded files, only update documentTitle in MongoDB (no RAG changes needed).
             // Note: RAG metadata will retain the old title until material is re-processed
@@ -680,6 +684,19 @@ const uploadFileHandler = async (req, res) => {
             fileContent: content, // Save extracted text
             documentTitle: documentTitle || file.originalname,
         });
+
+        // Best-effort: the upload path already tolerates long work (OCR, and a
+        // vision call per slide for PPTX), so this is the right place to spend
+        // it. But a failed summary must never cost a material that parsed and
+        // stored fine — the instructor can generate it from the materials page.
+        try {
+            await outlineService.generateOutline(actualSourceId);
+        } catch (outlineError) {
+            console.warn(
+                `⚠️ Could not generate an outline for ${actualSourceId}:`,
+                outlineError.message
+            );
+        }
 
         res.json({
             success: true,
