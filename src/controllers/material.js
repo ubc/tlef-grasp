@@ -422,6 +422,10 @@ const refetchMaterialHandler = async (req, res) => {
         });
         console.log("✅ Re-saved to MongoDB");
 
+        // The stored outline described text that no longer exists. This
+        // discards instructor edits too, which the edit UI warns about.
+        await clearMaterialOutline(sourceId);
+
         res.json({ success: true, message: "Link content refetched successfully" });
     } catch (error) {
         console.error("Error refetching material:", error);
