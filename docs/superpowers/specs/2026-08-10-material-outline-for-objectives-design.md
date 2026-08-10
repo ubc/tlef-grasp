@@ -33,7 +33,7 @@ repeatedly for an unchanged material.
 - Give objective generation a coverage artifact instead of a similarity ranking.
 - Pay the cost of reading a material once, not once per generation.
 - Work for materials larger than a context window.
-- Make the summary **visible and repairable**, so a thin or wrong one is an
+- Make the summary **visible and editable**, so a thin or wrong one is an
   instructor-fixable problem rather than an invisible cause of bad objectives.
 - Never make a user wait on summarization inside a request they didn't
   associate with it.
@@ -44,7 +44,7 @@ repeatedly for an unchanged material.
   for content matching one specific granular objective — and it keeps the
   per-material fan-out unchanged.
 - Replacing `fileContent`. The outline is derived data, stored alongside it.
-- Editing outlines by hand. See §5.
+- Merging instructor edits with regenerated content. See §5.
 - Improving the chunker or chunk metadata. Separate concerns, separately scoped.
 - Trimming `fileContent` from the materials list payload. Real and adjacent, but
   pre-existing and independent. See §10.
@@ -75,6 +75,8 @@ Persisted on `grasp_material`:
 | `outlineGeneratedAt` | When it was produced |
 | `outlineModel` | Model used, so a model change can invalidate |
 | `outlinePromptHash` | First 16 hex chars of the SHA-256 of the prompt template used |
+| `outlineSource` | `'generated'` or `'edited'` — whether an instructor has modified it |
+| `outlineEditedAt` | When it was last edited, absent when never |
 
 `fileContent` is never modified and remains the source of truth, so a thin or
 wrong outline is always recoverable by regenerating.
@@ -84,8 +86,9 @@ wrong outline is always recoverable by regenerating.
 `src/services/material-outline.js` exposes:
 
 ```js
-generateOutline(sourceId)   // → outline object; always (re)generates and stores
-getOutline(sourceId)        // → stored outline or null; never generates
+generateOutline(sourceId)         // → outline object; always (re)generates and stores
+getOutline(sourceId)              // → stored outline or null; never generates
+saveOutline(sourceId, outline)    // → validates and stores an instructor edit
 ```
 
 Splitting these two is deliberate and load-bearing. The single
@@ -139,12 +142,13 @@ prompt contract does not change. No RAG call is made on this path.
 The `materialIsRelevant` gate needs no change. If a material is a receipt, its
 outline will describe a receipt and the objective model will still reject it.
 
-### 5. Materials page: view and regenerate
+### 5. Materials page: view, edit, and regenerate
 
 Each material on the course materials page exposes its outline.
 
 - **Outline present:** a button opens a modal rendering the topic list and any
-  notes, read-only, with a **Regenerate** action.
+  notes, with **Edit**, **Regenerate**, and — when edited — a marker showing an
+  instructor has modified it.
 - **Outline absent:** the card flags it — this material will fall back to
   retrieval for objective generation — and offers **Generate outline**.
 - **While generating:** the action shows progress and is disabled. A large
@@ -156,16 +160,31 @@ This replaces the backfill script an earlier draft needed. Instructors self-serv
 on the materials that matter to them, so there is no bulk LLM spend and no
 migration tooling.
 
-**Read-only, not editable.** Letting instructors hand-edit a topic list is
-tempting, but an edited outline is destroyed by the next regeneration, which
-then demands versioning and conflict rules. If an outline is wrong, regenerate
-it or fix the source material.
+**Editing.** Topic titles and key points are editable — add, remove, reorder,
+rewrite. Saving sets `outlineSource: 'edited'` and stamps `outlineEditedAt`.
 
-**Why viewing matters.** The chief risk of summarizing is that a thin or skewed
+`notes` is **not** editable. It carries model-reported caveats and the
+system-generated truncation sentence from §8, so it is state about how the
+outline was produced rather than content the instructor authored.
+
+**One rule keeps this simple: the edit wins until an explicit regeneration.**
+Instructor edits are never merged with fresh model output — merging is what would
+demand versioning and conflict resolution. Pressing **Regenerate** on an edited
+outline warns that the edits will be discarded and requires confirmation.
+Regeneration is therefore also how you "revert to generated", so no separate
+revert affordance and no second stored copy is needed.
+
+Edits are validated server-side: at least one topic, every topic has a non-empty
+title, key points are non-empty after trimming, and topic count, key-point count,
+and total length are capped so an outline cannot grow larger than the material it
+summarizes.
+
+**Why this matters.** The chief risk of summarizing is that a thin or skewed
 outline silently degrades every objective generated from it, with no signal to
 the instructor. Making it readable converts that from an invisible failure into
-an inspectable one: bad objectives → read the outline → regenerate or replace
-the material.
+an inspectable one, and making it editable means the fix is deterministic and
+free: bad objectives → read the outline → correct it directly, rather than
+regenerating and hoping for a better roll.
 
 ### 6. Fallback
 
@@ -186,13 +205,14 @@ as governing the fallback path only.
 |---|---|
 | `GET /api/material/:sourceId/outline` | Fetch the stored outline, or 404 when absent |
 | `POST /api/material/:sourceId/outline` | Generate or regenerate, returning the new outline |
+| `PUT /api/material/:sourceId/outline` | Save an instructor edit after validation |
 
 `GET /api/material/course/:courseId` gains a computed **`hasOutline`** boolean
 per material and **must not include the `outline` field itself**. The list is
 already oversized (§10); shipping every material's full topic list to render a
 button would repeat that mistake. The modal fetches one outline on demand.
 
-Both routes carry the same gating as other generation endpoints:
+All three routes carry the same gating as other generation endpoints:
 `hasStaffAccessInCourse`, plus `assertCoInstructorPermission` and
 `assertTaPermission` under the existing `QUESTION_GENERATION` key. A dedicated
 permission key would be cleaner but requires a settings migration, which is not
@@ -242,6 +262,16 @@ cap bounds a pathological upload without affecting anything of normal size.
 
 Staleness marks, it does not auto-regenerate — consistent with §3.
 
+**Edited outlines never go stale.** Once `outlineSource` is `'edited'`, the
+prompt and model that originally produced it are no longer what the content
+reflects, so comparing against them is meaningless. The instructor owns it, and
+nagging them to regenerate would invite discarding their own edits.
+
+A **content** change still clears an edited outline, since the edits described
+material that no longer exists. That is a genuine loss of instructor work, so the
+edit UI should say plainly that outlines are tied to the material's current
+content.
+
 ### 10. Adjacent, deliberately out of scope
 
 `getCourseMaterials` runs an unprojected `find()`, so the materials list ships
@@ -263,6 +293,8 @@ to that payload (§7).
 | Outline missing during objective generation | Whole request falls back to RAG retrieval; no generation attempted |
 | `POST outline` fails | 500 with a message the modal surfaces; nothing stored; button remains available to retry |
 | `fileContent` empty or missing | `POST outline` returns 400 — there is nothing to summarize; objective generation falls back to RAG, reproducing today's "No content found" 400 |
+| `PUT outline` body fails validation | 400 naming the offending field; nothing stored; the modal keeps the instructor's unsaved text so the edit is not lost |
+| `PUT outline` on a material with no outline | 400 — editing presupposes something to edit; generate first |
 | Stored outline fails schema validation | Reported as absent, so the card offers regeneration rather than rendering garbage |
 | Material exceeds the batch cap | Partial outline stored, truncation recorded in `notes` and visible in the modal |
 | `GET outline` for a material with none | 404, so the client can distinguish "none" from a transport failure |
@@ -280,12 +312,22 @@ to that payload (§7).
 - batch cap produces a partial outline with truncation noted in `notes`
 - malformed stored outline is reported as absent
 - empty `fileContent` is rejected rather than producing an empty outline
+- `saveOutline` sets `outlineSource: 'edited'` and `outlineEditedAt`, and leaves
+  `notes` at its stored value rather than accepting one from the caller
+- `saveOutline` rejects: zero topics, a blank title, blank key points, and each
+  cap (topic count, key-point count, total length)
+- an edited outline is not reported stale on prompt-hash or model mismatch
+- a content update clears an edited outline just as it clears a generated one
+- `generateOutline` on an edited outline overwrites it and resets
+  `outlineSource` to `'generated'`
 
 `tests/unit/material-outline.route.test.js`:
 
 - `GET` returns the outline; 404 when absent
 - `POST` generates and returns; 400 on empty `fileContent`
-- both enforce staff access and the co-instructor/TA permission checks
+- `PUT` stores a valid edit; 400 on an invalid body; 400 when no outline exists
+- `PUT` cannot smuggle in `notes`, `outlineModel`, or `outlinePromptHash`
+- all three enforce staff access and the co-instructor/TA permission checks
 - the course materials list includes `hasOutline` and **excludes** `outline`
 
 `tests/unit/objective-generation-prompt.controller.test.js` (extending the
@@ -305,7 +347,13 @@ existing file):
 - Objective quality is **expected** to improve, because coverage replaces an
   arbitrary similarity ranking. This is not measured. The case for the change
   rests on amortized cost, removing a structural mismatch, and making the
-  summary inspectable; treat quality as a likely bonus rather than a claim.
+  summary inspectable and correctable; treat the model-driven quality gain as a
+  likely bonus rather than a claim.
+- Editing gives instructors direct control over what objectives are generated
+  from, which is a stronger guarantee than any prompt change: a corrected outline
+  is deterministic and costs nothing, whereas regenerating is nondeterministic and
+  spends tokens. It also means a poor summarization model is no longer a hard
+  ceiling on objective quality.
 - Rollout is gradual and instructor-driven. New uploads get outlines
   automatically; existing materials keep behaving exactly as they do today until
   someone presses the button. Nothing regresses and nothing needs migrating.
