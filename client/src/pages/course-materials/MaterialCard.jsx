@@ -1,7 +1,7 @@
 import { getMaterialTypeMeta } from "../../lib/materials";
 import { formatFileSize } from "../../lib/format";
 
-export default function MaterialCard({ material, onEdit, onRefetch, onDelete }) {
+export default function MaterialCard({ material, onEdit, onRefetch, onDelete, onViewOutline }) {
   const fileType = (material.fileType || "").toLowerCase();
   const meta = getMaterialTypeMeta(fileType);
   const isText = fileType.includes("text");
@@ -60,6 +60,17 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete }) 
                 <i className="fas fa-sync-alt" />
               </button>
             )}
+            <button
+              type="button"
+              title={material.hasOutline ? "View outline" : "No outline — generate one"}
+              aria-label={`Outline for ${material.documentTitle || "material"}`}
+              onClick={() => onViewOutline(material)}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 ${
+                material.hasOutline ? "text-muted hover:text-ink" : "text-amber-600"
+              }`}
+            >
+              <i className={material.hasOutline ? "fas fa-list-ul" : "fas fa-triangle-exclamation"} />
+            </button>
           </div>
           <button
             type="button"

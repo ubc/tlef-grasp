@@ -17,6 +17,7 @@ export const queryKeys = {
   detailedObjectives: (courseId) => ["detailed-objectives", courseId],
 
   materials: (courseId) => ["materials", courseId],
+  materialOutline: (sourceId) => ["material-outline", sourceId],
 
   quizzes: (courseId) => ["quizzes", "course", courseId],
   quizzesWithQuestions: (courseId) => ["quizzes-with-questions", courseId],

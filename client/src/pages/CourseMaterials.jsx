@@ -8,6 +8,8 @@ import {
   useUpdateMaterial,
   useRefetchLinkMaterial,
   useDeleteMaterial,
+  useGenerateOutline,
+  useSaveOutline,
 } from "../hooks/useMaterials";
 import {
   filterSupportedDocuments,
@@ -17,6 +19,7 @@ import { useToast } from "../components/ui/Toast";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import UploadSection from "./course-materials/UploadSection";
 import MaterialCard from "./course-materials/MaterialCard";
+import OutlineModal from "./course-materials/OutlineModal";
 import {
   MaterialFormModal,
   DeleteMaterialModal,
@@ -143,6 +146,16 @@ export default function CourseMaterials() {
   const deleteMutation = useDeleteMaterial(courseId, {
     onSuccess: () => showToast("Material deleted successfully", "success"),
     onError: () => showToast("Error deleting material. Please try again.", "error"),
+  });
+
+  const generateOutline = useGenerateOutline(courseId, {
+    onSuccess: () => showToast("Outline generated", "success"),
+    onError: (error) => showToast(error.message, "error"),
+  });
+
+  const saveOutline = useSaveOutline(courseId, {
+    onSuccess: () => showToast("Outline saved", "success"),
+    onError: (error) => showToast(error.message, "error"),
   });
 
   /* ------------------------------- Handlers ------------------------------ */
@@ -296,12 +309,13 @@ export default function CourseMaterials() {
               onEdit={(kind, m) => setModal({ kind, material: m })}
               onRefetch={handleRefetch}
               onDelete={(m) => setModal({ kind: "delete", material: m })}
+              onViewOutline={(m) => setModal({ kind: "outline", material: m })}
             />
           ))}
         </div>
       )}
 
-      {modal && modal.kind !== "delete" && (
+      {modal && modal.kind !== "delete" && modal.kind !== "outline" && (
         <MaterialFormModal
           kind={modal.kind}
           material={modal.material}
@@ -323,6 +337,17 @@ export default function CourseMaterials() {
             setModal(null);
             deleteMutation.mutate(modal.material);
           }}
+        />
+      )}
+
+      {modal?.kind === "outline" && (
+        <OutlineModal
+          material={modal.material}
+          onClose={() => setModal(null)}
+          onGenerate={(sourceId) => generateOutline.mutate(sourceId)}
+          onSave={(payload) => saveOutline.mutate(payload)}
+          generating={generateOutline.isPending}
+          saving={saveOutline.isPending}
         />
       )}
     </div>
