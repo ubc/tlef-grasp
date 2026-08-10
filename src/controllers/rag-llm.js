@@ -363,16 +363,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
     // Both settings apply to question generation only — objective generation
     // uses RAG_OBJECTIVE_CHUNK_LIMIT and deliberately passes no score threshold.
-    // The unprefixed names are the pre-rename spellings, still honoured so an
-    // existing deployment's tuning is not silently reset to the defaults.
-    const questionRagThreshold =
-      parseFloat(
-        process.env.RAG_QUESTION_SCORE_THRESHOLD ?? process.env.RAG_SCORE_THRESHOLD
-      ) || 0.6;
-    const questionRagLimit =
-      parseInt(
-        process.env.RAG_QUESTION_CHUNK_LIMIT ?? process.env.RAG_CHUNK_LIMIT
-      ) || 50;
+    const questionRagThreshold = parseFloat(process.env.RAG_QUESTION_SCORE_THRESHOLD) || 0.6;
+    const questionRagLimit = parseInt(process.env.RAG_QUESTION_CHUNK_LIMIT) || 50;
 
     let ragContext = '';
     if (learningObjectiveId) {

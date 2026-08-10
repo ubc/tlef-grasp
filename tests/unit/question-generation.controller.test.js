@@ -327,24 +327,15 @@ describe('generateQuestionsWithRagHandler retrieval settings', () => {
     expect(retrievalArgs()[4]).toBe(80);
   });
 
-  // A deployment still using the pre-rename spellings must not be silently
-  // reset to the defaults.
-  it('still honours the legacy unprefixed names', async () => {
+  // The pre-rename spellings were dropped outright rather than kept as a
+  // fallback, so a deployment still setting them gets the defaults.
+  it('ignores the legacy unprefixed names', async () => {
     process.env.RAG_CHUNK_LIMIT = '70';
     process.env.RAG_SCORE_THRESHOLD = '0.5';
 
     await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
 
-    expect(retrievalArgs()[3]).toBe(0.5);
-    expect(retrievalArgs()[4]).toBe(70);
-  });
-
-  it('prefers the new name when both are set', async () => {
-    process.env.RAG_QUESTION_CHUNK_LIMIT = '90';
-    process.env.RAG_CHUNK_LIMIT = '70';
-
-    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
-
-    expect(retrievalArgs()[4]).toBe(90);
+    expect(retrievalArgs()[3]).toBe(0.6);
+    expect(retrievalArgs()[4]).toBe(50);
   });
 });
