@@ -82,6 +82,45 @@ const getMaterialBySourceId = async (sourceId) => {
     }
 };
 
+const OUTLINE_FIELDS = [
+    'outline',
+    'outlineGeneratedAt',
+    'outlineModel',
+    'outlinePromptHash',
+    'outlineSource',
+    'outlineEditedAt',
+];
+
+/** Write outline fields for one material. */
+const setMaterialOutline = async (sourceId, fields) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+        await collection.updateOne({ sourceId: sourceId }, { $set: fields });
+    }
+    catch (error) {
+        console.error("Error setting material outline:", error);
+        throw error;
+    }
+};
+
+/**
+ * Remove every outline field. Called when a material's content changes: the
+ * outline described text that no longer exists, including any instructor edits.
+ */
+const clearMaterialOutline = async (sourceId) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+        const unset = {};
+        OUTLINE_FIELDS.forEach((field) => { unset[field] = ""; });
+        await collection.updateOne({ sourceId: sourceId }, { $unset: unset });
+    }
+    catch (error) {
+        console.error("Error clearing material outline:", error);
+        throw error;
+    }
+};
 
 module.exports = {
     saveMaterial,
@@ -89,4 +128,6 @@ module.exports = {
     getCourseMaterials,
     getMaterialCourseId,
     getMaterialBySourceId,
+    setMaterialOutline,
+    clearMaterialOutline,
 };

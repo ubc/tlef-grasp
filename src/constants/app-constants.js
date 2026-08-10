@@ -256,6 +256,38 @@ INSTRUCTIONS:
 2. Set "correct" to false if the answer names a different concept, is only partially right, or is too vague to distinguish from a wrong answer.
 3. "feedback": 1-2 sentences addressed directly to the student ("you"). If correct, briefly confirm why their phrasing is acceptable. If incorrect, explain what kind of answer was expected WITHOUT revealing the expected answer itself.`;
 
+/**
+ * Maximum characters summarized in a single call. Above this, the material is
+ * summarized in batches and consolidated.
+ */
+const OUTLINE_DIRECT_MAX_CHARS = 100000;
+/** Batch size when a material exceeds OUTLINE_DIRECT_MAX_CHARS. */
+const OUTLINE_BATCH_CHARS = 80000;
+/**
+ * Coverage cap. Past this many batches summarization stops and records the
+ * truncation, so one pathological upload cannot run unbounded LLM calls.
+ */
+const OUTLINE_MAX_BATCHES = 8;
+
+/** Caps on a stored outline, applied to model output and instructor edits alike. */
+const MAX_OUTLINE_TOPICS = 40;
+const MAX_OUTLINE_KEY_POINTS = 20;
+const MAX_OUTLINE_CHARS = 20000;
+
+const MATERIAL_OUTLINE_PROMPT = `You are an expert educational content designer. Summarize the following course material into a structured outline that captures everything a set of learning objectives would need to cover.
+
+COURSE MATERIAL:
+{materialContent}
+
+INSTRUCTIONS:
+1. Identify the distinct topics the material teaches, in the order the material presents them.
+2. For each topic, list the key points a student is expected to learn — concepts, definitions, relationships, methods, and worked results.
+3. Use the material's own terminology. Do not introduce topics the material does not cover.
+4. Do not editorialize about the material's quality, and do not add study advice.
+5. If the material is not teachable course content (a receipt, a syllabus administrative page, navigation text, personal notes), say so plainly in notes and return the few topics that are genuinely present.
+6. Use notes only for caveats about the material itself — for example sparse text from a scan, or content that appears truncated. Leave notes as an empty string when there is nothing to report.
+7. CRITICAL LaTeX FORMATTING: enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g. \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.`;
+
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
 const QUESTION_TYPES = {
@@ -272,6 +304,7 @@ const DEFAULT_PROMPTS = {
   powerPointImageDescription: POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   openEndedGrading: OPEN_ENDED_GRADING_PROMPT,
   fillInTheBlankGrading: FILL_IN_THE_BLANK_GRADING_PROMPT,
+  materialOutline: MATERIAL_OUTLINE_PROMPT,
 };
 
 // Default mapping from Bloom's level to ordered question-type preferences.
@@ -303,6 +336,13 @@ module.exports = {
   POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   OPEN_ENDED_GRADING_PROMPT,
   FILL_IN_THE_BLANK_GRADING_PROMPT,
+  MATERIAL_OUTLINE_PROMPT,
+  OUTLINE_DIRECT_MAX_CHARS,
+  OUTLINE_BATCH_CHARS,
+  OUTLINE_MAX_BATCHES,
+  MAX_OUTLINE_TOPICS,
+  MAX_OUTLINE_KEY_POINTS,
+  MAX_OUTLINE_CHARS,
   BLOOM_LEVELS,
   QUESTION_TYPES,
   DEFAULT_PROMPTS,
