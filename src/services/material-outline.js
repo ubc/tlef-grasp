@@ -111,22 +111,27 @@ const generateOutline = async (sourceId) => {
   }
 
   const template = await resolvePromptTemplate(material.courseId);
-  const { batches, totalChars, coveredChars, truncated } = batchContent(
-    material.fileContent,
-    { batchChars: OUTLINE_BATCH_CHARS, maxBatches: OUTLINE_MAX_BATCHES }
-  );
 
-  const fitsOneCall =
-    material.fileContent.length <= OUTLINE_DIRECT_MAX_CHARS || batches.length === 1;
-  if (!fitsOneCall) {
-    throw new Error('Multi-batch summarization is not implemented yet.');
+  let raw;
+  let notes;
+  if (material.fileContent.length <= OUTLINE_DIRECT_MAX_CHARS) {
+    // Fits one call: summarize the full text. Batching here would silently
+    // drop everything past the first batch.
+    raw = await summarizeBatch(template, material.fileContent);
+    notes = raw.notes || '';
+  } else {
+    const { batches, totalChars, coveredChars, truncated } = batchContent(
+      material.fileContent,
+      { batchChars: OUTLINE_BATCH_CHARS, maxBatches: OUTLINE_MAX_BATCHES }
+    );
+    if (batches.length !== 1) {
+      throw new Error('Multi-batch summarization is not implemented yet.');
+    }
+    raw = await summarizeBatch(template, batches[0]);
+    notes = [raw.notes || '', truncated ? truncationNote(coveredChars, totalChars) : '']
+      .filter(Boolean)
+      .join(' ');
   }
-
-  const raw = await summarizeBatch(template, batches[0]);
-
-  const notes = [raw.notes || '', truncated ? truncationNote(coveredChars, totalChars) : '']
-    .filter(Boolean)
-    .join(' ');
 
   const validated = validateOutline({ ...raw, notes }, CAPS);
   if (!validated.ok) {

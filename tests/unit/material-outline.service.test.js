@@ -164,6 +164,24 @@ describe('generateOutline', () => {
     expect(materialService.setMaterialOutline.mock.calls[0][1].outlineEditedAt).toBeNull();
   });
 
+  it('summarizes the full text for content between the batch and direct limits', async () => {
+    // 90000 chars: over OUTLINE_BATCH_CHARS (80000), under
+    // OUTLINE_DIRECT_MAX_CHARS (100000). Batching would drop the last 10000.
+    const content = 'z'.repeat(90000);
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: content, outline: undefined })
+    );
+
+    await generateOutline('src-1');
+
+    expect(mockGenerateStructured).toHaveBeenCalledTimes(1);
+    const prompt = mockGenerateStructured.mock.calls[0][0].prompt;
+    expect(prompt).toContain(content);
+
+    const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
+    expect(stored.notes).not.toContain('were not summarized');
+  });
+
   it('rejects a material with no extractable text', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ fileContent: '   ' })
