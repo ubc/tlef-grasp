@@ -277,3 +277,74 @@ describe('generateQuestionsWithRagHandler prompt interpolation', () => {
     expect(prompt).toContain('Explain $$F = ma$$');
   });
 });
+
+describe('generateQuestionsWithRagHandler retrieval settings', () => {
+  const ENV_KEYS = [
+    'RAG_QUESTION_CHUNK_LIMIT',
+    'RAG_CHUNK_LIMIT',
+    'RAG_QUESTION_SCORE_THRESHOLD',
+    'RAG_SCORE_THRESHOLD',
+  ];
+  let savedEnv;
+
+  beforeEach(() => {
+    savedEnv = {};
+    ENV_KEYS.forEach((key) => {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    });
+    mockGenerateStructured.mockReset();
+    mockGetExistingQuestionTexts.mockResolvedValue([]);
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+  });
+
+  afterEach(() => {
+    ENV_KEYS.forEach((key) => {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    });
+  });
+
+  // getLearningObjectiveRagContent(objectiveId, query, courseId, threshold, limit)
+  const retrievalArgs = () => ragService.getLearningObjectiveRagContent.mock.calls[0];
+
+  it('defaults to a 50-chunk budget at threshold 0.6', async () => {
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    expect(retrievalArgs()[3]).toBe(0.6);
+    expect(retrievalArgs()[4]).toBe(50);
+  });
+
+  it('reads the question-specific names', async () => {
+    process.env.RAG_QUESTION_CHUNK_LIMIT = '80';
+    process.env.RAG_QUESTION_SCORE_THRESHOLD = '0.4';
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    expect(retrievalArgs()[3]).toBe(0.4);
+    expect(retrievalArgs()[4]).toBe(80);
+  });
+
+  // A deployment still using the pre-rename spellings must not be silently
+  // reset to the defaults.
+  it('still honours the legacy unprefixed names', async () => {
+    process.env.RAG_CHUNK_LIMIT = '70';
+    process.env.RAG_SCORE_THRESHOLD = '0.5';
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    expect(retrievalArgs()[3]).toBe(0.5);
+    expect(retrievalArgs()[4]).toBe(70);
+  });
+
+  it('prefers the new name when both are set', async () => {
+    process.env.RAG_QUESTION_CHUNK_LIMIT = '90';
+    process.env.RAG_CHUNK_LIMIT = '70';
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    expect(retrievalArgs()[4]).toBe(90);
+  });
+});
