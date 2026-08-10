@@ -58,6 +58,24 @@ class EmptyMaterialError extends Error {
   }
 }
 
+/** Thrown when an edit is attempted on a material that has no outline. */
+class NoOutlineError extends Error {
+  constructor(sourceId) {
+    super(`Material ${sourceId} has no outline to edit; generate one first.`);
+    this.name = 'NoOutlineError';
+    this.code = 'NO_OUTLINE';
+  }
+}
+
+/** Thrown when a submitted outline fails validation. */
+class InvalidOutlineError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = 'InvalidOutlineError';
+    this.code = 'INVALID_OUTLINE';
+  }
+}
+
 /** Identifies the prompt an outline was produced with, for staleness checks. */
 const promptHashFor = (template) =>
   crypto.createHash('sha256').update(String(template)).digest('hex').slice(0, 16);
@@ -192,9 +210,48 @@ const generateOutline = async (sourceId) => {
   };
 };
 
+/**
+ * Store an instructor's edit. The edit wins until an explicit regeneration —
+ * there is no merging with model output, which is what would demand versioning
+ * and conflict rules.
+ *
+ * `notes` and the generation provenance fields are deliberately not writable
+ * here: they describe how the outline was produced, not what the instructor
+ * authored.
+ */
+const saveOutline = async (sourceId, submitted) => {
+  const material = await getMaterialBySourceId(sourceId);
+  if (!material || !material.outline) {
+    throw new NoOutlineError(sourceId);
+  }
+
+  const validated = validateOutline(submitted, CAPS);
+  if (!validated.ok) {
+    throw new InvalidOutlineError(validated.error);
+  }
+
+  const fields = {
+    outline: { topics: validated.outline.topics, notes: material.outline.notes || '' },
+    outlineSource: 'edited',
+    outlineEditedAt: new Date(),
+  };
+  await setMaterialOutline(sourceId, fields);
+
+  return {
+    outline: fields.outline,
+    source: 'edited',
+    generatedAt: material.outlineGeneratedAt || null,
+    editedAt: fields.outlineEditedAt,
+    stale: false,
+  };
+};
+
 module.exports = {
   getOutline,
   generateOutline,
+  saveOutline,
   promptHashFor,
   EmptyMaterialError,
+  NoOutlineError,
+  InvalidOutlineError,
 };

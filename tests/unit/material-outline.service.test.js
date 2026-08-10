@@ -19,8 +19,11 @@ const materialService = require('../../src/services/material');
 const {
   getOutline,
   generateOutline,
+  saveOutline,
   promptHashFor,
   EmptyMaterialError,
+  NoOutlineError,
+  InvalidOutlineError,
 } = require('../../src/services/material-outline');
 const { MATERIAL_OUTLINE_PROMPT } = require('../../src/constants/app-constants');
 
@@ -277,5 +280,87 @@ describe('generateOutline with large materials', () => {
 
     const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
     expect(stored.notes).not.toContain('were not summarized');
+  });
+});
+
+describe('saveOutline', () => {
+  const edited = {
+    topics: [{ title: 'Corrected topic', keyPoints: ['Instructor point'] }],
+    notes: 'this should be ignored',
+  };
+
+  it('stores the edit and marks provenance', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: { ...OUTLINE, notes: 'model caveat' } })
+    );
+
+    const result = await saveOutline('src-1', edited);
+
+    expect(result.source).toBe('edited');
+    expect(result.stale).toBe(false);
+
+    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
+    expect(fields.outlineSource).toBe('edited');
+    expect(fields.outlineEditedAt).toBeInstanceOf(Date);
+    expect(fields.outline.topics[0].title).toBe('Corrected topic');
+  });
+
+  // notes carries model caveats and the code-generated truncation sentence, so
+  // it is state about how the outline was produced, not instructor content.
+  it('keeps the stored notes and ignores caller-supplied notes', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: { ...OUTLINE, notes: 'model caveat' } })
+    );
+
+    await saveOutline('src-1', edited);
+
+    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
+    expect(fields.outline.notes).toBe('model caveat');
+  });
+
+  it('does not let a caller overwrite generation provenance', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
+
+    await saveOutline('src-1', {
+      ...edited,
+      outlineModel: 'attacker-model',
+      outlinePromptHash: 'attackerhash000',
+    });
+
+    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
+    expect(fields.outlineModel).toBeUndefined();
+    expect(fields.outlinePromptHash).toBeUndefined();
+  });
+
+  it('rejects an edit when the material has no outline yet', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+
+    await expect(saveOutline('src-1', edited)).rejects.toMatchObject({
+      code: 'NO_OUTLINE',
+    });
+    expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid edit with a usable message', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
+
+    await expect(saveOutline('src-1', { topics: [], notes: '' })).rejects.toMatchObject({
+      code: 'INVALID_OUTLINE',
+    });
+    expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
+  });
+
+  it('rejects an edit that exceeds the size cap', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
+    const bloated = {
+      topics: [{ title: 'T', keyPoints: ['z'.repeat(30000)] }],
+      notes: '',
+    };
+
+    await expect(saveOutline('src-1', bloated)).rejects.toMatchObject({
+      code: 'INVALID_OUTLINE',
+    });
   });
 });
