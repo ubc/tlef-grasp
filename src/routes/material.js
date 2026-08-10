@@ -29,4 +29,10 @@ router.post("/refetch", largeJson, materialController.refetchMaterialHandler);
 
 router.post("/fetch-url-content", express.json(), materialController.fetchUrlContentHandler);
 
+router.get("/:sourceId/outline", materialController.getMaterialOutlineHandler);
+
+router.post("/:sourceId/outline", materialController.generateMaterialOutlineHandler);
+
+router.put("/:sourceId/outline", largeJson, materialController.saveMaterialOutlineHandler);
+
 module.exports = router;

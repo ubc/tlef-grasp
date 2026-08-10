@@ -7,6 +7,7 @@ const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissi
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
 const { parseInWorker } = require('../utils/parse-in-worker');
+const outlineService = require('../services/material-outline');
 
 const TITLE_ONLY_UPDATE_TYPES = new Set(['pdf', 'file']);
 
@@ -64,13 +65,19 @@ const getCourseMaterialsHandler = async (req, res) => {
     try {
         const { courseId } = req.params;
         const userId = req.user.id;
-    
+
         if (!(await hasStaffAccessInCourse(req.user, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
         }
 
         const materials = await getCourseMaterials(courseId);
-        res.json({ success: true, materials: materials });
+        // The outline itself is never listed — it is fetched per material when
+        // the instructor opens it. Only whether one exists is needed here.
+        const summarized = materials.map(({ outline, ...rest }) => ({
+            ...rest,
+            hasOutline: !!outline,
+        }));
+        res.json({ success: true, materials: summarized });
     } catch (error) {
         console.error("Error getting materials:", error);
         res.status(500).json({ error: "Failed to get materials" });
@@ -686,6 +693,68 @@ const uploadFileHandler = async (req, res) => {
     }
 };
 
+/** Shared gate for the outline routes: staff access plus generation permissions. */
+const assertOutlineAccess = async (req, res) => {
+    const courseId = await getMaterialCourseId(req.params.sourceId);
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+        res.status(403).json({ success: false, error: "User is not in course" });
+        return null;
+    }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return null;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return null;
+    return { courseId };
+};
+
+const getMaterialOutlineHandler = async (req, res) => {
+    try {
+        if (!(await assertOutlineAccess(req, res))) return;
+
+        const result = await outlineService.getOutline(req.params.sourceId);
+        if (!result) {
+            return res.status(404).json({ success: false, error: "No outline for this material" });
+        }
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error("Error fetching material outline:", error);
+        res.status(500).json({ success: false, error: "Failed to fetch outline" });
+    }
+};
+
+const generateMaterialOutlineHandler = async (req, res) => {
+    try {
+        if (!(await assertOutlineAccess(req, res))) return;
+
+        const result = await outlineService.generateOutline(req.params.sourceId);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        if (error.code === 'EMPTY_MATERIAL') {
+            return res.status(400).json({ success: false, code: error.code, error: error.message });
+        }
+        console.error("Error generating material outline:", error);
+        res.status(500).json({ success: false, error: "Failed to generate outline" });
+    }
+};
+
+const saveMaterialOutlineHandler = async (req, res) => {
+    try {
+        if (!(await assertOutlineAccess(req, res))) return;
+
+        const { outline } = req.body;
+        if (!outline) {
+            return res.status(400).json({ success: false, error: "An outline is required" });
+        }
+
+        const result = await outlineService.saveOutline(req.params.sourceId, outline);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        if (error.code === 'NO_OUTLINE' || error.code === 'INVALID_OUTLINE') {
+            return res.status(400).json({ success: false, code: error.code, error: error.message });
+        }
+        console.error("Error saving material outline:", error);
+        res.status(500).json({ success: false, error: "Failed to save outline" });
+    }
+};
+
 module.exports = {
   saveMaterialHandler,
   deleteMaterialHandler,
@@ -693,5 +762,8 @@ module.exports = {
   updateMaterialHandler,
   refetchMaterialHandler,
   fetchUrlContentHandler,
-  uploadFileHandler
+  uploadFileHandler,
+  getMaterialOutlineHandler,
+  generateMaterialOutlineHandler,
+  saveMaterialOutlineHandler
 };
