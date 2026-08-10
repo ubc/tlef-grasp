@@ -8,7 +8,9 @@ const databaseService = require('../services/database');
 const { ObjectId } = require('mongodb');
 
 // Import services
-const { getMaterialCourseId } = require('../services/material');
+const { getMaterialCourseId, getMaterialBySourceId } = require('../services/material');
+const outlineService = require('../services/material-outline');
+const { renderOutlineBlock } = require('../utils/outline-text');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
@@ -704,15 +706,53 @@ Include foundational concepts, practical applications, and assessment criteria.`
       searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
     }
 
-    console.log("Retrieving RAG content from selected materials...");
-    const objectiveRagLimit = parseInt(process.env.RAG_OBJECTIVE_CHUNK_LIMIT) || 200;
+    // Objective generation is a coverage task, so it reads each material's
+    // stored outline rather than a similarity ranking. It never generates one:
+    // doing so here would put a multi-second summarization inside this click
+    // for every material that does not have one yet.
+    let ragContext = '';
+    let usedOutlines = false;
+    try {
+      const blocks = [];
+      for (const sourceId of materialIds) {
+        const stored = await outlineService.getOutline(sourceId);
+        if (!stored) {
+          blocks.length = 0;
+          break;
+        }
+        const material = await getMaterialBySourceId(sourceId);
+        blocks.push(
+          renderOutlineBlock({
+            documentTitle: material?.documentTitle || '',
+            sourceId,
+            outline: stored.outline,
+          })
+        );
+      }
+      if (blocks.length === materialIds.length && blocks.length > 0) {
+        ragContext = blocks.join('\n\n---\n\n');
+        usedOutlines = true;
+      }
+    } catch (outlineError) {
+      console.warn(
+        '⚠️ Could not read material outlines; falling back to retrieval:',
+        outlineError.message
+      );
+    }
 
-    let ragContext = await ragService.getRagContentFromMaterials(
-      materialIds,
-      searchQuery,
-      objectiveRagLimit,
-      courseId
-    );
+    let objectiveRagLimit;
+    if (!usedOutlines) {
+      // Exactly today's behaviour, so a material without an outline generates
+      // objectives no worse than it does now.
+      objectiveRagLimit = parseInt(process.env.RAG_OBJECTIVE_CHUNK_LIMIT) || 200;
+      console.log('Retrieving RAG content from selected materials (outline fallback)...');
+      ragContext = await ragService.getRagContentFromMaterials(
+        materialIds,
+        searchQuery,
+        objectiveRagLimit,
+        courseId
+      );
+    }
 
     if ((!ragContext || ragContext.trim().length === 0) && (!userObjectives || userObjectives.length === 0)) {
       return res.status(400).json({

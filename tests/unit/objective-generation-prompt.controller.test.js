@@ -28,8 +28,18 @@ jest.mock('../../src/utils/llm-provider', () => ({
 jest.mock('../../src/utils/structured-llm', () => ({
   generateStructured: mockGenerateStructured,
 }));
+jest.mock('../../src/services/material-outline', () => ({
+  getOutline: jest.fn(),
+  generateOutline: jest.fn(),
+}));
+jest.mock('../../src/services/material', () => ({
+  getMaterialBySourceId: jest.fn(),
+  getMaterialCourseId: jest.fn(),
+}));
 
 const { generateLearningObjectivesHandler } = require('../../src/controllers/rag-llm');
+const outlineService = require('../../src/services/material-outline');
+const materialService = require('../../src/services/material');
 
 const validObjectives = {
   materialIsRelevant: true,
@@ -119,5 +129,75 @@ describe('objective-generation prompt assembly', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(mockGenerateStructured).not.toHaveBeenCalled();
+  });
+});
+
+describe('objective generation from outlines', () => {
+  const outlineFor = (title) => ({
+    outline: { topics: [{ title, keyPoints: [`${title} point`] }], notes: '' },
+    source: 'generated',
+    generatedAt: new Date(),
+    editedAt: null,
+    stale: false,
+  });
+
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetRagContentFromMaterials.mockReset();
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify(validObjectives),
+      usage: {},
+    });
+    materialService.getMaterialBySourceId.mockImplementation(async (sourceId) => ({
+      sourceId,
+      documentTitle: `Title ${sourceId}`,
+    }));
+  });
+
+  it('builds the prompt from outlines and makes no RAG call', async () => {
+    outlineService.getOutline.mockImplementation(async (sourceId) =>
+      outlineFor(`Topic ${sourceId}`)
+    );
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    expect(mockGetRagContentFromMaterials).not.toHaveBeenCalled();
+    const prompt = promptFromFirstCall();
+    expect(prompt).toContain('### MATERIAL: Title material-a (SOURCE ID: material-a)');
+    expect(prompt).toContain('### MATERIAL: Title material-b (SOURCE ID: material-b)');
+    expect(prompt).toContain('## Topic material-a');
+    expect(prompt).toContain('\n\n---\n\n');
+  });
+
+  // Generating here is what would make every instructor's first objective
+  // generation on every pre-existing material the slow one.
+  it('never generates an outline', async () => {
+    outlineService.getOutline.mockResolvedValue(null);
+    mockGetRagContentFromMaterials.mockResolvedValue('Retrieved chunk text.');
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    expect(outlineService.generateOutline).not.toHaveBeenCalled();
+  });
+
+  it('falls back to retrieval when any outline is missing', async () => {
+    outlineService.getOutline.mockImplementation(async (sourceId) =>
+      sourceId === 'material-a' ? outlineFor('Topic A') : null
+    );
+    mockGetRagContentFromMaterials.mockResolvedValue('Retrieved chunk text.');
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    expect(mockGetRagContentFromMaterials).toHaveBeenCalledTimes(1);
+    expect(promptFromFirstCall()).toContain('Retrieved chunk text.');
+  });
+
+  it('falls back to retrieval when reading an outline throws', async () => {
+    outlineService.getOutline.mockRejectedValue(new Error('mongo down'));
+    mockGetRagContentFromMaterials.mockResolvedValue('Retrieved chunk text.');
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    expect(promptFromFirstCall()).toContain('Retrieved chunk text.');
   });
 });
