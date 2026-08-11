@@ -344,6 +344,23 @@ const updateMaterialHandler = async (req, res) => {
             // The stored outline described text that no longer exists. This
             // discards instructor edits too, which the edit UI warns about.
             await clearMaterialOutline(sourceId);
+
+            // Regenerate for text materials so editing has the same
+            // best-effort outline behaviour as creating one. Links are
+            // skipped: a link's fileContent holds the URL, not the fetched
+            // page text (see saveMaterialHandler above and the
+            // documentType === 'link' ? url : materialContent line above),
+            // so there is nothing here worth summarizing.
+            if (documentType === 'text') {
+                try {
+                    await outlineService.generateOutline(sourceId);
+                } catch (outlineError) {
+                    console.warn(
+                        `⚠️ Could not generate an outline for ${sourceId}:`,
+                        outlineError.message
+                    );
+                }
+            }
         } else {
             // For uploaded files, only update documentTitle in MongoDB (no RAG changes needed).
             // Note: RAG metadata will retain the old title until material is re-processed

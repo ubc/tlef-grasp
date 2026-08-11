@@ -238,6 +238,93 @@ describe('outline clearing on content change', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
+  it('regenerates an outline after clearing it for a text material update', async () => {
+    outlineService.generateOutline.mockResolvedValue({ outline: { topics: [], notes: '' } });
+    const res = buildRes();
+    const req = {
+      user: { id: 'user-1' },
+      body: {
+        sourceId: 'source-1',
+        courseId: 'course-1',
+        documentType: 'text',
+        documentData: { textContent: 'New text content' },
+        documentTitle: 'Updated Material'
+      }
+    };
+
+    await updateMaterialHandler(req, res);
+
+    expect(materialService.clearMaterialOutline).toHaveBeenCalledWith('source-1');
+    expect(outlineService.generateOutline).toHaveBeenCalledWith('source-1');
+    // Ordering matters: a stale outline must be gone before a new one is
+    // attempted, so if generation fails it doesn't leave a plausible-looking
+    // summary of content that no longer exists.
+    expect(materialService.clearMaterialOutline.mock.invocationCallOrder[0])
+      .toBeLessThan(outlineService.generateOutline.mock.invocationCallOrder[0]);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  // Losing an updated material because its summary failed would be a bad
+  // trade; the instructor can generate it from the materials page instead.
+  it('still succeeds when outline regeneration fails for a text material update', async () => {
+    outlineService.generateOutline.mockRejectedValue(new Error('model unavailable'));
+    const res = buildRes();
+    const req = {
+      user: { id: 'user-1' },
+      body: {
+        sourceId: 'source-1',
+        courseId: 'course-1',
+        documentType: 'text',
+        documentData: { textContent: 'New text content' },
+        documentTitle: 'Updated Material'
+      }
+    };
+
+    await updateMaterialHandler(req, res);
+
+    expect(materialService.clearMaterialOutline).toHaveBeenCalledWith('source-1');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  it('clears but does not regenerate an outline when updating a link material', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue({
+      sourceId: 'source-1',
+      courseId: 'course-1',
+      documentTitle: 'Test Material',
+      fileContent: 'https://example.com/old-page',
+      fileType: 'link'
+    });
+    // updateMaterialHandler re-fetches link content from the URL; stub the
+    // network call rather than hitting a real host from the test suite.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve('<html><body><p>Refetched page text.</p></body></html>'),
+    });
+    const res = buildRes();
+    const req = {
+      user: { id: 'user-1' },
+      body: {
+        sourceId: 'source-1',
+        courseId: 'course-1',
+        documentType: 'link',
+        documentData: { url: 'https://example.com/page' },
+        documentTitle: 'Updated Link'
+      }
+    };
+
+    try {
+      await updateMaterialHandler(req, res);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(materialService.clearMaterialOutline).toHaveBeenCalledWith('source-1');
+    expect(outlineService.generateOutline).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
   it('clears outline when refetching link content', async () => {
     const res = buildRes();
     const req = {
