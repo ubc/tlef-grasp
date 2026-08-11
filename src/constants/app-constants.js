@@ -286,7 +286,8 @@ INSTRUCTIONS:
 4. Do not editorialize about the material's quality, and do not add study advice.
 5. If the material is not teachable course content (a receipt, a syllabus administrative page, navigation text, personal notes), say so plainly in notes and return the few topics that are genuinely present.
 6. Use notes only for caveats about the material itself — for example sparse text from a scan, or content that appears truncated. Leave notes as an empty string when there is nothing to report.
-7. CRITICAL LaTeX FORMATTING: enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g. \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.`;
+7. CRITICAL LaTeX FORMATTING: enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g. \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+8. Produce at most {maxTopics} topics and at most {maxKeyPoints} key points per topic. Keep the outline concise — merge or drop the least important material rather than exceeding these limits.`;
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 

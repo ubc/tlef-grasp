@@ -218,6 +218,81 @@ describe('generateOutline', () => {
     expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
   });
 
+  it('trims model output with too many topics and records it in notes', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+    const topics = Array.from({ length: 45 }, (_, i) => ({
+      title: `Topic ${i}`,
+      keyPoints: ['A point'],
+    }));
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify({ topics, notes: '' }),
+      usage: {},
+    });
+
+    const result = await generateOutline('src-1');
+
+    expect(result.outline.topics).toHaveLength(40);
+    expect(result.outline.notes).toContain('5 topics');
+    expect(result.outline.notes).toContain('trimmed');
+  });
+
+  it('trims a topic with too many key points and records it in notes', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+    const keyPoints = Array.from({ length: 25 }, (_, i) => `Point ${i}`);
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify({ topics: [{ title: 'Topic A', keyPoints }], notes: '' }),
+      usage: {},
+    });
+
+    const result = await generateOutline('src-1');
+
+    expect(result.outline.topics[0].keyPoints).toHaveLength(20);
+    expect(result.outline.notes).toContain('5 key points');
+  });
+
+  it('drops trailing topics when output exceeds the character cap', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+    // 5 topics x ~6000 chars each is well within the topic/key-point caps but
+    // far over the 20000-char total cap, so whole topics must be dropped.
+    const topics = Array.from({ length: 5 }, (_, i) => ({
+      title: `Topic ${i}`,
+      keyPoints: ['x'.repeat(6000)],
+    }));
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify({ topics, notes: '' }),
+      usage: {},
+    });
+
+    const result = await generateOutline('src-1');
+
+    expect(result.outline.topics.length).toBeGreaterThan(0);
+    expect(result.outline.topics.length).toBeLessThan(5);
+    expect(JSON.stringify(result.outline).length).toBeLessThanOrEqual(20000);
+    expect(result.outline.notes).toContain('trimmed');
+    expect(result.outline.notes).toContain('topic');
+  });
+
+  it('leaves output within all caps untouched with no cap note', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify(OUTLINE),
+      usage: {},
+    });
+
+    const result = await generateOutline('src-1');
+
+    expect(result.outline).toEqual(OUTLINE);
+    expect(result.outline.notes).toBe('');
+  });
+
   it('prefers a course-specific prompt from settings', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ outline: undefined })

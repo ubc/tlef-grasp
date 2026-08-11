@@ -135,9 +135,10 @@ NOTES: <notes, omitted entirely when empty>
 ```
 
 This is the **existing** framing that `getRagContentFromMaterials` produces
-today, deliberately preserved: the auto objective prompt interpolates
-`{sourceIdsList}` and expects material-attributed content in that shape, so the
-prompt contract does not change. No RAG call is made on this path.
+today, deliberately preserved: the objective prompt relies on the
+`### MATERIAL: <title> (SOURCE ID: <sid>)` header for per-material
+attribution, so the prompt contract does not change. No RAG call is made on
+this path.
 
 The `materialIsRelevant` gate needs no change. If a material is a receipt, its
 outline will describe a receipt and the objective model will still reject it.

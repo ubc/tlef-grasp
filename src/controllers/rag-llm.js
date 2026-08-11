@@ -767,14 +767,21 @@ Include foundational concepts, practical applications, and assessment criteria.`
       ragContext = "No usable material content was retrieved. Preserve the instructor-provided objectives without adding content.";
     }
 
-    // Context size is bounded by RAG_OBJECTIVE_CHUNK_LIMIT alone: the merge
-    // keeps at most that many chunks and the chunker caps each at 1000 chars.
-    // This warns rather than truncates — a prompt this large means the limit was
-    // set unusually high, and silently cutting the context would hide that while
-    // also deleting whichever materials sort last.
+    // Context size is bounded differently depending on the path. On the
+    // retrieval fallback path (used when any material lacks an outline),
+    // RAG_OBJECTIVE_CHUNK_LIMIT bounds it: the merge keeps at most that many
+    // chunks and the chunker caps each at 1000 chars. On the outline path,
+    // there is no chunk limit — size instead tracks however much text is in
+    // the selected materials' outlines. This warns rather than truncates in
+    // either case — a prompt this large is worth surfacing, and silently
+    // cutting the context would hide that while also deleting whichever
+    // materials sort last.
     if (ragContext.length > OBJECTIVE_CONTEXT_WARN_CHARS) {
+      const bound = usedOutlines
+        ? 'context was built from material outlines, not chunk retrieval'
+        : `check RAG_OBJECTIVE_CHUNK_LIMIT (currently ${objectiveRagLimit})`;
       console.warn(
-        `⚠️ Objective-generation context is ${ragContext.length} chars from ${materialIds.length} material(s) — check RAG_OBJECTIVE_CHUNK_LIMIT (currently ${objectiveRagLimit}).`
+        `⚠️ Objective-generation context is ${ragContext.length} chars from ${materialIds.length} material(s) — ${bound}.`
       );
     }
 

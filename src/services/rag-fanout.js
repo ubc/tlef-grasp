@@ -139,8 +139,10 @@ const retrieveChunksPerMaterial = async (
 
 /**
  * Group chunks under a header per material, for prompts that cite their sources.
- * Output format is load-bearing: the auto objective-generation prompt
- * interpolates {sourceIdsList} and expects these headers.
+ * Output format is load-bearing: the objective-generation prompt relies on
+ * this `### MATERIAL: <title> (SOURCE ID: <sid>)` header for per-material
+ * attribution. `renderOutlineBlock` (src/utils/outline-text.js) emits the same
+ * header for the outline path, so the two producers must not drift apart.
  */
 const formatChunksByMaterial = (chunks) => {
   if (!chunks || chunks.length === 0) {

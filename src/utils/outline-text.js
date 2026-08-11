@@ -141,9 +141,26 @@ const renderOutlineBlock = ({ documentTitle, sourceId, outline }) => {
 const truncationNote = (coveredChars, totalChars) =>
   `This outline covers the first ${coveredChars} of ${totalChars} characters of the material; later sections were not summarized.`;
 
+/**
+ * Deterministic note recorded when a generated outline exceeded the topic,
+ * key-point, or character caps and was trimmed to fit them. Sibling of
+ * truncationNote: same "record it, never drop it silently" pattern.
+ */
+const capNote = (droppedTopics, droppedKeyPoints) => {
+  const parts = [];
+  if (droppedTopics > 0) {
+    parts.push(`${droppedTopics} topic${droppedTopics === 1 ? '' : 's'}`);
+  }
+  if (droppedKeyPoints > 0) {
+    parts.push(`${droppedKeyPoints} key point${droppedKeyPoints === 1 ? '' : 's'}`);
+  }
+  return `This outline exceeded the size limits and was trimmed: ${parts.join(' and ')} dropped.`;
+};
+
 module.exports = {
   batchContent,
   validateOutline,
   renderOutlineBlock,
   truncationNote,
+  capNote,
 };

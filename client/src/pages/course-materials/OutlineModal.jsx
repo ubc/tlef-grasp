@@ -20,12 +20,14 @@ export default function OutlineModal({
   const [editing, setEditing] = useState(false);
   const [topics, setTopics] = useState([]);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     setTopics(outlineData?.outline?.topics || []);
     setEditing(false);
     setConfirmRegenerate(false);
+    setConfirmClose(false);
     setDirty(false);
   }, [outlineData]);
 
@@ -36,6 +38,7 @@ export default function OutlineModal({
   const updateTopic = (index, patch) => {
     setDirty(true);
     setConfirmRegenerate(false);
+    setConfirmClose(false);
     setTopics((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
   };
 
@@ -48,17 +51,26 @@ export default function OutlineModal({
     onGenerate(material.sourceId);
   };
 
+  const requestClose = () => {
+    if (dirty && !confirmClose) {
+      setConfirmClose(true);
+      return;
+    }
+    setConfirmClose(false);
+    onClose();
+  };
+
   return (
     <Modal
       open
-      onClose={generating || saving ? () => {} : onClose}
+      onClose={generating || saving ? () => {} : requestClose}
       title={`Outline — ${material?.documentTitle || "Untitled"}`}
       wide
       footer={
         <>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={busy}
             className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-gray-50 disabled:opacity-50"
           >
@@ -132,6 +144,15 @@ export default function OutlineModal({
         </div>
       )}
 
+      {confirmClose && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+        >
+          You have unsaved edits that closing will discard. Press Close again to continue.
+        </div>
+      )}
+
       {!missing && !isPending && (
         <>
           {edited && (
@@ -187,6 +208,7 @@ export default function OutlineModal({
                     onClick={() => {
                       setDirty(true);
                       setConfirmRegenerate(false);
+                      setConfirmClose(false);
                       setTopics((prev) => prev.filter((_, i) => i !== index));
                     }}
                     className="mt-2 text-xs text-danger underline"
@@ -205,6 +227,7 @@ export default function OutlineModal({
                 onClick={() => {
                   setDirty(true);
                   setConfirmRegenerate(false);
+                  setConfirmClose(false);
                   setTopics((prev) => [...prev, { title: "", keyPoints: [] }]);
                 }}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-primary bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"

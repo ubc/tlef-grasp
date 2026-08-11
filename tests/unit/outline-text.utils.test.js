@@ -3,6 +3,7 @@ const {
   validateOutline,
   renderOutlineBlock,
   truncationNote,
+  capNote,
 } = require('../../src/utils/outline-text');
 
 const CAPS = { maxTopics: 40, maxKeyPoints: 20, maxChars: 20000 };
@@ -157,5 +158,36 @@ describe('truncationNote', () => {
     const note = truncationNote(640000, 1500000);
     expect(note).toContain('640000');
     expect(note).toContain('1500000');
+  });
+});
+
+describe('capNote', () => {
+  it('reports dropped topics only', () => {
+    const note = capNote(3, 0);
+    expect(note).toContain('3 topics');
+    expect(note).not.toContain('key point');
+  });
+
+  it('reports a single dropped topic with singular wording', () => {
+    const note = capNote(1, 0);
+    expect(note).toContain('1 topic ');
+  });
+
+  it('reports dropped key points only', () => {
+    const note = capNote(0, 7);
+    expect(note).toContain('7 key points');
+    expect(note).not.toContain('topic');
+  });
+
+  it('reports a single dropped key point with singular wording', () => {
+    const note = capNote(0, 1);
+    expect(note).toContain('1 key point ');
+  });
+
+  it('reports both dropped topics and key points together', () => {
+    const note = capNote(2, 5);
+    expect(note).toContain('2 topics');
+    expect(note).toContain('5 key points');
+    expect(note).toContain('and');
   });
 });
