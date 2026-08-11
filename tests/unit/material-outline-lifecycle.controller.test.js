@@ -52,7 +52,7 @@ jest.mock('../../src/utils/parse-in-worker', () => ({
 
 const outlineService = require('../../src/services/material-outline');
 const materialService = require('../../src/services/material');
-const { uploadFileHandler, updateMaterialHandler, refetchMaterialHandler } = require('../../src/controllers/material');
+const { uploadFileHandler, updateMaterialHandler, refetchMaterialHandler, saveMaterialHandler } = require('../../src/controllers/material');
 
 const buildRes = () => {
   const res = {};
@@ -105,6 +105,79 @@ describe('outline generation at upload', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+});
+
+describe('outline generation at save', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    materialService.getMaterialBySourceId.mockResolvedValue({
+      sourceId: 'source-1',
+      courseId: 'course-1',
+      documentTitle: 'Test Material',
+      fileContent: 'Old content',
+      fileType: 'link'
+    });
+  });
+
+  const buildTextSaveReq = () => ({
+    user: { id: 'user-1' },
+    body: {
+      sourceId: 'source-1',
+      courseId: 'course-1',
+      materialData: {
+        fileType: 'text/plain',
+        fileSize: 20,
+        fileContent: 'Some pasted text.',
+        documentTitle: 'Pasted Notes',
+      },
+    },
+  });
+
+  it('generates an outline after a text material is saved', async () => {
+    outlineService.generateOutline.mockResolvedValue({ outline: { topics: [], notes: '' } });
+    const res = buildRes();
+
+    await saveMaterialHandler(buildTextSaveReq(), res);
+
+    expect(materialService.saveMaterial).toHaveBeenCalled();
+    expect(outlineService.generateOutline).toHaveBeenCalledWith('source-1');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  // Losing a saved material because its summary failed would be a bad
+  // trade; the instructor can generate it from the materials page instead.
+  it('still succeeds when outline generation fails for a text material', async () => {
+    outlineService.generateOutline.mockRejectedValue(new Error('model unavailable'));
+    const res = buildRes();
+
+    await saveMaterialHandler(buildTextSaveReq(), res);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  it('does not generate an outline for a link material', async () => {
+    const res = buildRes();
+    const req = {
+      user: { id: 'user-1' },
+      body: {
+        sourceId: 'source-1',
+        courseId: 'course-1',
+        materialData: {
+          fileType: 'link',
+          fileSize: 20,
+          fileContent: 'https://example.com/page',
+          documentTitle: 'Example Page',
+        },
+      },
+    };
+
+    await saveMaterialHandler(req, res);
+
+    expect(materialService.saveMaterial).toHaveBeenCalled();
+    expect(outlineService.generateOutline).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 });
 

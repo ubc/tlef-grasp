@@ -23,6 +23,24 @@ const saveMaterialHandler = async (req, res) => {
         if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
         await saveMaterial(sourceId, courseId, materialData);
+
+        if (materialData?.fileType === 'link') {
+            // A link's fileContent is its URL, not the fetched page text —
+            // there is nothing here worth summarizing into an outline.
+        } else {
+            // Best-effort, same trade as the upload path: a failed summary
+            // must never cost a material that saved fine — the instructor
+            // can generate it from the materials page.
+            try {
+                await outlineService.generateOutline(sourceId);
+            } catch (outlineError) {
+                console.warn(
+                    `⚠️ Could not generate an outline for ${sourceId}:`,
+                    outlineError.message
+                );
+            }
+        }
+
         res.json({ success: true, message: "Material saved successfully" });
     } catch (error) {
         console.error("Error saving material:", error);
