@@ -71,9 +71,6 @@ describe('outline storage', () => {
     expect(Object.keys(update.$unset).sort()).toEqual([
       'outline',
       'outlineEditedAt',
-      'outlineGeneratedAt',
-      'outlineModel',
-      'outlinePromptHash',
       'outlineSource',
     ]);
   });

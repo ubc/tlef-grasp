@@ -3,9 +3,6 @@ const mockGenerateStructured = jest.fn();
 jest.mock('../../src/utils/structured-llm', () => ({
   generateStructured: mockGenerateStructured,
 }));
-jest.mock('../../src/utils/llm-provider', () => ({
-  getLLMModel: jest.fn(() => 'test-model'),
-}));
 jest.mock('../../src/services/settings', () => ({
   getSettings: jest.fn().mockResolvedValue(null),
 }));
@@ -20,12 +17,10 @@ const {
   getOutline,
   generateOutline,
   saveOutline,
-  promptHashFor,
   EmptyMaterialError,
   NoOutlineError,
   InvalidOutlineError,
 } = require('../../src/services/material-outline');
-const { MATERIAL_OUTLINE_PROMPT } = require('../../src/constants/app-constants');
 
 const OUTLINE = { topics: [{ title: 'Topic A', keyPoints: ['Point one'] }], notes: '' };
 
@@ -36,9 +31,7 @@ const storedMaterial = (overrides = {}) => ({
   fileContent: 'Some teachable course content about respiration.',
   outline: OUTLINE,
   outlineSource: 'generated',
-  outlineGeneratedAt: new Date('2026-08-01'),
-  outlineModel: 'test-model',
-  outlinePromptHash: promptHashFor(MATERIAL_OUTLINE_PROMPT),
+  outlineEditedAt: null,
   ...overrides,
 });
 
@@ -84,7 +77,6 @@ describe('getOutline', () => {
 
     expect(result.outline).toEqual(OUTLINE);
     expect(result.source).toBe('generated');
-    expect(result.stale).toBe(false);
   });
 
   it('reports a malformed stored outline as absent', async () => {
@@ -95,38 +87,12 @@ describe('getOutline', () => {
     await expect(getOutline('src-1')).resolves.toBeNull();
   });
 
-  it('marks stale on a model mismatch', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({ outlineModel: 'some-older-model' })
-    );
+  it('never reads settings', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
 
-    await expect(getOutline('src-1')).resolves.toMatchObject({ stale: true });
-  });
+    await getOutline('src-1');
 
-  it('marks stale on a prompt-hash mismatch', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({ outlinePromptHash: 'deadbeefdeadbeef' })
-    );
-
-    await expect(getOutline('src-1')).resolves.toMatchObject({ stale: true });
-  });
-
-  // An edited outline no longer reflects the prompt or model that produced it,
-  // so comparing against them is meaningless — and nagging the instructor to
-  // regenerate would invite discarding their own work.
-  it('never marks an edited outline stale', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({
-        outlineSource: 'edited',
-        outlineModel: 'some-older-model',
-        outlinePromptHash: 'deadbeefdeadbeef',
-      })
-    );
-
-    await expect(getOutline('src-1')).resolves.toMatchObject({
-      source: 'edited',
-      stale: false,
-    });
+    expect(require('../../src/services/settings').getSettings).not.toHaveBeenCalled();
   });
 });
 
@@ -149,10 +115,22 @@ describe('generateOutline', () => {
     expect(sourceId).toBe('src-1');
     expect(fields.outline).toEqual(OUTLINE);
     expect(fields.outlineSource).toBe('generated');
-    expect(fields.outlineModel).toBe('test-model');
-    expect(fields.outlinePromptHash).toBe(promptHashFor(MATERIAL_OUTLINE_PROMPT));
-    expect(fields.outlineGeneratedAt).toBeInstanceOf(Date);
     expect(fields.outlineEditedAt).toBeNull();
+  });
+
+  // Structural guard: these fields were removed along with the staleness
+  // mechanism they existed to power, and must not creep back in.
+  it('never writes outlineModel, outlinePromptHash, or outlineGeneratedAt', async () => {
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ outline: undefined })
+    );
+
+    await generateOutline('src-1');
+
+    const fields = materialService.setMaterialOutline.mock.calls[0][1];
+    expect(fields).not.toHaveProperty('outlineModel');
+    expect(fields).not.toHaveProperty('outlinePromptHash');
+    expect(fields).not.toHaveProperty('outlineGeneratedAt');
   });
 
   it('overwrites an edited outline and resets provenance to generated', async () => {
@@ -304,10 +282,7 @@ describe('generateOutline', () => {
     const result = await generateOutline('src-1');
 
     expect(mockGenerateStructured.mock.calls[0][0].prompt).toContain('CUSTOM ');
-    expect(materialService.setMaterialOutline.mock.calls[0][1].outlinePromptHash).toBe(
-      promptHashFor('CUSTOM {materialContent}')
-    );
-    expect(result.stale).toBe(false);
+    expect(result.outline).toEqual(OUTLINE);
   });
 });
 
@@ -372,7 +347,6 @@ describe('saveOutline', () => {
     const result = await saveOutline('src-1', edited);
 
     expect(result.source).toBe('edited');
-    expect(result.stale).toBe(false);
 
     const [, fields] = materialService.setMaterialOutline.mock.calls[0];
     expect(fields.outlineSource).toBe('edited');
@@ -398,13 +372,13 @@ describe('saveOutline', () => {
 
     await saveOutline('src-1', {
       ...edited,
-      outlineModel: 'attacker-model',
-      outlinePromptHash: 'attackerhash000',
+      outlineSource: 'generated',
+      outlineEditedAt: new Date('1999-01-01'),
     });
 
     const [, fields] = materialService.setMaterialOutline.mock.calls[0];
-    expect(fields.outlineModel).toBeUndefined();
-    expect(fields.outlinePromptHash).toBeUndefined();
+    expect(fields.outlineSource).toBe('edited');
+    expect(fields.outlineEditedAt).not.toEqual(new Date('1999-01-01'));
   });
 
   it('rejects an edit when the material has no outline yet', async () => {

@@ -84,9 +84,6 @@ const getMaterialBySourceId = async (sourceId) => {
 
 const OUTLINE_FIELDS = [
     'outline',
-    'outlineGeneratedAt',
-    'outlineModel',
-    'outlinePromptHash',
     'outlineSource',
     'outlineEditedAt',
 ];

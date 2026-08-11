@@ -7,11 +7,9 @@
  * accident, which is exactly how summarization would end up inside an
  * instructor's objective-generation click. `getOutline` never invokes the LLM.
  */
-const crypto = require('crypto');
 const { getMaterialBySourceId, setMaterialOutline } = require('./material');
 const settingsService = require('./settings');
 const { generateStructured } = require('../utils/structured-llm');
-const { getLLMModel } = require('../utils/llm-provider');
 const { MATERIAL_OUTLINE_SCHEMA } = require('../constants/llm-schemas');
 const {
   DEFAULT_PROMPTS,
@@ -78,32 +76,15 @@ class InvalidOutlineError extends Error {
   }
 }
 
-/** Identifies the prompt an outline was produced with, for staleness checks. */
-const promptHashFor = (template) =>
-  crypto.createHash('sha256').update(String(template)).digest('hex').slice(0, 16);
-
 const resolvePromptTemplate = async (courseId) => {
   const settings = await settingsService.getSettings(courseId);
   return settings?.prompts?.materialOutline || DEFAULT_PROMPTS.materialOutline;
 };
 
-/**
- * An outline is stale when the model or prompt behind it has changed. Edited
- * outlines are exempt: they no longer reflect either, and the instructor owns
- * them. Staleness only reports — it never triggers regeneration.
- */
-const isStale = (material, currentPromptHash) => {
-  if (material.outlineSource === 'edited') return false;
-  if (material.outlineModel !== getLLMModel()) return true;
-  return material.outlinePromptHash !== currentPromptHash;
-};
-
 const present = (material, outline) => ({
   outline,
   source: material.outlineSource === 'edited' ? 'edited' : 'generated',
-  generatedAt: material.outlineGeneratedAt || null,
   editedAt: material.outlineEditedAt || null,
-  stale: false,
 });
 
 /** Read the stored outline. Never generates, never calls the LLM. */
@@ -119,11 +100,7 @@ const getOutline = async (sourceId) => {
     return null;
   }
 
-  const template = await resolvePromptTemplate(material.courseId);
-  return {
-    ...present(material, validated.outline),
-    stale: isStale(material, promptHashFor(template)),
-  };
+  return present(material, validated.outline);
 };
 
 /** Summarize one batch of material text into an outline. */
@@ -247,9 +224,6 @@ const generateOutline = async (sourceId) => {
 
   const fields = {
     outline: validated.outline,
-    outlineGeneratedAt: new Date(),
-    outlineModel: getLLMModel(),
-    outlinePromptHash: promptHashFor(template),
     outlineSource: 'generated',
     outlineEditedAt: null,
   };
@@ -258,9 +232,7 @@ const generateOutline = async (sourceId) => {
   return {
     outline: validated.outline,
     source: 'generated',
-    generatedAt: fields.outlineGeneratedAt,
     editedAt: null,
-    stale: false,
   };
 };
 
@@ -294,9 +266,7 @@ const saveOutline = async (sourceId, submitted) => {
   return {
     outline: fields.outline,
     source: 'edited',
-    generatedAt: material.outlineGeneratedAt || null,
     editedAt: fields.outlineEditedAt,
-    stale: false,
   };
 };
 
@@ -304,7 +274,6 @@ module.exports = {
   getOutline,
   generateOutline,
   saveOutline,
-  promptHashFor,
   EmptyMaterialError,
   NoOutlineError,
   InvalidOutlineError,

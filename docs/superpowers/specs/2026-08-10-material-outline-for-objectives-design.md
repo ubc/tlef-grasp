@@ -72,9 +72,6 @@ Persisted on `grasp_material`:
 | Field | Purpose |
 |---|---|
 | `outline` | The parsed object above |
-| `outlineGeneratedAt` | When it was produced |
-| `outlineModel` | Model used, so a model change can invalidate |
-| `outlinePromptHash` | First 16 hex chars of the SHA-256 of the prompt template used |
 | `outlineSource` | `'generated'` or `'edited'` — whether an instructor has modified it |
 | `outlineEditedAt` | When it was last edited, absent when never |
 
@@ -251,27 +248,14 @@ cap bounds a pathological upload without affecting anything of normal size.
   deletes and re-adds RAG documents; it clears `outline` in the same place, so
   the card shows the material as un-outlined until regenerated. Title-only edits
   do not invalidate.
-- **Prompt changed:** the summarization prompt follows the existing
-  `settings?.prompts?.X || DEFAULT_PROMPTS.X` pattern, so an instructor can edit
-  it. `outlinePromptHash` is compared on read; a mismatch reports the outline as
-  stale so it can be regenerated. Without this, editing the prompt would visibly
-  do nothing — a confusing bug.
-- **Model changed:** `outlineModel` mismatch reports stale, for the same reason.
-  Note this means switching `LLM_PROVIDER` between Ollama and OpenAI marks every
-  outline stale, which is intended: a summary from a small local model should not
-  silently back production objectives.
 
-Staleness marks, it does not auto-regenerate — consistent with §3.
-
-**Edited outlines never go stale.** Once `outlineSource` is `'edited'`, the
-prompt and model that originally produced it are no longer what the content
-reflects, so comparing against them is meaningless. The instructor owns it, and
-nagging them to regenerate would invite discarding their own edits.
-
-A **content** change still clears an edited outline, since the edits described
-material that no longer exists. That is a genuine loss of instructor work, so the
-edit UI should say plainly that outlines are tied to the material's current
-content.
+A content change is the only signal that clears an outline. There is no
+staleness tracking for the summarization prompt or model: an outline is never
+compared against either, so a prompt or model change is simply invisible until
+an instructor presses regenerate. A content change still clears an edited
+outline, since the edits described material that no longer exists. That is a
+genuine loss of instructor work, so the edit UI should say plainly that outlines
+are tied to the material's current content.
 
 ### 10. Adjacent, deliberately out of scope
 
@@ -305,10 +289,10 @@ to that payload (§7).
 `tests/unit/material-outline.service.test.js`, with a mocked database and LLM:
 
 - `getOutline` never invokes the LLM, whether an outline exists or not
-- `generateOutline` stores outline, timestamp, model, and prompt hash
+- `getOutline` never reads settings
+- `generateOutline` stores outline and provenance, and never writes the removed
+  staleness fields (`outlineModel`, `outlinePromptHash`, `outlineGeneratedAt`)
 - content update clears the stored outline
-- prompt-hash mismatch reports stale; matching hash does not
-- model mismatch reports stale
 - map-reduce batches oversized content and issues one consolidation call
 - batch cap produces a partial outline with truncation noted in `notes`
 - malformed stored outline is reported as absent
@@ -317,7 +301,6 @@ to that payload (§7).
   `notes` at its stored value rather than accepting one from the caller
 - `saveOutline` rejects: zero topics, a blank title, blank key points, and each
   cap (topic count, key-point count, total length)
-- an edited outline is not reported stale on prompt-hash or model mismatch
 - a content update clears an edited outline just as it clears a generated one
 - `generateOutline` on an edited outline overwrites it and resets
   `outlineSource` to `'generated'`
@@ -327,7 +310,7 @@ to that payload (§7).
 - `GET` returns the outline; 404 when absent
 - `POST` generates and returns; 400 on empty `fileContent`
 - `PUT` stores a valid edit; 400 on an invalid body; 400 when no outline exists
-- `PUT` cannot smuggle in `notes`, `outlineModel`, or `outlinePromptHash`
+- `PUT` cannot smuggle in `notes`
 - all three enforce staff access and the co-instructor/TA permission checks
 - the course materials list includes `hasOutline` and **excludes** `outline`
 

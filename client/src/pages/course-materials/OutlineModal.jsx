@@ -160,12 +160,6 @@ export default function OutlineModal({
               <i className="fas fa-pen mr-1" /> Edited by an instructor
             </p>
           )}
-          {outlineData?.stale && (
-            <p className="mb-3 text-xs text-muted">
-              Generated with an earlier model or prompt — regenerate to refresh it.
-            </p>
-          )}
-
           <div className="space-y-4">
             {topics.map((topic, index) => (
               <div key={index} className="rounded-lg border border-gray-200 p-3">
