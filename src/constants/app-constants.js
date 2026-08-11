@@ -60,13 +60,16 @@ COURSE MATERIALS CONTENT:
 {ragContext}
 
 INSTRUCTIONS:
-1. First decide whether the material contains enough course-related, teachable content to support learning objectives. If it does not (for example, it is a personal note, placeholder text, navigation, a receipt, or unrelated content), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives to satisfy the requested count.
+1. First decide whether the material contains enough course-related, teachable content to support learning objectives. If it does not (for example, it is a personal note, placeholder text, navigation, a receipt, or unrelated content), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives for material that is not genuinely relevant.
 2. Only when materialIsRelevant is true, analyze the course materials and identify key topics, concepts, and learning outcomes.
-3. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
-4. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
-5. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes.
-7. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
+3. Derive the meta learning objectives from the topics in the provided outlines. Create as many as the material requires — typically one per topic, or one per group of closely related topics. There is no target number: let the material's structure decide how many there are.
+4. Every topic in every provided outline must be covered by at least one meta learning objective. Do not omit topics to keep the list short.
+5. Treat the provided materials as one body of course content, not as separate lists. When two or more materials cover the same topic, produce ONE meta learning objective for that topic rather than a near-duplicate objective per material.
+6. Merging must never lose coverage. A topic covered by several materials yields one meta learning objective whose granular objectives reflect everything those materials teach about it, with genuinely duplicate granular objectives collapsed into one.
+7. For each meta learning objective, write granular objectives covering that topic's key points. Create as many as the key points require. Do not pad with weak or overlapping objectives, and do not drop key points to keep the list short: distinctness matters, but coverage takes priority over brevity.
+8. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
+9. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes.
+10. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -85,9 +88,11 @@ RULES FOR GRANULAR OBJECTIVES:
 - Avoid granular objectives that are too shallow to assess meaningfully on their own, such as recalling a single definition or performing a trivial isolated task. Instead, embed such skills within a richer, more substantive objective.
 
 SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
+- Every topic in every provided outline is covered by at least one meta objective.
+- No two meta objectives cover the same topic; topics appearing in more than one material were merged into a single objective.
 - No two granular objectives under the same main objective test the same fact or skill.
 - No granular objective is a rephrasing of its parent meta objective.
-- Each granular objective is genuinely distinct and necessary — remove any that are redundant or only added to meet a count.
+- Each granular objective is genuinely distinct and necessary — remove any that are redundant.
 - Every meta objective has at least one granular objective.
 - Every granular objective begins with an active verb and has at least one Bloom level.
 

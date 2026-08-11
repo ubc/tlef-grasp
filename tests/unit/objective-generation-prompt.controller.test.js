@@ -200,4 +200,46 @@ describe('objective generation from outlines', () => {
 
     expect(promptFromFirstCall()).toContain('Retrieved chunk text.');
   });
+
+  // The prompt used to hard-code "3-8 main objectives" and "2-5 granular
+  // objectives", calibrated for 200 shuffled chunks where the model had no way
+  // to know how many distinct topics existed. Outlines enumerate topics
+  // directly, so a fixed range no longer belongs in the prompt.
+  it('imposes no fixed objective count', async () => {
+    outlineService.getOutline.mockImplementation(async (sourceId) =>
+      outlineFor(`Topic ${sourceId}`)
+    );
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    const prompt = promptFromFirstCall();
+    expect(prompt).not.toContain('3-8');
+    expect(prompt).not.toContain('2-5');
+  });
+
+  it('instructs merging topics that appear in more than one material', async () => {
+    outlineService.getOutline.mockImplementation(async (sourceId) =>
+      outlineFor(`Topic ${sourceId}`)
+    );
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    const prompt = promptFromFirstCall();
+    expect(prompt).toContain(
+      'produce ONE meta learning objective for that topic rather than a near-duplicate objective per material'
+    );
+  });
+
+  it('requires every outline topic to be covered', async () => {
+    outlineService.getOutline.mockImplementation(async (sourceId) =>
+      outlineFor(`Topic ${sourceId}`)
+    );
+
+    await generateLearningObjectivesHandler(buildRequest(), buildResponse());
+
+    const prompt = promptFromFirstCall();
+    expect(prompt).toContain(
+      'Every topic in every provided outline must be covered by at least one meta learning objective'
+    );
+  });
 });
