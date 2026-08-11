@@ -23,6 +23,7 @@ const getCourseSections = async (courseId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_course_section')
     .find({ courseId: toObjectId(courseId) })
+    .project({ 'lmsLink.linkedBy': 0 })
     .toArray();
 };
 

@@ -85,6 +85,22 @@ Copy the template and fill in your values:
 cp .env.example .env
 ```
 
+#### Optional Moodle connection
+
+Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for
+the local Moodle container, use `http://localhost:9200`). If it is absent, the
+Moodle tab and link buttons are hidden.
+
+The Moodle site must have REST web services enabled and expose these functions
+to the service used by GRASP:
+
+- `core_webservice_get_site_info`
+- `core_enrol_get_users_courses`
+- `core_group_get_course_groups`
+
+Each instructor generates their own Moodle web-service token and pastes it into
+GRASP. The token is stored per GRASP user; it is not shared with co-instructors.
+
 ### 3. Start the development servers
 
 ```bash

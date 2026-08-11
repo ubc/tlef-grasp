@@ -8,8 +8,14 @@ import {
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
+import {
+  CanvasConnectionPanel,
+  MoodleConnectionPanel,
+} from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
 import {
   QUESTION_TYPES,
@@ -119,8 +125,12 @@ const buildPromptState = (source = {}) =>
 export default function Settings() {
   const showToast = useToast();
   const courseId = useSelectedCourseId();
+  const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
+  const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
 
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(
+    canvasReturnState ? "canvas" : openMoodleSettings ? "moodle" : "general"
+  );
   const [bloomPrimary, setBloomPrimary] = useState(() =>
     Object.fromEntries(
       BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
@@ -139,6 +149,22 @@ export default function Settings() {
   const defaultPrompts = defaults?.prompts || {};
   const codeQuery = useEnrollmentCode(courseId);
   const enrollmentCode = codeQuery.enrollmentCode;
+  const canvasStatus = useCanvasStatus();
+  const moodleStatus = useMoodleStatus();
+  const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
+  const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
+
+  useEffect(() => {
+    if (!canvasStatus.isPending && !showCanvasIntegration && activeTab === "canvas") {
+      setActiveTab("general");
+    }
+  }, [activeTab, canvasStatus.isPending, showCanvasIntegration]);
+
+  useEffect(() => {
+    if (!moodleStatus.isPending && !showMoodleIntegration && activeTab === "moodle") {
+      setActiveTab("general");
+    }
+  }, [activeTab, moodleStatus.isPending, showMoodleIntegration]);
 
   // Hydrate the form when settings arrive
   useEffect(() => {
@@ -230,6 +256,12 @@ export default function Settings() {
   const tabs = [
     { id: "general", icon: "fa-cog", label: "Course Settings" },
     { id: "prompt", icon: "fa-terminal", label: "Course Prompts" },
+    ...(showCanvasIntegration
+      ? [{ id: "canvas", icon: "fa-chalkboard-teacher", label: "Canvas LMS" }]
+      : []),
+    ...(showMoodleIntegration
+      ? [{ id: "moodle", icon: "fa-graduation-cap", label: "Moodle LMS" }]
+      : []),
     // Owner-only: control what co-instructors can access in this course.
     ...(isOwner
       ? [{ id: "permissions", icon: "fa-user-shield", label: "Co-Instructor Permissions" }]
@@ -258,22 +290,24 @@ export default function Settings() {
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saveMutation.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
-        >
-          {saveMutation.isPending ? (
-            <>
-              <i className="fas fa-spinner fa-spin" /> Saving...
-            </>
-          ) : (
-            <>
-              <i className="fas fa-save" /> Save All Changes
-            </>
-          )}
-        </button>
+        {!["canvas", "moodle"].includes(activeTab) && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {saveMutation.isPending ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-save" /> Save All Changes
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -535,6 +569,17 @@ export default function Settings() {
             </button>
           </div>
         </section>
+      )}
+
+      {activeTab === "canvas" && showCanvasIntegration && (
+        <CanvasConnectionPanel
+          status={canvasStatus}
+          returnState={canvasReturnState}
+        />
+      )}
+
+      {activeTab === "moodle" && showMoodleIntegration && (
+        <MoodleConnectionPanel status={moodleStatus} />
       )}
 
       <ConfirmModal
