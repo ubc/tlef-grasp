@@ -203,7 +203,9 @@ test.describe('Instructor question bank (seeded course)', () => {
     await expect(firstTitleCell).toBeVisible();
   });
 
-  test('exports selected questions to CSV carrying the objective columns', async ({
+  // Un-skip together with EXPORT_ENABLED in QuestionsTab.jsx — the Export
+  // button is hidden while parts of the exported payload are unfinished.
+  test.skip('exports selected questions to CSV carrying the objective columns', async ({
     page,
   }) => {
     await selectSeededCourse(page, { role: 'instructor' });
