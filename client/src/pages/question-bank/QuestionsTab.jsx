@@ -22,6 +22,11 @@ import QuestionEditModal from "./QuestionEditModal";
 import AddQuestionWizard from "./AddQuestionWizard";
 import { downloadQuestionsExport } from "../../lib/exports";
 
+// Question export is hidden while parts of the exported payload are still
+// unfinished. Flip back to true (and re-enable the e2e export spec) once the
+// export covers everything it advertises.
+const EXPORT_ENABLED = false;
+
 const STATUS_PILL_CLASSES = {
   approved: "bg-green-100 text-green-700",
   draft: "bg-gray-100 text-gray-600",
@@ -149,14 +154,16 @@ function BulkActionBar({ selectedCount, busy, onAction, onDelete, onExport }) {
         {selectedCount} question{selectedCount !== 1 ? "s" : ""} selected
       </span>
       <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={selectedCount === 0 || busy}
-          onClick={onExport}
-          className={actionBtnClass}
-        >
-          <i className="fas fa-file-export" /> Export
-        </button>
+        {EXPORT_ENABLED && (
+          <button
+            type="button"
+            disabled={selectedCount === 0 || busy}
+            onClick={onExport}
+            className={actionBtnClass}
+          >
+            <i className="fas fa-file-export" /> Export
+          </button>
+        )}
         <button
           type="button"
           disabled={selectedCount === 0 || busy}
