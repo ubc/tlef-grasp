@@ -38,6 +38,12 @@ const OFF_VALUES = new Set(["false", "0", "no", "off"]);
  * investigation without a restart.
  */
 function usageLogEnabled() {
+  // Under test, only write when a path was named deliberately. generateStructured
+  // records every call, so any suite that exercises it would otherwise append to
+  // whoever's real log happens to be at the default path — inventing cost that
+  // never happened, for models like "gpt-test".
+  if (process.env.NODE_ENV === "test" && !process.env.LLM_USAGE_LOG) return false;
+
   const raw = process.env.LLM_USAGE_LOG_ENABLED;
   if (raw === undefined || raw === null) return true;
   return !OFF_VALUES.has(String(raw).trim().toLowerCase());

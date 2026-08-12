@@ -2,7 +2,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { recordUsage, usageLogPath, flushUsageLog } = require('../../src/utils/llm-usage-log');
+const {
+  recordUsage,
+  usageLogPath,
+  usageLogEnabled,
+  flushUsageLog,
+} = require('../../src/utils/llm-usage-log');
 
 let tmpDir;
 const saved = {};
@@ -144,6 +149,27 @@ describe('the LLM_USAGE_LOG_ENABLED gate', () => {
     const lines = readLines();
     expect(lines).toHaveLength(1);
     expect(lines[0].operation).toBe('kept');
+  });
+});
+
+// generateStructured records every call, and any test that exercises it would
+// otherwise append to the developer's real log — `npx jest` was quietly filling
+// logs/llm-usage.jsonl with rows for models like "gpt-test", which then show up
+// in `npm run usage` as unlabelled cost that never happened.
+describe('under test', () => {
+  it('does not write to the default log', () => {
+    delete process.env.LLM_USAGE_LOG;
+    delete process.env.LLM_USAGE_LOG_ENABLED;
+
+    // NODE_ENV is "test" under jest.
+    expect(usageLogEnabled()).toBe(false);
+  });
+
+  it('still writes when a test points it somewhere explicitly', () => {
+    process.env.LLM_USAGE_LOG = '/tmp/deliberate.jsonl';
+    delete process.env.LLM_USAGE_LOG_ENABLED;
+
+    expect(usageLogEnabled()).toBe(true);
   });
 });
 
