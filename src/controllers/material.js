@@ -783,7 +783,7 @@ const generateMaterialOutlineHandler = async (req, res) => {
         const result = await outlineService.generateOutline(req.params.sourceId);
         res.json({ success: true, ...result });
     } catch (error) {
-        if (error.code === 'EMPTY_MATERIAL') {
+        if (error.code === 'EMPTY_MATERIAL' || error.code === 'MATERIAL_TOO_LARGE') {
             return res.status(400).json({ success: false, code: error.code, error: error.message });
         }
         console.error("Error generating material outline:", error);

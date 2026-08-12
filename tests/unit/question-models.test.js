@@ -159,6 +159,92 @@ describe('question model normalization', () => {
     ).toBe('Photosynthesis converts');
   });
 
+  // Multiple-choice has always emitted scratchwork first, so constrained
+  // decoding produces the worked reasoning before it commits to an answer — and
+  // it is the type with the fewest content errors. The types without it carried
+  // nearly all of them: formulas inconsistent with their own stem, answers that
+  // round to zero at the stated precision, ranges no chemist would write.
+  it('makes every generated type reason before it commits', () => {
+    for (const model of [MultipleChoiceQuestion, FillInTheBlankQuestion, CalculationQuestion]) {
+      const schema = model.getJsonSchema();
+      expect(schema.required[0]).toBe('scratchwork');
+      // First in `properties` too: constrained decoding emits fields in order,
+      // so a scratchwork listed last would be written after the answer it is
+      // supposed to inform.
+      expect(Object.keys(schema.properties)[0]).toBe('scratchwork');
+    }
+  });
+
+  it('keeps scratchwork out of the stored question', () => {
+    const fitb = FillInTheBlankQuestion.validateAndNormalize({
+      scratchwork: 'The blank has to be the salt classification, not a word the sentence implies.',
+      topicTitle: 'Salt behaviour',
+      question: 'A salt of a strong acid and strong base gives a solution that is _________.',
+      correctAnswer: 'neutral',
+      acceptableAnswers: ['neutral'],
+      explanation: '',
+    });
+    expect(fitb).not.toHaveProperty('scratchwork');
+
+    const calc = CalculationQuestion.validateAndNormalize({
+      scratchwork: 'Checked that x changes the result and that 2 decimals can show it.',
+      topicTitle: 'Free variables',
+      stem: 'A system has {{x}} variables and 2 pivots. How many are free?',
+      calculationFormula: 'x-2',
+      calculationVariables: [{ name: 'x', min: 3, max: 8, integerOnly: true, decimals: null }],
+      calculationAnswerDecimals: 0,
+      calculationAnswerTolerancePercent: null,
+      explanation: '',
+    });
+    expect(calc).not.toHaveProperty('scratchwork');
+  });
+
+  // Half of a generated bank is fill-in-the-blank, and the type's rules only
+  // ever constrained its shape — one blank, declarative, no "What/Which". A
+  // stem like "the favoured side holds the weaker acid and the weaker ______"
+  // satisfies all of that and still answers itself from its own parallel
+  // structure.
+  it('forbids a fill-in-the-blank whose sentence gives away the blank', () => {
+    const instruction = FillInTheBlankQuestion.getPromptInstruction();
+    expect(instruction).toMatch(/not be recoverable from the sentence/i);
+    expect(instruction).toMatch(/parallel structure/i);
+    // Worked counter-examples, not just a rule: the rejected stems here are
+    // real ones this pipeline produced.
+    expect(instruction).toContain('Bad:');
+    expect(instruction).toContain('Good:');
+  });
+
+  // The JSON schema only pins field names, so a model that drifted into
+  // multiple-choice phrasing still emits a schema-valid fill-in-the-blank
+  // record — a question stem with no blank in it, which no amount of
+  // downstream grading can match an answer against. Rejecting it here is what
+  // makes getRetrySuffix() reachable for this failure.
+  it('rejects a fill-in-the-blank stem that has no blank to fill', () => {
+    expect(() =>
+      FillInTheBlankQuestion.validateAndNormalize({
+        topicTitle: 'Classifying salt solutions',
+        question: 'Which salt solution is expected to be neutral in water?',
+        correctAnswer: 'A',
+        acceptableAnswers: ['A'],
+        explanation: 'Strong acid + strong base.',
+      })
+    ).toThrow(/exactly one blank/i);
+  });
+
+  // Grading matches a single submitted string against acceptableAnswers, so a
+  // second blank has nothing to be graded against.
+  it('rejects a fill-in-the-blank stem with more than one blank', () => {
+    expect(() =>
+      FillInTheBlankQuestion.validateAndNormalize({
+        topicTitle: 'Acid-base pairs',
+        question: 'A _________ acid pairs with a _________ base.',
+        correctAnswer: 'strong',
+        acceptableAnswers: ['strong'],
+        explanation: 'Two blanks.',
+      })
+    ).toThrow(/exactly one blank/i);
+  });
+
   it('normalizes open-ended fields and fallback topic titles', () => {
     const normalized = OpenEndedQuestion.validateAndNormalize({
       topicTitle: '',

@@ -26,6 +26,7 @@ async function describeSlideImage(image, promptTemplate) {
     model: getVisionModel(),
     temperature: 0.2,
     schemaName: "image_description",
+    operation: "pptx-slide-image",
   });
 
   let description = "";

@@ -26,7 +26,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -361,10 +361,39 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     const existingQuestionsContext = buildExistingQuestionsContext(existingQuestionTexts);
 
     // Prepare RAG search query
-    const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
+    // Embedded and compared against chunks of course material, so it carries the
+    // objective text and nothing else. Wrapper phrasing ("Get relevant content
+    // about...", "for course: Biology") appears in no chunk and only drags the
+    // query vector toward generic instructional language — which depressed the
+    // scores enough that the threshold below filtered everything out and the
+    // no-threshold fallback in rag-fanout became the real retrieval path. The
+    // course is already implied: retrieval is filtered to this objective's own
+    // materials.
+    const searchQuery = [learningObjectiveText, granularLearningObjectiveText]
+      .map((text) => String(text || '').trim())
+      .filter(Boolean)
+      .join('. ');
 
     // Both settings apply to question generation only — objective generation
     // uses RAG_OBJECTIVE_CHUNK_LIMIT and deliberately passes no score threshold.
+    //
+    // The chunk limit is the dominant cost in this pipeline: retrieved material
+    // goes into the prefix that every request in a batch opens with, so each
+    // chunk is paid for roughly once per question generated, plus once per fix.
+    // At 50 (~12.5k tokens) that is around 80% of a batch's input.
+    //
+    // It is a TOTAL split evenly across the materials on an objective, up to
+    // MAX_MATERIALS_PER_OBJECTIVE — so 50 is 50 chunks for one material but
+    // ~17 each for three. Lowering it therefore bites hardest on the objectives
+    // drawing on the most sources.
+    //
+    // It is a ceiling, not a target: only chunks clearing the threshold below
+    // are retrieved, so a narrow objective costs less than a broad one without
+    // this needing to change. That only holds while the threshold actually
+    // discriminates — if rag-fanout starts logging "returned 0 chunks, retrying
+    // without threshold" for most materials, the threshold is being bypassed,
+    // every objective is paying the full ceiling, and the fix is to lower the
+    // threshold (or check what is being embedded as the query), not this.
     const questionRagThreshold = parseFloat(process.env.RAG_QUESTION_SCORE_THRESHOLD) || 0.6;
     const questionRagLimit = parseInt(process.env.RAG_QUESTION_CHUNK_LIMIT) || 50;
 
@@ -414,23 +443,43 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           bloomTypePreferences: bloomTypePrefs,
         });
 
-      // Build the first-turn prompt (includes full RAG context for prompt caching)
+      // The prefix every request in this batch opens with — the planner's and
+      // each generator's — byte-for-byte identical, so the provider processes
+      // the retrieved material once and the rest of the batch reads it from
+      // cache. Anything that differs per question goes in the turn that follows
+      // it, never in here.
+      //
+      // Every type's rules go in here, not into the individual turns. In a
+      // conversation the opening message is sent once and re-read by every later
+      // turn, so this is the one place they can sit without being restated —
+      // and having all four present is what guarantees no question is ever asked
+      // for with its rules absent, which is the bug that started this. The turn
+      // itself names which type is in force.
+      //
       // Content-bearing values are substituted via replacer functions: a plain
       // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
       // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
       // at the model corrupted.
-      const buildFirstPrompt = (bloomLevel, questionType) => {
+      const allTypeInstructions = Object.values(QUESTION_TYPES)
+        .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction()}`)
+        .join("\n\n");
+
+      const buildSharedPrefix = () => {
         let filled = promptTemplate
           .replace('{courseName}', () => courseName || '')
           .replace('{learningObjectiveText}', () => learningObjectiveText || '')
           .replace('{granularLearningObjectiveText}', () => granularLearningObjectiveText || '')
-          .replace('{bloomLevel}', bloomLevel || '')
-          .replace('{questionType}', questionType || '')
+          .replace('{bloomLevel}', 'stated per question below')
+          .replace('{questionType}', 'stated per question below')
           .replace('{ragContext}', () => ragContext || '')
-          .replace(
-            '{typeSpecificInstructions}',
-            () => QuestionFactory.getModel(questionType).getPromptInstruction()
-          );
+          .replace('{typeSpecificInstructions}', () => allTypeInstructions);
+        // Instructors can replace this prompt from Settings, and a replacement
+        // that drops the placeholder would send no type rules at all — while
+        // every turn still points at "the instructions given at the start of
+        // this conversation". Append them rather than let that dangle.
+        if (!filled.includes(allTypeInstructions)) {
+          filled = `${filled}\n\nUse ONLY the instructions for the question type named with each question below:\n${allTypeInstructions}`;
+        }
         if (filled.includes('{existingQuestionsContext}')) {
           filled = filled.split('{existingQuestionsContext}').join(existingQuestionsContext);
         } else if (existingQuestionsContext) {
@@ -439,126 +488,153 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         return filled;
       };
 
-      let questionsData = [];
+      const sharedPrefix = buildSharedPrefix();
+
+      const slotSpecs = Array.from({ length: targetCount }, (_, i) => ({
+        index: i,
+        bloomLevel: bloomLevels[i % bloomLevels.length] || "Understand",
+        questionType: questionTypeForIndex(i),
+      }));
+
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       const maxRetries = 3;
-      // Conversation history of successful turns for context (enables prompt caching)
-      const conversationHistory = [];
-      // conversationCutoffs[k] = conversationHistory.length immediately after
-      // questionsData[k]'s own turn was appended — the branch point the review-fix
-      // loop uses to continue that specific question's conversation for a fix,
-      // without re-sending or duplicating later questions' turns.
-      const conversationCutoffs = [];
+
+      // A turn says which question it wants and nothing more. The rules are in
+      // the opening message and the earlier questions are in the history, so
+      // restating either would only pay for them twice.
+      //
+      // Naming the type on every turn is not decoration: with several types'
+      // worked examples in the history, a turn that does not say which one it
+      // wants leaves the model to infer it from what it can see — and what it
+      // can see is the previous question, of whatever type that was.
+      const buildTurn = (spec, { attempt = 1, lastError = null, withSiblingConstraint = true } = {}) => {
+        let turn =
+          `QUESTION ${spec.index + 1} OF ${targetCount}.\n`
+          + `Write a ${spec.questionType.toUpperCase()} question at Bloom's Taxonomy Level: ${spec.bloomLevel}.\n`
+          + `Follow the instructions for question type "${spec.questionType}" given at the start of this conversation, and ignore the instructions for the other types.\n`;
+        if (spec.index > 0 && withSiblingConstraint) {
+          turn += `It must test something different from the questions already written above — not a rephrasing, and not the same worked example, reaction, or scenario with different wording.\n`;
+        }
+        turn += `\nRespond with ONLY a single valid JSON object. No other text.`;
+        if (attempt > 1) {
+          turn += QuestionFactory.getModel(spec.questionType).getRetrySuffix(attempt, lastError);
+        }
+        return turn;
+      };
+
       const seenQuestionTexts = new Set(
         existingQuestionTexts.map(normalizeQuestionText).filter(Boolean)
       );
 
-      for (let i = 0; i < targetCount; i++) {
-        const currentBloomLevel = bloomLevels[i % bloomLevels.length] || "Understand";
-        const currentQuestionType = questionTypeForIndex(i);
-        let questionData = null;
-        const currentQuestionHistory = [];
+      // One question, retried in place. Returns null when every attempt failed,
+      // so one bad slot costs its own question and not the batch.
+      const generateOneQuestion = async (spec, conversation) => {
+        const model = QuestionFactory.getModel(spec.questionType);
+        const attemptHistory = [];
         let lastError = null;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           let responseContent = null;
-          let turnPrompt = "";
+          const turnPrompt = buildTurn(spec, { attempt, lastError });
           try {
-            if (i === 0 && attempt === 1) {
-              // First question, first attempt: full prompt with RAG context
-              turnPrompt = buildFirstPrompt(currentBloomLevel, currentQuestionType);
-            } else if (attempt > 1) {
-              // Retry: add correction hint for the specific type
-              turnPrompt = (i === 0 ? buildFirstPrompt(currentBloomLevel, currentQuestionType) : `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept than previously generated questions.\nRespond with ONLY a single valid JSON object. No other text.`)
-                + QuestionFactory.getModel(currentQuestionType).getRetrySuffix(attempt, lastError);
-            } else {
-              // Subsequent questions (i > 0), first attempt: include schema hint since
-              // filterPromptToType stripped all other type schemas from the Q1 prompt.
-              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.`;
-            }
-
-            // Full message history (successful turns + this question's retries),
-            // so the provider can reuse the cached prefix.
             const messages = [
-              ...conversationHistory,
-              ...currentQuestionHistory,
+              ...conversation,
+              ...attemptHistory,
               { role: 'user', content: turnPrompt },
             ];
 
-            console.log(`Sending prompt to LLM (Q${i + 1}/${targetCount}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
+            console.log(`Sending prompt to LLM (Q${spec.index + 1}/${targetCount}, type=${spec.questionType}, bloom=${spec.bloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
             // question type. Low temperature for focused, well-formed questions.
             const response = await generateStructured({
               messages,
-              schema: QuestionFactory.getModel(currentQuestionType).getJsonSchema(),
+              schema: model.getJsonSchema(),
               temperature: QUESTION_GEN_TEMPERATURE,
+              operation: 'question-generate',
             });
 
             const qPrompt = response.usage?.promptTokens || 0;
             const qCompletion = response.usage?.completionTokens || 0;
             totalPromptTokens += qPrompt;
             totalCompletionTokens += qCompletion;
-            console.log(`📊 Token Usage Q${i + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
+            console.log(`📊 Token Usage Q${spec.index + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
 
             responseContent = response.content || "";
             if (!responseContent) throw new Error("Empty response from LLM");
 
             const parsed = safeJsonParse(responseContent);
             // Scramble here — on the raw parsed response, before anything (the
-            // conversation history, review, or the fix loop) ever sees a letter
+            // fix context, review, or the fix loop) ever sees a letter
             // assignment. Scrambling later would desync whichever letter a
             // reviewer's issue text names from what the instructor eventually
             // sees, since nothing re-derives that text after a later shuffle.
             scrambleMultipleChoiceOptions(parsed);
-            const candidateQuestion = QuestionFactory
-              .getModel(currentQuestionType)
-              .validateAndNormalize(parsed);
+            const questionData = model.validateAndNormalize(parsed);
 
             const normalizedQuestionText = normalizeQuestionText(
-              getGeneratedQuestionText(candidateQuestion)
+              getGeneratedQuestionText(questionData)
             );
             if (normalizedQuestionText && seenQuestionTexts.has(normalizedQuestionText)) {
               throw new Error(
                 "Generated question duplicates a question already used for this granular objective"
               );
             }
-            questionData = candidateQuestion;
+            questionData.bloomLevel = spec.bloomLevel;
 
-            console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
+            console.log(`✅ Successfully generated question ${spec.index + 1} (${spec.questionType})`);
 
-            // Save to conversation history so subsequent questions have context.
-            // Store the scrambled version (not the raw responseContent) so the
-            // model's own history matches what review/fix later reason about.
-            conversationHistory.push({ role: 'user', content: turnPrompt });
-            conversationHistory.push({ role: 'assistant', content: JSON.stringify(parsed) });
-            if (normalizedQuestionText) seenQuestionTexts.add(normalizedQuestionText);
-
-            break; // Success
-
+            // The exact exchange that produced this question, kept so the fix
+            // loop can reopen it later. It holds the scrambled version (not the
+            // raw responseContent) so what the fixer sees matches what the
+            // reviewer reasoned about. Nothing from a sibling question is in
+            // here — that separation is the point of generating them apart.
+            return {
+              questionData,
+              normalizedQuestionText,
+              turnPrompt,
+              rawAnswer: JSON.stringify(parsed),
+              // Without the sibling constraint: the fix replays this question
+              // alone, so "different from the questions already written above"
+              // would point at a conversation the fixer cannot see.
+              fixContext: [
+                { role: 'user', content: sharedPrefix },
+                { role: 'user', content: buildTurn(spec, { withSiblingConstraint: false }) },
+                { role: 'assistant', content: JSON.stringify(parsed) },
+              ],
+            };
           } catch (error) {
             lastError = error;
-            console.warn(`❌ Q${i + 1} attempt ${attempt} failed:`, error.message);
+            console.warn(`❌ Q${spec.index + 1} attempt ${attempt} failed:`, error.message);
             if (responseContent) {
-              currentQuestionHistory.push({ role: 'user', content: turnPrompt });
-              currentQuestionHistory.push({ role: 'assistant', content: responseContent });
+              attemptHistory.push({ role: 'user', content: turnPrompt });
+              attemptHistory.push({ role: 'assistant', content: responseContent });
             }
             if (attempt === maxRetries) {
-              console.error(`Failed to generate question ${i + 1} after ${maxRetries} attempts`);
+              console.error(`Failed to generate question ${spec.index + 1} after ${maxRetries} attempts`);
             } else {
               console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
             }
           }
         }
+        return null;
+      };
 
-        if (questionData) {
-          // Add the bloom level to the question data so the UI knows which level it belongs to
-          questionData.bloomLevel = currentBloomLevel;
+      // One conversation for the batch: the opening message, then a turn per
+      // question, each seeing the answers before it.
+      const conversation = [{ role: 'user', content: sharedPrefix }];
+      let questionsData = [];
+      const fixContexts = [];
 
-          questionsData.push(questionData);
-          conversationCutoffs.push(conversationHistory.length);
-        }
+      for (const spec of slotSpecs) {
+        const result = await generateOneQuestion(spec, conversation);
+        if (!result) continue;
+        if (result.normalizedQuestionText) seenQuestionTexts.add(result.normalizedQuestionText);
+        conversation.push({ role: 'user', content: result.turnPrompt });
+        conversation.push({ role: 'assistant', content: result.rawAnswer });
+        questionsData.push(result.questionData);
+        fixContexts.push(result.fixContext);
       }
 
       const generationModel = getLLMModel() || 'unknown';
@@ -571,8 +647,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       const reviewFixResult = await reviewAndFixQuestions(
         questionsData,
         courseName,
-        conversationHistory,
-        conversationCutoffs,
+        fixContexts,
         learningObjectiveText,
         granularLearningObjectiveText
       );
@@ -814,6 +889,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
     const { content: responseContent } = await generateStructured({
       prompt: fullPrompt,
       schema: OBJECTIVES_SCHEMA,
+      operation: 'objective-generate',
       temperature: 0.4,
     });
     console.log("Full Prompt: ", fullPrompt);
@@ -941,6 +1017,7 @@ async function rateQuestions(questions, courseName) {
     prompt,
     schema: QUESTION_REVIEW_SCHEMA,
     temperature: 0.1,
+    operation: 'question-review',
     model: getReviewModel() || null,
   });
   if (usage) {
@@ -1008,7 +1085,7 @@ function scrambleMultipleChoiceOptions(questionData) {
 // failed attempt (validation never succeeds within maxRetries) resolves with
 // fixed: null so the caller can still account for the tokens spent and retry
 // in a later cycle rather than losing the question.
-async function attemptFix(questionData, rating, branchedHistory, maxRetries, temperature) {
+async function attemptFix(questionData, rating, questionContext, maxRetries, temperature) {
   const questionType = questionData.questionType || questionData.type;
   const model = QuestionFactory.getModel(questionType);
   const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
@@ -1027,10 +1104,10 @@ async function attemptFix(questionData, rating, branchedHistory, maxRetries, tem
           .replace("{reasoning}", rating?.reasoning || "(no reasoning provided)")
       : model.getRetrySuffix(attempt, lastError);
 
-    const messages = [...branchedHistory, ...localHistory, { role: "user", content: turnPrompt }];
+    const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
     let responseContent = null;
     try {
-      const response = await generateStructured({ messages, schema: model.getJsonSchema(), temperature });
+      const response = await generateStructured({ messages, schema: model.getJsonSchema(), temperature, operation: 'question-fix' });
       totalPromptTokens += response.usage?.promptTokens || 0;
       totalCompletionTokens += response.usage?.completionTokens || 0;
       responseContent = response.content || "";
@@ -1095,11 +1172,19 @@ function applyRatings(questionsData, ratings, indices) {
 async function reviewAndFixQuestions(
   questionsData,
   courseName,
-  conversationHistory,
-  conversationCutoffs,
+  fixContexts,
   learningObjectiveText,
   granularLearningObjectiveText
 ) {
+  // Each fix call replays its question's whole context — the opening message,
+  // retrieved material and all — so this is the most expensive knob in the loop.
+  //
+  // Its value is currently capped by something else: a question only reaches a
+  // second cycle if the re-review still flags it, and the re-review is a fresh
+  // general pass with no memory of the original issue. So a patch that did not
+  // actually resolve what was flagged is cleared anyway and exits after cycle 1.
+  // Giving the re-review the original issue to verify is what would let a second
+  // cycle act on the questions it was raised for.
   const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
   const MAX_FIX_RETRIES = 2;
   const FIX_TEMPERATURE = 0.3;
@@ -1148,7 +1233,7 @@ async function reviewAndFixQuestions(
         attemptFix(
           questionsData[i],
           issueByIndex.get(i),
-          conversationHistory.slice(0, conversationCutoffs[i]),
+          fixContexts[i],
           MAX_FIX_RETRIES,
           FIX_TEMPERATURE
         )

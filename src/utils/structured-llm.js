@@ -11,6 +11,7 @@
 const { Ollama } = require("ollama");
 const llmService = require("../services/llm");
 const { getLLMProvider, getLLMModel } = require("./llm-provider");
+const { recordUsage } = require("./llm-usage-log");
 
 /**
  * Generate a response constrained to `schema` (a JSON Schema object).
@@ -29,7 +30,37 @@ const { getLLMProvider, getLLMModel } = require("./llm-provider");
  * @param {string}  [params.schemaName]   Name for the OpenAI json_schema (identifier chars only).
  * @returns {Promise<{ content: string, usage: { promptTokens: number, completionTokens: number, totalTokens: number } }>}
  */
-async function generateStructured({ prompt, messages = null, schema, temperature = 0.4, images = null, model = null, schemaName = "response" }) {
+async function generateStructured({ prompt, messages = null, schema, temperature = 0.4, images = null, model = null, schemaName = "response", operation = "unknown" }) {
+  const startedAt = Date.now();
+  try {
+    const result = await callProvider({ prompt, messages, schema, temperature, images, model, schemaName });
+    recordUsage({
+      operation,
+      provider: getLLMProvider(),
+      model: model || getLLMModel(),
+      promptTokens: result.usage.promptTokens,
+      completionTokens: result.usage.completionTokens,
+      ms: Date.now() - startedAt,
+      images: Array.isArray(images) ? images.length : 0,
+    });
+    return result;
+  } catch (error) {
+    // A call that threw still consumed a request and, usually, input tokens.
+    // Omitting it would make this log quietly disagree with the provider's bill.
+    recordUsage({
+      operation,
+      provider: getLLMProvider(),
+      model: model || getLLMModel(),
+      ms: Date.now() - startedAt,
+      ok: false,
+      error: error.message,
+      images: Array.isArray(images) ? images.length : 0,
+    });
+    throw error;
+  }
+}
+
+async function callProvider({ prompt, messages, schema, temperature, images, model, schemaName }) {
   const normalizedImages = Array.isArray(images)
     ? images.map((image) =>
         typeof image === "string"

@@ -270,10 +270,23 @@ const OUTLINE_DIRECT_MAX_CHARS = 100000;
 /** Batch size when a material exceeds OUTLINE_DIRECT_MAX_CHARS. */
 const OUTLINE_BATCH_CHARS = 80000;
 /**
- * Coverage cap. Past this many batches summarization stops and records the
- * truncation, so one pathological upload cannot run unbounded LLM calls.
+ * Coverage cap, so one pathological upload cannot run unbounded LLM calls.
+ * Lowered from 8: at 8 batches a single outline ran to roughly 290k tokens —
+ * more than four full question-generation batches — for one click on one
+ * document.
  */
-const OUTLINE_MAX_BATCHES = 8;
+const OUTLINE_MAX_BATCHES = 3;
+/**
+ * The largest material one outline can cover, derived so the ceiling and the
+ * batching that implements it cannot drift apart. Materials above this are
+ * refused rather than summarized part-way: an outline that covers a fraction of
+ * a document is worse than no outline, because learning objectives are
+ * generated from it and questions from those objectives, so the unread tail
+ * silently produces nothing while still costing full price to ingest and embed.
+ * Split oversized material into chapters — each then fits, and each gets its own
+ * full topic budget instead of sharing one.
+ */
+const OUTLINE_MAX_CONTENT_CHARS = OUTLINE_BATCH_CHARS * OUTLINE_MAX_BATCHES;
 
 /** Caps on a stored outline, applied to model output and instructor edits alike. */
 const MAX_OUTLINE_TOPICS = 40;
@@ -347,6 +360,7 @@ module.exports = {
   OUTLINE_DIRECT_MAX_CHARS,
   OUTLINE_BATCH_CHARS,
   OUTLINE_MAX_BATCHES,
+  OUTLINE_MAX_CONTENT_CHARS,
   MAX_OUTLINE_TOPICS,
   MAX_OUTLINE_KEY_POINTS,
   MAX_OUTLINE_CHARS,

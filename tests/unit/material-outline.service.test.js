@@ -21,6 +21,7 @@ const {
   NoOutlineError,
   InvalidOutlineError,
 } = require('../../src/services/material-outline');
+const { OUTLINE_MAX_CONTENT_CHARS } = require('../../src/constants/app-constants');
 
 const OUTLINE = { topics: [{ title: 'Topic A', keyPoints: ['Point one'] }], notes: '' };
 
@@ -287,7 +288,9 @@ describe('generateOutline', () => {
 });
 
 describe('generateOutline with large materials', () => {
-  const BIG = 'x'.repeat(250000); // > OUTLINE_DIRECT_MAX_CHARS (100000)
+  // Between OUTLINE_DIRECT_MAX_CHARS (100000) and OUTLINE_MAX_CONTENT_CHARS,
+  // so it takes the batching path without hitting the refusal.
+  const BIG = 'x'.repeat(200000);
 
   it('summarizes in batches and consolidates once', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
@@ -300,25 +303,86 @@ describe('generateOutline with large materials', () => {
 
     await generateOutline('src-1');
 
-    // 250000 chars / 80000 per batch = 4 batches, plus one consolidation call.
-    expect(mockGenerateStructured).toHaveBeenCalledTimes(5);
+    // 200000 chars / 80000 per batch = 3 batches, plus one consolidation call.
+    expect(mockGenerateStructured).toHaveBeenCalledTimes(4);
 
     const consolidationPrompt =
-      mockGenerateStructured.mock.calls[4][0].prompt;
+      mockGenerateStructured.mock.calls[3][0].prompt;
     expect(consolidationPrompt).toContain('Topic A');
   });
 
-  it('records truncation in notes when coverage is capped', async () => {
-    const huge = 'y'.repeat(80000 * 12); // 12 batches, cap is 8
+  // Oversized materials used to be summarized up to the batch cap and the
+  // shortfall recorded in notes — which meant paying for every batch and then
+  // silently owning an outline that covered part of the document. Objectives
+  // come from the outline, and questions from objectives, so the unread tail
+  // became unreachable while still costing full price to ingest and embed.
+  // Refusing before the first call spends nothing and puts the choice (split
+  // the material) in front of the instructor.
+  it('refuses a material larger than one outline can cover, before any LLM call', async () => {
+    const huge = 'y'.repeat(OUTLINE_MAX_CONTENT_CHARS + 1);
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ fileContent: huge, outline: undefined })
     );
 
-    await generateOutline('src-1');
+    await expect(generateOutline('src-1')).rejects.toMatchObject({
+      code: 'MATERIAL_TOO_LARGE',
+    });
+    expect(mockGenerateStructured).not.toHaveBeenCalled();
+    expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
+  });
 
-    const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
-    expect(stored.notes).toContain(String(80000 * 8));
-    expect(stored.notes).toContain(String(80000 * 12));
+  it('names the actual size and the limit so the message is actionable', async () => {
+    const huge = 'y'.repeat(OUTLINE_MAX_CONTENT_CHARS + 1);
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: huge, outline: undefined })
+    );
+
+    await expect(generateOutline('src-1')).rejects.toThrow(
+      new RegExp(`${OUTLINE_MAX_CONTENT_CHARS + 1}[\\s\\S]*${OUTLINE_MAX_CONTENT_CHARS}`)
+    );
+  });
+
+  // Objective generation falls back to retrieval when a material has no
+  // outline, so refusing does not block the instructor — it quietly lowers the
+  // quality of what they get next. The message says so, since nothing else in
+  // the flow will.
+  it('warns that objectives from this material may be less accurate', async () => {
+    const huge = 'y'.repeat(OUTLINE_MAX_CONTENT_CHARS + 1);
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: huge, outline: undefined })
+    );
+
+    const error = await generateOutline('src-1').catch((e) => e);
+
+    expect(error.message).toMatch(/learning objectives/i);
+    expect(error.message).toMatch(/less accurate/i);
+  });
+
+  // The message is read by an instructor deciding which upload to split, so it
+  // has to name the document the way they see it in the UI, not by its id.
+  it('identifies the material by title, not by source id', async () => {
+    const huge = 'y'.repeat(OUTLINE_MAX_CONTENT_CHARS + 1);
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: huge, outline: undefined, documentTitle: 'Linear Algebra Ch. 1-12' })
+    );
+
+    const error = await generateOutline('src-1').catch((e) => e);
+
+    expect(error.message).toContain('Linear Algebra Ch. 1-12');
+    expect(error.message).not.toContain('src-1');
+    // Still carried for logging and for callers that need to act on it.
+    expect(error.sourceId).toBe('src-1');
+  });
+
+  it('falls back to the source id when a material has no title', async () => {
+    const huge = 'y'.repeat(OUTLINE_MAX_CONTENT_CHARS + 1);
+    materialService.getMaterialBySourceId.mockResolvedValue(
+      storedMaterial({ fileContent: huge, outline: undefined, documentTitle: '' })
+    );
+
+    const error = await generateOutline('src-1').catch((e) => e);
+
+    expect(error.message).toContain('src-1');
   });
 
   it('does not append a truncation note when everything was covered', async () => {

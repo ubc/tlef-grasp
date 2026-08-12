@@ -16,6 +16,7 @@ const {
   OUTLINE_DIRECT_MAX_CHARS,
   OUTLINE_BATCH_CHARS,
   OUTLINE_MAX_BATCHES,
+  OUTLINE_MAX_CONTENT_CHARS,
   MAX_OUTLINE_TOPICS,
   MAX_OUTLINE_KEY_POINTS,
   MAX_OUTLINE_CHARS,
@@ -55,6 +56,30 @@ class EmptyMaterialError extends Error {
     super(`Material ${sourceId} has no extractable text to summarize.`);
     this.name = 'EmptyMaterialError';
     this.code = 'EMPTY_MATERIAL';
+  }
+}
+
+/**
+ * Thrown when a material is too large for one outline to cover. Raised before
+ * any LLM call, so an oversized document costs nothing rather than paying for
+ * every batch and returning a partial outline.
+ */
+class MaterialTooLargeError extends Error {
+  constructor(sourceId, documentTitle, actualChars, maxChars) {
+    // The message reaches an instructor choosing which upload to split, so it
+    // names the document as they see it listed. The id is kept on the error for
+    // logs and callers rather than put in front of them.
+    const label = String(documentTitle || '').trim() || sourceId;
+    super(
+      `Material "${label}" is ${actualChars} characters; one outline covers at most ${maxChars}. `
+      + `Split it into smaller materials (for example, one per chapter) and generate an outline for each. `
+      + `Until then, learning objectives generated from this material may be less accurate.`
+    );
+    this.name = 'MaterialTooLargeError';
+    this.code = 'MATERIAL_TOO_LARGE';
+    this.sourceId = sourceId;
+    this.actualChars = actualChars;
+    this.maxChars = maxChars;
   }
 }
 
@@ -113,6 +138,7 @@ const summarizeBatch = async (template, content) => {
     schema: MATERIAL_OUTLINE_SCHEMA,
     temperature: 0.2,
     schemaName: 'material_outline',
+    operation: 'outline-batch',
   });
   if (!raw) throw new Error('Empty response from the summarization model.');
   return JSON.parse(raw);
@@ -132,6 +158,7 @@ const consolidateOutlines = async (partials) => {
     schema: MATERIAL_OUTLINE_SCHEMA,
     temperature: 0.2,
     schemaName: 'material_outline',
+    operation: 'outline-consolidate',
   });
   if (!raw) throw new Error('Empty response from the consolidation model.');
   return JSON.parse(raw);
@@ -185,6 +212,16 @@ const generateOutline = async (sourceId) => {
   if (!material || !material.fileContent || !material.fileContent.trim()) {
     throw new EmptyMaterialError(sourceId);
   }
+  // Checked before the prompt is resolved and before the first call: refusing
+  // has to be free, or it is just a more expensive way to fail.
+  if (material.fileContent.length > OUTLINE_MAX_CONTENT_CHARS) {
+    throw new MaterialTooLargeError(
+      sourceId,
+      material.documentTitle,
+      material.fileContent.length,
+      OUTLINE_MAX_CONTENT_CHARS
+    );
+  }
 
   const template = await resolvePromptTemplate(material.courseId);
 
@@ -208,6 +245,11 @@ const generateOutline = async (sourceId) => {
       partials.push(await summarizeBatch(template, batch));
     }
     raw = partials.length === 1 ? partials[0] : await consolidateOutlines(partials);
+    // Still reachable despite the size guard above: batchContent packs on page
+    // markers, so a marker landing near a batch boundary closes that batch
+    // early and a document at the ceiling can still need one batch more than
+    // OUTLINE_MAX_BATCHES. The shortfall is small where the guard passed, but
+    // it is recorded rather than dropped silently, same as before.
     notes = [raw.notes || '', truncated ? truncationNote(coveredChars, totalChars) : '']
       .filter(Boolean)
       .join(' ');
@@ -275,6 +317,7 @@ module.exports = {
   generateOutline,
   saveOutline,
   EmptyMaterialError,
+  MaterialTooLargeError,
   NoOutlineError,
   InvalidOutlineError,
 };

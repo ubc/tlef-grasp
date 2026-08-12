@@ -9,6 +9,7 @@ const {
   OUTLINE_DIRECT_MAX_CHARS,
   OUTLINE_BATCH_CHARS,
   OUTLINE_MAX_BATCHES,
+  OUTLINE_MAX_CONTENT_CHARS,
   MAX_OUTLINE_TOPICS,
   MAX_OUTLINE_KEY_POINTS,
   MAX_OUTLINE_CHARS,
@@ -18,7 +19,10 @@ describe('outline constants and schema', () => {
   it('exposes the documented numeric values', () => {
     expect(OUTLINE_DIRECT_MAX_CHARS).toBe(100000);
     expect(OUTLINE_BATCH_CHARS).toBe(80000);
-    expect(OUTLINE_MAX_BATCHES).toBe(8);
+    expect(OUTLINE_MAX_BATCHES).toBe(3);
+    // Derived, so the advertised ceiling and the batching that implements it
+    // cannot drift apart.
+    expect(OUTLINE_MAX_CONTENT_CHARS).toBe(240000);
     expect(MAX_OUTLINE_TOPICS).toBe(40);
     expect(MAX_OUTLINE_KEY_POINTS).toBe(20);
     expect(MAX_OUTLINE_CHARS).toBe(20000);

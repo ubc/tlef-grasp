@@ -93,6 +93,29 @@ function gradingStubFromPrompt(schema, prompt = '') {
 // Replaces src/utils/structured-llm.js — same contract as generateStructured().
 const structuredLlmStub = {
   generateStructured: async ({ schema, prompt }) => {
+    // Fill-in-the-blank generation, recognized by its schema shape. The generic
+    // stubFromSchema produces "Stub question N", which
+    // FillInTheBlankQuestion.validateAndNormalize rejects for having no blank —
+    // so without this branch every stubbed fill-in-the-blank question would
+    // exhaust its retries and vanish from the batch.
+    if (
+      schema?.properties?.acceptableAnswers &&
+      schema?.properties?.correctAnswer &&
+      schema?.properties?.topicTitle
+    ) {
+      const n = (stubCounter += 1);
+      return {
+        content: JSON.stringify({
+          scratchwork: `Stub reasoning ${n}: the blank is not recoverable from the sentence.`,
+          topicTitle: `Stub topic ${n}`,
+          question: `Stub fill-in-the-blank stem ${n} completed by _________.`,
+          correctAnswer: `Stub answer ${n}`,
+          acceptableAnswers: [`Stub answer ${n}`, `Stub synonym ${n}`],
+          explanation: `Stub explanation ${n}`,
+        }),
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
     const graded = gradingStubFromPrompt(schema, prompt);
     // Material-outline summarization (issue #32 follow-up): recognized by its
     // schema shape (topics[].title/keyPoints plus notes), the same way the

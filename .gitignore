@@ -22,3 +22,6 @@ monocart-report/
 test-results/
 coverage-reports/
 tests/e2e/.auth/
+
+# LLM usage log (append-only token accounting, written at runtime)
+logs/

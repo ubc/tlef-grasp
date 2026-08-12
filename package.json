@@ -22,7 +22,9 @@
     "test:a11y:debug": "playwright test --config=playwright.a11y.config.js --debug",
     "test:a11y:report": "playwright show-report playwright-report-a11y",
     "test:ui": "playwright test --ui",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "usage": "node scripts/llm-usage-report.js",
+    "usage:clear": "node scripts/llm-usage-clear.js"
   },
   "keywords": [],
   "author": "",

@@ -76,6 +76,7 @@ const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleA
         schema: OPEN_ENDED_GRADING_SCHEMA,
         temperature: 0.1,
         schemaName: "open_ended_grading",
+        operation: "grade-open-ended",
     }));
 
     const result = JSON.parse(content);
@@ -122,6 +123,7 @@ const gradeFillInTheBlankAnswer = async ({ courseId, question, studentAnswer, co
         schema: FILL_IN_THE_BLANK_GRADING_SCHEMA,
         temperature: 0.1,
         schemaName: "fill_in_the_blank_grading",
+        operation: "grade-fill-in-the-blank",
     }));
 
     const result = JSON.parse(content);

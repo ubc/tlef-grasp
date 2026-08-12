@@ -98,10 +98,16 @@ describe('generateQuestionsWithRagHandler duplicate protection', () => {
     await generateQuestionsWithRagHandler(buildRequest(), res);
 
     expect(mockGetExistingQuestionTexts).toHaveBeenCalledWith('course-1', 'granular-1');
-    // 2 generation attempts (duplicate retry + success) + 1 initial review call,
-    // which comes back clean so no fix cycle runs.
+    // 2 generation attempts (duplicate retry + success) + 1 initial review
+    // call, which comes back clean so no fix cycle runs. No planning call: a
+    // single-question batch has no coverage to plan.
     expect(mockGenerateStructured).toHaveBeenCalledTimes(3);
+    // The existing-question list rides in the shared prefix, so every request
+    // in the batch gets it without any of them re-sending it.
     expect(mockGenerateStructured.mock.calls[0][0].messages[0].content).toContain(
+      '1. What is ATP?'
+    );
+    expect(mockGenerateStructured.mock.calls[1][0].messages[0].content).toContain(
       '1. What is ATP?'
     );
     expect(res.json).toHaveBeenCalledWith(
@@ -118,14 +124,17 @@ describe('generateQuestionsWithRagHandler duplicate protection', () => {
   });
 
   it('never returns a duplicate when every retry repeats it', async () => {
-    mockGenerateStructured.mockResolvedValue({
-      content: JSON.stringify(makeMcq('What is ATP?')),
-      usage: {},
-    });
+    mockGenerateStructured
+      .mockResolvedValue({
+        content: JSON.stringify(makeMcq('What is ATP?')),
+        usage: {},
+      });
     const res = buildResponse();
 
     await generateQuestionsWithRagHandler(buildRequest(), res);
 
+    // 3 exhausted generation attempts. No review runs — there is nothing to
+    // review.
     expect(mockGenerateStructured).toHaveBeenCalledTimes(3);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(
@@ -179,11 +188,13 @@ describe('generateQuestionsWithRagHandler review-fix loop', () => {
 
     // The "scramble the generated options" step runs immediately when the
     // question (and separately, the fix) is produced — never again after —
-    // so conversationHistory, the reviewer's issue text, and what ships all
-    // agree on the same lettering throughout. That still means correctAnswer's
-    // *letter* isn't deterministic in this test (each scramble is random);
-    // assert on content instead — the option holding the fix's chosen answer
-    // ("Option B") must be the one marked correct, whichever letter that is.
+    // so the question's own fix context, the reviewer's issue text, and what
+    // ships all agree on the same lettering throughout. That still means
+    // correctAnswer's *letter* isn't deterministic in this test (each scramble
+    // is random); assert on content instead — the option holding the fix's
+    // chosen answer ("Option B") must be the one marked correct, whichever
+    // letter that is.
+    // 1 generation + 1 review + 1 fix + 1 re-review.
     expect(mockGenerateStructured).toHaveBeenCalledTimes(4);
     expect(res.json).toHaveBeenCalledTimes(1);
     const payload = res.json.mock.calls[0][0];
@@ -222,25 +233,24 @@ describe('generateQuestionsWithRagHandler review-fix loop', () => {
     randomSpy.mockRestore();
   });
 
-  it('ships a question still flagged after 2 fix cycles if every fix attempt fails validation', async () => {
+  it('ships a question still flagged after the last fix cycle if every attempt fails validation', async () => {
     mockGenerateStructured
       .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
       .mockResolvedValueOnce(makeReviewResponse([flaggedRating('0')]))
       // cycle 1: both fix attempts return unparseable content
       .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
       .mockResolvedValueOnce({ content: 'still not valid json', usage: {} })
-      // cycle 2
+      // cycle 2: the same
       .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
       .mockResolvedValueOnce({ content: 'still not valid json', usage: {} });
     const res = buildResponse();
 
     await generateQuestionsWithRagHandler(buildRequest(), res);
 
-    // 1 generation + 1 initial review + 2 cycles x 2 fix attempts each = 6.
+    // 1 generation + 1 initial review + 2 cycles x 2 fix attempts = 6.
     // No re-review calls: a fix attempt that never produces valid output never
     // reaches the "patched" set, so nothing is re-reviewed — this is the
-    // existing ship-with-flag behavior, just reached after more attempts, not
-    // a new failure mode.
+    // existing ship-with-flag behavior, not a new failure mode.
     expect(mockGenerateStructured).toHaveBeenCalledTimes(6);
     expect(res.json).toHaveBeenCalledTimes(1);
     const payload = res.json.mock.calls[0][0];
@@ -317,6 +327,23 @@ describe('generateQuestionsWithRagHandler retrieval settings', () => {
     expect(retrievalArgs()[4]).toBe(50);
   });
 
+  // The query is embedded and compared against chunks of course material.
+  // Wrapper text ("Get relevant content about...", "for course: Biology")
+  // appears in no chunk, so it only pulls the query vector away from the
+  // content it is meant to match — which depressed every score enough that the
+  // 0.6 threshold filtered everything and the no-threshold fallback became the
+  // real retrieval path.
+  it('embeds the objective text alone, without wrapper phrasing', async () => {
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    const query = retrievalArgs()[1];
+    expect(query).toContain('Explain cellular energy');
+    expect(query).toContain('Explain ATP production');
+    expect(query).not.toMatch(/get relevant content/i);
+    expect(query).not.toMatch(/learning objective:/i);
+    expect(query).not.toContain('Biology');
+  });
+
   it('reads the question-specific names', async () => {
     process.env.RAG_QUESTION_CHUNK_LIMIT = '80';
     process.env.RAG_QUESTION_SCORE_THRESHOLD = '0.4';
@@ -337,5 +364,209 @@ describe('generateQuestionsWithRagHandler retrieval settings', () => {
 
     expect(retrievalArgs()[3]).toBe(0.6);
     expect(retrievalArgs()[4]).toBe(50);
+  });
+});
+
+// Generation is one conversation per batch: every question after the first sees
+// the ones before it, which is the only thing that reliably stops a batch
+// converging on one worked example.
+//
+// The bug that made this worth revisiting is fixed by two things, not by
+// abandoning the conversation. Every question type's rules sit in the opening
+// message, so a type is never asked for with its rules absent; and each turn
+// names the type it wants, so the model is never left inferring it from the
+// worked examples of a different type sitting in the history.
+describe('generateQuestionsWithRagHandler batch conversation', () => {
+  const buildMixedTypeRequest = () => ({
+    body: {
+      ...buildRequest().body,
+      // Understand -> multiple-choice, Remember -> fill-in-the-blank under
+      // DEFAULT_BLOOM_TYPE_PREFERENCES, so this batch spans two types.
+      bloomLevels: ['Understand', 'Remember'],
+      count: 2,
+    },
+  });
+
+  const makeFitb = (question) => ({
+    topicTitle: 'Salt solution acidity',
+    question,
+    correctAnswer: 'neutral',
+    acceptableAnswers: ['neutral', 'pH 7'],
+    explanation: 'Strong acid + strong base leaves no hydrolysing ion.',
+  });
+
+  const callArgs = (i) => mockGenerateStructured.mock.calls[i][0];
+  const opening = (i) => callArgs(i).messages[0].content;
+  const turn = (i) => callArgs(i).messages.at(-1).content;
+
+  const queueBatch = () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      .mockResolvedValueOnce({
+        content: JSON.stringify(makeFitb('A neutral salt gives a solution that is _________.')),
+        usage: {},
+      })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0'), cleanRating('1')]));
+  };
+
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetExistingQuestionTexts.mockReset();
+    mockGetExistingQuestionTexts.mockResolvedValue([]);
+  });
+
+  it('issues one request per question, with no planning call', async () => {
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    // 2 generations + 1 review.
+    expect(mockGenerateStructured).toHaveBeenCalledTimes(3);
+  });
+
+  it('carries every type\'s rules in the opening message', async () => {
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    // Paid for once at the head of the conversation rather than restated per
+    // turn, so no question is ever asked for without its rules present.
+    expect(opening(0)).toContain('Generate 4 answer options');
+    expect(opening(0)).toContain('Forbidden openings');
+    expect(opening(1)).toBe(opening(0));
+  });
+
+  it('names the type on every turn so it is never inferred from history', async () => {
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    expect(turn(0)).toContain('MULTIPLE-CHOICE');
+    expect(turn(1)).toContain('FILL-IN-THE-BLANK');
+  });
+
+  it('shows each question the ones already written in this batch', async () => {
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    const first = callArgs(0).messages;
+    const second = callArgs(1).messages;
+    // The first question has only the opening message to work from.
+    expect(first).toHaveLength(2);
+    // The second sees the first one's turn and its answer.
+    expect(second.some((m) => m.role === 'assistant' && m.content.includes('What is ATP?'))).toBe(true);
+  });
+
+  // The fix replays the question's own exchange rather than the whole
+  // conversation up to it: a sibling's raw JSON in context is a template to
+  // copy, and the patch is meant to be targeted at one question.
+  // Instructors can replace the generation prompt from Settings. A replacement
+  // that drops {typeSpecificInstructions} would otherwise send no type rules at
+  // all, while every turn still says "follow the instructions given at the start
+  // of this conversation" — pointing at something that was never sent. That is
+  // the bug this whole branch started with, reachable again through the prompt
+  // editor. The existing-questions block below it already handles the same case.
+  it('still sends the type rules when a custom prompt omits the placeholder', async () => {
+    const settings = require('../../src/services/settings');
+    settings.getSettings.mockResolvedValueOnce({
+      prompts: {
+        questionGeneration:
+          'Course: {courseName}\nObjective: {granularLearningObjectiveText}\nMaterial: {ragContext}',
+      },
+    });
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    expect(opening(0)).toContain('Generate 4 answer options');
+    expect(opening(0)).toContain('Forbidden openings');
+  });
+
+  it('fixes a flagged question from its own exchange, not the whole batch', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      .mockResolvedValueOnce({
+        content: JSON.stringify(makeFitb('A neutral salt gives a solution that is _________.')),
+        usage: {},
+      })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0'), flaggedRating('1', 'The blank is ambiguous.')]))
+      .mockResolvedValueOnce({
+        content: JSON.stringify(makeFitb('A strong-acid, strong-base salt is _________.')),
+        usage: {},
+      })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('1')]));
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    const fixMessages = callArgs(3).messages;
+    expect(fixMessages.some((m) => m.role === 'assistant' && m.content.includes('_________'))).toBe(true);
+    expect(fixMessages.some((m) => m.content.includes('What is ATP?'))).toBe(false);
+    // ...and with the siblings gone, the turn must not still tell the model to
+    // differ from "the questions already written above" — there are none above.
+    expect(fixMessages.some((m) => m.content.includes('already written above'))).toBe(false);
+  });
+});
+
+// A retry is the correction path for anything validateAndNormalize rejects, so
+// it has to carry the same rules the first attempt did — plus the specific
+// error. Under the conversation this was where a question of a type other than
+// the batch's first silently lost its rules entirely.
+describe('generateQuestionsWithRagHandler retry turns', () => {
+  const buildMixedTypeRequest = () => ({
+    body: {
+      ...buildRequest().body,
+      bloomLevels: ['Understand', 'Remember'],
+      count: 2,
+    },
+  });
+
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetExistingQuestionTexts.mockReset();
+    mockGetExistingQuestionTexts.mockResolvedValue([]);
+  });
+
+  it('carries the type rules and the failure reason into a retry', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      // The fill-in-the-blank slot returns a multiple-choice stem with a letter
+      // for an answer — the exact drift this pipeline produced in the wild.
+      // validateAndNormalize rejects it, forcing a retry.
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          topicTitle: 'Salt solutions',
+          question: 'Which salt solution is expected to be neutral in water?',
+          correctAnswer: 'A',
+          acceptableAnswers: ['A'],
+          explanation: 'Strong acid + strong base.',
+        }),
+        usage: {},
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          topicTitle: 'Salt solutions',
+          question: 'A strong-acid, strong-base salt gives a solution that is _________.',
+          correctAnswer: 'neutral',
+          acceptableAnswers: ['neutral', 'pH 7'],
+          explanation: 'No hydrolysing ion remains.',
+        }),
+        usage: {},
+      })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0'), cleanRating('1')]));
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    // 0: question 1. 1: question 2, rejected. 2: question 2, retried.
+    const retryMessages = mockGenerateStructured.mock.calls[2][0].messages;
+    // The rules are in the opening message, which every turn still carries.
+    expect(retryMessages[0].content).toContain('Forbidden openings');
+    // The retry restates which type it wants rather than leaving the model to
+    // infer it from the rejected attempt.
+    expect(retryMessages.at(-1).content).toContain('FILL-IN-THE-BLANK');
+    // The rejected attempt and the reason it was rejected are both in front of
+    // the model on the retry.
+    expect(retryMessages.some((m) => m.content.includes('Which salt solution'))).toBe(true);
+    expect(retryMessages.at(-1).content).toContain('exactly one blank');
   });
 });

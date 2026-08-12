@@ -14,6 +14,7 @@ async function describeImage(base64Image, contextText) {
     const { content: rawContent, usage } = await generateStructured({
       prompt,
       schema: IMAGE_DESCRIPTION_SCHEMA,
+      operation: "pdf-page-image",
       images: [base64Image],
       model: getVisionModel(),
       temperature: 0.2,
