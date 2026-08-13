@@ -471,6 +471,8 @@ const submitQuizHandler = async (req, res) => {
     const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
+    // Achievements are decoration: a failure awarding them must not cost the
+    // student their score, so they get their own catch.
     let newAchievements = [];
     try {
       if (userId && courseId) {
@@ -478,6 +480,16 @@ const submitQuizHandler = async (req, res) => {
           userId.toString(), courseId.toString(), quizId, quizName, score ?? 0
         );
       }
+    } catch (achievementError) {
+      console.error("Error awarding quiz achievements:", achievementError);
+    }
+
+    // Recording the score is the point of this request. It used to share the
+    // catch above, so a failed write still answered success:true — the student
+    // saw a score that was never stored, the instructor's roster showed them as
+    // not having taken the quiz, and nothing prompted a retry. saveQuizScore
+    // treats a duplicate as a no-op, so retrying is safe.
+    try {
       if (userId && quizId) {
         await quizService.saveQuizScore({
           userId: userId.toString(),
@@ -490,8 +502,13 @@ const submitQuizHandler = async (req, res) => {
         });
       }
       await quizSessionService.markSubmitted(userId, quizId);
-    } catch (performanceError) {
-      console.error("Error recording score or awarding achievements:", performanceError);
+    } catch (scoreError) {
+      console.error("Error recording quiz score:", scoreError);
+      return res.status(500).json({
+        success: false,
+        code: "SCORE_NOT_RECORDED",
+        message: "Your answers were saved, but your score could not be recorded. Please try submitting again.",
+      });
     }
 
     res.json({

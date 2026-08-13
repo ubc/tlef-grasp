@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
@@ -10,6 +10,18 @@ export function firstUnansweredIndex(questions = [], feedback = {}) {
   const index = questions.findIndex((q) => !feedback[q.id]);
   return index === -1 ? questions.length - 1 : index;
 }
+
+// The quiz window closes server-side. A client clock that still shows time
+// remaining is not authoritative — it drifts, and a tab resumed from sleep can
+// be minutes behind — so a 409 from /check is what actually ends the attempt.
+const isExpiryError = (error) => error?.body?.code === "QUIZ_TIME_EXPIRED";
+
+// Submitting is idempotent server-side (a duplicate score row is ignored), so a
+// transient failure — flaky wifi, a worker restarting — is worth retrying before
+// telling a student their result was not recorded. Delays before attempts 2 and 3.
+const SUBMIT_RETRY_DELAYS_MS = [1000, 3000];
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // State machine for taking a quiz: loading questions (with draft restoration),
 // checking answers against the server, navigation and final submission.
@@ -29,6 +41,15 @@ export function useQuizSession({ onLoadError } = {}) {
   // Practice rounds re-attempt previously-wrong questions for learning only —
   // graded for feedback but never persisted, so they never touch the score.
   const [practiceMode, setPracticeMode] = useState(false);
+  // Whether the graded attempt actually reached the server: "saving" while the
+  // POST is in flight or retrying, "saved" once the score is recorded, "failed"
+  // when every attempt failed. The completion screen shows the local tally as
+  // provisional until this reads "saved", so a student is never told a score
+  // that was never written.
+  const [submitStatus, setSubmitStatus] = useState("idle");
+  // Local tally for the current attempt, kept so a manual retry can resubmit
+  // without recomputing from state that the completion screen has replaced.
+  const localTallyRef = useRef(null);
 
   const reset = () => {
     setQuizData(null);
@@ -38,6 +59,8 @@ export function useQuizSession({ onLoadError } = {}) {
     setStartTime(null);
     setTimeExpired(false);
     setPracticeMode(false);
+    setSubmitStatus("idle");
+    localTallyRef.current = null;
     queryClient.invalidateQueries({ queryKey: ["student-quiz-list"] });
   };
 
@@ -151,6 +174,10 @@ export function useQuizSession({ onLoadError } = {}) {
       setStartTime(Date.now());
       // A restart always follows a completed attempt, so it's practice.
       setPracticeMode(true);
+      // The previous round's submit outcome no longer describes what's on
+      // screen; a practice round has nothing to record.
+      setSubmitStatus("idle");
+      localTallyRef.current = null;
       // Drop any achievement toast lingering from the graded attempt — a
       // practice round earns nothing.
       setAchievementToasts([]);
@@ -174,8 +201,23 @@ export function useQuizSession({ onLoadError } = {}) {
     return result;
   };
 
+  // Turn a failed /check into something the student can act on. A 409 means the
+  // window closed while they were answering, so run the same expiry flow the
+  // timer does rather than showing a bare error next to a still-live quiz.
+  const describeCheckFailure = (error) => {
+    if (isExpiryError(error)) {
+      expireQuiz();
+      return "Your time is up. Your saved answers have been submitted.";
+    }
+    return error.message || "Could not check your answer. Please try again.";
+  };
+
+  // Returns an error message when the check failed, null on success — the same
+  // contract as submitTextAnswer, so the page surfaces both the same way.
+  // Swallowing this used to read as a broken quiz: the option never
+  // highlighted, no feedback appeared, and clicking again did nothing.
   const selectMcqAnswer = async (selectedIndex, rawKey, questionId) => {
-    if (submitting || feedback[questionId]) return;
+    if (submitting || feedback[questionId]) return null;
     setSubmitting(true);
     try {
       const result = await checkAnswer(questionId, { selectedIndex });
@@ -192,8 +234,10 @@ export function useQuizSession({ onLoadError } = {}) {
           questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         },
       }));
+      return null;
     } catch (error) {
       console.error("Error evaluating answer:", error);
+      return describeCheckFailure(error);
     } finally {
       setSubmitting(false);
     }
@@ -284,7 +328,7 @@ export function useQuizSession({ onLoadError } = {}) {
       return null;
     } catch (error) {
       console.error("Error evaluating answer:", error);
-      return error.message || "Could not check your answer. Please try again.";
+      return describeCheckFailure(error);
     } finally {
       setSubmitting(false);
     }
@@ -313,12 +357,71 @@ export function useQuizSession({ onLoadError } = {}) {
     setTimeExpired(false);
     setStartTime(Date.now());
     setPracticeMode(true);
+    setSubmitStatus("idle");
+    localTallyRef.current = null;
     // Drop any achievement toast lingering from the graded attempt.
     setAchievementToasts([]);
   };
 
+  // POST the attempt and fold the server-authoritative result into the
+  // completion screen. Throws if the score was not recorded.
+  const postSubmission = async (tally) => {
+    const timeSpent = startTime ? Date.now() - startTime : 0;
+    const data = await api.post(`/api/student/quizzes/${quizData.quizId}/submit`, {
+      timeSpent,
+      sessionId: Date.now().toString(),
+    });
+    // A 200 carrying success:false is still a failure. The old code only
+    // matched the happy shape and otherwise fell through silently, leaving the
+    // local tally on screen as though it had been recorded.
+    if (!data?.success || !data.data) {
+      throw new Error(data?.message || data?.error || "Your score could not be recorded.");
+    }
+
+    const result = data.data;
+    setCompletion({
+      correct: result.correctAnswers ?? tally.correct,
+      total: result.totalQuestions ?? tally.total,
+      score: result.score !== undefined ? result.score : tally.score,
+      openEndedCount: tally.openEndedCount,
+      newAchievements: result.newAchievements || [],
+    });
+    if (result.newAchievements?.length) {
+      setAchievementToasts(result.newAchievements);
+      setTimeout(() => setAchievementToasts([]), 5500);
+    }
+  };
+
+  const submitWithRetry = async (tally) => {
+    setSubmitStatus("saving");
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await postSubmission(tally);
+        setSubmitStatus("saved");
+        return true;
+      } catch (error) {
+        console.error("Error submitting quiz:", error);
+        // A 4xx will not fix itself on a retry; network failures and 5xx will.
+        const retriable = !(error.status >= 400 && error.status < 500);
+        if (!retriable || attempt >= SUBMIT_RETRY_DELAYS_MS.length) {
+          setSubmitStatus("failed");
+          return false;
+        }
+        await wait(SUBMIT_RETRY_DELAYS_MS[attempt]);
+      }
+    }
+  };
+
+  // Manual retry from the completion screen, for when the automatic attempts
+  // all failed and the student is still on the page.
+  const retrySubmit = async () => {
+    if (!localTallyRef.current || submitStatus === "saving") return false;
+    return submitWithRetry(localTallyRef.current);
+  };
+
   // Show a locally-computed score immediately, then replace it with the
-  // server-authoritative result (which also awards achievements).
+  // server-authoritative result (which also awards achievements). The local
+  // figure is provisional until submitStatus reads "saved".
   const finishQuiz = async () => {
     // Open-ended questions count once the LLM judge graded them; only those
     // still awaiting manual grading (isCorrect null) are excluded from the
@@ -336,42 +439,24 @@ export function useQuizSession({ onLoadError } = {}) {
       localTotal > 0 ? Math.round((localCorrect / localTotal) * 100) : null;
     const openEndedCount = quizData.questions.length - localTotal;
 
-    setCompletion({
+    const tally = {
       correct: localCorrect,
       total: localTotal,
       score: localScore,
       openEndedCount,
-      newAchievements: [],
-      practice: practiceMode,
-    });
+    };
+
+    setCompletion({ ...tally, newAchievements: [], practice: practiceMode });
 
     // Practice rounds are never submitted — no score write, no achievements.
-    // The local tally above is all the student sees.
-    if (practiceMode) return;
-
-    try {
-      const timeSpent = startTime ? Date.now() - startTime : 0;
-      const data = await api.post(`/api/student/quizzes/${quizData.quizId}/submit`, {
-        timeSpent,
-        sessionId: Date.now().toString(),
-      });
-      if (data.success && data.data) {
-        const result = data.data;
-        setCompletion({
-          correct: result.correctAnswers ?? localCorrect,
-          total: result.totalQuestions ?? localTotal,
-          score: result.score !== undefined ? result.score : localScore,
-          openEndedCount,
-          newAchievements: result.newAchievements || [],
-        });
-        if (result.newAchievements?.length) {
-          setAchievementToasts(result.newAchievements);
-          setTimeout(() => setAchievementToasts([]), 5500);
-        }
-      }
-    } catch (error) {
-      console.error("Error submitting quiz:", error);
+    // The local tally above is all the student sees, and it is final.
+    if (practiceMode) {
+      setSubmitStatus("idle");
+      return;
     }
+
+    localTallyRef.current = tally;
+    await submitWithRetry(tally);
   };
 
   const expireQuiz = () => {
@@ -393,6 +478,8 @@ export function useQuizSession({ onLoadError } = {}) {
     startTime,
     timeExpired,
     practiceMode,
+    submitStatus,
+    retrySubmit,
     startQuiz,
     restartQuiz,
     startPracticeWrong,

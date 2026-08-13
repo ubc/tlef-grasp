@@ -283,17 +283,22 @@ async function getStaffUsersNotInCourse(courseId) {
         const userIdsInCourse = await getUserIdsInCourse(db, courseId);
         const allUsers = await userCollection.find({}).toArray();
         
-        // Filter to get staff users (have staff affiliation but not faculty)
+        // Filter to get staff users (have staff affiliation but not faculty).
+        // A promoted TA is excluded: their staff affiliation was granted by an
+        // instructor for one specific course, so outside it they are a student —
+        // the same rule resolveCourseRole applies. This keeps the two pickers a
+        // partition, so getAllUsersNotInCourseHandler cannot list them twice.
         const staffUsers = allUsers.filter(user => {
             if (!user.affiliation) return false;
-            
+            if (user.staffViaTaPromotion) return false;
+
             const affiliations = Array.isArray(user.affiliation)
                 ? user.affiliation
                 : String(user.affiliation).split(',').map(a => a.trim());
-            
+
             const hasStaff = affiliations.includes('staff');
             const hasFaculty = affiliations.includes('faculty');
-            
+
             return hasStaff && !hasFaculty;
         });
         
@@ -317,20 +322,24 @@ async function getStudentsNotInCourse(courseId) {
         const userIdsInCourse = await getUserIdsInCourse(db, courseId);
         const allUsers = await userCollection.find({}).toArray();
         
-        // Filter to get students (have 'student' or 'affiliate' affiliation)
+        // Student if they have the student or affiliate affiliation and are not
+        // faculty. The staff affiliation still excludes them — genuine SAML
+        // staff are offered by getStaffUsersNotInCourse instead, so they stay
+        // addable — but a promoted TA is a student everywhere except the one
+        // course they were promoted in, which is why the flag overrides it.
+        // Before this they were offered only under "staff", so adding one to a
+        // second course as a learner meant picking them out of the wrong list.
         const students = allUsers.filter(user => {
             if (!user.affiliation) return false;
-            
+
             const affiliations = Array.isArray(user.affiliation)
                 ? user.affiliation
                 : String(user.affiliation).split(',').map(a => a.trim());
-            
-            // Student if they have student or affiliate affiliation
-            // but NOT faculty or staff
+
             const hasStudent = affiliations.includes('student') || affiliations.includes('affiliate');
-            const hasStaff = affiliations.includes('staff');
+            const hasStaff = affiliations.includes('staff') && !user.staffViaTaPromotion;
             const hasFaculty = affiliations.includes('faculty');
-            
+
             return hasStudent && !hasStaff && !hasFaculty;
         });
         

@@ -64,6 +64,7 @@ export default function StudentQuiz() {
     completion,
     achievementToasts,
     practiceMode,
+    submitStatus,
   } = session;
 
   const backToList = () => {
@@ -97,6 +98,17 @@ export default function StudentQuiz() {
     if (errorMessage) showToast(errorMessage, "error");
   };
 
+  // MCQ checks fail the same ways text answers do (expired window, rate limit,
+  // dropped connection) and need the same visible outcome.
+  const selectMcqAnswer = async (selectedIndex, rawKey, questionId) => {
+    const errorMessage = await session.selectMcqAnswer(
+      selectedIndex,
+      rawKey,
+      questionId
+    );
+    if (errorMessage) showToast(errorMessage, "error");
+  };
+
   if (view === "list") {
     return <QuizList onStart={startQuiz} />;
   }
@@ -122,6 +134,8 @@ export default function StudentQuiz() {
         onBackToList={backToList}
         onPracticeWrong={session.startPracticeWrong}
         wrongCount={wrongCount}
+        submitStatus={submitStatus}
+        onRetrySubmit={session.retrySubmit}
       />
     );
   }
@@ -291,7 +305,7 @@ export default function StudentQuiz() {
             answers={answers}
             feedback={feedback}
             submitting={submitting}
-            onSelect={session.selectMcqAnswer}
+            onSelect={selectMcqAnswer}
           />
         )}
 
