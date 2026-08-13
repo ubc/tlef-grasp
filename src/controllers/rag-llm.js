@@ -239,6 +239,20 @@ const addDocumentToRagHandler = async (req, res) => {
     const { content, metadata, courseId } = req.body;
     const cid = courseId || metadata?.courseId || null;
 
+    // Writes chunks into a course's vector store, so it needs the same gates as
+    // saving a material. Without them any staff user could inject text into
+    // another course's collection, where it becomes retrieval context for that
+    // course's question generation — and, having no grasp_material row, is
+    // invisible on the materials page and cannot be deleted through the UI.
+    if (!cid) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, cid))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, cid, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+    if (!(await assertTaPermission(req, res, cid, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
+
     const chunkIds = await ragService.addDocumentToRAG(content, metadata, cid);
 
     res.json({
@@ -258,6 +272,15 @@ const addDocumentToRagHandler = async (req, res) => {
 const searchRagHandler = async (req, res) => {
   try {
     const { query, limit = 5, courseId } = req.body;
+
+    // Returns raw chunks of a course's material verbatim, so it is staff-only in
+    // that course. Unscoped, this read another course's lecture content directly.
+    if (!courseId) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
 
     console.log("=== RAG SEARCH REQUEST ===");
     console.log("Query:", query);
@@ -316,6 +339,15 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         error: "Missing required parameters",
         details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevels array are required",
       });
+    }
+    // Membership first: both capability checks below fail OPEN for a non-member
+    // (an absent co-instructor permission means "allowed", and a user with no TA
+    // membership is not a TA), so neither one substitutes for this.
+    if (!courseId) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;

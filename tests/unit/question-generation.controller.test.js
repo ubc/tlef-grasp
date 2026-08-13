@@ -11,6 +11,12 @@ jest.mock('../../src/services/question', () => ({
 jest.mock('../../src/services/settings', () => ({
   getSettings: jest.fn().mockResolvedValue(null),
 }));
+// generateQuestionsWithRagHandler now checks course membership before the
+// capability guards (H6) — those two fail open for a non-member, so neither
+// substituted for it.
+jest.mock('../../src/utils/course-access', () => ({
+  hasStaffAccessInCourse: jest.fn().mockResolvedValue(true),
+}));
 jest.mock('../../src/utils/co-instructor-permissions', () => ({
   assertCoInstructorPermission: jest.fn().mockResolvedValue(true),
   PERMISSION_KEYS: { QUESTION_GENERATION: 'questionGeneration' },
