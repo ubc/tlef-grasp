@@ -1,4 +1,4 @@
-const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
+const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, restoreMaterialDocument, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
 const settingsService = require('../services/settings');
@@ -8,8 +8,114 @@ const ragService = require('../services/rag');
 const databaseService = require('../services/database');
 const { parseInWorker } = require('../utils/parse-in-worker');
 const outlineService = require('../services/material-outline');
+const { fetchReadableText, BlockedUrlError } = require('../utils/safe-fetch-url');
 
 const TITLE_ONLY_UPDATE_TYPES = new Set(['pdf', 'file']);
+
+/**
+ * Reconstruct the RAG metadata for a material as it already exists, so a failed
+ * content swap can put its original chunks back. Derived from the stored
+ * document rather than the request, which describes the *new* content.
+ */
+const ragMetadataForExisting = (existingMaterial, courseName) => {
+    const fileType = String(existingMaterial.fileType || '');
+    const type = fileType === 'link' ? 'url' : fileType.startsWith('text') ? 'text' : 'file';
+    return {
+        // A link stores its URL in fileContent; everything else stores its text,
+        // and its "source" was the original filename or title.
+        source: type === 'url' ? existingMaterial.fileContent || '' : existingMaterial.documentTitle || '',
+        type,
+        course: courseName,
+        sourceId: existingMaterial.sourceId,
+        documentTitle: existingMaterial.documentTitle || '',
+    };
+};
+
+/**
+ * Swap a material's stored text and its vector chunks together, putting the
+ * original back if any step fails.
+ *
+ * Editing or refetching a material is a delete-then-reinsert, because
+ * saveMaterial inserts and the sourceId is uniquely indexed. That made the
+ * sequence destructive: the Mongo row was deleted, then addDocumentToRAG ran,
+ * and if it threw — Qdrant restarting, the embedding provider rate-limiting, a
+ * network blip — the request 500'd with the row already gone and never
+ * re-inserted. The extracted text exists nowhere else, so the material, its
+ * outline, and every objective link pointing at it were lost for good, on a
+ * transient error, while the instructor was only fixing a typo.
+ *
+ * Vector chunks are derived data and can always be rebuilt from the text, so the
+ * Mongo document is what must survive. It is restored first and unconditionally;
+ * the chunk restore is best-effort on top.
+ *
+ * @returns {Promise<void>} resolves once the new content is in place; rejects
+ *   with the original failure after the rollback has been attempted.
+ */
+const replaceMaterialContent = async ({
+    existingMaterial,
+    courseId,
+    courseName,
+    ragContent,
+    ragMetadata,
+    materialFields,
+}) => {
+    const { sourceId } = existingMaterial;
+    let documentRemoved = false;
+
+    try {
+        try {
+            await ragService.deleteDocumentFromRAG(sourceId, courseId);
+            console.log("✅ Deleted from vector database");
+        } catch (ragError) {
+            // Tolerated: the add below writes this sourceId's chunks afresh.
+            console.error("Error deleting from vector database:", ragError);
+        }
+
+        await deleteMaterial(sourceId);
+        documentRemoved = true;
+        console.log("✅ Deleted from MongoDB");
+
+        await ragService.addDocumentToRAG(ragContent, ragMetadata, courseId);
+        console.log("✅ Re-saved to vector database");
+
+        await saveMaterial(sourceId, courseId, materialFields);
+        documentRemoved = false;
+        console.log("✅ Re-saved to MongoDB");
+    } catch (error) {
+        if (documentRemoved) {
+            try {
+                await restoreMaterialDocument(existingMaterial);
+                console.warn(`↩️ Restored material ${sourceId} after a failed update`);
+            } catch (restoreError) {
+                // The one case where text is genuinely at risk. Log the content
+                // length so the size of the loss is at least recoverable from logs.
+                console.error(
+                    `❌ Could not restore material ${sourceId} after a failed update ` +
+                    `(${(existingMaterial.fileContent || '').length} chars of extracted text):`,
+                    restoreError
+                );
+            }
+
+            try {
+                await ragService.addDocumentToRAG(
+                    existingMaterial.fileContent || '',
+                    ragMetadataForExisting(existingMaterial, courseName),
+                    courseId
+                );
+                console.warn(`↩️ Restored vector chunks for ${sourceId}`);
+            } catch (ragRestoreError) {
+                // Non-fatal: the text is back in Mongo, so re-saving the material
+                // rebuilds these. Retrieval is degraded until then.
+                console.error(
+                    `⚠️ Material ${sourceId} was restored but its vector chunks were not; ` +
+                    `re-save the material to rebuild them:`,
+                    ragRestoreError
+                );
+            }
+        }
+        throw error;
+    }
+};
 
 const saveMaterialHandler = async (req, res) => {
     try {
@@ -166,115 +272,17 @@ const updateMaterialHandler = async (req, res) => {
             materialType = "url";
             materialSource = url;
             
-            // Fetch content from URL
+            // Guarded fetch: scheme allow-list, non-public address rejection on
+            // every redirect hop, a wall-clock deadline, and a streamed byte cap.
+            // See utils/safe-fetch-url.js for what each guard prevents.
             try {
-                // Use built-in fetch (Node.js 18+) or node-fetch
-                let fetchFn;
-                try {
-                    fetchFn = globalThis.fetch || fetch;
-                    if (!fetchFn) {
-                        const nodeFetch = await import("node-fetch");
-                        fetchFn = nodeFetch.default;
-                    }
-                } catch (e) {
-                    throw new Error("Fetch is not available. Please use Node.js 18+ or install node-fetch");
-                }
-
-                const fetchResponse = await fetchFn(url, {
-                    headers: {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.5",
-                    },
-                });
-
-                if (!fetchResponse.ok) {
-                    return res.status(400).json({ 
-                        error: "Failed to fetch URL content", 
-                        details: `HTTP error! status: ${fetchResponse.status} ${fetchResponse.statusText}`
-                    });
-                }
-
-                const html = await fetchResponse.text();
-                
-                // Extract and clean text from HTML using Cheerio
-                let cheerio;
-                try {
-                    cheerio = require("cheerio");
-                } catch (e) {
-                    return res.status(500).json({ 
-                        error: "Failed to parse URL content", 
-                        details: "cheerio is required for HTML parsing but is not available" 
-                    });
-                }
-                
-                const $ = cheerio.load(html);
-                
-                // Remove unwanted elements
-                const unwantedSelectors = [
-                    "script", "style", "nav", "header", "footer", "aside",
-                    ".ad", ".ads", ".advertisement", ".sidebar", ".menu",
-                    ".navigation", ".nav", ".header", ".footer",
-                    "[role='navigation']", "[role='banner']", "[role='complementary']",
-                    ".social-share", ".share-buttons", ".comments", ".comment-section",
-                    "noscript", "iframe", "embed", "object",
-                ];
-                
-                unwantedSelectors.forEach((selector) => {
-                    try {
-                        $(selector).remove();
-                    } catch (e) {
-                        // Ignore invalid selectors
-                    }
-                });
-                
-                // Try to find main content area
-                let mainContent;
-                if ($("main").length > 0) {
-                    mainContent = $("main").first();
-                } else if ($("article").length > 0) {
-                    mainContent = $("article").first();
-                } else if ($('[role="main"]').length > 0) {
-                    mainContent = $('[role="main"]').first();
-                } else if ($(".content").length > 0) {
-                    mainContent = $(".content").first();
-                } else if ($("#content").length > 0) {
-                    mainContent = $("#content").first();
-                } else if ($(".main-content").length > 0) {
-                    mainContent = $(".main-content").first();
-                } else if ($("#main-content").length > 0) {
-                    mainContent = $("#main-content").first();
-                } else {
-                    mainContent = $("body");
-                }
-                
-                materialContent = mainContent.text() || "";
-                
-                // Clean up the text
-                materialContent = materialContent
-                    .replace(/\s+/g, " ")
-                    .replace(/\n\s*\n/g, "\n")
-                    .replace(/^\s+|\s+$/gm, "")
-                    .trim();
-                
-                // Limit text length
-                const maxLength = 100000;
-                if (materialContent.length > maxLength) {
-                    materialContent = materialContent.substring(0, maxLength) + "... [Content truncated due to length]";
-                }
-
-                // Validate that we actually got some content
-                if (!materialContent || materialContent.trim().length === 0) {
-                    return res.status(400).json({ 
-                        error: "Failed to extract content from URL", 
-                        details: "No text content could be extracted from the webpage" 
-                    });
-                }
+                const fetched = await fetchReadableText(url);
+                materialContent = fetched.text;
             } catch (fetchError) {
                 console.error("Error fetching URL content:", fetchError);
-                return res.status(400).json({ 
-                    error: "Failed to fetch URL content", 
-                    details: fetchError.message || "Could not retrieve content from the provided URL" 
+                return res.status(400).json({
+                    error: "Failed to fetch URL content",
+                    details: fetchError.message || "Could not retrieve content from the provided URL",
                 });
             }
         } else if (documentType === 'text') {
@@ -289,57 +297,43 @@ const updateMaterialHandler = async (req, res) => {
             materialSource = existingMaterial.documentTitle || "";
         }
 
-        // Step 1: Delete from vector database (RAG) - skip uploaded files when only updating title.
+        // Uploaded files only rename, so they skip the content swap entirely.
         if (!TITLE_ONLY_UPDATE_TYPES.has(documentType)) {
+            // Get course name for metadata
+            let courseName = "Unknown Course";
             try {
-                await ragService.deleteDocumentFromRAG(sourceId, materialCourseId);
-                console.log("✅ Deleted from vector database");
-            } catch (ragError) {
-                console.error("Error deleting from vector database:", ragError);
-                // Continue anyway - we'll try to add it back
+                const course = await getCourseById(materialCourseId);
+                if (course) {
+                    courseName = course.courseName || "Unknown Course";
+                }
+            } catch (courseError) {
+                console.error("Error getting course name:", courseError);
+                // Continue with default name
             }
 
-            // Step 2: Delete from MongoDB
-            await deleteMaterial(sourceId);
-            console.log("✅ Deleted from MongoDB");
-
-            // Step 3: Re-save to vector database (RAG)
-            try {
-                // Get course name for metadata
-                let courseName = "Unknown Course";
-                try {
-                    const course = await getCourseById(materialCourseId);
-                    if (course) {
-                        courseName = course.courseName || "Unknown Course";
-                    }
-                } catch (courseError) {
-                    console.error("Error getting course name:", courseError);
-                    // Continue with default name
-                }
-
-                await ragService.addDocumentToRAG(materialContent, {
+            // Rolls back to the stored document if the vector write or the
+            // re-insert fails, so a transient Qdrant/embedding error costs the
+            // edit rather than the material.
+            const fileSize = Buffer.byteLength(materialContent, 'utf8');
+            await replaceMaterialContent({
+                existingMaterial,
+                courseId: materialCourseId,
+                courseName,
+                ragContent: materialContent,
+                ragMetadata: {
                     source: materialSource,
                     type: materialType,
                     course: courseName,
                     sourceId: sourceId,
                     documentTitle: updatedDocumentTitle,
-                }, materialCourseId);
-                console.log("✅ Re-saved to vector database");
-            } catch (ragAddError) {
-                console.error("Error saving to vector database:", ragAddError);
-                throw ragAddError;
-            }
-
-            // Step 4: Re-save to MongoDB
-            // Calculate file size (using Buffer in Node.js instead of Blob)
-            const fileSize = Buffer.byteLength(materialContent, 'utf8');
-            await saveMaterial(sourceId, materialCourseId, {
-                fileType: existingMaterial.fileType || (documentType === 'link' ? 'link' : "text/plain"),
-                fileSize: fileSize,
-                fileContent: documentType === 'link' ? url : materialContent, // For links, save URL to fileContent; for text, save content
-                documentTitle: updatedDocumentTitle || null,
+                },
+                materialFields: {
+                    fileType: existingMaterial.fileType || (documentType === 'link' ? 'link' : "text/plain"),
+                    fileSize: fileSize,
+                    fileContent: documentType === 'link' ? url : materialContent, // For links, save URL to fileContent; for text, save content
+                    documentTitle: updatedDocumentTitle || null,
+                },
             });
-            console.log("✅ Re-saved to MongoDB");
 
             // The stored outline described text that no longer exists.
             await clearMaterialOutline(sourceId);
@@ -405,56 +399,40 @@ const refetchMaterialHandler = async (req, res) => {
         if (!(await assertCoInstructorPermission(req, res, materialCourseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
         if (!(await assertTaPermission(req, res, materialCourseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
-        // Step 1: Delete from vector database (RAG)
+        // Get course name for metadata
+        let courseName = "Unknown Course";
         try {
-            await ragService.deleteDocumentFromRAG(sourceId, materialCourseId);
-            console.log("✅ Deleted from vector database");
-        } catch (ragError) {
-            console.error("Error deleting from vector database:", ragError);
-            // Continue anyway - we'll try to add it back
+            const course = await getCourseById(materialCourseId);
+            if (course) {
+                courseName = course.courseName || "Unknown Course";
+            }
+        } catch (courseError) {
+            console.error("Error getting course name:", courseError);
+            // Continue with default name
         }
 
-        // Step 2: Delete from MongoDB
-        await deleteMaterial(sourceId);
-        console.log("✅ Deleted from MongoDB");
-
-        // Step 3: Re-save to vector database (RAG)
-        try {
-            // Get course name for metadata
-            let courseName = "Unknown Course";
-            try {
-                const course = await getCourseById(materialCourseId);
-                if (course) {
-                    courseName = course.courseName || "Unknown Course";
-                }
-            } catch (courseError) {
-                console.error("Error getting course name:", courseError);
-                // Continue with default name
-            }
-
-            await ragService.addDocumentToRAG(content, {
+        // Same rollback as the edit path: a refetch that fails at the vector
+        // write must cost the refetch, not the material.
+        const fileSize = Buffer.byteLength(content, 'utf8');
+        await replaceMaterialContent({
+            existingMaterial,
+            courseId: materialCourseId,
+            courseName,
+            ragContent: content,
+            ragMetadata: {
                 source: url,
                 type: "url",
                 course: courseName,
                 sourceId: sourceId,
                 documentTitle: existingMaterial.documentTitle || "",
-            }, materialCourseId);
-            console.log("✅ Re-saved to vector database");
-        } catch (ragAddError) {
-            console.error("Error saving to vector database:", ragAddError);
-            throw ragAddError;
-        }
-
-        // Step 4: Re-save to MongoDB
-        // Calculate file size (using Buffer in Node.js instead of Blob)
-        const fileSize = Buffer.byteLength(content, 'utf8');
-        await saveMaterial(sourceId, materialCourseId, {
-            fileType: 'link',
-            fileSize: fileSize,
-            fileContent: url, // For links, save URL to fileContent
-            documentTitle: existingMaterial.documentTitle || null,
+            },
+            materialFields: {
+                fileType: 'link',
+                fileSize: fileSize,
+                fileContent: url, // For links, save URL to fileContent
+                documentTitle: existingMaterial.documentTitle || null,
+            },
         });
-        console.log("✅ Re-saved to MongoDB");
 
         // The stored outline described text that no longer exists.
         await clearMaterialOutline(sourceId);
@@ -466,153 +444,34 @@ const refetchMaterialHandler = async (req, res) => {
     }
 };
 
+/**
+ * Fetch a URL's readable text for the "add a link" flow, so the client can
+ * preview it before saving. Delegates every guard to utils/safe-fetch-url.js:
+ * this endpoint hands an instructor-named URL to the server and returns the
+ * response body, which without those guards is a reflected SSRF.
+ */
 const fetchUrlContentHandler = async (req, res) => {
   try {
     const { url } = req.body;
 
     if (!url || !url.trim()) {
-      return res.status(400).json({
-        error: "URL is required",
-      });
+      return res.status(400).json({ error: "URL is required" });
     }
 
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch (e) {
-      return res.status(400).json({
-        error: "Invalid URL format",
-      });
-    }
-
-    console.log("=== FETCHING URL CONTENT (SERVER-SIDE) ===");
-    console.log("URL:", url);
-
-    // Fetch the webpage - use built-in fetch (Node.js 18+) or node-fetch
-    let fetchFn;
-    try {
-      // Try built-in fetch first (Node.js 18+)
-      fetchFn = globalThis.fetch || fetch;
-      if (!fetchFn) {
-        // Fallback to node-fetch if available
-        const nodeFetch = await import("node-fetch");
-        fetchFn = nodeFetch.default;
-      }
-    } catch (e) {
-      throw new Error("Fetch is not available. Please use Node.js 18+ or install node-fetch");
-    }
-
-    const response = await fetchFn(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const html = await response.text();
-
-    // Extract and clean text from HTML using Cheerio
-    let cheerio;
-    try {
-      cheerio = require("cheerio");
-    } catch (e) {
-      throw new Error("cheerio is required for HTML parsing. Please install it: npm install cheerio");
-    }
-
-    const $ = cheerio.load(html);
-
-    // Remove unwanted elements (scripts, styles, navigation, ads, etc.)
-    const unwantedSelectors = [
-      "script",
-      "style",
-      "nav",
-      "header",
-      "footer",
-      "aside",
-      ".ad",
-      ".ads",
-      ".advertisement",
-      ".sidebar",
-      ".menu",
-      ".navigation",
-      ".nav",
-      ".header",
-      ".footer",
-      "[role='navigation']",
-      "[role='banner']",
-      "[role='complementary']",
-      ".social-share",
-      ".share-buttons",
-      ".comments",
-      ".comment-section",
-      "noscript",
-      "iframe",
-      "embed",
-      "object",
-    ];
-
-    unwantedSelectors.forEach((selector) => {
-      try {
-        $(selector).remove();
-      } catch (e) {
-        // Ignore invalid selectors
-      }
-    });
-
-    // Try to find main content area (prioritize semantic HTML)
-    let mainContent;
-    if ($("main").length > 0) {
-      mainContent = $("main").first();
-    } else if ($("article").length > 0) {
-      mainContent = $("article").first();
-    } else if ($('[role="main"]').length > 0) {
-      mainContent = $('[role="main"]').first();
-    } else if ($(".content").length > 0) {
-      mainContent = $(".content").first();
-    } else if ($("#content").length > 0) {
-      mainContent = $("#content").first();
-    } else if ($(".main-content").length > 0) {
-      mainContent = $(".main-content").first();
-    } else if ($("#main-content").length > 0) {
-      mainContent = $("#main-content").first();
-    } else {
-      mainContent = $("body");
-    }
-
-    // Extract text from main content
-    let text = mainContent.text() || "";
-
-    // Clean up the text
-    text = text
-      .replace(/\s+/g, " ") // Replace multiple whitespace with single space
-      .replace(/\n\s*\n/g, "\n") // Remove empty lines
-      .replace(/^\s+|\s+$/gm, "") // Trim each line
-      .trim();
-
-    // Limit text length to prevent issues
-    const maxLength = 100000; // 100k characters
-    if (text.length > maxLength) {
-      text = text.substring(0, maxLength) + "... [Content truncated due to length]";
-    }
-
-    // Get title if available
-    const title = $("title").text() || url;
-
-    console.log(`✅ Extracted ${text.length} characters from URL`);
+    const fetched = await fetchReadableText(url.trim());
 
     res.json({
       success: true,
-      content: text,
-      title: title,
-      url: url,
-      length: text.length,
+      content: fetched.text,
+      title: fetched.title,
+      url: fetched.finalUrl,
+      length: fetched.text.length,
     });
   } catch (error) {
+    // Anything the guards rejected is the caller's problem, not a server fault.
+    if (error instanceof BlockedUrlError) {
+      return res.status(400).json({ error: "Failed to fetch URL content", details: error.message });
+    }
     console.error("Error fetching URL content:", error);
     res.status(500).json({
       error: "Failed to fetch URL content",

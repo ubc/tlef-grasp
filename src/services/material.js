@@ -37,6 +37,31 @@ const deleteMaterial = async (sourceId) => {
     }
 };
 
+/**
+ * Put a material document back exactly as it was — same _id, createdAt, and any
+ * outline fields. Used to undo the delete half of a content swap that failed
+ * partway through: editing a material deletes the row and re-inserts it, and the
+ * extracted text lives nowhere else, so a failure between the two used to lose
+ * the material permanently.
+ *
+ * Upserts rather than inserts so a retry is idempotent.
+ */
+const restoreMaterialDocument = async (document) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+        await collection.replaceOne(
+            { sourceId: document.sourceId },
+            document,
+            { upsert: true }
+        );
+    }
+    catch (error) {
+        console.error("Error restoring material:", error);
+        throw error;
+    }
+};
+
 const getMaterialCourseId = async (sourceId) => {
     try {
         const db = await databaseService.connect();
@@ -126,6 +151,7 @@ const clearMaterialOutline = async (sourceId) => {
 module.exports = {
     saveMaterial,
     deleteMaterial,
+    restoreMaterialDocument,
     getCourseMaterials,
     getMaterialCourseId,
     getMaterialBySourceId,

@@ -45,12 +45,20 @@ jest.mock('../../src/services/database', () => ({
     })
   })
 }));
+// The link path fetches through utils/safe-fetch-url, which resolves DNS and
+// enforces its own guards. That belongs to safe-fetch-url.utils.test.js; this
+// spec is about what happens to the outline afterwards, so stub the seam.
+jest.mock('../../src/utils/safe-fetch-url', () => ({
+  fetchReadableText: jest.fn(),
+  BlockedUrlError: class BlockedUrlError extends Error {},
+}));
 jest.mock('../../src/utils/parse-in-worker', () => ({
   parseInWorker: jest.fn().mockResolvedValue({ content: 'Parsed text.', tokenUsage: 0 }),
 }));
 
 const outlineService = require('../../src/services/material-outline');
 const materialService = require('../../src/services/material');
+const { fetchReadableText } = require('../../src/utils/safe-fetch-url');
 const { uploadFileHandler, updateMaterialHandler, refetchMaterialHandler, saveMaterialHandler } = require('../../src/controllers/material');
 
 const buildRes = () => {
@@ -294,12 +302,11 @@ describe('outline clearing on content change', () => {
       fileContent: 'https://example.com/old-page',
       fileType: 'link'
     });
-    // updateMaterialHandler re-fetches link content from the URL; stub the
-    // network call rather than hitting a real host from the test suite.
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve('<html><body><p>Refetched page text.</p></body></html>'),
+    // updateMaterialHandler re-fetches link content through the guarded fetcher.
+    fetchReadableText.mockResolvedValue({
+      text: 'Refetched page text.',
+      title: 'Refetched page',
+      finalUrl: 'https://example.com/page',
     });
     const res = buildRes();
     const req = {
@@ -313,11 +320,7 @@ describe('outline clearing on content change', () => {
       }
     };
 
-    try {
-      await updateMaterialHandler(req, res);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    await updateMaterialHandler(req, res);
 
     expect(materialService.clearMaterialOutline).toHaveBeenCalledWith('source-1');
     expect(outlineService.generateOutline).not.toHaveBeenCalled();

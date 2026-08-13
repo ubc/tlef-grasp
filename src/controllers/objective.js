@@ -239,7 +239,24 @@ const updateObjectiveHandler = async (req, res) => {
     // PUT /api/objective/:id/materials. Honouring them on this endpoint would
     // make the wizard's autosave rewrite material links as a side effect of
     // editing an objective's name or granular list.
-    const { name, granularObjectives, courseId, questionAction } = req.body;
+    //
+    // courseId is NOT read from the body. It used to be, and that was a
+    // confused-deputy hole: the request authorised against whatever course the
+    // caller named, while the write targeted the objective by _id alone. A user
+    // with access to course A could name course A, pass an objective id from
+    // course B, and rewrite it — and because courseId was also writable, move it
+    // into course A. Sending an empty granularObjectives array with it deleted
+    // course B's granular children and orphaned their questions. The course now
+    // comes from the objective, so authorisation and target cannot disagree.
+    const { name, granularObjectives, questionAction } = req.body;
+
+    const courseId = await getObjectiveCourseId(objectiveId);
+    if (!courseId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Learning objective not found',
+      });
+    }
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
@@ -261,9 +278,6 @@ const updateObjectiveHandler = async (req, res) => {
     }
     if (granularObjectives !== undefined) {
       updateData.granularObjectives = granularObjectives;
-    }
-    if (courseId !== undefined) {
-      updateData.courseId = courseId;
     }
     if (questionAction === 'delete' || questionAction === 'keep') {
       updateData.questionAction = questionAction;

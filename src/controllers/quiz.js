@@ -28,6 +28,23 @@ async function canAccessCourse(req, courseId) {
 }
 
 /**
+ * Whether `user` may act on one specific student's record in a course, under the
+ * same section scoping the scores table uses: the course owner and app
+ * administrators see everyone; any other instructor is limited to students
+ * enrolled in a section they own. A student with no section assignment is
+ * visible only to the former group, matching getQuizScores — its row filter
+ * drops students whose `sections` share nothing with the viewer's.
+ */
+async function canViewStudentInCourse(user, courseId, studentId) {
+  const { seeAll, sections } = await sectionService.getSectionsForViewer(courseId, user);
+  if (seeAll) return true;
+  const visible = new Set(sections.map((section) => section.sectionId));
+  if (visible.size === 0) return false;
+  const memberships = await sectionService.getUserCourseSections(studentId, courseId);
+  return memberships.some((membership) => visible.has(membership.sectionId));
+}
+
+/**
  * Create or update the current learner's report for one quiz question.
  * Instructors using the student preview can submit a test report under their
  * own account; regular student reports retain the same data shape.
@@ -1255,9 +1272,18 @@ const getStudentQuizAttemptHandler = async (req, res) => {
       return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
     }
     if (!(await assertTaPermission(req, res, quiz.courseId, TA_PERMISSION_KEYS.QUIZ_SCORES))) return;
+    // Same section scoping the scores table applies to its rows. Without it an
+    // instructor could read the answers of a student in a colleague's section by
+    // requesting them directly, even though that row is hidden from their table.
+    if (!(await canViewStudentInCourse(req.user, quiz.courseId, userId))) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only view students in sections you own",
+      });
+    }
 
     const attempts = await quizService.getStudentQuizAttempt(quizId, userId);
-    
+
     if (!attempts) {
       return res.status(404).json({ success: false, error: "Attempts not found" });
     }
@@ -1271,7 +1297,15 @@ const getStudentQuizAttemptHandler = async (req, res) => {
 
 /**
  * Grade/override an open-ended or AI-graded fill-in-the-blank attempt for a
- * specific student (Faculty only).
+ * specific student.
+ *
+ * Gated exactly like the two read endpoints for the same resource
+ * (getQuizScoresHandler / getStudentQuizAttemptHandler): staff access in the
+ * quiz's course, the quizScores TA capability, and the section scoping that
+ * limits a non-owner instructor to their own sections. Previously this had none
+ * of the three — the only check was the route's requireRole(FACULTY) — so the
+ * one handler that *mutates* a grade was less protected than the ones that
+ * merely display it.
  */
 const gradeAttemptHandler = async (req, res) => {
   try {
@@ -1283,6 +1317,20 @@ const gradeAttemptHandler = async (req, res) => {
     }
     if (!questionId) {
       return res.status(400).json({ success: false, error: 'questionId is required' });
+    }
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) return res.status(404).json({ success: false, error: "Quiz not found" });
+
+    if (!(await hasStaffAccessInCourse(req.user, quiz.courseId))) {
+      return res.status(403).json({ success: false, error: "Staff access is not granted in this course" });
+    }
+    if (!(await assertTaPermission(req, res, quiz.courseId, TA_PERMISSION_KEYS.QUIZ_SCORES))) return;
+    if (!(await canViewStudentInCourse(req.user, quiz.courseId, userId))) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only grade students in sections you own",
+      });
     }
 
     const result = await quizService.gradeAttempt(userId, quizId, questionId, isCorrect);
