@@ -106,16 +106,12 @@ router.post(
 
 /**
  * GET /api/quiz/:quizId/questions
- * Get all questions in a quiz
- * Query params: approvedOnly (optional) - if true, only return approved questions (for students)
+ * Get all questions in a quiz. Requires course membership; answers are only
+ * included for callers with staff access in the quiz's course.
+ * Query params: approvedOnly (optional) - request the approved-only student
+ * selection. It does NOT decide whether answers are returned — staff access does.
  */
 router.get("/:quizId/questions", quizController.getQuizQuestionsHandler);
-
-/**
- * POST /api/quiz/:quizId/performance
- * Record student performance for a quiz question
- */
-router.post("/:quizId/performance", quizController.recordPerformanceHandler);
 
 /**
  * POST /api/quiz/:quizId/question/:questionId/check

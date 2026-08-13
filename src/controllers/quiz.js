@@ -656,25 +656,44 @@ function resolveQuestionType(q) {
 
 
 /**
- * Get all questions in a quiz
+ * Get all questions in a quiz.
+ *
+ * Two views: the instructor view (every question, including drafts, with
+ * answers) and the student view (approved-only personalized selection, answers
+ * stripped). Which one you get is decided by staff access in this quiz's
+ * course, NOT by the client's `approvedOnly` flag — that flag only chooses the
+ * question set. Letting it choose the redaction meant a student could omit it
+ * and receive correct answers, option feedback, acceptable answers, sample
+ * answers, and calculation formulas for any quiz id in any course.
  */
 const getQuizQuestionsHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
     const { approvedOnly } = req.query;
     const approvedOnlyBool = approvedOnly === 'true' || approvedOnly === true;
-    
+
+    const quiz = await quizService.getQuizById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: "Quiz not found" });
+    }
+    if (!(await canAccessCourse(req, quiz.courseId))) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+    const staffAccess = await hasStaffAccessInCourse(req.user, quiz.courseId);
+    // Redact for anyone who is not staff here, whatever the client asked for.
+    const withholdAnswers = approvedOnlyBool || !staffAccess;
+
     let questions;
-    
-    if (approvedOnlyBool) {
-        // Students quiz view: use personalized selection logic
+
+    if (withholdAnswers) {
+        // Students quiz view: use personalized selection logic (approved only)
         const userId = req.user ? (req.user._id || req.user.id) : null;
         questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
     } else {
         // Bank full questions view: return all questions for instructors
         questions = await quizService.getQuizQuestions(quizId, false);
     }
-    
+
     const transformedQuestions = questions.map((q, index) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
@@ -689,7 +708,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           options: {},
         };
         let finalQuestion = formattedQuestion;
-        if (approvedOnlyBool) {
+        if (withholdAnswers) {
           delete finalQuestion.correctAnswer;
           delete finalQuestion.acceptableAnswers;
           // Avoid duplicating the same stem under `question` and `stem` in the student UI
@@ -711,10 +730,15 @@ const getQuizQuestionsHandler = async (req, res) => {
           granularObjectiveId: q.granularObjectiveId,
           bloom: q.bloom,
         };
-        if (approvedOnlyBool) {
+        if (withholdAnswers) {
           delete formattedQuestion.openEndedSampleAnswer;
           delete formattedQuestion.openEndedGradingCriteria;
           delete formattedQuestion.stem;
+          // Normally empty on an open-ended question, but an imported or
+          // hand-edited one can carry them — this branch spreads the whole
+          // document, so redact by field rather than by expected type.
+          delete formattedQuestion.correctAnswer;
+          delete formattedQuestion.acceptableAnswers;
         }
         return formattedQuestion;
       }
@@ -738,7 +762,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             : null;
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
 
-        if (approvedOnlyBool) {
+        if (withholdAnswers) {
           const built = CalculationQuestion.buildStudentCalculationInstance({
             template,
             formula,
@@ -813,7 +837,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           };
         }
       }
-      if (approvedOnlyBool) {
+      if (withholdAnswers) {
         ['A', 'B', 'C', 'D'].forEach(key => {
           if (optionsObj[key] && typeof optionsObj[key] === 'object') {
             delete optionsObj[key].feedback;
@@ -832,7 +856,7 @@ const getQuizQuestionsHandler = async (req, res) => {
 
       const finalQuestion = formattedQuestion;
 
-      if (approvedOnlyBool) {
+      if (withholdAnswers) {
         delete finalQuestion.correctAnswer;
       }
 
@@ -844,38 +868,6 @@ const getQuizQuestionsHandler = async (req, res) => {
     console.error("Error fetching quiz questions:", error);
     res.status(500).json({ success: false, error: error.message });
   }
-};
-
-/**
- * Record student performance for a quiz question
- */
-const recordPerformanceHandler = async (req, res) => {
-    try {
-        const { quizId } = req.params;
-        const { questionId, learningObjectiveId, granularObjectiveId, bloom, isCorrect } = req.body;
-        
-        if (!questionId || !bloom || isCorrect === undefined) {
-            return res.status(400).json({
-                success: false,
-                error: "questionId, bloom, and isCorrect are required",
-            });
-        }
-        
-        const result = await quizService.saveStudentPerformance({
-            userId: req.user._id,
-            quizId,
-            questionId,
-            learningObjectiveId,
-            granularObjectiveId,
-            bloom,
-            isCorrect
-        });
-        
-        res.json({ success: true, result });
-    } catch (error) {
-        console.error("Error recording student performance:", error);
-        res.status(500).json({ success: false, error: error.message });
-    }
 };
 
 /**
@@ -1453,7 +1445,6 @@ module.exports = {
   addQuizQuestionsHandler,
   addExistingQuizQuestionsHandler,
   getQuizQuestionsHandler,
-  recordPerformanceHandler,
   checkQuestionAnswerHandler,
   getQuizScoresHandler,
   getStudentQuizAttemptHandler,
