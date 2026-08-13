@@ -82,6 +82,10 @@ const getMaterialBySourceId = async (sourceId) => {
     }
 };
 
+// outlineSource/outlineEditedAt are legacy: they recorded whether an outline had
+// been hand-edited, and nothing writes them now that outlines are generate-only.
+// They stay in this list so clearing an outline also removes them from documents
+// written before that change.
 const OUTLINE_FIELDS = [
     'outline',
     'outlineSource',

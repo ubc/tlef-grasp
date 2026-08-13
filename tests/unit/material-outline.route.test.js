@@ -1,7 +1,6 @@
 jest.mock('../../src/services/material-outline', () => ({
   getOutline: jest.fn(),
   generateOutline: jest.fn(),
-  saveOutline: jest.fn(),
 }));
 jest.mock('../../src/services/material', () => ({
   saveMaterial: jest.fn(),
@@ -38,7 +37,6 @@ const courseAccess = require('../../src/utils/course-access');
 const {
   getMaterialOutlineHandler,
   generateMaterialOutlineHandler,
-  saveMaterialOutlineHandler,
   getCourseMaterialsHandler,
 } = require('../../src/controllers/material');
 
@@ -131,66 +129,12 @@ describe('POST outline', () => {
   });
 });
 
-describe('PUT outline', () => {
-  it('saves a valid edit', async () => {
-    outlineService.saveOutline.mockResolvedValue({ ...RESULT, source: 'edited' });
-    const res = buildRes();
-    const req = buildReq({ body: { outline: RESULT.outline } });
-
-    await saveMaterialOutlineHandler(req, res);
-
-    expect(outlineService.saveOutline).toHaveBeenCalledWith('src-1', RESULT.outline);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: true, source: 'edited' })
-    );
-  });
-
-  it('400s on an invalid edit, surfacing the reason', async () => {
-    outlineService.saveOutline.mockRejectedValue(
-      Object.assign(new Error('An outline needs at least one topic.'), {
-        code: 'INVALID_OUTLINE',
-      })
-    );
-    const res = buildRes();
-
-    await saveMaterialOutlineHandler(buildReq({ body: { outline: {} } }), res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: 'INVALID_OUTLINE',
-        error: 'An outline needs at least one topic.',
-      })
-    );
-  });
-
-  it('400s when there is no outline to edit', async () => {
-    outlineService.saveOutline.mockRejectedValue(
-      Object.assign(new Error('generate one first'), { code: 'NO_OUTLINE' })
-    );
-    const res = buildRes();
-
-    await saveMaterialOutlineHandler(buildReq({ body: { outline: {} } }), res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
-
-  it('400s when no outline is supplied at all', async () => {
-    const res = buildRes();
-
-    await saveMaterialOutlineHandler(buildReq({ body: {} }), res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(outlineService.saveOutline).not.toHaveBeenCalled();
-  });
-});
-
 describe('materials list', () => {
   // The list is already oversized; shipping every topic list to render a button
   // would repeat that mistake.
   it('reports hasOutline and never includes the outline itself', async () => {
     materialService.getCourseMaterials.mockResolvedValue([
-      { sourceId: 'a', outline: { topics: [], notes: '' }, outlineSource: 'edited' },
+      { sourceId: 'a', outline: { topics: [], notes: '' }, documentTitle: 'Lecture 3' },
       { sourceId: 'b' },
     ]);
     const res = buildRes();
@@ -202,7 +146,7 @@ describe('materials list', () => {
 
     const { materials } = res.json.mock.calls[0][0];
     expect(materials[0].hasOutline).toBe(true);
-    expect(materials[0].outlineSource).toBe('edited');
+    expect(materials[0].documentTitle).toBe('Lecture 3');
     expect(materials[0].outline).toBeUndefined();
     expect(materials[1].hasOutline).toBe(false);
   });

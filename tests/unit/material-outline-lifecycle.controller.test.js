@@ -1,7 +1,6 @@
 jest.mock('../../src/services/material-outline', () => ({
   getOutline: jest.fn(),
   generateOutline: jest.fn(),
-  saveOutline: jest.fn(),
 }));
 jest.mock('../../src/services/material', () => ({
   saveMaterial: jest.fn(),

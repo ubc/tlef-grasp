@@ -341,11 +341,10 @@ const updateMaterialHandler = async (req, res) => {
             });
             console.log("✅ Re-saved to MongoDB");
 
-            // The stored outline described text that no longer exists. This
-            // discards instructor edits too, which the edit UI warns about.
+            // The stored outline described text that no longer exists.
             await clearMaterialOutline(sourceId);
 
-            // Regenerate for text materials so editing has the same
+            // Regenerate for text materials so a content edit has the same
             // best-effort outline behaviour as creating one. Links are
             // skipped: a link's fileContent holds the URL, not the fetched
             // page text (see saveMaterialHandler above and the
@@ -457,8 +456,7 @@ const refetchMaterialHandler = async (req, res) => {
         });
         console.log("✅ Re-saved to MongoDB");
 
-        // The stored outline described text that no longer exists. This
-        // discards instructor edits too, which the edit UI warns about.
+        // The stored outline described text that no longer exists.
         await clearMaterialOutline(sourceId);
 
         res.json({ success: true, message: "Link content refetched successfully" });
@@ -791,26 +789,6 @@ const generateMaterialOutlineHandler = async (req, res) => {
     }
 };
 
-const saveMaterialOutlineHandler = async (req, res) => {
-    try {
-        if (!(await assertOutlineAccess(req, res))) return;
-
-        const { outline } = req.body;
-        if (!outline) {
-            return res.status(400).json({ success: false, error: "An outline is required" });
-        }
-
-        const result = await outlineService.saveOutline(req.params.sourceId, outline);
-        res.json({ success: true, ...result });
-    } catch (error) {
-        if (error.code === 'NO_OUTLINE' || error.code === 'INVALID_OUTLINE') {
-            return res.status(400).json({ success: false, code: error.code, error: error.message });
-        }
-        console.error("Error saving material outline:", error);
-        res.status(500).json({ success: false, error: "Failed to save outline" });
-    }
-};
-
 module.exports = {
   saveMaterialHandler,
   deleteMaterialHandler,
@@ -820,6 +798,5 @@ module.exports = {
   fetchUrlContentHandler,
   uploadFileHandler,
   getMaterialOutlineHandler,
-  generateMaterialOutlineHandler,
-  saveMaterialOutlineHandler
+  generateMaterialOutlineHandler
 };

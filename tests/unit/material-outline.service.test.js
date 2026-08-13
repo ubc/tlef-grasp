@@ -16,10 +16,7 @@ const materialService = require('../../src/services/material');
 const {
   getOutline,
   generateOutline,
-  saveOutline,
   EmptyMaterialError,
-  NoOutlineError,
-  InvalidOutlineError,
 } = require('../../src/services/material-outline');
 const { OUTLINE_MAX_CONTENT_CHARS } = require('../../src/constants/app-constants');
 
@@ -31,8 +28,6 @@ const storedMaterial = (overrides = {}) => ({
   documentTitle: 'Lecture 3',
   fileContent: 'Some teachable course content about respiration.',
   outline: OUTLINE,
-  outlineSource: 'generated',
-  outlineEditedAt: null,
   ...overrides,
 });
 
@@ -71,13 +66,12 @@ describe('getOutline', () => {
     await expect(getOutline('nope')).resolves.toBeNull();
   });
 
-  it('returns the stored outline with provenance', async () => {
+  it('returns the stored outline', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
 
     const result = await getOutline('src-1');
 
     expect(result.outline).toEqual(OUTLINE);
-    expect(result.source).toBe('generated');
   });
 
   it('reports a malformed stored outline as absent', async () => {
@@ -98,7 +92,7 @@ describe('getOutline', () => {
 });
 
 describe('generateOutline', () => {
-  it('summarizes a small material in one call and stores provenance', async () => {
+  it('summarizes a small material in one call and stores it', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ outline: undefined })
     );
@@ -110,18 +104,16 @@ describe('generateOutline', () => {
       'Some teachable course content about respiration.'
     );
     expect(result.outline).toEqual(OUTLINE);
-    expect(result.source).toBe('generated');
 
     const [sourceId, fields] = materialService.setMaterialOutline.mock.calls[0];
     expect(sourceId).toBe('src-1');
     expect(fields.outline).toEqual(OUTLINE);
-    expect(fields.outlineSource).toBe('generated');
-    expect(fields.outlineEditedAt).toBeNull();
   });
 
-  // Structural guard: these fields were removed along with the staleness
-  // mechanism they existed to power, and must not creep back in.
-  it('never writes outlineModel, outlinePromptHash, or outlineGeneratedAt', async () => {
+  // Structural guard: these fields were removed along with the mechanisms they
+  // existed to power (staleness tracking, then instructor edits), and must not
+  // creep back in.
+  it('writes only the outline, with no provenance or staleness fields', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ outline: undefined })
     );
@@ -129,21 +121,26 @@ describe('generateOutline', () => {
     await generateOutline('src-1');
 
     const fields = materialService.setMaterialOutline.mock.calls[0][1];
+    expect(Object.keys(fields)).toEqual(['outline']);
     expect(fields).not.toHaveProperty('outlineModel');
     expect(fields).not.toHaveProperty('outlinePromptHash');
     expect(fields).not.toHaveProperty('outlineGeneratedAt');
+    expect(fields).not.toHaveProperty('outlineSource');
+    expect(fields).not.toHaveProperty('outlineEditedAt');
   });
 
-  it('overwrites an edited outline and resets provenance to generated', async () => {
+  // Legacy documents can still carry the provenance keys from when instructor
+  // edits existed. Regenerating replaces the outline and leaves those keys for
+  // clearMaterialOutline to unset; it must not fail on them or copy them back.
+  it('replaces an outline on a material carrying legacy provenance keys', async () => {
     materialService.getMaterialBySourceId.mockResolvedValue(
       storedMaterial({ outlineSource: 'edited', outlineEditedAt: new Date('2026-08-05') })
     );
 
     const result = await generateOutline('src-1');
 
-    expect(result.source).toBe('generated');
-    expect(materialService.setMaterialOutline.mock.calls[0][1].outlineSource).toBe('generated');
-    expect(materialService.setMaterialOutline.mock.calls[0][1].outlineEditedAt).toBeNull();
+    expect(result.outline).toEqual(OUTLINE);
+    expect(Object.keys(materialService.setMaterialOutline.mock.calls[0][1])).toEqual(['outline']);
   });
 
   it('summarizes the full text for content between the batch and direct limits', async () => {
@@ -394,86 +391,5 @@ describe('generateOutline with large materials', () => {
 
     const stored = materialService.setMaterialOutline.mock.calls[0][1].outline;
     expect(stored.notes).not.toContain('were not summarized');
-  });
-});
-
-describe('saveOutline', () => {
-  const edited = {
-    topics: [{ title: 'Corrected topic', keyPoints: ['Instructor point'] }],
-    notes: 'this should be ignored',
-  };
-
-  it('stores the edit and marks provenance', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({ outline: { ...OUTLINE, notes: 'model caveat' } })
-    );
-
-    const result = await saveOutline('src-1', edited);
-
-    expect(result.source).toBe('edited');
-
-    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
-    expect(fields.outlineSource).toBe('edited');
-    expect(fields.outlineEditedAt).toBeInstanceOf(Date);
-    expect(fields.outline.topics[0].title).toBe('Corrected topic');
-  });
-
-  // notes carries model caveats and the code-generated truncation sentence, so
-  // it is state about how the outline was produced, not instructor content.
-  it('keeps the stored notes and ignores caller-supplied notes', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({ outline: { ...OUTLINE, notes: 'model caveat' } })
-    );
-
-    await saveOutline('src-1', edited);
-
-    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
-    expect(fields.outline.notes).toBe('model caveat');
-  });
-
-  it('does not let a caller overwrite generation provenance', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
-
-    await saveOutline('src-1', {
-      ...edited,
-      outlineSource: 'generated',
-      outlineEditedAt: new Date('1999-01-01'),
-    });
-
-    const [, fields] = materialService.setMaterialOutline.mock.calls[0];
-    expect(fields.outlineSource).toBe('edited');
-    expect(fields.outlineEditedAt).not.toEqual(new Date('1999-01-01'));
-  });
-
-  it('rejects an edit when the material has no outline yet', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(
-      storedMaterial({ outline: undefined })
-    );
-
-    await expect(saveOutline('src-1', edited)).rejects.toMatchObject({
-      code: 'NO_OUTLINE',
-    });
-    expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
-  });
-
-  it('rejects an invalid edit with a usable message', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
-
-    await expect(saveOutline('src-1', { topics: [], notes: '' })).rejects.toMatchObject({
-      code: 'INVALID_OUTLINE',
-    });
-    expect(materialService.setMaterialOutline).not.toHaveBeenCalled();
-  });
-
-  it('rejects an edit that exceeds the size cap', async () => {
-    materialService.getMaterialBySourceId.mockResolvedValue(storedMaterial());
-    const bloated = {
-      topics: [{ title: 'T', keyPoints: ['z'.repeat(30000)] }],
-      notes: '',
-    };
-
-    await expect(saveOutline('src-1', bloated)).rejects.toMatchObject({
-      code: 'INVALID_OUTLINE',
-    });
   });
 });

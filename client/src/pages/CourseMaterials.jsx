@@ -9,7 +9,6 @@ import {
   useRefetchLinkMaterial,
   useDeleteMaterial,
   useGenerateOutline,
-  useSaveOutline,
 } from "../hooks/useMaterials";
 import {
   filterSupportedDocuments,
@@ -150,11 +149,6 @@ export default function CourseMaterials() {
 
   const generateOutline = useGenerateOutline(courseId, {
     onSuccess: () => showToast("Outline generated", "success"),
-    onError: (error) => showToast(error.message, "error"),
-  });
-
-  const saveOutline = useSaveOutline(courseId, {
-    onSuccess: () => showToast("Outline saved", "success"),
     onError: (error) => showToast(error.message, "error"),
   });
 
@@ -345,9 +339,7 @@ export default function CourseMaterials() {
           material={modal.material}
           onClose={() => setModal(null)}
           onGenerate={(sourceId) => generateOutline.mutate(sourceId)}
-          onSave={(payload) => saveOutline.mutate(payload)}
           generating={generateOutline.isPending}
-          saving={saveOutline.isPending}
         />
       )}
     </div>

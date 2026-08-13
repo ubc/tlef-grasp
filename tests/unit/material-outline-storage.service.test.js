@@ -57,7 +57,7 @@ describe('outline storage', () => {
   });
 
   it('sets the outline fields for one material', async () => {
-    const fields = { outline: { topics: [], notes: '' }, outlineSource: 'generated' };
+    const fields = { outline: { topics: [], notes: '' } };
 
     await setMaterialOutline('src-1', fields);
 
@@ -67,6 +67,9 @@ describe('outline storage', () => {
     );
   });
 
+  // outlineSource/outlineEditedAt are no longer written (instructor edits were
+  // removed), but clearing still unsets them so legacy documents are cleaned up
+  // the next time their material changes.
   it('unsets every outline field when clearing', async () => {
     await clearMaterialOutline('src-1');
 

@@ -226,17 +226,3 @@ export function useGenerateOutline(courseId, options) {
   });
 }
 
-export function useSaveOutline(courseId, options) {
-  const queryClient = useQueryClient();
-  const invalidateMaterials = useInvalidateMaterials(courseId);
-  return useMutation({
-    mutationFn: ({ sourceId, outline }) =>
-      api.put(`/api/material/${sourceId}/outline`, { outline }),
-    onSuccess: (data, { sourceId }) => {
-      queryClient.setQueryData(queryKeys.materialOutline(sourceId), data);
-      invalidateMaterials();
-      options?.onSuccess?.(data, sourceId);
-    },
-    onError: options?.onError,
-  });
-}

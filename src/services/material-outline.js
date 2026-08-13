@@ -2,7 +2,13 @@
  * Material outlines: a structured summary of a course material, generated once
  * and reused by learning-objective generation.
  *
- * The read and write paths are deliberately separate functions. A single
+ * An outline is model output, not a document: it is generated or regenerated,
+ * never hand-edited. There is no write path an instructor can reach — the only
+ * way to change an outline is to regenerate it, which makes the stored outline
+ * always a faithful summary of the material's current text. If a summary is
+ * wrong, fix the material and regenerate.
+ *
+ * `getOutline` and `generateOutline` are deliberately separate. A single
  * get-or-create would let any caller trigger a multi-second LLM call by
  * accident, which is exactly how summarization would end up inside an
  * instructor's objective-generation click. `getOutline` never invokes the LLM.
@@ -83,34 +89,10 @@ class MaterialTooLargeError extends Error {
   }
 }
 
-/** Thrown when an edit is attempted on a material that has no outline. */
-class NoOutlineError extends Error {
-  constructor(sourceId) {
-    super(`Material ${sourceId} has no outline to edit; generate one first.`);
-    this.name = 'NoOutlineError';
-    this.code = 'NO_OUTLINE';
-  }
-}
-
-/** Thrown when a submitted outline fails validation. */
-class InvalidOutlineError extends Error {
-  constructor(reason) {
-    super(reason);
-    this.name = 'InvalidOutlineError';
-    this.code = 'INVALID_OUTLINE';
-  }
-}
-
 const resolvePromptTemplate = async (courseId) => {
-  const settings = await settingsService.getSettings(courseId);
+  const settings = await settingsService.getSettings(String(courseId));
   return settings?.prompts?.materialOutline || DEFAULT_PROMPTS.materialOutline;
 };
-
-const present = (material, outline) => ({
-  outline,
-  source: material.outlineSource === 'edited' ? 'edited' : 'generated',
-  editedAt: material.outlineEditedAt || null,
-});
 
 /** Read the stored outline. Never generates, never calls the LLM. */
 const getOutline = async (sourceId) => {
@@ -125,7 +107,7 @@ const getOutline = async (sourceId) => {
     return null;
   }
 
-  return present(material, validated.outline);
+  return { outline: validated.outline };
 };
 
 /** Summarize one batch of material text into an outline. */
@@ -264,60 +246,18 @@ const generateOutline = async (sourceId) => {
     throw new Error(`Generated outline was invalid: ${validated.error}`);
   }
 
-  const fields = {
-    outline: validated.outline,
-    outlineSource: 'generated',
-    outlineEditedAt: null,
-  };
-  await setMaterialOutline(sourceId, fields);
+  // Provenance fields are no longer written: an outline is always model output,
+  // so there is nothing to distinguish. clearMaterialOutline still unsets the
+  // legacy keys, so a document written before edits were removed is cleaned up
+  // the next time its material changes.
+  await setMaterialOutline(sourceId, { outline: validated.outline });
 
-  return {
-    outline: validated.outline,
-    source: 'generated',
-    editedAt: null,
-  };
-};
-
-/**
- * Store an instructor's edit. The edit wins until an explicit regeneration —
- * there is no merging with model output, which is what would demand versioning
- * and conflict rules.
- *
- * `notes` and the generation provenance fields are deliberately not writable
- * here: they describe how the outline was produced, not what the instructor
- * authored.
- */
-const saveOutline = async (sourceId, submitted) => {
-  const material = await getMaterialBySourceId(sourceId);
-  if (!material || !material.outline) {
-    throw new NoOutlineError(sourceId);
-  }
-
-  const validated = validateOutline(submitted, CAPS);
-  if (!validated.ok) {
-    throw new InvalidOutlineError(validated.error);
-  }
-
-  const fields = {
-    outline: { topics: validated.outline.topics, notes: material.outline.notes || '' },
-    outlineSource: 'edited',
-    outlineEditedAt: new Date(),
-  };
-  await setMaterialOutline(sourceId, fields);
-
-  return {
-    outline: fields.outline,
-    source: 'edited',
-    editedAt: fields.outlineEditedAt,
-  };
+  return { outline: validated.outline };
 };
 
 module.exports = {
   getOutline,
   generateOutline,
-  saveOutline,
   EmptyMaterialError,
   MaterialTooLargeError,
-  NoOutlineError,
-  InvalidOutlineError,
 };
