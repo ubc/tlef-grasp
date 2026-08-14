@@ -65,9 +65,31 @@ function logCostSummary(label, model, promptTokens, completionTokens) {
   console.log(`💰 ${label} [${model}] — input: ${promptTokens} tokens, output: ${completionTokens} tokens,${costStr}`);
 }
 
-// Simple error response function
+// Default seconds to wait when the provider rate limits without saying for how
+// long. The client pool honours this before launching more work.
+const DEFAULT_RETRY_AFTER_SECONDS = 20;
+
+// Simple error response function. A provider rate limit is reported as 429 with
+// Retry-After rather than 500: the client pool pauses and halves its
+// concurrency on 429, and cannot do either if every failure looks the same.
 function returnErrorResponse(res, error, details = null) {
   console.error("Question generation failed:", error);
+
+  if (isRetryableLLMError(error)) {
+    const headerValue =
+      error?.headers?.['retry-after'] ?? error?.response?.headers?.['retry-after'];
+    const parsed = parseInt(headerValue, 10);
+    const retryAfter = Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_RETRY_AFTER_SECONDS;
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      success: false,
+      rateLimited: true,
+      retryAfterSeconds: retryAfter,
+      error: "The AI provider is rate limiting this request. Generation will slow down and retry.",
+      details: details || error.message,
+    });
+  }
+
   res.status(500).json({
     success: false,
     error: "Question generation service is currently unavailable",
