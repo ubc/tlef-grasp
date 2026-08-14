@@ -78,6 +78,10 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
       throw new Error("Invalid response: questions array missing");
     }
 
+    // A success anywhere in the run breaks a rate-limit streak — "consecutive"
+    // must mean consecutive, not merely "5 total across the whole run".
+    consecutiveRateLimits = 0;
+
     const bloomLevels = granular.bloom || ["Understand"];
     const questions = response.questions.map((questionData, index) => {
       const resolvedType =
@@ -158,7 +162,6 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
   const failures = [];
   settled.forEach((result, index) => {
     if (result.status === "fulfilled") {
-      consecutiveRateLimits = 0;
       allQuestions.push(...result.value);
       return;
     }
