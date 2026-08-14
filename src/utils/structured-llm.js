@@ -13,6 +13,13 @@ const llmService = require("../services/llm");
 const { getLLMProvider, getLLMModel } = require("./llm-provider");
 const { recordUsage } = require("./llm-usage-log");
 
+// Callers say how hard the model should think, not how it should sample: the
+// newer OpenAI models reject an explicit `temperature` outright and take
+// `reasoning_effort` instead. Local Ollama models have no such control, so the
+// nearest local equivalent is a low temperature — less exploration for the work
+// we want careful and repeatable.
+const OLLAMA_EFFORT_TEMPERATURE = { high: 0.1, medium: 0.3 };
+
 /**
  * Generate a response constrained to `schema` (a JSON Schema object).
  *
@@ -24,16 +31,16 @@ const { recordUsage } = require("./llm-usage-log");
  * @param {string}  [params.prompt]       Single user prompt.
  * @param {Array}   [params.messages]     Multi-turn history [{ role, content }]. Takes precedence over prompt.
  * @param {object}   params.schema        JSON Schema the output must match.
- * @param {number}  [params.temperature]  Sampling temperature (default 0.4).
+ * @param {"medium"|"high"} [params.effort]  How hard the model should think (default "medium").
  * @param {Array<string|{data:string,mimeType:string}>}[params.images] Optional base64 images for vision.
  * @param {string}  [params.model]        Optional model override (defaults to the active LLM model).
  * @param {string}  [params.schemaName]   Name for the OpenAI json_schema (identifier chars only).
  * @returns {Promise<{ content: string, usage: { promptTokens: number, completionTokens: number, totalTokens: number } }>}
  */
-async function generateStructured({ prompt, messages = null, schema, temperature = 0.4, images = null, model = null, schemaName = "response", operation = "unknown" }) {
+async function generateStructured({ prompt, messages = null, schema, effort = "medium", images = null, model = null, schemaName = "response", operation = "unknown" }) {
   const startedAt = Date.now();
   try {
-    const result = await callProvider({ prompt, messages, schema, temperature, images, model, schemaName });
+    const result = await callProvider({ prompt, messages, schema, effort, images, model, schemaName });
     recordUsage({
       operation,
       provider: getLLMProvider(),
@@ -60,7 +67,7 @@ async function generateStructured({ prompt, messages = null, schema, temperature
   }
 }
 
-async function callProvider({ prompt, messages, schema, temperature, images, model, schemaName }) {
+async function callProvider({ prompt, messages, schema, effort, images, model, schemaName }) {
   const normalizedImages = Array.isArray(images)
     ? images.map((image) =>
         typeof image === "string"
@@ -87,7 +94,7 @@ async function callProvider({ prompt, messages, schema, temperature, images, mod
       messages: ollamaMessages,
       stream: false,
       format: schema,
-      options: { temperature },
+      options: { temperature: OLLAMA_EFFORT_TEMPERATURE[effort] ?? OLLAMA_EFFORT_TEMPERATURE.medium },
     });
     const promptTokens = response?.prompt_eval_count || 0;
     const completionTokens = response?.eval_count || 0;
@@ -106,7 +113,7 @@ async function callProvider({ prompt, messages, schema, temperature, images, mod
     json_schema: { name: schemaName, strict: true, schema },
   };
   const llmModule = await llmService.getLLMInstance(model, {
-    temperature,
+    reasoning_effort: effort,
     max_completion_tokens: null,
     response_format,
   });

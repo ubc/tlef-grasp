@@ -24,7 +24,7 @@ async function describeSlideImage(image, promptTemplate) {
     schema: IMAGE_DESCRIPTION_SCHEMA,
     images: [{ data: image.data.toString("base64"), mimeType: image.mimeType }],
     model: getVisionModel(),
-    temperature: 0.2,
+    effort: "medium",
     schemaName: "image_description",
     operation: "pptx-slide-image",
   });

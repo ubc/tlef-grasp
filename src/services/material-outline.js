@@ -118,7 +118,7 @@ const summarizeBatch = async (template, content) => {
       .replace('{maxTopics}', () => String(MAX_OUTLINE_TOPICS))
       .replace('{maxKeyPoints}', () => String(MAX_OUTLINE_KEY_POINTS)),
     schema: MATERIAL_OUTLINE_SCHEMA,
-    temperature: 0.2,
+    effort: 'medium',
     schemaName: 'material_outline',
     operation: 'outline-batch',
   });
@@ -138,7 +138,7 @@ const consolidateOutlines = async (partials) => {
       .replace('{maxTopics}', () => String(MAX_OUTLINE_TOPICS))
       .replace('{maxKeyPoints}', () => String(MAX_OUTLINE_KEY_POINTS)),
     schema: MATERIAL_OUTLINE_SCHEMA,
-    temperature: 0.2,
+    effort: 'medium',
     schemaName: 'material_outline',
     operation: 'outline-consolidate',
   });

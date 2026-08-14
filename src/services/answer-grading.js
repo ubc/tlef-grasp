@@ -74,7 +74,7 @@ const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleA
     const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: OPEN_ENDED_GRADING_SCHEMA,
-        temperature: 0.1,
+        effort: "high",
         schemaName: "open_ended_grading",
         operation: "grade-open-ended",
     }));
@@ -121,7 +121,7 @@ const gradeFillInTheBlankAnswer = async ({ courseId, question, studentAnswer, co
     const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: FILL_IN_THE_BLANK_GRADING_SCHEMA,
-        temperature: 0.1,
+        effort: "high",
         schemaName: "fill_in_the_blank_grading",
         operation: "grade-fill-in-the-blank",
     }));

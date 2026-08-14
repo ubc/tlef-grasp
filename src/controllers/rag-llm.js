@@ -452,12 +452,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     //console.log("RAG Context:", ragContext);
 
     // Use LLM service for generation
-    const QUESTION_GEN_TEMPERATURE = 0.3;
+    const QUESTION_GEN_EFFORT = "high";
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
     console.log("Generation config:", {
       provider: getLLMProvider(),
       model: getLLMModel(),
-      temperature: QUESTION_GEN_TEMPERATURE,
+      reasoningEffort: QUESTION_GEN_EFFORT,
       maxTokens: "uncapped",
       structuredOutput: true,
     });
@@ -579,11 +579,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             console.log(`Sending prompt to LLM (Q${spec.index + 1}/${targetCount}, type=${spec.questionType}, bloom=${spec.bloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
-            // question type. Low temperature for focused, well-formed questions.
+            // question type. High effort — a weak question ships to students.
             const response = await generateStructured({
               messages,
               schema: model.getJsonSchema(),
-              temperature: QUESTION_GEN_TEMPERATURE,
+              effort: QUESTION_GEN_EFFORT,
               operation: 'question-generate',
             });
 
@@ -915,14 +915,14 @@ Include foundational concepts, practical applications, and assessment criteria.`
         .replace('{ragContext}', () => ragContext);
     }
 
-    // Lower temperature for faithful, well-structured objectives. Schema-
-    // constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
+    // Medium effort: the objectives restate what the material already says.
+    // Schema-constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
     console.log("Sending prompt to LLM service...");
     const { content: responseContent } = await generateStructured({
       prompt: fullPrompt,
       schema: OBJECTIVES_SCHEMA,
       operation: 'objective-generate',
-      temperature: 0.4,
+      effort: 'medium',
     });
     console.log("Full Prompt: ", fullPrompt);
 
@@ -1043,12 +1043,12 @@ async function rateQuestions(questions, courseName) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
-  // Low temperature for consistent, conservative reviewing. Schema-constrained
+  // High effort for consistent, conservative reviewing. Schema-constrained
   // decoding guarantees the { ratings: [...] } shape.
   const { content: responseContent, usage } = await generateStructured({
     prompt,
     schema: QUESTION_REVIEW_SCHEMA,
-    temperature: 0.1,
+    effort: 'high',
     operation: 'question-review',
     model: getReviewModel() || null,
   });
@@ -1117,7 +1117,7 @@ function scrambleMultipleChoiceOptions(questionData) {
 // failed attempt (validation never succeeds within maxRetries) resolves with
 // fixed: null so the caller can still account for the tokens spent and retry
 // in a later cycle rather than losing the question.
-async function attemptFix(questionData, rating, questionContext, maxRetries, temperature) {
+async function attemptFix(questionData, rating, questionContext, maxRetries, effort) {
   const questionType = questionData.questionType || questionData.type;
   const model = QuestionFactory.getModel(questionType);
   const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
@@ -1139,7 +1139,7 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, tem
     const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
     let responseContent = null;
     try {
-      const response = await generateStructured({ messages, schema: model.getJsonSchema(), temperature, operation: 'question-fix' });
+      const response = await generateStructured({ messages, schema: model.getJsonSchema(), effort, operation: 'question-fix' });
       totalPromptTokens += response.usage?.promptTokens || 0;
       totalCompletionTokens += response.usage?.completionTokens || 0;
       responseContent = response.content || "";
@@ -1219,7 +1219,7 @@ async function reviewAndFixQuestions(
   // cycle act on the questions it was raised for.
   const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
   const MAX_FIX_RETRIES = 2;
-  const FIX_TEMPERATURE = 0.3;
+  const FIX_EFFORT = 'high';
 
   // Tallied across every rateQuestions() call (initial + all re-reviews) and
   // every attemptFix() call (successful or not) in this loop, so the caller
@@ -1267,7 +1267,7 @@ async function reviewAndFixQuestions(
           issueByIndex.get(i),
           fixContexts[i],
           MAX_FIX_RETRIES,
-          FIX_TEMPERATURE
+          FIX_EFFORT
         )
       )
     );

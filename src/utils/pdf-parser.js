@@ -9,15 +9,16 @@ async function describeImage(base64Image, contextText) {
   try {
     const prompt = `You are an expert data extractor. You MUST precisely transcribe EVERY single word, number, equation, and label visible in the image. Do NOT skip any text, even if it is a large heading, handwritten, or appears to be a definition. Treat the image as the single source of truth. After transcribing all text exactly as written, describe the visual relationships, diagrams, or charts. Surrounding text context is provided for understanding, not as an excuse to skip text: "${contextText}"\nRespond ONLY in valid JSON format with a single key "description" containing your full transcription and description. If the image is entirely decorative, set the description to "decorative".`;
 
-    // Low temperature for faithful transcription. Schema-constrained decoding
-    // guarantees the { description } shape on the Ollama (vision) path.
+    // Transcription is mechanical — the model is copying what it can see — so
+    // medium effort. Schema-constrained decoding guarantees the { description }
+    // shape on the Ollama (vision) path.
     const { content: rawContent, usage } = await generateStructured({
       prompt,
       schema: IMAGE_DESCRIPTION_SCHEMA,
       operation: "pdf-page-image",
       images: [base64Image],
       model: getVisionModel(),
-      temperature: 0.2,
+      effort: "medium",
     });
 
     let description = "";

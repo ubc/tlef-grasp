@@ -3,6 +3,12 @@
 
 const { getLLMProvider, getLLMModel } = require("../utils/llm-provider");
 
+// The newer OpenAI models reject an explicit `temperature` (only the default is
+// allowed) and expose `reasoning_effort` instead, so nothing on the OpenAI path
+// sends a temperature. Callers that care pass their own effort; this is the
+// floor for anything that does not.
+const DEFAULT_REASONING_EFFORT = "medium";
+
 class LLMService {
   constructor() {
     if (LLMService.instance) {
@@ -67,15 +73,19 @@ class LLMService {
 
     // Build config based on provider
     let llmConfig;
-    
+    const model =
+      overrideModel ||
+      getLLMModel() ||
+      (this.provider === 'openai' ? 'gpt-4o-mini' : 'llama3.1:8b');
+
     if (this.provider === 'openai') {
       llmConfig = {
         provider: 'openai',
         apiKey: process.env.OPENAI_API_KEY,
-        defaultModel: overrideModel || getLLMModel() || 'gpt-4o-mini',
+        defaultModel: model,
         defaultOptions: (() => {
           const opts = {
-            temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.6,
+            reasoning_effort: DEFAULT_REASONING_EFFORT,
             max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
             response_format: { type: 'json_object' },
             ...overrideOptions
@@ -90,7 +100,7 @@ class LLMService {
       llmConfig = {
         provider: 'ollama',
         endpoint: process.env.OLLAMA_ENDPOINT || 'http://localhost:11434',
-        defaultModel: overrideModel || getLLMModel() || 'llama3.1:8b',
+        defaultModel: model,
         defaultOptions: (() => {
           const opts = {
             temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
@@ -107,7 +117,7 @@ class LLMService {
 
     // LLMModule uses constructor, not static create method
     return new this.LLMModule(llmConfig);
-  }  
+  }
 
   /**
    * Check if the service is initialized
