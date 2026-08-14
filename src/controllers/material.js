@@ -7,6 +7,7 @@ const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissi
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
 const { parseInWorker } = require('../utils/parse-in-worker');
+const { effortForStage } = require('../utils/llm-effort');
 const outlineService = require('../services/material-outline');
 const { fetchReadableText, BlockedUrlError } = require('../utils/safe-fetch-url');
 
@@ -510,8 +511,17 @@ const uploadFileHandler = async (req, res) => {
         // Parsing runs in a worker thread (parse-in-worker.js): OCR/layout
         // analysis on a large file takes seconds of pure CPU, which would
         // otherwise freeze every in-flight request on the event loop.
+        // Resolved here, not in the worker: the worker thread has no database
+        // connection, so it cannot read the course's settings itself.
+        let parsingEffort = null;
+        try {
+            parsingEffort = effortForStage(await settingsService.getSettings(courseId), 'pdf-page-image');
+        } catch (settingsError) {
+            console.error("Error resolving parsing reasoning effort:", settingsError);
+        }
+
         if (file.mimetype === "application/pdf" || fileName.endsWith(".pdf")) {
-            const parsed = await parseInWorker("pdf", file.buffer);
+            const parsed = await parseInWorker("pdf", file.buffer, parsingEffort);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
             storedFileType = "application/pdf";
@@ -528,7 +538,7 @@ const uploadFileHandler = async (req, res) => {
             } catch (settingsError) {
                 console.error("Error getting PowerPoint extraction prompt:", settingsError);
             }
-            const parsed = await parseInWorker("pptx", file.buffer, file.originalname, powerPointPrompt);
+            const parsed = await parseInWorker("pptx", file.buffer, file.originalname, powerPointPrompt, parsingEffort);
             content = parsed.content;
             tokenUsage = parsed.tokenUsage || 0;
             storedFileType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";

@@ -75,7 +75,7 @@ describe('answer-grading service', () => {
       expect(generateStructured).toHaveBeenCalledTimes(1);
       const call = generateStructured.mock.calls[0][0];
       expect(call.schema).toBe(OPEN_ENDED_GRADING_SCHEMA);
-      expect(call.effort).toBe('high');
+      expect(call.operation).toBe('grade-open-ended');
       expect(call.prompt).toContain(args.question);
       expect(call.prompt).toContain(args.studentAnswer);
       expect(call.prompt).toContain(args.sampleAnswer);

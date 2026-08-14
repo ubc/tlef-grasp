@@ -14,6 +14,7 @@
 
 const settingsService = require("./settings");
 const { generateStructured } = require("../utils/structured-llm");
+const { effortForStage } = require("../utils/llm-effort");
 const { gradingLimiter } = require("../utils/grading-limiter");
 const {
     OPEN_ENDED_GRADING_SCHEMA,
@@ -33,17 +34,21 @@ const fillTemplate = (template, vars) => {
     return out;
 };
 
-const getPromptForCourse = async (courseId, promptKey) => {
+// One settings read serves both the prompt override and the course's chosen
+// reasoning effort. A failed read must not stop a student's answer being
+// graded, so both fall back to the deployment defaults.
+const getGradingConfigForCourse = async (courseId, promptKey, operation) => {
+    let settings = null;
     try {
-        if (courseId) {
-            const settings = await settingsService.getSettings(String(courseId));
-            const prompt = settings?.prompts?.[promptKey];
-            if (prompt && String(prompt).trim()) return prompt;
-        }
+        if (courseId) settings = await settingsService.getSettings(String(courseId));
     } catch (error) {
-        console.error(`[Answer Grading] Failed to load ${promptKey} prompt for course ${courseId}, using default:`, error);
+        console.error(`[Answer Grading] Failed to load ${promptKey} settings for course ${courseId}, using defaults:`, error);
     }
-    return DEFAULT_PROMPTS[promptKey];
+    const prompt = settings?.prompts?.[promptKey];
+    return {
+        template: prompt && String(prompt).trim() ? prompt : DEFAULT_PROMPTS[promptKey],
+        effort: effortForStage(settings, operation),
+    };
 };
 
 /**
@@ -60,7 +65,11 @@ const getPromptForCourse = async (courseId, promptKey) => {
  *         degrade to the pre-LLM behavior (manual grading).
  */
 const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleAnswer, gradingCriteria }) => {
-    const template = await getPromptForCourse(courseId, "openEndedGrading");
+    const { template, effort } = await getGradingConfigForCourse(
+        courseId,
+        "openEndedGrading",
+        "grade-open-ended"
+    );
     const prompt = fillTemplate(template, {
         question,
         studentAnswer,
@@ -74,7 +83,7 @@ const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleA
     const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: OPEN_ENDED_GRADING_SCHEMA,
-        effort: "high",
+        effort,
         schemaName: "open_ended_grading",
         operation: "grade-open-ended",
     }));
@@ -107,7 +116,11 @@ const gradeOpenEndedAnswer = async ({ courseId, question, studentAnswer, sampleA
  * @throws when the LLM call fails — callers keep the exact-match verdict.
  */
 const gradeFillInTheBlankAnswer = async ({ courseId, question, studentAnswer, correctAnswer, acceptableAnswers }) => {
-    const template = await getPromptForCourse(courseId, "fillInTheBlankGrading");
+    const { template, effort } = await getGradingConfigForCourse(
+        courseId,
+        "fillInTheBlankGrading",
+        "grade-fill-in-the-blank"
+    );
     const alternatives = (Array.isArray(acceptableAnswers) ? acceptableAnswers : [])
         .map((a) => String(a).trim())
         .filter((a) => a && a !== String(correctAnswer).trim());
@@ -121,7 +134,7 @@ const gradeFillInTheBlankAnswer = async ({ courseId, question, studentAnswer, co
     const { content } = await gradingLimiter.run(() => generateStructured({
         prompt,
         schema: FILL_IN_THE_BLANK_GRADING_SCHEMA,
-        effort: "high",
+        effort,
         schemaName: "fill_in_the_blank_grading",
         operation: "grade-fill-in-the-blank",
     }));

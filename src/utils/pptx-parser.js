@@ -16,7 +16,7 @@ function renderPrompt(template, image) {
     .replaceAll("{fileName}", image.fileName || "");
 }
 
-async function describeSlideImage(image, promptTemplate) {
+async function describeSlideImage(image, promptTemplate, effort) {
   const prompt = renderPrompt(promptTemplate, image);
 
   const { content: rawContent, usage } = await generateStructured({
@@ -24,7 +24,7 @@ async function describeSlideImage(image, promptTemplate) {
     schema: IMAGE_DESCRIPTION_SCHEMA,
     images: [{ data: image.data.toString("base64"), mimeType: image.mimeType }],
     model: getVisionModel(),
-    effort: "medium",
+    effort,
     schemaName: "image_description",
     operation: "pptx-slide-image",
   });
@@ -45,7 +45,7 @@ async function describeSlideImage(image, promptTemplate) {
   return { description, usage };
 }
 
-async function parsePptx(buffer, fileName = "presentation.pptx", promptTemplate = POWERPOINT_IMAGE_DESCRIPTION_PROMPT) {
+async function parsePptx(buffer, fileName = "presentation.pptx", promptTemplate = POWERPOINT_IMAGE_DESCRIPTION_PROMPT, effort = null) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "grasp-pptx-"));
   const safeName = path.basename(fileName).replace(/[^\w.-]/g, "_") || "presentation.pptx";
   const tempPath = path.join(
@@ -59,7 +59,7 @@ async function parsePptx(buffer, fileName = "presentation.pptx", promptTemplate 
     const parser = new DocumentParsingModule({
       imageConcurrency: 2,
       imageDescriber: async (image) => {
-        const result = await describeSlideImage(image, promptTemplate);
+        const result = await describeSlideImage(image, promptTemplate, effort);
         if (result?.usage) {
           totalTokens += result.usage.totalTokens || result.usage.total_tokens || 0;
         }

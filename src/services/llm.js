@@ -5,9 +5,10 @@ const { getLLMProvider, getLLMModel } = require("../utils/llm-provider");
 
 // The newer OpenAI models reject an explicit `temperature` (only the default is
 // allowed) and expose `reasoning_effort` instead, so nothing on the OpenAI path
-// sends a temperature. Callers that care pass their own effort; this is the
-// floor for anything that does not.
-const DEFAULT_REASONING_EFFORT = "medium";
+// sends a temperature. generateStructured resolves effort per operation; this
+// covers the callers that build an instance directly (the document parsers),
+// which have no operation label of their own.
+const { resolveEffort } = require("../utils/llm-effort");
 
 class LLMService {
   constructor() {
@@ -85,7 +86,7 @@ class LLMService {
         defaultModel: model,
         defaultOptions: (() => {
           const opts = {
-            reasoning_effort: DEFAULT_REASONING_EFFORT,
+            reasoning_effort: resolveEffort(),
             max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
             response_format: { type: 'json_object' },
             ...overrideOptions

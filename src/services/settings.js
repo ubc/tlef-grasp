@@ -11,6 +11,10 @@ const KEY_MAP = {
     'prompts.fillInTheBlankGrading': 'prompt_fill_in_the_blank_grading',
     'bloomTypePreferences': 'bloom_type_preferences',
     'coInstructorPermissions': 'co_instructor_permissions',
+    // Owner-only generation controls. The controller strips both from an update
+    // by a non-owner, the same way it does for coInstructorPermissions.
+    'reasoningEffort': 'reasoning_effort',
+    'autoFixEnabled': 'auto_fix_enabled',
 };
 
 
@@ -35,6 +39,14 @@ const getSettings = async (courseId) => {
             prompts: {},
             bloomTypePreferences: null,
             coInstructorPermissions: {},
+            // Per-pipeline-stage reasoning effort. An absent stage falls back to
+            // the LLM_EFFORT_* env vars and then to "medium" (see llm-effort.js),
+            // so an empty map means "whatever the deployment is configured for".
+            reasoningEffort: {},
+            // Generated questions are always reviewed; this governs only whether
+            // the flagged ones are then repaired automatically. On by default,
+            // which keeps an untouched course on its existing behaviour.
+            autoFixEnabled: true,
         };
 
         // Resolve each prompt: use stored value when present, otherwise fall back to default.
@@ -68,6 +80,24 @@ const getSettings = async (courseId) => {
         // Resolve co-instructor permissions: a map of feature key -> boolean.
         // An absent map (or absent key) means "allowed" — the frontend treats
         // anything not explicitly false as enabled, so the default is full access.
+        const effortDbKey = KEY_MAP['reasoningEffort'];
+        const storedEffort = settingsMap[effortDbKey];
+        if (storedEffort) {
+            try {
+                settings.reasoningEffort = JSON.parse(storedEffort);
+            } catch {
+                settings.reasoningEffort = {};
+            }
+        }
+
+        // Stored as a string by the flat key/value writer; only an explicit
+        // "false" turns it off, so a corrupt value fails safe to fixing.
+        const autoFixDbKey = KEY_MAP['autoFixEnabled'];
+        const storedAutoFix = settingsMap[autoFixDbKey];
+        if (storedAutoFix !== undefined && storedAutoFix !== null) {
+            settings.autoFixEnabled = !(storedAutoFix === false || storedAutoFix === 'false');
+        }
+
         const permsDbKey = KEY_MAP['coInstructorPermissions'];
         const storedPerms = settingsMap[permsDbKey];
         if (storedPerms) {

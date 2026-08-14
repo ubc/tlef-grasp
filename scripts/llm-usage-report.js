@@ -29,6 +29,8 @@ const PRICING = {
   "gpt-4.1-mini": { input: 0.4, output: 1.6 },
   "gpt-5.4": { input: 2.5, output: 10.0 },
   "gpt-5.4-mini": { input: 0.15, output: 0.6 },
+  // Per OpenAI's 2026-07-30 price cut.
+  "gpt-5.6-luna": { input: 0.2, output: 1.2 },
 };
 
 const parseSince = (value) => {

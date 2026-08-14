@@ -28,12 +28,15 @@ describe('generateStructured', () => {
     mockGetLLMProvider.mockReset();
     mockGetLLMModel.mockReset();
     delete process.env.OLLAMA_ENDPOINT;
+    delete process.env.LLM_REASONING_EFFORT;
+    delete process.env.LLM_EFFORT_QUESTION_GENERATE;
   });
 
   it('uses Ollama schema-constrained chat with image prompts', async () => {
     mockGetLLMProvider.mockReturnValue('ollama');
     mockGetLLMModel.mockReturnValue('llama-model');
     process.env.OLLAMA_ENDPOINT = 'http://ollama.test';
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
     mockChat.mockResolvedValue({
       message: { content: '{"answer":"ok"}' },
       prompt_eval_count: 7,
@@ -44,7 +47,7 @@ describe('generateStructured', () => {
       generateStructured({
         prompt: 'Return JSON',
         schema,
-        effort: "high",
+        operation: 'question-generate',
         images: ['base64-png'],
       })
     ).resolves.toEqual({
@@ -76,12 +79,13 @@ describe('generateStructured', () => {
       messages,
       stream: false,
       format: schema,
-      options: { temperature: 0.3 }, // default medium effort
+      options: { temperature: 0.1 }, // default high effort -> low local temperature
     });
   });
 
   it('passes strict json_schema response format to the toolkit for OpenAI prompts', async () => {
     mockGetLLMProvider.mockReturnValue('openai');
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
     const sendMessage = jest.fn().mockResolvedValue({
       content: '{"answer":"openai"}',
       usage: { promptTokens: 5, completionTokens: 4, totalTokens: 12 },
@@ -92,7 +96,7 @@ describe('generateStructured', () => {
       generateStructured({
         prompt: 'Return JSON',
         schema,
-        effort: 'high',
+        operation: 'question-generate',
         images: ['img'],
         model: 'gpt-test',
         schemaName: 'answer_payload',
@@ -129,13 +133,14 @@ describe('generateStructured', () => {
     });
 
     await generateStructured({ prompt: 'Return JSON', schema });
-    await generateStructured({ prompt: 'Return JSON', schema, effort: 'high' });
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
+    await generateStructured({ prompt: 'Return JSON', schema, operation: 'question-generate' });
 
     for (const [, options] of mockGetLLMInstance.mock.calls) {
       expect(options).not.toHaveProperty('temperature');
     }
-    // Absent effort falls back to medium rather than to a temperature.
-    expect(mockGetLLMInstance.mock.calls[0][1].reasoning_effort).toBe('medium');
+    // With nothing configured the effort is the built-in default, never a temperature.
+    expect(mockGetLLMInstance.mock.calls[0][1].reasoning_effort).toBe('high');
     expect(mockGetLLMInstance.mock.calls[1][1].reasoning_effort).toBe('high');
   });
 

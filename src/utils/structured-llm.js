@@ -12,13 +12,21 @@ const { Ollama } = require("ollama");
 const llmService = require("../services/llm");
 const { getLLMProvider, getLLMModel } = require("./llm-provider");
 const { recordUsage } = require("./llm-usage-log");
+const { resolveEffort } = require("./llm-effort");
 
-// Callers say how hard the model should think, not how it should sample: the
-// newer OpenAI models reject an explicit `temperature` outright and take
-// `reasoning_effort` instead. Local Ollama models have no such control, so the
-// nearest local equivalent is a low temperature — less exploration for the work
-// we want careful and repeatable.
-const OLLAMA_EFFORT_TEMPERATURE = { high: 0.1, medium: 0.3 };
+// How hard the model should think is a property of the operation, not of the
+// call site: `resolveEffort` reads it from the operation label and the
+// LLM_EFFORT_* env vars. The newer OpenAI models take `reasoning_effort` and
+// reject an explicit `temperature` outright. Local Ollama models have no such
+// control, so the nearest local equivalent is sampling temperature — less
+// exploration for the work we want careful and repeatable.
+const OLLAMA_EFFORT_TEMPERATURE = {
+  high: 0.1,
+  medium: 0.3,
+  low: 0.5,
+  minimal: 0.7,
+  none: 0.7,
+};
 
 /**
  * Generate a response constrained to `schema` (a JSON Schema object).
@@ -31,14 +39,20 @@ const OLLAMA_EFFORT_TEMPERATURE = { high: 0.1, medium: 0.3 };
  * @param {string}  [params.prompt]       Single user prompt.
  * @param {Array}   [params.messages]     Multi-turn history [{ role, content }]. Takes precedence over prompt.
  * @param {object}   params.schema        JSON Schema the output must match.
- * @param {"medium"|"high"} [params.effort]  How hard the model should think (default "medium").
+ * @param {string}  [params.operation]    Operation label — sets both the usage-log
+ *                                        stage and the reasoning effort (see llm-effort.js).
+ * @param {string}  [params.effort]       Resolved effort for this call. Callers that hold the
+ *                                        course's settings pass its choice, which outranks env.
  * @param {Array<string|{data:string,mimeType:string}>}[params.images] Optional base64 images for vision.
  * @param {string}  [params.model]        Optional model override (defaults to the active LLM model).
  * @param {string}  [params.schemaName]   Name for the OpenAI json_schema (identifier chars only).
  * @returns {Promise<{ content: string, usage: { promptTokens: number, completionTokens: number, totalTokens: number } }>}
  */
-async function generateStructured({ prompt, messages = null, schema, effort = "medium", images = null, model = null, schemaName = "response", operation = "unknown" }) {
+async function generateStructured({ prompt, messages = null, schema, images = null, model = null, schemaName = "response", operation = "unknown", effort: requestedEffort = null }) {
   const startedAt = Date.now();
+  // A caller-supplied effort is already the course's resolved choice; only fall
+  // back to the env vars when no course expressed one.
+  const effort = requestedEffort || resolveEffort(operation);
   try {
     const result = await callProvider({ prompt, messages, schema, effort, images, model, schemaName });
     recordUsage({

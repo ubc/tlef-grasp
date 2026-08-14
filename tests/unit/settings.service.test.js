@@ -214,3 +214,76 @@ describe('settings service', () => {
     });
   });
 });
+
+// Owner-only generation controls: per-stage reasoning effort, and whether the
+// review-fix loop runs at all during question generation.
+describe('settings service generation controls', () => {
+  beforeEach(() => {
+    databaseService.connect.mockReset();
+  });
+
+  it('hydrates the effort map and the auto-fix toggle', async () => {
+    mockSettingsCollection([
+      {
+        name: 'reasoning_effort',
+        value: JSON.stringify({ 'question-generation': 'high', 'answer-grading': 'low' }),
+      },
+      { name: 'auto_fix_enabled', value: false },
+    ]);
+
+    await expect(settingsService.getSettings('course-1')).resolves.toMatchObject({
+      reasoningEffort: { 'question-generation': 'high', 'answer-grading': 'low' },
+      autoFixEnabled: false,
+    });
+  });
+
+  it('defaults to no effort overrides and auto-fix switched on', async () => {
+    mockSettingsCollection([]);
+
+    // An untouched course must behave exactly as it did before the setting
+    // existed: env-resolved effort, review and auto-fix both running.
+    await expect(settingsService.getSettings('course-1')).resolves.toMatchObject({
+      reasoningEffort: {},
+      autoFixEnabled: true,
+    });
+  });
+
+  it('fails safe to fixing when the stored toggle is malformed', async () => {
+    mockSettingsCollection([
+      { name: 'reasoning_effort', value: '{not json' },
+      { name: 'auto_fix_enabled', value: 'yes-please' },
+    ]);
+
+    await expect(settingsService.getSettings('course-1')).resolves.toMatchObject({
+      reasoningEffort: {},
+      autoFixEnabled: true,
+    });
+  });
+
+  it('accepts the string "false" the flat writer produces', async () => {
+    mockSettingsCollection([{ name: 'auto_fix_enabled', value: 'false' }]);
+
+    await expect(settingsService.getSettings('course-1')).resolves.toMatchObject({
+      autoFixEnabled: false,
+    });
+  });
+
+  it('persists both under their flat keys', async () => {
+    const collection = mockSettingsCollection([]);
+
+    await settingsService.updateSettings('course-1', {
+      reasoningEffort: { 'question-generation': 'low' },
+      autoFixEnabled: false,
+    });
+
+    const written = collection.bulkWrite.mock.calls[0][0];
+    const byName = Object.fromEntries(
+      written.map((op) => [op.updateOne.update.$set.name, op.updateOne.update.$set.value])
+    );
+    expect(byName).toEqual({
+      // Objects are serialized; primitives are stored as-is.
+      reasoning_effort: JSON.stringify({ 'question-generation': 'low' }),
+      auto_fix_enabled: false,
+    });
+  });
+});

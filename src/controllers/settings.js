@@ -49,8 +49,18 @@ const updateSettingsHandler = async (req, res) => {
         // Only the course owner / app admins may change the co-instructor
         // permission map itself — stop a co-instructor with Settings access from
         // self-escalating. Other settings (prompts, bloom) are still saved.
-        if ('coInstructorPermissions' in updateData && !(await isCourseManager(req.user, courseId))) {
-            delete updateData.coInstructorPermissions;
+        // Generation controls are course-owner-only for the same reason: they
+        // change what every co-instructor's generation costs and whether
+        // flagged questions are repaired. Checked once, since all three keys
+        // share the requirement.
+        const OWNER_ONLY_KEYS = [
+            'coInstructorPermissions',
+            'reasoningEffort',
+            'autoFixEnabled',
+        ];
+        const ownerOnlyEdits = OWNER_ONLY_KEYS.filter((key) => key in updateData);
+        if (ownerOnlyEdits.length > 0 && !(await isCourseManager(req.user, courseId))) {
+            for (const key of ownerOnlyEdits) delete updateData[key];
         }
         const result = await settingsService.updateSettings(courseId, updateData);
         res.json({

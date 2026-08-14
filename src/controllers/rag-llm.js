@@ -16,6 +16,7 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
+const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
 const settingsService = require('../services/settings');
@@ -46,6 +47,8 @@ const MODEL_PRICING = {
   'gpt-4.5': { input: 75.00, output: 150.00 },
   'gpt-5.4': { input: 2.50, output: 10.00 },
   'gpt-5.4-mini': { input: 0.15, output: 0.60 },
+  // Per OpenAI's 2026-07-30 price cut.
+  'gpt-5.6-luna': { input: 0.20, output: 1.20 },
 };
 
 function calcCost(model, promptTokens, completionTokens) {
@@ -452,12 +455,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     //console.log("RAG Context:", ragContext);
 
     // Use LLM service for generation
-    const QUESTION_GEN_EFFORT = "high";
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
     console.log("Generation config:", {
       provider: getLLMProvider(),
       model: getLLMModel(),
-      reasoningEffort: QUESTION_GEN_EFFORT,
+      reasoningEffort: effortForStage(settings, 'question-generate'),
       maxTokens: "uncapped",
       structuredOutput: true,
     });
@@ -579,12 +581,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             console.log(`Sending prompt to LLM (Q${spec.index + 1}/${targetCount}, type=${spec.questionType}, bloom=${spec.bloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
-            // question type. High effort — a weak question ships to students.
+            // question type.
             const response = await generateStructured({
               messages,
               schema: model.getJsonSchema(),
-              effort: QUESTION_GEN_EFFORT,
               operation: 'question-generate',
+              effort: effortForStage(settings, 'question-generate'),
             });
 
             const qPrompt = response.usage?.promptTokens || 0;
@@ -676,12 +678,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
+      // Questions are always reviewed. A course owner can switch off the
+      // automatic fix that follows, in which case flagged questions are handed
+      // back flagged rather than repaired.
       const reviewFixResult = await reviewAndFixQuestions(
         questionsData,
         courseName,
         fixContexts,
         learningObjectiveText,
-        granularLearningObjectiveText
+        granularLearningObjectiveText,
+        effortForStage(settings, 'question-review'),
+        settings?.autoFixEnabled !== false
       );
       questionsData = reviewFixResult.questionsData;
       const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
@@ -915,14 +922,13 @@ Include foundational concepts, practical applications, and assessment criteria.`
         .replace('{ragContext}', () => ragContext);
     }
 
-    // Medium effort: the objectives restate what the material already says.
     // Schema-constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
     console.log("Sending prompt to LLM service...");
     const { content: responseContent } = await generateStructured({
       prompt: fullPrompt,
       schema: OBJECTIVES_SCHEMA,
       operation: 'objective-generate',
-      effort: 'medium',
+      effort: effortForStage(settings, 'objective-generate'),
     });
     console.log("Full Prompt: ", fullPrompt);
 
@@ -1004,7 +1010,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, courseName) {
+async function rateQuestions(questions, courseName, effort = null) {
   const formattedQuestions = questions.map(q => {
     // Determine the question stem based on type (MC vs others)
     const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
@@ -1043,14 +1049,13 @@ async function rateQuestions(questions, courseName) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
-  // High effort for consistent, conservative reviewing. Schema-constrained
-  // decoding guarantees the { ratings: [...] } shape.
+  // Schema-constrained decoding guarantees the { ratings: [...] } shape.
   const { content: responseContent, usage } = await generateStructured({
     prompt,
     schema: QUESTION_REVIEW_SCHEMA,
-    effort: 'high',
     operation: 'question-review',
     model: getReviewModel() || null,
+    effort,
   });
   if (usage) {
     const reviewModel = getReviewModel() || 'unknown';
@@ -1117,7 +1122,7 @@ function scrambleMultipleChoiceOptions(questionData) {
 // failed attempt (validation never succeeds within maxRetries) resolves with
 // fixed: null so the caller can still account for the tokens spent and retry
 // in a later cycle rather than losing the question.
-async function attemptFix(questionData, rating, questionContext, maxRetries, effort) {
+async function attemptFix(questionData, rating, questionContext, maxRetries, effort = null) {
   const questionType = questionData.questionType || questionData.type;
   const model = QuestionFactory.getModel(questionType);
   const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
@@ -1139,7 +1144,7 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, eff
     const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
     let responseContent = null;
     try {
-      const response = await generateStructured({ messages, schema: model.getJsonSchema(), effort, operation: 'question-fix' });
+      const response = await generateStructured({ messages, schema: model.getJsonSchema(), operation: 'question-fix', effort });
       totalPromptTokens += response.usage?.promptTokens || 0;
       totalCompletionTokens += response.usage?.completionTokens || 0;
       responseContent = response.content || "";
@@ -1206,7 +1211,9 @@ async function reviewAndFixQuestions(
   courseName,
   fixContexts,
   learningObjectiveText,
-  granularLearningObjectiveText
+  granularLearningObjectiveText,
+  effort = null,
+  autoFix = true
 ) {
   // Each fix call replays its question's whole context — the opening message,
   // retrieved material and all — so this is the most expensive knob in the loop.
@@ -1219,7 +1226,6 @@ async function reviewAndFixQuestions(
   // cycle act on the questions it was raised for.
   const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
   const MAX_FIX_RETRIES = 2;
-  const FIX_EFFORT = 'high';
 
   // Tallied across every rateQuestions() call (initial + all re-reviews) and
   // every attemptFix() call (successful or not) in this loop, so the caller
@@ -1242,7 +1248,7 @@ async function reviewAndFixQuestions(
 
   let ratings;
   try {
-    const initialReview = await rateQuestions(questionsData.map(forReview), courseName);
+    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort);
     ratings = initialReview.ratings;
     reviewPromptTokens += initialReview.usage.promptTokens;
     reviewCompletionTokens += initialReview.usage.completionTokens;
@@ -1254,6 +1260,16 @@ async function reviewAndFixQuestions(
   const allIndices = questionsData.map((_, i) => i);
   const { byIndex: initialRatingByIndex, stillFlagged: initialFlagged } = applyRatings(questionsData, ratings, allIndices);
   const initialFlaggedCount = initialFlagged.length;
+
+  // With auto-fix off the review still ran and its verdicts are already on the
+  // questions, so the instructor sees exactly which ones were flagged and why —
+  // they are just not rewritten automatically.
+  if (!autoFix) {
+    console.log(
+      `🔧 Auto-fix disabled for this course: ${initialFlaggedCount} flagged question(s) returned for manual review`
+    );
+    return { questionsData, tokenUsage: tokenUsage() };
+  }
 
   let flagged = initialFlagged;
   let issueByIndex = initialRatingByIndex;
@@ -1267,7 +1283,7 @@ async function reviewAndFixQuestions(
           issueByIndex.get(i),
           fixContexts[i],
           MAX_FIX_RETRIES,
-          FIX_EFFORT
+          effort
         )
       )
     );
@@ -1303,7 +1319,7 @@ async function reviewAndFixQuestions(
     if (patched.length > 0) {
       let reReviewRatings = [];
       try {
-        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName);
+        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort);
         reReviewRatings = reReview.ratings;
         reviewPromptTokens += reReview.usage.promptTokens;
         reviewCompletionTokens += reReview.usage.completionTokens;
@@ -1374,7 +1390,12 @@ const reviewQuestionsHandler = async (req, res) => {
     if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
-    const { ratings } = await rateQuestions(questions, courseName);
+    const reviewSettings = courseId ? await settingsService.getSettings(courseId) : null;
+    const { ratings } = await rateQuestions(
+      questions,
+      courseName,
+      effortForStage(reviewSettings, 'question-review')
+    );
 
     const results = [];
 

@@ -16,6 +16,7 @@
 const { getMaterialBySourceId, setMaterialOutline } = require('./material');
 const settingsService = require('./settings');
 const { generateStructured } = require('../utils/structured-llm');
+const { effortForStage } = require('../utils/llm-effort');
 const { MATERIAL_OUTLINE_SCHEMA } = require('../constants/llm-schemas');
 const {
   DEFAULT_PROMPTS,
@@ -89,9 +90,14 @@ class MaterialTooLargeError extends Error {
   }
 }
 
-const resolvePromptTemplate = async (courseId) => {
+// One settings read serves both the prompt override and the course's chosen
+// reasoning effort, so adding effort costs no extra query.
+const resolveOutlineConfig = async (courseId) => {
   const settings = await settingsService.getSettings(String(courseId));
-  return settings?.prompts?.materialOutline || DEFAULT_PROMPTS.materialOutline;
+  return {
+    template: settings?.prompts?.materialOutline || DEFAULT_PROMPTS.materialOutline,
+    effort: effortForStage(settings, 'outline-batch'),
+  };
 };
 
 /** Read the stored outline. Never generates, never calls the LLM. */
@@ -111,23 +117,23 @@ const getOutline = async (sourceId) => {
 };
 
 /** Summarize one batch of material text into an outline. */
-const summarizeBatch = async (template, content) => {
+const summarizeBatch = async (template, content, effort) => {
   const { content: raw } = await generateStructured({
     prompt: template
       .replace('{materialContent}', () => content)
       .replace('{maxTopics}', () => String(MAX_OUTLINE_TOPICS))
       .replace('{maxKeyPoints}', () => String(MAX_OUTLINE_KEY_POINTS)),
     schema: MATERIAL_OUTLINE_SCHEMA,
-    effort: 'medium',
     schemaName: 'material_outline',
     operation: 'outline-batch',
+    effort,
   });
   if (!raw) throw new Error('Empty response from the summarization model.');
   return JSON.parse(raw);
 };
 
 /** Merge per-batch outlines into one via a single consolidation call. */
-const consolidateOutlines = async (partials) => {
+const consolidateOutlines = async (partials, effort) => {
   const rendered = partials
     .map((partial, index) => `Partial outline ${index + 1}:\n${JSON.stringify(partial)}`)
     .join('\n\n');
@@ -138,9 +144,9 @@ const consolidateOutlines = async (partials) => {
       .replace('{maxTopics}', () => String(MAX_OUTLINE_TOPICS))
       .replace('{maxKeyPoints}', () => String(MAX_OUTLINE_KEY_POINTS)),
     schema: MATERIAL_OUTLINE_SCHEMA,
-    effort: 'medium',
     schemaName: 'material_outline',
     operation: 'outline-consolidate',
+    effort,
   });
   if (!raw) throw new Error('Empty response from the consolidation model.');
   return JSON.parse(raw);
@@ -205,14 +211,14 @@ const generateOutline = async (sourceId) => {
     );
   }
 
-  const template = await resolvePromptTemplate(material.courseId);
+  const { template, effort } = await resolveOutlineConfig(material.courseId);
 
   let raw;
   let notes;
   if (material.fileContent.length <= OUTLINE_DIRECT_MAX_CHARS) {
     // Fits one call: summarize the full text. Batching here would silently
     // drop everything past the first batch.
-    raw = await summarizeBatch(template, material.fileContent);
+    raw = await summarizeBatch(template, material.fileContent, effort);
     notes = raw.notes || '';
   } else {
     const { batches, totalChars, coveredChars, truncated } = batchContent(
@@ -224,9 +230,9 @@ const generateOutline = async (sourceId) => {
     // used elsewhere in the codebase for the same reason.
     const partials = [];
     for (const batch of batches) {
-      partials.push(await summarizeBatch(template, batch));
+      partials.push(await summarizeBatch(template, batch, effort));
     }
-    raw = partials.length === 1 ? partials[0] : await consolidateOutlines(partials);
+    raw = partials.length === 1 ? partials[0] : await consolidateOutlines(partials, effort);
     // Still reachable despite the size guard above: batchContent packs on page
     // markers, so a marker landing near a batch boundary closes that batch
     // early and a document at the ceiling can still need one batch more than
