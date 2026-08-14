@@ -17,6 +17,7 @@ const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissi
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
 const { generationLimiter } = require('../utils/generation-limiter');
+const { isRetryableLLMError } = require('../utils/llm-limiter');
 const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
@@ -640,6 +641,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
               ],
             };
           } catch (error) {
+            // The limiter already retried this with backoff. A rate limit that
+            // reaches here means the provider is saturated, so retrying the
+            // slot adds load without improving the odds. Content failures —
+            // invalid schema, duplicate, empty — still retry: a fresh sample
+            // may well be valid.
+            if (isRetryableLLMError(error)) throw error;
             lastError = error;
             console.warn(`❌ Q${spec.index + 1} attempt ${attempt} failed:`, error.message);
             if (responseContent) {
