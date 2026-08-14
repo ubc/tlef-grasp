@@ -72,6 +72,14 @@ export function runPool(tasks, { concurrency = 4, onRateLimit } = {}) {
 
       const waitMs = pauseUntil - Date.now();
       if (waitMs > 0) {
+        // If every task has already launched and settled, the run is done
+        // regardless of the pause — nothing is waiting on capacity, so there
+        // is nothing to gain by sitting out the rest of a (possibly
+        // many-second) Retry-After. Check before arming the pause timer, not
+        // after, or a pause that outlives the last launch stalls resolution
+        // for its full duration with zero work in flight.
+        finishIfDone();
+        if (finished) return;
         if (!pauseTimer) pauseTimer = setTimeout(() => { pauseTimer = null; pump(); }, waitMs);
         return;
       }
