@@ -15,7 +15,7 @@
 - A single batch must behave bit-for-bit as it does today: the conversational loop, sibling constraint, exact-match dedup, review and fix are all unchanged.
 - Client concurrency default **4**, server limiter concurrency default **6**; both env-tunable. Client concurrency of 1 must reproduce today's sequential behaviour exactly.
 - The two limiters are **separate instances in separate modules** and never share a cap: a generation run must not consume grading capacity while students are mid-quiz. Generation: concurrency 6, **no queue shedding**, 120000 ms call timeout. Grading: concurrency 32, 60000 ms queue timeout, 30000 ms call timeout.
-- Server tests are CommonJS under `tests/unit/` and run with `npm test`. Client tests are native ESM under `tests/client/` and run with `npm run test:client` — no Babel, no new dependencies.
+- Server tests are CommonJS under `tests/unit/` (`*.test.js`) and run with `npm test`. Client tests are native ESM under `tests/client/` and MUST be named `*.test.mjs` — the root package.json is CommonJS, so a `.js` test is loaded via require() and rejects the top-level await that `jest.unstable_mockModule` requires. Run with `npm run test:client`; no Babel, no new dependencies.
 - Nothing is persisted to MongoDB during generation, so retrying a failed objective is safe.
 - Commit after every task.
 
@@ -745,7 +745,7 @@ The client has no test infrastructure. Jest cannot parse the client's ESM (verif
 **Files:**
 - Create: `client/src/lib/async-pool.js`
 - Create: `jest.client.config.mjs`
-- Create: `tests/client/async-pool.test.js`
+- Create: `tests/client/async-pool.test.mjs`
 - Modify: `package.json` (add `test:client` script)
 
 **Interfaces:**
@@ -770,7 +770,10 @@ Create `jest.client.config.mjs`:
 export default {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests/client'],
-  testMatch: ['**/*.test.js'],
+  // .mjs, not .js: the root package.json has no "type", so Jest would load a
+  // .js test through require() and reject the top-level await that
+  // jest.unstable_mockModule needs. .mjs is unambiguously ESM.
+  testMatch: ['**/*.test.mjs'],
   transform: {},
 };
 ```
@@ -783,7 +786,7 @@ Add to `package.json` scripts, after `"test:unit:monocart"`:
 
 - [ ] **Step 2: Write the failing test**
 
-Create `tests/client/async-pool.test.js`:
+Create `tests/client/async-pool.test.mjs`:
 
 ```javascript
 import { jest, describe, it, expect } from '@jest/globals';
@@ -1002,7 +1005,7 @@ Expected: all pre-existing suites pass — `jest.config.js` roots at `tests/unit
 - [ ] **Step 7: Commit**
 
 ```bash
-git add client/src/lib/async-pool.js jest.client.config.mjs tests/client/async-pool.test.js package.json
+git add client/src/lib/async-pool.js jest.client.config.mjs tests/client/async-pool.test.mjs package.json
 git commit -m "Add a bounded async pool for the client, with a native-ESM test harness"
 ```
 
@@ -1012,7 +1015,7 @@ git commit -m "Add a bounded async pool for the client, with a native-ESM test h
 
 **Files:**
 - Modify: `client/src/pages/question-generation/generationApi.js:11-140` (`generateQuestions`)
-- Test: `tests/client/generation-api-pool.test.js` (create)
+- Test: `tests/client/generation-api-pool.test.mjs` (create)
 
 **Interfaces:**
 - Consumes: `runPool`, `PoolAbortedError` from Task 5.
@@ -1020,7 +1023,7 @@ git commit -m "Add a bounded async pool for the client, with a native-ESM test h
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/client/generation-api-pool.test.js`:
+Create `tests/client/generation-api-pool.test.mjs`:
 
 ```javascript
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
@@ -1300,7 +1303,7 @@ Expected: 0 errors (6 pre-existing warnings are acceptable), build succeeds.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add client/src/pages/question-generation/generationApi.js tests/client/generation-api-pool.test.js
+git add client/src/pages/question-generation/generationApi.js tests/client/generation-api-pool.test.mjs
 git commit -m "Generate granular objectives concurrently through a bounded pool"
 ```
 
@@ -1313,7 +1316,7 @@ Failures currently reach a `console.error` the instructor never sees. Under rate
 **Files:**
 - Modify: `client/src/pages/question-generation/generationApi.js` (add the sweep)
 - Modify: `client/src/pages/QuestionGeneration.jsx:204-217`
-- Test: `tests/client/generation-api-retry-sweep.test.js` (create)
+- Test: `tests/client/generation-api-retry-sweep.test.mjs` (create)
 
 **Interfaces:**
 - Consumes: `generateQuestions(course, objectiveGroups, onProgress, options)` from Task 6.
@@ -1321,7 +1324,7 @@ Failures currently reach a `console.error` the instructor never sees. Under rate
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/client/generation-api-retry-sweep.test.js`:
+Create `tests/client/generation-api-retry-sweep.test.mjs`:
 
 ```javascript
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
@@ -1509,7 +1512,7 @@ Expected: 0 lint errors, build succeeds, both test suites pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add client/src/pages/question-generation/generationApi.js client/src/pages/QuestionGeneration.jsx tests/client/generation-api-retry-sweep.test.js
+git add client/src/pages/question-generation/generationApi.js client/src/pages/QuestionGeneration.jsx tests/client/generation-api-retry-sweep.test.mjs
 git commit -m "Retry rate-limited objectives once and report what failed"
 ```
 
