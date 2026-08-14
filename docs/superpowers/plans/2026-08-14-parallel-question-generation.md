@@ -4,7 +4,7 @@
 
 **Goal:** Run granular-objective question batches concurrently instead of one at a time, and handle provider rate limiting so a run slows down and finishes rather than silently losing objectives.
 
-**Architecture:** The client flattens its nested generation loops into one task per granular objective and runs them through a bounded pool (default 4 in flight), assembling results in objective order. The server gains a shared `generationLimiter` — the existing grading limiter class, renamed and re-tuned — wrapping every generation, review, fix and retrieval call. Rate-limit failures stop being flattened to HTTP 500 and are returned as 429 with `Retry-After`, which the client pool reacts to by pausing and halving its concurrency.
+**Architecture:** The client flattens its nested generation loops into one task per granular objective and runs them through a bounded pool (default 4 in flight), assembling results in objective order. The limiter mechanism moves into its own module and grows two independent pools — `generationLimiter` wrapping every generation, review, fix and retrieval call, and a widened `gradingLimiter` sized for a whole class answering at once. Rate-limit failures stop being flattened to HTTP 500 and are returned as 429 with `Retry-After`, which the client pool reacts to by pausing and halving its concurrency.
 
 **Tech Stack:** Node/Express, MongoDB, Jest (server, CommonJS), React 18 + Vite (client, native ESM), Playwright (e2e).
 
@@ -14,35 +14,50 @@
 
 - A single batch must behave bit-for-bit as it does today: the conversational loop, sibling constraint, exact-match dedup, review and fix are all unchanged.
 - Client concurrency default **4**, server limiter concurrency default **6**; both env-tunable. Client concurrency of 1 must reproduce today's sequential behaviour exactly.
-- Generation limiter: **no queue shedding**, call timeout **120000 ms**, distinct from grading's 15s queue timeout / 30s call timeout. Grading's own behaviour must not change.
+- The two limiters are **separate instances in separate modules** and never share a cap: a generation run must not consume grading capacity while students are mid-quiz. Generation: concurrency 6, **no queue shedding**, 120000 ms call timeout. Grading: concurrency 32, 60000 ms queue timeout, 30000 ms call timeout.
 - Server tests are CommonJS under `tests/unit/` and run with `npm test`. Client tests are native ESM under `tests/client/` and run with `npm run test:client` — no Babel, no new dependencies.
 - Nothing is persisted to MongoDB during generation, so retrying a failed objective is safe.
 - Commit after every task.
 
 ---
 
-### Task 1: Generalise the limiter and add a generation instance
+### Task 1: Split the limiter mechanism from its two pools, and widen grading
 
-The limiter class is currently grading-specific in three ways that block reuse: its name, its hardcoded "grading" error strings, and `_acquire()` always arming a queue-timeout timer. Generation needs no queue shedding — and passing a huge `queueTimeoutMs` is not a workaround, because `setTimeout` with a delay above 2147483647 fires immediately.
+Two changes, one structural and one about capacity.
+
+**Structural.** The limiter class is currently grading-specific in three ways that block reuse: its name, its hardcoded "grading" error strings, and `_acquire()` always arming a queue-timeout timer. The mechanism moves to its own module, and the two pools become separate modules with their own tuning — generation traffic and grading traffic must never share a cap or a config.
+
+**Capacity.** Grading's current settings shed under class-sized load. Measured grading latency is a median of 1,716 ms (p90 2,592 ms), so concurrency 8 starts roughly 66 calls within the 15s queue timeout; a synchronised class of 100 sheds ~34 answers, and 300 sheds ~234. Shedding is not a delay — grading runs inside the student's answer-check request, so a shed answer is saved ungraded, the student gets no feedback, and the instructor grades it by hand.
+
+Grading calls are token-light (a question, an answer, a rubric) next to generation's 50 retrieved chunks, so they can run far wider without threatening the same tokens-per-minute ceiling. New defaults: **concurrency 32**, **queue timeout 60s**. At 32 the same 1,000-student burst drains in about 56s with nothing shed, and the 60s timeout stops being a trapdoor and becomes what it was meant to be — a safety valve for genuinely pathological load. The limiter's existing 429 backoff holds the slot, so a too-wide setting self-throttles instead of stampeding.
+
+Generation needs no queue shedding at all — and passing a huge `queueTimeoutMs` is not a workaround, because `setTimeout` with a delay above 2147483647 fires immediately.
 
 **Files:**
-- Modify: `src/utils/grading-limiter.js`
+- Create: `src/utils/llm-limiter.js` (the mechanism)
+- Create: `src/utils/generation-limiter.js` (the generation pool)
+- Modify: `src/utils/grading-limiter.js` (becomes the grading pool only)
 - Test: `tests/unit/llm-limiter.utils.test.js` (create)
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `LLMLimiter` class (constructor options `{ label, concurrency, callTimeoutMs, queueTimeoutMs, maxRetries, backoffBaseMs }`, method `run(fn)`); instances `gradingLimiter` and `generationLimiter`; predicate `isRetryableLLMError(error)`. All exported from `src/utils/grading-limiter.js`. A `queueTimeoutMs` of `0` means "never shed".
+- Produces:
+  - `src/utils/llm-limiter.js` exports `LLMLimiter` (constructor options `{ label, concurrency, callTimeoutMs, queueTimeoutMs, maxRetries, backoffBaseMs }`, method `run(fn)`) and `isRetryableLLMError(error)`. A `queueTimeoutMs` of `0` means "never shed".
+  - `src/utils/grading-limiter.js` exports `gradingLimiter` (concurrency 32, queue timeout 60s, call timeout 30s) and re-exports `isRetryableLLMError` so existing importers keep working.
+  - `src/utils/generation-limiter.js` exports `generationLimiter` (concurrency 6, queue timeout 0, call timeout 120s).
 
 - [ ] **Step 1: Write the failing test**
 
 Create `tests/unit/llm-limiter.utils.test.js`:
 
 ```javascript
-// The limiter is shared by two callers with opposite needs: grading sheds
-// queued work because a student is waiting and manual grading is the fallback,
-// while generation must never shed because an instructor already waits minutes
-// and shedding just loses an objective.
-const { LLMLimiter, generationLimiter, gradingLimiter } = require('../../src/utils/grading-limiter');
+// One mechanism, two pools that must never share a cap. Grading is sized for a
+// synchronised class: shedding there is not a delay, it is an ungraded answer
+// and a manual-grading job. Generation is sized for a provider ceiling and
+// never sheds, because an instructor already waits minutes.
+const { LLMLimiter } = require('../../src/utils/llm-limiter');
+const { gradingLimiter } = require('../../src/utils/grading-limiter');
+const { generationLimiter } = require('../../src/utils/generation-limiter');
 
 const deferred = () => {
   let resolve, reject;
@@ -98,10 +113,20 @@ describe('LLMLimiter', () => {
     expect(generationLimiter.concurrency).toBe(6);
   });
 
-  it('leaves grading defaults untouched', () => {
-    expect(gradingLimiter.queueTimeoutMs).toBe(15000);
+  it('sizes grading for a full class rather than a handful of students', () => {
+    // At 8 x ~1.7s per call only ~66 calls start within a 15s queue timeout, so
+    // a synchronised class of 100 shed ~34 answers to manual grading. Grading
+    // prompts are token-light, so width is the cheap fix.
+    expect(gradingLimiter.concurrency).toBe(32);
+    expect(gradingLimiter.queueTimeoutMs).toBe(60000);
     expect(gradingLimiter.callTimeoutMs).toBe(30000);
-    expect(gradingLimiter.concurrency).toBe(8);
+  });
+
+  it('keeps the two pools independent', () => {
+    // Separate instances: a generation run must not consume grading capacity
+    // while students are mid-quiz, and vice versa.
+    expect(generationLimiter).not.toBe(gradingLimiter);
+    expect(generationLimiter.concurrency).not.toBe(gradingLimiter.concurrency);
   });
 });
 ```
@@ -113,7 +138,12 @@ Expected: FAIL — `LLMLimiter is not a constructor` and `generationLimiter` und
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/utils/grading-limiter.js`, rename the class and parameterise it. Change the class declaration from `class GradingLimiter` to `class LLMLimiter`, add `this.label = options.label ?? 'LLM';` in the constructor, and replace the three grading-specific pieces:
+Create `src/utils/llm-limiter.js` by moving the existing class out of `grading-limiter.js` — the whole file except its final two lines (the `gradingLimiter` instance and the `module.exports`). Then apply four changes to what you moved:
+
+1. Rename `class GradingLimiter` to `class LLMLimiter`.
+2. Add `this.label = options.label ?? 'LLM';` as the first line of the constructor.
+3. Drop the `envInt(...)` fallbacks from the constructor's option resolution, so it reads `options.concurrency ?? DEFAULTS.concurrency` and so on. Env handling moves to the pool modules, which each own their own variable names.
+4. Replace the queue and timeout internals:
 
 ```javascript
     _acquire() {
@@ -123,10 +153,9 @@ In `src/utils/grading-limiter.js`, rename the class and parameterise it. Change 
         }
         return new Promise((resolve, reject) => {
             const waiter = { resolve, timer: null };
-            // queueTimeoutMs of 0 means "never shed": an instructor already
-            // waits minutes, so failing queued work to save seconds is a bad
-            // trade. Arming a timer with a huge delay is not an alternative —
-            // setTimeout fires immediately past 2147483647ms.
+            // queueTimeoutMs of 0 means "never shed". Arming a timer with a
+            // huge delay is not an alternative — setTimeout fires immediately
+            // past 2147483647ms.
             if (this.queueTimeoutMs > 0) {
                 waiter.timer = setTimeout(() => {
                     const idx = this.queue.indexOf(waiter);
@@ -160,15 +189,67 @@ In `src/utils/grading-limiter.js`, rename the class and parameterise it. Change 
     }
 ```
 
-Then replace the exports at the bottom of the file:
+Export the mechanism and keep `envInt` exported for the pool modules:
 
 ```javascript
-// One shared limiter for all grading traffic in this process.
-const gradingLimiter = new LLMLimiter({ label: 'grading' });
+module.exports = { LLMLimiter, isRetryableLLMError, envInt };
+```
 
-// Generation traffic: instructor-facing, long-running, and must not shed.
-// Shared across generation, review, fix and retrieval so those cannot
-// independently saturate the provider.
+Replace the whole of `src/utils/grading-limiter.js` with the grading pool only:
+
+```javascript
+// Concurrency guard for student-facing LLM grading calls (open-ended judge,
+// fill-in-the-blank rescue). The mechanism lives in llm-limiter.js; this file
+// is only the pool and its sizing.
+//
+// Sizing is set by the worst realistic case: a synchronised class answering at
+// once. Grading runs inside the student's answer-check request, so a shed call
+// is not a delay — the answer is saved ungraded, the student gets no feedback,
+// and the instructor grades it by hand.
+//
+// Measured grading latency is ~1.7s median. At the old concurrency of 8 only
+// ~66 calls could start within the old 15s queue timeout, so a class of 100
+// answering together shed ~34 answers and a class of 300 shed ~234. Grading
+// prompts are token-light next to question generation's retrieved material, so
+// running much wider is cheap: at 32, a 1,000-student burst drains in under a
+// minute with nothing shed, and the 60s queue timeout is a safety valve rather
+// than a trapdoor.
+//
+// A width that outruns the provider self-corrects: a 429 retries with backoff
+// while holding its slot, which throttles the whole pool.
+
+const { LLMLimiter, isRetryableLLMError, envInt } = require('./llm-limiter');
+
+const gradingLimiter = new LLMLimiter({
+    label: 'grading',
+    concurrency: envInt('GRADING_LLM_CONCURRENCY', 32),
+    callTimeoutMs: envInt('GRADING_LLM_TIMEOUT_MS', 30000),
+    queueTimeoutMs: envInt('GRADING_LLM_QUEUE_TIMEOUT_MS', 60000),
+    maxRetries: envInt('GRADING_LLM_MAX_RETRIES', 2),
+});
+
+// Re-exported so existing importers of this module keep working unchanged.
+module.exports = { gradingLimiter, isRetryableLLMError };
+```
+
+Create `src/utils/generation-limiter.js`:
+
+```javascript
+// Concurrency guard for instructor-facing question generation: the generation
+// turns, the review pass, the fix loop, and the RAG retrieval each objective
+// performs. Shared across all four so they cannot independently saturate the
+// provider, and deliberately separate from the grading pool so a generation
+// run cannot eat capacity students are relying on mid-quiz.
+//
+// Two settings differ from grading for the same underlying reason — nobody is
+// staring at a spinner that a shed call would cut short:
+//   - queueTimeoutMs 0: never shed. An instructor already waits minutes;
+//     failing an objective to save seconds of queueing is a bad trade.
+//   - callTimeoutMs 120000: generation reaches p90 41s and max 51s at high
+//     reasoning effort, so grading's 30s cap would abort legitimate work.
+
+const { LLMLimiter, envInt } = require('./llm-limiter');
+
 const generationLimiter = new LLMLimiter({
     label: 'generation',
     concurrency: envInt('GENERATION_LLM_CONCURRENCY', 6),
@@ -177,17 +258,18 @@ const generationLimiter = new LLMLimiter({
     maxRetries: envInt('GENERATION_LLM_MAX_RETRIES', 3),
 });
 
-module.exports = { gradingLimiter, generationLimiter, LLMLimiter, isRetryableLLMError };
+module.exports = { generationLimiter };
 ```
 
-Note `gradingLimiter` keeps reading its own `GRADING_LLM_*` env vars through the constructor's existing `options.X ?? envInt("GRADING_...")` fallbacks, so grading behaviour is unchanged.
+- [ ] **Step 4: Verify no stale references**
 
-- [ ] **Step 4: Update the existing grading import**
-
-`src/services/answer-grading.js` imports `{ gradingLimiter }`, which still exists — verify no other file imports the old class name:
+`src/services/answer-grading.js` imports `{ gradingLimiter }` from `grading-limiter.js`, which still exports it, so that import is unchanged.
 
 Run: `grep -rn "GradingLimiter" src/ tests/`
-Expected: only `src/utils/grading-limiter.js` internals (now `LLMLimiter`) — no stale references. Fix any that appear.
+Expected: no matches at all — the class name is gone. Fix any that appear.
+
+Run: `grep -rn "require.*grading-limiter" src/`
+Expected: only `src/services/answer-grading.js`. Anything else should be importing from `llm-limiter.js` or `generation-limiter.js` instead.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -197,8 +279,8 @@ Expected: new suite passes; all pre-existing suites still pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/utils/grading-limiter.js tests/unit/llm-limiter.utils.test.js
-git commit -m "Generalise the LLM limiter and add a generation instance"
+git add src/utils/llm-limiter.js src/utils/grading-limiter.js src/utils/generation-limiter.js tests/unit/llm-limiter.utils.test.js
+git commit -m "Split the LLM limiter into its mechanism and two pools, widen grading"
 ```
 
 ---
@@ -224,10 +306,8 @@ Create `tests/unit/generation-limiter-wiring.test.js`:
 // instead of preventing them, so both paths are asserted.
 const mockRun = jest.fn((fn) => fn());
 
-jest.mock('../../src/utils/grading-limiter', () => ({
+jest.mock('../../src/utils/generation-limiter', () => ({
   generationLimiter: { run: mockRun },
-  gradingLimiter: { run: jest.fn((fn) => fn()) },
-  isRetryableLLMError: jest.fn(() => false),
 }));
 
 const { retrieveForSource } = require('../../src/services/rag-fanout');
@@ -270,7 +350,7 @@ Expected: FAIL — `expect(mockRun).toHaveBeenCalledTimes(1)` receives 0, becaus
 In `src/services/rag-fanout.js`, add the import at the top:
 
 ```javascript
-const { generationLimiter } = require('../utils/grading-limiter');
+const { generationLimiter } = require('../utils/generation-limiter');
 ```
 
 and wrap both calls inside `retrieveForSource`:
@@ -295,7 +375,7 @@ and wrap both calls inside `retrieveForSource`:
 In `src/controllers/rag-llm.js`, add to the imports:
 
 ```javascript
-const { generationLimiter } = require('../utils/grading-limiter');
+const { generationLimiter } = require('../utils/generation-limiter');
 ```
 
 Then wrap each of the three `generateStructured` calls. The generation call inside `generateOneQuestion`:
@@ -471,10 +551,11 @@ Expected: FAIL — the first test sees 3 calls, because the slot retries the 429
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/controllers/rag-llm.js`, add `isRetryableLLMError` to the limiter import:
+In `src/controllers/rag-llm.js`, add the predicate import alongside the limiter one from Task 2:
 
 ```javascript
-const { generationLimiter, isRetryableLLMError } = require('../utils/grading-limiter');
+const { generationLimiter } = require('../utils/generation-limiter');
+const { isRetryableLLMError } = require('../utils/llm-limiter');
 ```
 
 In `generateOneQuestion`'s `catch (error)` block, re-throw rate-limit errors before recording the attempt:
@@ -515,7 +596,7 @@ git commit -m "Leave rate-limit retries to the limiter, not the question slot"
 - Test: `tests/unit/generation-rate-limit-status.test.js` (create)
 
 **Interfaces:**
-- Consumes: `isRetryableLLMError` from Task 1.
+- Consumes: `isRetryableLLMError`, already imported into `rag-llm.js` by Task 3.
 - Produces: generation endpoints respond `429` with a `Retry-After` header (seconds, integer) and `{ success: false, error, rateLimited: true }` when the underlying failure is a rate limit; every other failure keeps its current 500 shape.
 
 - [ ] **Step 1: Write the failing test**
@@ -1448,6 +1529,17 @@ git commit -m "Retry rate-limited objectives once and report what failed"
 Append to the LLM section of `.env.example`, after the reasoning-effort block:
 
 ```bash
+# --- Grading concurrency ---
+# Grading runs inside the student's answer-check request, so a shed call is not
+# a delay: the answer is saved ungraded and the instructor grades it by hand.
+# Sizing assumes a whole class answering at once. At ~1.7s per call, 32 drains
+# a 1,000-student burst in under a minute; the queue timeout is a safety valve,
+# not the normal path. Grading prompts are small, so width is cheap here.
+#GRADING_LLM_CONCURRENCY=32
+#GRADING_LLM_QUEUE_TIMEOUT_MS=60000
+#GRADING_LLM_TIMEOUT_MS=30000
+#GRADING_LLM_MAX_RETRIES=2
+
 # --- Generation concurrency ---
 # Question generation runs one request per granular objective. Those objectives
 # are independent, so they run concurrently; these bound how many.
@@ -1469,7 +1561,7 @@ Append to the LLM section of `.env.example`, after the reasoning-effort block:
 - [ ] **Step 2: Verify nothing else references removed names**
 
 Run: `grep -rn "GradingLimiter" src/ tests/ .env.example`
-Expected: no matches outside `src/utils/grading-limiter.js`.
+Expected: no matches anywhere — Task 1 removed the class name entirely.
 
 - [ ] **Step 3: Commit**
 
@@ -1489,3 +1581,4 @@ After all tasks:
 - [ ] `npm --prefix client run lint && npm --prefix client run build` — 0 errors.
 - [ ] Manual check with a real course: generate for 4+ granular objectives and confirm from the server log that batches interleave (their `=== RAG + LLM GENERATION REQUEST ===` headers appear before earlier ones finish) and that question order in the UI still matches objective order.
 - [ ] Set `GENERATION_LLM_CONCURRENCY=1` and confirm the run still completes, just slower — this is the escape hatch if a deployment's rate limits are tighter than expected.
+- [ ] Confirm the two pools are independent: start a generation run and, while it is in flight, submit a student answer that needs AI grading. The answer must be graded promptly rather than queueing behind generation.
