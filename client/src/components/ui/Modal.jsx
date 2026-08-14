@@ -1,7 +1,13 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
-// Generic centered modal with backdrop. Closes on backdrop click and Escape.
+// Generic centered modal with backdrop. Closes on Escape, the header X, or a
+// footer action — deliberately NOT on backdrop click. Modals here hold unsaved
+// form state (see MaterialFormModal) and are unmounted on close, so a stray
+// backdrop click discarded everything typed. Two gestures triggered it: a click
+// in the padding gutter beside the panel, and — because the DOM dispatches
+// click on the nearest common ancestor of mousedown/mouseup — releasing a text
+// selection that started inside the panel over the backdrop.
 export default function Modal({ open, onClose, title, children, footer, wide = false }) {
   const titleId = useId();
   const closeButtonRef = useRef(null);
@@ -28,12 +34,7 @@ export default function Modal({ open, onClose, title, children, footer, wide = f
   if (!open) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/50 p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose?.();
-      }}
-    >
+    <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/50 p-4">
       <div
         role="dialog"
         aria-modal="true"
