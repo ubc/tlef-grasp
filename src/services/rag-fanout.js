@@ -13,6 +13,8 @@
  * worth testing lives here instead.
  */
 
+const { generationLimiter } = require('../utils/generation-limiter');
+
 /**
  * Chunks each material is guaranteed before redistribution. Uses floor plus a
  * remainder spread over the first materials so the quotas sum to exactly
@@ -38,13 +40,19 @@ const computeQuotas = (totalLimit, materialCount) => {
 const retrieveForSource = async (instance, sourceId, query, limit, scoreThreshold) => {
   const filter = { must: [{ key: 'sourceId', match: { any: [sourceId] } }] };
 
-  let chunks = await instance.retrieveContext(query, { limit, scoreThreshold, filter });
+  // Under the generation limiter: each objective issues 3-5 searches, each
+  // preceded by an embedding call, so concurrent objectives multiply fast.
+  let chunks = await generationLimiter.run(() =>
+    instance.retrieveContext(query, { limit, scoreThreshold, filter })
+  );
 
   if ((!chunks || chunks.length === 0) && scoreThreshold !== undefined) {
     console.log(
       `⚠️ Score threshold ${scoreThreshold} returned 0 chunks for material ${sourceId} — retrying without threshold`
     );
-    chunks = await instance.retrieveContext(query, { limit, filter });
+    chunks = await generationLimiter.run(() =>
+      instance.retrieveContext(query, { limit, filter })
+    );
   }
 
   return chunks || [];

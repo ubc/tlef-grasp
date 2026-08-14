@@ -16,6 +16,7 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
+const { generationLimiter } = require('../utils/generation-limiter');
 const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
@@ -582,12 +583,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
             // question type.
-            const response = await generateStructured({
+            const response = await generationLimiter.run(() => generateStructured({
               messages,
               schema: model.getJsonSchema(),
               operation: 'question-generate',
               effort: effortForStage(settings, 'question-generate'),
-            });
+            }));
 
             const qPrompt = response.usage?.promptTokens || 0;
             const qCompletion = response.usage?.completionTokens || 0;
@@ -1050,13 +1051,13 @@ async function rateQuestions(questions, courseName, effort = null) {
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
   // Schema-constrained decoding guarantees the { ratings: [...] } shape.
-  const { content: responseContent, usage } = await generateStructured({
+  const { content: responseContent, usage } = await generationLimiter.run(() => generateStructured({
     prompt,
     schema: QUESTION_REVIEW_SCHEMA,
     operation: 'question-review',
     model: getReviewModel() || null,
     effort,
-  });
+  }));
   if (usage) {
     const reviewModel = getReviewModel() || 'unknown';
     logCostSummary(`Question review (${questions.length} questions)`, reviewModel, usage.promptTokens || 0, usage.completionTokens || 0);
@@ -1144,7 +1145,7 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, eff
     const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
     let responseContent = null;
     try {
-      const response = await generateStructured({ messages, schema: model.getJsonSchema(), operation: 'question-fix', effort });
+      const response = await generationLimiter.run(() => generateStructured({ messages, schema: model.getJsonSchema(), operation: 'question-fix', effort }));
       totalPromptTokens += response.usage?.promptTokens || 0;
       totalCompletionTokens += response.usage?.completionTokens || 0;
       responseContent = response.content || "";
