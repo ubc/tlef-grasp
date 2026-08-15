@@ -83,8 +83,15 @@ describe('generateQuestions concurrency', () => {
   });
 
   it('marks a 429 failure as rate limited', async () => {
-    mockPost.mockRejectedValueOnce(Object.assign(new Error('slow down'), { status: 429 }));
-    mockPost.mockResolvedValue(okResponse('from g-2'));
+    // g-1 429s on every attempt (including the tail retry sweep, which would
+    // otherwise recover a transient failure and leave nothing to inspect
+    // here), so the persisting failure can be checked for the flag.
+    mockPost.mockImplementation(async (_url, body) => {
+      if (body.granularLearningObjectiveId === 'g-1') {
+        throw Object.assign(new Error('slow down'), { status: 429 });
+      }
+      return okResponse('from g-2');
+    });
 
     const { failures } = await generateQuestions(course, objectiveGroups, undefined, { concurrency: 1 });
 
@@ -139,8 +146,10 @@ describe('generateQuestions rate-limit circuit breaker', () => {
 
     // All 11 objectives were launched — the breaker never fired, including
     // for objectives 10 and 11, which only run if the counter was reset by
-    // the successes at 2, 4, 6, and 8.
-    expect(mockPost).toHaveBeenCalledTimes(11);
+    // the successes at 2, 4, 6, and 8. The 5 that 429 are genuinely
+    // rate-limited (not breaker-skipped), so Task 7's tail sweep retries all
+    // 5 of them once more (still 429, per this mock), for 11 + 5 = 16 calls.
+    expect(mockPost).toHaveBeenCalledTimes(16);
     expect(questions).toHaveLength(6);
     expect(failures).toHaveLength(5);
     expect(failures.every((f) => f.rateLimited)).toBe(true);
@@ -162,7 +171,18 @@ describe('generateQuestions rate-limit circuit breaker', () => {
       generateQuestions(course, elevenObjectiveGroups, undefined, { concurrency: 1 })
     ).rejects.toThrow('slow down');
 
-    // Only the 5 consecutive failures were attempted; r-6..r-11 never launched.
-    expect(mockPost).toHaveBeenCalledTimes(5);
+    // r-6..r-11 were never launched by the initial pool, and the tail sweep
+    // only retries genuinely rate-limited failures — never objectives the
+    // breaker skipped — so they must still never appear in the call log.
+    const launchedIds = new Set(
+      mockPost.mock.calls.map(([, body]) => body.granularLearningObjectiveId)
+    );
+    for (let n = 6; n <= 11; n += 1) {
+      expect(launchedIds.has(`r-${n}`)).toBe(false);
+    }
+
+    // The 5 consecutive failures were attempted once by the initial pool,
+    // then once more by Task 7's tail sweep (still 429, per this mock): 10.
+    expect(mockPost).toHaveBeenCalledTimes(10);
   });
 });

@@ -28,7 +28,7 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
   const units = [];
   for (const learningObjective of objectiveGroups) {
     for (const granular of learningObjective.items) {
-      units.push({ learningObjective, granular });
+      units.push({ learningObjective, granular, order: units.length });
     }
   }
 
@@ -156,29 +156,70 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
     return Math.min(seconds * 1000, MAX_PAUSE_MS);
   };
 
-  const settled = await runPool(tasks, { concurrency, onRateLimit });
-
-  const allQuestions = [];
-  const failures = [];
-  settled.forEach((result, index) => {
-    if (result.status === "fulfilled") {
-      allQuestions.push(...result.value);
-      return;
-    }
-    const { learningObjective, granular } = units[index];
-    console.error(`Failed to generate questions for objective: ${granular.text}`, result.reason);
-    failures.push({
-      objectiveText: granular.text || learningObjective.title || "",
-      granularId: granular.granularId,
-      reason: result.reason?.message || String(result.reason),
-      rateLimited: result.reason?.status === 429 || result.reason?.rateLimited === true,
+  // Settles one batch of results into `into` (successes, keyed by original
+  // position) and `failures` (with enough detail to retry or report them).
+  // Reused for the initial pass and, below, for the tail retry sweep.
+  const collect = (settled, unitList, into, failures) => {
+    settled.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        into.push({ index: unitList[index].order, questions: result.value });
+        return;
+      }
+      const { learningObjective, granular, order } = unitList[index];
+      console.error(`Failed to generate questions for objective: ${granular.text}`, result.reason);
+      failures.push({
+        order,
+        objectiveText: granular.text || learningObjective.title || "",
+        granularId: granular.granularId,
+        reason: result.reason?.message || String(result.reason),
+        rateLimited: result.reason?.status === 429 || result.reason?.rateLimited === true,
+      });
     });
-  });
+  };
+
+  const ordered = [];
+  const failures = [];
+  collect(await runPool(tasks, { concurrency, onRateLimit }), units, ordered, failures);
+
+  // One sweep at concurrency 1 for objectives that failed for a reason worth
+  // retrying. Slow, but it is only the tail, and it turns "I lost 3
+  // objectives" into "it took a little longer". Safe because nothing is
+  // persisted until the stepper's save step.
+  //
+  // Deliberately excludes objectives the pool never launched because the
+  // circuit breaker tripped (PoolAbortedError, rateLimited: false) — those
+  // were skipped to stop hammering a saturated provider, and immediately
+  // retrying the work the breaker declined to attempt would defeat it. They
+  // stay reported as failures below rather than being resent.
+  const retryable = failures.filter((failure) => failure.rateLimited);
+  if (retryable.length > 0) {
+    // Failures the sweep won't touch (non-retryable / breaker-skipped) must
+    // survive into the final report — only the retried subset is replaced by
+    // the sweep's own outcome below.
+    const nonRetryable = failures.filter((failure) => !failure.rateLimited);
+    const retryUnits = retryable.map((failure) => units[failure.order]);
+    const retryTasks = retryUnits.map((unit) => tasks[unit.order]);
+    const swept = [];
+    const stillFailed = [];
+    collect(await runPool(retryTasks, { concurrency: 1 }), retryUnits, swept, stillFailed);
+    ordered.push(...swept);
+    // Only failures that survived the sweep (plus anything the sweep never
+    // touched) are reported.
+    failures.length = 0;
+    failures.push(...nonRetryable, ...stillFailed);
+    failures.sort((a, b) => a.order - b.order);
+  }
+
+  const allQuestions = ordered
+    .sort((a, b) => a.index - b.index)
+    .flatMap((entry) => entry.questions);
 
   // A total failure is an outage worth surfacing as an error. A partial one is
-  // a result the instructor can still use, with the gaps named.
-  if (allQuestions.length === 0 && failures.length > 0) {
-    throw settled.find((r) => r.status === "rejected").reason;
+  // a result the instructor can still use, with the gaps named. Guarded by
+  // units.length > 0 so an empty run (no objectives) doesn't count as "every
+  // objective failed".
+  if (units.length > 0 && failures.length === units.length) {
+    throw new Error(failures[0].reason);
   }
 
   return {

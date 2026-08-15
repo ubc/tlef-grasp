@@ -201,7 +201,7 @@ export default function QuestionGeneration() {
     );
 
     try {
-      const { questions } = await generateQuestions(
+      const { questions, failures } = await generateQuestions(
         selectedCourse,
         objectiveGroups,
         ({ generated, total }) =>
@@ -209,6 +209,16 @@ export default function QuestionGeneration() {
             `Generating questions — ${generated} of ${total} (includes automatic quality review and fixes)`
           )
       );
+
+      if (failures?.length > 0) {
+        const rateLimited = failures.filter((failure) => failure.rateLimited).length;
+        showToast(
+          `${failures.length} objective${failures.length === 1 ? "" : "s"} could not be generated` +
+            (rateLimited > 0 ? " (the AI provider was rate limiting)" : "") +
+            ". The rest are ready below.",
+          "warning"
+        );
+      }
 
       const groups = convertQuestionsToGroups(questions);
 
