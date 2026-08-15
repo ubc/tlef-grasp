@@ -212,8 +212,16 @@ export default function QuestionGeneration() {
 
       if (failures?.length > 0) {
         const rateLimited = failures.filter((failure) => failure.rateLimited).length;
+        // Name the failed objectives so the instructor knows what to
+        // regenerate, but cap the list so a large failure set doesn't
+        // produce an unreadable toast.
+        const names = failures.map((failure) => failure.objectiveText).filter(Boolean);
+        const shown = names.slice(0, 3);
+        const extra = names.length - shown.length;
+        const nameList = extra > 0 ? `${shown.join(", ")}, and ${extra} more` : shown.join(", ");
         showToast(
           `${failures.length} objective${failures.length === 1 ? "" : "s"} could not be generated` +
+            (nameList ? `: ${nameList}` : "") +
             (rateLimited > 0 ? " (the AI provider was rate limiting)" : "") +
             ". The rest are ready below.",
           "warning"

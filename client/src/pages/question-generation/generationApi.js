@@ -173,6 +173,10 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
         granularId: granular.granularId,
         reason: result.reason?.message || String(result.reason),
         rateLimited: result.reason?.status === 429 || result.reason?.rateLimited === true,
+        // Carried through so the sweep can honour the provider's requested
+        // wait before firing its first retry (see below) — collect()'s other
+        // caller (the initial pass) just ignores this field.
+        retryAfterSeconds: result.reason?.retryAfterSeconds,
       });
     });
   };
@@ -201,7 +205,35 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
     const retryTasks = retryUnits.map((unit) => tasks[unit.order]);
     const swept = [];
     const stillFailed = [];
-    collect(await runPool(retryTasks, { concurrency: 1 }), retryUnits, swept, stillFailed);
+    // Reuse the same onRateLimit so the sweep honours Retry-After and still
+    // has a circuit breaker of its own — but start its streak fresh. Every
+    // objective reaching the sweep got here by being rate-limited (or, for
+    // the objective that tripped the breaker, by being the 5th in a row),
+    // so the shared counter is already sitting at or near the threshold; left
+    // untouched, the sweep's very first retry would immediately re-trip the
+    // breaker and abandon the rest of the tail — precisely the case this
+    // sweep exists to give a second chance.
+    consecutiveRateLimits = 0;
+
+    // runPool's own pause only ever delays the *next* launch inside an
+    // ongoing run; once a pool has nothing left to launch it resolves
+    // immediately rather than sitting out a pause that would benefit no one
+    // still in flight (see async-pool.js). That's the right call for a pool
+    // that is genuinely finished, but it means the wait the provider asked
+    // for on the failure that sent this objective to the sweep never
+    // survives into a brand-new runPool() call — that call starts with no
+    // memory of it. So the first retry is paused explicitly, up front, using
+    // the same formula as onRateLimit but without its side effects (no
+    // consecutive-streak bump for a wait, not a new failure); onRateLimit
+    // itself, passed to runPool below, still covers pauses between the 2nd,
+    // 3rd, etc. retries if the sweep itself keeps getting rate limited.
+    const leadSeconds = Number(retryable[0]?.retryAfterSeconds) || 0;
+    const leadPauseMs = Math.min(leadSeconds * 1000, MAX_PAUSE_MS);
+    if (leadPauseMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, leadPauseMs));
+    }
+
+    collect(await runPool(retryTasks, { concurrency: 1, onRateLimit }), retryUnits, swept, stillFailed);
     ordered.push(...swept);
     // Only failures that survived the sweep (plus anything the sweep never
     // touched) are reported.

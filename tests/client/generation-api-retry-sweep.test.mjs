@@ -45,6 +45,39 @@ describe('tail retry sweep', () => {
     expect(questions.map((q) => q.text)).toEqual(['from g-1', 'from g-2 on retry']);
   });
 
+  it('honours Retry-After before firing the sweep retry', async () => {
+    // g-2 429s with a small but nonzero retryAfterSeconds; the sweep must
+    // not launch its retry until at least that long after the failure. A
+    // sweep with no onRateLimit fires the retry immediately (~0ms later),
+    // so a generous-but-tight floor catches that regression without making
+    // the suite slow or flaky.
+    const RETRY_AFTER_SECONDS = 0.08;
+    const timestamps = [];
+    mockPost.mockImplementation(async (_url, body) => {
+      if (body.granularLearningObjectiveId === 'g-2') {
+        timestamps.push(Date.now());
+        if (timestamps.length === 1) {
+          throw Object.assign(new Error('slow down'), {
+            status: 429,
+            body: { retryAfterSeconds: RETRY_AFTER_SECONDS },
+          });
+        }
+        return okResponse('from g-2 on retry');
+      }
+      return okResponse('from g-1');
+    });
+
+    const { failures } = await generateQuestions(course, objectiveGroups, undefined, { concurrency: 2 });
+
+    expect(failures).toHaveLength(0);
+    expect(timestamps).toHaveLength(2);
+    const gapMs = timestamps[1] - timestamps[0];
+    // Allow a little slack under the target so scheduling jitter can't flake
+    // this, but a retry that fired near-instantly (no pause at all) must
+    // still fail it.
+    expect(gapMs).toBeGreaterThanOrEqual(RETRY_AFTER_SECONDS * 1000 - 15);
+  });
+
   it('does not retry a non-retryable failure, but still sweeps a retryable one alongside it', async () => {
     // g-2 fails for a non-retryable reason (no status/rateLimited flag) and
     // must never be re-requested. g-3 fails for a retryable (429) reason and
