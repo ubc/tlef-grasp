@@ -10,6 +10,23 @@ const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 // How many objectives are generated at once. Objectives are independent, so
 // this is a straight latency win; 1 reproduces the old sequential behaviour.
 const DEFAULT_CONCURRENCY = 4;
+
+// Resolves the pool's concurrency: an explicit `options.concurrency` always
+// wins; otherwise a well-formed VITE_GENERATION_CONCURRENCY (a positive
+// integer) is used; anything else — unset, malformed, zero, negative — falls
+// back to DEFAULT_CONCURRENCY. The NaN guard matters: a NaN concurrency
+// reaches runPool as `active < limit`, which is never true, so the pool would
+// launch nothing and hang forever.
+//
+// Exported (rather than reading import.meta.env inline) so the guard is
+// testable under plain Node/Jest: Vite inlines import.meta.env.VITE_* at
+// build time, which only a real Vite build reproduces, so the raw string is
+// threaded through as a parameter instead.
+export function resolveConcurrency(explicitConcurrency, rawEnvValue, fallback = DEFAULT_CONCURRENCY) {
+  if (explicitConcurrency !== undefined && explicitConcurrency !== null) return explicitConcurrency;
+  const parsed = parseInt(rawEnvValue, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 // Cap on how long a provider Retry-After can stall the run.
 const MAX_PAUSE_MS = 60000;
 // Consecutive rate-limit failures before we stop rather than keep hammering.
@@ -21,7 +38,7 @@ const RATE_LIMIT_CIRCUIT_BREAK = 5;
 // waiting on each one in turn. Results stay in objective order regardless of
 // completion order.
 export async function generateQuestions(course, objectiveGroups, onProgress, options = {}) {
-  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const concurrency = resolveConcurrency(options.concurrency, import.meta.env?.VITE_GENERATION_CONCURRENCY);
 
   // One task per granular objective, flattened so the pool sees a single list
   // while results stay addressable by their original position.
@@ -67,6 +84,12 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
       if (error?.status === 429) {
         error.rateLimited = true;
         error.retryAfterSeconds = error?.body?.retryAfterSeconds;
+      } else if (error?.status === 401 || error?.status === 403) {
+        // Spec section 5: a revoked session or lost course access should stop
+        // the whole run immediately, not fire every remaining objective at a
+        // provider call that can only fail the same way. runPool aborts as
+        // soon as it sees `fatal` on a rejection, before launching more work.
+        error.fatal = true;
       }
       throw error;
     }

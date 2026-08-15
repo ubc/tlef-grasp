@@ -690,9 +690,25 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       const conversation = [{ role: 'user', content: sharedPrefix }];
       let questionsData = [];
       const fixContexts = [];
+      // A rate limit that survives the limiter means the provider is
+      // genuinely saturated. Caught here (not left to propagate out of the
+      // handler) so whatever was already generated in this batch — already
+      // paid for — still ships, rather than the whole request unwinding into
+      // a 429 that drops it. Kept aside so a batch that generated nothing at
+      // all can still re-throw it below and answer 429 with Retry-After.
+      let pendingRateLimitError = null;
 
       for (const spec of slotSpecs) {
-        const result = await generateOneQuestion(spec, conversation);
+        let result;
+        try {
+          result = await generateOneQuestion(spec, conversation);
+        } catch (error) {
+          if (isRetryableLLMError(error)) {
+            pendingRateLimitError = error;
+            break;
+          }
+          throw error;
+        }
         if (!result) continue;
         if (result.normalizedQuestionText) seenQuestionTexts.add(result.normalizedQuestionText);
         conversation.push({ role: 'user', content: result.turnPrompt });
@@ -705,6 +721,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       logCostSummary(`Question generation (${questionsData.length} questions)`, generationModel, totalPromptTokens, totalCompletionTokens);
 
       if (questionsData.length === 0) {
+        // A batch that produced nothing must not look like success: if a
+        // rate limit is what stopped us, re-throw it so the handler still
+        // answers 429 with Retry-After instead of the generic 500 below.
+        if (pendingRateLimitError) throw pendingRateLimitError;
         throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
@@ -727,6 +747,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       res.json({
         success: true,
         questions: questionsData,
+        // How many questions this batch was asked for versus how many it
+        // actually produced — always equal except when a rate limit stopped
+        // generation partway through, in which case the caller reports the
+        // shortfall to the instructor.
+        requested: targetCount,
+        produced: questionsData.length,
         method: "RAG + LLM Stateful Conversation",
         // Broken out by stage so cost attributable to the review-fix loop
         // (review + fix) can be tracked separately from generation.

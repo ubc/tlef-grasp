@@ -75,4 +75,85 @@ describe('LLMLimiter', () => {
     expect(generationLimiter).not.toBe(gradingLimiter);
     expect(generationLimiter.concurrency).not.toBe(gradingLimiter.concurrency);
   });
+
+  // Finding 4 (final branch review): the retry-on-429-while-holding-slot path
+  // is the mechanism the whole parallel-generation design leans on for
+  // throttling — a 429 is meant to retry with backoff *without* releasing its
+  // concurrency slot, so a queued second caller cannot start and pile more
+  // load onto an already-saturated provider. It previously had no direct
+  // coverage. backoffBaseMs is kept tiny so the retry delays don't slow the
+  // suite.
+  describe('retry-on-429 while holding the slot', () => {
+    const retryableError = () => Object.assign(new Error('429 rate limited'), { status: 429 });
+
+    it('retries a retryable rejection up to maxRetries and then succeeds', async () => {
+      const limiter = new LLMLimiter({ label: 'test', concurrency: 1, queueTimeoutMs: 0, maxRetries: 2, backoffBaseMs: 2 });
+      let attempts = 0;
+
+      const result = await limiter.run(async () => {
+        attempts += 1;
+        if (attempts < 3) throw retryableError();
+        return 'ok after retries';
+      });
+
+      expect(result).toBe('ok after retries');
+      // maxRetries: 2 allows 3 total attempts (the initial try plus 2
+      // retries); this succeeded on the 3rd.
+      expect(attempts).toBe(3);
+    });
+
+    it('holds the slot for the whole retry sequence, so a second caller cannot start mid-retry', async () => {
+      const limiter = new LLMLimiter({ label: 'test', concurrency: 1, queueTimeoutMs: 0, maxRetries: 2, backoffBaseMs: 20 });
+      let attempts = 0;
+
+      const first = limiter.run(async () => {
+        attempts += 1;
+        if (attempts < 2) throw retryableError();
+        return 'first done';
+      });
+
+      let secondStarted = false;
+      const second = limiter.run(async () => {
+        secondStarted = true;
+        return 'second done';
+      });
+
+      // The first call's single retry is still backing off (20ms+) at this
+      // point. If the slot were released between attempts instead of held
+      // for the whole sequence, the queued second call would already have
+      // started here.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(secondStarted).toBe(false);
+
+      await expect(first).resolves.toBe('first done');
+      await expect(second).resolves.toBe('second done');
+    });
+
+    it('does not retry a non-retryable error', async () => {
+      const limiter = new LLMLimiter({ label: 'test', concurrency: 1, queueTimeoutMs: 0, maxRetries: 2, backoffBaseMs: 2 });
+      let attempts = 0;
+      const error = new Error('schema validation failed');
+
+      await expect(
+        limiter.run(async () => {
+          attempts += 1;
+          throw error;
+        })
+      ).rejects.toBe(error);
+      expect(attempts).toBe(1);
+    });
+
+    it('throws the last retryable error once retries are exhausted', async () => {
+      const limiter = new LLMLimiter({ label: 'test', concurrency: 1, queueTimeoutMs: 0, maxRetries: 2, backoffBaseMs: 2 });
+      let attempts = 0;
+
+      await expect(
+        limiter.run(async () => {
+          attempts += 1;
+          throw retryableError();
+        })
+      ).rejects.toThrow('429 rate limited');
+      expect(attempts).toBe(3);
+    });
+  });
 });
