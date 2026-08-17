@@ -807,7 +807,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
                       .map((qt) => ({
                         bloomLevel: qt.bloomLevel,
                         questionType: qt.questionType,
-                        count: Math.min(3, Math.max(1, parseInt(qt.count, 10) || 1)),
+                        count: Math.min(5, Math.max(1, parseInt(qt.count, 10) || 1)),
                       }))
                   : [];
                 bloomTaxonomies.forEach((level) => {
