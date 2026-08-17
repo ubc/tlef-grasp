@@ -5,18 +5,21 @@ const { IMAGE_DESCRIPTION_SCHEMA } = require("../constants/llm-schemas");
 const fs = require("fs").promises;
 const path = require("path");
 
-async function describeImage(base64Image, contextText) {
+async function describeImage(base64Image, contextText, effort) {
   try {
     const prompt = `You are an expert data extractor. You MUST precisely transcribe EVERY single word, number, equation, and label visible in the image. Do NOT skip any text, even if it is a large heading, handwritten, or appears to be a definition. Treat the image as the single source of truth. After transcribing all text exactly as written, describe the visual relationships, diagrams, or charts. Surrounding text context is provided for understanding, not as an excuse to skip text: "${contextText}"\nRespond ONLY in valid JSON format with a single key "description" containing your full transcription and description. If the image is entirely decorative, set the description to "decorative".`;
 
-    // Low temperature for faithful transcription. Schema-constrained decoding
-    // guarantees the { description } shape on the Ollama (vision) path.
+    // Effort is resolved on the main thread and passed in: this runs inside a
+    // parse worker, which has no database connection to read course settings.
+    // Schema-constrained decoding guarantees the { description } shape on the
+    // Ollama (vision) path.
     const { content: rawContent, usage } = await generateStructured({
       prompt,
       schema: IMAGE_DESCRIPTION_SCHEMA,
+      operation: "pdf-page-image",
       images: [base64Image],
       model: getVisionModel(),
-      temperature: 0.2,
+      effort,
     });
 
     let description = "";
@@ -77,7 +80,7 @@ function clusterOcrItems(items, threshold = 60) {
  * 3. VLM (OpenAI) as a "Visual Healer" for equations and diagrams.
  * 4. NFKC Normalization for robust searchability.
  */
-async function parsePdf(buffer) {
+async function parsePdf(buffer, effort = null) {
   const { LiteParse } = await import("@llamaindex/liteparse");
   const parser = new LiteParse({ ocrEnabled: true });
 
@@ -153,7 +156,7 @@ async function parsePdf(buffer) {
                 const base64 = croppedBuffer.toString('base64');
                 const contextText = pageText;  
                 
-                const vlmResult = await describeImage(base64, contextText);
+                const vlmResult = await describeImage(base64, contextText, effort);
                 
                 if (vlmResult && vlmResult.usage) {
                   totalTokens += vlmResult.usage.totalTokens || vlmResult.usage.total_tokens || 0;

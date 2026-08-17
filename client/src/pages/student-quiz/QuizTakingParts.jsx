@@ -384,11 +384,19 @@ export function CompletionScreen({
   onBackToList,
   onPracticeWrong,
   wrongCount = 0,
+  submitStatus = "idle",
+  onRetrySubmit,
 }) {
   const { correct, total, score, openEndedCount, newAchievements, practice } =
     completion;
   const hasPerfectBadge = !practice && score === 100 && total > 0;
   const canPractice = wrongCount > 0 && typeof onPracticeWrong === "function";
+  // Until the server confirms the write, everything here is a local tally.
+  // Telling a student "you scored 80%" over a submission that never landed is
+  // how they end up recorded as never having taken the quiz.
+  const saving = !practice && submitStatus === "saving";
+  const submitFailed = !practice && submitStatus === "failed";
+  const provisional = saving || submitFailed;
 
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-8">
@@ -407,6 +415,40 @@ export function CompletionScreen({
             : "You have completed all questions."}
         </p>
 
+        {saving && (
+          <p className="mt-4 text-sm font-medium text-muted" role="status">
+            <i className="fas fa-spinner fa-spin mr-2" aria-hidden="true" />
+            Recording your result...
+          </p>
+        )}
+
+        {submitFailed && (
+          <div
+            className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-5 text-left"
+            role="alert"
+          >
+            <div className="font-semibold text-danger">
+              <i className="fas fa-triangle-exclamation mr-2" aria-hidden="true" />
+              Your result was not recorded
+            </div>
+            <p className="mt-2 text-sm text-gray-700">
+              The score below is what this device counted, but it did not reach the
+              server, so your instructor will not see it. Stay on this page and try
+              again. If it keeps failing, contact your instructor before closing
+              this tab.
+            </p>
+            {typeof onRetrySubmit === "function" && (
+              <button
+                type="button"
+                onClick={onRetrySubmit}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-danger px-5 py-2 font-medium text-white transition-colors hover:opacity-90"
+              >
+                <i className="fas fa-rotate-right" aria-hidden="true" /> Submit again
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Practice rounds report the current session only and omit the score,
             since they don't count toward the grade. */}
         <div className={`my-8 grid gap-4 ${practice ? "grid-cols-2" : "grid-cols-3"}`}>
@@ -420,15 +462,21 @@ export function CompletionScreen({
           </div>
           {!practice && (
             <div className="rounded-xl bg-page p-4">
-              <div className="text-sm text-muted">Score:</div>
-              <div className="text-2xl font-bold text-ink">
+              <div className="text-sm text-muted">
+                {provisional ? "Score (not saved):" : "Score:"}
+              </div>
+              <div
+                className={`text-2xl font-bold ${provisional ? "text-muted" : "text-ink"}`}
+              >
                 {score === null ? (openEndedCount > 0 ? "—" : "0%") : `${score}%`}
               </div>
             </div>
           )}
         </div>
 
-        {(newAchievements.length > 0 || hasPerfectBadge) && (
+        {/* Achievements are awarded by the server, so there is nothing to show
+            until the submission lands. */}
+        {!provisional && (newAchievements.length > 0 || hasPerfectBadge) && (
           <div className="mb-8 inline-flex items-center gap-2 rounded-full bg-warning/15 px-5 py-2.5 font-semibold text-warning">
             {newAchievements.length === 1 ? (
               <>

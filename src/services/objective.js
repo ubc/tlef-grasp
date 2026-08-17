@@ -244,9 +244,17 @@ const getObjectiveWithMaterials = async (objectiveId, courseId = null) => {
 };
 
 /**
- * Update a learning objective
+ * Update a learning objective.
+ *
+ * `courseId` is deliberately NOT writable here. An objective belongs to the
+ * course it was created in for the lifetime of its questions, mastery records
+ * and quiz links; letting a caller reassign it turned a name edit into a way to
+ * move another course's objective into your own. Granular children continue to
+ * inherit their courseId from the parent, which is read from the stored
+ * document rather than the request.
+ *
  * @param {string|ObjectId} objectiveId - The learning objective ID
- * @param {Object} updateData - { name: string, granularObjectives: Array<{id?: string, text: string}>, materialIds: Array<string> }
+ * @param {Object} updateData - { name: string, granularObjectives: Array<{id?: string, text: string}>, questionAction?: 'keep'|'delete' }
  */
 const updateObjective = async (objectiveId, updateData) => {
   try {
@@ -271,13 +279,8 @@ const updateObjective = async (objectiveId, updateData) => {
     if (updateData.name !== undefined) {
       update.name = updateData.name.trim();
     }
-    if (updateData.courseId !== undefined) {
-      // Convert courseId to ObjectId if it's a string
-      update.courseId = ObjectId.isValid(updateData.courseId) 
-        ? new ObjectId(updateData.courseId) 
-        : updateData.courseId;
-    }
-    
+
+
     // Update parent objective name if provided
     if (updateData.name !== undefined) {
       await collection.updateOne(
@@ -292,17 +295,15 @@ const updateObjective = async (objectiveId, updateData) => {
       const existingGranular = await collection.find({ parent: id }).toArray();
       const existingGranularIds = existingGranular.map(g => g._id.toString());
       
-      // Get courseId from parent objective if not provided in updateData
-      let courseIdForGranular = update.courseId;
-      if (!courseIdForGranular) {
-        const existingParent = await collection.findOne({ _id: id });
-        courseIdForGranular = existingParent?.courseId;
-        // Ensure courseId is an ObjectId if it came from existing parent
-        if (courseIdForGranular && ObjectId.isValid(courseIdForGranular)) {
-          courseIdForGranular = new ObjectId(courseIdForGranular);
-        }
+      // Granular children always inherit the parent's own course — the only
+      // source of truth now that courseId is not writable. Read off the document
+      // already loaded above rather than re-fetching it.
+      let courseIdForGranular = existingObjective.courseId;
+      if (courseIdForGranular && ObjectId.isValid(courseIdForGranular)) {
+        courseIdForGranular = new ObjectId(courseIdForGranular);
       }
-      
+
+
       // Process granular objectives
       const granularToKeep = [];
       const granularToCreate = [];

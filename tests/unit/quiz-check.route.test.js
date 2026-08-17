@@ -33,10 +33,28 @@ jest.mock('../../src/middleware/auth', () => ({
   requirePageRole: () => (_req, _res, next) => next(),
 }));
 
+// The grade/override and attempt-detail handlers are course-scoped: staff access,
+// the quizScores TA capability, and the section scoping the scores table uses.
+jest.mock('../../src/utils/course-access', () => ({
+  hasStaffAccessInCourse: jest.fn().mockResolvedValue(true),
+}));
+jest.mock('../../src/utils/ta-permissions', () => ({
+  assertTaPermission: jest.fn().mockResolvedValue(true),
+  TA_PERMISSION_KEYS: { QUIZ_SCORES: 'quizScores', QUIZZES: 'quizzes', QUESTION_FLAGS: 'questionFlags' },
+}));
+jest.mock('../../src/services/course-section', () => ({
+  getSectionsForViewer: jest.fn().mockResolvedValue({ seeAll: true, sections: [] }),
+  getUserCourseSections: jest.fn().mockResolvedValue([]),
+  getCourseSections: jest.fn().mockResolvedValue([]),
+  getSectionsOwnedByUser: jest.fn().mockResolvedValue([]),
+}));
+
 const quizService = require('../../src/services/quiz');
 const { getQuestion } = require('../../src/services/question');
 const answerGrading = require('../../src/services/answer-grading');
 const quizSessionService = require('../../src/services/quiz-session');
+const courseAccess = require('../../src/utils/course-access');
+const sectionService = require('../../src/services/course-section');
 const quizRouter = require('../../src/routes/quiz');
 
 function buildApp(user = { _id: 'user-1' }) {
@@ -498,6 +516,15 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
 
   const gradeUrl = '/api/quiz/quiz-1/student/student-1/grade';
 
+  // jest.clearAllMocks() above wipes the module-level defaults, so restore the
+  // course-scoping happy path for each test.
+  beforeEach(() => {
+    quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1' });
+    courseAccess.hasStaffAccessInCourse.mockResolvedValue(true);
+    sectionService.getSectionsForViewer.mockResolvedValue({ seeAll: true, sections: [] });
+    sectionService.getUserCourseSections.mockResolvedValue([]);
+  });
+
   it('applies an instructor grade/override', async () => {
     quizService.gradeAttempt.mockResolvedValue({
       score: 80,
@@ -543,6 +570,64 @@ describe('PUT /api/quiz/:quizId/student/:userId/grade', () => {
       'fib-question-1',
       false
     );
+  });
+
+  // H7 regression: this handler previously had no course scoping at all — the
+  // only gate was requireRole(FACULTY) — so any faculty user in the institution
+  // could rewrite a grade in any course, and a co-instructor could regrade a
+  // student in a colleague's section. The two read endpoints for the same
+  // resource already checked all three of these.
+  it('403s when the caller has no staff access in the quiz\u2019s course', async () => {
+    courseAccess.hasStaffAccessInCourse.mockResolvedValue(false);
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'question-1', isCorrect: true });
+
+    expect(res.status).toBe(403);
+    expect(quizService.gradeAttempt).not.toHaveBeenCalled();
+  });
+
+  it('403s when the student is outside the sections the caller owns', async () => {
+    sectionService.getSectionsForViewer.mockResolvedValue({
+      seeAll: false,
+      sections: [{ sectionId: 'mine' }],
+    });
+    sectionService.getUserCourseSections.mockResolvedValue([{ sectionId: 'someone-elses' }]);
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'question-1', isCorrect: true });
+
+    expect(res.status).toBe(403);
+    expect(quizService.gradeAttempt).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-owner instructor to grade a student in a section they own', async () => {
+    sectionService.getSectionsForViewer.mockResolvedValue({
+      seeAll: false,
+      sections: [{ sectionId: 'mine' }],
+    });
+    sectionService.getUserCourseSections.mockResolvedValue([{ sectionId: 'mine' }]);
+    quizService.gradeAttempt.mockResolvedValue({ score: 100, correctAnswers: 5, totalQuestions: 5 });
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'question-1', isCorrect: true });
+
+    expect(res.status).toBe(200);
+    expect(quizService.gradeAttempt).toHaveBeenCalled();
+  });
+
+  it('404s for an unknown quiz id', async () => {
+    quizService.getQuizById.mockResolvedValue(null);
+
+    const res = await request(buildApp())
+      .put(gradeUrl)
+      .send({ questionId: 'question-1', isCorrect: true });
+
+    expect(res.status).toBe(404);
+    expect(quizService.gradeAttempt).not.toHaveBeenCalled();
   });
 
   it('rejects a non-boolean isCorrect', async () => {

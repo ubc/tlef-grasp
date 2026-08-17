@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { useCourseObjectives, useInvalidateObjectives } from "../../hooks/useObjectives";
+import { useCourseMaterials } from "../../hooks/useMaterials";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import AIGenerateModal from "./AIGenerateModal";
@@ -26,6 +27,7 @@ export default function ObjectivesStep({
   const dropdownRef = useRef(null);
 
   const { objectives: dbObjectives } = useCourseObjectives(course?.id);
+  const { materials: courseMaterials } = useCourseMaterials(course?.id);
 
   useEffect(() => {
     const handleClick = (event) => {
@@ -70,7 +72,6 @@ export default function ObjectivesStep({
       const data = await api.put(`/api/objective/${group.objectiveId}`, {
         name: group.title,
         courseId: course.id,
-        materialIds: group.materialIds || [],
         granularObjectives,
       });
       if (data.success && data.granularObjectives) {
@@ -474,6 +475,7 @@ export default function ObjectivesStep({
             <ObjectiveGroupCard
               key={group.id}
               group={group}
+              courseMaterials={courseMaterials}
               showValidation={showValidation}
               onUpdateGroup={(updater) => updateGroup(group.id, updater)}
               onCommitTitle={(value) => commitGroupTitle(group, value)}

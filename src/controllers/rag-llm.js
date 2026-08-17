@@ -8,12 +8,17 @@ const databaseService = require('../services/database');
 const { ObjectId } = require('mongodb');
 
 // Import services
-const { getMaterialCourseId } = require('../services/material');
+const { getMaterialCourseId, getMaterialBySourceId } = require('../services/material');
+const outlineService = require('../services/material-outline');
+const { renderOutlineBlock } = require('../utils/outline-text');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getLLMModel, getReviewModel, getLLMProvider } = require('../utils/llm-provider');
 const { generateStructured } = require('../utils/structured-llm');
+const { generationLimiter } = require('../utils/generation-limiter');
+const { isRetryableLLMError } = require('../utils/llm-limiter');
+const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
 const settingsService = require('../services/settings');
@@ -24,7 +29,16 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_REVIEW_PROMPT } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
+
+/**
+ * Objective-generation context size that warrants a warning. Not a limit:
+ * RAG_OBJECTIVE_CHUNK_LIMIT already bounds the context (that many chunks, each
+ * capped at 1000 chars by the chunker), so at the default of 200 the context
+ * tops out around 200k chars. Exceeding this means the limit was raised well
+ * past its default, which is worth surfacing rather than silently trimming.
+ */
+const OBJECTIVE_CONTEXT_WARN_CHARS = 300000;
 
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
@@ -35,6 +49,8 @@ const MODEL_PRICING = {
   'gpt-4.5': { input: 75.00, output: 150.00 },
   'gpt-5.4': { input: 2.50, output: 10.00 },
   'gpt-5.4-mini': { input: 0.15, output: 0.60 },
+  // Per OpenAI's 2026-07-30 price cut.
+  'gpt-5.6-luna': { input: 0.20, output: 1.20 },
 };
 
 function calcCost(model, promptTokens, completionTokens) {
@@ -49,9 +65,31 @@ function logCostSummary(label, model, promptTokens, completionTokens) {
   console.log(`💰 ${label} [${model}] — input: ${promptTokens} tokens, output: ${completionTokens} tokens,${costStr}`);
 }
 
-// Simple error response function
+// Default seconds to wait when the provider rate limits without saying for how
+// long. The client pool honours this before launching more work.
+const DEFAULT_RETRY_AFTER_SECONDS = 20;
+
+// Simple error response function. A provider rate limit is reported as 429 with
+// Retry-After rather than 500: the client pool pauses and halves its
+// concurrency on 429, and cannot do either if every failure looks the same.
 function returnErrorResponse(res, error, details = null) {
   console.error("Question generation failed:", error);
+
+  if (isRetryableLLMError(error)) {
+    const headerValue =
+      error?.headers?.['retry-after'] ?? error?.response?.headers?.['retry-after'];
+    const parsed = parseInt(headerValue, 10);
+    const retryAfter = Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_RETRY_AFTER_SECONDS;
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      success: false,
+      rateLimited: true,
+      retryAfterSeconds: retryAfter,
+      error: "The AI provider is rate limiting this request. Generation will slow down and retry.",
+      details: details || error.message,
+    });
+  }
+
   res.status(500).json({
     success: false,
     error: "Question generation service is currently unavailable",
@@ -228,6 +266,20 @@ const addDocumentToRagHandler = async (req, res) => {
     const { content, metadata, courseId } = req.body;
     const cid = courseId || metadata?.courseId || null;
 
+    // Writes chunks into a course's vector store, so it needs the same gates as
+    // saving a material. Without them any staff user could inject text into
+    // another course's collection, where it becomes retrieval context for that
+    // course's question generation — and, having no grasp_material row, is
+    // invisible on the materials page and cannot be deleted through the UI.
+    if (!cid) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, cid))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, cid, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+    if (!(await assertTaPermission(req, res, cid, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
+
     const chunkIds = await ragService.addDocumentToRAG(content, metadata, cid);
 
     res.json({
@@ -247,6 +299,15 @@ const addDocumentToRagHandler = async (req, res) => {
 const searchRagHandler = async (req, res) => {
   try {
     const { query, limit = 5, courseId } = req.body;
+
+    // Returns raw chunks of a course's material verbatim, so it is staff-only in
+    // that course. Unscoped, this read another course's lecture content directly.
+    if (!courseId) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
 
     console.log("=== RAG SEARCH REQUEST ===");
     console.log("Query:", query);
@@ -306,6 +367,15 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         details: "courseName, learningObjectiveText, granularLearningObjectiveText, and bloomLevels array are required",
       });
     }
+    // Membership first: both capability checks below fail OPEN for a non-member
+    // (an absent co-instructor permission means "allowed", and a user with no TA
+    // membership is not a TA), so neither one substitutes for this.
+    if (!courseId) {
+      return res.status(400).json({ error: "A courseId is required" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
@@ -350,10 +420,41 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     const existingQuestionsContext = buildExistingQuestionsContext(existingQuestionTexts);
 
     // Prepare RAG search query
-    const searchQuery = `Get relevant content about learning objective: ${learningObjectiveText || ''}, Granular Learning Objective: ${granularLearningObjectiveText || ''} for course: ${courseName || ''}`;
+    // Embedded and compared against chunks of course material, so it carries the
+    // objective text and nothing else. Wrapper phrasing ("Get relevant content
+    // about...", "for course: Biology") appears in no chunk and only drags the
+    // query vector toward generic instructional language — which depressed the
+    // scores enough that the threshold below filtered everything out and the
+    // no-threshold fallback in rag-fanout became the real retrieval path. The
+    // course is already implied: retrieval is filtered to this objective's own
+    // materials.
+    const searchQuery = [learningObjectiveText, granularLearningObjectiveText]
+      .map((text) => String(text || '').trim())
+      .filter(Boolean)
+      .join('. ');
 
-    const questionRagThreshold = parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.6;
-    const questionRagLimit = parseInt(process.env.RAG_CHUNK_LIMIT) || 50;
+    // Both settings apply to question generation only — objective generation
+    // uses RAG_OBJECTIVE_CHUNK_LIMIT and deliberately passes no score threshold.
+    //
+    // The chunk limit is the dominant cost in this pipeline: retrieved material
+    // goes into the prefix that every request in a batch opens with, so each
+    // chunk is paid for roughly once per question generated, plus once per fix.
+    // At 50 (~12.5k tokens) that is around 80% of a batch's input.
+    //
+    // It is a TOTAL split evenly across the materials on an objective, up to
+    // MAX_MATERIALS_PER_OBJECTIVE — so 50 is 50 chunks for one material but
+    // ~17 each for three. Lowering it therefore bites hardest on the objectives
+    // drawing on the most sources.
+    //
+    // It is a ceiling, not a target: only chunks clearing the threshold below
+    // are retrieved, so a narrow objective costs less than a broad one without
+    // this needing to change. That only holds while the threshold actually
+    // discriminates — if rag-fanout starts logging "returned 0 chunks, retrying
+    // without threshold" for most materials, the threshold is being bypassed,
+    // every objective is paying the full ceiling, and the fix is to lower the
+    // threshold (or check what is being embedded as the query), not this.
+    const questionRagThreshold = parseFloat(process.env.RAG_QUESTION_SCORE_THRESHOLD) || 0.6;
+    const questionRagLimit = parseInt(process.env.RAG_QUESTION_CHUNK_LIMIT) || 50;
 
     let ragContext = '';
     if (learningObjectiveId) {
@@ -378,12 +479,11 @@ const generateQuestionsWithRagHandler = async (req, res) => {
     //console.log("RAG Context:", ragContext);
 
     // Use LLM service for generation
-    const QUESTION_GEN_TEMPERATURE = 0.3;
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
     console.log("Generation config:", {
       provider: getLLMProvider(),
       model: getLLMModel(),
-      temperature: QUESTION_GEN_TEMPERATURE,
+      reasoningEffort: effortForStage(settings, 'question-generate'),
       maxTokens: "uncapped",
       structuredOutput: true,
     });
@@ -421,19 +521,43 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         }));
       }
 
-      // Build the first-turn prompt (includes full RAG context for prompt caching)
-      const buildFirstPrompt = (bloomLevel, questionType) => {
+      // The prefix every request in this batch opens with — the planner's and
+      // each generator's — byte-for-byte identical, so the provider processes
+      // the retrieved material once and the rest of the batch reads it from
+      // cache. Anything that differs per question goes in the turn that follows
+      // it, never in here.
+      //
+      // Every type's rules go in here, not into the individual turns. In a
+      // conversation the opening message is sent once and re-read by every later
+      // turn, so this is the one place they can sit without being restated —
+      // and having all four present is what guarantees no question is ever asked
+      // for with its rules absent, which is the bug that started this. The turn
+      // itself names which type is in force.
+      //
+      // Content-bearing values are substituted via replacer functions: a plain
+      // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
+      // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
+      // at the model corrupted.
+      const allTypeInstructions = Object.values(QUESTION_TYPES)
+        .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction()}`)
+        .join("\n\n");
+
+      const buildSharedPrefix = () => {
         let filled = promptTemplate
-          .replace('{courseName}', courseName || '')
-          .replace('{learningObjectiveText}', learningObjectiveText || '')
-          .replace('{granularLearningObjectiveText}', granularLearningObjectiveText || '')
-          .replace('{bloomLevel}', bloomLevel || '')
-          .replace('{questionType}', questionType || '')
-          .replace('{ragContext}', ragContext || '')
-          .replace(
-            '{typeSpecificInstructions}',
-            QuestionFactory.getModel(questionType).getPromptInstruction()
-          );
+          .replace('{courseName}', () => courseName || '')
+          .replace('{learningObjectiveText}', () => learningObjectiveText || '')
+          .replace('{granularLearningObjectiveText}', () => granularLearningObjectiveText || '')
+          .replace('{bloomLevel}', 'stated per question below')
+          .replace('{questionType}', 'stated per question below')
+          .replace('{ragContext}', () => ragContext || '')
+          .replace('{typeSpecificInstructions}', () => allTypeInstructions);
+        // Instructors can replace this prompt from Settings, and a replacement
+        // that drops the placeholder would send no type rules at all — while
+        // every turn still points at "the instructions given at the start of
+        // this conversation". Append them rather than let that dangle.
+        if (!filled.includes(allTypeInstructions)) {
+          filled = `${filled}\n\nUse ONLY the instructions for the question type named with each question below:\n${allTypeInstructions}`;
+        }
         if (filled.includes('{existingQuestionsContext}')) {
           filled = filled.split('{existingQuestionsContext}').join(existingQuestionsContext);
         } else if (existingQuestionsContext) {
@@ -442,152 +566,225 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         return filled;
       };
 
-      const questionsData = [];
+      const sharedPrefix = buildSharedPrefix();
+
+      const slotSpecs = Array.from({ length: targetCount }, (_, i) => ({
+        index: i,
+        bloomLevel: bloomLevels[i % bloomLevels.length] || "Understand",
+        questionType: questionTypeForIndex(i),
+      }));
+
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       const maxRetries = 3;
-      // Conversation history of successful turns for context (enables prompt caching)
-      const conversationHistory = [];
+
+      // A turn says which question it wants and nothing more. The rules are in
+      // the opening message and the earlier questions are in the history, so
+      // restating either would only pay for them twice.
+      //
+      // Naming the type on every turn is not decoration: with several types'
+      // worked examples in the history, a turn that does not say which one it
+      // wants leaves the model to infer it from what it can see — and what it
+      // can see is the previous question, of whatever type that was.
+      const buildTurn = (spec, { attempt = 1, lastError = null, withSiblingConstraint = true } = {}) => {
+        let turn =
+          `QUESTION ${spec.index + 1} OF ${targetCount}.\n`
+          + `Write a ${spec.questionType.toUpperCase()} question at Bloom's Taxonomy Level: ${spec.bloomLevel}.\n`
+          + `Follow the instructions for question type "${spec.questionType}" given at the start of this conversation, and ignore the instructions for the other types.\n`;
+        if (spec.index > 0 && withSiblingConstraint) {
+          turn += `It must test something different from the questions already written above — not a rephrasing, and not the same worked example, reaction, or scenario with different wording.\n`;
+        }
+        turn += `\nRespond with ONLY a single valid JSON object. No other text.`;
+        if (attempt > 1) {
+          turn += QuestionFactory.getModel(spec.questionType).getRetrySuffix(attempt, lastError);
+        }
+        return turn;
+      };
+
       const seenQuestionTexts = new Set(
         existingQuestionTexts.map(normalizeQuestionText).filter(Boolean)
       );
 
-      for (let i = 0; i < workItems.length; i++) {
-        const currentBloomLevel = workItems[i].bloomLevel;
-        const currentQuestionType = workItems[i].questionType;
-        let questionData = null;
-        const currentQuestionHistory = [];
+      // One question, retried in place. Returns null when every attempt failed,
+      // so one bad slot costs its own question and not the batch.
+      const generateOneQuestion = async (spec, conversation) => {
+        const model = QuestionFactory.getModel(spec.questionType);
+        const attemptHistory = [];
         let lastError = null;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           let responseContent = null;
-          let turnPrompt = "";
+          const turnPrompt = buildTurn(spec, { attempt, lastError });
           try {
-            if (i === 0 && attempt === 1) {
-              // First question, first attempt: full prompt with RAG context
-              turnPrompt = buildFirstPrompt(currentBloomLevel, currentQuestionType);
-            } else if (attempt > 1) {
-              // Retry: add correction hint for the specific type
-              turnPrompt = (i === 0 ? buildFirstPrompt(currentBloomLevel, currentQuestionType) : `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept than previously generated questions.\nRespond with ONLY a single valid JSON object. No other text.`)
-                + QuestionFactory.getModel(currentQuestionType).getRetrySuffix(attempt, lastError);
-            } else {
-              // Subsequent questions (i > 0), first attempt: include schema hint since
-              // filterPromptToType stripped all other type schemas from the Q1 prompt.
-              turnPrompt = `Now generate another ${currentQuestionType} question for this granular learning objective targeting Bloom's Taxonomy Level: ${currentBloomLevel}.\nEnsure the question tests a completely different concept or facet of the objective than the previously generated questions.`;
-            }
-
-            // Full message history (successful turns + this question's retries),
-            // so the provider can reuse the cached prefix.
             const messages = [
-              ...conversationHistory,
-              ...currentQuestionHistory,
+              ...conversation,
+              ...attemptHistory,
               { role: 'user', content: turnPrompt },
             ];
 
-            console.log(`Sending prompt to LLM (Q${i + 1}/${workItems.length}, type=${currentQuestionType}, bloom=${currentBloomLevel}, attempt ${attempt}/${maxRetries})...`);
+            console.log(`Sending prompt to LLM (Q${spec.index + 1}/${targetCount}, type=${spec.questionType}, bloom=${spec.bloomLevel}, attempt ${attempt}/${maxRetries})...`);
 
             // Schema-constrained decoding (Ollama) / json mode (OpenAI) for this
-            // question type. Low temperature for focused, well-formed questions.
-            const response = await generateStructured({
+            // question type.
+            const response = await generationLimiter.run(() => generateStructured({
               messages,
-              schema: QuestionFactory.getModel(currentQuestionType).getJsonSchema(),
-              temperature: QUESTION_GEN_TEMPERATURE,
-            });
+              schema: model.getJsonSchema(),
+              operation: 'question-generate',
+              effort: effortForStage(settings, 'question-generate'),
+            }));
 
             const qPrompt = response.usage?.promptTokens || 0;
             const qCompletion = response.usage?.completionTokens || 0;
             totalPromptTokens += qPrompt;
             totalCompletionTokens += qCompletion;
-            console.log(`📊 Token Usage Q${i + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
+            console.log(`📊 Token Usage Q${spec.index + 1}: prompt=${qPrompt}, completion=${qCompletion}`);
 
             responseContent = response.content || "";
             if (!responseContent) throw new Error("Empty response from LLM");
 
             const parsed = safeJsonParse(responseContent);
-            const candidateQuestion = QuestionFactory
-              .getModel(currentQuestionType)
-              .validateAndNormalize(parsed);
+            // Scramble here — on the raw parsed response, before anything (the
+            // fix context, review, or the fix loop) ever sees a letter
+            // assignment. Scrambling later would desync whichever letter a
+            // reviewer's issue text names from what the instructor eventually
+            // sees, since nothing re-derives that text after a later shuffle.
+            scrambleMultipleChoiceOptions(parsed);
+            const questionData = model.validateAndNormalize(parsed);
 
             const normalizedQuestionText = normalizeQuestionText(
-              getGeneratedQuestionText(candidateQuestion)
+              getGeneratedQuestionText(questionData)
             );
             if (normalizedQuestionText && seenQuestionTexts.has(normalizedQuestionText)) {
               throw new Error(
                 "Generated question duplicates a question already used for this granular objective"
               );
             }
-            questionData = candidateQuestion;
+            questionData.bloomLevel = spec.bloomLevel;
 
-            console.log(`✅ Successfully generated question ${i + 1} (${currentQuestionType})`);
+            console.log(`✅ Successfully generated question ${spec.index + 1} (${spec.questionType})`);
 
-            // Save to conversation history so subsequent questions have context
-            conversationHistory.push({ role: 'user', content: turnPrompt });
-            conversationHistory.push({ role: 'assistant', content: responseContent });
-            if (normalizedQuestionText) seenQuestionTexts.add(normalizedQuestionText);
-
-            break; // Success
-
+            // The exact exchange that produced this question, kept so the fix
+            // loop can reopen it later. It holds the scrambled version (not the
+            // raw responseContent) so what the fixer sees matches what the
+            // reviewer reasoned about. Nothing from a sibling question is in
+            // here — that separation is the point of generating them apart.
+            return {
+              questionData,
+              normalizedQuestionText,
+              turnPrompt,
+              rawAnswer: JSON.stringify(parsed),
+              // Without the sibling constraint: the fix replays this question
+              // alone, so "different from the questions already written above"
+              // would point at a conversation the fixer cannot see.
+              fixContext: [
+                { role: 'user', content: sharedPrefix },
+                { role: 'user', content: buildTurn(spec, { withSiblingConstraint: false }) },
+                { role: 'assistant', content: JSON.stringify(parsed) },
+              ],
+            };
           } catch (error) {
+            // The limiter already retried this with backoff. A rate limit that
+            // reaches here means the provider is saturated, so retrying the
+            // slot adds load without improving the odds. Content failures —
+            // invalid schema, duplicate, empty — still retry: a fresh sample
+            // may well be valid.
+            if (isRetryableLLMError(error)) throw error;
             lastError = error;
-            console.warn(`❌ Q${i + 1} attempt ${attempt} failed:`, error.message);
+            console.warn(`❌ Q${spec.index + 1} attempt ${attempt} failed:`, error.message);
             if (responseContent) {
-              currentQuestionHistory.push({ role: 'user', content: turnPrompt });
-              currentQuestionHistory.push({ role: 'assistant', content: responseContent });
+              attemptHistory.push({ role: 'user', content: turnPrompt });
+              attemptHistory.push({ role: 'assistant', content: responseContent });
             }
             if (attempt === maxRetries) {
-              console.error(`Failed to generate question ${i + 1} after ${maxRetries} attempts`);
+              console.error(`Failed to generate question ${spec.index + 1} after ${maxRetries} attempts`);
             } else {
               console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
             }
           }
         }
+        return null;
+      };
 
-        if (questionData) {
-          // Programmatically scramble the generated options 
-          if (questionData.options && questionData.correctAnswer && questionData.options[questionData.correctAnswer]) {
-            const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
-            const optionValues = optionKeys.map(k => questionData.options[k]);
+      // One conversation for the batch: the opening message, then a turn per
+      // question, each seeing the answers before it.
+      const conversation = [{ role: 'user', content: sharedPrefix }];
+      let questionsData = [];
+      const fixContexts = [];
+      // A rate limit that survives the limiter means the provider is
+      // genuinely saturated. Caught here (not left to propagate out of the
+      // handler) so whatever was already generated in this batch — already
+      // paid for — still ships, rather than the whole request unwinding into
+      // a 429 that drops it. Kept aside so a batch that generated nothing at
+      // all can still re-throw it below and answer 429 with Retry-After.
+      let pendingRateLimitError = null;
 
-            for (let j = optionValues.length - 1; j > 0; j--) {
-              const k = Math.floor(Math.random() * (j + 1));
-              [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
-            }
-
-            const originalCorrectValue = questionData.options[questionData.correctAnswer];
-            let newCorrectKey = questionData.correctAnswer;
-
-            for (let j = 0; j < optionKeys.length; j++) {
-              const key = optionKeys[j];
-              questionData.options[key] = optionValues[j];
-              if (optionValues[j] === originalCorrectValue) {
-                newCorrectKey = key;
-              }
-            }
-
-            const correctOptionLetter = questionData.correctAnswer;
-            questionData.correctAnswer = newCorrectKey;
-            console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
+      for (const spec of slotSpecs) {
+        let result;
+        try {
+          result = await generateOneQuestion(spec, conversation);
+        } catch (error) {
+          if (isRetryableLLMError(error)) {
+            pendingRateLimitError = error;
+            break;
           }
-
-          // Add the bloom level to the question data so the UI knows which level it belongs to
-          questionData.bloomLevel = currentBloomLevel;
-
-          questionsData.push(questionData);
+          throw error;
         }
+        if (!result) continue;
+        if (result.normalizedQuestionText) seenQuestionTexts.add(result.normalizedQuestionText);
+        conversation.push({ role: 'user', content: result.turnPrompt });
+        conversation.push({ role: 'assistant', content: result.rawAnswer });
+        questionsData.push(result.questionData);
+        fixContexts.push(result.fixContext);
       }
 
       const generationModel = getLLMModel() || 'unknown';
       logCostSummary(`Question generation (${questionsData.length} questions)`, generationModel, totalPromptTokens, totalCompletionTokens);
 
       if (questionsData.length === 0) {
-        throw new Error(`Failed to generate any valid questions after trying all ${workItems.length} requested question(s).`);
+        // A batch that produced nothing must not look like success: if a
+        // rate limit is what stopped us, re-throw it so the handler still
+        // answers 429 with Retry-After instead of the generic 500 below.
+        if (pendingRateLimitError) throw pendingRateLimitError;
+        throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
       }
 
+      // Questions are always reviewed. A course owner can switch off the
+      // automatic fix that follows, in which case flagged questions are handed
+      // back flagged rather than repaired.
+      const reviewFixResult = await reviewAndFixQuestions(
+        questionsData,
+        courseName,
+        fixContexts,
+        learningObjectiveText,
+        granularLearningObjectiveText,
+        effortForStage(settings, 'question-review'),
+        settings?.autoFixEnabled !== false
+      );
+      questionsData = reviewFixResult.questionsData;
+      const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
+
+      const generationTokens = { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
       res.json({
         success: true,
         questions: questionsData,
+        // How many questions this batch was asked for versus how many it
+        // actually produced — always equal except when a rate limit stopped
+        // generation partway through, in which case the caller reports the
+        // shortfall to the instructor.
+        requested: targetCount,
+        produced: questionsData.length,
         method: "RAG + LLM Stateful Conversation",
-        tokenUsage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+        // Broken out by stage so cost attributable to the review-fix loop
+        // (review + fix) can be tracked separately from generation.
+        tokenUsage: {
+          generation: generationTokens,
+          review: reviewTokens,
+          fix: fixTokens,
+          total: {
+            promptTokens: generationTokens.promptTokens + reviewTokens.promptTokens + fixTokens.promptTokens,
+            completionTokens: generationTokens.completionTokens + reviewTokens.completionTokens + fixTokens.completionTokens,
+          },
+        },
       });
     } catch (llmError) {
       console.error("❌ LLM service failed:", llmError.message);
@@ -699,13 +896,53 @@ Include foundational concepts, practical applications, and assessment criteria.`
       searchQuery += `. Focused on: ${userObjectives.join(', ')}`;
     }
 
-    console.log("Retrieving RAG content from selected materials...");
-    let ragContext = await ragService.getRagContentFromMaterials(
-      materialIds,
-      searchQuery,
-      200,
-      courseId
-    );
+    // Objective generation is a coverage task, so it reads each material's
+    // stored outline rather than a similarity ranking. It never generates one:
+    // doing so here would put a multi-second summarization inside this click
+    // for every material that does not have one yet.
+    let ragContext = '';
+    let usedOutlines = false;
+    try {
+      const blocks = [];
+      for (const sourceId of materialIds) {
+        const stored = await outlineService.getOutline(sourceId);
+        if (!stored) {
+          blocks.length = 0;
+          break;
+        }
+        const material = await getMaterialBySourceId(sourceId);
+        blocks.push(
+          renderOutlineBlock({
+            documentTitle: material?.documentTitle || '',
+            sourceId,
+            outline: stored.outline,
+          })
+        );
+      }
+      if (blocks.length === materialIds.length && blocks.length > 0) {
+        ragContext = blocks.join('\n\n---\n\n');
+        usedOutlines = true;
+      }
+    } catch (outlineError) {
+      console.warn(
+        '⚠️ Could not read material outlines; falling back to retrieval:',
+        outlineError.message
+      );
+    }
+
+    let objectiveRagLimit;
+    if (!usedOutlines) {
+      // Exactly today's behaviour, so a material without an outline generates
+      // objectives no worse than it does now.
+      objectiveRagLimit = parseInt(process.env.RAG_OBJECTIVE_CHUNK_LIMIT) || 200;
+      console.log('Retrieving RAG content from selected materials (outline fallback)...');
+      ragContext = await ragService.getRagContentFromMaterials(
+        materialIds,
+        searchQuery,
+        objectiveRagLimit,
+        courseId
+      );
+    }
 
     if ((!ragContext || ragContext.trim().length === 0) && (!userObjectives || userObjectives.length === 0)) {
       return res.status(400).json({
@@ -720,32 +957,54 @@ Include foundational concepts, practical applications, and assessment criteria.`
       ragContext = "No usable material content was retrieved. Preserve the instructor-provided objectives without adding content.";
     }
 
+    // Context size is bounded differently depending on the path. On the
+    // retrieval fallback path (used when any material lacks an outline),
+    // RAG_OBJECTIVE_CHUNK_LIMIT bounds it: the merge keeps at most that many
+    // chunks and the chunker caps each at 1000 chars. On the outline path,
+    // there is no chunk limit — size instead tracks however much text is in
+    // the selected materials' outlines. This warns rather than truncates in
+    // either case — a prompt this large is worth surfacing, and silently
+    // cutting the context would hide that while also deleting whichever
+    // materials sort last.
+    if (ragContext.length > OBJECTIVE_CONTEXT_WARN_CHARS) {
+      const bound = usedOutlines
+        ? 'context was built from material outlines, not chunk retrieval'
+        : `check RAG_OBJECTIVE_CHUNK_LIMIT (currently ${objectiveRagLimit})`;
+      console.warn(
+        `⚠️ Objective-generation context is ${ragContext.length} chars from ${materialIds.length} material(s) — ${bound}.`
+      );
+    }
+
     // Determine which prompt to use (Auto vs Manual)
     let promptTemplate;
     let fullPrompt;
 
+    // Content-bearing values are substituted via replacer functions: a plain
+    // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
+    // LaTeX in course material ("$$E = mc^2$$") would arrive at the model
+    // corrupted.
     if (userObjectives && userObjectives.length > 0) {
       promptTemplate = settings?.prompts?.objectiveGenerationManual || DEFAULT_PROMPTS.objectiveGenerationManual;
       const userList = userObjectives.map((obj) => `   - ${obj}`).join('\n');
       fullPrompt = promptTemplate
-        .replace('{courseName}', courseName || "Course")
-        .replace('{userObjectivesList}', userList)
-        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{courseName}', () => courseName || "Course")
+        .replace('{userObjectivesList}', () => userList)
+        .replace('{ragContext}', () => ragContext);
     } else {
       promptTemplate = settings?.prompts?.objectiveGenerationAuto || DEFAULT_PROMPTS.objectiveGenerationAuto;
       fullPrompt = promptTemplate
-        .replace('{courseName}', courseName || "Course")
-        .replace('{sourceIdsList}', materialIds.join(', '))
-        .replace('{ragContext}', ragContext.substring(0, 100000) + (ragContext.length > 100000 ? "\n\n[... content truncated ...]" : ""));
+        .replace('{courseName}', () => courseName || "Course")
+        .replace('{sourceIdsList}', () => materialIds.join(', '))
+        .replace('{ragContext}', () => ragContext);
     }
 
-    // Lower temperature for faithful, well-structured objectives. Schema-
-    // constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
+    // Schema-constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
     console.log("Sending prompt to LLM service...");
     const { content: responseContent } = await generateStructured({
       prompt: fullPrompt,
       schema: OBJECTIVES_SCHEMA,
-      temperature: 0.4,
+      operation: 'objective-generate',
+      effort: effortForStage(settings, 'objective-generate'),
     });
     console.log("Full Prompt: ", fullPrompt);
 
@@ -849,7 +1108,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, courseName) {
+async function rateQuestions(questions, courseName, effort = null) {
   const formattedQuestions = questions.map(q => {
     // Determine the question stem based on type (MC vs others)
     const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
@@ -888,14 +1147,14 @@ async function rateQuestions(questions, courseName) {
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
 
-  // Low temperature for consistent, conservative reviewing. Schema-constrained
-  // decoding guarantees the { ratings: [...] } shape.
-  const { content: responseContent, usage } = await generateStructured({
+  // Schema-constrained decoding guarantees the { ratings: [...] } shape.
+  const { content: responseContent, usage } = await generationLimiter.run(() => generateStructured({
     prompt,
     schema: QUESTION_REVIEW_SCHEMA,
-    temperature: 0.1,
+    operation: 'question-review',
     model: getReviewModel() || null,
-  });
+    effort,
+  }));
   if (usage) {
     const reviewModel = getReviewModel() || 'unknown';
     logCostSummary(`Question review (${questions.length} questions)`, reviewModel, usage.promptTokens || 0, usage.completionTokens || 0);
@@ -911,7 +1170,293 @@ async function rateQuestions(questions, courseName) {
     ratings = [ratings];
   }
   if (!Array.isArray(ratings)) throw new Error("Review response is not a JSON array");
-  return ratings;
+  return {
+    ratings,
+    usage: { promptTokens: usage?.promptTokens || 0, completionTokens: usage?.completionTokens || 0 },
+  };
+}
+
+function firstWords(text, count) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).slice(0, count).join(" ");
+}
+
+// Shuffle an MCQ's option lettering so the correct answer isn't always in
+// the same position. Must run immediately when a question (or a fix) is
+// produced — before it's pushed to conversation history or reviewed — and
+// never again after that. Scrambling later would desync whichever letter a
+// reviewer's issue text names (shown to the instructor via reviewIssue /
+// autoFixReason) from the lettering the instructor actually ends up seeing,
+// since nothing re-derives that text after a later shuffle.
+function scrambleMultipleChoiceOptions(questionData) {
+  if (!questionData.options || !questionData.correctAnswer || !questionData.options[questionData.correctAnswer]) {
+    return;
+  }
+  const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+  const optionValues = optionKeys.map(k => questionData.options[k]);
+
+  for (let j = optionValues.length - 1; j > 0; j--) {
+    const k = Math.floor(Math.random() * (j + 1));
+    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
+  }
+
+  const originalCorrectValue = questionData.options[questionData.correctAnswer];
+  let newCorrectKey = questionData.correctAnswer;
+
+  for (let j = 0; j < optionKeys.length; j++) {
+    const key = optionKeys[j];
+    questionData.options[key] = optionValues[j];
+    if (optionValues[j] === originalCorrectValue) {
+      newCorrectKey = key;
+    }
+  }
+
+  const correctOptionLetter = questionData.correctAnswer;
+  questionData.correctAnswer = newCorrectKey;
+  console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
+}
+
+// Attempt a single targeted-patch fix for one flagged question, branching off
+// its own slice of the original generation conversation. Never throws — a
+// failed attempt (validation never succeeds within maxRetries) resolves with
+// fixed: null so the caller can still account for the tokens spent and retry
+// in a later cycle rather than losing the question.
+async function attemptFix(questionData, rating, questionContext, maxRetries, effort = null) {
+  const questionType = questionData.questionType || questionData.type;
+  const model = QuestionFactory.getModel(questionType);
+  const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
+
+  let lastError = null;
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  const localHistory = [];
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const turnPrompt = attempt === 1
+      ? QUESTION_FIX_PROMPT
+          .replace("{questionType}", questionType)
+          .replace("{questionExcerpt}", questionExcerpt)
+          .replace("{issue}", rating?.issue || "(no issue text provided)")
+          .replace("{reasoning}", rating?.reasoning || "(no reasoning provided)")
+      : model.getRetrySuffix(attempt, lastError);
+
+    const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
+    let responseContent = null;
+    try {
+      const response = await generationLimiter.run(() => generateStructured({ messages, schema: model.getJsonSchema(), operation: 'question-fix', effort }));
+      totalPromptTokens += response.usage?.promptTokens || 0;
+      totalCompletionTokens += response.usage?.completionTokens || 0;
+      responseContent = response.content || "";
+      if (!responseContent) throw new Error("Empty response from LLM");
+
+      const parsed = safeJsonParse(responseContent);
+      // Scramble this fix's own output immediately too — same reasoning as
+      // in the generation loop: it must happen before this ever gets
+      // re-reviewed or shipped, and never again after.
+      scrambleMultipleChoiceOptions(parsed);
+      const fixed = model.validateAndNormalize(parsed);
+      return { fixed, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Review-fix: fix attempt ${attempt}/${maxRetries} failed for a ${questionType} question:`, error.message);
+      if (responseContent) {
+        localHistory.push({ role: "user", content: turnPrompt });
+        localHistory.push({ role: "assistant", content: responseContent });
+      }
+    }
+  }
+
+  return { fixed: null, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
+}
+
+// Apply a batch of review ratings onto questionsData (by request-scoped index
+// id) and return which of the given indices are still flagged. Mutates
+// questionsData in place for reviewFlag/reviewIssue, same as generation does
+// for bloomLevel elsewhere in this file.
+function applyRatings(questionsData, ratings, indices) {
+  const byIndex = new Map();
+  (ratings || []).forEach((r) => {
+    const idx = parseInt(r.questionId, 10);
+    if (Number.isInteger(idx)) byIndex.set(idx, r);
+  });
+  const stillFlagged = [];
+  for (const i of indices) {
+    const rating = byIndex.get(i);
+    if (rating && rating.flagged) {
+      questionsData[i].reviewFlag = true;
+      questionsData[i].reviewIssue = rating.issue || "";
+      stillFlagged.push(i);
+    } else {
+      questionsData[i].reviewFlag = false;
+      questionsData[i].reviewIssue = "";
+    }
+  }
+  return { byIndex, stillFlagged };
+}
+
+/**
+ * Bounded review→fix loop: review the freshly generated batch, and for
+ * whatever gets flagged, attempt a targeted-patch fix (branching off that
+ * question's own slice of the generation conversation) followed by a full
+ * independent re-review of just the fixed subset — up to MAX_CYCLES times.
+ * Whatever is still flagged after the cap ships to the instructor exactly as
+ * before this feature existed: not a new failure mode, just reached after
+ * more attempts. See the "Bounded Review→Fix Loop" plan for the full design
+ * rationale (review must stay independent; fixes must be targeted patches,
+ * not full regenerations; the loop bound is code-controlled, not model-decided).
+ */
+async function reviewAndFixQuestions(
+  questionsData,
+  courseName,
+  fixContexts,
+  learningObjectiveText,
+  granularLearningObjectiveText,
+  effort = null,
+  autoFix = true
+) {
+  // Each fix call replays its question's whole context — the opening message,
+  // retrieved material and all — so this is the most expensive knob in the loop.
+  //
+  // Its value is currently capped by something else: a question only reaches a
+  // second cycle if the re-review still flags it, and the re-review is a fresh
+  // general pass with no memory of the original issue. So a patch that did not
+  // actually resolve what was flagged is cleared anyway and exits after cycle 1.
+  // Giving the re-review the original issue to verify is what would let a second
+  // cycle act on the questions it was raised for.
+  const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
+  const MAX_FIX_RETRIES = 2;
+
+  // Tallied across every rateQuestions() call (initial + all re-reviews) and
+  // every attemptFix() call (successful or not) in this loop, so the caller
+  // can report the review-fix loop's cost separately from generation's.
+  let reviewPromptTokens = 0;
+  let reviewCompletionTokens = 0;
+  let fixPromptTokens = 0;
+  let fixCompletionTokens = 0;
+  const tokenUsage = () => ({
+    review: { promptTokens: reviewPromptTokens, completionTokens: reviewCompletionTokens },
+    fix: { promptTokens: fixPromptTokens, completionTokens: fixCompletionTokens },
+  });
+
+  const forReview = (q, i) => ({
+    ...q,
+    id: String(i),
+    learningObjectiveText,
+    granularObjectiveText: granularLearningObjectiveText,
+  });
+
+  let ratings;
+  try {
+    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort);
+    ratings = initialReview.ratings;
+    reviewPromptTokens += initialReview.usage.promptTokens;
+    reviewCompletionTokens += initialReview.usage.completionTokens;
+  } catch (error) {
+    console.error("Review-fix loop: initial review failed, shipping questions unreviewed:", error.message);
+    return { questionsData, tokenUsage: tokenUsage() };
+  }
+
+  const allIndices = questionsData.map((_, i) => i);
+  const { byIndex: initialRatingByIndex, stillFlagged: initialFlagged } = applyRatings(questionsData, ratings, allIndices);
+  const initialFlaggedCount = initialFlagged.length;
+
+  // With auto-fix off the review still ran and its verdicts are already on the
+  // questions, so the instructor sees exactly which ones were flagged and why —
+  // they are just not rewritten automatically.
+  if (!autoFix) {
+    console.log(
+      `🔧 Auto-fix disabled for this course: ${initialFlaggedCount} flagged question(s) returned for manual review`
+    );
+    return { questionsData, tokenUsage: tokenUsage() };
+  }
+
+  let flagged = initialFlagged;
+  let issueByIndex = initialRatingByIndex;
+  const cycleLog = [];
+
+  for (let cycle = 1; cycle <= MAX_CYCLES && flagged.length > 0; cycle++) {
+    const results = await Promise.all(
+      flagged.map((i) =>
+        attemptFix(
+          questionsData[i],
+          issueByIndex.get(i),
+          fixContexts[i],
+          MAX_FIX_RETRIES,
+          effort
+        )
+      )
+    );
+
+    let cyclePromptTokens = 0;
+    let cycleCompletionTokens = 0;
+    const patched = [];
+    const failedToFix = [];
+
+    results.forEach((result, idx) => {
+      const i = flagged[idx];
+      cyclePromptTokens += result.promptTokens;
+      cycleCompletionTokens += result.completionTokens;
+
+      if (result.fixed) {
+        const preservedBloom = questionsData[i].bloomLevel;
+        const fixedIssueText = issueByIndex.get(i)?.issue || "an issue";
+        questionsData[i] = result.fixed;
+        questionsData[i].bloomLevel = preservedBloom;
+        questionsData[i].autoFixLastIssue = fixedIssueText;
+        patched.push(i);
+      } else {
+        failedToFix.push(i);
+      }
+    });
+
+    fixPromptTokens += cyclePromptTokens;
+    fixCompletionTokens += cycleCompletionTokens;
+    const fixModel = getLLMModel() || "unknown";
+    logCostSummary(`Question fix (cycle ${cycle}, ${patched.length}/${flagged.length} fixed)`, fixModel, cyclePromptTokens, cycleCompletionTokens);
+
+    let stillFlaggedAfterFix = [];
+    if (patched.length > 0) {
+      let reReviewRatings = [];
+      try {
+        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort);
+        reReviewRatings = reReview.ratings;
+        reviewPromptTokens += reReview.usage.promptTokens;
+        reviewCompletionTokens += reReview.usage.completionTokens;
+      } catch (error) {
+        console.error(`Review-fix loop: re-review failed in cycle ${cycle}, keeping fixed questions flagged as a precaution:`, error.message);
+        for (const i of patched) {
+          questionsData[i].reviewFlag = true;
+          questionsData[i].reviewIssue = questionsData[i].autoFixLastIssue || questionsData[i].reviewIssue || "";
+        }
+        stillFlaggedAfterFix = [...patched];
+      }
+      if (reReviewRatings.length) {
+        const { byIndex: reReviewByIndex, stillFlagged } = applyRatings(questionsData, reReviewRatings, patched);
+        for (const i of patched) {
+          if (!stillFlagged.includes(i)) {
+            questionsData[i].wasAutoFixed = true;
+            questionsData[i].autoFixReason = `Automatically fixed after an AI review found: ${questionsData[i].autoFixLastIssue || "an issue"}`;
+          }
+        }
+        issueByIndex = new Map([...issueByIndex, ...reReviewByIndex]);
+        stillFlaggedAfterFix = stillFlagged;
+      }
+    }
+
+    cycleLog.push(`cycle ${cycle} fixed ${patched.length - stillFlaggedAfterFix.length}/${flagged.length}`);
+    flagged = [...failedToFix, ...stillFlaggedAfterFix];
+  }
+
+  console.log(
+    `🔧 Review-fix loop: ${initialFlaggedCount} flagged initially` +
+      (cycleLog.length ? ` → ${cycleLog.join(" → ")}` : "") +
+      ` → ${flagged.length} flagged, ${cycleLog.length} cycle(s) used`
+  );
+
+  for (const q of questionsData) {
+    delete q.autoFixLastIssue;
+  }
+
+  return { questionsData, tokenUsage: tokenUsage() };
 }
 
 const reviewQuestionsHandler = async (req, res) => {
@@ -943,7 +1488,12 @@ const reviewQuestionsHandler = async (req, res) => {
     if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
-    const ratings = await rateQuestions(questions, courseName);
+    const reviewSettings = courseId ? await settingsService.getSettings(courseId) : null;
+    const { ratings } = await rateQuestions(
+      questions,
+      courseName,
+      effortForStage(reviewSettings, 'question-review')
+    );
 
     const results = [];
 

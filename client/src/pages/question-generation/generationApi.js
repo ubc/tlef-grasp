@@ -1,126 +1,295 @@
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
+import { runPool } from "../../lib/async-pool";
 
 // Question generation + review pipeline (port of generation-questions.js and
 // the step-2 helpers in question-generation.js).
 
 const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
-// Generate question batches for every granular objective, sequentially
-// (mirrors the legacy loop: continue past failures once something succeeded).
-export async function generateQuestions(course, objectiveGroups, onProgress) {
-  const total = objectiveGroups.reduce(
-    (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0),
-    0
-  );
-  let generated = 0;
-  let totalPromptTokens = 0;
-  let totalCompletionTokens = 0;
-  const allQuestions = [];
+// How many objectives are generated at once. Objectives are independent, so
+// this is a straight latency win; 1 reproduces the old sequential behaviour.
+const DEFAULT_CONCURRENCY = 4;
 
+// Resolves the pool's concurrency: an explicit `options.concurrency` always
+// wins; otherwise a well-formed VITE_GENERATION_CONCURRENCY (a positive
+// integer) is used; anything else — unset, malformed, zero, negative — falls
+// back to DEFAULT_CONCURRENCY. The NaN guard matters: a NaN concurrency
+// reaches runPool as `active < limit`, which is never true, so the pool would
+// launch nothing and hang forever.
+//
+// Exported (rather than reading import.meta.env inline) so the guard is
+// testable under plain Node/Jest: Vite inlines import.meta.env.VITE_* at
+// build time, which only a real Vite build reproduces, so the raw string is
+// threaded through as a parameter instead.
+export function resolveConcurrency(explicitConcurrency, rawEnvValue, fallback = DEFAULT_CONCURRENCY) {
+  if (explicitConcurrency !== undefined && explicitConcurrency !== null) return explicitConcurrency;
+  const parsed = parseInt(rawEnvValue, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+// Cap on how long a provider Retry-After can stall the run.
+const MAX_PAUSE_MS = 60000;
+// Consecutive rate-limit failures before we stop rather than keep hammering.
+const RATE_LIMIT_CIRCUIT_BREAK = 5;
+
+// Generate question batches for every granular objective through a bounded
+// concurrency pool (mirrors the legacy loop's intent: continue past failures
+// once something succeeded), but issues requests in parallel instead of
+// waiting on each one in turn. Results stay in objective order regardless of
+// completion order.
+export async function generateQuestions(course, objectiveGroups, onProgress, options = {}) {
+  const concurrency = resolveConcurrency(options.concurrency, import.meta.env?.VITE_GENERATION_CONCURRENCY);
+
+  // One task per granular objective, flattened so the pool sees a single list
+  // while results stay addressable by their original position.
+  const units = [];
   for (const learningObjective of objectiveGroups) {
     for (const granular of learningObjective.items) {
-      try {
-        const response = await api.post("/api/rag-llm/generate-questions-with-rag", {
-          courseId: course.id || course._id,
-          courseName: course.name || course.courseName || "",
-          learningObjectiveId: learningObjective.objectiveId,
-          learningObjectiveText: learningObjective.title,
-          granularLearningObjectiveId: granular.granularId,
-          granularLearningObjectiveText: granular.text,
-          bloomLevels: granular.bloom || ["Understand"],
-          materialIds: learningObjective.materialIds || [],
-          count: granular.count,
-          // Optional: pin the generated type (Question Bank wizard). Omitted for
-          // the main pathway, where type is derived from Bloom preferences.
-          ...(granular.questionType ? { questionType: granular.questionType } : {}),
-          // Optional: explicit per-Bloom-level type counts from the objective
-          // generation step. When present, the server generates exactly this
-          // breakdown instead of resolving type via course-wide preferences.
-          ...(granular.questionTypes?.length ? { questionTypes: granular.questionTypes } : {}),
-        });
-
-        if (!response.success) {
-          throw new Error(
-            response.error || "Question generation service is currently unavailable"
-          );
-        }
-        if (!response.questions || !Array.isArray(response.questions)) {
-          throw new Error("Invalid response: questions array missing");
-        }
-
-        const bloomLevels = granular.bloom || ["Understand"];
-        const questions = response.questions.map((questionData, index) => {
-          const resolvedType =
-            questionData.questionType ||
-            questionData.type ||
-            QUESTION_TYPES.MULTIPLE_CHOICE;
-          const bloomLevel =
-            questionData.bloomLevel ||
-            bloomLevels[index % bloomLevels.length] ||
-            "Understand";
-
-          const base = {
-            id: `${granular.granularId}-${index + 1}-${Date.now()}`,
-            granularObjectiveId: `${granular.granularId}`,
-            learningObjectiveId: learningObjective.objectiveId,
-            materialIds: learningObjective.materialIds || [],
-            courseId: course.id || course._id,
-            text: questionData.question || questionData.stem || "",
-            topicTitle: questionData.topicTitle || "",
-            questionType: resolvedType,
-            options: questionData.options || null,
-            correctAnswer: questionData.correctAnswer || "",
-            acceptableAnswers: questionData.acceptableAnswers || [],
-            bloomLevel,
-            metaCode: learningObjective.title,
-            loCode: granular.text,
-            lastEdited: now(),
-            by: "LLM + RAG System",
-            explanation: questionData.explanation || "",
-          };
-
-          if (resolvedType === QUESTION_TYPES.CALCULATION) {
-            base.stem = questionData.stem || questionData.question || "";
-            base.calculationFormula = questionData.calculationFormula || "";
-            base.calculationVariables = questionData.calculationVariables || [];
-            base.calculationAnswerDecimals =
-              questionData.calculationAnswerDecimals ?? 2;
-            base.calculationAnswerTolerancePercent =
-              questionData.calculationAnswerTolerancePercent ?? null;
-          } else if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
-            base.stem = questionData.stem || questionData.question || "";
-            base.openEndedSampleAnswer = questionData.openEndedSampleAnswer || "";
-            base.openEndedGradingCriteria =
-              questionData.openEndedGradingCriteria || "";
-          } else if (resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-            base.stem = questionData.question || "";
-          }
-
-          return base;
-        });
-
-        allQuestions.push(...questions);
-        const tokenUsage = response.tokenUsage || {};
-        totalPromptTokens += tokenUsage.promptTokens || 0;
-        totalCompletionTokens += tokenUsage.completionTokens || 0;
-        generated += questions.length;
-        onProgress?.({ generated, total });
-      } catch (error) {
-        console.error(
-          `Failed to generate questions for objective: ${granular.text}`,
-          error
-        );
-        if (allQuestions.length === 0) throw error;
-      }
+      units.push({ learningObjective, granular, order: units.length });
     }
+  }
+
+  const total = units.reduce((sum, unit) => sum + (unit.granular.count || 1), 0);
+  let generated = 0;
+  let consecutiveRateLimits = 0;
+
+  const tokenTotals = {
+    generation: { promptTokens: 0, completionTokens: 0 },
+    review: { promptTokens: 0, completionTokens: 0 },
+    fix: { promptTokens: 0, completionTokens: 0 },
+  };
+  const addTokens = (bucket, usage) => {
+    bucket.promptTokens += usage?.promptTokens || 0;
+    bucket.completionTokens += usage?.completionTokens || 0;
+  };
+
+  const tasks = units.map(({ learningObjective, granular }) => async () => {
+    let response;
+    try {
+      response = await api.post("/api/rag-llm/generate-questions-with-rag", {
+        courseId: course.id || course._id,
+        courseName: course.name || course.courseName || "",
+        learningObjectiveId: learningObjective.objectiveId,
+        learningObjectiveText: learningObjective.title,
+        granularLearningObjectiveId: granular.granularId,
+        granularLearningObjectiveText: granular.text,
+        bloomLevels: granular.bloom || ["Understand"],
+        materialIds: learningObjective.materialIds || [],
+        count: granular.count,
+        // Optional: pin the generated type (Question Bank wizard). Omitted for
+        // the main pathway, where type is derived from Bloom preferences.
+        ...(granular.questionType ? { questionType: granular.questionType } : {}),
+      });
+    } catch (error) {
+      if (error?.status === 429) {
+        error.rateLimited = true;
+        error.retryAfterSeconds = error?.body?.retryAfterSeconds;
+      } else if (error?.status === 401 || error?.status === 403) {
+        // Spec section 5: a revoked session or lost course access should stop
+        // the whole run immediately, not fire every remaining objective at a
+        // provider call that can only fail the same way. runPool aborts as
+        // soon as it sees `fatal` on a rejection, before launching more work.
+        error.fatal = true;
+      }
+      throw error;
+    }
+
+    if (!response.success) {
+      throw new Error(response.error || "Question generation service is currently unavailable");
+    }
+    if (!response.questions || !Array.isArray(response.questions)) {
+      throw new Error("Invalid response: questions array missing");
+    }
+
+    // A success anywhere in the run breaks a rate-limit streak — "consecutive"
+    // must mean consecutive, not merely "5 total across the whole run".
+    consecutiveRateLimits = 0;
+
+    const bloomLevels = granular.bloom || ["Understand"];
+    const questions = response.questions.map((questionData, index) => {
+      const resolvedType =
+        questionData.questionType ||
+        questionData.type ||
+        QUESTION_TYPES.MULTIPLE_CHOICE;
+      const bloomLevel =
+        questionData.bloomLevel ||
+        bloomLevels[index % bloomLevels.length] ||
+        "Understand";
+
+      const base = {
+        id: `${granular.granularId}-${index + 1}-${Date.now()}`,
+        granularObjectiveId: `${granular.granularId}`,
+        learningObjectiveId: learningObjective.objectiveId,
+        materialIds: learningObjective.materialIds || [],
+        courseId: course.id || course._id,
+        text: questionData.question || questionData.stem || "",
+        topicTitle: questionData.topicTitle || "",
+        questionType: resolvedType,
+        options: questionData.options || null,
+        correctAnswer: questionData.correctAnswer || "",
+        acceptableAnswers: questionData.acceptableAnswers || [],
+        bloomLevel,
+        metaCode: learningObjective.title,
+        loCode: granular.text,
+        lastEdited: now(),
+        by: "LLM + RAG System",
+        explanation: questionData.explanation || "",
+        reviewFlag: questionData.reviewFlag || false,
+        reviewIssue: questionData.reviewIssue || "",
+        wasAutoFixed: questionData.wasAutoFixed || false,
+        autoFixReason: questionData.autoFixReason || "",
+      };
+
+      if (resolvedType === QUESTION_TYPES.CALCULATION) {
+        base.stem = questionData.stem || questionData.question || "";
+        base.calculationFormula = questionData.calculationFormula || "";
+        base.calculationVariables = questionData.calculationVariables || [];
+        base.calculationAnswerDecimals =
+          questionData.calculationAnswerDecimals ?? 2;
+        base.calculationAnswerTolerancePercent =
+          questionData.calculationAnswerTolerancePercent ?? null;
+      } else if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
+        base.stem = questionData.stem || questionData.question || "";
+        base.openEndedSampleAnswer = questionData.openEndedSampleAnswer || "";
+        base.openEndedGradingCriteria =
+          questionData.openEndedGradingCriteria || "";
+      } else if (resolvedType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
+        base.stem = questionData.question || "";
+      }
+
+      return base;
+    });
+
+    const tokenUsage = response.tokenUsage || {};
+    addTokens(tokenTotals.generation, tokenUsage.generation);
+    addTokens(tokenTotals.review, tokenUsage.review);
+    addTokens(tokenTotals.fix, tokenUsage.fix);
+    generated += questions.length;
+    onProgress?.({ generated, total });
+
+    return questions;
+  });
+
+  // Named rather than inline because Task 7's retry sweep reuses it.
+  const onRateLimit = (error) => {
+    consecutiveRateLimits += 1;
+    // An exhausted quota should cost seconds, not ten minutes of hammering.
+    if (consecutiveRateLimits >= RATE_LIMIT_CIRCUIT_BREAK) error.fatal = true;
+    const seconds = Number(error?.retryAfterSeconds) || 0;
+    return Math.min(seconds * 1000, MAX_PAUSE_MS);
+  };
+
+  // Settles one batch of results into `into` (successes, keyed by original
+  // position) and `failures` (with enough detail to retry or report them).
+  // Reused for the initial pass and, below, for the tail retry sweep.
+  const collect = (settled, unitList, into, failures) => {
+    settled.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        into.push({ index: unitList[index].order, questions: result.value });
+        return;
+      }
+      const { learningObjective, granular, order } = unitList[index];
+      console.error(`Failed to generate questions for objective: ${granular.text}`, result.reason);
+      failures.push({
+        order,
+        objectiveText: granular.text || learningObjective.title || "",
+        granularId: granular.granularId,
+        reason: result.reason?.message || String(result.reason),
+        rateLimited: result.reason?.status === 429 || result.reason?.rateLimited === true,
+        // Carried through so the sweep can honour the provider's requested
+        // wait before firing its first retry (see below) — collect()'s other
+        // caller (the initial pass) just ignores this field.
+        retryAfterSeconds: result.reason?.retryAfterSeconds,
+      });
+    });
+  };
+
+  const ordered = [];
+  const failures = [];
+  collect(await runPool(tasks, { concurrency, onRateLimit }), units, ordered, failures);
+
+  // One sweep at concurrency 1 for objectives that failed for a reason worth
+  // retrying. Slow, but it is only the tail, and it turns "I lost 3
+  // objectives" into "it took a little longer". Safe because nothing is
+  // persisted until the stepper's save step.
+  //
+  // Deliberately excludes objectives the pool never launched because the
+  // circuit breaker tripped (PoolAbortedError, rateLimited: false) — those
+  // were skipped to stop hammering a saturated provider, and immediately
+  // retrying the work the breaker declined to attempt would defeat it. They
+  // stay reported as failures below rather than being resent.
+  const retryable = failures.filter((failure) => failure.rateLimited);
+  if (retryable.length > 0) {
+    // Failures the sweep won't touch (non-retryable / breaker-skipped) must
+    // survive into the final report — only the retried subset is replaced by
+    // the sweep's own outcome below.
+    const nonRetryable = failures.filter((failure) => !failure.rateLimited);
+    const retryUnits = retryable.map((failure) => units[failure.order]);
+    const retryTasks = retryUnits.map((unit) => tasks[unit.order]);
+    const swept = [];
+    const stillFailed = [];
+    // Reuse the same onRateLimit so the sweep honours Retry-After and still
+    // has a circuit breaker of its own — but start its streak fresh. Every
+    // objective reaching the sweep got here by being rate-limited (or, for
+    // the objective that tripped the breaker, by being the 5th in a row),
+    // so the shared counter is already sitting at or near the threshold; left
+    // untouched, the sweep's very first retry would immediately re-trip the
+    // breaker and abandon the rest of the tail — precisely the case this
+    // sweep exists to give a second chance.
+    consecutiveRateLimits = 0;
+
+    // runPool's own pause only ever delays the *next* launch inside an
+    // ongoing run; once a pool has nothing left to launch it resolves
+    // immediately rather than sitting out a pause that would benefit no one
+    // still in flight (see async-pool.js). That's the right call for a pool
+    // that is genuinely finished, but it means the wait the provider asked
+    // for on the failure that sent this objective to the sweep never
+    // survives into a brand-new runPool() call — that call starts with no
+    // memory of it. So the first retry is paused explicitly, up front, using
+    // the same formula as onRateLimit but without its side effects (no
+    // consecutive-streak bump for a wait, not a new failure); onRateLimit
+    // itself, passed to runPool below, still covers pauses between the 2nd,
+    // 3rd, etc. retries if the sweep itself keeps getting rate limited.
+    const leadSeconds = Number(retryable[0]?.retryAfterSeconds) || 0;
+    const leadPauseMs = Math.min(leadSeconds * 1000, MAX_PAUSE_MS);
+    if (leadPauseMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, leadPauseMs));
+    }
+
+    collect(await runPool(retryTasks, { concurrency: 1, onRateLimit }), retryUnits, swept, stillFailed);
+    ordered.push(...swept);
+    // Only failures that survived the sweep (plus anything the sweep never
+    // touched) are reported.
+    failures.length = 0;
+    failures.push(...nonRetryable, ...stillFailed);
+    failures.sort((a, b) => a.order - b.order);
+  }
+
+  const allQuestions = ordered
+    .sort((a, b) => a.index - b.index)
+    .flatMap((entry) => entry.questions);
+
+  // A total failure is an outage worth surfacing as an error. A partial one is
+  // a result the instructor can still use, with the gaps named. Guarded by
+  // units.length > 0 so an empty run (no objectives) doesn't count as "every
+  // objective failed".
+  if (units.length > 0 && failures.length === units.length) {
+    throw new Error(failures[0].reason);
   }
 
   return {
     questions: allQuestions,
+    failures,
     tokenUsage: {
-      promptTokens: totalPromptTokens,
-      completionTokens: totalCompletionTokens,
+      ...tokenTotals,
+      total: {
+        promptTokens:
+          tokenTotals.generation.promptTokens + tokenTotals.review.promptTokens + tokenTotals.fix.promptTokens,
+        completionTokens:
+          tokenTotals.generation.completionTokens +
+          tokenTotals.review.completionTokens +
+          tokenTotals.fix.completionTokens,
+      },
     },
   };
 }
@@ -179,6 +348,10 @@ export function convertQuestionsToGroups(questions) {
         explanation: question.explanation,
         flagStatus: question.flagStatus || false,
         flagReason: question.flagReason || "",
+        reviewFlag: question.reviewFlag || false,
+        reviewIssue: question.reviewIssue || "",
+        wasAutoFixed: question.wasAutoFixed || false,
+        autoFixReason: question.autoFixReason || "",
       };
 
       let card;
@@ -261,7 +434,12 @@ export function convertQuestionsToGroups(questions) {
   }));
 }
 
-// Run the AI quality review and annotate flagged questions in place.
+// Run the AI quality review and annotate flagged questions in place. Fresh
+// generation no longer calls this directly — review (and an automatic fix
+// attempt) now happens server-side inside generate-questions-with-rag, and
+// reviewFlag/reviewIssue arrive already populated on each question. Kept
+// exported for a future "re-review after manual instructor edit" flow, which
+// doesn't exist yet but is the natural fit for this endpoint.
 export async function reviewGeneratedQuestions(questionGroups, courseId) {
   const allQuestions = [];
   questionGroups.forEach((group) => {
@@ -465,7 +643,6 @@ export async function generateWizardQuestion({
 
   const { questions } = await generateQuestions(course, objectiveGroups);
   const groups = convertQuestionsToGroups(questions);
-  await reviewGeneratedQuestions(groups, course.id || course._id);
 
   const card = groups[0]?.los?.[0]?.questions?.[0];
   if (!card) {

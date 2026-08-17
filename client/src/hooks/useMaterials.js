@@ -201,3 +201,28 @@ export function useDeleteMaterial(courseId, options) {
     },
   });
 }
+
+export function useMaterialOutline(sourceId, enabled) {
+  const query = useQuery({
+    queryKey: queryKeys.materialOutline(sourceId),
+    queryFn: () => api.get(`/api/material/${sourceId}/outline`),
+    enabled: !!sourceId && !!enabled,
+    retry: false, // a 404 means "no outline yet", not a transient failure
+  });
+  return { ...query, outlineData: query.data || null };
+}
+
+export function useGenerateOutline(courseId, options) {
+  const queryClient = useQueryClient();
+  const invalidateMaterials = useInvalidateMaterials(courseId);
+  return useMutation({
+    mutationFn: (sourceId) => api.post(`/api/material/${sourceId}/outline`, {}),
+    onSuccess: (data, sourceId) => {
+      queryClient.setQueryData(queryKeys.materialOutline(sourceId), data);
+      invalidateMaterials();
+      options?.onSuccess?.(data, sourceId);
+    },
+    onError: options?.onError,
+  });
+}
+

@@ -93,7 +93,67 @@ function gradingStubFromPrompt(schema, prompt = '') {
 // Replaces src/utils/structured-llm.js — same contract as generateStructured().
 const structuredLlmStub = {
   generateStructured: async ({ schema, prompt }) => {
+    // Fill-in-the-blank generation, recognized by its schema shape. The generic
+    // stubFromSchema produces "Stub question N", which
+    // FillInTheBlankQuestion.validateAndNormalize rejects for having no blank —
+    // so without this branch every stubbed fill-in-the-blank question would
+    // exhaust its retries and vanish from the batch.
+    if (
+      schema?.properties?.acceptableAnswers &&
+      schema?.properties?.correctAnswer &&
+      schema?.properties?.topicTitle
+    ) {
+      const n = (stubCounter += 1);
+      return {
+        content: JSON.stringify({
+          scratchwork: `Stub reasoning ${n}: the blank is not recoverable from the sentence.`,
+          topicTitle: `Stub topic ${n}`,
+          question: `Stub fill-in-the-blank stem ${n} completed by _________.`,
+          correctAnswer: `Stub answer ${n}`,
+          acceptableAnswers: [`Stub answer ${n}`, `Stub synonym ${n}`],
+          explanation: `Stub explanation ${n}`,
+        }),
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
     const graded = gradingStubFromPrompt(schema, prompt);
+    // Material-outline summarization (issue #32 follow-up): recognized by its
+    // schema shape (topics[].title/keyPoints plus notes), the same way the
+    // objectives branch below is recognized by materialIsRelevant. Without this
+    // branch the generic stubFromSchema fallthrough produces a placeholder
+    // outline that never carries the E2E irrelevance marker, so the downstream
+    // objective-generation prompt loses the signal and the relevance branch
+    // below can never fire.
+    if (
+      schema?.properties?.topics?.items?.properties?.title &&
+      schema?.properties?.topics?.items?.properties?.keyPoints &&
+      schema?.properties?.notes
+    ) {
+      const irrelevant = prompt.includes('[E2E_IRRELEVANT_MATERIAL]');
+      if (irrelevant) {
+        // Emulates MATERIAL_OUTLINE_PROMPT instruction 5: say so plainly in
+        // notes and return the few topics that are genuinely present. The
+        // marker is carried through notes so it survives into the rendered
+        // outline block and reaches the objective-generation prompt.
+        return {
+          content: JSON.stringify({
+            topics: [{ title: 'Unrelated content', keyPoints: ['Not teachable course content'] }],
+            notes: 'This material is not teachable course content. [E2E_IRRELEVANT_MATERIAL]',
+          }),
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        };
+      }
+      return {
+        content: JSON.stringify({
+          topics: [
+            { title: nextStubString('Topic'), keyPoints: [nextStubString('key point')] },
+            { title: nextStubString('Topic'), keyPoints: [nextStubString('key point')] },
+          ],
+          notes: '',
+        }),
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+    }
     // Objective generation needs two deterministic branches so browser tests
     // can prove that unrelated uploads do not produce fabricated objectives.
     if (schema?.properties?.materialIsRelevant) {

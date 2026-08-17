@@ -33,10 +33,14 @@ const CALCULATION_VARIABLE_SCHEMA = {
     required: ["name", "min", "max", "integerOnly", "decimals"],
 };
 
+// scratchwork is listed first so constrained decoding works the problem before
+// committing to a formula, ranges and a precision — the order matters, since a
+// scratchwork emitted last cannot influence any of them.
 const CALCULATION_SCHEMA = {
     type: "object",
     additionalProperties: false,
     properties: {
+        scratchwork: { type: "string" },
         topicTitle: { type: "string" },
         stem: { type: "string" },
         calculationFormula: { type: "string" },
@@ -45,7 +49,7 @@ const CALCULATION_SCHEMA = {
         calculationAnswerTolerancePercent: { type: ["number", "null"] },
         explanation: { type: "string" },
     },
-    required: ["topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", "calculationAnswerTolerancePercent", "explanation"],
+    required: ["scratchwork", "topicTitle", "stem", "calculationFormula", "calculationVariables", "calculationAnswerDecimals", "calculationAnswerTolerancePercent", "explanation"],
 };
 
 class CalculationQuestion extends Question {
@@ -59,7 +63,7 @@ You must output a JSON object representing a parameterized question. The server 
 
 ### VARIABLE NAMING RULES (CRITICAL):
 - Use ONLY single-letter variable names: a, b, c, d, m, n, r, t, v, x, y, z.
-- Do NOT use words (e.g., "mass", "velocity", "radius", "time").
+- Do NOT use words (e.g., "mass", "population", "revenue", "time").
 - Names in \`calculationFormula\`, \`calculationVariables\`, and \`{{name}}\` placeholders in \`stem\` must be byte-for-byte identical.
 
 ### RULES (violations cause immediate rejection):
@@ -81,14 +85,22 @@ You must output a JSON object representing a parameterized question. The server 
 13. **Arithmetic Questions Only**: Only generate a calculation question when the answer is a numeric quantity computed from the given values (a length, energy, probability, count, etc.). Do NOT generate calculation questions for conceptual or counting answers that are always the same constant regardless of the variable values (e.g., "how many solution sets exist" is always 1; "are these rows independent" is yes/no). If the answer to the question is not meaningfully affected by the variable values you declared, reformulate as a different question type.
 
 ### PROCEDURE:
-1. "type": "calculation"
-2. "topicTitle": short neutral label (3-10 words), no "?", must not reveal the answer.
-3. "stem": question text. Every variable appears as {{name}} (double braces). Do NOT write numeric values inline — use placeholders.
-4. "calculationFormula": ONE ASCII expression. References every declared variable.
-5. "calculationVariables": 1-3 entries, each {"name": single letter, "min": number, "max": number, "integerOnly": true} or {"name": single letter, "min": number, "max": number, "decimals": 0-8}. Forbidden names: "pi", "PI", "e", "E".
-6. "calculationAnswerDecimals": integer 0-12 (decimal places shown to the student).
-7. "calculationAnswerTolerancePercent" (optional): 0-100 for percentage-band grading. Omit for exact decimal rounding.
-8. "explanation": brief explanation of the formula.
+1. "scratchwork": work the problem before you commit to anything below. State the
+   quantity being asked for; pick each variable's range and give a physically
+   sensible value for it (a concentration is not 800 M, an equilibrium constant
+   is not 7); compute the answer at the low end and at the high end of those
+   ranges; confirm the answer actually changes when each variable changes, and
+   that it is still visible at the number of decimals you are about to choose (an
+   answer near 10^-14 shown to 2 decimals reads as 0.00). If any of those checks
+   fails, fix the ranges, the formula or the decimals here before writing them.
+2. "type": "calculation"
+3. "topicTitle": short neutral label (3-10 words), no "?", must not reveal the answer.
+4. "stem": question text. Every variable appears as {{name}} (double braces). Do NOT write numeric values inline — use placeholders.
+5. "calculationFormula": ONE ASCII expression. References every declared variable.
+6. "calculationVariables": 1-3 entries, each {"name": single letter, "min": number, "max": number, "integerOnly": true} or {"name": single letter, "min": number, "max": number, "decimals": 0-8}. Forbidden names: "pi", "PI", "e", "E".
+7. "calculationAnswerDecimals": integer 0-12 (decimal places shown to the student).
+8. "calculationAnswerTolerancePercent" (optional): 0-100 for percentage-band grading. Omit for exact decimal rounding.
+9. "explanation": brief explanation of the formula.
 
 ### SELF-CHECK before returning JSON:
 - Every name in calculationVariables appears in stem as {{name}} (double braces).
@@ -99,7 +111,7 @@ You must output a JSON object representing a parameterized question. The server 
 - The formula is non-trivial: confirm every variable affects the result (no variable cancels out).
 - The stem asks for a computable number, not a convergence/divergence label.
 
-Worked example (derive your own formula and variables from the course content): for "kinetic energy of an object of mass {{m}} kg at {{v}} m/s", the formula is "0.5 * m * v^2" with variables m and v, each appearing in both the stem (as {{m}}, {{v}}) and the formula.`;
+Worked example of the MECHANICS only (derive your own formula, stem, and variables from the actual course content — this is not a suggested topic): for a stem like "compute the result for {{a}} and {{b}}" where the underlying relationship doubles {{a}} and adds {{b}}, the formula is "2*a + b" with variables a and b, each appearing in both the stem (as {{a}}, {{b}}) and the formula.`;
     }
 
     static getRetrySuffix(attempt, lastError) {

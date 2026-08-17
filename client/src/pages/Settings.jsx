@@ -8,8 +8,14 @@ import {
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
+import {
+  CanvasConnectionPanel,
+  MoodleConnectionPanel,
+} from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
 import {
   QUESTION_TYPES,
@@ -32,6 +38,61 @@ const BLOOM_BADGE_COLORS = {
   Evaluate: "bg-purple-100 text-purple-700",
   Create: "bg-pink-100 text-pink-700",
 };
+
+// Pipeline stages a course owner can tune, keyed to the server's
+// OPERATION_GROUPS so the labels match what the usage report prints.
+const GENERATION_STAGES = [
+  {
+    key: "question-generation",
+    label: "Question generation",
+    description: "Writing each question from the retrieved course material.",
+  },
+  {
+    key: "question-review-fix",
+    label: "Question review and fix",
+    description:
+      "Checking each generated question, and repairing flagged ones when automatic fixing is on.",
+  },
+  {
+    key: "answer-grading",
+    label: "Answer grading",
+    description: "Grading open-ended and fill-in-the-blank answers students submit.",
+  },
+  {
+    key: "objective-generation",
+    label: "Learning objective generation",
+    description: "Deriving objectives from the material attached to a course.",
+  },
+  {
+    key: "outline-generation",
+    label: "Outline generation",
+    description: "Summarizing a material into the outline shown on its card.",
+  },
+  {
+    key: "document-parsing",
+    label: "Document parsing",
+    description: "Transcribing images and diagrams found in PDFs and slide decks.",
+  },
+];
+
+// "" means the course expresses no preference and the deployment default
+// applies. The server accepts more values than this; these are the useful ones.
+const EFFORT_OPTIONS = [
+  { value: "", label: "Default" },
+  { value: "low", label: "Low — fastest, cheapest" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High — slowest, most thorough" },
+];
+
+const buildEffortState = (source = {}) =>
+  Object.fromEntries(
+    GENERATION_STAGES.map((stage) => [
+      stage.key,
+      EFFORT_OPTIONS.some((option) => option.value === source[stage.key])
+        ? source[stage.key]
+        : "",
+    ])
+  );
 
 const PROMPT_FIELDS = [
   {
@@ -119,8 +180,12 @@ const buildPromptState = (source = {}) =>
 export default function Settings() {
   const showToast = useToast();
   const courseId = useSelectedCourseId();
+  const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
+  const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
 
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(
+    canvasReturnState ? "canvas" : openMoodleSettings ? "moodle" : "general"
+  );
   const [bloomPrimary, setBloomPrimary] = useState(() =>
     Object.fromEntries(
       BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
@@ -132,6 +197,10 @@ export default function Settings() {
   const [coInstructorPerms, setCoInstructorPerms] = useState(() =>
     Object.fromEntries(CO_INSTRUCTOR_PERMISSIONS.map((perm) => [perm.key, true]))
   );
+  // Generation controls (owner only). Empty effort means "use the deployment
+  // default"; the automatic fix runs unless the owner turns it off.
+  const [reasoningEffort, setReasoningEffort] = useState(() => buildEffortState());
+  const [autoFixEnabled, setAutoFixEnabled] = useState(true);
 
   const { isOwner } = useCoInstructorAccess();
   const { settings } = useCourseSettings(courseId);
@@ -139,6 +208,22 @@ export default function Settings() {
   const defaultPrompts = defaults?.prompts || {};
   const codeQuery = useEnrollmentCode(courseId);
   const enrollmentCode = codeQuery.enrollmentCode;
+  const canvasStatus = useCanvasStatus();
+  const moodleStatus = useMoodleStatus();
+  const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
+  const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
+
+  useEffect(() => {
+    if (!canvasStatus.isPending && !showCanvasIntegration && activeTab === "canvas") {
+      setActiveTab("general");
+    }
+  }, [activeTab, canvasStatus.isPending, showCanvasIntegration]);
+
+  useEffect(() => {
+    if (!moodleStatus.isPending && !showMoodleIntegration && activeTab === "moodle") {
+      setActiveTab("general");
+    }
+  }, [activeTab, moodleStatus.isPending, showMoodleIntegration]);
 
   // Hydrate the form when settings arrive
   useEffect(() => {
@@ -156,6 +241,8 @@ export default function Settings() {
         return next;
       });
     }
+    setReasoningEffort(buildEffortState(settings.reasoningEffort));
+    setAutoFixEnabled(settings.autoFixEnabled !== false);
     if (settings.coInstructorPermissions) {
       setCoInstructorPerms(() =>
         Object.fromEntries(
@@ -198,8 +285,19 @@ export default function Settings() {
     saveMutation.mutate({
       prompts,
       bloomTypePreferences,
-      // Only the owner may change co-instructor permissions.
-      ...(isOwner ? { coInstructorPermissions: coInstructorPerms } : {}),
+      // Only the owner may change co-instructor permissions or the generation
+      // controls; the server strips them from a non-owner's update regardless.
+      ...(isOwner
+        ? {
+            coInstructorPermissions: coInstructorPerms,
+            // Drop the stages left on "Default" so an unset stage keeps
+            // following the deployment configuration.
+            reasoningEffort: Object.fromEntries(
+              Object.entries(reasoningEffort).filter(([, effort]) => effort)
+            ),
+            autoFixEnabled,
+          }
+        : {}),
     });
   };
 
@@ -230,9 +328,18 @@ export default function Settings() {
   const tabs = [
     { id: "general", icon: "fa-cog", label: "Course Settings" },
     { id: "prompt", icon: "fa-terminal", label: "Course Prompts" },
+    ...(showCanvasIntegration
+      ? [{ id: "canvas", icon: "fa-chalkboard-teacher", label: "Canvas LMS" }]
+      : []),
+    ...(showMoodleIntegration
+      ? [{ id: "moodle", icon: "fa-graduation-cap", label: "Moodle LMS" }]
+      : []),
     // Owner-only: control what co-instructors can access in this course.
     ...(isOwner
-      ? [{ id: "permissions", icon: "fa-user-shield", label: "Co-Instructor Permissions" }]
+      ? [
+          { id: "generation", icon: "fa-wand-magic-sparkles", label: "AI Generation" },
+          { id: "permissions", icon: "fa-user-shield", label: "Co-Instructor Permissions" },
+        ]
       : []),
   ];
 
@@ -243,6 +350,19 @@ export default function Settings() {
   const coInstructorPermsAtDefault = CO_INSTRUCTOR_PERMISSIONS.every(
     (perm) => coInstructorPerms[perm.key] !== false
   );
+
+  // Default state: every stage deferring to the deployment, review-fix running.
+  const generationAtDefault =
+    autoFixEnabled && GENERATION_STAGES.every((stage) => !reasoningEffort[stage.key]);
+
+  const handleResetGeneration = () => {
+    setReasoningEffort(buildEffortState());
+    setAutoFixEnabled(true);
+    showToast(
+      "AI generation settings restored to defaults — click Save All Changes to apply.",
+      "info"
+    );
+  };
 
   const handleResetCoInstructorPerms = () => {
     setCoInstructorPerms(
@@ -258,22 +378,24 @@ export default function Settings() {
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saveMutation.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
-        >
-          {saveMutation.isPending ? (
-            <>
-              <i className="fas fa-spinner fa-spin" /> Saving...
-            </>
-          ) : (
-            <>
-              <i className="fas fa-save" /> Save All Changes
-            </>
-          )}
-        </button>
+        {!["canvas", "moodle"].includes(activeTab) && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
+          >
+            {saveMutation.isPending ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-save" /> Save All Changes
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -480,6 +602,95 @@ export default function Settings() {
         </section>
       )}
 
+      {activeTab === "generation" && isOwner && (
+        <section className="rounded-2xl bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-ink">AI Generation</h2>
+          <p className="mt-1 mb-6 text-sm text-muted">
+            Control how much the AI thinks before answering, and whether generated
+            questions are reviewed. Higher effort produces better output but takes
+            longer and costs more. Stages left on{" "}
+            <span className="font-semibold text-ink">Default</span> follow this
+            installation&rsquo;s configuration. Click{" "}
+            <span className="font-semibold text-ink">Save All Changes</span> to apply.
+          </p>
+
+          <div className="divide-y divide-gray-100">
+            <div className="flex items-center justify-between gap-4 pb-4">
+              <div className="flex items-start gap-3">
+                <i className="fas fa-clipboard-check mt-0.5 w-5 text-center text-muted" />
+                <div>
+                  <p className="text-sm font-medium text-ink">
+                    Automatically fix flagged questions
+                  </p>
+                  <p className="text-xs text-muted">
+                    Every generated question is reviewed either way. With this on, the
+                    AI also rewrites the ones it flags and re-reviews them. Turning it
+                    off is faster and cheaper: flagged questions come back flagged,
+                    with the reviewer&rsquo;s reason, for you to fix or discard.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoFixEnabled}
+                aria-label="Automatically fix flagged questions"
+                onClick={() => setAutoFixEnabled((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                  autoFixEnabled ? "bg-primary" : "bg-gray-200"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    autoFixEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {GENERATION_STAGES.map((stage) => (
+              <div
+                key={stage.key}
+                className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-sm font-medium text-ink">{stage.label}</p>
+                  <p className="text-xs text-muted">{stage.description}</p>
+                </div>
+                <select
+                  aria-label={`Reasoning effort for ${stage.label}`}
+                  value={reasoningEffort[stage.key] ?? ""}
+                  onChange={(event) =>
+                    setReasoningEffort((prev) => ({
+                      ...prev,
+                      [stage.key]: event.target.value,
+                    }))
+                  }
+                  className="w-full shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-ink focus:border-primary focus:outline-none sm:w-64"
+                >
+                  {EFFORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleResetGeneration}
+              disabled={generationAtDefault}
+              className={`${secondaryBtnClass} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <i className="fas fa-undo" /> Reset to Defaults
+            </button>
+          </div>
+        </section>
+      )}
+
       {activeTab === "permissions" && isOwner && (
         <section className="rounded-2xl bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-ink">Co-Instructor Permissions</h2>
@@ -535,6 +746,17 @@ export default function Settings() {
             </button>
           </div>
         </section>
+      )}
+
+      {activeTab === "canvas" && showCanvasIntegration && (
+        <CanvasConnectionPanel
+          status={canvasStatus}
+          returnState={canvasReturnState}
+        />
+      )}
+
+      {activeTab === "moodle" && showMoodleIntegration && (
+        <MoodleConnectionPanel status={moodleStatus} />
       )}
 
       <ConfirmModal

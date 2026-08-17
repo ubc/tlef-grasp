@@ -116,6 +116,36 @@ test.describe('Instructor course materials lifecycle (seeded course)', () => {
     ).toBeVisible();
   });
 
+  // Regression: the modal used to close on any click landing on the backdrop,
+  // which discarded the unsaved form state (it lives in the component and is
+  // unmounted on close). Two gestures hit it — a click in the padding gutter
+  // beside the panel, and releasing a text selection that started inside the
+  // textarea over the backdrop, because the DOM dispatches click on the nearest
+  // common ancestor of mousedown and mouseup. Runs on the modal the previous
+  // test left open, and leaves it open with its fields untouched.
+  test('keeps the text modal open when a click lands on the backdrop', async () => {
+    const heading = page.getByRole('heading', { name: 'Add Text Content' });
+    const textarea = page.getByPlaceholder('Paste your text content here...');
+    await textarea.fill(BODY);
+
+    const box = await textarea.boundingBox();
+    const panel = await page.getByRole('dialog').boundingBox();
+
+    // Gesture 1: drag a selection out of the textarea and release on the backdrop.
+    await page.mouse.move(box.x + 40, box.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(panel.x - 30, panel.y - 30, { steps: 10 });
+    await page.mouse.up();
+    await expect(heading).toBeVisible();
+
+    // Gesture 2: a plain click in the gutter just outside the panel edge.
+    await page.mouse.click(panel.x - 8, panel.y + 40);
+    await expect(heading).toBeVisible();
+
+    // The typed content survived both.
+    await expect(textarea).toHaveValue(BODY);
+  });
+
   test('rejects text content without a document title', async () => {
     await page.getByPlaceholder('Enter document title...').fill('   ');
     await page.getByPlaceholder('Paste your text content here...').fill(BODY);

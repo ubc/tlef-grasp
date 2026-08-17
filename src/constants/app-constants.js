@@ -60,14 +60,17 @@ COURSE MATERIALS CONTENT:
 {ragContext}
 
 INSTRUCTIONS:
-1. First decide whether the material contains enough course-related, teachable content to support learning objectives. If it does not (for example, it is a personal note, placeholder text, navigation, a receipt, or unrelated content), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives to satisfy the requested count.
+1. First decide whether the material contains enough course-related, teachable content to support learning objectives. If it does not (for example, it is a personal note, placeholder text, navigation, a receipt, or unrelated content), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives for material that is not genuinely relevant. This relevance decision always takes priority over every instruction below — no downstream coverage or merging requirement ever justifies fabricating an objective for material you have judged irrelevant.
 2. Only when materialIsRelevant is true, analyze the course materials and identify key topics, concepts, and learning outcomes.
-3. Generate 3-8 main (meta) learning objectives covering the major themes in the provided materials. Go outside this range only if the material genuinely demands it.
-4. For each main learning objective, generate 2-5 granular (sub) objectives, or as many as the material genuinely supports. Do not pad with weak or overlapping objectives to meet a minimum. Quality and distinctiveness take priority over quantity.
-5. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
-6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
-7. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
-8. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
+3. Only when materialIsRelevant is true: derive the meta learning objectives from the topics in the provided outlines. Create as many as the material requires — typically one per topic, or one per group of closely related topics. There is no target number: let the material's structure decide how many there are.
+4. Only when materialIsRelevant is true: Every topic in every provided outline must be covered by at least one meta learning objective. Do not omit topics to keep the list short. This coverage requirement never overrides the relevance decision in instruction 1 — if materialIsRelevant is false, return no objectives regardless of what the outline's topics contain.
+5. Only when materialIsRelevant is true: treat the provided materials as one body of course content, not as separate lists. When two or more materials cover the same topic, produce ONE meta learning objective for that topic rather than a near-duplicate objective per material.
+6. Only when materialIsRelevant is true: merging must never lose coverage. A topic covered by several materials yields one meta learning objective whose granular objectives reflect everything those materials teach about it, with genuinely duplicate granular objectives collapsed into one.
+7. Only when materialIsRelevant is true: for each meta learning objective, write granular objectives covering that topic's key points. Create as many as the key points require. Do not pad with weak or overlapping objectives, and do not drop key points to keep the list short: distinctness matters, but coverage takes priority over brevity.
+8. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
+9. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes.
+10. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
+11. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -93,9 +96,12 @@ RULES FOR GRANULAR OBJECTIVES:
 - Avoid granular objectives that are too shallow to assess meaningfully on their own, such as recalling a single definition or performing a trivial isolated task. Instead, embed such skills within a richer, more substantive objective.
 
 SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
+- If materialIsRelevant is false, objectives is empty — none of the checks below apply, and no outline topic count justifies adding an objective.
+- If materialIsRelevant is true: every topic in every provided outline is covered by at least one meta objective.
+- No two meta objectives cover the same topic; topics appearing in more than one material were merged into a single objective.
 - No two granular objectives under the same main objective test the same fact or skill.
 - No granular objective is a rephrasing of its parent meta objective.
-- Each granular objective is genuinely distinct and necessary — remove any that are redundant or only added to meet a count.
+- Each granular objective is genuinely distinct and necessary — remove any that are redundant.
 - Every meta objective has at least one granular objective.
 - Every granular objective begins with an active verb and has at least one Bloom level.
 - Every Bloom level on a granular objective has at least one recommended question type with a count.
@@ -167,7 +173,32 @@ CORRECTNESS:
 - Do any distractors accidentally give a correct answer?
 - Are any two answer options identical or near-identical in text?
 - Note: blank feedback on the correct answer is intentional and is NOT a flag reason.
-- IMPORTANT: For questions involving mathematics, flag a correctness issue ONLY if you are highly confident there is an error. If you are uncertain whether the answer is correct, do NOT flag it — leave that judgment to the instructor.
+- IMPORTANT: This course may be in any discipline — mathematics, chemistry, physics,
+  biology, or a non-quantitative subject. Whatever the discipline, if the question
+  has a checkable, objective correct answer, you MUST independently recompute or
+  re-derive it in the reasoning field before judging, rather than judging whether it
+  sounds plausible. This includes: a numeric computation; a comparison of which of
+  two values, quantities, or outcomes is greater, favoured, or correct; whether
+  something satisfies a stated definition, condition, or rule; or a classification
+  against criteria given in the material. Show the actual recomputation or
+  derivation — the real numbers, substitution, or step-by-step reasoning — not just
+  a verdict. Only leave flagged false if your own re-derivation matches the stated
+  correctAnswer. Do not accept a claim as correct just because it sounds plausible
+  or uses correct-sounding terminology — re-derive it.
+- This re-derivation requirement applies to any checkable, objective claim, in any
+  discipline. For genuinely subjective judgment calls (see BLOOM LEVEL ACCURACY and
+  DISTRACTOR QUALITY below), it is still fine to leave flagged false when uncertain.
+- Before re-deriving anything, check whether the question explicitly states a
+  convention, definition, ordering, indexing, sign convention, unit, or setup
+  particular to that problem. If it does, your re-derivation MUST use that exact
+  stated convention — do not substitute a different one just because it is more
+  familiar or more common in general practice. Silently swapping to a different,
+  more familiar convention than the one the question actually stated produces a
+  different, non-comparable answer — that is a reviewer error, not a question
+  error. If your re-derivation disagrees with the stated correctAnswer, before
+  flagging, explicitly re-check in the reasoning field that you used the exact
+  convention/definition the question itself stated, not a default one from your
+  own training or general knowledge of the field.
 
 TOPIC ALIGNMENT:
 - Does the question content actually test the concept named in the learning objective?
@@ -196,6 +227,17 @@ Step 2 — Set flagged to true if you found any issue in Step 1. Describe it con
 CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question listed above — match each by its questionId.
 
 You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
+
+const QUESTION_FIX_PROMPT = `An independent quality reviewer examined the {questionType} question you generated above (beginning: "{questionExcerpt}") and flagged it:
+
+REVIEWER'S ISSUE: {issue}
+REVIEWER'S REASONING: {reasoning}
+
+Fix ONLY what is necessary to resolve this specific issue. Do not rewrite the question from scratch, and do not change any field the issue above does not implicate — if the issue is about one distractor's feedback, leave the stem, the other distractors, and their feedback exactly as they are; if the issue is about the stem or the correct answer, change only what is needed to correct it. Preserve the original question's topic, Bloom's Taxonomy level, and question type exactly.
+
+Before finalizing, independently re-verify that your corrected content is accurate — work through it a different way than you originally constructed the question.
+
+Respond with ONLY a single valid JSON object matching the same schema as before. No other text.`;
 
 const OPEN_ENDED_GRADING_PROMPT = `You are an automated grader for a university course. Grade the student's answer to an open-ended question.
 
@@ -237,6 +279,52 @@ INSTRUCTIONS:
 2. Set "correct" to false if the answer names a different concept, is only partially right, or is too vague to distinguish from a wrong answer.
 3. "feedback": 1-2 sentences addressed directly to the student ("you"). If correct, briefly confirm why their phrasing is acceptable. If incorrect, explain what kind of answer was expected WITHOUT revealing the expected answer itself.`;
 
+/**
+ * Maximum characters summarized in a single call. Above this, the material is
+ * summarized in batches and consolidated.
+ */
+const OUTLINE_DIRECT_MAX_CHARS = 100000;
+/** Batch size when a material exceeds OUTLINE_DIRECT_MAX_CHARS. */
+const OUTLINE_BATCH_CHARS = 80000;
+/**
+ * Coverage cap, so one pathological upload cannot run unbounded LLM calls.
+ * Lowered from 8: at 8 batches a single outline ran to roughly 290k tokens —
+ * more than four full question-generation batches — for one click on one
+ * document.
+ */
+const OUTLINE_MAX_BATCHES = 3;
+/**
+ * The largest material one outline can cover, derived so the ceiling and the
+ * batching that implements it cannot drift apart. Materials above this are
+ * refused rather than summarized part-way: an outline that covers a fraction of
+ * a document is worse than no outline, because learning objectives are
+ * generated from it and questions from those objectives, so the unread tail
+ * silently produces nothing while still costing full price to ingest and embed.
+ * Split oversized material into chapters — each then fits, and each gets its own
+ * full topic budget instead of sharing one.
+ */
+const OUTLINE_MAX_CONTENT_CHARS = OUTLINE_BATCH_CHARS * OUTLINE_MAX_BATCHES;
+
+/** Caps on a stored outline, applied to model output and instructor edits alike. */
+const MAX_OUTLINE_TOPICS = 40;
+const MAX_OUTLINE_KEY_POINTS = 20;
+const MAX_OUTLINE_CHARS = 20000;
+
+const MATERIAL_OUTLINE_PROMPT = `You are an expert educational content designer. Summarize the following course material into a structured outline that captures everything a set of learning objectives would need to cover.
+
+COURSE MATERIAL:
+{materialContent}
+
+INSTRUCTIONS:
+1. Identify the distinct topics the material teaches, in the order the material presents them.
+2. For each topic, list the key points a student is expected to learn — concepts, definitions, relationships, methods, and worked results.
+3. Use the material's own terminology. Do not introduce topics the material does not cover.
+4. Do not editorialize about the material's quality, and do not add study advice.
+5. If the material is not teachable course content (a receipt, a syllabus administrative page, navigation text, personal notes), say so plainly in notes and return the few topics that are genuinely present.
+6. Use notes only for caveats about the material itself — for example sparse text from a scan, or content that appears truncated. Leave notes as an empty string when there is nothing to report.
+7. CRITICAL LaTeX FORMATTING: enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g. \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+8. Produce at most {maxTopics} topics and at most {maxKeyPoints} key points per topic. Keep the outline concise — merge or drop the least important material rather than exceeding these limits.`;
+
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
 const QUESTION_TYPES = {
@@ -253,6 +341,7 @@ const DEFAULT_PROMPTS = {
   powerPointImageDescription: POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   openEndedGrading: OPEN_ENDED_GRADING_PROMPT,
   fillInTheBlankGrading: FILL_IN_THE_BLANK_GRADING_PROMPT,
+  materialOutline: MATERIAL_OUTLINE_PROMPT,
 };
 
 // Default mapping from Bloom's level to ordered question-type preferences.
@@ -266,16 +355,35 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
   Create: [QUESTION_TYPES.OPEN_ENDED, QUESTION_TYPES.MULTIPLE_CHOICE],
 };
 
+/**
+ * Maximum course materials an instructor can attach to one meta learning
+ * objective. A product guardrail rather than a technical limit: retrieval splits
+ * a fixed chunk budget across however many materials are attached, so raising
+ * this does not raise token cost. Objectives created before the cap existed may
+ * exceed it — reads tolerate that, writes do not.
+ */
+const MAX_MATERIALS_PER_OBJECTIVE = 3;
+
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
+  QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,
   POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   OPEN_ENDED_GRADING_PROMPT,
   FILL_IN_THE_BLANK_GRADING_PROMPT,
+  MATERIAL_OUTLINE_PROMPT,
+  OUTLINE_DIRECT_MAX_CHARS,
+  OUTLINE_BATCH_CHARS,
+  OUTLINE_MAX_BATCHES,
+  OUTLINE_MAX_CONTENT_CHARS,
+  MAX_OUTLINE_TOPICS,
+  MAX_OUTLINE_KEY_POINTS,
+  MAX_OUTLINE_CHARS,
   BLOOM_LEVELS,
   QUESTION_TYPES,
   DEFAULT_PROMPTS,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
+  MAX_MATERIALS_PER_OBJECTIVE,
 };

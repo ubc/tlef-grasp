@@ -17,6 +17,7 @@ export const queryKeys = {
   detailedObjectives: (courseId) => ["detailed-objectives", courseId],
 
   materials: (courseId) => ["materials", courseId],
+  materialOutline: (sourceId) => ["material-outline", sourceId],
 
   quizzes: (courseId) => ["quizzes", "course", courseId],
   quizzesWithQuestions: (courseId) => ["quizzes-with-questions", courseId],
@@ -38,6 +39,35 @@ export const queryKeys = {
   courseSettings: (courseId) => ["course-settings", courseId],
   settingsDefaults: ["course-settings-defaults"],
   enrollmentCode: (courseId) => ["enrollment-code", courseId],
+
+  canvasStatus: ["canvas", "status"],
+  canvasAvailableCourses: (courseId, sectionId) => [
+    "canvas",
+    "available-courses",
+    courseId,
+    sectionId,
+  ],
+  canvasSections: (courseId, sectionId, canvasCourseId) => [
+    "canvas",
+    "sections",
+    courseId,
+    sectionId,
+    canvasCourseId,
+  ],
+  moodleStatus: ["moodle", "status"],
+  moodleAvailableCourses: (courseId, sectionId) => [
+    "moodle",
+    "available-courses",
+    courseId,
+    sectionId,
+  ],
+  moodleGroups: (courseId, sectionId, moodleCourseId) => [
+    "moodle",
+    "groups",
+    courseId,
+    sectionId,
+    moodleCourseId,
+  ],
 
   // UBC course-section integration
   ubcCampuses: ["ubc-campuses"],

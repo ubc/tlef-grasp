@@ -1204,26 +1204,49 @@ const getQuizScores = async (quizId) => {
         const { getCourseUsers } = require('./user-course');
         const courseUsers = await getCourseUsers(quiz.courseId);
         
-        // Filter out instructors/staff to get only students
-        const studentsInCourse = courseUsers.filter(userCourse => {
-            if (!userCourse.affiliation) return false;
-            
-            const affiliations = Array.isArray(userCourse.affiliation)
-                ? userCourse.affiliation
-                : String(userCourse.affiliation).split(',').map(a => a.trim());
-            
-            const hasStudent = affiliations.includes('student') || affiliations.includes('affiliate');
-            const hasStaff = affiliations.includes('staff');
-            const hasFaculty = affiliations.includes('faculty');
-            
-            return hasStudent && !hasStaff && !hasFaculty;
-        });
-        
+        // Who counts as a student is decided by their role *in this course*, not
+        // by their global affiliation. The old test was
+        // `student && !staff && !faculty`, which silently dropped every promoted
+        // TA taking this course as a learner — they keep 'student' but gain
+        // 'staff' on promotion — with no warning anywhere: the attempt was still
+        // recorded, the instructor just never saw the row.
+        //
+        // resolveCourseRole is the same call the Users page makes, so the two
+        // views agree on who is a student here.
+        const { resolveCourseRole } = require('../utils/course-access');
+        const { isFaculty } = require('../utils/auth');
+        const studentsInCourse = [];
+        for (const userCourse of courseUsers) {
+            // getCourseUsers projects the user fields to the top level and keeps
+            // the full document under `user`; staffViaTaPromotion only exists on
+            // the latter. The unwind preserves orphaned memberships, so `user`
+            // may be missing.
+            const userDoc = userCourse.user || userCourse;
+            if (!userDoc?.affiliation) continue;
+            const courseRole = resolveCourseRole(userDoc, userCourse, await isFaculty(userDoc));
+            if (courseRole === 'student') studentsInCourse.push(userCourse);
+        }
+
         // 3. Get all quiz scores for this quiz
         const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
         const scores = await db.collection("grasp_quiz_score").find({
             quizId: quizIdObj
         }).toArray();
+
+        // A recorded score must never be missing from this table. Role
+        // resolution still cannot separate a genuine work-learn student — SAML
+        // affiliation ['student','staff'] with no promotion flag — from an
+        // instructor, so anyone who actually submitted is added back even when
+        // their role reads as staff. An instructor seeing an unexpected row can
+        // ignore it; a silently absent submission they cannot even know about.
+        const rosteredIds = new Set(studentsInCourse.map(s => s.userId.toString()));
+        const scoredIds = new Set(scores.map(s => s.userId.toString()));
+        for (const userCourse of courseUsers) {
+            const userStrId = userCourse.userId?.toString();
+            if (!userStrId || rosteredIds.has(userStrId) || !scoredIds.has(userStrId)) continue;
+            rosteredIds.add(userStrId);
+            studentsInCourse.push(userCourse);
+        }
 
         // 3b. Count AI grades each student denied and no instructor has yet
         // finalized (issue #76). Surfaced per-row so instructors can spot which

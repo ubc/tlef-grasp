@@ -28,12 +28,15 @@ describe('generateStructured', () => {
     mockGetLLMProvider.mockReset();
     mockGetLLMModel.mockReset();
     delete process.env.OLLAMA_ENDPOINT;
+    delete process.env.LLM_REASONING_EFFORT;
+    delete process.env.LLM_EFFORT_QUESTION_GENERATE;
   });
 
   it('uses Ollama schema-constrained chat with image prompts', async () => {
     mockGetLLMProvider.mockReturnValue('ollama');
     mockGetLLMModel.mockReturnValue('llama-model');
     process.env.OLLAMA_ENDPOINT = 'http://ollama.test';
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
     mockChat.mockResolvedValue({
       message: { content: '{"answer":"ok"}' },
       prompt_eval_count: 7,
@@ -44,7 +47,7 @@ describe('generateStructured', () => {
       generateStructured({
         prompt: 'Return JSON',
         schema,
-        temperature: 0.1,
+        operation: 'question-generate',
         images: ['base64-png'],
       })
     ).resolves.toEqual({
@@ -58,7 +61,7 @@ describe('generateStructured', () => {
       messages: [{ role: 'user', content: 'Return JSON', images: ['base64-png'] }],
       stream: false,
       format: schema,
-      options: { temperature: 0.1 },
+      options: { temperature: 0.1 }, // high effort -> low local temperature
     });
     expect(mockGetLLMInstance).not.toHaveBeenCalled();
   });
@@ -76,12 +79,13 @@ describe('generateStructured', () => {
       messages,
       stream: false,
       format: schema,
-      options: { temperature: 0.4 },
+      options: { temperature: 0.1 }, // default high effort -> low local temperature
     });
   });
 
   it('passes strict json_schema response format to the toolkit for OpenAI prompts', async () => {
     mockGetLLMProvider.mockReturnValue('openai');
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
     const sendMessage = jest.fn().mockResolvedValue({
       content: '{"answer":"openai"}',
       usage: { promptTokens: 5, completionTokens: 4, totalTokens: 12 },
@@ -92,7 +96,7 @@ describe('generateStructured', () => {
       generateStructured({
         prompt: 'Return JSON',
         schema,
-        temperature: 0.2,
+        operation: 'question-generate',
         images: ['img'],
         model: 'gpt-test',
         schemaName: 'answer_payload',
@@ -103,7 +107,7 @@ describe('generateStructured', () => {
     });
 
     expect(mockGetLLMInstance).toHaveBeenCalledWith('gpt-test', {
-      temperature: 0.2,
+      reasoning_effort: 'high',
       max_completion_tokens: null,
       response_format: {
         type: 'json_schema',
@@ -117,6 +121,27 @@ describe('generateStructured', () => {
       ],
       {}
     );
+  });
+
+  // The newer OpenAI models reject an explicit temperature outright ("does not
+  // support 0.4 with this model"), which took down every LLM feature at once.
+  // Effort is the only knob the OpenAI path may send.
+  it('never sends a temperature on the OpenAI path', async () => {
+    mockGetLLMProvider.mockReturnValue('openai');
+    mockGetLLMInstance.mockResolvedValue({
+      sendMessage: jest.fn().mockResolvedValue({ content: '{}', usage: {} }),
+    });
+
+    await generateStructured({ prompt: 'Return JSON', schema });
+    process.env.LLM_EFFORT_QUESTION_GENERATE = 'high';
+    await generateStructured({ prompt: 'Return JSON', schema, operation: 'question-generate' });
+
+    for (const [, options] of mockGetLLMInstance.mock.calls) {
+      expect(options).not.toHaveProperty('temperature');
+    }
+    // With nothing configured the effort is the built-in default, never a temperature.
+    expect(mockGetLLMInstance.mock.calls[0][1].reasoning_effort).toBe('high');
+    expect(mockGetLLMInstance.mock.calls[1][1].reasoning_effort).toBe('high');
   });
 
   it('passes image MIME types through for OpenAI image prompts', async () => {

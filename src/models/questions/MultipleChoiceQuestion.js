@@ -44,14 +44,24 @@ class MultipleChoiceQuestion extends Question {
     static getPromptInstruction() {
         return `INSTRUCTIONS:
 1. Write a question stem aligned to the learning objective and Bloom's level.
-   If you have already generated questions in this conversation, the new stem
-   must approach the concept from a structurally different angle.
+   Do not default to "Which of the following..." or "Which statement is/best
+   describes/best explains..." as your stem opener — vary the construction (a
+   scenario or vignette, a direct question, a "given the following data, what
+   explains..." stem, etc.). If you have already generated questions in this
+   conversation, the new stem must also approach the concept from a
+   structurally different angle AND must not reuse the same opening
+   construction as an earlier question in this conversation.
 2. Generate 4 answer options (A-D). Every option must be unique — no two options
    may describe the same concept in different words.
 3. Every distractor must represent a genuine misconception a student might hold,
    not an obviously wrong or trivially absurd option.
 4. SELF-CHECK before setting correctAnswer: work through the problem step by step
-   in the scratchwork field. Show your calculations or reasoning. Then set
+   in the scratchwork field. Show your calculations or reasoning. Then, verify your
+   answer using a method DIFFERENT from how you constructed the question — if you
+   built the question from a rule or pattern, re-derive the answer from first
+   principles or a worked example instead of just re-stating the rule; if it is a
+   comparison between two quantities, compute both sides independently rather than
+   re-checking the same computation. Only after this independent check, set
    correctAnswer to the letter you confirmed is correct. Also verify no other
    option is accidentally correct.
 5. For each incorrect option, write feedback that explains the specific
@@ -90,13 +100,23 @@ class MultipleChoiceQuestion extends Question {
             throw new Error("Two or more answer options have identical or near-identical text.");
         }
 
+        const correctAnswer = data.correctAnswer.trim().toUpperCase();
+        const missingFeedback = ["A", "B", "C", "D"].filter(
+            (k) => k !== correctAnswer && !options[k].feedback
+        );
+        if (missingFeedback.length > 0) {
+            throw new Error(
+                `Incorrect option(s) ${missingFeedback.join(", ")} are missing feedback explaining the misconception.`
+            );
+        }
+
         return {
             type: QUESTION_TYPES.MULTIPLE_CHOICE,
             questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
             question: data.question.trim(),
             // scratchwork is intentionally omitted — used only for chain-of-thought during generation
             options,
-            correctAnswer: data.correctAnswer.trim().toUpperCase(),
+            correctAnswer,
             explanation: data.explanation != null ? String(data.explanation) : "",
         };
     }

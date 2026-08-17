@@ -142,6 +142,30 @@ const FILL_IN_THE_BLANK_GRADING_SCHEMA = {
   required: ["correct", "feedback"],
 };
 
+// Material outline: { topics, notes }. Topics is an array of {title, keyPoints}
+// where keyPoints is an array of strings. Used for summarizing course materials
+// once and reusing across objective generation.
+const MATERIAL_OUTLINE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    topics: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          keyPoints: { type: "array", items: { type: "string" } },
+        },
+        required: ["title", "keyPoints"],
+      },
+    },
+    notes: { type: "string" },
+  },
+  required: ["topics", "notes"],
+};
+
 // Per-question-type schemas are co-located with their model + validation logic
 // in src/models/questions/*.js (each model's getJsonSchema()), so the shape and
 // the semantic checks that enforce it stay together.
@@ -152,4 +176,5 @@ module.exports = {
   QUESTION_REVIEW_SCHEMA,
   OPEN_ENDED_GRADING_SCHEMA,
   FILL_IN_THE_BLANK_GRADING_SCHEMA,
+  MATERIAL_OUTLINE_SCHEMA,
 };

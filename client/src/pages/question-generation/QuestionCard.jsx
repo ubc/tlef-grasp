@@ -280,6 +280,18 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
         </div>
       )}
 
+      {/* Auto-fixed notice: an independent AI review flagged an issue and a
+          targeted fix was applied and re-verified. Still shown alongside the
+          review-warning banner above if the question is flagged again after
+          exhausting the fix loop's attempts, so the instructor can see both
+          "this was fixed at least once" and "and is still flagged" together. */}
+      {question.wasAutoFixed && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2.5 text-sm text-green-800">
+          <i className="fas fa-wrench mt-0.5" />
+          <span>{question.autoFixReason || "Automatically fixed after an AI quality review."}</span>
+        </div>
+      )}
+
       {/* Body */}
       {isFib &&
         (isEditing ? (

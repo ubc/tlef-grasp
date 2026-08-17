@@ -2,7 +2,7 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
-const { updateObjectiveMaterialRelations, getMaterialsForObjective } = require('../services/objective-material');
+const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
   try {
@@ -132,6 +132,12 @@ const createObjectiveHandler = async (req, res) => {
       });
     }
 
+    // Validate the material cap before any write, so an over-cap request
+    // does not leave behind a parent objective (and its granular children)
+    // with no materials attached. Throws MaterialCapExceededError, caught
+    // below and mapped to the same 400 as updateObjectiveMaterialRelations.
+    assertWithinMaterialCap(materialIds);
+
     const result = await createObjective({
       name: name.trim(),
       granularObjectives: granularObjectives || [],
@@ -149,6 +155,13 @@ const createObjectiveHandler = async (req, res) => {
       granularObjectives: result.granular,
     });
   } catch (error) {
+    if (error.code === 'MATERIAL_CAP_EXCEEDED') {
+      return res.status(400).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
     console.error('Error creating objective:', error);
     res.status(500).json({
       success: false,
@@ -204,6 +217,13 @@ const updateObjectiveMaterials = async (req, res) => {
       message: 'Material relationships updated successfully',
     });
   } catch (error) {
+    if (error.code === 'MATERIAL_CAP_EXCEEDED') {
+      return res.status(400).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
     console.error('Error updating material relationships:', error);
     res.status(500).json({
       success: false,
@@ -215,7 +235,28 @@ const updateObjectiveMaterials = async (req, res) => {
 const updateObjectiveHandler = async (req, res) => {
   try {
     const objectiveId = req.params.id;
-    const { name, granularObjectives, materialIds, courseId, questionAction } = req.body;
+    // Materials are deliberately not read here: they are written only by
+    // PUT /api/objective/:id/materials. Honouring them on this endpoint would
+    // make the wizard's autosave rewrite material links as a side effect of
+    // editing an objective's name or granular list.
+    //
+    // courseId is NOT read from the body. It used to be, and that was a
+    // confused-deputy hole: the request authorised against whatever course the
+    // caller named, while the write targeted the objective by _id alone. A user
+    // with access to course A could name course A, pass an objective id from
+    // course B, and rewrite it — and because courseId was also writable, move it
+    // into course A. Sending an empty granularObjectives array with it deleted
+    // course B's granular children and orphaned their questions. The course now
+    // comes from the objective, so authorisation and target cannot disagree.
+    const { name, granularObjectives, questionAction } = req.body;
+
+    const courseId = await getObjectiveCourseId(objectiveId);
+    if (!courseId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Learning objective not found',
+      });
+    }
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
@@ -237,9 +278,6 @@ const updateObjectiveHandler = async (req, res) => {
     }
     if (granularObjectives !== undefined) {
       updateData.granularObjectives = granularObjectives;
-    }
-    if (courseId !== undefined) {
-      updateData.courseId = courseId;
     }
     if (questionAction === 'delete' || questionAction === 'keep') {
       updateData.questionAction = questionAction;

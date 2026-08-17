@@ -13,7 +13,6 @@ import { useQuestionDraft } from "./question-generation/useQuestionDraft";
 import {
   generateQuestions,
   convertQuestionsToGroups,
-  reviewGeneratedQuestions,
   buildQuestionPayload,
 } from "./question-generation/generationApi";
 
@@ -197,21 +196,39 @@ export default function QuestionGeneration() {
       (sum, g) => sum + g.items.reduce((s, item) => s + (item.count || 1), 0),
       0
     );
-    setGenerationMessage(`Generating questions — 0 of ${totalExpected}`);
+    setGenerationMessage(
+      `Generating questions — 0 of ${totalExpected} (includes automatic quality review and fixes)`
+    );
 
     try {
-      const { questions } = await generateQuestions(
+      const { questions, failures } = await generateQuestions(
         selectedCourse,
         objectiveGroups,
         ({ generated, total }) =>
-          setGenerationMessage(`Generating questions — ${generated} of ${total}`)
+          setGenerationMessage(
+            `Generating questions — ${generated} of ${total} (includes automatic quality review and fixes)`
+          )
       );
 
+      if (failures?.length > 0) {
+        const rateLimited = failures.filter((failure) => failure.rateLimited).length;
+        // Name the failed objectives so the instructor knows what to
+        // regenerate, but cap the list so a large failure set doesn't
+        // produce an unreadable toast.
+        const names = failures.map((failure) => failure.objectiveText).filter(Boolean);
+        const shown = names.slice(0, 3);
+        const extra = names.length - shown.length;
+        const nameList = extra > 0 ? `${shown.join(", ")}, and ${extra} more` : shown.join(", ");
+        showToast(
+          `${failures.length} objective${failures.length === 1 ? "" : "s"} could not be generated` +
+            (nameList ? `: ${nameList}` : "") +
+            (rateLimited > 0 ? " (the AI provider was rate limiting)" : "") +
+            ". The rest are ready below.",
+          "warning"
+        );
+      }
+
       const groups = convertQuestionsToGroups(questions);
-      setGenerationMessage(
-        `Reviewing ${questions.length} questions for quality — almost done…`
-      );
-      await reviewGeneratedQuestions(groups, courseId);
 
       setQuestionGroups(groups);
       questionGroupsRef.current = groups;

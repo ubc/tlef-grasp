@@ -49,7 +49,8 @@ router.put('/:id/materials', express.json(), objectiveController.updateObjective
 /**
  * PUT /api/objective/:id
  * Update a learning objective
- * Body: { name: string, granularObjectives: Array<{id?: string, text: string}>, materialIds: Array<string> }
+ * Body: { name: string, granularObjectives: Array<{id?: string, text: string}> }
+ * Materials are not updated here — use PUT /api/objective/:id/materials.
  */
 router.put('/:id', express.json(), objectiveController.updateObjectiveHandler);
 

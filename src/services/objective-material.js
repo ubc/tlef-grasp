@@ -1,5 +1,30 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
+const { MAX_MATERIALS_PER_OBJECTIVE } = require('../constants/app-constants');
+
+/**
+ * Thrown when a write would attach more than MAX_MATERIALS_PER_OBJECTIVE
+ * materials to one objective. Carries a `code` so controllers can map it to a
+ * 400 without string-matching the message.
+ */
+class MaterialCapExceededError extends Error {
+  constructor(attempted) {
+    super(
+      `Cannot attach ${attempted} materials to a learning objective; the maximum is ${MAX_MATERIALS_PER_OBJECTIVE}.`
+    );
+    this.name = 'MaterialCapExceededError';
+    this.code = 'MATERIAL_CAP_EXCEEDED';
+    this.attempted = attempted;
+    this.max = MAX_MATERIALS_PER_OBJECTIVE;
+  }
+}
+
+/** Throws if the requested material list exceeds the cap. */
+const assertWithinMaterialCap = (materialSourceIds) => {
+  if (materialSourceIds && materialSourceIds.length > MAX_MATERIALS_PER_OBJECTIVE) {
+    throw new MaterialCapExceededError(materialSourceIds.length);
+  }
+};
 
 /**
  * Create a relationship between a learning objective and materials
@@ -7,6 +32,7 @@ const { ObjectId } = require('mongodb');
  * @param {Array<string>} materialSourceIds - Array of material sourceIds (will be converted to material _id)
  */
 const createObjectiveMaterialRelations = async (objectiveId, materialSourceIds) => {
+  assertWithinMaterialCap(materialSourceIds);
   try {
     const db = await databaseService.connect();
     const relationshipCollection = db.collection('grasp_objective_material');
@@ -187,6 +213,9 @@ const removeAllRelationsForObjective = async (objectiveId) => {
  * @param {Array<string>} materialSourceIds - Array of material sourceIds (will be converted to material _id)
  */
 const updateObjectiveMaterialRelations = async (objectiveId, materialSourceIds) => {
+  // Checked before the removal below: this function deletes existing links
+  // before creating the new ones, so a late failure would lose data.
+  assertWithinMaterialCap(materialSourceIds);
   try {
     // Remove existing relationships
     await removeAllRelationsForObjective(objectiveId);
@@ -210,4 +239,6 @@ module.exports = {
   removeObjectiveMaterialRelation,
   removeAllRelationsForObjective,
   updateObjectiveMaterialRelations,
+  assertWithinMaterialCap,
+  MaterialCapExceededError,
 };

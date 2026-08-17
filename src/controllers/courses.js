@@ -14,6 +14,9 @@ const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUser
 const materialService = require('../services/material');
 const questionService = require('../services/question');
 const { isFaculty, isStaff } = require('../utils/auth');
+const { hasStaffAccessInCourse } = require('../utils/course-access');
+const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 
 // Enrollment-code flows are available to faculty, staff, and app administrators
 // (administrators are already covered by isFaculty), but not students.
@@ -86,11 +89,18 @@ const getCourseByIdHandler = async (req, res) => {
   }
 };
 
+// Materials carry the full extracted text of every upload (fileContent) and the
+// generated outline, so this is staff-only in the course — the /api/courses mount
+// admits students, and without this check any authenticated user could read any
+// course's material by id.
 const getCourseMaterials = async (req, res) => {
   try {
     const { courseId } = req.params;
     const course = await getCourseById(courseId);
     if (!course) return res.status(404).json({ error: "Course not found" });
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
     const materials = await materialService.getCourseMaterials(courseId);
     res.json({ success: true, materials });
   } catch (error) {
@@ -99,11 +109,18 @@ const getCourseMaterials = async (req, res) => {
   }
 };
 
+// Returns whole question documents, correct answers and all (correctAnswer,
+// per-option feedback, acceptableAnswers, openEndedSampleAnswer,
+// openEndedGradingCriteria, calculationFormula). Staff-only in the course: this
+// route is mounted for students, so an unguarded read here is an answer key.
 const getCourseQuestions = async (req, res) => {
   try {
     const { courseId } = req.params;
     const course = await getCourseById(courseId);
     if (!course) return res.status(404).json({ error: "Course not found" });
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
     const questions = await questionService.getQuestions(courseId);
     res.json({ success: true, questions });
   } catch (error) {
@@ -112,6 +129,9 @@ const getCourseQuestions = async (req, res) => {
   }
 };
 
+// Writes a material row into the course, so it needs the same gates as
+// POST /api/material/save: staff access in the course plus the course-materials
+// capability for co-instructors and TAs.
 const addCourseMaterial = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -120,6 +140,12 @@ const addCourseMaterial = async (req, res) => {
 
     const course = await getCourseById(courseId);
     if (!course) return res.status(404).json({ error: "Course not found" });
+
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
     const materialSourceId = sourceId || `m${Date.now()}`;
     await materialService.saveMaterial(materialSourceId, courseId, {

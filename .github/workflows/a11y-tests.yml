@@ -92,6 +92,11 @@ jobs:
         run: npm install
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # onnxruntime-node (via fastembed) downloads a multi-hundred-MB CUDA
+          # build on linux/x64 whether or not a GPU is present, and that download
+          # is what fails the install here. Runners have no GPU, so the CPU
+          # binary is all this needs.
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Install client dependencies
         run: npm install --prefix client
