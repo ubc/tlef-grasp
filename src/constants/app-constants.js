@@ -67,7 +67,7 @@ INSTRUCTIONS:
 5. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
 6. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply Newton's second law...", "Distinguish between..."). Do not add boilerplate prefixes.
 7. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
-8. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-3) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
+8. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -130,7 +130,7 @@ Syntax & Language:
    - For user-provided granular objectives, preserve the instructor’s wording exactly. Only correct obvious grammatical errors.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create). For user-provided granular objectives, infer Bloom levels from the verb and scope of the text.
 3. Alignment: All content must be derived strictly from the provided course content. Do not invent material that is not in the provided course content.
-4. Question types: For each Bloom level assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-3) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
+4. Question types: For each Bloom level assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
 
 Question-type guidance:
 - multiple-choice: default choice when there are clear correct/incorrect alternatives — most Remember/Understand/Apply/Analyze content.

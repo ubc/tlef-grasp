@@ -52,7 +52,7 @@ const OBJECTIVES_SCHEMA = {
                     properties: {
                       bloomLevel: { type: "string", enum: BLOOM_LEVELS },
                       questionType: { type: "string", enum: Object.values(QUESTION_TYPES) },
-                      count: { type: "integer", minimum: 1, maximum: 3 },
+                      count: { type: "integer", minimum: 1, maximum: 5 },
                     },
                     required: ["bloomLevel", "questionType", "count"],
                   },

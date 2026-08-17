@@ -244,7 +244,7 @@ export default function ObjectivesStep({
           const newCount = existing[idx].count + delta;
           if (newCount <= 0) {
             next = existing.filter((_, j) => j !== idx);
-          } else if (newCount > 3) {
+          } else if (newCount > 5) {
             return i;
           } else {
             next = existing.map((qt, j) => (j === idx ? { ...qt, count: newCount } : qt));

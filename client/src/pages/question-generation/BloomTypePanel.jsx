@@ -8,15 +8,6 @@ const TYPE_ORDER = [
   QUESTION_TYPES.OPEN_ENDED,
 ];
 
-// Short on-pill labels so all four types fit on one line; the full name is
-// still available via the title tooltip and button aria-labels.
-const SHORT_LABELS = {
-  [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
-  [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill in the Blank",
-  [QUESTION_TYPES.CALCULATION]: "Calculation",
-  [QUESTION_TYPES.OPEN_ENDED]: "Open Ended",
-};
-
 // Per-Bloom-level breakdown of how many questions of each type to generate.
 // Rendered below the Bloom chip row when a selected chip is expanded.
 export default function BloomTypePanel({ bloomLevel, questionTypes, onChangeCount }) {
@@ -35,10 +26,9 @@ export default function BloomTypePanel({ bloomLevel, questionTypes, onChangeCoun
           return (
             <div
               key={type}
-              title={label}
               className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white py-0.5 pl-2 pr-1"
             >
-              <span className="text-xs font-medium text-ink">{SHORT_LABELS[type]}</span>
+              <span className="text-xs font-medium text-ink">{label}</span>
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
@@ -55,7 +45,7 @@ export default function BloomTypePanel({ bloomLevel, questionTypes, onChangeCoun
                 <button
                   type="button"
                   aria-label={`Increase ${label} count for ${bloomLevel}`}
-                  disabled={count >= 3}
+                  disabled={count >= 5}
                   onClick={() => onChangeCount(type, 1)}
                   className="flex h-5 w-5 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
                 >
