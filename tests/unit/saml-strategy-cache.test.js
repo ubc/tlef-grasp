@@ -47,4 +47,8 @@ describe('ubcshib strategy request-ID cache', () => {
     // Worker B receives the IdP POST and looks the id up.
     await expect(strategy._saml.cacheProvider.getAsync('_worker_a_id')).resolves.toBe('instant');
   });
+
+  it('binds assertions to this service provider via AudienceRestriction', () => {
+    expect(strategy._saml.options.audience).toBe('https://grasp.example.ubc.ca');
+  });
 });

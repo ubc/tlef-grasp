@@ -147,6 +147,13 @@ const strategy = new Strategy(
 // round-robined to a different worker — fails with "InResponseTo is not valid".
 strategy._saml.cacheProvider = samlRequestCache;
 
+// node-saml skips the AudienceRestriction check entirely unless `audience` is
+// set (saml.js checks `this.options.audience != null`), and it never checks the
+// inbound Destination. Without this, any in-window assertion signed by the UBC
+// IdP is accepted, including one issued for a different UBC service provider.
+// Same whitelist problem as above, so it is set post-construction.
+strategy._saml.options.audience = process.env.SAML_ISSUER;
+
 passport.use(strategy);
 
 // Serialize user to session
