@@ -16,127 +16,127 @@ const { samlRequestCache } = require('../services/samlRequestCache');
 const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
 
 const strategy = new Strategy(
-		{
-			// Service Provider Identity (usually your app's URL)
-			issuer: process.env.SAML_ISSUER,
+	{
+		// Service Provider Identity (usually your app's URL)
+		issuer: process.env.SAML_ISSUER,
 
-			// Callback URL after authentication
-			callbackUrl: process.env.SAML_CALLBACK_URL,
+		// Callback URL after authentication
+		callbackUrl: process.env.SAML_CALLBACK_URL,
 
-			// Path to your application's private key for signing SAML requests
-			privateKeyPath: process.env.SAML_PRIVATE_KEY_PATH,
-			cert: fs.readFileSync(process.env.SAML_CERT_PATH, 'utf8'),
+		// Path to your application's private key for signing SAML requests
+		privateKeyPath: process.env.SAML_PRIVATE_KEY_PATH,
+		cert: fs.readFileSync(process.env.SAML_CERT_PATH, 'utf8'),
 
-			// Specify which attributes your app needs
-			// See ATTRIBUTES.md for full list of available attributes
-			attributeConfig: ['ubcEduCwlPuid', 'mail', 'eduPersonAffiliation'],
+		// Specify which attributes your app needs
+		// See ATTRIBUTES.md for full list of available attributes
+		attributeConfig: ['ubcEduCwlPuid', 'mail', 'eduPersonAffiliation'],
 
-			// Optional: Enable single logout
-			enableSLO: true,
-		},
-		// Verify callback: called with user profile after successful authentication
-		async (profile, done) => {
-			// Extract UBC Shibboleth attributes
-			const ubcEduCwlPuid = profile.attributes?.ubcEduCwlPuid ||
-				profile['urn:mace:dir:attribute-def:ubcEduCwlPuid'] ||
-				profile['urn:oid:1.3.6.1.4.1.60.6.1.6'];
+		// Optional: Enable single logout
+		enableSLO: true,
+	},
+	// Verify callback: called with user profile after successful authentication
+	async (profile, done) => {
+		// Extract UBC Shibboleth attributes
+		const ubcEduCwlPuid = profile.attributes?.ubcEduCwlPuid ||
+			profile['urn:mace:dir:attribute-def:ubcEduCwlPuid'] ||
+			profile['urn:oid:1.3.6.1.4.1.60.6.1.6'];
 
-			const email = profile.attributes?.mail ||
-				profile.attributes?.email ||
-				profile['urn:oid:0.9.2342.19200300.100.1.3'] ||
-				profile.mail ||
-				profile.email ||
-				profile.nameID;
+		const email = profile.attributes?.mail ||
+			profile.attributes?.email ||
+			profile['urn:oid:0.9.2342.19200300.100.1.3'] ||
+			profile.mail ||
+			profile.email ||
+			profile.nameID;
 
-			// CWL only reliably releases the email to this app (not a name), so the
-			// displayName seed falls back to the email. The authoritative legal
-			// name shown to instructors comes from the academic API during roster
-			// sync (see syncStudentsToCourse), not from CWL.
-			const displayName = profile.attributes?.displayName ||
-				profile.attributes?.cn ||
-				profile['urn:oid:2.16.840.1.113730.3.1.241'] ||
-				email;
+		// CWL only reliably releases the email to this app (not a name), so the
+		// displayName seed falls back to the email. The authoritative legal
+		// name shown to instructors comes from the academic API during roster
+		// sync (see syncStudentsToCourse), not from CWL.
+		const displayName = profile.attributes?.displayName ||
+			profile.attributes?.cn ||
+			profile['urn:oid:2.16.840.1.113730.3.1.241'] ||
+			email;
 
-			const affiliations = profile.attributes?.eduPersonAffiliation ||
-				profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.1'] ||
-				[];
+		const affiliations = profile.attributes?.eduPersonAffiliation ||
+			profile['urn:oid:1.3.6.1.4.1.5923.1.1.1.1'] ||
+			[];
 
-			// Making sure PUID is present
-			if (!ubcEduCwlPuid) {
-				return done(new Error('PUID is required'));
-			}
-
-			// Check if user has a valid affiliation (faculty, staff, student, or affiliate)
-			const hasValidAffiliation = VALID_AFFILIATIONS.some(aff => affiliations.includes(aff));
-			
-			if (!hasValidAffiliation) {
-				return done(new Error('Access denied. This application is only available to UBC faculty, staff, and students.'));
-			}
-
-			// Get database connection and save user
-			try {
-				let user = await getUserByPuid(ubcEduCwlPuid);
-
-				// CWL releases no usable name to this app, so enrich the
-				// authoritative legal name and the displayName from the academic
-				// API. Best-effort (never allowed to fail login) and only fetched
-				// when something still needs it: a missing legal name, or a
-				// displayName the user never personalized (still their email).
-				// A displayName the user actually chose is left untouched.
-				const displayNameNeverSet = user && (!user.displayName || user.displayName === user.email);
-				let apiPerson = null;
-				if (!user || !user.legalName || displayNameNeverSet) {
-					try {
-						apiPerson = await ubcApiService.getPersonByPuid(ubcEduCwlPuid);
-					} catch (lookupError) {
-						console.warn('Academic API name lookup failed:', lookupError.message);
-					}
-				}
-
-				if (null === user) {
-					await createOrUpdateUser({
-						// Prefer the academic-API preferred name for the editable
-						// displayName seed; fall back to the CWL value (email).
-						displayName: apiPerson?.preferredName || displayName,
-						legalName: apiPerson?.legalName,
-						email: email,
-						affiliation: affiliations,
-						puid: ubcEduCwlPuid,
-					});
-					user = await getUserByPuid(ubcEduCwlPuid);
-				} else if (apiPerson) {
-					// Existing user: backfill the legal name, and upgrade a
-					// never-personalized displayName (still the email fallback) to
-					// the proper academic-API name. A displayName the user actually
-					// chose (anything other than their email) is honored, not touched.
-					const updates = {};
-					if (apiPerson.legalName && user.legalName !== apiPerson.legalName) {
-						updates.legalName = apiPerson.legalName;
-					}
-					if (apiPerson.preferredName && displayNameNeverSet && user.displayName !== apiPerson.preferredName) {
-						updates.displayName = apiPerson.preferredName;
-					}
-					if (Object.keys(updates).length > 0) {
-						await updateUserNames(ubcEduCwlPuid, updates);
-						user = { ...user, ...updates };
-					}
-				}
-
-				// Get user role for session
-				const role = await getUserRole(user);
-
-				return done(null, { 
-					...user, 
-					role,
-					nameID: profile.nameID,
-					nameIDFormat: profile.nameIDFormat,
-					nameIDNameQualifier: profile.nameIDNameQualifier,
-					nameIDSPNameQualifier: profile.nameIDSPNameQualifier
-				});
-			} catch (error) {
-				return done(new Error('Error saving user to database: ' + error.message));
-			}
+		// Making sure PUID is present
+		if (!ubcEduCwlPuid) {
+			return done(new Error('PUID is required'));
 		}
+
+		// Check if user has a valid affiliation (faculty, staff, student, or affiliate)
+		const hasValidAffiliation = VALID_AFFILIATIONS.some(aff => affiliations.includes(aff));
+		
+		if (!hasValidAffiliation) {
+			return done(new Error('Access denied. This application is only available to UBC faculty, staff, and students.'));
+		}
+
+		// Get database connection and save user
+		try {
+			let user = await getUserByPuid(ubcEduCwlPuid);
+
+			// CWL releases no usable name to this app, so enrich the
+			// authoritative legal name and the displayName from the academic
+			// API. Best-effort (never allowed to fail login) and only fetched
+			// when something still needs it: a missing legal name, or a
+			// displayName the user never personalized (still their email).
+			// A displayName the user actually chose is left untouched.
+			const displayNameNeverSet = user && (!user.displayName || user.displayName === user.email);
+			let apiPerson = null;
+			if (!user || !user.legalName || displayNameNeverSet) {
+				try {
+					apiPerson = await ubcApiService.getPersonByPuid(ubcEduCwlPuid);
+				} catch (lookupError) {
+					console.warn('Academic API name lookup failed:', lookupError.message);
+				}
+			}
+
+			if (null === user) {
+				await createOrUpdateUser({
+					// Prefer the academic-API preferred name for the editable
+					// displayName seed; fall back to the CWL value (email).
+					displayName: apiPerson?.preferredName || displayName,
+					legalName: apiPerson?.legalName,
+					email: email,
+					affiliation: affiliations,
+					puid: ubcEduCwlPuid,
+				});
+				user = await getUserByPuid(ubcEduCwlPuid);
+			} else if (apiPerson) {
+				// Existing user: backfill the legal name, and upgrade a
+				// never-personalized displayName (still the email fallback) to
+				// the proper academic-API name. A displayName the user actually
+				// chose (anything other than their email) is honored, not touched.
+				const updates = {};
+				if (apiPerson.legalName && user.legalName !== apiPerson.legalName) {
+					updates.legalName = apiPerson.legalName;
+				}
+				if (apiPerson.preferredName && displayNameNeverSet && user.displayName !== apiPerson.preferredName) {
+					updates.displayName = apiPerson.preferredName;
+				}
+				if (Object.keys(updates).length > 0) {
+					await updateUserNames(ubcEduCwlPuid, updates);
+					user = { ...user, ...updates };
+				}
+			}
+
+			// Get user role for session
+			const role = await getUserRole(user);
+
+			return done(null, { 
+				...user, 
+				role,
+				nameID: profile.nameID,
+				nameIDFormat: profile.nameIDFormat,
+				nameIDNameQualifier: profile.nameIDNameQualifier,
+				nameIDSPNameQualifier: profile.nameIDSPNameQualifier
+			});
+		} catch (error) {
+			return done(new Error('Error saving user to database: ' + error.message));
+		}
+	}
 );
 
 // passport-ubcshib copies a fixed whitelist of SAML options into the strategy
