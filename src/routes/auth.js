@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth');
+const { samlErrorHandler } = require('../middleware/samlErrorHandler');
 
 // Login route - redirects to UBC IdP
 router.get('/ubcshib', authController.login);
@@ -15,7 +16,8 @@ router.get('/ubcshib', authController.login);
 router.all(
 	'/saml/callback',
 	authController.callback,
-	authController.callbackSuccess
+	authController.callbackSuccess,
+	samlErrorHandler
 );
 
 // Logout
