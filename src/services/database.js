@@ -166,10 +166,25 @@ class DatabaseService {
       await this.db.collection("grasp_user_course_section").createIndex({ userId: 1, courseId: 1, sectionId: 1 }, { unique: true });
       await this.db.collection("grasp_user_course_section").createIndex({ courseId: 1, sectionId: 1 });
 
+      // --- SAML request-ID cache ---
+      await this.createSamlRequestIndexes(this.db);
+
       console.log("✅ MongoDB collections initialized");
     } catch (error) {
       console.error("❌ Error initializing collections:", error);
     }
+  }
+
+  /**
+   * TTL index for the shared SAML request-ID cache. Ten minutes covers a CWL
+   * login including a Duo prompt; node-saml's own 8-hour default would leave
+   * consumed IDs lying around far longer than they are useful.
+   */
+  async createSamlRequestIndexes(db) {
+    await db.collection("grasp_saml_request").createIndex(
+      { createdAt: 1 },
+      { expireAfterSeconds: 600 }
+    );
   }
 
   async createOrReplaceIndex(collection, keys, options) {

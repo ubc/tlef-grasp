@@ -81,3 +81,19 @@ describe('samlRequestCache', () => {
     expect(SAML_REQUEST_COLLECTION).toBe('grasp_saml_request');
   });
 });
+
+describe('grasp_saml_request TTL index', () => {
+  it('expires request ids ten minutes after they are written', async () => {
+    const realDatabase = jest.requireActual('../../src/services/database');
+    const createIndex = jest.fn().mockResolvedValue('createdAt_1');
+    const collection = jest.fn().mockReturnValue({ createIndex, dropIndex: jest.fn() });
+
+    await realDatabase.createSamlRequestIndexes({ collection });
+
+    expect(collection).toHaveBeenCalledWith('grasp_saml_request');
+    expect(createIndex).toHaveBeenCalledWith(
+      { createdAt: 1 },
+      { expireAfterSeconds: 600 }
+    );
+  });
+});
