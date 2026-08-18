@@ -10,12 +10,12 @@ const fs = require('fs');
 const { createOrUpdateUser, getUserByPuid, updateUserNames } = require('../services/user');
 const { getUserRole, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
+const { samlRequestCache } = require('../services/samlRequestCache');
 
 // Valid affiliations that can access the application
 const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
 
-passport.use(
-	new Strategy(
+const strategy = new Strategy(
 		{
 			// Service Provider Identity (usually your app's URL)
 			issuer: process.env.SAML_ISSUER,
@@ -137,8 +137,17 @@ passport.use(
 				return done(new Error('Error saving user to database: ' + error.message));
 			}
 		}
-	)
 );
+
+// passport-ubcshib copies a fixed whitelist of SAML options into the strategy
+// (see its index.js) and silently drops anything else, so cacheProvider cannot
+// be passed through the constructor. node-saml reads this.cacheProvider on
+// every path, so replacing it after construction covers login and SLO alike.
+// Without this, request IDs live in one worker's heap and the IdP's POST —
+// round-robined to a different worker — fails with "InResponseTo is not valid".
+strategy._saml.cacheProvider = samlRequestCache;
+
+passport.use(strategy);
 
 // Serialize user to session
 // Runs ONCE on login - stores full user data in session
@@ -170,4 +179,4 @@ passport.deserializeUser((user, done) => {
 	done(null, user);
 });
 
-module.exports = { passport, VALID_AFFILIATIONS, ROLES };
+module.exports = { passport, strategy, VALID_AFFILIATIONS, ROLES };
