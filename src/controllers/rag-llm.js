@@ -510,8 +510,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
       if (workItems.length === 0) {
         const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
-        const targetCount = parseInt(count) || bloomLevels.length || 1;
-        workItems = Array.from({ length: targetCount }, (_, i) => ({
+        const fallbackCount = parseInt(count) || bloomLevels.length || 1;
+        workItems = Array.from({ length: fallbackCount }, (_, i) => ({
           bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
           questionType: resolveGenerationQuestionType({
             requestedType: requestedQuestionType,
@@ -520,6 +520,12 @@ const generateQuestionsWithRagHandler = async (req, res) => {
           }),
         }));
       }
+
+      // Declared here, outside the if above, so every downstream use
+      // (slotSpecs, buildTurn's "QUESTION X OF Y" text, the `requested` field
+      // in the response) sees it regardless of which branch populated
+      // workItems.
+      const targetCount = workItems.length;
 
       // The prefix every request in this batch opens with — the planner's and
       // each generator's — byte-for-byte identical, so the provider processes
@@ -568,10 +574,10 @@ const generateQuestionsWithRagHandler = async (req, res) => {
 
       const sharedPrefix = buildSharedPrefix();
 
-      const slotSpecs = Array.from({ length: targetCount }, (_, i) => ({
+      const slotSpecs = workItems.map((item, i) => ({
         index: i,
-        bloomLevel: bloomLevels[i % bloomLevels.length] || "Understand",
-        questionType: questionTypeForIndex(i),
+        bloomLevel: item.bloomLevel,
+        questionType: item.questionType,
       }));
 
       let totalPromptTokens = 0;
@@ -745,7 +751,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         // rate limit is what stopped us, re-throw it so the handler still
         // answers 429 with Retry-After instead of the generic 500 below.
         if (pendingRateLimitError) throw pendingRateLimitError;
-        throw new Error(`Failed to generate any valid questions after trying all ${bloomLevels.length} bloom levels.`);
+        throw new Error(`Failed to generate any valid questions after trying all ${targetCount} requested question(s).`);
       }
 
       // Questions are always reviewed. A course owner can switch off the

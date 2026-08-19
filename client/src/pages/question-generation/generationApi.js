@@ -79,6 +79,10 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
         // Optional: pin the generated type (Question Bank wizard). Omitted for
         // the main pathway, where type is derived from Bloom preferences.
         ...(granular.questionType ? { questionType: granular.questionType } : {}),
+        // Optional: explicit per-Bloom-level type counts from the objective
+        // generation step. When present, the server generates exactly this
+        // breakdown instead of resolving type via course-wide preferences.
+        ...(granular.questionTypes?.length ? { questionTypes: granular.questionTypes } : {}),
       });
     } catch (error) {
       if (error?.status === 429) {
