@@ -22,21 +22,13 @@ import {
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   BLOOM_LEVELS,
 } from "../lib/constants";
+import { BLOOM_BADGE_COLORS } from "../lib/bloom";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
   [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill-in-the-blank",
   [QUESTION_TYPES.CALCULATION]: "Calculation",
   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
-};
-
-const BLOOM_BADGE_COLORS = {
-  Remember: "bg-blue-100 text-blue-700",
-  Understand: "bg-green-100 text-green-700",
-  Apply: "bg-yellow-100 text-yellow-700",
-  Analyze: "bg-orange-100 text-orange-700",
-  Evaluate: "bg-purple-100 text-purple-700",
-  Create: "bg-pink-100 text-pink-700",
 };
 
 // Pipeline stages a course owner can tune, keyed to the server's
