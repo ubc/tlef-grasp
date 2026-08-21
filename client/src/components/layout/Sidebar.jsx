@@ -10,6 +10,10 @@ import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
 import { PATH_PERMISSION, TA_PATH_PERMISSION } from "../../lib/permissions";
 
+// Sentinel <option> value: picking it opens the onboarding hub instead of
+// switching the selected course.
+const MANAGE_COURSES = "__manage_courses__";
+
 const INSTRUCTOR_ITEMS = [
   { to: "/dashboard", icon: "fa-home", label: "Dashboard" },
   { to: "/course-materials", icon: "fa-upload", label: "Course Materials" },
@@ -56,10 +60,15 @@ function NavItem({ to, icon, label }) {
 }
 
 function CourseSelector() {
-  const { isStudent } = useCurrentUser();
+  const { isStudent, isFaculty, isStaff } = useCurrentUser();
   const { courses, isLoading, isError } = useMyCourses();
   const { selectedCourse, setSelectedCourse } = useAppStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  // Only faculty and staff can create or join a course, so only they get a
+  // route back to the onboarding hub.
+  const canManageCourses = isFaculty || isStaff;
 
   // Keep the session course in sync with what the API says the user can access
   useEffect(() => {
@@ -81,6 +90,10 @@ function CourseSelector() {
   }, [courses, isLoading, isError, isStudent, selectedCourse, setSelectedCourse]);
 
   const handleChange = (event) => {
+    if (event.target.value === MANAGE_COURSES) {
+      navigate("/onboarding");
+      return;
+    }
     const course = courses.find((c) => c.id === event.target.value);
     if (course) {
       setSelectedCourse(course);
@@ -98,10 +111,6 @@ function CourseSelector() {
         <div className="italic text-white/50">Error loading courses</div>
       ) : courses.length === 0 ? (
         <div className="italic text-white/50">No course available</div>
-      ) : courses.length === 1 ? (
-        <div className="break-words text-lg font-semibold text-white">
-          {courses[0].name}
-        </div>
       ) : (
         <select
           aria-label="Select a course"
@@ -115,6 +124,9 @@ function CourseSelector() {
               {course.name}
             </option>
           ))}
+          {canManageCourses && (
+            <option value={MANAGE_COURSES}>+ Manage courses...</option>
+          )}
         </select>
       )}
     </div>
