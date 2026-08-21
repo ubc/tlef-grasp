@@ -15,27 +15,24 @@ export default function Onboarding() {
 
   const { courses, isPending: coursesPending } = useMyCourseProfiles();
 
-  // If the user arrived already onboarded (a still-valid course is selected),
-  // send them straight to their dashboard. Decide only once the real course
-  // list has loaded, so a selection left over from a now-deleted course (e.g.
-  // after a DB reset) is cleared instead of bouncing to a "No course available"
-  // page. The ref ensures we act on the first settled load only — never
-  // mid-flow after creating/joining a course.
-  const redirectDecided = useRef(false);
+  const hasValidSelection =
+    !coursesPending &&
+    Boolean(selectedCourse) &&
+    courses.some((c) => (c._id || c.id) === selectedCourse.id);
+
+  // A selection left over from a now-deleted course (e.g. after a DB reset)
+  // would strand the user on a "No course available" dashboard, so drop it once
+  // the real course list has settled. A *still-valid* selection is left alone:
+  // the sidebar links here on purpose, so the user keeps their course and can
+  // back out to their dashboard unchanged. The ref ensures we act on the first
+  // settled load only — never mid-flow after creating/joining a course.
+  const staleCheckDone = useRef(false);
   useEffect(() => {
-    if (redirectDecided.current || !user || coursesPending) return;
-    redirectDecided.current = true;
+    if (staleCheckDone.current || !user || coursesPending) return;
+    staleCheckDone.current = true;
 
-    const validSelection =
-      selectedCourse &&
-      courses.some((c) => (c._id || c.id) === selectedCourse.id);
-
-    if (validSelection) {
-      navigate(isStudent ? "/student-dashboard" : "/dashboard", { replace: true });
-    } else if (selectedCourse) {
-      setSelectedCourse(null);
-    }
-  }, [user, coursesPending, courses, selectedCourse, isStudent, navigate, setSelectedCourse]);
+    if (selectedCourse && !hasValidSelection) setSelectedCourse(null);
+  }, [user, coursesPending, selectedCourse, hasValidSelection, setSelectedCourse]);
 
   const [activeTab, setActiveTab] = useState(null);
 
@@ -74,8 +71,20 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 py-10">
       <div className="mx-auto w-full max-w-[700px]">
-        {/* Sign out */}
-        <div className="mb-4 flex justify-end">
+        {/* Escape hatches */}
+        <div className="mb-4 flex justify-end gap-2">
+          {hasValidSelection && (
+            <button
+              type="button"
+              onClick={() =>
+                navigate(isStudent ? "/student-dashboard" : "/dashboard")
+              }
+              className="inline-flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+            >
+              <i className="fas fa-arrow-left" />
+              Back to Dashboard
+            </button>
+          )}
           <button
             type="button"
             onClick={handleSignOut}
