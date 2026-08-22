@@ -152,21 +152,18 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
 
     // Issue #31: the per-objective number must read clearly as "how many
-    // questions to generate". The stepper now carries a "Questions" caption,
-    // accessible +/- controls, and the card totals them explicitly.
+    // questions to generate". The card totals them explicitly.
+    //
+    // AI-generated objectives now come back with a per-Bloom-level question
+    // type breakdown by default (the server fills in a type for every
+    // selected level from course preferences), so the card shows the typed,
+    // read-only total here rather than the legacy +/- stepper — that stepper
+    // only remains for objectives added without a type breakdown (e.g. via
+    // "Add Objective").
     await expect(page.getByText('Questions', { exact: true }).first()).toBeVisible();
     await expect(
       page
-        .getByRole('button', {
-          name: 'Increase questions to generate for this objective',
-        })
-        .first()
-    ).toBeVisible();
-    await expect(
-      page
-        .getByRole('button', {
-          name: 'Decrease questions to generate for this objective',
-        })
+        .getByTitle("Total across all Bloom levels' selected question types")
         .first()
     ).toBeVisible();
     await expect(

@@ -155,6 +155,7 @@ const createObjective = async (objectiveData) => {
         name: granular.text || granular.name,
         bloomTaxonomies: granular.bloomTaxonomies || [],
         questionCount: granular.questionCount || 2,
+        questionTypes: granular.questionTypes || [],
         parent: parentId,
         courseId: courseIdObj,
         createdAt: new Date(),
@@ -323,6 +324,7 @@ const updateObjective = async (objectiveId, updateData) => {
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
             questionCount: granular.questionCount || 2,
+            questionTypes: granular.questionTypes || [],
           });
         } else {
           // New granular objective - create it
@@ -330,6 +332,7 @@ const updateObjective = async (objectiveId, updateData) => {
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
             questionCount: granular.questionCount || 2,
+            questionTypes: granular.questionTypes || [],
             parent: id,
             courseId: courseIdForGranular,
             createdAt: new Date(),
@@ -337,13 +340,14 @@ const updateObjective = async (objectiveId, updateData) => {
           });
         }
       });
-      
+
       // Update existing granular objectives
       const updatePromises = granularToUpdate.map(granular => {
         const update = {
           name: granular.name,
           bloomTaxonomies: granular.bloomTaxonomies,
           questionCount: granular.questionCount,
+          questionTypes: granular.questionTypes,
           updatedAt: new Date()
         };
         // Update courseId if provided

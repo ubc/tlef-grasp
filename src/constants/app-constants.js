@@ -70,6 +70,7 @@ INSTRUCTIONS:
 8. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create).
 9. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes.
 10. Ensure objectives are specific to the content provided, not generic. Use the terminology from the course materials.
+11. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
 
 Bloom's level guidance (sample verbs in parentheses):
 - Remember: recall a definition or fact (define, list, identify, name)
@@ -78,6 +79,13 @@ Bloom's level guidance (sample verbs in parentheses):
 - Analyze: compare, differentiate, or break down components (compare, differentiate, examine, contrast)
 - Evaluate: justify, critique, or defend a choice (evaluate, critique, justify, judge)
 - Create: design, construct, or propose something new (design, construct, propose, formulate)
+
+Question-type guidance:
+- multiple-choice: default choice when there are clear correct/incorrect alternatives — most Remember/Understand/Apply/Analyze content.
+- fill-in-the-blank: short factual recall, a single term or value.
+- calculation: only when the content involves a numeric formula/procedure the student must execute.
+- open-ended: Create/Evaluate-level reasoning that can't be reduced to one correct option.
+A Bloom level may map to more than one type when genuinely useful, but don't pad — keep totals per granular objective small (2-4) unless the material clearly supports more.
 
 RULES FOR GRANULAR OBJECTIVES:
 - Each granular objective under a main objective must test a DISTINCT concept or skill — not a rephrasing of the same idea.
@@ -96,6 +104,7 @@ SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - Each granular objective is genuinely distinct and necessary — remove any that are redundant.
 - Every meta objective has at least one granular objective.
 - Every granular objective begins with an active verb and has at least one Bloom level.
+- Every Bloom level on a granular objective has at least one recommended question type with a count.
 
 IMPORTANT RULES:
 1. Base objectives strictly on the provided material content.
@@ -127,11 +136,19 @@ Syntax & Language:
    - For user-provided granular objectives, preserve the instructor’s wording exactly. Only correct obvious grammatical errors.
 2. Taxonomy: Every granular objective must include an array of applicable Bloom’s Taxonomy levels (Remember, Understand, Apply, Analyze, Evaluate, Create). For user-provided granular objectives, infer Bloom levels from the verb and scope of the text.
 3. Alignment: All content must be derived strictly from the provided course content. Do not invent material that is not in the provided course content.
+4. Question types: For each Bloom level assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
+
+Question-type guidance:
+- multiple-choice: default choice when there are clear correct/incorrect alternatives — most Remember/Understand/Apply/Analyze content.
+- fill-in-the-blank: short factual recall, a single term or value.
+- calculation: only when the content involves a numeric formula/procedure the student must execute.
+- open-ended: Create/Evaluate-level reasoning that can't be reduced to one correct option.
 
 SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
 - No two granular objectives under the same Meta objective test the same fact or skill.
 - Every Meta objective has at least one granular objective.
 - Every granular objective has at least one Bloom level.
+- Every Bloom level on a granular objective has at least one recommended question type with a count.
 - User-provided granular objectives still convey the instructor’s original meaning.
 
 FINAL INSTRUCTIONS:

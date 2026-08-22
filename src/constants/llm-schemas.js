@@ -8,12 +8,18 @@
 // All object schemas set additionalProperties:false and list every property in
 // `required`, which is also what OpenAI strict structured outputs demands.
 
-const { BLOOM_LEVELS } = require("./app-constants");
+const { BLOOM_LEVELS, QUESTION_TYPES } = require("./app-constants");
 
 // Learning objectives: a relevance verdict plus { objectives: [ { name,
-// granularObjectives: [ { text, bloomTaxonomies } ] } ] }. The verdict makes
-// "there is no teachable content here" an explicit, schema-enforced answer
-// instead of inviting the model to invent plausible-sounding objectives.
+// granularObjectives: [ { text, bloomTaxonomies, questionTypes } ] } ] }. The
+// verdict makes "there is no teachable content here" an explicit,
+// schema-enforced answer instead of inviting the model to invent
+// plausible-sounding objectives.
+//
+// questionTypes is a flat array of (bloomLevel, questionType, count) triples
+// rather than an object keyed by Bloom level — JSON schema needs fixed
+// property names for objects, and a flat array is simpler for the model to
+// emit and for the caller to validate/group.
 const OBJECTIVES_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -38,8 +44,21 @@ const OBJECTIVES_SCHEMA = {
                   type: "array",
                   items: { type: "string", enum: BLOOM_LEVELS },
                 },
+                questionTypes: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      bloomLevel: { type: "string", enum: BLOOM_LEVELS },
+                      questionType: { type: "string", enum: Object.values(QUESTION_TYPES) },
+                      count: { type: "integer", minimum: 1, maximum: 5 },
+                    },
+                    required: ["bloomLevel", "questionType", "count"],
+                  },
+                },
               },
-              required: ["text", "bloomTaxonomies"],
+              required: ["text", "bloomTaxonomies", "questionTypes"],
             },
           },
         },

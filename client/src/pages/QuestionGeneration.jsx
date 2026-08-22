@@ -251,6 +251,7 @@ export default function QuestionGeneration() {
     }
     let firstError = null;
     let hasBloomError = false;
+    let hasTypeError = false;
 
     objectiveGroups.forEach((group) => {
       if (group.items.length === 0) {
@@ -258,14 +259,25 @@ export default function QuestionGeneration() {
         return;
       }
       group.items.forEach((item) => {
-        if (item.mode === "manual" && item.bloom.length === 0) {
+        if (item.mode !== "manual") return;
+        if (item.bloom.length === 0) {
           hasBloomError = true;
+          return;
+        }
+        const questionTypes = item.questionTypes || [];
+        if (questionTypes.length > 0) {
+          const missingTypeLevel = item.bloom.some(
+            (level) => !questionTypes.some((qt) => qt.bloomLevel === level && qt.count > 0)
+          );
+          if (missingTypeLevel) hasTypeError = true;
         }
       });
     });
 
-    if (firstError || hasBloomError) {
+    if (firstError || hasBloomError || hasTypeError) {
       if (firstError) showToast(firstError, "error");
+      else if (hasTypeError)
+        showToast("Please choose at least one question type for each selected Bloom level", "error");
       setShowValidation(true);
       return false;
     }
