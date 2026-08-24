@@ -719,8 +719,10 @@ const getArchivedCoursesHandler = async (req, res) => {
 };
 
 /**
- * Archive a course. Owner and app administrators only — a co-instructor cannot
- * archive a course however broad their permissions are.
+ * Archive a course. Gated on isCourseManager, which is this codebase's standard
+ * "who manages this course" test: the owner plus app administrators (the same
+ * gate that guards the owner-only settings keys). A co-instructor cannot
+ * archive a course however broad their co-instructor permissions are.
  */
 const archiveCourseHandler = async (req, res) => {
   try {
@@ -730,7 +732,8 @@ const archiveCourseHandler = async (req, res) => {
 
     if (!(await isCourseManager(req.user, courseId))) {
       return res.status(403).json({
-        error: "Only the course owner can archive this course.",
+        error:
+          "Only the course owner or an app administrator can archive this course.",
       });
     }
     if (course.archived === true) {
@@ -762,7 +765,8 @@ const unarchiveCourseHandler = async (req, res) => {
 
     if (!(await isCourseManager(req.user, courseId))) {
       return res.status(403).json({
-        error: "Only the course owner can unarchive this course.",
+        error:
+          "Only the course owner or an app administrator can unarchive this course.",
       });
     }
     if (course.archived !== true) {

@@ -61,13 +61,17 @@ function NavItem({ to, icon, label }) {
 }
 
 function CourseSelector() {
-  const { isStudent, isFaculty, isStaff } = useCurrentUser();
+  const { isFaculty, isStaff } = useCurrentUser();
   const { courses, isLoading, isError } = useMyCourses();
   // Archived courses are excluded from /api/courses/my, so without this the
   // effect below would eject an owner the moment they opened one from the
   // Manage-courses hub. They stay out of the dropdown options — the hub is the
   // way in — but they count as a valid current selection.
-  const { courses: archivedCourses } = useArchivedCourses();
+  // isLoading, not isPending: the archived query is disabled for students, and
+  // a disabled query stays `pending` forever — gating on that would freeze the
+  // effect below and never settle their course selection.
+  const { courses: archivedCourses, isLoading: archivedLoading } =
+    useArchivedCourses();
   const { selectedCourse, setSelectedCourse } = useAppStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -84,7 +88,10 @@ function CourseSelector() {
   // here it is idempotent: a valid selection resolves to "keep" and sets
   // nothing.
   useEffect(() => {
-    if (isLoading || isError) return;
+    // Wait for the archived list too. It arrives empty while in flight, so
+    // acting on the live list alone would switch an owner out of an archived
+    // course on every page load before the archived query had answered.
+    if (isLoading || isError || archivedLoading) return;
 
     const next = resolveCourseSelection({ selectedCourse, courses, archivedCourses });
     if (next.action === "switch") setSelectedCourse(next.course);
@@ -94,6 +101,7 @@ function CourseSelector() {
     archivedCourses,
     isLoading,
     isError,
+    archivedLoading,
     selectedCourse,
     setSelectedCourse,
   ]);

@@ -50,6 +50,11 @@ recorded here because several of them are not the obvious default.
   `archivedAt` is the field it will key on.
 - **Archiving by anyone but the owner or an app administrator.** Co-instructors
   and TAs cannot archive, however broad their co-instructor permissions are.
+  App administrators *can*, deliberately: `isCourseManager` is the gate this
+  codebase already uses for owner-only powers (it guards the owner-only settings
+  keys), and an instructor who has left the university has to leave someone able
+  to retire their courses. The 403 text says "owner or an app administrator" so
+  the behaviour and the message agree.
 - **Per-section archiving.** The unit is the course shell.
 - **Qdrant/RAG teardown.** An archived course keeps its vector collection so
   unarchiving is instant and lossless. Storage cost is accepted.
@@ -73,6 +78,21 @@ is live. This is what makes the migration a no-op.
 
 Archiving has to do two different things to two different audiences, and it is
 worth naming them separately because they are enforced at different points.
+
+**Gate 0 — the unique index.** `grasp_course` carries a unique index on
+`courseCode`. Filtering archived courses out of `getCourseByCode` is not enough
+to release a code: the *insert* of next term's shell would still fail with a
+duplicate-key error, whatever the application looked up first. So the index is
+partial, covering only live courses:
+
+```js
+{ unique: true, partialFilterExpression: { archived: { $exists: false } } }
+```
+
+`$exists: false` selects exactly the documents the app treats as live —
+`createCourse` never writes the field and `unarchiveCourse` `$unset`s it, so
+absent means live and `true` means archived. `createOrReplaceIndex` upgrades the
+plain unique index that existing databases already carry.
 
 **Gate 1 — visibility.** Archived courses are filtered out of the course lists:
 `getUserCourses` (which backs both `/api/courses/my` and `/api/student/courses`),
@@ -106,14 +126,20 @@ The archive and unarchive endpoints are exempt — they are the way out.
 
 ### Resolving the course for a request
 
-`courseId` reaches the API three ways, and the middleware checks them in order:
-`req.params.courseId`, then `req.body.courseId`, then `req.query.courseId`.
+`courseId` reaches the API several ways, and the middleware checks them in
+order: `req.params.courseId`, `req.body.courseId`, `req.body.metadata.courseId`
+(the RAG add-document route), `req.body.course` (question export names it that),
+`req.body.questions[0].courseId` (question review carries it only on the
+questions), then `req.query.courseId`. A handler that invents a new shape has to
+be added there — a shape the list misses is a write that reaches an archived
+course.
 
 That covers the course, users, material-by-course, and rag-llm routes. It does
 not cover routes keyed by a child resource — `/api/quiz/:quizId`,
 `/api/student/quizzes/:quizId/*`, `/api/question/:questionId`,
-`/api/objective/:id`, `/api/material/delete/:sourceId` — where the course is one
-lookup away. For those the middleware takes an explicit resolver:
+`/api/objective/:id`, `/api/material/delete/:sourceId`, `/api/image/:fileId` —
+where the course is one lookup away. For those the middleware takes an explicit
+resolver:
 
 ```js
 requireActiveCourse({ resolve: async (req) => (await getQuizById(req.params.quizId))?.courseId })
@@ -126,7 +152,10 @@ stay exactly where they are and still run.
 
 The student quiz routes are the ones that matter most for the hard-cut decision:
 they are what an open quiz tab calls, and the resolver is what turns "archived"
-into an immediate refusal for a student mid-attempt.
+into an immediate refusal for a student mid-attempt. `/api/image/:fileId` is
+part of that same cut rather than only a write block — images live in GridFS
+with their course on the file metadata, and a student rendering a quiz fetches
+them directly.
 
 ### Archive
 
@@ -185,10 +214,11 @@ scores out is a large part of why an instructor archives rather than deletes.
 
 ## Risks
 
-**A missed write path.** The middleware covers routes by `courseId` and by
-explicit resolver; a route that carries neither would let a write through. The
-consequence is a stray edit to an archived course, not data loss or a privacy
-breach, and the resolver list is easy to extend. Accepted.
+**A missed write path.** The middleware covers routes by the id shapes listed
+above and by explicit resolver; a handler that invents another shape would let a
+write through. The consequence is a stray edit to an archived course, not data
+loss, and the list is easy to extend — but it is the part of this design most
+likely to rot, so a new course-scoped route should be checked against it.
 
 **A student loses an in-flight attempt.** This is the chosen behaviour, not an
 oversight — an instructor archiving a course mid-term is the unusual case, and

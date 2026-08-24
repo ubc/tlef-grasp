@@ -153,6 +153,68 @@ describe('requireActiveCourse', () => {
       expect(res.body.error).toBe(ARCHIVED_ERROR);
     });
 
+    // Three handlers name the course something other than `courseId`. Each one
+    // that the gate fails to recognise is an endpoint a co-instructor can still
+    // drive against an archived course.
+    it('reads metadata.courseId (RAG add-document)', async () => {
+      mockCourse(ARCHIVED_COURSE);
+      isCourseManager.mockResolvedValue(true);
+
+      const res = await request(buildApp())
+        .post('/api/courses/create')
+        .send({ content: 'x', metadata: { courseId: 'course-1' } });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe(ARCHIVED_ERROR);
+    });
+
+    it('reads `course` (question export names it that)', async () => {
+      mockCourse(ARCHIVED_COURSE);
+      isCourseManager.mockResolvedValue(true);
+
+      const res = await request(buildApp())
+        .post('/api/courses/create')
+        .send({ course: 'course-1', questionIds: ['q1'] });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('reads questions[0].courseId (question review)', async () => {
+      mockCourse(ARCHIVED_COURSE);
+      isCourseManager.mockResolvedValue(true);
+
+      const res = await request(buildApp())
+        .post('/api/courses/create')
+        .send({ questions: [{ courseId: 'course-1', questionTitle: 'x' }] });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('ignores a non-id `course` object rather than treating it as an id', async () => {
+      mockCourse(ARCHIVED_COURSE);
+      const res = await request(buildApp())
+        .post('/api/courses/create')
+        .send({ course: { name: 'not an id' } });
+
+      expect(res.status).toBe(200);
+      // The "/:courseId" layer still resolves the literal path segment; what
+      // matters is that the object was never treated as an id.
+      for (const [id] of getCourseById.mock.calls) {
+        expect(typeof id).toBe('string');
+      }
+    });
+
+    it('checks a course once per request even across several gate layers', async () => {
+      // Routers mount two or three layers of this gate; the later ones must not
+      // re-read the same course document.
+      mockCourse(LIVE_COURSE);
+
+      const res = await request(buildApp()).get('/api/courses/course-1/things');
+
+      expect(res.status).toBe(200);
+      expect(getCourseById).toHaveBeenCalledTimes(1);
+    });
+
     it('passes through when no course can be resolved', async () => {
       mockCourse(ARCHIVED_COURSE);
       const res = await request(buildApp()).post('/api/courses/create').send({});

@@ -7,12 +7,20 @@ jest.mock("../../src/services/image", () => ({
   uploadImage: jest.fn(),
   getImageStream: jest.fn(),
   deleteImage: jest.fn(),
+  // Used by the archived-course gate to resolve a file's course.
+  getImageCourseId: jest.fn(),
+}));
+// These routes now pass through requireActiveCourse, which reads the course to
+// see whether it has been archived.
+jest.mock("../../src/services/course", () => ({
+  getCourseById: jest.fn(),
 }));
 jest.mock("../../src/services/user-course", () => ({
   isUserInCourse: jest.fn(),
 }));
 jest.mock("../../src/utils/co-instructor-permissions", () => ({
   assertCoInstructorPermission: jest.fn(),
+  isCourseManager: jest.fn(),
   PERMISSION_KEYS: { QUESTION_BANK: "questionBank" },
 }));
 jest.mock("../../src/utils/ta-permissions", () => ({
@@ -27,6 +35,7 @@ jest.mock("../../src/middleware/auth", () => ({
 }));
 
 const imageService = require("../../src/services/image");
+const { getCourseById } = require("../../src/services/course");
 const { isUserInCourse } = require("../../src/services/user-course");
 const { assertCoInstructorPermission } = require("../../src/utils/co-instructor-permissions");
 const imageRouter = require("../../src/routes/image");
@@ -69,6 +78,11 @@ describe("question image routes", () => {
   beforeEach(() => {
     isUserInCourse.mockResolvedValue(true);
     assertCoInstructorPermission.mockResolvedValue(true);
+    // A live course: these specs are about image validation and access, not
+    // archiving, so the archived-course gate should always wave them through.
+    // Archived behaviour is covered in course-archive-image.route.test.js.
+    getCourseById.mockResolvedValue({ _id: COURSE_ID });
+    imageService.getImageCourseId.mockResolvedValue(COURSE_ID);
   });
 
   describe("POST /api/image/upload", () => {

@@ -15,12 +15,16 @@ export default function Onboarding() {
   const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
   const { courses, isPending: coursesPending } = useMyCourseProfiles();
-  const { courses: archivedCourses } = useArchivedCourses();
+  // isLoading rather than isPending: the query is disabled for students, where
+  // isPending never resolves.
+  const { courses: archivedCourses, isLoading: archivedLoading } =
+    useArchivedCourses();
 
   // An archived course counts as a valid selection: its owner is entitled to be
   // sitting in it read-only, and clearing it here would strand them.
   const hasValidSelection =
     !coursesPending &&
+    !archivedLoading &&
     Boolean(selectedCourse) &&
     (courses.some((c) => (c._id || c.id) === selectedCourse.id) ||
       archivedCourses.some((c) => c.id === selectedCourse.id));
@@ -33,11 +37,21 @@ export default function Onboarding() {
   // settled load only — never mid-flow after creating/joining a course.
   const staleCheckDone = useRef(false);
   useEffect(() => {
-    if (staleCheckDone.current || !user || coursesPending) return;
+    // Both lists must have settled: an archived selection looks stale while the
+    // archived query is still in flight, and clearing it would strand an owner
+    // who arrived here from an archived course.
+    if (staleCheckDone.current || !user || coursesPending || archivedLoading) return;
     staleCheckDone.current = true;
 
     if (selectedCourse && !hasValidSelection) setSelectedCourse(null);
-  }, [user, coursesPending, selectedCourse, hasValidSelection, setSelectedCourse]);
+  }, [
+    user,
+    coursesPending,
+    archivedLoading,
+    selectedCourse,
+    hasValidSelection,
+    setSelectedCourse,
+  ]);
 
   const [activeTab, setActiveTab] = useState(null);
 

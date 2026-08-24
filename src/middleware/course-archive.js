@@ -51,14 +51,57 @@ function alreadyCleared(req, courseId) {
 }
 
 /**
+ * Where a course id can be hiding in a request.
+ *
+ * `courseId` in the params, body, or query covers most routes, but three
+ * handlers name it differently and would otherwise slip past the gate
+ * entirely:
+ *   - POST /api/rag-llm/add-document accepts `metadata.courseId` as an
+ *     alternative to a top-level `courseId` (controllers/rag-llm.js).
+ *   - POST /api/rag-llm/review-questions carries it only on the questions
+ *     themselves, as `questions[0].courseId`.
+ *   - POST /api/question/export calls the field `course`.
+ *
+ * Keep this list in step with those handlers: a shape missing here is a write
+ * that reaches an archived course.
+ */
+function isUsableId(value) {
+    // Reject objects and empty strings — `course` in particular is an id on the
+    // export route but must not be trusted blindly if a caller sends an object.
+    return (
+        (typeof value === 'string' && value.trim() !== '') ||
+        (value && typeof value === 'object' && typeof value.toHexString === 'function')
+    );
+}
+
+function courseIdFromRequest(req) {
+    const candidates = [
+        req.params?.courseId,
+        req.body?.courseId,
+        req.body?.metadata?.courseId,
+        req.body?.course,
+        Array.isArray(req.body?.questions) ? req.body.questions[0]?.courseId : undefined,
+        req.query?.courseId,
+    ];
+    return candidates.find(isUsableId) || null;
+}
+
+/**
  * Build the gate. Without options it reads the course id from
  * `req.params.courseId`, `req.body.courseId`, then `req.query.courseId` — which
  * covers every route that names the course directly.
  *
- * Routes keyed by a child resource (a quiz, question, objective, or material id)
- * pass a resolver:
+ * Routes keyed by a child resource (a quiz, question, objective, material, or
+ * image id) pass a resolver:
  *
  *   router.get('/:quizId', requireActiveCourse({ resolve: resolveCourseFromQuiz }), handler)
+ *
+ * A supplied resolver ALWAYS runs, even when the request also names a course.
+ * It must, because the request-supplied id is attacker-controlled: given
+ * `GET /api/image/:fileId?courseId=<a live course>`, trusting the query string
+ * would clear a live course and never look at the archived course the image
+ * actually belongs to. Every course a request touches is checked, and any one
+ * of them being archived refuses the request.
  *
  * Mount it AFTER the body parser on routes whose course id arrives in the body,
  * or `req.body` will still be undefined when the gate runs.
@@ -70,46 +113,53 @@ function alreadyCleared(req, courseId) {
 function requireActiveCourse({ resolve } = {}) {
     return async function courseArchiveGate(req, res, next) {
         try {
-            let courseId =
-                req.params?.courseId || req.body?.courseId || req.query?.courseId;
+            const candidates = [];
 
-            if (!courseId && typeof resolve === 'function') {
+            const claimed = courseIdFromRequest(req);
+            if (claimed) candidates.push(claimed);
+
+            if (typeof resolve === 'function') {
                 // A resolver looks up a child resource (quiz, question,
-                // material, objective) that may simply not exist. That is not
-                // this middleware's problem to report — let the route's own
-                // handler produce its usual 404 rather than turning a missing
-                // id into a 500 here.
+                // material, objective, image, flag) that may simply not exist.
+                // That is not this middleware's problem to report — let the
+                // route's own handler produce its usual 404 rather than turning
+                // a missing id into a 500 here.
                 try {
-                    courseId = await resolve(req);
+                    const resolved = await resolve(req);
+                    if (resolved) candidates.push(resolved);
                 } catch (resolveError) {
                     console.error(
-                        '[requireActiveCourse] Resolver failed; passing through:',
+                        '[requireActiveCourse] Resolver failed:',
                         resolveError.message
                     );
-                    return next();
                 }
             }
-            if (!courseId) return next();
-            if (alreadyCleared(req, courseId)) return next();
 
-            const course = await getCourseById(courseId);
-            if (!course || course.archived !== true) return next();
+            for (const candidate of candidates) {
+                const courseId = String(candidate);
+                if (alreadyCleared(req, courseId)) continue;
 
-            // Past this point the course is archived.
-            if (!(await isCourseManager(req.user, courseId))) {
-                return res.status(403).json({
-                    error: ARCHIVED_ERROR,
-                    message: 'This course has been archived by its instructor.',
-                });
+                const course = await getCourseById(courseId);
+                if (!course || course.archived !== true) continue;
+
+                // Past this point the request touches an archived course.
+                if (!(await isCourseManager(req.user, courseId))) {
+                    return res.status(403).json({
+                        error: ARCHIVED_ERROR,
+                        message: 'This course has been archived by its instructor.',
+                    });
+                }
+
+                if (!READ_METHODS.has(req.method)) {
+                    return res.status(403).json({
+                        error: ARCHIVED_ERROR,
+                        message:
+                            'This course is archived and read-only. Unarchive it to make changes.',
+                    });
+                }
             }
 
-            if (READ_METHODS.has(req.method)) return next();
-
-            return res.status(403).json({
-                error: ARCHIVED_ERROR,
-                message:
-                    'This course is archived and read-only. Unarchive it to make changes.',
-            });
+            return next();
         } catch (error) {
             console.error('[requireActiveCourse] Error resolving course:', error);
             return next(error);
@@ -147,6 +197,26 @@ const resolveCourseFromMaterial = async (req) => {
     return material?.courseId || null;
 };
 
+// Images live in GridFS, not a grasp_* collection, and carry their course on
+// the file's metadata. Students fetch these while taking a quiz, so this
+// resolver is part of the hard cut, not just the write block.
+const resolveCourseFromImage = async (req) => {
+    const fileId = req.params?.fileId;
+    if (!OBJECT_ID_PATTERN.test(String(fileId || ''))) return null;
+    const { getImageCourseId } = require('../services/image');
+    return (await getImageCourseId(fileId)) || null;
+};
+
+// Question-flag status updates are keyed only by the flag; the flag document
+// carries its course directly.
+const resolveCourseFromFlag = async (req) => {
+    const flagId = req.params?.flagId;
+    if (!OBJECT_ID_PATTERN.test(String(flagId || ''))) return null;
+    const { getFlagById } = require('../services/quiz-question-flag');
+    const flag = await getFlagById(flagId);
+    return flag?.courseId || null;
+};
+
 const resolveCourseFromObjective = async (req) => {
     const objectiveId = req.params?.id;
     if (!OBJECT_ID_PATTERN.test(String(objectiveId || ''))) return null;
@@ -161,5 +231,7 @@ module.exports = {
     resolveCourseFromQuestion,
     resolveCourseFromMaterial,
     resolveCourseFromObjective,
+    resolveCourseFromImage,
+    resolveCourseFromFlag,
     ARCHIVED_ERROR,
 };
