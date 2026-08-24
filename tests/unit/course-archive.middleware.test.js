@@ -271,13 +271,28 @@ describe('requireActiveCourse', () => {
       expect(isCourseManager).not.toHaveBeenCalled();
     });
 
-    it('passes through when the resolver throws rather than 500ing', async () => {
-      // A missing quiz/material is the route handler's 404 to report, not the
-      // gate's 500.
-      const resolve = jest.fn().mockRejectedValue(new Error('no such quiz'));
+    it('refuses the request when the resolver throws', async () => {
+      // A missing quiz/material resolves to null and leaves the handler to
+      // report its own 404. A throw means the lookup itself failed, so the gate
+      // cannot tell whether the course behind it is archived — continuing would
+      // let the request act on an archived course if the handler's own lookup
+      // then succeeded.
+      const resolve = jest.fn().mockRejectedValue(new Error('connection reset'));
+
       const res = await request(buildApp(OWNER, { resolve })).get(
         '/api/courses/by-quiz/quiz-9'
       );
+
+      expect(res.status).toBe(500);
+    });
+
+    it('lets a resolver report a missing resource as null and passes through', async () => {
+      const resolve = jest.fn().mockResolvedValue(null);
+
+      const res = await request(buildApp(OWNER, { resolve })).get(
+        '/api/courses/by-quiz/quiz-9'
+      );
+
       expect(res.status).toBe(200);
     });
   });

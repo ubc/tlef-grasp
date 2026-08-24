@@ -119,11 +119,15 @@ function requireActiveCourse({ resolve } = {}) {
             if (claimed) candidates.push(claimed);
 
             if (typeof resolve === 'function') {
-                // A resolver looks up a child resource (quiz, question,
-                // material, objective, image, flag) that may simply not exist.
-                // That is not this middleware's problem to report — let the
-                // route's own handler produce its usual 404 rather than turning
-                // a missing id into a 500 here.
+                // A resolver reports a child resource that does not exist by
+                // returning null, which leaves the route's own handler to
+                // produce its usual 404. A THROW is different: it means the
+                // lookup itself failed, and the gate cannot tell whether the
+                // course behind it is archived. Failing open there would let a
+                // request through on a transient database error and act on an
+                // archived course if the handler's own lookup then succeeded,
+                // so an operational failure propagates — the same thing that
+                // already happens when getCourseById below fails.
                 try {
                     const resolved = await resolve(req);
                     if (resolved) candidates.push(resolved);
@@ -132,6 +136,7 @@ function requireActiveCourse({ resolve } = {}) {
                         '[requireActiveCourse] Resolver failed:',
                         resolveError.message
                     );
+                    return next(resolveError);
                 }
             }
 

@@ -158,7 +158,11 @@ one. Any candidate being archived refuses the request.
 
 A request whose course cannot be resolved passes through untouched, and a course
 id that is not a valid ObjectId resolves to no course (the existing
-`getCourseById` contract). The middleware's job is to refuse archived courses,
+`getCourseById` contract). A resolver that *throws* is a different case and does
+not pass through: every resolver reports a missing resource by returning null,
+so an exception means the lookup itself failed and the gate cannot tell what it
+is guarding. That propagates as a 500, matching what already happens when
+`getCourseById` fails. The middleware's job is to refuse archived courses,
 not to be an authorization layer — the existing `hasStaffAccessInCourse` /
 `assertCoInstructorPermission` checks stay exactly where they are and still
 run.
