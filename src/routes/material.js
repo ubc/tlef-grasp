@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const materialController = require('../controllers/material');
 const multer = require("multer");
+const {
+  requireActiveCourse,
+  resolveCourseFromMaterial,
+} = require("../middleware/course-archive");
 
 // Material bodies carry full parsed document text, so they get a much larger
 // limit than the app-wide 1mb default in server.js.
@@ -15,22 +19,29 @@ const upload = multer({
 	limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
 });
 
-router.post("/save", largeJson, materialController.saveMaterialHandler);
+// The archived-course gate goes AFTER each body parser here, not at the top of
+// the router: server.js deliberately skips its global express.json for
+// /api/material (the 1mb cap would reject these bodies), so req.body does not
+// exist until largeJson/multer has run.
+const materialGate = requireActiveCourse();
+const materialSourceGate = requireActiveCourse({ resolve: resolveCourseFromMaterial });
 
-router.post("/upload", upload.single("file"), materialController.uploadFileHandler);
+router.get("/course/:courseId", materialGate, materialController.getCourseMaterialsHandler);
 
-router.delete("/delete/:sourceId", materialController.deleteMaterialHandler);
+router.post("/save", largeJson, materialGate, materialController.saveMaterialHandler);
 
-router.get("/course/:courseId", materialController.getCourseMaterialsHandler);
+router.post("/upload", upload.single("file"), materialGate, materialController.uploadFileHandler);
 
-router.post("/update", largeJson, materialController.updateMaterialHandler);
+router.delete("/delete/:sourceId", materialSourceGate, materialController.deleteMaterialHandler);
 
-router.post("/refetch", largeJson, materialController.refetchMaterialHandler);
+router.post("/update", largeJson, materialGate, materialController.updateMaterialHandler);
+
+router.post("/refetch", largeJson, materialGate, materialController.refetchMaterialHandler);
 
 router.post("/fetch-url-content", express.json(), materialController.fetchUrlContentHandler);
 
-router.get("/:sourceId/outline", materialController.getMaterialOutlineHandler);
+router.get("/:sourceId/outline", materialSourceGate, materialController.getMaterialOutlineHandler);
 
-router.post("/:sourceId/outline", materialController.generateMaterialOutlineHandler);
+router.post("/:sourceId/outline", materialSourceGate, materialController.generateMaterialOutlineHandler);
 
 module.exports = router;

@@ -118,6 +118,13 @@ const getUserCourses = async (userId) => {
             },
             // Unwind the course array (since $lookup returns an array)
             { $unwind: { path: "$course", preserveNullAndEmptyArrays: true } },
+            // Archived courses are invisible to everyone here — owner included.
+            // The owner reaches them through /api/courses/archived instead, so
+            // this one filter is what removes a soft-deleted course from both
+            // /api/courses/my and /api/student/courses. An orphaned membership
+            // (course row missing) has no `course.archived` and still passes,
+            // preserving the existing behaviour for those.
+            { $match: { "course.archived": { $ne: true } } },
             // Reshape the output to include course fields at top level
             {
                 $project: {

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { useMyCourseProfiles } from "../hooks/useCourses";
+import { useMyCourseProfiles, useArchivedCourses } from "../hooks/useCourses";
 import { useAppStore } from "../stores/appStore";
 import LoginTab from "./onboarding/LoginTab";
 import JoinTab from "./onboarding/JoinTab";
+import ArchivedTab from "./onboarding/ArchivedTab";
 import SetupWizard from "./onboarding/SetupWizard";
 
 export default function Onboarding() {
@@ -14,11 +15,19 @@ export default function Onboarding() {
   const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
   const { courses, isPending: coursesPending } = useMyCourseProfiles();
+  // isLoading rather than isPending: the query is disabled for students, where
+  // isPending never resolves.
+  const { courses: archivedCourses, isLoading: archivedLoading } =
+    useArchivedCourses();
 
+  // An archived course counts as a valid selection: its owner is entitled to be
+  // sitting in it read-only, and clearing it here would strand them.
   const hasValidSelection =
     !coursesPending &&
+    !archivedLoading &&
     Boolean(selectedCourse) &&
-    courses.some((c) => (c._id || c.id) === selectedCourse.id);
+    (courses.some((c) => (c._id || c.id) === selectedCourse.id) ||
+      archivedCourses.some((c) => c.id === selectedCourse.id));
 
   // A selection left over from a now-deleted course (e.g. after a DB reset)
   // would strand the user on a "No course available" dashboard, so drop it once
@@ -28,11 +37,21 @@ export default function Onboarding() {
   // settled load only — never mid-flow after creating/joining a course.
   const staleCheckDone = useRef(false);
   useEffect(() => {
-    if (staleCheckDone.current || !user || coursesPending) return;
+    // Both lists must have settled: an archived selection looks stale while the
+    // archived query is still in flight, and clearing it would strand an owner
+    // who arrived here from an archived course.
+    if (staleCheckDone.current || !user || coursesPending || archivedLoading) return;
     staleCheckDone.current = true;
 
     if (selectedCourse && !hasValidSelection) setSelectedCourse(null);
-  }, [user, coursesPending, selectedCourse, hasValidSelection, setSelectedCourse]);
+  }, [
+    user,
+    coursesPending,
+    archivedLoading,
+    selectedCourse,
+    hasValidSelection,
+    setSelectedCourse,
+  ]);
 
   const [activeTab, setActiveTab] = useState(null);
 
@@ -57,6 +76,11 @@ export default function Onboarding() {
     ...(isFaculty ? [{ id: "setup", label: "New Course Setup" }] : []),
     { id: "login", label: "Login to Existing Dashboard" },
     ...(canJoinByCode ? [{ id: "join", label: "Join a course" }] : []),
+    // The only route into an archived course, so it appears as soon as the
+    // instructor has one rather than being a permanent empty tab.
+    ...(archivedCourses.length > 0
+      ? [{ id: "archived", label: "Archived courses" }]
+      : []),
   ];
 
   useEffect(() => {
@@ -130,6 +154,8 @@ export default function Onboarding() {
             />
           ) : activeTab === "join" ? (
             <JoinTab />
+          ) : activeTab === "archived" ? (
+            <ArchivedTab />
           ) : (
             <SetupWizard />
           )}
