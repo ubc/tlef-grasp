@@ -4,6 +4,19 @@ const quizController = require("../controllers/quiz");
 const { requireRole } = require("../middleware/auth");
 const { ROLES } = require("../utils/auth");
 const { checkLimiter } = require("../middleware/rate-limit");
+const {
+  requireActiveCourse,
+  resolveCourseFromQuiz,
+} = require("../middleware/course-archive");
+
+// Archived-course gate. Three layers because the course arrives three ways:
+// in the body/query (quiz creation, score filters), in the path, or one lookup
+// away behind a quiz id. Each layer resolves nothing and passes through on the
+// routes it does not apply to.
+router.use(requireActiveCourse());
+router.use("/course/:courseId", requireActiveCourse());
+router.use("/flags/course/:courseId", requireActiveCourse());
+router.use("/:quizId", requireActiveCourse({ resolve: resolveCourseFromQuiz }));
 
 /**
  * GET /api/quiz/course/:courseId

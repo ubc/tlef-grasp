@@ -1,6 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const achievementController = require("../controllers/achievement");
+const { requireActiveCourse } = require("../middleware/course-archive");
+
+// courseId arrives in the body (save) or the query (counts).
+router.use(requireActiveCourse());
 
 /**
  * Save an achievement

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import ArchivedCourseBanner from "../course/ArchivedCourseBanner";
 
 const PAGE_TITLES = {
   "/dashboard": "Dashboard",
@@ -92,6 +93,8 @@ export default function AppLayout() {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="min-h-screen bg-page lg:ml-[280px]">
+        {/* Renders nothing unless the selected course is archived. */}
+        <ArchivedCourseBanner />
         <Outlet />
       </main>
     </div>

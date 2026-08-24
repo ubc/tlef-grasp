@@ -1,6 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const ragLlmController = require('../controllers/rag-llm');
+const {
+  requireActiveCourse,
+  resolveCourseFromMaterial,
+} = require('../middleware/course-archive');
+
+// Every route here is a write or a paid LLM call against one course, named by
+// courseId in the body except for the document delete, which names a material.
+router.use(requireActiveCourse());
+router.use('/delete-document/:sourceId', requireActiveCourse({ resolve: resolveCourseFromMaterial }));
 
 // Add document to RAG
 router.post(

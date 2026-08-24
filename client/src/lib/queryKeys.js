@@ -8,6 +8,7 @@ export const queryKeys = {
 
   myCourses: (audience) => ["my-courses", audience],
   studentCourses: ["student-courses"],
+  archivedCourses: ["archived-courses"],
 
   questions: (courseId) => ["questions", courseId],
   questionBank: (courseId) => ["question-bank", courseId],

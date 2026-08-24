@@ -7,6 +7,9 @@ const {
   getCourseByEnrollmentCode,
   listCoursesForEnrollment,
   updateCourseEnrollmentCode,
+  archiveCourse,
+  unarchiveCourse,
+  listArchivedCoursesForOwner,
 } = require('../services/course');
 
 const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = require('../services/user-course');
@@ -15,7 +18,7 @@ const materialService = require('../services/material');
 const questionService = require('../services/question');
 const { isFaculty, isStaff } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
-const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
+const { assertCoInstructorPermission, isCourseManager, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 
 // Enrollment-code flows are available to faculty, staff, and app administrators
@@ -697,8 +700,114 @@ const recycleSectionHandler = async (req, res) => {
   }
 };
 
+// --- Archiving (soft deletion) ----------------------------------------------
+
+/**
+ * Archived courses the caller owns — the "Archived courses" tab in the
+ * Manage-courses hub. Owner-scoped on purpose: an app administrator manages
+ * every course, and every archived course in the deployment is not a page.
+ */
+const getArchivedCoursesHandler = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const courses = await listArchivedCoursesForOwner(userId);
+    res.json({ success: true, courses: courses.map(omitCourseAccess) });
+  } catch (error) {
+    console.error("Error listing archived courses:", error);
+    res.status(500).json({ error: "Failed to retrieve archived courses" });
+  }
+};
+
+/**
+ * Archive a course. Owner and app administrators only — a co-instructor cannot
+ * archive a course however broad their permissions are.
+ */
+const archiveCourseHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const course = await getCourseById(courseId);
+    if (!course) return res.status(404).json({ error: "Course not found" });
+
+    if (!(await isCourseManager(req.user, courseId))) {
+      return res.status(403).json({
+        error: "Only the course owner can archive this course.",
+      });
+    }
+    if (course.archived === true) {
+      return res.status(409).json({ error: "Course is already archived" });
+    }
+
+    await archiveCourse(courseId, req.user?._id || req.user?.id);
+    const updated = await getCourseById(courseId);
+    res.json({ success: true, course: omitCourseAccess(updated) });
+  } catch (error) {
+    console.error("Error archiving course:", error);
+    res.status(500).json({ error: "Failed to archive course" });
+  }
+};
+
+/**
+ * Restore an archived course.
+ *
+ * Archiving released the course code, so another shell may hold it by now. When
+ * it does, the restore is refused with 409 `code_conflict` and a suggested free
+ * code; the client re-sends with an explicit `courseCode`. Two live courses
+ * never end up sharing a code, and the live course is never the one renamed.
+ */
+const unarchiveCourseHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const course = await getCourseById(courseId);
+    if (!course) return res.status(404).json({ error: "Course not found" });
+
+    if (!(await isCourseManager(req.user, courseId))) {
+      return res.status(403).json({
+        error: "Only the course owner can unarchive this course.",
+      });
+    }
+    if (course.archived !== true) {
+      return res.status(409).json({ error: "Course is not archived" });
+    }
+
+    const requestedCode =
+      typeof req.body?.courseCode === "string" ? req.body.courseCode.trim() : "";
+    const targetCode = requestedCode || course.courseCode;
+
+    // getCourseByCode only sees live courses, so this cannot match the course
+    // being restored — a hit is always a genuine conflict with another shell.
+    const clash = await getCourseByCode(targetCode);
+    if (clash) {
+      if (requestedCode) {
+        return res.status(409).json({
+          error: "code_conflict",
+          message: `The course code "${targetCode}" is already in use by "${clash.courseName}".`,
+          conflictingCourseName: clash.courseName,
+          suggestedCode: await findAvailableCourseCode(targetCode),
+        });
+      }
+      return res.status(409).json({
+        error: "code_conflict",
+        message: `Another course is now using the code "${targetCode}". Choose a new code for the course you are restoring.`,
+        conflictingCourseName: clash.courseName,
+        currentCode: course.courseCode,
+        suggestedCode: await findAvailableCourseCode(course.courseCode),
+      });
+    }
+
+    await unarchiveCourse(courseId, requestedCode || undefined);
+    const updated = await getCourseById(courseId);
+    res.json({ success: true, course: omitCourseAccess(updated) });
+  } catch (error) {
+    console.error("Error unarchiving course:", error);
+    res.status(500).json({ error: "Failed to unarchive course" });
+  }
+};
+
 module.exports = {
   getMyCourses,
+  getArchivedCoursesHandler,
+  archiveCourseHandler,
+  unarchiveCourseHandler,
   getCourseByIdHandler,
   getCourseMaterials,
   getCourseQuestions,

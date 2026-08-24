@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const objectiveController = require('../controllers/objective');
+const {
+  requireActiveCourse,
+  resolveCourseFromObjective,
+} = require('../middleware/course-archive');
+
+router.use(requireActiveCourse());
+router.use('/:id', requireActiveCourse({ resolve: resolveCourseFromObjective }));
 
 // Note: Authentication is handled at app level with ensureAuthenticatedAPI
 // No need for route-level auth since app.use("/api/objective", ensureAuthenticatedAPI, objectiveRoutes)

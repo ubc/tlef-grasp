@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useSelectedCourseId } from "../stores/appStore";
+import { useNavigate } from "react-router-dom";
+import { useSelectedCourse, useSelectedCourseId } from "../stores/appStore";
 import {
   useCourseSettings,
   useSettingsDefaults,
@@ -8,6 +9,7 @@ import {
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { ArchiveCourseButton } from "../components/course/CourseArchiveActions";
 import { useCanvasStatus } from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useToast } from "../components/ui/Toast";
@@ -171,7 +173,9 @@ const buildPromptState = (source = {}) =>
 
 export default function Settings() {
   const showToast = useToast();
+  const navigate = useNavigate();
   const courseId = useSelectedCourseId();
+  const selectedCourse = useSelectedCourse();
   const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
   const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
 
@@ -525,6 +529,29 @@ export default function Settings() {
               old code will need the new one.
             </p>
           </section>
+
+          {/* Owner-only: co-instructors cannot retire a course, however broad
+              their permissions are. */}
+          {isOwner && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-ink">Archive course</h2>
+              <p className="mt-1 mb-5 text-sm text-muted">
+                Retire this course at the end of term. Archiving keeps everything
+                — materials, questions, quizzes, and student scores — but removes
+                the course from students and co-instructors and makes it
+                read-only for you. You can restore it at any time from{" "}
+                <strong className="text-ink">
+                  Onboarding &rarr; Archived courses
+                </strong>
+                .
+              </p>
+              <ArchiveCourseButton
+                courseId={courseId}
+                courseName={selectedCourse?.name || "This course"}
+                onArchived={() => navigate("/onboarding")}
+              />
+            </section>
+          )}
         </div>
       )}
 

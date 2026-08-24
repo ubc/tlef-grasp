@@ -3,16 +3,32 @@ const router = express.Router();
 const coursesController = require('../controllers/courses');
 const settingsController = require('../controllers/settings');
 const { requireRole } = require('../middleware/auth');
+const { requireActiveCourse } = require('../middleware/course-archive');
 const { ROLES } = require('../utils/auth');
 
 
 router.get("/my", coursesController.getMyCourses);
+
+// Archived courses the caller owns (must precede "/:courseId")
+router.get("/archived", coursesController.getArchivedCoursesHandler);
 
 // Student self-enrollment (must be before "/:courseId" so "enrollment-list" is not parsed as an id)
 router.get("/enrollment-list", coursesController.listEnrollmentCourses);
 router.post("/join-by-code", express.json(), coursesController.joinCourseByEnrollmentCode);
 
 router.post("/new", express.json(), coursesController.createNewCourse);
+
+// Archive / unarchive. Declared ahead of the requireActiveCourse gate below so
+// they stay reachable on an archived course — they are the way back out. Both
+// are owner-only, enforced by isCourseManager inside the handlers.
+router.post("/:courseId/archive", express.json(), coursesController.archiveCourseHandler);
+router.post("/:courseId/unarchive", express.json(), coursesController.unarchiveCourseHandler);
+
+// From here down, every course-scoped route is gated: an archived course is
+// invisible to everyone but its owner, and read-only even for them. Literal
+// paths that reach this point ("/defaults/settings") resolve to no course and
+// pass straight through.
+router.use("/:courseId", requireActiveCourse());
 
 router.post("/:courseId/join", express.json(), coursesController.joinCourseWithCode);
 router.get("/:courseId/enrollment-code", coursesController.getEnrollmentCode);
