@@ -134,21 +134,34 @@ questions), then `req.query.courseId`. A handler that invents a new shape has to
 be added there — a shape the list misses is a write that reaches an archived
 course.
 
-That covers the course, users, material-by-course, and rag-llm routes. It does
-not cover routes keyed by a child resource — `/api/quiz/:quizId`,
+That covers the course, users, material-by-course, LMS, and rag-llm routes. It
+does not cover routes keyed by a child resource — `/api/quiz/:quizId`,
 `/api/student/quizzes/:quizId/*`, `/api/question/:questionId`,
-`/api/objective/:id`, `/api/material/delete/:sourceId`, `/api/image/:fileId` —
-where the course is one lookup away. For those the middleware takes an explicit
-resolver:
+`/api/objective/:id`, `/api/material/delete/:sourceId`, `/api/image/:fileId`,
+`/api/quiz/flags/:flagId/status` — where the course is one lookup away. For
+those the middleware takes an explicit resolver:
 
 ```js
 requireActiveCourse({ resolve: async (req) => (await getQuizById(req.params.quizId))?.courseId })
 ```
 
-A request whose course cannot be resolved passes through untouched. The
-middleware's job is to refuse archived courses, not to be an authorization layer
-— the existing `hasStaffAccessInCourse` / `assertCoInstructorPermission` checks
-stay exactly where they are and still run.
+**A supplied resolver always runs, and every course a request touches is
+checked.** This is the one rule here that is not obvious, and getting it wrong
+is a hole rather than an inconvenience. An earlier version treated the
+request-supplied id as sufficient and only fell back to the resolver when none
+was present — which meant a student could read an archived course's image or
+quiz with `?courseId=<any live course they belong to>`: the gate cleared the
+live course named in the query and never looked at the archived course the
+resource actually belonged to. The request-supplied id is attacker-controlled,
+so it can only ever *add* a course to check, never replace the authoritative
+one. Any candidate being archived refuses the request.
+
+A request whose course cannot be resolved passes through untouched, and a course
+id that is not a valid ObjectId resolves to no course (the existing
+`getCourseById` contract). The middleware's job is to refuse archived courses,
+not to be an authorization layer — the existing `hasStaffAccessInCourse` /
+`assertCoInstructorPermission` checks stay exactly where they are and still
+run.
 
 The student quiz routes are the ones that matter most for the hard-cut decision:
 they are what an open quiz tab calls, and the resolver is what turns "archived"

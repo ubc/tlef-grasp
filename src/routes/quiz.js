@@ -7,6 +7,7 @@ const { checkLimiter } = require("../middleware/rate-limit");
 const {
   requireActiveCourse,
   resolveCourseFromQuiz,
+  resolveCourseFromFlag,
 } = require("../middleware/course-archive");
 
 // Archived-course gate. Three layers because the course arrives three ways:
@@ -17,6 +18,10 @@ router.use(requireActiveCourse());
 router.use("/course/:courseId", requireActiveCourse());
 router.use("/flags/course/:courseId", requireActiveCourse());
 router.use("/:quizId", requireActiveCourse({ resolve: resolveCourseFromQuiz }));
+// Flag status updates name neither a course nor a quiz — only the flag, which
+// the "/:quizId" layer above sees as the literal segment "flags" and resolves
+// to nothing. The flag document carries its own courseId.
+router.use("/flags/:flagId", requireActiveCourse({ resolve: resolveCourseFromFlag }));
 
 /**
  * GET /api/quiz/course/:courseId

@@ -215,6 +215,55 @@ describe('requireActiveCourse', () => {
       expect(getCourseById).toHaveBeenCalledTimes(1);
     });
 
+    // The request-supplied id is attacker-controlled. If naming any live course
+    // suppressed the resolver, a student could read an archived course's images
+    // or quizzes with `?courseId=<a course they are still in>`.
+    it('still resolves the authoritative course when the request names another', async () => {
+      getCourseById.mockImplementation(async (id) =>
+        String(id) === 'course-1'
+          ? ARCHIVED_COURSE
+          : { _id: String(id), courseName: 'Decoy', archived: undefined }
+      );
+      const resolve = jest.fn().mockResolvedValue('course-1');
+
+      const res = await request(buildApp({ _id: 'student-1' }, { resolve }))
+        .get('/api/courses/by-quiz/quiz-9')
+        .query({ courseId: 'a-live-course' });
+
+      expect(resolve).toHaveBeenCalled();
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe(ARCHIVED_ERROR);
+    });
+
+    it('refuses when the decoy is live but the resolved course is archived, on writes too', async () => {
+      getCourseById.mockImplementation(async (id) =>
+        String(id) === 'course-1'
+          ? ARCHIVED_COURSE
+          : { _id: String(id), courseName: 'Decoy' }
+      );
+      isCourseManager.mockResolvedValue(true);
+      const resolve = jest.fn().mockResolvedValue('course-1');
+
+      const res = await request(buildApp(OWNER, { resolve }))
+        .delete('/api/courses/by-quiz/quiz-9')
+        .query({ courseId: 'a-live-course' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/read-only/i);
+    });
+
+    it('allows the request when neither the named nor the resolved course is archived', async () => {
+      getCourseById.mockResolvedValue({ _id: 'x', courseName: 'Live' });
+      const resolve = jest.fn().mockResolvedValue('course-1');
+
+      const res = await request(buildApp(OWNER, { resolve }))
+        .get('/api/courses/by-quiz/quiz-9')
+        .query({ courseId: 'a-live-course' });
+
+      expect(res.status).toBe(200);
+      expect(resolve).toHaveBeenCalled();
+    });
+
     it('passes through when no course can be resolved', async () => {
       mockCourse(ARCHIVED_COURSE);
       const res = await request(buildApp()).post('/api/courses/create').send({});
