@@ -147,6 +147,48 @@ const removeSchedulesForQuiz = async (quizId) => {
 };
 
 /**
+ * Order a course's quizzes the way one student actually experiences them.
+ *
+ * Availability is per section, so document creation order is not teaching
+ * order — two sections running at different paces receive the same quizzes in
+ * different sequences. The sort key is the earliest release date across the
+ * student's sections (earliest, not `resolveWindow`'s governing window, so the
+ * ordering is stable rather than shifting as `now` moves). Quizzes with no row
+ * for any of the student's sections keep their relative creation order and sort
+ * ahead of scheduled ones, matching the pre-scheduling behaviour.
+ *
+ * @param {Array<{_id: any, createdAt: Date}>} quizzes - Course quizzes, already in createdAt order.
+ * @param {Map<string, Array<{courseSectionId: string, releaseDate: Date}>>} schedulesByQuiz
+ * @param {string[]} studentCourseSectionIds
+ * @returns {Array} The same quiz objects, ordered for this student.
+ */
+const orderQuizzesForStudent = (quizzes = [], schedulesByQuiz = new Map(), studentCourseSectionIds = []) => {
+  const mine = new Set(studentCourseSectionIds.map((id) => id.toString()));
+  if (mine.size === 0) return [...quizzes];
+
+  const releaseFor = (quiz) => {
+    const rows = schedulesByQuiz.get(quiz._id.toString()) || [];
+    const times = rows
+      .filter((r) => mine.has(r.courseSectionId.toString()))
+      .map((r) => new Date(r.releaseDate).getTime())
+      .filter((t) => !Number.isNaN(t));
+    return times.length ? Math.min(...times) : null;
+  };
+
+  return quizzes
+    .map((quiz, index) => ({ quiz, index, release: releaseFor(quiz) }))
+    .sort((a, b) => {
+      if (a.release === null && b.release === null) return a.index - b.index;
+      if (a.release === null) return -1;
+      if (b.release === null) return 1;
+      // Same release date (or a tie from equal timestamps): fall back to the
+      // incoming createdAt order so the result stays deterministic.
+      return a.release - b.release || a.index - b.index;
+    })
+    .map((entry) => entry.quiz);
+};
+
+/**
  * Resolve a student's effective availability window for one quiz from the
  * supplied schedule rows and the section ids the student belongs to.
  *
@@ -210,4 +252,5 @@ module.exports = {
   removeSchedulesForSection,
   removeSchedulesForQuiz,
   resolveWindow,
+  orderQuizzesForStudent,
 };
