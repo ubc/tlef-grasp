@@ -2,6 +2,7 @@ const express = require('express');
 const { createCanvasIntegration } = require('../lms/canvas');
 const { createCanvasController } = require('../controllers/lms-canvas');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
+const { requireActiveCourse } = require('../middleware/course-archive');
 
 function createCanvasRouter(integration = createCanvasIntegration()) {
   const router = express.Router();
@@ -34,6 +35,11 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
   });
   router.use('/auth', canvas.createAuthRouter(config));
   router.get('/status', requireCanvasAuth, controller.getStatus);
+
+  // Every course-scoped Canvas route is gated: an archived course exposes no
+  // integration state to anyone but its owner, and accepts no link changes.
+  // Mounted after the OAuth and status routes, which are user-scoped.
+  router.use('/courses/:courseId', requireActiveCourse());
 
   router.get(
     '/courses/:courseId/sections/:sectionId/available-courses',

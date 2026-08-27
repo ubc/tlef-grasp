@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useSelectedCourseId } from "../stores/appStore";
+import { useNavigate } from "react-router-dom";
+import { useSelectedCourse, useSelectedCourseId } from "../stores/appStore";
 import {
   useCourseSettings,
   useSettingsDefaults,
@@ -8,6 +9,7 @@ import {
   useRegenerateEnrollmentCode,
 } from "../hooks/useCourseSettings";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { ArchiveCourseButton } from "../components/course/CourseArchiveActions";
 import { useCanvasStatus } from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useToast } from "../components/ui/Toast";
@@ -22,21 +24,13 @@ import {
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   BLOOM_LEVELS,
 } from "../lib/constants";
+import { BLOOM_BADGE_COLORS } from "../lib/bloom";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
   [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill-in-the-blank",
   [QUESTION_TYPES.CALCULATION]: "Calculation",
   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
-};
-
-const BLOOM_BADGE_COLORS = {
-  Remember: "bg-blue-100 text-blue-700",
-  Understand: "bg-green-100 text-green-700",
-  Apply: "bg-yellow-100 text-yellow-700",
-  Analyze: "bg-orange-100 text-orange-700",
-  Evaluate: "bg-purple-100 text-purple-700",
-  Create: "bg-pink-100 text-pink-700",
 };
 
 // Pipeline stages a course owner can tune, keyed to the server's
@@ -179,7 +173,9 @@ const buildPromptState = (source = {}) =>
 
 export default function Settings() {
   const showToast = useToast();
+  const navigate = useNavigate();
   const courseId = useSelectedCourseId();
+  const selectedCourse = useSelectedCourse();
   const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
   const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
 
@@ -533,6 +529,29 @@ export default function Settings() {
               old code will need the new one.
             </p>
           </section>
+
+          {/* Owner-only: co-instructors cannot retire a course, however broad
+              their permissions are. */}
+          {isOwner && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-ink">Archive course</h2>
+              <p className="mt-1 mb-5 text-sm text-muted">
+                Retire this course at the end of term. Archiving keeps everything
+                — materials, questions, quizzes, and student scores — but removes
+                the course from students and co-instructors and makes it
+                read-only for you. You can restore it at any time from{" "}
+                <strong className="text-ink">
+                  Onboarding &rarr; Archived courses
+                </strong>
+                .
+              </p>
+              <ArchiveCourseButton
+                courseId={courseId}
+                courseName={selectedCourse?.name || "This course"}
+                onArchived={() => navigate("/onboarding")}
+              />
+            </section>
+          )}
         </div>
       )}
 

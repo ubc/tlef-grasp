@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
-import { useMyCourseProfiles } from "../hooks/useCourses";
+import { useMyCourseProfiles, useArchivedCourses } from "../hooks/useCourses";
 import { useAppStore } from "../stores/appStore";
 import LoginTab from "./onboarding/LoginTab";
 import JoinTab from "./onboarding/JoinTab";
+import ArchivedTab from "./onboarding/ArchivedTab";
 import SetupWizard from "./onboarding/SetupWizard";
 
 export default function Onboarding() {
@@ -14,28 +15,43 @@ export default function Onboarding() {
   const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
   const { courses, isPending: coursesPending } = useMyCourseProfiles();
+  // isLoading rather than isPending: the query is disabled for students, where
+  // isPending never resolves.
+  const { courses: archivedCourses, isLoading: archivedLoading } =
+    useArchivedCourses();
 
-  // If the user arrived already onboarded (a still-valid course is selected),
-  // send them straight to their dashboard. Decide only once the real course
-  // list has loaded, so a selection left over from a now-deleted course (e.g.
-  // after a DB reset) is cleared instead of bouncing to a "No course available"
-  // page. The ref ensures we act on the first settled load only — never
-  // mid-flow after creating/joining a course.
-  const redirectDecided = useRef(false);
+  // An archived course counts as a valid selection: its owner is entitled to be
+  // sitting in it read-only, and clearing it here would strand them.
+  const hasValidSelection =
+    !coursesPending &&
+    !archivedLoading &&
+    Boolean(selectedCourse) &&
+    (courses.some((c) => (c._id || c.id) === selectedCourse.id) ||
+      archivedCourses.some((c) => c.id === selectedCourse.id));
+
+  // A selection left over from a now-deleted course (e.g. after a DB reset)
+  // would strand the user on a "No course available" dashboard, so drop it once
+  // the real course list has settled. A *still-valid* selection is left alone:
+  // the sidebar links here on purpose, so the user keeps their course and can
+  // back out to their dashboard unchanged. The ref ensures we act on the first
+  // settled load only — never mid-flow after creating/joining a course.
+  const staleCheckDone = useRef(false);
   useEffect(() => {
-    if (redirectDecided.current || !user || coursesPending) return;
-    redirectDecided.current = true;
+    // Both lists must have settled: an archived selection looks stale while the
+    // archived query is still in flight, and clearing it would strand an owner
+    // who arrived here from an archived course.
+    if (staleCheckDone.current || !user || coursesPending || archivedLoading) return;
+    staleCheckDone.current = true;
 
-    const validSelection =
-      selectedCourse &&
-      courses.some((c) => (c._id || c.id) === selectedCourse.id);
-
-    if (validSelection) {
-      navigate(isStudent ? "/student-dashboard" : "/dashboard", { replace: true });
-    } else if (selectedCourse) {
-      setSelectedCourse(null);
-    }
-  }, [user, coursesPending, courses, selectedCourse, isStudent, navigate, setSelectedCourse]);
+    if (selectedCourse && !hasValidSelection) setSelectedCourse(null);
+  }, [
+    user,
+    coursesPending,
+    archivedLoading,
+    selectedCourse,
+    hasValidSelection,
+    setSelectedCourse,
+  ]);
 
   const [activeTab, setActiveTab] = useState(null);
 
@@ -60,6 +76,11 @@ export default function Onboarding() {
     ...(isFaculty ? [{ id: "setup", label: "New Course Setup" }] : []),
     { id: "login", label: "Login to Existing Dashboard" },
     ...(canJoinByCode ? [{ id: "join", label: "Join a course" }] : []),
+    // The only route into an archived course, so it appears as soon as the
+    // instructor has one rather than being a permanent empty tab.
+    ...(archivedCourses.length > 0
+      ? [{ id: "archived", label: "Archived courses" }]
+      : []),
   ];
 
   useEffect(() => {
@@ -74,8 +95,20 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#667eea] to-[#764ba2] px-5 py-10">
       <div className="mx-auto w-full max-w-[700px]">
-        {/* Sign out */}
-        <div className="mb-4 flex justify-end">
+        {/* Escape hatches */}
+        <div className="mb-4 flex justify-end gap-2">
+          {hasValidSelection && (
+            <button
+              type="button"
+              onClick={() =>
+                navigate(isStudent ? "/student-dashboard" : "/dashboard")
+              }
+              className="inline-flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+            >
+              <i className="fas fa-arrow-left" />
+              Back to Dashboard
+            </button>
+          )}
           <button
             type="button"
             onClick={handleSignOut}
@@ -121,6 +154,8 @@ export default function Onboarding() {
             />
           ) : activeTab === "join" ? (
             <JoinTab />
+          ) : activeTab === "archived" ? (
+            <ArchivedTab />
           ) : (
             <SetupWizard />
           )}

@@ -64,6 +64,20 @@ const getImageStream = async (fileId) => {
 };
 
 /**
+ * The course an uploaded image belongs to, or null if the file is unknown.
+ * Reads the GridFS files document only — deliberately does not open a download
+ * stream, since the archived-course gate needs the metadata and nothing else.
+ */
+const getImageCourseId = async (fileId) => {
+    const id = toObjectId(fileId);
+    if (!id) return null;
+
+    const bucket = await getBucket();
+    const file = await bucket.find({ _id: id }).next();
+    return file?.metadata?.courseId || null;
+};
+
+/**
  * Read an entire image into a Buffer (used by QTI export).
  * Returns null when the file does not exist.
  */
@@ -126,6 +140,7 @@ const collectQuestionImageIds = (question) => {
 module.exports = {
     uploadImage,
     getImageStream,
+    getImageCourseId,
     downloadImageBuffer,
     deleteImage,
     deleteImages,

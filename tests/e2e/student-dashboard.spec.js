@@ -27,6 +27,16 @@ test.describe('Student dashboard navigation (authenticated)', () => {
     await page.getByText('How GRASP works').click();
     await expect(page.getByRole('link', { name: 'Take practice quizzes' })).toBeVisible();
 
+    // The Bloom guide's one-line summary is readable while collapsed; the six
+    // levels only render once it is expanded.
+    const bloomGuide = page.locator('details').filter({ hasText: "What is Bloom's Taxonomy?" });
+    await expect(bloomGuide).toContainText('Six levels of thinking');
+    await expect(bloomGuide.getByText('Remember', { exact: true })).toBeHidden();
+    await page.getByText("What is Bloom's Taxonomy?").click();
+    for (const level of ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']) {
+      await expect(bloomGuide.getByText(level, { exact: true })).toBeVisible();
+    }
+
     await page.getByRole('link', { name: 'View All Quizzes' }).click();
 
     await expect(page).toHaveURL('/quiz');
@@ -68,5 +78,6 @@ test.describe('Instructor student preview (authenticated)', () => {
     const progress = page.getByRole('region');
     await expect(progress.getByText('Student preview:')).toBeVisible();
     await expect(page.getByRole('main').getByText(SEED.COURSE_NAME)).toBeVisible();
+    await expect(page.getByText("What is Bloom's Taxonomy?")).toBeVisible();
   });
 });

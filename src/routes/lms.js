@@ -1,8 +1,12 @@
 const express = require('express');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
 const lmsSectionLinkService = require('../services/lms-section-link');
+const { requireActiveCourse } = require('../middleware/course-archive');
 
 const router = express.Router();
+
+// Unlinking a section from an LMS is a write against the course.
+router.use('/courses/:courseId', requireActiveCourse());
 
 router.delete(
   '/courses/:courseId/sections/:sectionId/link',

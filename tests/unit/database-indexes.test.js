@@ -40,3 +40,47 @@ describe('DatabaseService.createOrReplaceIndex', () => {
     expect(collection.dropIndex).not.toHaveBeenCalled();
   });
 });
+
+describe('initializeCollections index definitions', () => {
+  // Archiving a course is supposed to release its course code for reuse next
+  // term. Filtering archived courses out of getCourseByCode is not enough on
+  // its own: grasp_course carries a UNIQUE index on courseCode, so the INSERT
+  // of the new shell would still fail with a duplicate-key error whatever the
+  // application looked up first. The index has to exclude archived courses for
+  // the release to be real.
+  it('makes courseCode unique across live courses only', async () => {
+    const collections = new Map();
+    const collectionFor = (name) => {
+      if (!collections.has(name)) {
+        collections.set(name, {
+          createIndex: jest.fn().mockResolvedValue(undefined),
+          dropIndex: jest.fn().mockResolvedValue(undefined),
+        });
+      }
+      return collections.get(name);
+    };
+
+    const originalDb = databaseService.db;
+    databaseService.db = { collection: jest.fn((name) => collectionFor(name)) };
+
+    try {
+      await databaseService.initializeCollections();
+    } finally {
+      databaseService.db = originalDb;
+    }
+
+    const courseIndexCalls = collectionFor('grasp_course').createIndex.mock.calls;
+    const courseCodeCall = courseIndexCalls.find(
+      ([keys]) => keys && keys.courseCode === 1
+    );
+
+    expect(courseCodeCall).toBeDefined();
+    const [, options] = courseCodeCall;
+    expect(options.unique).toBe(true);
+    // $exists: false, not `archived: false`: a live course carries no
+    // `archived` field at all, and $ne is not permitted in a partial filter.
+    expect(options.partialFilterExpression).toEqual({
+      archived: { $exists: false },
+    });
+  });
+});

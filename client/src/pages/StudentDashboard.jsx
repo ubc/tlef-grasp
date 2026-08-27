@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import BloomTaxonomyGuide from "../components/BloomTaxonomyGuide";
 import Calendar from "../components/Calendar";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useMyCourses, useStudentCourses } from "../hooks/useCourses";
@@ -202,6 +203,7 @@ export default function StudentDashboard() {
           </ol>
         </section>
         <StudentGuide />
+        <BloomTaxonomyGuide />
       </div>
 
       {/* Right column */}

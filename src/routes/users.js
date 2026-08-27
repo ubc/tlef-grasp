@@ -1,6 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const usersController = require('../controllers/users');
+const { requireActiveCourse } = require('../middleware/course-archive');
+
+// Archived courses take no roster changes, and expose no roster to anyone but
+// their owner.
+router.use("/course/:courseId", requireActiveCourse());
+router.use("/staff/not-in-course/:courseId", requireActiveCourse());
+router.use("/students/not-in-course/:courseId", requireActiveCourse());
+router.use("/all/not-in-course/:courseId", requireActiveCourse());
 
 // Resolve the current user's effective role in the selected course.
 router.get("/course/:courseId/access", usersController.getCourseAccessHandler);

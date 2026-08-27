@@ -48,6 +48,7 @@ const helmet = require("helmet");
 const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
+const { samlErrorHandler } = require('./middleware/samlErrorHandler');
 
 const authRoutes = require('./routes/auth');
 const questionRoutes = require("./routes/question");
@@ -148,7 +149,8 @@ app.post(
   passport.authenticate('ubcshib', { failureRedirect: '/auth/login' }),
   (req, res) => {
     res.redirect('/onboarding');
-  }
+  },
+  samlErrorHandler
 );
 
 app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);

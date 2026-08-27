@@ -2,6 +2,7 @@ const express = require('express');
 const { createMoodleIntegration } = require('../lms/moodle');
 const { createMoodleController } = require('../controllers/lms-moodle');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
+const { requireActiveCourse } = require('../middleware/course-archive');
 
 function createMoodleRouter(integration = createMoodleIntegration()) {
   const router = express.Router();
@@ -23,6 +24,10 @@ function createMoodleRouter(integration = createMoodleIntegration()) {
 
   router.use('/auth', express.json(), moodle.createAuthRouter(config));
   router.get('/status', requireMoodleAuth, controller.getStatus);
+
+  // Course-scoped Moodle routes carry the same archived-course gate as Canvas.
+  router.use('/courses/:courseId', requireActiveCourse());
+
   router.get(
     '/courses/:courseId/sections/:sectionId/available-courses',
     requireOwnedSection,

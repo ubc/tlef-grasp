@@ -4,6 +4,10 @@ const multer = require("multer");
 const imageController = require("../controllers/image");
 const { requireRole } = require("../middleware/auth");
 const { ROLES } = require("../utils/auth");
+const {
+  requireActiveCourse,
+  resolveCourseFromImage,
+} = require("../middleware/course-archive");
 
 // Images are held in memory briefly, validated, then streamed into GridFS.
 const upload = multer({
@@ -29,20 +33,37 @@ const handleUpload = (req, res, next) => {
  * POST /api/image/upload
  * Upload a question image (staff and above).
  */
-router.post("/upload", requireRole(ROLES.STAFF), handleUpload, imageController.uploadImageHandler);
+// The gate sits after handleUpload because multer is what populates req.body,
+// where the upload names its courseId.
+router.post(
+    "/upload",
+    requireRole(ROLES.STAFF),
+    handleUpload,
+    requireActiveCourse(),
+    imageController.uploadImageHandler
+);
 
 /**
  * GET /api/image/:fileId
  * Stream a question image. Any authenticated user enrolled in the image's
  * course (students need this to see images while taking quizzes).
  */
-router.get("/:fileId", imageController.getImageHandler);
+router.get(
+    "/:fileId",
+    requireActiveCourse({ resolve: resolveCourseFromImage }),
+    imageController.getImageHandler
+);
 
 /**
  * DELETE /api/image/:fileId
  * Delete an uploaded image (staff and above). Used by editors when an image
  * is removed before the question referencing it was ever saved.
  */
-router.delete("/:fileId", requireRole(ROLES.STAFF), imageController.deleteImageHandler);
+router.delete(
+    "/:fileId",
+    requireRole(ROLES.STAFF),
+    requireActiveCourse({ resolve: resolveCourseFromImage }),
+    imageController.deleteImageHandler
+);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const { ObjectId } = require("mongodb");
 const databaseService = require("./database");
+const quizScheduleService = require("./quiz-schedule");
 const { BLOOM_LEVELS } = require("../constants/app-constants");
 
 /**
@@ -491,11 +492,56 @@ const getPhase1Questions = async (quizId, userId) => {
 };
 
 /**
+ * A course's quizzes in the order this student actually reaches them.
+ *
+ * Phases 2 and 3 both split the course at "the current quiz" and treat
+ * everything before it as history. Since scheduling is per section, that split
+ * cannot come from document creation order — a quiz created later can be
+ * released to a section first, and ordering by `createdAt` would then hide a
+ * quiz the student has already completed. Callers with no section (instructors
+ * previewing a quiz) fall back to creation order.
+ *
+ * @param {Object} db - Connected database handle.
+ * @param {string|ObjectId} courseId
+ * @param {string|ObjectId} userId
+ * @returns {Promise<Array>} Course quizzes ordered for this student.
+ */
+const getCourseQuizzesInStudentOrder = async (db, courseId, userId) => {
+    const normalizedCourseId = courseId
+        ? (ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId)
+        : null;
+
+    const quizzes = await db.collection("grasp_quiz").find({
+        courseId: normalizedCourseId
+    }).sort({ createdAt: 1 }).toArray();
+
+    if (quizzes.length === 0 || !normalizedCourseId || !userId) return quizzes;
+
+    const studentCourseSectionIds = await quizScheduleService.getStudentSectionObjectIds(
+        userId,
+        normalizedCourseId
+    );
+    if (studentCourseSectionIds.length === 0) return quizzes;
+
+    const schedulesByQuiz = await quizScheduleService.getSchedulesForQuizzes(
+        quizzes.map(q => q._id.toString()),
+        studentCourseSectionIds
+    );
+
+    return quizScheduleService.orderQuizzesForStudent(
+        quizzes,
+        schedulesByQuiz,
+        studentCourseSectionIds
+    );
+};
+
+/**
  * Phase 2: Remediation Selection.
- * Identifies the student's *immediate* previous quiz chronologically. Scans for any Learning
- * Objectives marked as failed (`needsRemediation: true`) during that specific past quiz.
- * Selects 1 question per failed LO, strictly drawing from the pool of questions associated with past quizzes,
- * prioritizing the exact Bloom level where the student previously struggled.
+ * Scans every quiz the student reached before this one (per-section release order,
+ * not document creation order) for Learning Objectives marked as failed
+ * (`needsRemediation: true`). Selects 1 question per failed LO, strictly drawing from
+ * the pool of questions associated with those past quizzes, prioritizing the exact
+ * Bloom level where the student previously struggled.
  * 
  * @param {string|ObjectId} quizId - The ID of the current quiz.
  * @param {string|ObjectId} userId - The ID of the student.
@@ -512,9 +558,7 @@ const getPhase2Questions = async (quizId, userId) => {
         courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
     }).toArray();
 
-    const courseQuizzes = await db.collection("grasp_quiz").find({
-        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-    }).sort({ createdAt: 1 }).toArray();
+    const courseQuizzes = await getCourseQuizzesInStudentOrder(db, quiz.courseId, userId);
 
     const currentQuizIdx = courseQuizzes.findIndex(q => q._id.toString() === quizId.toString());
     const historicalQuizIds = courseQuizzes.slice(0, currentQuizIdx).map(q => q._id.toString());
@@ -614,12 +658,10 @@ const getPhase3Questions = async (quizId, userId) => {
         courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
     }).toArray();
 
-    const courseQuizzes = await db.collection("grasp_quiz").find({
-        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-    }).sort({ createdAt: 1 }).toArray();
+    const courseQuizzes = await getCourseQuizzesInStudentOrder(db, quiz.courseId, userId);
 
     const currentQuizIdx = courseQuizzes.findIndex(q => q._id.toString() === quizId.toString());
-    
+
     // If this is Quiz 1, there are no previous quizzes, thus no Spaced Review is possible yet
     if (currentQuizIdx <= 0) return [];
 
@@ -731,7 +773,7 @@ const getPhase3Questions = async (quizId, userId) => {
  * Orchestrator logic that fetches questions for a student view of a quiz.
  * Follows the 3-Phase Spaced Repetition process:
  * 1. New Material (1 item per valid Course LO assigned to this quiz)
- * 2. Remediation (Items failed in immediate previous quiz from student mastery)
+ * 2. Remediation (Items failed in the student's earlier quizzes from student mastery)
  * 3. Spaced Review (Pool logic testing previous positive mastery instances)
  * 
  * @param {string} quizId 

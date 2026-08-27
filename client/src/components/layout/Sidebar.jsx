@@ -3,12 +3,17 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useCourseAccess } from "../../hooks/useCourseAccess";
-import { useMyCourses } from "../../hooks/useCourses";
+import { useMyCourses, useArchivedCourses } from "../../hooks/useCourses";
 import { useCoInstructorAccess } from "../../hooks/useCoInstructorAccess";
 import { useTaAccess } from "../../hooks/useTaAccess";
 import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
 import { PATH_PERMISSION, TA_PATH_PERMISSION } from "../../lib/permissions";
+import { resolveCourseSelection } from "../../lib/courseSelection";
+
+// Sentinel <option> value: picking it opens the onboarding hub instead of
+// switching the selected course.
+const MANAGE_COURSES = "__manage_courses__";
 
 const INSTRUCTOR_ITEMS = [
   { to: "/dashboard", icon: "fa-home", label: "Dashboard" },
@@ -56,31 +61,64 @@ function NavItem({ to, icon, label }) {
 }
 
 function CourseSelector() {
-  const { isStudent } = useCurrentUser();
+  const { isFaculty, isStaff } = useCurrentUser();
   const { courses, isLoading, isError } = useMyCourses();
+  // Archived courses are excluded from /api/courses/my, so without this the
+  // effect below would eject an owner the moment they opened one from the
+  // Manage-courses hub. They stay out of the dropdown options — the hub is the
+  // way in — but they count as a valid current selection.
+  // isLoading, not isPending: the archived query is disabled for students, and
+  // a disabled query stays `pending` forever — gating on that would freeze the
+  // effect below and never settle their course selection.
+  const { courses: archivedCourses, isLoading: archivedLoading } =
+    useArchivedCourses();
   const { selectedCourse, setSelectedCourse } = useAppStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  // Keep the session course in sync with what the API says the user can access
+  // Only faculty and staff can create or join a course, so only they get a
+  // route back to the onboarding hub.
+  const canManageCourses = isFaculty || isStaff;
+
+  // Keep the session course in sync with what the API says the user can access.
+  // resolveCourseSelection is called inside the effect, not above it: the hooks
+  // hand back freshly mapped arrays on every render, so a computed result used
+  // as a dependency would re-run this on every render — and since setting a
+  // course writes a new object into the store, that would never settle. Called
+  // here it is idempotent: a valid selection resolves to "keep" and sets
+  // nothing.
   useEffect(() => {
-    if (isLoading || isError) return;
+    // Wait for the archived list too. It arrives empty while in flight, so
+    // acting on the live list alone would switch an owner out of an archived
+    // course on every page load before the archived query had answered.
+    if (isLoading || isError || archivedLoading) return;
 
-    if (courses.length === 0) {
-      // No courses (all deleted, or removed from the course) — drop any stale
-      // selection so the onboarding guard sends the user back to onboarding.
-      if (selectedCourse) setSelectedCourse(null);
-      return;
-    }
+    const next = resolveCourseSelection({ selectedCourse, courses, archivedCourses });
+    if (next.action === "switch") setSelectedCourse(next.course);
+    if (next.action === "clear") setSelectedCourse(null);
+  }, [
+    courses,
+    archivedCourses,
+    isLoading,
+    isError,
+    archivedLoading,
+    selectedCourse,
+    setSelectedCourse,
+  ]);
 
-    const stillValid =
-      selectedCourse && courses.some((course) => course.id === selectedCourse.id);
-
-    if (!stillValid) {
-      setSelectedCourse(courses[0]);
-    }
-  }, [courses, isLoading, isError, isStudent, selectedCourse, setSelectedCourse]);
+  // An archived course is a legal selection but never an option in the list,
+  // so give the <select> a matching option or it renders blank.
+  const selectedIsArchived = resolveCourseSelection({
+    selectedCourse,
+    courses,
+    archivedCourses,
+  }).isArchived;
 
   const handleChange = (event) => {
+    if (event.target.value === MANAGE_COURSES) {
+      navigate("/onboarding");
+      return;
+    }
     const course = courses.find((c) => c.id === event.target.value);
     if (course) {
       setSelectedCourse(course);
@@ -96,12 +134,8 @@ function CourseSelector() {
         <div className="text-lg font-semibold text-white">Loading...</div>
       ) : isError ? (
         <div className="italic text-white/50">Error loading courses</div>
-      ) : courses.length === 0 ? (
+      ) : courses.length === 0 && !selectedIsArchived ? (
         <div className="italic text-white/50">No course available</div>
-      ) : courses.length === 1 ? (
-        <div className="break-words text-lg font-semibold text-white">
-          {courses[0].name}
-        </div>
       ) : (
         <select
           aria-label="Select a course"
@@ -110,11 +144,19 @@ function CourseSelector() {
           className="w-full cursor-pointer appearance-none rounded-lg border border-white/20 bg-white/10 px-3 py-2.5 text-sm font-medium text-white transition-all hover:border-white/30 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 [&>option]:bg-sidebar-from [&>option]:text-white"
         >
           <option value="">Select a course...</option>
+          {selectedIsArchived && (
+            <option value={selectedCourse.id}>
+              {selectedCourse.name} (Archived)
+            </option>
+          )}
           {courses.map((course) => (
             <option key={course.id} value={course.id}>
               {course.name}
             </option>
           ))}
+          {canManageCourses && (
+            <option value={MANAGE_COURSES}>+ Manage courses...</option>
+          )}
         </select>
       )}
     </div>

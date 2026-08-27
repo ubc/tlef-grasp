@@ -3,7 +3,16 @@ const { ObjectId } = require('mongodb');
 
 /**
  * Schema: { _id, courseName, courseCode, campus,
- *           courseAccess, owner, createdAt, updatedAt }
+ *           courseAccess, owner, createdAt, updatedAt,
+ *           archived?, archivedAt?, archivedBy? }
+ *
+ * Archiving is GRASP's soft delete. `archived` is absent on every course that
+ * has never been archived, so all the lookups below filter on
+ * `archived: { $ne: true }` rather than `archived: false` — an existing course
+ * is live without a migration. Archived courses also stop reserving their
+ * courseCode and stop honouring their invite code, which is why the filter
+ * lives in getCourseByCode/getCourseByEnrollmentCode rather than at the call
+ * sites: freeing the code for next term's shell falls out of it.
  *
  * Note: academicPeriod is intentionally NOT persisted — a course shell is
  * meant to be reused across semesters. The selected sections are stored, but
@@ -71,7 +80,10 @@ async function getCourseByCode(courseCode) {
     if (!courseCode) return null;
     try {
         const db = await databaseService.connect();
-        return db.collection("grasp_course").findOne({ courseCode });
+        return db.collection("grasp_course").findOne({
+            courseCode,
+            archived: { $ne: true },
+        });
     } catch (error) {
         console.error("Error getting course by code:", error);
         throw error;
@@ -100,7 +112,7 @@ async function listCoursesForEnrollment(searchQuery) {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_course");
-        const filter = {};
+        const filter = { archived: { $ne: true } };
         if (searchQuery && String(searchQuery).trim()) {
             const q = escapeRegex(String(searchQuery).trim());
             const regex = new RegExp(q, "i");
@@ -137,15 +149,90 @@ async function getCourseByEnrollmentCode(code) {
     if (!trimmed) return null;
     try {
         const db = await databaseService.connect();
-        return db.collection("grasp_course").findOne({ courseAccess: trimmed });
+        return db.collection("grasp_course").findOne({
+            courseAccess: trimmed,
+            archived: { $ne: true },
+        });
     } catch (error) {
         console.error("Error getting course by enrollment code:", error);
         throw error;
     }
 }
 
+/**
+ * Flag a course as archived (GRASP's soft delete). Nothing else is touched:
+ * memberships, quizzes, schedules, materials, and the course's Qdrant
+ * collection all survive untouched, so unarchiving restores the course exactly
+ * as it was. Access is cut by the read filters above and by the
+ * requireActiveCourse middleware, not by mutating anything downstream.
+ * @param {string|ObjectId} courseId
+ * @param {string|ObjectId} archivedBy - The owner/admin performing the archive
+ */
+async function archiveCourse(courseId, archivedBy) {
+    const db = await databaseService.connect();
+    const id = typeof courseId === "string" ? new ObjectId(courseId) : courseId;
+    const by = typeof archivedBy === "string" && ObjectId.isValid(archivedBy)
+        ? new ObjectId(archivedBy)
+        : archivedBy;
+    return db.collection("grasp_course").updateOne(
+        { _id: id },
+        {
+            $set: {
+                archived: true,
+                archivedAt: new Date(),
+                archivedBy: by ?? null,
+                updatedAt: new Date(),
+            },
+        }
+    );
+}
+
+/**
+ * Restore an archived course, optionally under a new course code (the caller
+ * checks for a collision first — archiving released the old code, so another
+ * shell may hold it by now).
+ * @param {string|ObjectId} courseId
+ * @param {string} [courseCode] - Replacement code, when the original is taken
+ */
+async function unarchiveCourse(courseId, courseCode) {
+    const db = await databaseService.connect();
+    const id = typeof courseId === "string" ? new ObjectId(courseId) : courseId;
+    const update = {
+        $unset: { archived: "", archivedAt: "", archivedBy: "" },
+        $set: { updatedAt: new Date() },
+    };
+    if (courseCode) update.$set.courseCode = courseCode;
+    return db.collection("grasp_course").updateOne({ _id: id }, update);
+}
+
+/**
+ * Archived courses owned by a user — the backing list for the "Archived
+ * courses" tab in the Manage-courses hub.
+ *
+ * Deliberately scoped to ownership rather than to isCourseManager: an app
+ * administrator manages every course, and a list of every archived course in
+ * the deployment is not a useful page. Administrators can still open any
+ * archived course by id.
+ * @param {string|ObjectId} ownerId
+ */
+async function listArchivedCoursesForOwner(ownerId) {
+    if (!ownerId) return [];
+    const db = await databaseService.connect();
+    const id = typeof ownerId === "string" && ObjectId.isValid(ownerId)
+        ? new ObjectId(ownerId)
+        : ownerId;
+    return db
+        .collection("grasp_course")
+        .find({ archived: true, $or: [{ owner: id }, { owner: String(ownerId) }] })
+        .sort({ archivedAt: -1 })
+        .toArray();
+}
+
 module.exports = {
     createCourse,
+    archiveCourse,
+    unarchiveCourse,
+    listArchivedCoursesForOwner,
     getCourseById,
     getCourseByCode,
     findAvailableCourseCode,
