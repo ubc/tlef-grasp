@@ -65,10 +65,23 @@ class DatabaseService {
       // Course codes are unique among LIVE courses only. Archiving releases a
       // course's code so next term's shell can reuse it — a plain unique index
       // would defeat that with a duplicate-key error at insert, no matter what
-      // the application-level lookups filter on. The partial filter selects
-      // exactly the documents the app treats as live: `archived` is absent on a
-      // live course (createCourse never writes it and unarchiveCourse $unsets
-      // it) and true on an archived one.
+      // the application-level lookups filter on.
+      //
+      // The filter has to be plain equality on an explicit `archived: false`.
+      // partialFilterExpression accepts only a restricted grammar (equality,
+      // $exists:true, $type, the range operators, $and/$or/$in), so the two
+      // ways of saying "not archived" that match how the app queries —
+      // `$ne: true` and `$exists: false` — are both rejected at index build:
+      // each desugars to $not. Hence the backfill: live courses carry the
+      // field explicitly so equality can select them.
+      //
+      // It must run BEFORE the index build. Documents without `archived` fall
+      // outside the partial filter, so a shell created before this migration
+      // would stop reserving its course code entirely.
+      await this.db.collection("grasp_course").updateMany(
+        { archived: { $exists: false } },
+        { $set: { archived: false } }
+      );
       // createOrReplaceIndex upgrades the plain unique courseCode_1 index that
       // existing databases already carry.
       await this.createOrReplaceIndex(
@@ -77,7 +90,7 @@ class DatabaseService {
         {
           name: "courseCode_1",
           unique: true,
-          partialFilterExpression: { archived: { $exists: false } },
+          partialFilterExpression: { archived: false },
         }
       );
       try {
