@@ -6,13 +6,20 @@ const { ObjectId } = require('mongodb');
  *           courseAccess, owner, createdAt, updatedAt,
  *           archived?, archivedAt?, archivedBy? }
  *
- * Archiving is GRASP's soft delete. `archived` is absent on every course that
- * has never been archived, so all the lookups below filter on
- * `archived: { $ne: true }` rather than `archived: false` — an existing course
- * is live without a migration. Archived courses also stop reserving their
- * courseCode and stop honouring their invite code, which is why the filter
- * lives in getCourseByCode/getCourseByEnrollmentCode rather than at the call
- * sites: freeing the code for next term's shell falls out of it.
+ * Archiving is GRASP's soft delete. A live course carries `archived: false`
+ * and an archived one `archived: true`. The field is written explicitly rather
+ * than left absent because the unique courseCode index is partial on
+ * `archived: false`, and a partial filter cannot express "field is missing"
+ * (see initializeCollections in services/database.js, which also backfills
+ * courses predating the field).
+ *
+ * The lookups below still filter on `archived: { $ne: true }` rather than
+ * `archived: false`: it is equivalent for both shapes and stays correct for
+ * any document the backfill has not reached yet. Archived courses also stop
+ * reserving their courseCode and stop honouring their invite code, which is
+ * why the filter lives in getCourseByCode/getCourseByEnrollmentCode rather
+ * than at the call sites: freeing the code for next term's shell falls out
+ * of it.
  *
  * Note: academicPeriod is intentionally NOT persisted — a course shell is
  * meant to be reused across semesters. The selected sections are stored, but
@@ -42,6 +49,10 @@ async function createCourse(courseData) {
             courseAccess: courseData.courseAccess,
             owner: courseData.owner,
             ubcCourseId: courseData.ubcCourseId,
+            // Explicit, not absent: the partial unique index on courseCode
+            // selects `archived: false`, so a course without the field would
+            // never reserve its code.
+            archived: false,
             createdAt: now,
             updatedAt: now,
         });
@@ -198,8 +209,10 @@ async function unarchiveCourse(courseId, courseCode) {
     const db = await databaseService.connect();
     const id = typeof courseId === "string" ? new ObjectId(courseId) : courseId;
     const update = {
-        $unset: { archived: "", archivedAt: "", archivedBy: "" },
-        $set: { updatedAt: new Date() },
+        // archived goes back to an explicit false rather than being unset, so
+        // the restored course re-enters the partial unique index on courseCode.
+        $unset: { archivedAt: "", archivedBy: "" },
+        $set: { archived: false, updatedAt: new Date() },
     };
     if (courseCode) update.$set.courseCode = courseCode;
     return db.collection("grasp_course").updateOne({ _id: id }, update);

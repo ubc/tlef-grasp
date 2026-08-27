@@ -98,15 +98,15 @@ describe('course service archiving', () => {
   });
 
   describe('unarchiveCourse', () => {
-    it('clears all three archive fields', async () => {
+    it('clears the archive metadata and returns archived to an explicit false', async () => {
       await unarchiveCourse('507f1f77bcf86cd799439011');
 
       const [, update] = collection.updateOne.mock.calls[0];
-      expect(Object.keys(update.$unset).sort()).toEqual([
-        'archived',
-        'archivedAt',
-        'archivedBy',
-      ]);
+      expect(Object.keys(update.$unset).sort()).toEqual(['archivedAt', 'archivedBy']);
+      // archived is set false rather than unset: the unique courseCode index is
+      // partial on `archived: false`, so unsetting the field would drop the
+      // restored course out of the index and stop it reserving its code.
+      expect(update.$set.archived).toBe(false);
       expect(update.$set.courseCode).toBeUndefined();
     });
 
