@@ -3,31 +3,21 @@ const { BIO_PROF2_AUTH_FILE } = require('./auth');
 const { selectSeededCourse } = require('./helpers');
 
 // Course Settings for bio_prof2 (owner of the seeded BIOC 302 course): the
-// Bloom-level question-type table and invite code on the general tab, saving
-// settings, the LLM prompt editors, and the owner-only co-instructor
-// permissions tab. Nothing here regenerates the invite code (that would
-// invalidate a shared credential mid-suite). Opt-in (E2E_SAML=1).
+// invite code on the general tab, saving settings, the LLM prompt editors, and
+// the owner-only co-instructor permissions tab. Nothing here regenerates the
+// invite code (that would invalidate a shared credential mid-suite). Opt-in
+// (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 
 test.describe('Instructor course settings (seeded course)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
   test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
-  test('shows the Bloom mapping table and a course invite code', async ({
+  test('shows a course invite code and no Bloom mapping table', async ({
     page,
   }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/settings');
-
-    await expect(
-      page.getByRole('heading', { name: 'Question Type by Bloom Level' })
-    ).toBeVisible();
-    // One primary-type select per Bloom level, hydrated with a value.
-    for (const level of ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']) {
-      await expect(
-        page.getByLabel(`Default question type for ${level}`)
-      ).toHaveValue(/.+/);
-    }
 
     // The invite code loads from the API into the read-only field.
     await expect(page.getByLabel('Current invite code')).toHaveValue(/.+/);
@@ -35,6 +25,15 @@ test.describe('Instructor course settings (seeded course)', () => {
     await expect(
       page.getByRole('button', { name: 'Regenerate code' })
     ).toBeVisible();
+
+    // The per-course Bloom-to-question-type mapping is retired: instructors now
+    // choose types per (granular objective, Bloom level) during generation,
+    // which supersedes a course-wide default. Asserted absent rather than just
+    // dropped from this test, so the setting cannot quietly return.
+    await expect(
+      page.getByRole('heading', { name: 'Question Type by Bloom Level' })
+    ).toHaveCount(0);
+    await expect(page.getByLabel('Default question type for Remember')).toHaveCount(0);
   });
 
   test('saves the course settings', async ({ page }) => {
