@@ -1,4 +1,5 @@
-import { QUESTION_TYPES } from "../../lib/constants";
+import { QUESTION_TYPES, MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
+import { pairCount } from "../../lib/questionTypes";
 import { formatQuestionTypeLabel } from "../../lib/utils";
 
 const TYPE_ORDER = [
@@ -10,9 +11,19 @@ const TYPE_ORDER = [
 
 // Per-Bloom-level breakdown of how many questions of each type to generate.
 // Rendered below the Bloom chip row when a selected chip is expanded.
-export default function BloomTypePanel({ bloomLevel, questionTypes, onChangeCount }) {
-  const countFor = (type) =>
-    questionTypes.find((qt) => qt.questionType === type)?.count || 0;
+//
+// Taking every count for this level to zero deselects the level: selection is
+// derived from these numbers rather than tracked alongside them.
+export default function BloomTypePanel({
+  bloomLevel,
+  questionTypes,
+  objectiveTotal,
+  onChangeCount,
+}) {
+  // pairCount sums, matching the card's total and the chip badge. Reading the
+  // first match instead would show a different number for the same data.
+  const countFor = (type) => pairCount(questionTypes, bloomLevel, type);
+  const objectiveFull = objectiveTotal >= MAX_QUESTIONS_PER_OBJECTIVE;
 
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-page p-3">
@@ -45,7 +56,12 @@ export default function BloomTypePanel({ bloomLevel, questionTypes, onChangeCoun
                 <button
                   type="button"
                   aria-label={`Increase ${label} count for ${bloomLevel}`}
-                  disabled={count >= 5}
+                  title={
+                    objectiveFull
+                      ? `This objective is at its limit of ${MAX_QUESTIONS_PER_OBJECTIVE} questions`
+                      : undefined
+                  }
+                  disabled={objectiveFull}
                   onClick={() => onChangeCount(type, 1)}
                   className="flex h-5 w-5 items-center justify-center rounded-md border border-gray-200 text-muted transition-colors hover:bg-gray-50 disabled:opacity-30"
                 >

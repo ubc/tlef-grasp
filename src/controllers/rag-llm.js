@@ -20,7 +20,7 @@ const { generationLimiter } = require('../utils/generation-limiter');
 const { isRetryableLLMError } = require('../utils/llm-limiter');
 const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
-const { resolveGenerationQuestionType } = require('../utils/question-type-selection');
+const { resolveGenerationQuestionType, normalizeQuestionTypes } = require('../utils/question-type-selection');
 const settingsService = require('../services/settings');
 const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
@@ -29,7 +29,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -496,27 +496,30 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // bloomLevels for `count` questions, resolving type via the caller's
       // pinned type (Question Bank wizard) or the course's Bloom→type
       // preferences.
-      const validQuestionTypes = new Set(Object.values(QUESTION_TYPES));
-      let workItems = Array.isArray(questionTypes)
-        ? questionTypes
-            .filter((qt) => qt && BLOOM_LEVELS.includes(qt.bloomLevel) && validQuestionTypes.has(qt.questionType))
-            .flatMap((qt) =>
-              Array(Math.max(1, parseInt(qt.count, 10) || 1)).fill({
-                bloomLevel: qt.bloomLevel,
-                questionType: qt.questionType,
-              })
-            )
-        : [];
+      //
+      // Both branches are clamped, and both matter: every entry becomes its own
+      // sequential LLM generation (they share a conversation to keep the prompt
+      // prefix cached), so an unbounded count from the request body is a request
+      // that never returns. The typed branch shares normalizeQuestionTypes with
+      // the objective-save path — the same values used to be clamped when saved
+      // and unbounded when generated.
+      let workItems = normalizeQuestionTypes(questionTypes).flatMap((qt) =>
+        Array(qt.count).fill({
+          bloomLevel: qt.bloomLevel,
+          questionType: qt.questionType,
+        })
+      );
 
       if (workItems.length === 0) {
-        const bloomTypePrefs = settings?.bloomTypePreferences || DEFAULT_BLOOM_TYPE_PREFERENCES;
-        const fallbackCount = parseInt(count) || bloomLevels.length || 1;
+        const fallbackCount = Math.min(
+          MAX_QUESTIONS_PER_OBJECTIVE,
+          parseInt(count) || bloomLevels.length || 1
+        );
         workItems = Array.from({ length: fallbackCount }, (_, i) => ({
           bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
           questionType: resolveGenerationQuestionType({
             requestedType: requestedQuestionType,
             bloomLevel: bloomLevels[i % bloomLevels.length] || 'Understand',
-            bloomTypePreferences: bloomTypePrefs,
           }),
         }));
       }
@@ -1065,19 +1068,18 @@ Include foundational concepts, practical applications, and assessment criteria.`
                 // and whose type/count are valid. Any Bloom level left with no
                 // valid entry gets a default type so the UI never shows an
                 // empty per-type breakdown for a selected level.
-                const validQuestionTypes = Object.values(QUESTION_TYPES);
-                const questionTypes = Array.isArray(go.questionTypes)
-                  ? go.questionTypes
-                      .filter((qt) => qt && bloomTaxonomies.includes(qt.bloomLevel) && validQuestionTypes.includes(qt.questionType))
-                      .map((qt) => ({
-                        bloomLevel: qt.bloomLevel,
-                        questionType: qt.questionType,
-                        count: Math.min(5, Math.max(1, parseInt(qt.count, 10) || 1)),
-                      }))
-                  : [];
+                const questionTypes = normalizeQuestionTypes(go.questionTypes, {
+                  allowedBloomLevels: bloomTaxonomies,
+                });
                 bloomTaxonomies.forEach((level) => {
                   if (!questionTypes.some((qt) => qt.bloomLevel === level)) {
-                    const fallbackType = (DEFAULT_BLOOM_TYPE_PREFERENCES[level] || [])[0] || QUESTION_TYPES.MULTIPLE_CHOICE;
+                    // The schema asks the model for a type per Bloom level but
+                    // cannot enforce it, so this is the only place a type is
+                    // chosen for a level it skipped. The instructor adjusts it
+                    // per level in the generation step, which is why there is no
+                    // course-wide override to consult here.
+                    const fallbackType = (DEFAULT_BLOOM_TYPE_PREFERENCES[level] || [])[0]
+                      || QUESTION_TYPES.MULTIPLE_CHOICE;
                     questionTypes.push({ bloomLevel: level, questionType: fallbackType, count: 1 });
                   }
                 });

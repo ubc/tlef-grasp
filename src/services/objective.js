@@ -2,6 +2,7 @@ const databaseService = require('./database');
 const objectiveMaterialService = require('./objective-material');
 const questionService = require('./question');
 const { ObjectId } = require('mongodb');
+const { normalizeQuestionTypes } = require('../utils/question-type-selection');
 
 /**
  * Get all parent learning objectives (parent = 0) for a specific course
@@ -154,8 +155,13 @@ const createObjective = async (objectiveData) => {
       const granularObjectives = objectiveData.granularObjectives.map((granular) => ({
         name: granular.text || granular.name,
         bloomTaxonomies: granular.bloomTaxonomies || [],
-        questionCount: granular.questionCount || 2,
-        questionTypes: granular.questionTypes || [],
+        // questionTypes is the sole record of how many questions an objective
+        // wants: the total is the sum of its counts. questionCount is no longer
+        // written — a second copy of the same number could only ever disagree
+        // with this one. Reads still tolerate it on rows that predate the change.
+        questionTypes: normalizeQuestionTypes(granular.questionTypes, {
+          allowedBloomLevels: granular.bloomTaxonomies,
+        }),
         parent: parentId,
         courseId: courseIdObj,
         createdAt: new Date(),
@@ -323,16 +329,18 @@ const updateObjective = async (objectiveId, updateData) => {
             id: granularId,
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
-            questionCount: granular.questionCount || 2,
-            questionTypes: granular.questionTypes || [],
+            questionTypes: normalizeQuestionTypes(granular.questionTypes, {
+              allowedBloomLevels: granular.bloomTaxonomies,
+            }),
           });
         } else {
           // New granular objective - create it
           granularToCreate.push({
             name: granular.text || granular.name,
             bloomTaxonomies: granular.bloomTaxonomies || [],
-            questionCount: granular.questionCount || 2,
-            questionTypes: granular.questionTypes || [],
+            questionTypes: normalizeQuestionTypes(granular.questionTypes, {
+              allowedBloomLevels: granular.bloomTaxonomies,
+            }),
             parent: id,
             courseId: courseIdForGranular,
             createdAt: new Date(),
@@ -346,10 +354,13 @@ const updateObjective = async (objectiveId, updateData) => {
         const update = {
           name: granular.name,
           bloomTaxonomies: granular.bloomTaxonomies,
-          questionCount: granular.questionCount,
           questionTypes: granular.questionTypes,
           updatedAt: new Date()
         };
+        // Any stale questionCount already on the document is left in place
+        // rather than unset: on a row that has no questionTypes it is still the
+        // only record of how many questions the objective wanted, and that is
+        // exactly what the client reads to seed one.
         // Update courseId if provided
         if (courseIdForGranular) {
           update.courseId = courseIdForGranular;

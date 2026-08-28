@@ -19,19 +19,6 @@ import {
   MoodleConnectionPanel,
 } from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
-import {
-  QUESTION_TYPES,
-  DEFAULT_BLOOM_TYPE_PREFERENCES,
-  BLOOM_LEVELS,
-} from "../lib/constants";
-import { BLOOM_BADGE_COLORS } from "../lib/bloom";
-
-const TYPE_LABELS = {
-  [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
-  [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill-in-the-blank",
-  [QUESTION_TYPES.CALCULATION]: "Calculation",
-  [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
-};
 
 // Pipeline stages a course owner can tune, keyed to the server's
 // OPERATION_GROUPS so the labels match what the usage report prints.
@@ -182,11 +169,6 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState(
     canvasReturnState ? "canvas" : openMoodleSettings ? "moodle" : "general"
   );
-  const [bloomPrimary, setBloomPrimary] = useState(() =>
-    Object.fromEntries(
-      BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
-    )
-  );
   const [prompts, setPrompts] = useState(() => buildPromptState());
   // Co-instructor permission toggles (owner only). Default every feature to
   // enabled; the stored map only carries explicit restrictions.
@@ -227,16 +209,6 @@ export default function Settings() {
     if (settings.prompts) {
       setPrompts(buildPromptState(settings.prompts));
     }
-    if (settings.bloomTypePreferences) {
-      setBloomPrimary((prev) => {
-        const next = { ...prev };
-        for (const level of BLOOM_LEVELS) {
-          const prefs = settings.bloomTypePreferences[level];
-          if (prefs && prefs.length > 0) next[level] = prefs[0];
-        }
-        return next;
-      });
-    }
     setReasoningEffort(buildEffortState(settings.reasoningEffort));
     setAutoFixEnabled(settings.autoFixEnabled !== false);
     if (settings.coInstructorPermissions) {
@@ -268,19 +240,8 @@ export default function Settings() {
       showToast("No course selected. Please select a course first.", "error");
       return;
     }
-    // Primary first, then the default fallbacks minus the primary
-    const bloomTypePreferences = Object.fromEntries(
-      BLOOM_LEVELS.map((level) => {
-        const primary = bloomPrimary[level];
-        const rest = DEFAULT_BLOOM_TYPE_PREFERENCES[level].filter(
-          (type) => type !== primary
-        );
-        return [level, [primary, ...rest]];
-      })
-    );
     saveMutation.mutate({
       prompts,
-      bloomTypePreferences,
       // Only the owner may change co-instructor permissions or the generation
       // controls; the server strips them from a non-owner's update regardless.
       ...(isOwner
@@ -295,15 +256,6 @@ export default function Settings() {
           }
         : {}),
     });
-  };
-
-  const handleResetBloom = () => {
-    setBloomPrimary(
-      Object.fromEntries(
-        BLOOM_LEVELS.map((level) => [level, DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]])
-      )
-    );
-    showToast("Bloom defaults restored — click Save All Changes to apply.", "info");
   };
 
   const handleCopyCode = async () => {
@@ -414,70 +366,6 @@ export default function Settings() {
 
       {activeTab === "general" && (
         <div className="space-y-8">
-          <section className="rounded-2xl bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-ink">
-              Question Type by Bloom Level
-            </h2>
-            <p className="mt-1 mb-5 text-sm text-muted">
-              Set the primary question type generated for each Bloom's Taxonomy level.
-              Changes apply to this course only. The default mapping is used when no
-              override is set.
-            </p>
-
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-muted">
-                  <th className="py-2 pr-4 font-semibold">Bloom's Level</th>
-                  <th className="py-2 pr-4 font-semibold">Primary Question Type</th>
-                  <th className="py-2 font-semibold">Default</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BLOOM_LEVELS.map((level) => (
-                  <tr key={level} className="border-b border-gray-100">
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${BLOOM_BADGE_COLORS[level]}`}
-                      >
-                        {level}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <select
-                        aria-label={`Default question type for ${level}`}
-                        value={bloomPrimary[level]}
-                        onChange={(event) =>
-                          setBloomPrimary((prev) => ({
-                            ...prev,
-                            [level]: event.target.value,
-                          }))
-                        }
-                        className="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-ink focus:border-primary focus:outline-none"
-                      >
-                        {Object.values(QUESTION_TYPES).map((type) => (
-                          <option key={type} value={type}>
-                            {TYPE_LABELS[type]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-3 text-muted">
-                      {TYPE_LABELS[DEFAULT_BLOOM_TYPE_PREFERENCES[level][0]]}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-
-            <div className="mt-4">
-              <button type="button" onClick={handleResetBloom} className={secondaryBtnClass}>
-                <i className="fas fa-undo" /> Reset to Defaults
-              </button>
-            </div>
-          </section>
-
           <section className="rounded-2xl bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-ink">Course invite code</h2>
             <p className="mt-1 mb-5 text-sm text-muted">

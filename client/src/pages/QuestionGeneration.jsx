@@ -251,7 +251,6 @@ export default function QuestionGeneration() {
     }
     let firstError = null;
     let hasBloomError = false;
-    let hasTypeError = false;
 
     objectiveGroups.forEach((group) => {
       if (group.items.length === 0) {
@@ -259,25 +258,17 @@ export default function QuestionGeneration() {
         return;
       }
       group.items.forEach((item) => {
+        // A Bloom level exists on an item only while it has a question type
+        // with a count, so "has levels" and "has something to generate" are the
+        // same condition — an item whose types were all zeroed arrives here with
+        // no levels and is caught by this one check.
         if (item.mode !== "manual") return;
-        if (item.bloom.length === 0) {
-          hasBloomError = true;
-          return;
-        }
-        const questionTypes = item.questionTypes || [];
-        if (questionTypes.length > 0) {
-          const missingTypeLevel = item.bloom.some(
-            (level) => !questionTypes.some((qt) => qt.bloomLevel === level && qt.count > 0)
-          );
-          if (missingTypeLevel) hasTypeError = true;
-        }
+        if (item.bloom.length === 0) hasBloomError = true;
       });
     });
 
-    if (firstError || hasBloomError || hasTypeError) {
+    if (firstError || hasBloomError) {
       if (firstError) showToast(firstError, "error");
-      else if (hasTypeError)
-        showToast("Please choose at least one question type for each selected Bloom level", "error");
       setShowValidation(true);
       return false;
     }

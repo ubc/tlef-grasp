@@ -1,5 +1,5 @@
 const databaseService = require('./database');
-const { DEFAULT_PROMPTS, DEFAULT_BLOOM_TYPE_PREFERENCES } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS } = require('../constants/app-constants');
 
 // Mapping between hierarchical object structure and DB flat keys
 const KEY_MAP = {
@@ -9,7 +9,6 @@ const KEY_MAP = {
     'prompts.powerPointImageDescription': 'prompt_powerpoint_image_description',
     'prompts.openEndedGrading': 'prompt_open_ended_grading',
     'prompts.fillInTheBlankGrading': 'prompt_fill_in_the_blank_grading',
-    'bloomTypePreferences': 'bloom_type_preferences',
     'coInstructorPermissions': 'co_instructor_permissions',
     // Owner-only generation controls. The controller strips both from an update
     // by a non-owner, the same way it does for coInstructorPermissions.
@@ -37,7 +36,6 @@ const getSettings = async (courseId) => {
         // Reconstruct the hierarchical settings object
         const settings = {
             prompts: {},
-            bloomTypePreferences: null,
             coInstructorPermissions: {},
             // Per-pipeline-stage reasoning effort. An absent stage falls back to
             // the LLM_EFFORT_* env vars and then to "medium" (see llm-effort.js),
@@ -62,19 +60,6 @@ const getSettings = async (courseId) => {
             } else {
                 settings.prompts[promptKey] = DEFAULT_PROMPTS[promptKey];
             }
-        }
-
-        // Resolve bloomTypePreferences: parse stored JSON or fall back to default.
-        const bloomDbKey = KEY_MAP['bloomTypePreferences'];
-        const storedBloom = settingsMap[bloomDbKey];
-        if (storedBloom) {
-            try {
-                settings.bloomTypePreferences = JSON.parse(storedBloom);
-            } catch {
-                settings.bloomTypePreferences = DEFAULT_BLOOM_TYPE_PREFERENCES;
-            }
-        } else {
-            settings.bloomTypePreferences = DEFAULT_BLOOM_TYPE_PREFERENCES;
         }
 
         // Resolve co-instructor permissions: a map of feature key -> boolean.
@@ -130,8 +115,9 @@ const updateSettings = async (courseId, updateData) => {
         // Function to flatten and create bulk ops.
         // KEY_MAP is checked first: if the current path maps to a DB key, store it directly
         // (serializing objects/arrays to JSON). Only recurse into plain objects that are NOT
-        // themselves a top-level key — this prevents bloomTypePreferences from being
-        // flattened into per-level entries.
+        // themselves a top-level key — this prevents object-valued settings like
+        // coInstructorPermissions and reasoningEffort from being flattened into
+        // one entry per inner key.
         const processUpdates = (obj, prefix = '') => {
             for (const key in obj) {
                 const path = prefix ? `${prefix}.${key}` : key;

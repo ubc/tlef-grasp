@@ -6,6 +6,13 @@ import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import AIGenerateModal from "./AIGenerateModal";
 import ObjectiveGroupCard from "./ObjectiveGroupCard";
+import {
+  questionTypesFor,
+  selectedBloomLevels,
+  totalQuestions,
+  defaultTypeForLevel,
+} from "../../lib/questionTypes";
+import { MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
 
 /* ------------------------------ Main step 1 ------------------------------ */
 
@@ -49,6 +56,34 @@ export default function ObjectivesStep({
     );
   };
 
+  // `bloom` and `count` are projections of questionTypes, never independent
+  // state: a level is selected exactly when it has a type with a count, and the
+  // total is the sum of those counts. Every mutation goes through here so the
+  // three cannot drift apart — they used to, and a stale `count` was what made
+  // an objective generate a number of questions nobody had chosen.
+  const withQuestionTypes = (item, questionTypes) => ({
+    ...item,
+    questionTypes,
+    bloom: selectedBloomLevels(questionTypes),
+    count: totalQuestions(questionTypes),
+  });
+
+  // Build the editor's view of a granular objective. Objectives saved before
+  // question types existed get an equivalent breakdown seeded from their Bloom
+  // levels and question count, so they open configured rather than blank.
+  const itemFromGranular = (granular, id) =>
+    withQuestionTypes(
+      {
+        id,
+        granularId: granular._id ? String(granular._id) : null,
+        text: granular.name,
+        mode: "manual",
+        level: 1,
+        selected: false,
+      },
+      questionTypesFor(granular)
+    );
+
   // Persist a group's full objective record (name, materials, granular list).
   // Granulars removed from this page are only detached, never deleted: the
   // server treats any granular missing from this payload as a deletion, so
@@ -57,10 +92,11 @@ export default function ObjectivesStep({
     if (!group?.objectiveId || !course?.id) return;
     const granularObjectives = [...group.items, ...(group.detachedItems || [])].map(
       (item) => {
+        // No questionCount: questionTypes carries the total, and a second copy
+        // of the same number could only ever disagree with it.
         const granularObj = {
           text: item.text,
           bloomTaxonomies: item.bloom || [],
-          questionCount: item.count,
           questionTypes: item.questionTypes || [],
         };
         if (item.granularId) granularObj.id = item.granularId;
@@ -126,28 +162,9 @@ export default function ObjectivesStep({
         title: objectiveName,
         isOpen: true,
         materialIds,
-        items: granularObjectives.map((granular, index) => {
-          const questionTypes = granular.questionTypes || [];
-          const typedTotal = questionTypes.reduce((sum, qt) => sum + (qt.count || 0), 0);
-          return {
-            id: parseFloat(`${newGroupNumber}.${index + 1}`),
-            granularId: granular._id ? String(granular._id) : null,
-            text: granular.name,
-            bloom:
-              granular.bloomTaxonomies && granular.bloomTaxonomies.length > 0
-                ? granular.bloomTaxonomies
-                : [],
-            questionTypes,
-            minQuestions: 2,
-            count:
-              typedTotal > 0
-                ? typedTotal
-                : granular.questionCount || Math.max(2, granular.bloomTaxonomies?.length || 0),
-            mode: "manual",
-            level: 1,
-            selected: false,
-          };
-        }),
+        items: granularObjectives.map((granular, index) =>
+          itemFromGranular(granular, parseFloat(`${newGroupNumber}.${index + 1}`))
+        ),
       };
       setObjectiveGroups((prev) => [...prev, newGroup]);
     } catch (error) {
@@ -167,22 +184,9 @@ export default function ObjectivesStep({
           title: objective.name,
           isOpen: true,
           materialIds,
-          items: (granulars || []).map((granular, gIdx) => {
-            const questionTypes = granular.questionTypes || [];
-            const typedTotal = questionTypes.reduce((sum, qt) => sum + (qt.count || 0), 0);
-            return {
-              id: parseFloat(`${newGroupNumber}.${gIdx + 1}`),
-              granularId: String(granular._id),
-              text: granular.name,
-              bloom: granular.bloomTaxonomies || [],
-              questionTypes,
-              minQuestions: 2,
-              count: typedTotal > 0 ? typedTotal : 2,
-              mode: "manual",
-              level: 1,
-              selected: false,
-            };
-          }),
+          items: (granulars || []).map((granular, gIdx) =>
+            itemFromGranular(granular, parseFloat(`${newGroupNumber}.${gIdx + 1}`))
+          ),
         });
       });
       return next;
@@ -190,16 +194,21 @@ export default function ObjectivesStep({
     invalidateObjectives();
   };
 
-  // Adds a Bloom level to the item's selection. Selected chips no longer
-  // deselect on click (click opens the per-type breakdown panel instead) —
-  // removal goes through removeBloomChip via the chip's × button.
+  // Selects a Bloom level by giving it a question type to generate. A level
+  // with no types would immediately read as unselected, so adding the chip and
+  // seeding its default type are the same action. Clicking an already-selected
+  // chip opens its breakdown panel instead of deselecting; deselecting happens
+  // by zeroing the level's types there.
   const toggleBloomChip = (group, item, level) => {
     if (item.mode !== "manual") return;
     updateGroup(group.id, (g) => {
       const items = g.items.map((i) => {
         if (i.id !== item.id || i.bloom.includes(level)) return i;
-        const bloom = [...i.bloom, level];
-        return { ...i, bloom, count: Math.max(i.count, bloom.length) };
+        if (totalQuestions(i.questionTypes) >= MAX_QUESTIONS_PER_OBJECTIVE) return i;
+        return withQuestionTypes(i, [
+          ...(i.questionTypes || []),
+          { bloomLevel: level, questionType: defaultTypeForLevel(level), count: 1 },
+        ]);
       });
       const updated = { ...g, items };
       if (g.objectiveId) saveObjectiveToDatabase(updated);
@@ -207,28 +216,12 @@ export default function ObjectivesStep({
     });
   };
 
-  const removeBloomChip = (group, item, level) => {
-    if (item.mode !== "manual") return;
-    updateGroup(group.id, (g) => {
-      const items = g.items.map((i) => {
-        if (i.id !== item.id) return i;
-        const bloom = i.bloom.filter((b) => b !== level);
-        const questionTypes = (i.questionTypes || []).filter((qt) => qt.bloomLevel !== level);
-        const count =
-          questionTypes.length > 0
-            ? questionTypes.reduce((sum, qt) => sum + qt.count, 0)
-            : i.count;
-        return { ...i, bloom, questionTypes, count };
-      });
-      const updated = { ...g, items };
-      if (g.objectiveId) saveObjectiveToDatabase(updated);
-      return updated;
-    });
-  };
-
-  // Adjust the count for one (bloomLevel, questionType) pair on a granular
-  // item. Once an item has any questionTypes entry, its total question count
-  // is derived from these counts rather than the legacy manual stepper.
+  // Adjust the count for one (bloomLevel, questionType) pair. Dropping a pair
+  // to zero removes it, and when that was the level's last type the level
+  // deselects — which is the only way to deselect one. Zeroing every level
+  // leaves the objective with no Bloom levels, which validateStep1 already
+  // blocks, so there is no state where an objective silently generates
+  // something other than what the panel shows.
   const changeTypeCount = (group, item, bloomLevel, questionType, delta) => {
     updateGroup(group.id, (g) => {
       const items = g.items.map((i) => {
@@ -237,6 +230,8 @@ export default function ObjectivesStep({
         const idx = existing.findIndex(
           (qt) => qt.bloomLevel === bloomLevel && qt.questionType === questionType
         );
+        if (delta > 0 && totalQuestions(existing) >= MAX_QUESTIONS_PER_OBJECTIVE) return i;
+
         let next;
         if (idx === -1) {
           if (delta <= 0) return i;
@@ -245,31 +240,13 @@ export default function ObjectivesStep({
           const newCount = existing[idx].count + delta;
           if (newCount <= 0) {
             next = existing.filter((_, j) => j !== idx);
-          } else if (newCount > 5) {
-            return i;
           } else {
             next = existing.map((qt, j) => (j === idx ? { ...qt, count: newCount } : qt));
           }
         }
-        const count = next.reduce((sum, qt) => sum + qt.count, 0);
-        return { ...i, questionTypes: next, count };
+        return withQuestionTypes(i, next);
       });
       const updated = { ...g, items };
-      saveObjectiveToDatabase(updated);
-      return updated;
-    });
-  };
-
-  const changeCount = (group, item, delta) => {
-    const minAllowed = Math.max(2, item.bloom?.length || 0);
-    const next = item.count + delta;
-    if (delta > 0 && item.count >= 9) return;
-    if (delta < 0 && item.count <= minAllowed) return;
-    updateGroup(group.id, (g) => {
-      const updated = {
-        ...g,
-        items: g.items.map((i) => (i.id === item.id ? { ...i, count: next } : i)),
-      };
       saveObjectiveToDatabase(updated);
       return updated;
     });
@@ -320,13 +297,15 @@ export default function ObjectivesStep({
       ...g,
       items: [
         ...g.items,
+        // Starts with no Bloom levels, so no question types and a total of
+        // zero. Picking a chip seeds its type and the total follows.
         {
           id: Date.now() + g.items.length + 1,
           granularId: null,
           text: "",
           bloom: [],
-          minQuestions: 2,
-          count: 2,
+          questionTypes: [],
+          count: 0,
           mode: "manual",
           level: 1,
           selected: false,
@@ -362,17 +341,25 @@ export default function ObjectivesStep({
         templates(parent)
           .slice(0, granularCount)
           .forEach((template, i) => {
-            newItems.push({
-              id: parseFloat(`${parent.id}.${i + 1}`),
-              text: template.title,
-              bloom: template.bloom,
-              minQuestions: 1,
-              count: 1,
-              mode: "manual",
-              level: 2,
-              parentId: parent.id,
-              selected: false,
-            });
+            // Templates arrive with Bloom levels already chosen, so seed a
+            // type for each — otherwise they would render as unselected.
+            newItems.push(
+              withQuestionTypes(
+                {
+                  id: parseFloat(`${parent.id}.${i + 1}`),
+                  text: template.title,
+                  mode: "manual",
+                  level: 2,
+                  parentId: parent.id,
+                  selected: false,
+                },
+                (template.bloom || []).map((level) => ({
+                  bloomLevel: level,
+                  questionType: defaultTypeForLevel(level),
+                  count: 1,
+                }))
+              )
+            );
           });
       });
       return {
@@ -481,8 +468,6 @@ export default function ObjectivesStep({
               onCommitTitle={(value) => commitGroupTitle(group, value)}
               onCommitItemText={(item, value) => commitItemText(group, item, value)}
               onToggleBloom={(item, level) => toggleBloomChip(group, item, level)}
-              onRemoveBloom={(item, level) => removeBloomChip(group, item, level)}
-              onChangeCount={(item, delta) => changeCount(group, item, delta)}
               onChangeTypeCount={(item, bloomLevel, questionType, delta) =>
                 changeTypeCount(group, item, bloomLevel, questionType, delta)
               }

@@ -364,6 +364,26 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
  */
 const MAX_MATERIALS_PER_OBJECTIVE = 3;
 
+/**
+ * Ceiling on the total questions for ONE GRANULAR objective, summed across every
+ * Bloom level and question type it asks for. A meta objective is not capped, so a
+ * meta with several granulars can still ask for a multiple of this.
+ *
+ * Unlike MAX_MATERIALS_PER_OBJECTIVE this does bound cost: every question is its
+ * own LLM generation, and within one granular objective they run sequentially
+ * (they share a conversation so the prompt prefix stays cached), so an unclamped
+ * count is a request that never returns.
+ *
+ * Deliberately the only cap. An earlier per-pair limit constrained how the total
+ * was distributed as well as its size, which is a judgement about pedagogy rather
+ * than cost — an instructor wanting all of it as one type at one level is asking
+ * for no more work than spreading it around. Measured over 929 existing granular
+ * objectives, 97% use exactly two questions, the 99th percentile is three, and the
+ * most any has ever used is seven, so this leaves generous room while still ruling
+ * out the pathological case.
+ */
+const MAX_QUESTIONS_PER_OBJECTIVE = 20;
+
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
@@ -386,4 +406,5 @@ module.exports = {
   DEFAULT_PROMPTS,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   MAX_MATERIALS_PER_OBJECTIVE,
+  MAX_QUESTIONS_PER_OBJECTIVE,
 };

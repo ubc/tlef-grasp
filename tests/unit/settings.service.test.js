@@ -3,10 +3,7 @@ jest.mock('../../src/services/database', () => ({
 }));
 
 const databaseService = require('../../src/services/database');
-const {
-  DEFAULT_BLOOM_TYPE_PREFERENCES,
-  DEFAULT_PROMPTS,
-} = require('../../src/constants/app-constants');
+const { DEFAULT_PROMPTS } = require('../../src/constants/app-constants');
 const settingsService = require('../../src/services/settings');
 
 function mockSettingsCollection(rows = []) {
@@ -34,10 +31,6 @@ describe('settings service', () => {
           value: 'Custom PowerPoint prompt',
         },
         {
-          name: 'bloom_type_preferences',
-          value: JSON.stringify({ Remember: ['multiple-choice'] }),
-        },
-        {
           name: 'co_instructor_permissions',
           value: JSON.stringify({ settings: false, createQuiz: true }),
         },
@@ -50,22 +43,29 @@ describe('settings service', () => {
           objectiveGenerationManual: DEFAULT_PROMPTS.objectiveGenerationManual,
           powerPointImageDescription: 'Custom PowerPoint prompt',
         },
-        bloomTypePreferences: { Remember: ['multiple-choice'] },
         coInstructorPermissions: { settings: false, createQuiz: true },
       });
     });
 
     it('falls back to defaults when stored JSON is missing or malformed', async () => {
-      mockSettingsCollection([
-        { name: 'bloom_type_preferences', value: '{not json' },
-        { name: 'co_instructor_permissions', value: '{also bad' },
-      ]);
+      mockSettingsCollection([{ name: 'co_instructor_permissions', value: '{also bad' }]);
 
       await expect(settingsService.getSettings('course-1')).resolves.toMatchObject({
         prompts: DEFAULT_PROMPTS,
-        bloomTypePreferences: DEFAULT_BLOOM_TYPE_PREFERENCES,
         coInstructorPermissions: {},
       });
+    });
+
+    // Courses configured before the per-course Bloom→type mapping was retired
+    // still have the row. It must not reappear on the settings object, or a
+    // caller could start honouring a preference the UI no longer exposes.
+    it('ignores a leftover bloom_type_preferences row', async () => {
+      mockSettingsCollection([
+        { name: 'bloom_type_preferences', value: JSON.stringify({ Remember: ['open-ended'] }) },
+      ]);
+
+      const settings = await settingsService.getSettings('course-1');
+      expect(settings.bloomTypePreferences).toBeUndefined();
     });
 
     it('logs and rethrows database read errors', async () => {
@@ -95,6 +95,8 @@ describe('settings service', () => {
             objectiveGenerationAuto: 'Updated objective prompt',
             powerPointImageDescription: 'Updated PowerPoint prompt',
           },
+          // Retired: must be dropped like any other unsupported key rather than
+          // written back to a row nothing reads.
           bloomTypePreferences: { Create: ['open-ended'] },
           coInstructorPermissions: { settings: false },
           ignored: { nested: 'value' },
@@ -144,20 +146,6 @@ describe('settings service', () => {
               $set: {
                 name: 'prompt_powerpoint_image_description',
                 value: 'Updated PowerPoint prompt',
-                courseId: 'course-1',
-                updatedAt: expect.any(Date),
-              },
-            },
-            upsert: true,
-          },
-        },
-        {
-          updateOne: {
-            filter: { name: 'bloom_type_preferences', courseId: 'course-1' },
-            update: {
-              $set: {
-                name: 'bloom_type_preferences',
-                value: JSON.stringify({ Create: ['open-ended'] }),
                 courseId: 'course-1',
                 updatedAt: expect.any(Date),
               },

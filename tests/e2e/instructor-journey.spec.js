@@ -154,12 +154,10 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // Issue #31: the per-objective number must read clearly as "how many
     // questions to generate". The card totals them explicitly.
     //
-    // AI-generated objectives now come back with a per-Bloom-level question
-    // type breakdown by default (the server fills in a type for every
-    // selected level from course preferences), so the card shows the typed,
-    // read-only total here rather than the legacy +/- stepper — that stepper
-    // only remains for objectives added without a type breakdown (e.g. via
-    // "Add Objective").
+    // That number is always the derived total of the objective's per-Bloom-level
+    // question types — there is no manual stepper any more, for any objective.
+    // Adjusting it happens in a level's type panel, so nothing on the card can
+    // disagree with the breakdown underneath it.
     await expect(page.getByText('Questions', { exact: true }).first()).toBeVisible();
     await expect(
       page
@@ -169,6 +167,11 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(
       page.getByText(/Total questions to generate:\s*\d+/).first()
     ).toBeVisible();
+    // The stepper is gone rather than merely unused: an objective that reverted
+    // to it would generate a default breakdown nobody chose.
+    await expect(
+      page.getByRole('button', { name: /questions to generate for this objective/ })
+    ).toHaveCount(0);
   });
 
   test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {
@@ -343,9 +346,13 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
   });
 
   test('approves the generated questions in the question bank', async () => {
-    // Draft questions are selectable; select all and bulk-approve.
-    const rows = page.getByRole('row');
-    await expect(rows.first()).toBeVisible();
+    // Wait for question rows, not `rows.first()`: the first row is the header,
+    // which renders before the questions have loaded. Select-all is a no-op
+    // against an empty list, so checking it too early silently selects nothing
+    // and the click appears not to register.
+    await expect(
+      page.getByRole('row').filter({ hasText: /Draft|Approved/ }).first()
+    ).toBeVisible();
 
     // Not .first() over all checkboxes: the page's first checkbox is the
     // "Show flagged only" filter, which would empty the table instead.

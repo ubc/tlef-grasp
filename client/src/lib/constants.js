@@ -35,3 +35,9 @@ export const BLOOM_LEVELS = [
 // Mirrors MAX_MATERIALS_PER_OBJECTIVE in src/constants/app-constants.js.
 // The server rejects writes above this; the UI stops the instructor first.
 export const MAX_MATERIALS_PER_OBJECTIVE = 3;
+
+// Mirrors MAX_QUESTIONS_PER_OBJECTIVE in src/constants/app-constants.js — see
+// there for why this is the only cap. It bounds one GRANULAR objective's total.
+// The server clamps to it; the steppers disable at it so the instructor sees the
+// limit rather than having it silently applied.
+export const MAX_QUESTIONS_PER_OBJECTIVE = 20;
