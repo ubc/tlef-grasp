@@ -12,6 +12,10 @@ router.get("/my", coursesController.getMyCourses);
 // Archived courses the caller owns (must precede "/:courseId")
 router.get("/archived", coursesController.getArchivedCoursesHandler);
 
+// The caller's own switcher order. Literal path, so it must precede "/:courseId"
+// or "order" is parsed as a course id.
+router.put("/order", express.json(), coursesController.reorderMyCoursesHandler);
+
 // Student self-enrollment (must be before "/:courseId" so "enrollment-list" is not parsed as an id)
 router.get("/enrollment-list", coursesController.listEnrollmentCourses);
 router.post("/join-by-code", express.json(), coursesController.joinCourseByEnrollmentCode);
@@ -32,6 +36,10 @@ router.use("/:courseId", requireActiveCourse());
 
 router.post("/:courseId/join", express.json(), coursesController.joinCourseWithCode);
 router.get("/:courseId/enrollment-code", coursesController.getEnrollmentCode);
+
+// Owner-only course nickname. Below the requireActiveCourse gate on purpose:
+// an archived course is read-only, renaming it included.
+router.patch("/:courseId/nickname", express.json(), coursesController.updateCourseNicknameHandler);
 router.post(
   "/:courseId/regenerate-enrollment-code",
   express.json(),

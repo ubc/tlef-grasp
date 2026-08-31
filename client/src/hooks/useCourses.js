@@ -4,9 +4,13 @@ import { queryKeys } from "../lib/queryKeys";
 import { useCurrentUser } from "./useCurrentUser";
 import { useCourse } from "./useSections";
 import { useSelectedCourseId } from "../stores/appStore";
+import { courseLabel } from "../lib/academicPeriod";
 
-// Courses the current user can access, normalized to { id, name }.
-// Students and staff use different endpoints.
+// Courses the current user can access, normalized to { id, name, label }.
+// `label` is the one-line switcher string (name + nickname + academic period);
+// `name` stays the bare course name for everything that just needs to say which
+// course is selected. Students and staff use different endpoints.
+// The server returns them in the user's own saved order.
 export function useMyCourses() {
   const { user, isStudent } = useCurrentUser();
 
@@ -19,11 +23,14 @@ export function useMyCourses() {
 
   return {
     ...query,
-    courses: (query.data?.courses || []).map((course) => ({
-      ...course,
-      id: course._id || course.id,
-      name: course.name || course.courseName || "Unknown Course",
-    })),
+    courses: (query.data?.courses || []).map((course) => {
+      const normalized = {
+        ...course,
+        id: course._id || course.id,
+        name: course.name || course.courseName || "Unknown Course",
+      };
+      return { ...normalized, label: courseLabel(normalized) };
+    }),
   };
 }
 
@@ -53,10 +60,16 @@ export function useStudentCourses() {
 
   return {
     ...query,
-    courses: (query.data?.courses || []).map((course) => ({
-      id: course._id || course.id,
-      name: course.name || course.courseName || "Unknown Course",
-    })),
+    courses: (query.data?.courses || []).map((course) => {
+      const normalized = {
+        id: course._id || course.id,
+        name: course.name || course.courseName || "Unknown Course",
+        nickname: course.nickname || "",
+        academicPeriod: course.academicPeriod || "",
+        academicPeriodName: course.academicPeriodName || "",
+      };
+      return { ...normalized, label: courseLabel(normalized) };
+    }),
   };
 }
 
@@ -156,6 +169,46 @@ export function useUnarchiveCourse(options) {
     onSuccess: (data, variables, ...rest) => {
       invalidate(variables?.courseId);
       options?.onSuccess?.(data, variables, ...rest);
+    },
+  });
+}
+
+// Invalidate every list that renders a course label or a course order: the
+// staff switcher, the hub's full profiles, and the student switcher.
+function useCourseListInvalidation() {
+  const queryClient = useQueryClient();
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ["my-courses"] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.studentCourses });
+  };
+}
+
+// Set or clear a course's nickname. Owner-only on the server; the UI only
+// offers the control to owners.
+export function useSetCourseNickname(options) {
+  const invalidate = useCourseListInvalidation();
+  return useMutation({
+    mutationFn: ({ courseId, nickname }) =>
+      api.patch(`/api/courses/${courseId}/nickname`, { nickname }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
+// Save the caller's own switcher order. Takes the full ordered list of course
+// ids rather than a move delta, matching the server: absolute positions are
+// idempotent, so an impatient double-click cannot scramble the order.
+export function useReorderCourses(options) {
+  const invalidate = useCourseListInvalidation();
+  return useMutation({
+    mutationFn: (courseIds) => api.put("/api/courses/order", { courseIds }),
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
     },
   });
 }
