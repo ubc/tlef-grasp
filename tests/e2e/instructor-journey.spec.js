@@ -222,6 +222,14 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // deletion lives in Question Bank → Learning Objectives; here the same
     // click used to persist the removal and silently delete the granular from
     // the objective in the database.
+
+    // Generation now auto-saves and leaves an editable custom objective on
+    // this shared page (#101). Start with an empty selection before loading
+    // the persisted objective whose granulars this test intends to count.
+    await navLink('Question Bank').click();
+    await navLink('Question Generation').click();
+    await expect(page.getByRole('heading', { name: 'No learning objectives yet' })).toBeVisible();
+
     const courseId = await page.evaluate(
       () =>
         JSON.parse(window.sessionStorage.getItem('grasp-selected-course') || '{}')
