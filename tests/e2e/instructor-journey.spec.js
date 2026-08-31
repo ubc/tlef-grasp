@@ -241,9 +241,13 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     );
     expect(targetObjective, 'persisted objective').toBeTruthy();
     await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+    // The list is a multi-select (#100): tick the objectives wanted, then
+    // confirm once. The confirm button counts what is checked, so its name is
+    // the assertion that exactly this one objective is about to be added.
     await page
-      .getByRole('button', { name: targetObjective.name, exact: true })
-      .click();
+      .getByRole('checkbox', { name: targetObjective.name, exact: true })
+      .check();
+    await page.getByRole('button', { name: 'Add 1 objective' }).click();
 
     // Delete the first granular row; the click also fires the objective save
     // (PUT), so wait for that round-trip before re-reading the DB.

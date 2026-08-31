@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { useCourseObjectives, useInvalidateObjectives } from "../../hooks/useObjectives";
 import { useCourseMaterials } from "../../hooks/useMaterials";
@@ -6,13 +6,15 @@ import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import AIGenerateModal from "./AIGenerateModal";
 import ObjectiveGroupCard from "./ObjectiveGroupCard";
-import {
-  questionTypesFor,
-  selectedBloomLevels,
-  totalQuestions,
-  defaultTypeForLevel,
-} from "../../lib/questionTypes";
+import { totalQuestions, defaultTypeForLevel } from "../../lib/questionTypes";
+import { appendObjectiveGroups, withQuestionTypes } from "./objectiveGroups";
+import { runPool } from "../../lib/async-pool";
 import { MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
+
+// How many objectives the "Add Existing" list loads at a time. Each one costs
+// two cheap GETs, so this only exists to keep a select-all over a large course
+// from opening a hundred connections at once.
+const OBJECTIVE_FETCH_CONCURRENCY = 4;
 
 /* ------------------------------ Main step 1 ------------------------------ */
 
@@ -26,6 +28,10 @@ export default function ObjectivesStep({
   const invalidateObjectives = useInvalidateObjectives(course?.id);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Checked-but-not-yet-added objectives, keyed by stringified _id. Discarded
+  // whenever the dropdown closes, so reopening it always starts clean.
+  const [selectedObjectiveIds, setSelectedObjectiveIds] = useState(() => new Set());
+  const [addingObjectives, setAddingObjectives] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [granularizeTarget, setGranularizeTarget] = useState(null);
@@ -36,15 +42,34 @@ export default function ObjectivesStep({
   const { objectives: dbObjectives } = useCourseObjectives(course?.id);
   const { materials: courseMaterials } = useCourseMaterials(course?.id);
 
+  // Closing always discards the pending search and selection, so reopening the
+  // list starts clean rather than resurrecting checkboxes from a session the
+  // instructor walked away from.
+  const closeDropdown = useCallback(() => {
+    setDropdownOpen(false);
+    setSearch("");
+    setSelectedObjectiveIds(new Set());
+  }, []);
+
   useEffect(() => {
     const handleClick = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
+        closeDropdown();
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }, [closeDropdown]);
+
+  const toggleObjectiveSelection = (objectiveId) => {
+    const key = String(objectiveId);
+    setSelectedObjectiveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const addedObjectiveIds = new Set(
     objectiveGroups.filter((g) => g.objectiveId).map((g) => String(g.objectiveId))
@@ -55,34 +80,6 @@ export default function ObjectivesStep({
       prev.map((group) => (group.id === groupId ? updater(group) : group))
     );
   };
-
-  // `bloom` and `count` are projections of questionTypes, never independent
-  // state: a level is selected exactly when it has a type with a count, and the
-  // total is the sum of those counts. Every mutation goes through here so the
-  // three cannot drift apart — they used to, and a stale `count` was what made
-  // an objective generate a number of questions nobody had chosen.
-  const withQuestionTypes = (item, questionTypes) => ({
-    ...item,
-    questionTypes,
-    bloom: selectedBloomLevels(questionTypes),
-    count: totalQuestions(questionTypes),
-  });
-
-  // Build the editor's view of a granular objective. Objectives saved before
-  // question types existed get an equivalent breakdown seeded from their Bloom
-  // levels and question count, so they open configured rather than blank.
-  const itemFromGranular = (granular, id) =>
-    withQuestionTypes(
-      {
-        id,
-        granularId: granular._id ? String(granular._id) : null,
-        text: granular.name,
-        mode: "manual",
-        level: 1,
-        selected: false,
-      },
-      questionTypesFor(granular)
-    );
 
   // Persist a group's full objective record (name, materials, granular list).
   // Granulars removed from this page are only detached, never deleted: the
@@ -132,65 +129,97 @@ export default function ObjectivesStep({
     }
   };
 
-  const handleObjectiveSelection = async (objectiveId, objectiveName) => {
-    const normalizedId = String(objectiveId);
-    const existing = objectiveGroups.find(
-      (group) => group.objectiveId && String(group.objectiveId) === normalizedId
-    );
-    if (existing) {
-      updateGroup(existing.id, (group) => ({ ...group, isOpen: true }));
-      return;
-    }
+  // Load everything a group needs for one objective. The two reads are
+  // independent, so they overlap; the pool below is what bounds how many
+  // objectives are in flight at once.
+  const fetchObjectiveDetail = async (objective) => {
+    const [granularData, materialsData] = await Promise.all([
+      api.get(
+        `/api/objective/${objective._id}/granular?courseId=${encodeURIComponent(course.id)}`
+      ),
+      api.get(`/api/objective/${objective._id}/materials`),
+    ]);
 
-    try {
-      const [granularData, materialsData] = await Promise.all([
-        api.get(
-          `/api/objective/${objectiveId}/granular?courseId=${encodeURIComponent(course.id)}`
-        ),
-        api.get(`/api/objective/${objectiveId}/materials`),
-      ]);
-
-      const granularObjectives = granularData.success ? granularData.objectives : [];
-      const materialIds = materialsData.success
+    return {
+      objectiveId: objective._id,
+      title: objective.name,
+      materialIds: materialsData.success
         ? materialsData.materials.map((m) => m.sourceId || m._id)
-        : [];
+        : [],
+      granulars: granularData.success ? granularData.objectives : [],
+    };
+  };
 
-      const newGroupNumber = objectiveGroups.length + 1;
-      const newGroup = {
-        id: Date.now() + Math.random(),
-        objectiveId,
-        title: objectiveName,
-        isOpen: true,
-        materialIds,
-        items: granularObjectives.map((granular, index) =>
-          itemFromGranular(granular, parseFloat(`${newGroupNumber}.${index + 1}`))
-        ),
-      };
-      setObjectiveGroups((prev) => [...prev, newGroup]);
-    } catch (error) {
-      console.error("Error fetching granular objectives:", error);
-      showToast("Failed to load granular objectives", "error");
+  // Add every checked objective in one go. Each one is an independent pair of
+  // reads, so they run through a small pool rather than all at once — checking
+  // twenty objectives should not fire forty simultaneous requests at the
+  // server. runPool reports in input order, so the groups land in the order
+  // they appear in the list regardless of which request finished first.
+  //
+  // One objective failing to load must not cost the instructor the rest of the
+  // selection: the ones that loaded are added, the ones that did not are named
+  // in a toast and stay checked so retrying is a single click.
+  const handleAddSelected = async () => {
+    const chosen = dbObjectives.filter(
+      (objective) =>
+        selectedObjectiveIds.has(String(objective._id)) &&
+        !addedObjectiveIds.has(String(objective._id))
+    );
+    if (chosen.length === 0) return;
+
+    setAddingObjectives(true);
+    try {
+      const settled = await runPool(
+        chosen.map((objective) => () => fetchObjectiveDetail(objective)),
+        { concurrency: OBJECTIVE_FETCH_CONCURRENCY }
+      );
+
+      const additions = [];
+      const failed = [];
+      settled.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          additions.push(result.value);
+          return;
+        }
+        console.error(
+          `Error fetching granular objectives for "${chosen[index].name}":`,
+          result.reason
+        );
+        failed.push(chosen[index]);
+      });
+
+      if (additions.length > 0) {
+        setObjectiveGroups((prev) => appendObjectiveGroups(prev, additions));
+      }
+
+      if (failed.length === 0) {
+        closeDropdown();
+        return;
+      }
+
+      const names = failed.map((objective) => objective.name).join(", ");
+      showToast(
+        `Failed to load ${failed.length} learning objective${failed.length === 1 ? "" : "s"}: ${names}`,
+        "error"
+      );
+      setSelectedObjectiveIds(new Set(failed.map((objective) => String(objective._id))));
+    } finally {
+      setAddingObjectives(false);
     }
   };
 
   const handleAISaved = (savedGroups) => {
-    setObjectiveGroups((prev) => {
-      const next = [...prev];
-      savedGroups.forEach(({ objective, granulars, materialIds }) => {
-        const newGroupNumber = next.length + 1;
-        next.push({
-          id: Date.now() + Math.random(),
+    setObjectiveGroups((prev) =>
+      appendObjectiveGroups(
+        prev,
+        savedGroups.map(({ objective, granulars, materialIds }) => ({
           objectiveId: objective._id,
           title: objective.name,
-          isOpen: true,
           materialIds,
-          items: (granulars || []).map((granular, gIdx) =>
-            itemFromGranular(granular, parseFloat(`${newGroupNumber}.${gIdx + 1}`))
-          ),
-        });
-      });
-      return next;
-    });
+          granulars,
+        }))
+      )
+    );
     invalidateObjectives();
   };
 
@@ -373,6 +402,40 @@ export default function ObjectivesStep({
   const filteredDbObjectives = dbObjectives.filter((objective) =>
     (objective.name || "").toLowerCase().includes(search.toLowerCase())
   );
+  // Rows the instructor can still act on: already-added objectives render, but
+  // as a disabled "already added" row, so they are neither selectable nor part
+  // of what "select all" means.
+  const selectableObjectives = filteredDbObjectives.filter(
+    (objective) => !addedObjectiveIds.has(String(objective._id))
+  );
+  const allSelectableChecked =
+    selectableObjectives.length > 0 &&
+    selectableObjectives.every((objective) =>
+      selectedObjectiveIds.has(String(objective._id))
+    );
+  // Only counts what a click on "Add" would actually add: a selection can
+  // outlive the search that made it, and an objective added since it was
+  // checked is skipped rather than duplicated.
+  const selectedCount = dbObjectives.filter(
+    (objective) =>
+      selectedObjectiveIds.has(String(objective._id)) &&
+      !addedObjectiveIds.has(String(objective._id))
+  ).length;
+
+  // Applies to the rows currently listed, leaving selections hidden by the
+  // search filter alone — narrowing the search then clearing should not
+  // silently drop objectives the instructor already picked.
+  const toggleSelectAll = () => {
+    setSelectedObjectiveIds((prev) => {
+      const next = new Set(prev);
+      selectableObjectives.forEach((objective) => {
+        const key = String(objective._id);
+        if (allSelectableChecked) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  };
 
   return (
     <div>
@@ -395,7 +458,7 @@ export default function ObjectivesStep({
         <div ref={dropdownRef} className="relative">
           <button
             type="button"
-            onClick={() => setDropdownOpen((v) => !v)}
+            onClick={() => (dropdownOpen ? closeDropdown() : setDropdownOpen(true))}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
           >
             <i className="fas fa-plus" /> Add Existing Learning Objectives
@@ -412,6 +475,25 @@ export default function ObjectivesStep({
                   className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
                 />
               </div>
+              {selectableObjectives.length > 0 && (
+                <div className="flex items-center justify-between border-b border-gray-100 px-3 py-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    disabled={addingObjectives}
+                    className="font-medium text-primary hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    {/* Both actions are scoped to the rows currently listed,
+                        so both name that count — with a search active,
+                        "Deselect all" must not read as clearing the whole
+                        selection when it only clears the matches. */}
+                    {allSelectableChecked
+                      ? `Deselect all ${selectableObjectives.length}`
+                      : `Select all ${selectableObjectives.length}`}
+                  </button>
+                  <span className="text-muted">{selectedCount} selected</span>
+                </div>
+              )}
               <ul className="max-h-60 overflow-y-auto py-1">
                 {filteredDbObjectives.length === 0 ? (
                   <li className="px-3 py-2 text-sm text-muted">
@@ -419,28 +501,72 @@ export default function ObjectivesStep({
                   </li>
                 ) : (
                   filteredDbObjectives.map((objective) => {
-                    const disabled = addedObjectiveIds.has(String(objective._id));
+                    const key = String(objective._id);
+                    const added = addedObjectiveIds.has(key);
                     return (
                       <li key={objective._id}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={async () => {
-                            setDropdownOpen(false);
-                            await handleObjectiveSelection(
-                              objective._id,
-                              objective.name
-                            );
-                          }}
-                          className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
+                        <label
+                          className={`flex items-start gap-2.5 px-3 py-2 text-sm transition-colors ${
+                            added
+                              ? "cursor-not-allowed opacity-40"
+                              : "cursor-pointer hover:bg-primary/5"
+                          }`}
                         >
-                          {objective.name}
-                        </button>
+                          <input
+                            type="checkbox"
+                            // An added objective reads as checked because it is
+                            // on the page — the disabled state and the suffix
+                            // say why it cannot be unchecked here.
+                            checked={added || selectedObjectiveIds.has(key)}
+                            disabled={added || addingObjectives}
+                            onChange={() => toggleObjectiveSelection(key)}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                          />
+                          <span className="min-w-0 flex-1 text-ink">
+                            {objective.name}
+                            {added && (
+                              <span className="ml-1.5 text-xs italic text-muted">
+                                (already added)
+                              </span>
+                            )}
+                          </span>
+                        </label>
                       </li>
                     );
                   })
                 )}
               </ul>
+              <div className="flex items-center justify-end gap-2 border-t border-gray-100 p-2">
+                <button
+                  type="button"
+                  onClick={closeDropdown}
+                  disabled={addingObjectives}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddSelected}
+                  disabled={selectedCount === 0 || addingObjectives}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-40"
+                >
+                  {addingObjectives ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin" /> Adding...
+                    </>
+                  ) : (
+                    // Counted once something is checked, so the button says
+                    // exactly what confirming will do; bare "Add objectives"
+                    // while it is disabled beats "Add 0 objectives".
+                    selectedCount === 0 ? (
+                      "Add objectives"
+                    ) : (
+                      `Add ${selectedCount} objective${selectedCount === 1 ? "" : "s"}`
+                    )
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>
