@@ -26,6 +26,74 @@ async function deleteImportedQuiz(quizName, questionTitles) {
   }
 }
 
+// A second owned section, created for the bulk-scheduling test only and removed
+// afterwards. The seeded course is shared by every spec in this suite (and the
+// student ones), so the extra section — and whatever the test schedules on it —
+// must not outlive the test.
+const SECOND_SECTION_ID = 'SEC-BIOC302-102';
+const SECOND_SECTION_NUMBER = '102';
+
+async function withSeededDb(fn) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is required for the bulk-scheduling spec');
+  const client = new MongoClient(uri, { connectTimeoutMS: 8000 });
+  await client.connect();
+  try {
+    const db = client.db(process.env.MONGODB_DB_NAME || undefined);
+    const course = await db.collection('grasp_course').findOne({ courseCode: SEED.COURSE_CODE });
+    const quiz = course
+      ? await db.collection('grasp_quiz').findOne({ courseId: course._id, name: SEED.QUIZ_NAME })
+      : null;
+    return await fn(db, { course, quiz });
+  } finally {
+    await client.close();
+  }
+}
+
+// Adds section 102 to the seeded course, owned by bio_prof2 like 101, and
+// returns the quiz's existing schedule rows so they can be put back afterwards.
+async function addSecondSection() {
+  return withSeededDb(async (db, { course, quiz }) => {
+    const prof = await db.collection('grasp_user').findOne({ puid: SEED.BIO_PROF2_PUID });
+    await db.collection('grasp_course_section').updateOne(
+      { courseId: course._id, sectionId: SECOND_SECTION_ID },
+      {
+        $set: {
+          sectionNumber: SECOND_SECTION_NUMBER,
+          academicPeriod: 'AP-SEED-W1',
+          academicPeriodName: 'Seeded Winter Term 1',
+          owner: prof._id,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          courseId: course._id,
+          sectionId: SECOND_SECTION_ID,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    return db
+      .collection('grasp_quiz_section_schedule')
+      .find({ quizId: quiz._id })
+      .toArray();
+  });
+}
+
+// Drops section 102 and restores the schedule rows the test overwrote, so the
+// seeded 101 window is exactly what the other specs expect.
+async function removeSecondSection(originalSchedules) {
+  await withSeededDb(async (db, { course, quiz }) => {
+    await db.collection('grasp_quiz_section_schedule').deleteMany({ quizId: quiz._id });
+    if (originalSchedules?.length) {
+      await db.collection('grasp_quiz_section_schedule').insertMany(originalSchedules);
+    }
+    await db
+      .collection('grasp_course_section')
+      .deleteOne({ courseId: course._id, sectionId: SECOND_SECTION_ID });
+  });
+}
+
 test.describe('Instructor seeded course management (authenticated)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
   test.use({ storageState: BIO_PROF2_AUTH_FILE });
@@ -220,6 +288,60 @@ test.describe('Instructor seeded course management (authenticated)', () => {
       quizCard.getByRole('checkbox', { name: /Disable previous question/ })
     ).not.toBeChecked();
     await expect(quizCard.getByRole('button', { name: 'Unpublish' })).toBeVisible();
+  });
+
+  // Issue #104: instructors teaching several sections had to repeat the same
+  // release/expire window once per section. The picker takes them all at once.
+  test.describe('scheduling every section at once', () => {
+    let originalSchedules = [];
+
+    test.beforeAll(async () => {
+      originalSchedules = await addSecondSection();
+    });
+
+    test.afterAll(async () => {
+      await removeSecondSection(originalSchedules);
+    });
+
+    test('applies one window to both sections in a single save', async ({ page }) => {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/quizzes');
+
+      const quizCard = getQuizCard(page, SEED.QUIZ_NAME);
+      await expect(quizCard).toBeVisible();
+      await quizCard.getByRole('button', { name: 'Schedule' }).click();
+
+      const dialog = page.getByRole('dialog', { name: 'Schedule sections' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: /Select sections/ }).click();
+
+      // 101 already has the seeded window and stays selectable — re-applying a
+      // window across a partly scheduled course is the whole point.
+      await expect(dialog.getByRole('checkbox', { name: /101\s+Scheduled/ })).toBeVisible();
+      await expect(dialog.getByRole('checkbox', { name: SECOND_SECTION_NUMBER })).toBeVisible();
+      await dialog.getByRole('checkbox', { name: 'All my sections' }).check();
+
+      await dialog.locator('input[type="datetime-local"]').first().fill('2020-01-01T00:00');
+      await dialog.locator('input[type="datetime-local"]').nth(1).fill('2100-01-01T00:00');
+
+      // One PUT carrying both sections — not one request per section.
+      const savePut = page.waitForRequest(
+        (request) => request.method() === 'PUT' && /\/api\/quiz\/.+\/schedules$/.test(request.url())
+      );
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+      const sent = (await savePut).postDataJSON();
+      expect(sent.schedules).toHaveLength(2);
+      expect(sent.schedules.map((row) => row.releaseDate)).toEqual([
+        '2020-01-01T00:00',
+        '2020-01-01T00:00',
+      ]);
+
+      await expect(dialog).toBeHidden();
+      await expect(quizCard.getByRole('button', { name: /101\s+Active/ })).toBeVisible();
+      await expect(
+        quizCard.getByRole('button', { name: new RegExp(`${SECOND_SECTION_NUMBER}\\s+Active`) })
+      ).toBeVisible();
+    });
   });
 
   test('exports the seeded quiz to JSON with objectives and quiz settings', async ({
