@@ -48,7 +48,12 @@ describe('reshapePerson', () => {
     expect(result.legalName).toBe('Robin Sageata');
   });
 
-  it('leaves legalName empty when the record has no Legal Name entry', () => {
+  // The real-world shape: the academic API returns only Preferred Name and
+  // Plain Preferred Name entries, never a Legal Name one. Leaving legalName
+  // empty here made the instructor roster render "Unknown User" for everyone,
+  // so it now falls back to the best available name. The field's remaining
+  // value is that it is API-sourced and never student-editable.
+  it('falls back to the preferred name when the record has no Legal Name entry', () => {
     const result = reshapePerson(
       person({
         personNames: [
@@ -60,7 +65,32 @@ describe('reshapePerson', () => {
     );
 
     expect(result.preferredName).toBe('Ali Abdi');
-    expect(result.legalName).toBe('');
+    expect(result.legalName).toBe('Ali Abdi');
+  });
+
+  it('falls back to the only available name when it is not typed as either', () => {
+    const result = reshapePerson(
+      person({
+        personNames: [{ nameType: 'Plain Preferred Name', givenName: 'Ali', familyName: 'Abdi' }],
+      }),
+      'student_id'
+    );
+
+    expect(result.legalName).toBe('Ali Abdi');
+  });
+
+  it('still prefers a real Legal Name entry over the preferred name', () => {
+    const result = reshapePerson(
+      person({
+        personNames: [
+          { nameType: 'Preferred Name', givenName: 'Robbie', familyName: 'Sage' },
+          { nameType: 'Legal Name', givenName: 'Robin', familyName: 'Sageata' },
+        ],
+      }),
+      'student_id'
+    );
+
+    expect(result.legalName).toBe('Robin Sageata');
   });
 
   it('prefers the Work email, falling back to Personal', () => {

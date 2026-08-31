@@ -188,7 +188,12 @@ function reshapePerson(person, idType) {
     // Preferred name if the person set one, otherwise the first available name
     // (which, for a legal-name-only record, is the legal name).
     preferredName: joinName(preferred) || joinName(names[0]),
-    legalName: joinName(legal),
+    // The academic API releases no "Legal Name" entry in practice — every
+    // record comes back with only Preferred Name / Plain Preferred Name — so
+    // fall back to the best available name rather than leaving this empty.
+    // This field is not a legal guarantee; its value to instructors is that,
+    // unlike displayName, it is always API-sourced and never student-editable.
+    legalName: joinName(legal) || joinName(preferred) || joinName(names[0]),
     email: email || personalEmail,
   };
 }
