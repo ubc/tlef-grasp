@@ -131,11 +131,24 @@ const getUserCourses = async (userId) => {
             // truthful answer is the newest term the course actually has
             // sections in.
             //
-            // Sorting the raw period code descending is chronological, not just
-            // alphabetical: within an academic year the codes read S1 < S2 <
-            // W1 < W2, which is exactly May < July < September < January. A
-            // section with no period code sorts last, so a real code always
-            // wins over a missing one.
+            // CAVEAT: "newest" here is the highest period id by plain string
+            // sort, which is NOT reliably chronological. Locally it looks
+            // correct only because the fake academic API invents readable ids
+            // (`AP-2026W1` — see seed.ts), where the alphabet happens to agree
+            // with the calendar. The real API issues opaque surrogate keys
+            // (`ACADEMIC_PERIOD-3-302`), which carry no order at all — string
+            // sort even puts `-3-99` above `-3-315`.
+            //
+            // The API does supply a true ordering (`startDate`, plus
+            // previous/nextAcademicPeriodId), and the sync toolkit already
+            // sorts by it — but ubcApiService.getAcademicPeriods drops
+            // everything except {key, title}, so the date never reaches a
+            // section document. Persisting the period start date and sorting on
+            // that is the real fix; until then this picks a stable, but not
+            // dependably newest, section.
+            //
+            // A section with no period id sorts last, so a real id always wins
+            // over a missing one.
             {
                 $lookup: {
                     from: "grasp_course_section",
