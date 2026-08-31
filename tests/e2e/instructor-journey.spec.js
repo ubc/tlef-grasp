@@ -386,20 +386,21 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(card.getByRole('heading', { name: QUIZ_NAME })).toBeVisible();
 
     // Schedule the (single owned) section with a release/expire window so the
-    // published quiz is actually visible to students.
+    // published quiz is actually visible to students. The picker takes any
+    // number of sections; with one owned section "All my sections" is it.
     await card.getByRole('button', { name: 'Schedule' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Schedule a section' })
-    ).toBeVisible();
-    await page.locator('select').last().selectOption({ index: 1 });
+    const dialog = page.getByRole('dialog', { name: 'Schedule sections' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /Select sections/ }).click();
+    await dialog.getByRole('checkbox', { name: 'All my sections' }).check();
 
-    const release = page.locator('input[type="datetime-local"]').first();
-    const expire = page.locator('input[type="datetime-local"]').nth(1);
+    const release = dialog.locator('input[type="datetime-local"]').first();
+    const expire = dialog.locator('input[type="datetime-local"]').nth(1);
     await release.fill('2020-01-01T00:00');
     await expire.fill('2100-01-01T00:00');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(
-      page.getByRole('heading', { name: 'Schedule a section' })
+      page.getByRole('heading', { name: 'Schedule sections' })
     ).toBeHidden();
 
     // Publish it.

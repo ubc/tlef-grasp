@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { toDatetimeLocal, formatDate } from "../../lib/format";
 import DeliveryFormatToggle from "../../components/DeliveryFormatToggle";
 import Modal from "../../components/ui/Modal";
+import MultiSelect from "../../components/ui/MultiSelect";
+import {
+  applyScheduleWindow,
+  schedulesWithout,
+  sectionPickerOptions,
+} from "./schedulePayload";
 import { useQuizSchedules, useUpdateQuizSchedules } from "../../hooks/useQuizzes";
 import { useToast } from "../../components/ui/Toast";
 
@@ -14,21 +20,22 @@ function scheduleStatus(row, now) {
   return { label: "Active", cls: "bg-success/15 text-success" };
 }
 
-// Create/edit one section's release/expire window.
-function ScheduleModal({ open, mode, section, available, initial, onClose, onSave, onRemove, saving }) {
-  const [courseSectionId, setCourseSectionId] = useState("");
+// Set a release/expire window: on one section when editing, on any number of
+// them when scheduling (instructors run the same window across 002, 005, ...).
+function ScheduleModal({ open, mode, section, options, initial, onClose, onSave, onRemove, saving }) {
+  const [courseSectionIds, setCourseSectionIds] = useState([]);
   const [releaseDate, setReleaseDate] = useState("");
   const [expireDate, setExpireDate] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setCourseSectionId(mode === "edit" ? section?.courseSectionId || "" : "");
+    setCourseSectionIds(mode === "edit" && section ? [section.courseSectionId] : []);
     setReleaseDate(initial?.releaseDate ? toDatetimeLocal(initial.releaseDate) : "");
     setExpireDate(initial?.expireDate ? toDatetimeLocal(initial.expireDate) : "");
   }, [open, mode, section, initial]);
 
   const valid =
-    courseSectionId &&
+    courseSectionIds.length > 0 &&
     releaseDate &&
     expireDate &&
     new Date(expireDate) > new Date(releaseDate);
@@ -37,7 +44,7 @@ function ScheduleModal({ open, mode, section, available, initial, onClose, onSav
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === "edit" ? "Edit section schedule" : "Schedule a section"}
+      title={mode === "edit" ? "Edit section schedule" : "Schedule sections"}
       footer={
         <>
           {mode === "edit" && (
@@ -59,7 +66,7 @@ function ScheduleModal({ open, mode, section, available, initial, onClose, onSav
           </button>
           <button
             type="button"
-            onClick={() => onSave({ courseSectionId, releaseDate, expireDate })}
+            onClick={() => onSave({ courseSectionIds, releaseDate, expireDate })}
             disabled={!valid || saving}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
           >
@@ -70,24 +77,28 @@ function ScheduleModal({ open, mode, section, available, initial, onClose, onSav
     >
       <div className="space-y-4">
         <div>
-          <label className="mb-1 block text-sm font-semibold text-ink">Section</label>
+          <label className="mb-1 block text-sm font-semibold text-ink">
+            {mode === "edit" ? "Section" : "Sections"}
+          </label>
           {mode === "edit" ? (
             <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-ink">
               {section?.label}
             </div>
           ) : (
-            <select
-              value={courseSectionId}
-              onChange={(event) => setCourseSectionId(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-            >
-              <option value="">Select a section…</option>
-              {available.map((s) => (
-                <option key={s.courseSectionId} value={s.courseSectionId}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            <>
+              <MultiSelect
+                value={courseSectionIds}
+                onChange={setCourseSectionIds}
+                options={options}
+                placeholder="Select sections…"
+                searchPlaceholder="Search sections…"
+                selectAllLabel="All my sections"
+              />
+              <p className="mt-1 text-xs text-muted">
+                The dates below apply to every section you pick. Picking one marked
+                “Scheduled” replaces its current window.
+              </p>
+            </>
           )}
         </div>
 
@@ -147,32 +158,18 @@ function SectionSchedule({ courseId, quizId, sections }) {
   );
 
   const now = new Date();
-  const scheduledIds = new Set(mySchedules.map((s) => s.courseSectionId));
-  const availableSections = sections
-    .filter((s) => !scheduledIds.has(s._id))
-    .map((s) => ({ courseSectionId: s._id, label: s.sectionNumber || s.sectionId }));
+  // Every owned section is offered, already-scheduled ones included, so a single
+  // save can put the same window on all of them.
+  const pickerOptions = sectionPickerOptions(sections, mySchedules);
 
-  // Rebuild the schedule payload for the sections this instructor owns (the
-  // backend replaces this instructor's set) with one section changed or removed.
-  // Untouched rows keep their stored ISO dates.
-  const payloadWithout = (courseSectionId) =>
-    mySchedules
-      .filter((s) => s.courseSectionId !== courseSectionId)
-      .map((s) => ({
-        courseSectionId: s.courseSectionId,
-        releaseDate: s.releaseDate,
-        expireDate: s.expireDate,
-      }));
-
-  const handleSave = ({ courseSectionId, releaseDate, expireDate }) => {
-    updateMutation.mutate([
-      ...payloadWithout(courseSectionId),
-      { courseSectionId, releaseDate, expireDate },
-    ]);
+  const handleSave = ({ courseSectionIds, releaseDate, expireDate }) => {
+    updateMutation.mutate(
+      applyScheduleWindow(mySchedules, { courseSectionIds, releaseDate, expireDate })
+    );
   };
 
   const handleRemove = (courseSectionId) => {
-    updateMutation.mutate(payloadWithout(courseSectionId));
+    updateMutation.mutate(schedulesWithout(mySchedules, [courseSectionId]));
   };
 
   const editing =
@@ -190,13 +187,11 @@ function SectionSchedule({ courseId, quizId, sections }) {
         <button
           type="button"
           onClick={() => setModal({ mode: "create" })}
-          disabled={sections.length === 0 || availableSections.length === 0}
+          disabled={sections.length === 0}
           title={
             sections.length === 0
               ? "Add sections to this course first"
-              : availableSections.length === 0
-                ? "All sections are scheduled"
-                : "Schedule a section"
+              : "Schedule one or more sections"
           }
           className="rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -243,7 +238,7 @@ function SectionSchedule({ courseId, quizId, sections }) {
             ? { courseSectionId: editing.courseSectionId, label: labelFor(editing.courseSectionId) }
             : null
         }
-        available={availableSections}
+        options={pickerOptions}
         initial={editing}
         saving={updateMutation.isPending}
         onClose={() => setModal(null)}
