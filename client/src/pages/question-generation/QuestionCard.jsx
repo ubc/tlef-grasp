@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
@@ -21,9 +21,21 @@ function FibBlock({ label, children }) {
   );
 }
 
-export default function QuestionCard({ question, onChange, onDelete, onSaveDraft }) {
+export default function QuestionCard({
+  question,
+  onChange,
+  onDelete,
+  onSaveDraft,
+  detailsOpen = false,
+}) {
   const showToast = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  // Objective and Bloom level are hidden by default so the question itself is
+  // what the card shows (#102). The step-level "Show objectives" toggle sets
+  // the starting state for every card; each card can still be opened on its own.
+  const [showDetails, setShowDetails] = useState(detailsOpen);
+  useEffect(() => setShowDetails(detailsOpen), [detailsOpen]);
+  const detailsId = `question-details-${question.id}`;
   // Local edit buffer so blur-commits don't fight React re-renders
   const [draft, setDraft] = useState(null);
 
@@ -240,21 +252,31 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
               className="mb-2 font-semibold text-ink"
             />
           )}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {typeChipLabel && (
               <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
                 {typeChipLabel}
               </span>
             )}
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-              {question.metaCode}
-            </span>
-            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-medium text-teal-700">
-              {question.loCode}
-            </span>
-            <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700">
-              Bloom: {question.bloom}
-            </span>
+            {/* The meta objective is the group header this card sits under, so
+                it is not repeated. The granular objective and Bloom level go
+                behind this disclosure instead. */}
+            <button
+              type="button"
+              onClick={() => setShowDetails((prev) => !prev)}
+              aria-expanded={showDetails}
+              aria-controls={detailsId}
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-0.5 text-xs font-medium text-muted transition-colors hover:bg-gray-50 hover:text-ink"
+            >
+              <i className="fas fa-circle-info" aria-hidden="true" />
+              Objective &amp; Bloom
+              <i
+                className={`fas fa-chevron-down text-[10px] transition-transform ${
+                  showDetails ? "" : "-rotate-90"
+                }`}
+                aria-hidden="true"
+              />
+            </button>
           </div>
         </div>
         <div className="shrink-0 text-right text-xs text-muted">
@@ -269,6 +291,29 @@ export default function QuestionCard({ question, onChange, onDelete, onSaveDraft
           </span>
           <div>Last Edited: {question.lastEdited}</div>
           <div>By: {question.by}</div>
+        </div>
+      </div>
+
+      {/* Kept mounted so the toggle's aria-controls always resolves. */}
+      <div
+        id={detailsId}
+        hidden={!showDetails}
+        className="mb-3 space-y-1.5 rounded-lg bg-page px-4 py-2.5"
+      >
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted uppercase">
+            Objective
+          </span>
+          <RichText
+            text={escapeHtml(question.loCode || "")}
+            className="min-w-0 flex-1 text-sm text-ink"
+          />
+        </div>
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-xs font-semibold tracking-wide text-muted uppercase">
+            Bloom
+          </span>
+          <span className="text-sm text-ink">{question.bloom}</span>
         </div>
       </div>
 

@@ -13,6 +13,10 @@ export default function QuestionsStep({
   onSaveDraft,
 }) {
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  // Sets the starting state of every card's objective/Bloom disclosure, so
+  // checking alignment across a whole batch is one click instead of one per
+  // card. Off by default (#102).
+  const [showDetails, setShowDetails] = useState(false);
 
   const updateQuestion = (questionId, updates) => {
     setQuestionGroups((prev) =>
@@ -95,7 +99,16 @@ export default function QuestionsStep({
 
   return (
     <div>
-      <div className="mb-5 flex justify-end">
+      <div className="mb-5 flex flex-wrap items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setShowDetails((prev) => !prev)}
+          aria-pressed={showDetails}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-ink transition-colors hover:bg-gray-50"
+        >
+          <i className={`fas ${showDetails ? "fa-eye-slash" : "fa-eye"}`} />
+          {showDetails ? "Hide objectives" : "Show objectives"}
+        </button>
         <button
           type="button"
           onClick={onRegenerateAll}
@@ -149,6 +162,7 @@ export default function QuestionsStep({
                           onChange={(updates) => updateQuestion(question.id, updates)}
                           onDelete={() => deleteQuestion(question.id)}
                           onSaveDraft={onSaveDraft}
+                          detailsOpen={showDetails}
                         />
                       ))}
                     </div>
