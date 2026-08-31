@@ -3,7 +3,7 @@ const { ObjectId } = require('mongodb');
 
 /**
  * Schema: { _id, courseName, courseCode, campus,
- *           courseAccess, owner, createdAt, updatedAt,
+ *           courseAccess, owner, nickname?, createdAt, updatedAt,
  *           archived?, archivedAt?, archivedBy? }
  *
  * Archiving is GRASP's soft delete. A live course carries `archived: false`
@@ -25,6 +25,17 @@ const { ObjectId } = require('mongodb');
  * meant to be reused across semesters. The selected sections are stored, but
  * the period that owned the original sync is only used transiently at create
  * time (and at any future re-sync the user explicitly initiates).
+ *
+ * The period shown next to a course in the switcher is therefore DERIVED from
+ * its sections (grasp_course_section.academicPeriod), not read from here — see
+ * getUserCourses in services/user-course.js. That keeps a reused shell showing
+ * the term it is actually being taught in rather than the term it was born in.
+ *
+ * `nickname` is the course-level label an owner can set to tell two shells of
+ * the same course apart. It is deliberately on the course rather than on the
+ * membership: one nickname, visible to co-instructors, TAs and students alike.
+ * Per-user ordering of the switcher is the opposite — that lives on the
+ * membership (grasp_user_course.displayOrder).
  */
 async function createCourse(courseData) {
     try {
@@ -144,6 +155,33 @@ async function listCoursesForEnrollment(searchQuery) {
     }
 }
 
+/**
+ * Longest nickname we will store. The switcher is a narrow sidebar <select>,
+ * so anything past this is unreadable in the place it exists to help.
+ */
+const MAX_NICKNAME_LENGTH = 60;
+
+/**
+ * Set (or clear) a course's nickname. A blank nickname unsets the field rather
+ * than storing an empty string, so the label builders can treat "absent" as the
+ * only falsy case they need to handle.
+ * @param {string|ObjectId} courseId
+ * @param {string} nickname - Trimmed and truncated; blank clears the nickname.
+ */
+async function updateCourseNickname(courseId, nickname) {
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_course");
+    const id = typeof courseId === "string" ? new ObjectId(courseId) : courseId;
+    const trimmed = String(nickname ?? "").trim().slice(0, MAX_NICKNAME_LENGTH);
+
+    const update = trimmed
+        ? { $set: { nickname: trimmed, updatedAt: new Date() } }
+        : { $unset: { nickname: "" }, $set: { updatedAt: new Date() } };
+
+    await collection.updateOne({ _id: id }, update);
+    return trimmed;
+}
+
 async function updateCourseEnrollmentCode(courseId, courseAccess) {
     const db = await databaseService.connect();
     const collection = db.collection("grasp_course");
@@ -242,7 +280,9 @@ async function listArchivedCoursesForOwner(ownerId) {
 }
 
 module.exports = {
+    MAX_NICKNAME_LENGTH,
     createCourse,
+    updateCourseNickname,
     archiveCourse,
     unarchiveCourse,
     listArchivedCoursesForOwner,

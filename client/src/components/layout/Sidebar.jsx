@@ -10,6 +10,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
 import { PATH_PERMISSION, TA_PATH_PERMISSION } from "../../lib/permissions";
 import { resolveCourseSelection } from "../../lib/courseSelection";
+import { periodLabel } from "../../lib/academicPeriod";
 
 // Sentinel <option> value: picking it opens the onboarding hub instead of
 // switching the selected course.
@@ -114,6 +115,15 @@ function CourseSelector() {
     archivedCourses,
   }).isArchived;
 
+  // The sidebar is narrow, so a closed <select> truncates its own option text —
+  // and what gets cut is exactly the nickname and period that make two shells of
+  // the same course distinguishable. The options keep the full one-line label
+  // for choosing between them; this subtitle keeps it readable once chosen.
+  const selectedDetail = courses.find((c) => c.id === selectedCourse?.id);
+  const selectedSubtitle = selectedDetail
+    ? [selectedDetail.nickname, periodLabel(selectedDetail)].filter(Boolean).join(" · ")
+    : "";
+
   const handleChange = (event) => {
     if (event.target.value === MANAGE_COURSES) {
       navigate("/onboarding");
@@ -149,15 +159,23 @@ function CourseSelector() {
               {selectedCourse.name} (Archived)
             </option>
           )}
+          {/* label, not name: the nickname and academic period are what tell
+              two shells of the same course apart. It falls back to the bare
+              name when a course has neither. */}
           {courses.map((course) => (
-            <option key={course.id} value={course.id}>
-              {course.name}
+            <option key={course.id} value={course.id} title={course.label || course.name}>
+              {course.label || course.name}
             </option>
           ))}
           {canManageCourses && (
             <option value={MANAGE_COURSES}>+ Manage courses...</option>
           )}
         </select>
+      )}
+      {selectedSubtitle && (
+        <p className="mt-1.5 truncate text-xs text-white/60" title={selectedSubtitle}>
+          {selectedSubtitle}
+        </p>
       )}
     </div>
   );

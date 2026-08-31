@@ -125,6 +125,56 @@ const getUserCourses = async (userId) => {
             // (course row missing) has no `course.archived` and still passes,
             // preserving the existing behaviour for those.
             { $match: { "course.archived": { $ne: true } } },
+            // Derive the course's academic period from its sections. The period
+            // is deliberately not stored on the course (see the schema note in
+            // services/course.js: a shell is reused across terms), so the only
+            // truthful answer is the newest term the course actually has
+            // sections in.
+            //
+            // CAVEAT: "newest" here is the highest period id by plain string
+            // sort, which is NOT reliably chronological. Locally it looks
+            // correct only because the fake academic API invents readable ids
+            // (`AP-2026W1` — see seed.ts), where the alphabet happens to agree
+            // with the calendar. The real API issues opaque surrogate keys
+            // (`ACADEMIC_PERIOD-3-302`), which carry no order at all — string
+            // sort even puts `-3-99` above `-3-315`.
+            //
+            // The API does supply a true ordering (`startDate`, plus
+            // previous/nextAcademicPeriodId), and the sync toolkit already
+            // sorts by it — but ubcApiService.getAcademicPeriods drops
+            // everything except {key, title}, so the date never reaches a
+            // section document. Persisting the period start date and sorting on
+            // that is the real fix; until then this picks a stable, but not
+            // dependably newest, section.
+            //
+            // A section with no period id sorts last, so a real id always wins
+            // over a missing one.
+            {
+                $lookup: {
+                    from: "grasp_course_section",
+                    let: { courseIdToMatch: "$course._id" },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ["$courseId", "$$courseIdToMatch"] } } },
+                        { $sort: { academicPeriod: -1 } },
+                        { $limit: 1 },
+                        { $project: { _id: 0, academicPeriod: 1, academicPeriodName: 1 } },
+                    ],
+                    as: "latestSection",
+                },
+            },
+            {
+                $addFields: {
+                    // Written into the course sub-document as well as the top
+                    // level: /api/courses/my returns `course` verbatim, while
+                    // getStudentCourses reads the flattened fields.
+                    "course.academicPeriod": { $first: "$latestSection.academicPeriod" },
+                    "course.academicPeriodName": { $first: "$latestSection.academicPeriodName" },
+                    // Courses the user has never reordered sort after the ones
+                    // they have, then alphabetically among themselves.
+                    orderKey: { $ifNull: ["$displayOrder", Number.MAX_SAFE_INTEGER] },
+                },
+            },
+            { $sort: { orderKey: 1, "course.courseName": 1 } },
             // Reshape the output to include course fields at top level
             {
                 $project: {
@@ -134,7 +184,11 @@ const getUserCourses = async (userId) => {
                     // Include all course fields at top level for easier access
                     courseName: "$course.courseName",
                     courseCode: "$course.courseCode",
+                    nickname: "$course.nickname",
+                    academicPeriod: "$course.academicPeriod",
+                    academicPeriodName: "$course.academicPeriodName",
                     createdAt: "$course.createdAt",
+                    displayOrder: 1,
                     // Keep full course object if needed
                     course: 1
                 }
@@ -499,12 +553,17 @@ const getStudentCourses = async (userId) => {
         console.log('[getStudentCourses] Raw userCourses result:', JSON.stringify(userCourses, null, 2));
         
         // Transform to expected format: { id, name, ... }
+        // nickname and the derived academic period ride along so a student's
+        // switcher labels courses the same way an instructor's does.
         const transformed = userCourses.map(uc => ({
             _id: uc.courseId ? uc.courseId.toString() : '',
             id: uc.courseId ? uc.courseId.toString() : '',
             name: uc.courseName || 'Unknown Course',
             courseName: uc.courseName || '',
             courseCode: uc.courseCode || '',
+            nickname: uc.nickname || '',
+            academicPeriod: uc.academicPeriod || '',
+            academicPeriodName: uc.academicPeriodName || '',
         })).filter(course => course.id); // Filter out courses without valid ID
         
         console.log('[getStudentCourses] Transformed courses:', JSON.stringify(transformed, null, 2));
@@ -515,9 +574,58 @@ const getStudentCourses = async (userId) => {
     }
 };
 
+/**
+ * Persist one user's preferred order for the course switcher.
+ *
+ * The caller sends the whole ordered list rather than a "move this one up"
+ * delta: writing absolute positions is idempotent, so a double-clicked arrow or
+ * two tabs racing each other converge on the same order instead of drifting.
+ *
+ * Ids the user has no membership for simply match nothing — the filter is
+ * scoped to their own rows, so this cannot reorder anyone else's switcher.
+ * @param {string|ObjectId} userId
+ * @param {Array<string|ObjectId>} courseIds - Full list, in the desired order
+ * @returns {Promise<number>} How many memberships were repositioned
+ */
+const setUserCourseOrder = async (userId, courseIds) => {
+    if (!Array.isArray(courseIds) || courseIds.length === 0) return 0;
+
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_user_course");
+
+    const userIdObj = typeof userId === 'string' && ObjectId.isValid(userId)
+        ? new ObjectId(userId)
+        : userId;
+
+    // Memberships were not always written with ObjectId courseIds, so match
+    // both shapes the same way getUserCourses does.
+    const operations = courseIds.map((courseId, index) => {
+        const asString = String(courseId);
+        const courseIdMatches = [{ courseId: asString }];
+        if (ObjectId.isValid(asString)) {
+            courseIdMatches.unshift({ courseId: new ObjectId(asString) });
+        }
+        return {
+            updateOne: {
+                filter: {
+                    $and: [
+                        { $or: [{ userId: userIdObj }, { userId: String(userId) }] },
+                        { $or: courseIdMatches },
+                    ],
+                },
+                update: { $set: { displayOrder: index } },
+            },
+        };
+    });
+
+    const result = await collection.bulkWrite(operations, { ordered: false });
+    return result.modifiedCount || 0;
+};
+
 module.exports = {
     createUserCourse,
     getUserCourses,
+    setUserCourseOrder,
     getUserCourseIds,
     getCourseUsers,
     getCourseUserIds,

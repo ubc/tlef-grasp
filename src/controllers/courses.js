@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const {
   createCourse,
+  updateCourseNickname,
+  MAX_NICKNAME_LENGTH,
   getCourseById,
   getCourseByCode,
   findAvailableCourseCode,
@@ -12,7 +14,7 @@ const {
   listArchivedCoursesForOwner,
 } = require('../services/course');
 
-const { createUserCourse, getUserCourses, isUserInCourse, getCourseUsers } = require('../services/user-course');
+const { createUserCourse, getUserCourses, setUserCourseOrder, isUserInCourse, getCourseUsers } = require('../services/user-course');
 const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner, getSectionsForViewer } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
@@ -77,6 +79,64 @@ const getMyCourses = async (req, res) => {
   } catch (error) {
     console.error("Error getting user courses:", error);
     res.status(500).json({ error: "Failed to retrieve courses" });
+  }
+};
+
+/**
+ * Set or clear a course's nickname — the label that tells two shells of the
+ * same course apart in the switcher.
+ *
+ * Owner-only (isCourseManager also admits app administrators). It is not a
+ * co-instructor permission: the nickname is course-wide and every student sees
+ * it, so it belongs to whoever owns the course rather than to anyone with a
+ * write bit in it.
+ */
+const updateCourseNicknameHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { nickname } = req.body || {};
+
+    if (nickname !== undefined && nickname !== null && typeof nickname !== 'string') {
+      return res.status(400).json({ error: "Nickname must be a string" });
+    }
+
+    const course = await getCourseById(courseId);
+    if (!course) return res.status(404).json({ error: "Course not found" });
+
+    if (!(await isCourseManager(req.user, courseId))) {
+      return res.status(403).json({ error: "Only the course owner can rename a course" });
+    }
+
+    const stored = await updateCourseNickname(courseId, nickname);
+    res.json({ success: true, nickname: stored, maxLength: MAX_NICKNAME_LENGTH });
+  } catch (error) {
+    console.error("Error updating course nickname:", error);
+    res.status(500).json({ error: "Failed to update course nickname" });
+  }
+};
+
+/**
+ * Reorder the caller's own course switcher. The client posts the full ordered
+ * list of course ids; positions are stored on the caller's memberships, so one
+ * instructor's ordering never moves anyone else's list.
+ */
+const reorderMyCoursesHandler = async (req, res) => {
+  try {
+    const { courseIds } = req.body || {};
+
+    if (!Array.isArray(courseIds)) {
+      return res.status(400).json({ error: "courseIds must be an array" });
+    }
+    if (!courseIds.every((id) => typeof id === 'string' && id)) {
+      return res.status(400).json({ error: "courseIds must be an array of course ids" });
+    }
+
+    const userId = req.user._id || req.user.id;
+    const reordered = await setUserCourseOrder(userId, courseIds);
+    res.json({ success: true, reordered });
+  } catch (error) {
+    console.error("Error reordering courses:", error);
+    res.status(500).json({ error: "Failed to reorder courses" });
   }
 };
 
@@ -809,6 +869,8 @@ const unarchiveCourseHandler = async (req, res) => {
 
 module.exports = {
   getMyCourses,
+  updateCourseNicknameHandler,
+  reorderMyCoursesHandler,
   getArchivedCoursesHandler,
   archiveCourseHandler,
   unarchiveCourseHandler,

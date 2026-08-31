@@ -17,19 +17,7 @@ import MoodleSectionLinkModal from "../components/lms/MoodleSectionLinkModal";
 import { useCanvasStatus } from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useUnlinkLmsSection } from "../hooks/useLmsSectionLink";
-
-// Convert a bare academic-period code (e.g. "2025W1") to a readable label.
-function prettyPeriod(section) {
-  if (section.academicPeriodName) return section.academicPeriodName;
-  const code = section.academicPeriod || "";
-  if (code.length >= 5) {
-    const year = code.substring(0, 4);
-    const term = code.substring(4);
-    if (term.startsWith("W")) return `${year} Winter${term.substring(1)}`;
-    if (term.startsWith("S")) return `${year} Summer${term.substring(1)}`;
-  }
-  return code || "Unknown";
-}
+import { prettyPeriod } from "../lib/academicPeriod";
 
 const headClass =
   "border-b border-gray-200 px-4 py-3 text-left text-sm font-semibold text-muted";
