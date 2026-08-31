@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { api } from "../../lib/api";
-import { escapeHtml, formatFileSize } from "../../lib/format";
+import { formatFileSize } from "../../lib/format";
 import { useCourseMaterials } from "../../hooks/useMaterials";
 import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
 import Modal from "../../components/ui/Modal";
-import RichText from "../../components/RichText";
 import { useToast } from "../../components/ui/Toast";
+import { generateAndSaveObjectives } from "./objectiveGeneration";
 
 function getMaterialTypeLabel(fileType) {
   if (!fileType) return "Unknown";
@@ -19,6 +18,12 @@ function getMaterialTypeLabel(fileType) {
 // Modal that generates learning objectives from selected materials (up to
 // MAX_MATERIALS_PER_OBJECTIVE) via the RAG/LLM pipeline, with optional
 // user-provided objectives to reorganize.
+//
+// Generating is the last thing that happens here. It used to hand back a
+// preview to tick through and a Save Selected button, but instructors did not
+// want to confirm a list they cannot edit (#101): everything the generator
+// returns is saved and the modal closes onto the editable page, where
+// rewording, removing and regenerating already live.
 export default function AIGenerateModal({ course, onClose, onSaved }) {
   const showToast = useToast();
   const [customRows, setCustomRows] = useState([]);
@@ -26,9 +31,6 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   const [bulkText, setBulkText] = useState("");
   const [selectedMaterialIds, setSelectedMaterialIds] = useState([]);
   const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [generated, setGenerated] = useState(null); // [{ name, granularObjectives }]
-  const [selectedIndices, setSelectedIndices] = useState(new Set());
   const [generationMessage, setGenerationMessage] = useState("");
 
   const { materials, isPending: materialsPending } = useCourseMaterials(course?.id);
@@ -59,28 +61,44 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       return;
     }
     setGenerating(true);
-    setGenerated(null);
     setGenerationMessage("");
+    const materialTitles = Object.fromEntries(
+      selectedMaterialIds.map((sourceId) => [
+        sourceId,
+        materials.find((m) => m.sourceId === sourceId)?.documentTitle || "",
+      ])
+    );
+    const userObjectives = customRows.map((row) => row.trim()).filter(Boolean);
+
     try {
-      const materialTitles = Object.fromEntries(
-        selectedMaterialIds.map((sourceId) => [
-          sourceId,
-          materials.find((m) => m.sourceId === sourceId)?.documentTitle || "",
-        ])
-      );
-      const data = await api.post("/api/rag-llm/generate-learning-objectives", {
-        courseId: course.id,
-        courseName: course.name,
+      const { saved, failed } = await generateAndSaveObjectives({
+        course,
         materialIds: selectedMaterialIds,
         materialTitles,
-        userObjectives: customRows.map((r) => r.trim()).filter(Boolean),
+        userObjectives,
       });
-      if (!data.success || !data.objectives || data.objectives.length === 0) {
-        throw new Error(data.error || "No objectives generated");
+
+      failed.forEach(({ name, error }) =>
+        showToast(`Failed to save "${name}": ${error.message}`, "error")
+      );
+
+      // Nothing saved means there is nothing to land on, so the modal stays
+      // open with its inputs intact — the instructor can pick a different
+      // material or add their own objectives without setting this up again.
+      if (saved.length === 0) {
+        setGenerationMessage("Every generated objective failed to save.");
+        return;
       }
-      setGenerated(data.objectives);
-      setSelectedIndices(new Set(data.objectives.map((_, i) => i)));
-      showToast(`Generated ${data.objectives.length} learning objective(s)`, "success");
+
+      // The run itself travels with the result: Regenerate on the page reruns
+      // exactly these inputs, and it cannot ask this modal for them once the
+      // modal is gone.
+      onSaved(saved, { materialIds: selectedMaterialIds, materialTitles, userObjectives });
+      showToast(
+        `Added ${saved.length} learning objective${saved.length === 1 ? "" : "s"} to the page`,
+        "success"
+      );
+      onClose();
     } catch (error) {
       console.error("Error generating learning objectives:", error);
       const message = error.message || "Failed to generate learning objectives";
@@ -88,58 +106,6 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       showToast(message, "error");
     } finally {
       setGenerating(false);
-    }
-  };
-
-  const handleSave = async () => {
-    const indices = Array.from(selectedIndices);
-    if (indices.length === 0) {
-      showToast("Please select at least one objective to save", "warning");
-      return;
-    }
-    setSaving(true);
-    const savedGroups = [];
-    try {
-      for (const index of indices) {
-        const objective = generated[index];
-        if (!objective) continue;
-        try {
-          const data = await api.post("/api/objective", {
-            name: objective.name,
-            courseId: course.id,
-            materialIds: selectedMaterialIds,
-            granularObjectives: objective.granularObjectives.map((go) => ({
-              text: typeof go === "string" ? go : go.text,
-              bloomTaxonomies: typeof go === "string" ? [] : go.bloomTaxonomies || [],
-              questionTypes: typeof go === "string" ? [] : go.questionTypes || [],
-            })),
-          });
-          if (!data.success) {
-            throw new Error(data.error || `Failed to save objective: ${objective.name}`);
-          }
-          savedGroups.push({
-            objective: data.objective,
-            granulars: data.granularObjectives,
-            materialIds: selectedMaterialIds,
-          });
-        } catch (saveError) {
-          console.error(`Error saving objective "${objective.name}":`, saveError);
-          showToast(
-            `Failed to save "${objective.name}": ${saveError.message}`,
-            "error"
-          );
-        }
-      }
-      if (savedGroups.length > 0) {
-        onSaved(savedGroups);
-        showToast(
-          `Successfully added ${savedGroups.length} learning objective(s) to page`,
-          "success"
-        );
-      }
-      onClose();
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -159,51 +125,22 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           >
             Cancel
           </button>
-          {!generated ? (
-            <button
-              type="button"
-              disabled={selectedMaterialIds.length === 0 || generating}
-              onClick={handleGenerate}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
-            >
-              {generating ? (
-                <>
-                  <i className="fas fa-spinner fa-spin" /> Generating...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-magic" /> Generate
-                </>
-              )}
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                disabled={generating}
-                onClick={handleGenerate}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-50"
-              >
-                <i className="fas fa-sync-alt" /> Regenerate
-              </button>
-              <button
-                type="button"
-                disabled={saving || selectedIndices.size === 0}
-                onClick={handleSave}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
-              >
-                {saving ? (
-                  <>
-                    <i className="fas fa-spinner fa-spin" /> Saving...
-                  </>
-                ) : (
-                  <>
-                    <i className="fas fa-save" /> Save Selected ({selectedIndices.size})
-                  </>
-                )}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            disabled={selectedMaterialIds.length === 0 || generating}
+            onClick={handleGenerate}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+          >
+            {generating ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Generating...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-magic" /> Generate
+              </>
+            )}
+          </button>
         </>
       }
     >
@@ -211,10 +148,12 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
         Select up to {MAX_MATERIALS_PER_OBJECTIVE} course materials to generate
         learning objectives from. The AI will analyze the content and create relevant learning objectives. If you
         provide your own learning objectives, the AI will reorganize them into a proper
-        hierarchy rather than generating new ones (optional).
+        hierarchy rather than generating new ones (optional). Generated objectives
+        are saved automatically and opened on the edit page.
       </p>
 
       {/* Custom objectives */}
+      <fieldset disabled={generating}>
       <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
@@ -366,11 +305,17 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
       </div>
 
       {/* Generation status */}
+      </fieldset>
       {generating && (
-        <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4">
+        <div role="status" className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4">
           <div className="flex items-center gap-3 text-sky-900">
             <i className="fas fa-spinner fa-spin text-sky-600" />
-            <span className="font-medium">Generating learning objectives...</span>
+            <div>
+              <span className="font-medium">Generating learning objectives...</span>
+              <p className="mt-0.5 text-sm text-sky-800">
+                They will open for editing as soon as they are ready.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -384,61 +329,6 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
               <p className="mt-1 text-sm">{generationMessage}</p>
               <p className="mt-2 text-sm">Try another material or add your own objectives above; we will preserve them.</p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Generated preview */}
-      {generated && (
-        <div className="mt-6">
-          <label className="mb-2 block font-semibold text-ink">
-            Generated Learning Objectives:
-          </label>
-          <div className="max-h-96 space-y-3 overflow-y-auto rounded-lg border border-gray-200 p-3">
-            {generated.map((objective, index) => {
-              const selected = selectedIndices.has(index);
-              return (
-                <div
-                  key={index}
-                  className={`flex gap-3 rounded-lg border-2 p-4 transition-colors ${
-                    selected ? "border-blue-500 bg-white" : "border-gray-200 bg-gray-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() =>
-                      setSelectedIndices((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(index)) next.delete(index);
-                        else next.add(index);
-                        return next;
-                      })
-                    }
-                    className="mt-1 h-4.5 w-4.5 shrink-0 accent-primary"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <RichText
-                      text={`${index + 1}. ${escapeHtml(objective.name)}`}
-                      className="mb-2 font-semibold text-ink"
-                    />
-                    <ul className="space-y-1.5">
-                      {objective.granularObjectives.map((granular, gIndex) => (
-                        <li key={gIndex} className="flex gap-2 text-sm text-gray-600">
-                          <span className="text-gray-400">•</span>
-                          <RichText
-                            text={escapeHtml(
-                              typeof granular === "string" ? granular : granular.text
-                            )}
-                            className="min-w-0 flex-1"
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       )}

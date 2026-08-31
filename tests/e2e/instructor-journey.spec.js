@@ -143,13 +143,20 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // matching misses the glyph), and it must not match the modal heading.
     await page.getByRole('button', { name: /Generate$/ }).click();
 
-    // Stubbed generation returns objectives; save them onto the page.
-    const saveSelected = page.getByRole('button', { name: /Save Selected/ });
-    await expect(saveSelected).toBeEnabled({ timeout: 30_000 });
-    await saveSelected.click();
+    // Issue #101: generating saves everything it produced and closes the modal
+    // straight onto the editable page. There is no preview to confirm and no
+    // Save Selected button to press — landing anywhere else is the regression.
+    await expect(
+      page.getByRole('heading', { name: 'Generate Learning Objectives' })
+    ).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole('button', { name: /Save Selected/ })).toHaveCount(0);
 
     // The saved objective group is now rendered as an editable card on step 1.
     await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
+
+    // Regenerating moved out of the modal and onto this page, where it only
+    // appears once there is a run to redo.
+    await expect(page.getByRole('button', { name: /Regenerate/ })).toBeVisible();
 
     // Issue #31: the per-objective number must read clearly as "how many
     // questions to generate". The card totals them explicitly.
@@ -186,16 +193,27 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await page.getByRole('checkbox', { name: IRRELEVANT_MATERIAL_TITLE }).check();
     await page.getByRole('button', { name: /Generate$/ }).click();
 
+    // A run that produces nothing has nothing to land the instructor on, so the
+    // modal is the one case that stays open (#101) — with its material choice
+    // and custom objectives intact, so the retry below is not a fresh setup.
     await expect(page.getByRole('alert')).toContainText('No learning objectives were created');
-    await expect(page.getByRole('button', { name: /Save Selected/ })).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: 'Generate Learning Objectives' })
+    ).toBeVisible();
 
     await page.getByRole('button', { name: 'Add Objective' }).click();
     await page.getByPlaceholder('Enter a learning objective...').fill(INSTRUCTOR_OBJECTIVE);
     await page.getByRole('button', { name: /Generate$/ }).click();
 
-    await expect(page.getByText(INSTRUCTOR_OBJECTIVE, { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Save Selected/ })).toBeEnabled();
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    // The instructor's own objective survives and arrives on the editable page.
+    // Its card is found by its delete control, which names the objective — the
+    // title itself renders as a textarea value, which getByText cannot see.
+    await expect(
+      page.getByRole('heading', { name: 'Generate Learning Objectives' })
+    ).toHaveCount(0, { timeout: 30_000 });
+    await expect(
+      page.getByRole('button', { name: `Delete ${INSTRUCTOR_OBJECTIVE}` })
+    ).toBeVisible();
   });
 
   test('deleting a granular here only detaches it from the page (#41)', async () => {
@@ -204,6 +222,14 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // deletion lives in Question Bank → Learning Objectives; here the same
     // click used to persist the removal and silently delete the granular from
     // the objective in the database.
+
+    // Generation now auto-saves and leaves an editable custom objective on
+    // this shared page (#101). Start with an empty selection before loading
+    // the persisted objective whose granulars this test intends to count.
+    await navLink('Question Bank').click();
+    await navLink('Question Generation').click();
+    await expect(page.getByRole('heading', { name: 'No learning objectives yet' })).toBeVisible();
+
     const courseId = await page.evaluate(
       () =>
         JSON.parse(window.sessionStorage.getItem('grasp-selected-course') || '{}')

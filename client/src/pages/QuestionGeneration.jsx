@@ -111,6 +111,7 @@ export default function QuestionGeneration() {
 
   const [step, setStep] = useState(1);
   const [objectiveGroups, setObjectiveGroups] = useState([]);
+  const [regeneratingObjectives, setRegeneratingObjectives] = useState(false);
   const [questionGroups, setQuestionGroups] = useState([]);
   const [showValidation, setShowValidation] = useState(false);
 
@@ -366,6 +367,8 @@ export default function QuestionGeneration() {
           objectiveGroups={objectiveGroups}
           setObjectiveGroups={setObjectiveGroups}
           showValidation={showValidation}
+          regenerating={regeneratingObjectives}
+          setRegenerating={setRegeneratingObjectives}
         />
       )}
 
@@ -426,6 +429,7 @@ export default function QuestionGeneration() {
           type="button"
           disabled={
             generating ||
+            regeneratingObjectives ||
             saving ||
             (step === 1 && objectiveGroups.length === 0) ||
             (step === 2 &&

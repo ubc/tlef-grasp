@@ -8,6 +8,7 @@ import AIGenerateModal from "./AIGenerateModal";
 import ObjectiveGroupCard from "./ObjectiveGroupCard";
 import { totalQuestions, defaultTypeForLevel } from "../../lib/questionTypes";
 import { appendObjectiveGroups, withQuestionTypes } from "./objectiveGroups";
+import { generateAndSaveObjectives, deleteObjectives } from "./objectiveGeneration";
 import { runPool } from "../../lib/async-pool";
 import { MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
 
@@ -23,6 +24,8 @@ export default function ObjectivesStep({
   objectiveGroups,
   setObjectiveGroups,
   showValidation,
+  regenerating,
+  setRegenerating,
 }) {
   const showToast = useToast();
   const invalidateObjectives = useInvalidateObjectives(course?.id);
@@ -33,11 +36,22 @@ export default function ObjectivesStep({
   const [selectedObjectiveIds, setSelectedObjectiveIds] = useState(() => new Set());
   const [addingObjectives, setAddingObjectives] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  // Inputs of the most recent AI run — the materials and custom objectives the
+  // Generate modal used, plus the objectives it produced. Regenerate reruns
+  // exactly this, and the modal it came from is long gone by then.
+  const [lastRun, setLastRun] = useState(null);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [granularizeTarget, setGranularizeTarget] = useState(null);
   const [granularCount, setGranularCount] = useState(3);
   const [useDefaults, setUseDefaults] = useState(true);
   const dropdownRef = useRef(null);
+
+  // A regenerate runs for as long as the LLM takes, and the instructor can
+  // keep editing meanwhile. What it replaces has to be decided against the
+  // page as it stands when the run lands, not as it stood when they clicked.
+  const objectiveGroupsRef = useRef(objectiveGroups);
+  objectiveGroupsRef.current = objectiveGroups;
 
   const { objectives: dbObjectives } = useCourseObjectives(course?.id);
   const { materials: courseMaterials } = useCourseMaterials(course?.id);
@@ -208,19 +222,105 @@ export default function ObjectivesStep({
     }
   };
 
-  const handleAISaved = (savedGroups) => {
-    setObjectiveGroups((prev) =>
-      appendObjectiveGroups(
-        prev,
-        savedGroups.map(({ objective, granulars, materialIds }) => ({
-          objectiveId: objective._id,
-          title: objective.name,
-          materialIds,
-          granulars,
-        }))
-      )
-    );
+  // Shape a completed run for appendObjectiveGroups.
+  const groupsFromRun = (savedGroups) =>
+    savedGroups.map(({ objective, granulars, materialIds }) => ({
+      objectiveId: objective._id,
+      title: objective.name,
+      materialIds,
+      granulars,
+    }));
+
+  const runObjectiveIds = (savedGroups) =>
+    savedGroups.map(({ objective }) => String(objective._id));
+
+  const handleAISaved = (savedGroups, run) => {
+    setObjectiveGroups((prev) => appendObjectiveGroups(prev, groupsFromRun(savedGroups)));
+    setLastRun({ ...run, objectiveIds: runObjectiveIds(savedGroups) });
     invalidateObjectives();
+  };
+
+  // Objectives from the last run that are still on the page. A regenerate
+  // replaces these and only these: one the instructor already removed with the
+  // trash button is gone from their page by their own choice, and that button
+  // promises the record survives in the Question Bank.
+  const replaceableIds = (groups) => {
+    if (!lastRun) return [];
+    const present = new Set(
+      groups.filter((group) => group.objectiveId).map((group) => String(group.objectiveId))
+    );
+    return lastRun.objectiveIds.filter((id) => present.has(id));
+  };
+
+  // Save the full replacement before deleting anything from the previous run.
+  const handleRegenerate = async () => {
+    if (!lastRun || regenerating) return;
+    setRegenerateOpen(false);
+    setRegenerating(true);
+    try {
+      const { saved, failed } = await generateAndSaveObjectives({
+        course,
+        materialIds: lastRun.materialIds,
+        materialTitles: lastRun.materialTitles,
+        userObjectives: lastRun.userObjectives,
+      });
+
+      failed.forEach(({ name, error }) =>
+        showToast(`Failed to save "${name}": ${error.message}`, "error")
+      );
+      if (saved.length === 0) {
+        showToast(
+          "Regenerating produced nothing that could be saved — your current learning objectives are unchanged",
+          "error"
+        );
+        return;
+      }
+
+      // Keep both sets on a partial save so no previous work is lost and the
+      // successful saves remain visible. A retry replaces the combined set.
+      if (failed.length > 0) {
+        setObjectiveGroups((prev) => appendObjectiveGroups(prev, groupsFromRun(saved)));
+        setLastRun({
+          ...lastRun,
+          objectiveIds: [...lastRun.objectiveIds, ...runObjectiveIds(saved)],
+        });
+        invalidateObjectives();
+        showToast(
+          "Some new objectives could not be saved. Your previous objectives were kept, and the saved additions are shown below.",
+          "warning"
+        );
+        return;
+      }
+
+      const replaced = replaceableIds(objectiveGroupsRef.current);
+      const { deleted, failed: deleteFailures } = await deleteObjectives(replaced);
+      const replacedSet = new Set(deleted);
+      setObjectiveGroups((prev) =>
+        appendObjectiveGroups(
+          prev.filter((group) => !replacedSet.has(String(group.objectiveId))),
+          groupsFromRun(saved)
+        )
+      );
+      setLastRun({
+        ...lastRun,
+        objectiveIds: [...deleteFailures.map(({ objectiveId }) => objectiveId), ...runObjectiveIds(saved)],
+      });
+      invalidateObjectives();
+      showToast(
+        deleteFailures.length > 0
+          ? "New objectives were saved, but some previous objectives could not be deleted. They remain on the page and in the Question Bank."
+          : `Regenerated ${saved.length} learning objective${saved.length === 1 ? "" : "s"}`,
+        deleteFailures.length > 0 ? "warning" : "success"
+      );
+    } catch (error) {
+      console.error("Error regenerating learning objectives:", error);
+      showToast(
+        error.message || "Failed to regenerate learning objectives",
+        "error"
+      );
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   // Selects a Bloom level by giving it a question type to generate. A level
@@ -447,14 +547,36 @@ export default function ObjectivesStep({
       </p>
 
       {/* Action buttons */}
-      <div className="mb-6 flex flex-wrap gap-3">
+      <fieldset disabled={regenerating} className="mb-6 flex flex-wrap gap-3">
         <button
           type="button"
+          disabled={regenerating}
           onClick={() => setAiModalOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-50"
         >
           <i className="fas fa-magic" /> Create Learning Objectives
         </button>
+        {/* Regenerating used to live in the Generate modal, next to a preview.
+            With the preview gone it belongs here, where the instructor can see
+            what they would be trading in. */}
+        {lastRun && (
+          <button
+            type="button"
+            disabled={regenerating}
+            onClick={() => setRegenerateOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            {regenerating ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Regenerating...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-sync-alt" /> Regenerate
+              </>
+            )}
+          </button>
+        )}
         <div ref={dropdownRef} className="relative">
           <button
             type="button"
@@ -570,9 +692,10 @@ export default function ObjectivesStep({
             </div>
           )}
         </div>
-      </div>
+      </fieldset>
 
       {/* Objective groups */}
+      <fieldset disabled={regenerating} aria-busy={regenerating}>
       {objectiveGroups.length === 0 ? (
         <div className="rounded-2xl bg-white py-16 text-center shadow-sm">
           <i className="fas fa-lightbulb mb-4 text-4xl text-gray-300" />
@@ -609,6 +732,7 @@ export default function ObjectivesStep({
           ))}
         </div>
       )}
+      </fieldset>
 
       {/* AI generate modal */}
       {aiModalOpen && (
@@ -618,6 +742,49 @@ export default function ObjectivesStep({
           onSaved={handleAISaved}
         />
       )}
+
+      {/* Regenerate confirmation modal */}
+      <Modal
+        open={regenerateOpen}
+        onClose={() => setRegenerateOpen(false)}
+        title="Regenerate learning objectives?"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setRegenerateOpen(false)}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRegenerate}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
+            >
+              <i className="fas fa-sync-alt" /> Regenerate
+            </button>
+          </>
+        }
+      >
+        <p className="text-ink">
+          This runs the generator again on the same course materials, with the same
+          custom learning objectives.
+        </p>
+        {/* Named plainly because it is not undoable: unlike the trash button on a
+            card, this one does delete the records. */}
+        {replaceableIds(objectiveGroups).length > 0 && (
+          <p className="mt-3 text-ink">
+            The{" "}
+            <strong>
+              {replaceableIds(objectiveGroups).length} learning objective
+              {replaceableIds(objectiveGroups).length === 1 ? "" : "s"}
+            </strong>{" "}
+            it created last time will be replaced by the new ones and deleted from the
+            Question Bank, along with any edits you have made to them.
+          </p>
+        )}
+      </Modal>
 
       {/* Delete confirmation modal */}
       <Modal
