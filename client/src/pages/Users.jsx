@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSelectedCourseId } from "../stores/appStore";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import {
@@ -15,13 +15,32 @@ import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import { LoadingRow } from "../components/ui/states";
+import {
+  filterAndSortCourseUsers,
+  getUserNames,
+  UNKNOWN_USER_NAME,
+} from "./users/userListUtils";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 function RoleBadge({ role }) {
   const config = {
-    faculty: { icon: "fa-graduation-cap", label: "Faculty", classes: "bg-purple-100 text-purple-700" },
-    ta: { icon: "fa-chalkboard-teacher", label: "TA", classes: "bg-amber-100 text-amber-700" },
+    faculty: {
+      icon: "fa-graduation-cap",
+      label: "Faculty",
+      classes: "bg-purple-100 text-purple-700",
+    },
+    ta: {
+      icon: "fa-chalkboard-teacher",
+      label: "TA",
+      classes: "bg-amber-100 text-amber-700",
+    },
     staff: { icon: "fa-user-tie", label: "Staff", classes: "bg-blue-100 text-blue-700" },
-    student: { icon: "fa-user-graduate", label: "Student", classes: "bg-green-100 text-green-700" },
+    student: {
+      icon: "fa-user-graduate",
+      label: "Student",
+      classes: "bg-green-100 text-green-700",
+    },
   }[role];
   if (!config) return null;
   return (
@@ -33,18 +52,25 @@ function RoleBadge({ role }) {
   );
 }
 
-function UserNameCell({ name, isCurrentUser }) {
+function UserNameCell({ legalName, displayName, isCurrentUser }) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100">
         <i className="fas fa-user text-sm text-muted" />
       </div>
-      <span className="font-medium text-ink">{name}</span>
-      {isCurrentUser && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-          <i className="fas fa-user-circle" /> You
-        </span>
-      )}
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-ink">{legalName}</span>
+          {isCurrentUser && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              <i className="fas fa-user-circle" /> You
+            </span>
+          )}
+        </div>
+        {displayName && (
+          <span className="block text-xs text-muted">Display name: {displayName}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -62,6 +88,16 @@ const tableHeadClass =
   "border-b border-gray-200 px-4 py-3 text-left text-sm font-semibold text-muted";
 const tableCellClass = "border-b border-gray-100 px-4 py-3 text-sm";
 
+function getCourseRole(user) {
+  return (
+    user.courseRole ||
+    getUserRole({
+      ...user,
+      affiliation: user.affiliation || user.user?.affiliation,
+    })
+  );
+}
+
 export default function Users() {
   const showToast = useToast();
   const { user: currentUser, isFaculty } = useCurrentUser();
@@ -69,8 +105,9 @@ export default function Users() {
   // Only the course owner (or an app administrator) may remove instructors.
   const { fullAccess } = useCoInstructorAccess();
 
-  const PAGE_SIZE = 10;
   const [sectionFilter, setSectionFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
   const [removeTarget, setRemoveTarget] = useState(null);
   // { userId, displayName, action: 'promote' | 'demote' }
@@ -78,8 +115,7 @@ export default function Users() {
   // { userId, displayName, taPermissions } — the TA whose permissions are open
   const [permissionsTarget, setPermissionsTarget] = useState(null);
 
-  const { users: courseUsers, isPending: courseUsersPending } =
-    useCourseUsers(courseId);
+  const { users: courseUsers, isPending: courseUsersPending } = useCourseUsers(courseId);
   // Only the sections this instructor owns — students are scoped to these.
   const { sections: courseSections } = useMyCourseSections(courseId);
 
@@ -89,15 +125,26 @@ export default function Users() {
     return match ? match.sectionNumber || sectionId : sectionId;
   };
 
-  const visibleCourseUsers =
-    sectionFilter === "all"
-      ? courseUsers
-      : courseUsers.filter(
-          (user) => Array.isArray(user.sections) && user.sections.includes(sectionFilter)
-        );
+  const visibleCourseUsers = useMemo(
+    () =>
+      filterAndSortCourseUsers(courseUsers, {
+        sectionFilter,
+        search,
+        getRole: getCourseRole,
+      }),
+    [courseUsers, search, sectionFilter]
+  );
 
-  const totalPages = Math.ceil(visibleCourseUsers.length / PAGE_SIZE);
-  const pagedUsers = visibleCourseUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(visibleCourseUsers.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedUsers = visibleCourseUsers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   const removeMutation = useRemoveUserFromCourse(courseId, {
     onSuccess: () => showToast("User removed from course successfully", "success"),
@@ -121,8 +168,7 @@ export default function Users() {
         "TA demoted to student. The change applies on their next login.",
         "success"
       ),
-    onError: (error) =>
-      showToast(error.message || "Failed to demote TA", "error"),
+    onError: (error) => showToast(error.message || "Failed to demote TA", "error"),
   });
 
   const permissionsMutation = useUpdateTaPermissions(courseId, {
@@ -149,26 +195,54 @@ export default function Users() {
             <i className="fas fa-users mr-2 text-primary" />
             Users in Course
           </h2>
-          {courseSections.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label htmlFor="section-filter" className="text-sm font-medium text-muted">
-                Section:
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+            <div className="relative min-w-64 max-w-sm flex-1">
+              <label htmlFor="user-search" className="sr-only">
+                Search users by legal or display name
               </label>
-              <select
-                id="section-filter"
-                value={sectionFilter}
-                onChange={(event) => { setSectionFilter(event.target.value); setPage(1); }}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-              >
-                <option value="all">All Sections</option>
-                {courseSections.map((section) => (
-                  <option key={section.sectionId} value={section.sectionId}>
-                    {section.sectionNumber || section.sectionId}
-                  </option>
-                ))}
-              </select>
+              <i
+                className="fas fa-search absolute top-1/2 left-3 -translate-y-1/2 text-muted"
+                aria-hidden="true"
+              />
+              <input
+                id="user-search"
+                type="search"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by legal or display name..."
+                className="w-full rounded-lg border border-gray-300 py-2 pr-3 pl-9 text-sm focus:border-primary focus:outline-none"
+              />
             </div>
-          )}
+            {courseSections.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="section-filter"
+                  className="text-sm font-medium text-muted"
+                >
+                  Section:
+                </label>
+                <select
+                  id="section-filter"
+                  value={sectionFilter}
+                  onChange={(event) => {
+                    setSectionFilter(event.target.value);
+                    setPage(1);
+                  }}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                >
+                  <option value="all">All Sections</option>
+                  {courseSections.map((section) => (
+                    <option key={section.sectionId} value={section.sectionId}>
+                      {section.sectionNumber || section.sectionId}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         {courseUsersPending ? (
@@ -176,7 +250,7 @@ export default function Users() {
         ) : courseUsers.length === 0 ? (
           <EmptyState icon="fa-users" message="No users found in this course." />
         ) : visibleCourseUsers.length === 0 ? (
-          <EmptyState icon="fa-filter" message="No users in the selected section." />
+          <EmptyState icon="fa-search" message="No users match your filters." />
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -196,23 +270,17 @@ export default function Users() {
                     const userId = String(
                       user.userId || user._id || user.user?._id || ""
                     );
-                    // Instructor roster: identify people by their authoritative
-                    // legal name, not the editable display name.
-                    const displayName =
-                      user.legalName || user.user?.legalName || "Unknown User";
+                    const { legalName, distinctDisplayName } = getUserNames(user);
+                    const targetName =
+                      legalName === UNKNOWN_USER_NAME && distinctDisplayName
+                        ? distinctDisplayName
+                        : legalName;
                     // Prefer the course-scoped role resolved by the server
                     // (distinguishes TAs); fall back to global affiliations.
-                    const role =
-                      user.courseRole ||
-                      getUserRole({
-                        ...user,
-                        affiliation: user.affiliation || user.user?.affiliation,
-                      });
+                    const role = getCourseRole(user);
                     const isCurrentUser = userId === currentUserId;
                     const canRemove =
-                      isFaculty &&
-                      !isCurrentUser &&
-                      (role !== "faculty" || fullAccess);
+                      isFaculty && !isCurrentUser && (role !== "faculty" || fullAccess);
                     const canChangeCourseRole =
                       isFaculty &&
                       !isCurrentUser &&
@@ -222,7 +290,11 @@ export default function Users() {
                     return (
                       <tr key={userId} className="hover:bg-gray-50">
                         <td className={tableCellClass}>
-                          <UserNameCell name={displayName} isCurrentUser={isCurrentUser} />
+                          <UserNameCell
+                            legalName={legalName}
+                            displayName={distinctDisplayName}
+                            isCurrentUser={isCurrentUser}
+                          />
                         </td>
                         <td className={tableCellClass}>
                           <RoleBadge role={role} />
@@ -254,7 +326,11 @@ export default function Users() {
                                   title="Promote to TA"
                                   disabled={roleChangePending}
                                   onClick={() =>
-                                    setRoleChangeTarget({ userId, displayName, action: "promote" })
+                                    setRoleChangeTarget({
+                                      userId,
+                                      displayName: targetName,
+                                      action: "promote",
+                                    })
                                   }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/85 disabled:opacity-50"
                                 >
@@ -268,7 +344,7 @@ export default function Users() {
                                   onClick={() =>
                                     setPermissionsTarget({
                                       userId,
-                                      displayName,
+                                      displayName: targetName,
                                       taPermissions: user.taPermissions,
                                     })
                                   }
@@ -283,7 +359,11 @@ export default function Users() {
                                   title="Demote to Student"
                                   disabled={roleChangePending}
                                   onClick={() =>
-                                    setRoleChangeTarget({ userId, displayName, action: "demote" })
+                                    setRoleChangeTarget({
+                                      userId,
+                                      displayName: targetName,
+                                      action: "demote",
+                                    })
                                   }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600/85 disabled:opacity-50"
                                 >
@@ -294,7 +374,9 @@ export default function Users() {
                                 <button
                                   type="button"
                                   title="Remove from course"
-                                  onClick={() => setRemoveTarget({ userId, displayName })}
+                                  onClick={() =>
+                                    setRemoveTarget({ userId, displayName: targetName })
+                                  }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
                                 >
                                   <i className="fas fa-user-minus" /> Remove
@@ -311,27 +393,57 @@ export default function Users() {
                 </tbody>
               </table>
             </div>
-            {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between text-sm text-muted">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+              <div className="flex flex-wrap items-center gap-4">
                 <span>
-                  Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, visibleCourseUsers.length)} of {visibleCourseUsers.length} users
+                  Showing {(currentPage - 1) * pageSize + 1}–
+                  {Math.min(currentPage * pageSize, visibleCourseUsers.length)} of{" "}
+                  {visibleCourseUsers.length} users
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="page-size" className="font-medium">
+                    Users per page:
+                  </label>
+                  <select
+                    id="page-size"
+                    value={pageSize}
+                    onChange={(event) => {
+                      setPageSize(Number(event.target.value));
+                      setPage(1);
+                    }}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {totalPages > 1 && (
+                <nav
+                  className="flex items-center gap-1"
+                  aria-label="User list pagination"
+                >
                   <button
                     type="button"
-                    onClick={() => setPage((p) => p - 1)}
-                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    aria-label="Previous page"
                     className="rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:opacity-40"
                   >
-                    <i className="fas fa-chevron-left" />
+                    <i className="fas fa-chevron-left" aria-hidden="true" />
                   </button>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
                     <button
                       key={n}
                       type="button"
                       onClick={() => setPage(n)}
+                      aria-label={`Page ${n}`}
+                      aria-current={n === currentPage ? "page" : undefined}
                       className={`rounded-lg border px-3 py-1.5 transition-colors ${
-                        n === page
+                        n === currentPage
                           ? "border-primary bg-primary text-white"
                           : "border-gray-200 hover:bg-gray-50"
                       }`}
@@ -341,15 +453,16 @@ export default function Users() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    aria-label="Next page"
                     className="rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:opacity-40"
                   >
-                    <i className="fas fa-chevron-right" />
+                    <i className="fas fa-chevron-right" aria-hidden="true" />
                   </button>
-                </div>
-              </div>
-            )}
+                </nav>
+              )}
+            </div>
           </>
         )}
       </section>
@@ -362,9 +475,7 @@ export default function Users() {
           (action === "promote" ? promoteMutation : demoteMutation).mutate(userId);
         }}
         title={
-          roleChangeTarget?.action === "promote"
-            ? "Promote to TA"
-            : "Demote to Student"
+          roleChangeTarget?.action === "promote" ? "Promote to TA" : "Demote to Student"
         }
         message={
           roleChangeTarget?.action === "promote"
