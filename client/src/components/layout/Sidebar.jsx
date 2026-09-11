@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useCourseAccess } from "../../hooks/useCourseAccess";
@@ -10,6 +10,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useToast } from "../ui/Toast";
 import { PATH_PERMISSION, TA_PATH_PERMISSION } from "../../lib/permissions";
 import { resolveCourseSelection } from "../../lib/courseSelection";
+import { stripCourseScopedParams } from "../../lib/courseScopedParams";
 import { periodLabel } from "../../lib/academicPeriod";
 
 // Sentinel <option> value: picking it opens the onboarding hub instead of
@@ -76,6 +77,7 @@ function CourseSelector() {
   const { selectedCourse, setSelectedCourse } = useAppStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Only faculty and staff can create or join a course, so only they get a
   // route back to the onboarding hub.
@@ -134,6 +136,13 @@ function CourseSelector() {
       setSelectedCourse(course);
       // Refetch all course-scoped data instead of the legacy full page reload
       queryClient.invalidateQueries();
+      // Page state is discarded by AppLayout's course key, but query-string
+      // filters are in the URL and outlive the remount. A filter naming a quiz
+      // or objective of the course just left matches nothing here.
+      const search = stripCourseScopedParams(location.search);
+      if (search !== null) {
+        navigate(`${location.pathname}${search}`, { replace: true });
+      }
     }
   };
 

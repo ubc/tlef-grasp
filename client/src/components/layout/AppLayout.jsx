@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import ArchivedCourseBanner from "../course/ArchivedCourseBanner";
+import { useSelectedCourseId } from "../../stores/appStore";
 
 const PAGE_TITLES = {
   "/dashboard": "Dashboard",
@@ -24,6 +25,7 @@ const PAGE_TITLES = {
 
 export default function AppLayout() {
   const { pathname } = useLocation();
+  const courseId = useSelectedCourseId();
   // Below lg the sidebar is an off-canvas drawer toggled from the top bar
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const triggerRef = useRef(null);
@@ -95,7 +97,15 @@ export default function AppLayout() {
       <main className="min-h-screen bg-page lg:ml-[280px]">
         {/* Renders nothing unless the selected course is archived. */}
         <ArchivedCourseBanner />
-        <Outlet />
+        {/* Keying the page on the course discards it on a switch instead of
+            re-rendering it. Course-scoped queries already refetch on their own,
+            but a page's own state does not: a selected quiz id, ticked
+            checkboxes, a half-finished generation wizard all belong to the
+            course that produced them, and a plain re-render leaves them
+            pointing at it. The sidebar sits outside this and is unaffected. */}
+        <div key={courseId || "no-course"}>
+          <Outlet />
+        </div>
       </main>
     </div>
   );
