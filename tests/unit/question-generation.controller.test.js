@@ -243,27 +243,51 @@ describe('generateQuestionsWithRagHandler review-fix loop', () => {
     mockGenerateStructured
       .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
       .mockResolvedValueOnce(makeReviewResponse([flaggedRating('0')]))
-      // cycle 1: both fix attempts return unparseable content
-      .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
-      .mockResolvedValueOnce({ content: 'still not valid json', usage: {} })
-      // cycle 2: the same
+      // the one default cycle: both fix attempts return unparseable content
       .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
       .mockResolvedValueOnce({ content: 'still not valid json', usage: {} });
     const res = buildResponse();
 
     await generateQuestionsWithRagHandler(buildRequest(), res);
 
-    // 1 generation + 1 initial review + 2 cycles x 2 fix attempts = 6.
+    // 1 generation + 1 initial review + 1 default cycle x 2 fix attempts = 4.
     // No re-review calls: a fix attempt that never produces valid output never
     // reaches the "patched" set, so nothing is re-reviewed — this is the
     // existing ship-with-flag behavior, not a new failure mode.
-    expect(mockGenerateStructured).toHaveBeenCalledTimes(6);
+    expect(mockGenerateStructured).toHaveBeenCalledTimes(4);
     expect(res.json).toHaveBeenCalledTimes(1);
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload.questions).toHaveLength(1);
     expect(payload.questions[0].reviewFlag).toBe(true);
     expect(payload.questions[0].wasAutoFixed).toBeFalsy();
+  });
+
+  it('runs the extra cycles REVIEW_FIX_MAX_CYCLES asks for', async () => {
+    const previous = process.env.REVIEW_FIX_MAX_CYCLES;
+    process.env.REVIEW_FIX_MAX_CYCLES = '2';
+    try {
+      mockGenerateStructured
+        .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+        .mockResolvedValueOnce(makeReviewResponse([flaggedRating('0')]))
+        // cycle 1: both fix attempts return unparseable content
+        .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
+        .mockResolvedValueOnce({ content: 'still not valid json', usage: {} })
+        // cycle 2: the same
+        .mockResolvedValueOnce({ content: 'not valid json', usage: {} })
+        .mockResolvedValueOnce({ content: 'still not valid json', usage: {} });
+      const res = buildResponse();
+
+      await generateQuestionsWithRagHandler(buildRequest(), res);
+
+      // 1 generation + 1 initial review + 2 cycles x 2 fix attempts = 6: the
+      // bound is code-controlled, so raising it is the only way past one cycle.
+      expect(mockGenerateStructured).toHaveBeenCalledTimes(6);
+      expect(res.json.mock.calls[0][0].questions[0].reviewFlag).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.REVIEW_FIX_MAX_CYCLES;
+      else process.env.REVIEW_FIX_MAX_CYCLES = previous;
+    }
   });
 });
 
