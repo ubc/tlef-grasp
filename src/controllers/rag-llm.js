@@ -1324,13 +1324,13 @@ async function reviewAndFixQuestions(
   // Each fix call replays its question's whole context — the opening message,
   // retrieved material and all — so this is the most expensive knob in the loop.
   //
-  // Its value is currently capped by something else: a question only reaches a
-  // second cycle if the re-review still flags it, and the re-review is a fresh
+  // The default is one cycle because a second one earns little today: a question
+  // only reaches it if the re-review still flags it, and the re-review is a fresh
   // general pass with no memory of the original issue. So a patch that did not
   // actually resolve what was flagged is cleared anyway and exits after cycle 1.
-  // Giving the re-review the original issue to verify is what would let a second
-  // cycle act on the questions it was raised for.
-  const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 2;
+  // Giving the re-review the original issue to verify is what would make raising
+  // this (via REVIEW_FIX_MAX_CYCLES) worth the replay cost.
+  const MAX_CYCLES = parseInt(process.env.REVIEW_FIX_MAX_CYCLES) || 1;
   const MAX_FIX_RETRIES = 2;
 
   // Tallied across every rateQuestions() call (initial + all re-reviews) and
