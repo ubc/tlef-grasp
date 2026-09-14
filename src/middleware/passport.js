@@ -15,6 +15,15 @@ const { samlRequestCache } = require('../services/samlRequestCache');
 // Valid affiliations that can access the application
 const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
 
+// passport-ubcshib hardcodes one IdP per SAML_ENVIRONMENT, and its LOCAL entry
+// points at :8080 — so a docker-simple-saml published anywhere else (or over
+// TLS) is unreachable without an override. Blank is treated as unset so a
+// commented-out or empty .env line keeps the hardcoded default.
+const endpointOverride = (value) => {
+	const trimmed = (value || '').trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+};
+
 const strategy = new Strategy(
 	{
 		// Service Provider Identity (usually your app's URL)
@@ -22,6 +31,11 @@ const strategy = new Strategy(
 
 		// Callback URL after authentication
 		callbackUrl: process.env.SAML_CALLBACK_URL,
+
+		// IdP endpoints. Left undefined, passport-ubcshib supplies the pair for
+		// SAML_ENVIRONMENT; STAGING and PRODUCTION should always use those.
+		entryPoint: endpointOverride(process.env.SAML_ENTRY_POINT),
+		logoutUrl: endpointOverride(process.env.SAML_LOGOUT_URL),
 
 		// Path to your application's private key for signing SAML requests
 		privateKeyPath: process.env.SAML_PRIVATE_KEY_PATH,
