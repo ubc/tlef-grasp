@@ -1,4 +1,5 @@
 const databaseService = require('./database');
+const { ObjectId } = require('mongodb');
 
 async function createOrUpdateUser(userData) {
     try {
@@ -169,6 +170,11 @@ function normalizeAffiliations(affiliation) {
  * affiliation is untouched, and staffViaTaPromotion records that the staff
  * affiliation was granted by us (not by SAML), so demotion knows it is safe
  * to remove it again.
+ *
+ * A user whose staff affiliation came from SAML already has everything the
+ * staff-tier route mounts need, so nothing is granted and — crucially — the
+ * promotion marker is NOT set: demoting them later must leave their genuine
+ * affiliation alone. Their TA designation lives on the membership only.
  * @param {string|ObjectId} userId - User ID
  */
 async function grantPromotedStaffAffiliation(userId) {
@@ -185,6 +191,8 @@ async function grantPromotedStaffAffiliation(userId) {
         const user = await collection.findOne({ _id: idObj });
         if (!user) return null;
         const affiliations = normalizeAffiliations(user.affiliation);
+        const staffFromSaml = affiliations.includes('staff') && !user.staffViaTaPromotion;
+        if (staffFromSaml) return null;
         if (!affiliations.includes('staff')) affiliations.push('staff');
         return collection.updateOne(
             { _id: idObj },
@@ -350,6 +358,98 @@ async function getStudentsNotInCourse(courseId) {
     }
 }
 
+// Cap on search hits: the picker is for finding one known person by email or
+// name, not for browsing the user base.
+const SEARCH_RESULT_LIMIT = 10;
+
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Both shapes an id may be stored under in grasp_user_course (ObjectId from
+ * the app, string from older writes), so $in/$nin filters catch either.
+ */
+function idForms(id) {
+    const forms = [id];
+    const asString = String(id);
+    if (typeof id !== 'string') forms.push(asString);
+    if (ObjectId.isValid(asString)) forms.push(new ObjectId(asString));
+    return forms;
+}
+
+/**
+ * How many courses each of the given users belongs to, keyed by string id.
+ * Lets the picker point out accounts that are not in any course yet — the
+ * "signed in but has no role anywhere" guests issue #115 is about.
+ */
+async function countMembershipsByUser(db, userIds) {
+    const counts = new Map();
+    if (!userIds.length) return counts;
+    const rows = await db.collection("grasp_user_course").aggregate([
+        { $match: { userId: { $in: userIds.flatMap(idForms) } } },
+        { $group: { _id: { $toString: "$userId" }, count: { $sum: 1 } } },
+    ]).toArray();
+    for (const row of rows) counts.set(row._id, row.count);
+    return counts;
+}
+
+/**
+ * Find accounts that are not in the course, by email or name. Search-only on
+ * purpose: an instructor types the email or name of the person they mean and
+ * gets a handful of matches, rather than a browsable list of every GRASP
+ * account. Faculty filtering is left to the caller (it needs the admin
+ * whitelist from utils/auth).
+ * @param {string|ObjectId} courseId - Course whose members are excluded
+ * @param {string} query - Case-insensitive substring of email, display name, or legal name
+ * @param {{ limit?: number }} [options]
+ * @returns {Promise<Array>} Users with a `courseCount` of their memberships
+ */
+async function searchUsersNotInCourse(courseId, query, { limit = SEARCH_RESULT_LIMIT } = {}) {
+    try {
+        const trimmed = String(query || '').trim();
+        if (!trimmed) return [];
+
+        const db = await databaseService.connect();
+        const userCollection = db.collection("grasp_user");
+        const userIdsInCourse = await getUserIdsInCourse(db, courseId);
+        const pattern = new RegExp(escapeRegExp(trimmed), 'i');
+
+        const matches = await userCollection
+            .find(
+                {
+                    _id: { $nin: userIdsInCourse.flatMap(idForms) },
+                    $or: [{ email: pattern }, { displayName: pattern }, { legalName: pattern }],
+                },
+                {
+                    projection: {
+                        _id: 1,
+                        puid: 1,
+                        email: 1,
+                        displayName: 1,
+                        legalName: 1,
+                        affiliation: 1,
+                        staffViaTaPromotion: 1,
+                    },
+                }
+            )
+            .sort({ legalName: 1, displayName: 1, email: 1 })
+            .limit(Math.max(1, Math.min(Number(limit) || SEARCH_RESULT_LIMIT, 50)))
+            .toArray();
+
+        // Second line of defence for ids stored in a shape $nin did not catch.
+        const candidates = filterUsersNotInCourse(matches, userIdsInCourse);
+        const courseCounts = await countMembershipsByUser(db, candidates.map((u) => u._id));
+        return candidates.map((user) => ({
+            ...user,
+            courseCount: courseCounts.get(String(user._id)) || 0,
+        }));
+    } catch (error) {
+        console.error("Error searching users not in course:", error);
+        throw error;
+    }
+}
+
 module.exports = {
     createOrUpdateUser,
     getUserByPuid,
@@ -361,4 +461,5 @@ module.exports = {
     updateUserProfile,
     getStaffUsersNotInCourse,
     getStudentsNotInCourse,
+    searchUsersNotInCourse,
 };

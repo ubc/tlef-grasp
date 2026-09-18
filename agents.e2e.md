@@ -406,6 +406,13 @@ layer. What exists today:
   - `tests/e2e/student-journey.spec.js` — the student loop as `bio_student` against the
     seeded quiz: find it in Available Quizzes → take it answering correctly → see 100% →
     retry.
+  - `tests/e2e/instructor-add-people.spec.js` — manual course access (issue #115) as
+    `bio_prof2`: search the Users page picker for the plain `student` persona (signed
+    in, in no course), add them straight in as a TA, see the "Added by … on …" line and
+    the audit fields via the API, then revoke from the roster and see both steps in
+    Access History. The persona's email/name are read from the DB
+    (`getGuestPersonaUser()` in `seed.js`) — a login refreshes them from the IdP and
+    the academic-API fake, so never hardcode them.
 - **Auth wiring**: `tests/e2e/auth.js` (per-role + per-persona storage-state paths) and
   `tests/e2e/saml.setup.js` (logs in faculty/staff/student **and** the `bio_prof2`/
   `bio_student`/`bio_student3` personas via the local IdP, saves one state each, then

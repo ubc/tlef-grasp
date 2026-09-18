@@ -12,24 +12,39 @@ jest.mock('../../src/services/database', () => ({
   connect: jest.fn(),
 }));
 
-jest.mock('../../src/services/user-course', () => ({
-  getCourseUsers: jest.fn(),
-  createUserCourse: jest.fn(),
-  deleteUserCourse: jest.fn(),
-  isUserInCourse: jest.fn(),
-  getUserCourseMembership: jest.fn(),
-  setUserCourseRole: jest.fn(),
-  setUserCourseTaPermissions: jest.fn(),
-  countTaMemberships: jest.fn(),
-}));
+jest.mock('../../src/services/user-course', () => {
+  const { MEMBERSHIP_SOURCES } = jest.requireActual('../../src/services/user-course');
+  return {
+    MEMBERSHIP_SOURCES,
+    getCourseUsers: jest.fn(),
+    createUserCourse: jest.fn(),
+    deleteUserCourse: jest.fn(),
+    isUserInCourse: jest.fn(),
+    getUserCourseMembership: jest.fn(),
+    setUserCourseRole: jest.fn(),
+    setUserCourseTaPermissions: jest.fn(),
+    countTaMemberships: jest.fn(),
+  };
+});
 
 jest.mock('../../src/services/user', () => ({
   getStaffUsersNotInCourse: jest.fn(),
   getStudentsNotInCourse: jest.fn(),
+  searchUsersNotInCourse: jest.fn(),
   getUserById: jest.fn(),
   grantPromotedStaffAffiliation: jest.fn(),
   revokePromotedStaffAffiliation: jest.fn(),
 }));
+
+jest.mock('../../src/services/course-access-log', () => {
+  const { ACCESS_ACTIONS } = jest.requireActual('../../src/services/course-access-log');
+  return {
+    ACCESS_ACTIONS,
+    recordCourseAccessEvent: jest.fn(),
+    getCourseAccessLog: jest.fn(),
+  };
+});
+
 
 jest.mock('../../src/services/course', () => ({
   getCourseById: jest.fn(),
@@ -41,6 +56,7 @@ jest.mock('../../src/services/course-section', () => ({
 
 const userCourseService = require('../../src/services/user-course');
 const userService = require('../../src/services/user');
+const accessLog = require('../../src/services/course-access-log');
 const courseSectionService = require('../../src/services/course-section');
 const usersRouter = require('../../src/routes/users');
 
@@ -168,10 +184,20 @@ describe('POST /api/users/course/:courseId/promote', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('stu-1', COURSE_ID, 'ta');
+    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('stu-1', COURSE_ID, 'ta', {
+      changedBy: 'prof-1',
+    });
     // Staff affiliation is added via $addToSet + promotion marker; the student
     // affiliation is never removed by this service.
     expect(userService.grantPromotedStaffAffiliation).toHaveBeenCalledWith('stu-1');
+    // The grant is evidence: who made whom a TA, in which course.
+    expect(accessLog.recordCourseAccessEvent).toHaveBeenCalledWith({
+      courseId: COURSE_ID,
+      targetUserId: 'stu-1',
+      actorUserId: 'prof-1',
+      action: 'promoted',
+      role: 'ta',
+    });
   });
 
   it('rejects a TA (staff) caller: TAs cannot promote users', async () => {
@@ -244,7 +270,7 @@ describe('POST /api/users/course/:courseId/promote', () => {
     expect(userCourseService.setUserCourseRole).not.toHaveBeenCalled();
   });
 
-  it('rejects promoting genuine SAML staff', async () => {
+  it('lets genuine SAML staff be designated TA (issue #115): the membership carries the role', async () => {
     userCourseService.isUserInCourse.mockResolvedValue(true);
     userCourseService.getUserCourseMembership.mockResolvedValue({
       userId: 'staff-1',
@@ -258,8 +284,13 @@ describe('POST /api/users/course/:courseId/promote', () => {
 
     const res = await request(buildApp(instructor)).post(promoteUrl).send({ userId: 'staff-1' });
 
-    expect(res.status).toBe(400);
-    expect(userCourseService.setUserCourseRole).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('staff-1', COURSE_ID, 'ta', {
+      changedBy: 'prof-1',
+    });
+    // The user service is what knows to leave a SAML staff affiliation alone
+    // (and never set the promotion marker); the controller still asks it.
+    expect(userService.grantPromotedStaffAffiliation).toHaveBeenCalledWith('staff-1');
   });
 
   it('allows promoting an existing TA of another course who is a student here', async () => {
@@ -273,7 +304,9 @@ describe('POST /api/users/course/:courseId/promote', () => {
     const res = await request(buildApp(instructor)).post(promoteUrl).send({ userId: 'ta-1' });
 
     expect(res.status).toBe(200);
-    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, 'ta');
+    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, 'ta', {
+      changedBy: 'prof-1',
+    });
   });
 
   it('requires a userId', async () => {
@@ -295,8 +328,18 @@ describe('POST /api/users/course/:courseId/demote', () => {
     const res = await request(buildApp(instructor)).post(demoteUrl).send({ userId: 'ta-1' });
 
     expect(res.status).toBe(200);
-    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, null);
+    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, null, {
+      changedBy: 'prof-1',
+    });
     expect(userService.revokePromotedStaffAffiliation).toHaveBeenCalledWith('ta-1');
+    expect(res.body.role).toBe('student');
+    expect(accessLog.recordCourseAccessEvent).toHaveBeenCalledWith({
+      courseId: COURSE_ID,
+      targetUserId: 'ta-1',
+      actorUserId: 'prof-1',
+      action: 'demoted',
+      role: 'student',
+    });
   });
 
   it('keeps the staff affiliation while the user is still a TA in another course', async () => {
@@ -308,7 +351,9 @@ describe('POST /api/users/course/:courseId/demote', () => {
     const res = await request(buildApp(instructor)).post(demoteUrl).send({ userId: 'ta-1' });
 
     expect(res.status).toBe(200);
-    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, null);
+    expect(userCourseService.setUserCourseRole).toHaveBeenCalledWith('ta-1', COURSE_ID, null, {
+      changedBy: 'prof-1',
+    });
     expect(userService.revokePromotedStaffAffiliation).not.toHaveBeenCalled();
   });
 
@@ -327,6 +372,12 @@ describe('POST /api/users/course/:courseId/demote', () => {
 
     expect(res.status).toBe(200);
     expect(userService.revokePromotedStaffAffiliation).not.toHaveBeenCalled();
+    // They revert to ordinary course staff, not to student.
+    expect(res.body.role).toBe('staff');
+    expect(res.body.message).toMatch(/remain course staff/);
+    expect(accessLog.recordCourseAccessEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'demoted', role: 'staff', targetUserId: 'staff-1' })
+    );
   });
 
   it('rejects demoting a user who is not a TA in this course', async () => {

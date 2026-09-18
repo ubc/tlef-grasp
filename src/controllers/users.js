@@ -1,7 +1,29 @@
-const { getCourseUsers, createUserCourse, deleteUserCourse, isUserInCourse, getUserCourseMembership, setUserCourseRole, setUserCourseTaPermissions, countTaMemberships } = require('../services/user-course');
-const { getStaffUsersNotInCourse, getStudentsNotInCourse, getUserById, grantPromotedStaffAffiliation, revokePromotedStaffAffiliation } = require('../services/user');
+const {
+  getCourseUsers,
+  createUserCourse,
+  deleteUserCourse,
+  isUserInCourse,
+  getUserCourseMembership,
+  setUserCourseRole,
+  setUserCourseTaPermissions,
+  countTaMemberships,
+  MEMBERSHIP_SOURCES,
+} = require('../services/user-course');
+const {
+  getStaffUsersNotInCourse,
+  getStudentsNotInCourse,
+  searchUsersNotInCourse,
+  getUserById,
+  grantPromotedStaffAffiliation,
+  revokePromotedStaffAffiliation,
+} = require('../services/user');
+const {
+  ACCESS_ACTIONS,
+  recordCourseAccessEvent,
+  getCourseAccessLog,
+} = require('../services/course-access-log');
 const { getSectionsOwnedByUser } = require('../services/course-section');
-const { isFaculty, parseAffiliations } = require('../utils/auth');
+const { isFaculty } = require('../utils/auth');
 const { TA_COURSE_ROLE, hasStaffAccessInCourse, resolveCourseRole } = require('../utils/course-access');
 const { isCourseManager } = require('../utils/co-instructor-permissions');
 const {
@@ -10,6 +32,65 @@ const {
   sanitizeTaPermissions,
   assertTaPermission,
 } = require('../utils/ta-permissions');
+
+// Roles an instructor may grant when adding someone by hand (issue #115).
+// 'member' is a plain membership: the person's effective course role then
+// follows from their affiliation (student, or staff for SAML staff).
+const ADD_ROLES = { MEMBER: 'member', TA: 'ta' };
+const ADD_ROLE_VALUES = Object.values(ADD_ROLES);
+
+// A search needs enough of an email or name to point at one person.
+const SEARCH_MIN_LENGTH = 3;
+const SEARCH_RESULT_LIMIT = 10;
+const ACCESS_LOG_DEFAULT_LIMIT = 100;
+
+const requesterIdOf = (req) => req.user._id || req.user.id;
+
+/**
+ * The role a user holds in a course with no TA designation: what they fall
+ * back to when a TA role is removed, and what a plain "add" grants.
+ * @returns {'staff'|'student'}
+ */
+function baseCourseRole(user) {
+  return resolveCourseRole(user, null, false);
+}
+
+/**
+ * Designate a course member as TA: the membership gains courseRole 'ta', a
+ * clean (full-access) permission map, and the user gains the staff affiliation
+ * when they did not already hold it from SAML. Shared by promotion and by
+ * adding someone straight in as a TA.
+ */
+async function applyTaPromotion(userId, courseId, actorId) {
+  await setUserCourseRole(userId, courseId, TA_COURSE_ROLE, { changedBy: actorId });
+  // Fresh promotions start with full access (every permission enabled);
+  // the instructor can restrict individual capabilities afterwards.
+  await setUserCourseTaPermissions(userId, courseId, null);
+  await grantPromotedStaffAffiliation(userId);
+}
+
+/**
+ * Take the TA designation away. The staff affiliation granted by a promotion
+ * is only revoked once the user holds no TA role in any course; SAML-granted
+ * staff affiliations are never touched (they carry no promotion marker).
+ * When the membership itself has just been deleted there is no role left to
+ * clear, only the affiliation to reconsider.
+ * @returns {Promise<Object|null>} The target user document
+ */
+async function applyTaDemotion(userId, courseId, actorId, { membershipRemoved = false } = {}) {
+  if (!membershipRemoved) {
+    await setUserCourseRole(userId, courseId, null, { changedBy: actorId });
+    // A later re-promotion starts from a clean (full-access) slate.
+    await setUserCourseTaPermissions(userId, courseId, null);
+  }
+
+  const remainingTaCourses = await countTaMemberships(userId);
+  const targetUser = await getUserById(userId);
+  if (remainingTaCourses === 0 && targetUser?.staffViaTaPromotion) {
+    await revokePromotedStaffAffiliation(userId);
+  }
+  return targetUser;
+}
 
 /**
  * Shared guard for TA promotion/demotion: the requester must be faculty (an
@@ -27,7 +108,7 @@ async function assertCanManageCourseRoles(req, res, courseId, targetUserId) {
     return null;
   }
 
-  const requesterId = req.user._id || req.user.id;
+  const requesterId = requesterIdOf(req);
   if (!(await isUserInCourse(requesterId, courseId))) {
     res.status(403).json({ success: false, error: "User is not in course" });
     return null;
@@ -57,9 +138,12 @@ async function assertCanManageCourseRoles(req, res, courseId, targetUserId) {
 
 /**
  * POST /api/users/course/:courseId/promote
- * Promote a student in the course to TA: the membership gains
- * courseRole 'ta' and the user gains the staff affiliation (keeping
- * student). Takes effect on the student's next login.
+ * Designate a course member as TA: the membership gains courseRole 'ta' and
+ * the user gains the staff affiliation (keeping student) unless SAML already
+ * gave them one. Takes effect on the member's next login. Instructors cannot
+ * be made TAs — they already outrank one, and touching their affiliations
+ * could not be undone safely. Anyone else may hold the role, including staff
+ * whose Workday affiliation is not a reliable signal of TA work.
  */
 const promoteUserToTaHandler = async (req, res) => {
   try {
@@ -81,29 +165,22 @@ const promoteUserToTaHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "User not found" });
     }
 
-    // Only regular students are promotable. Faculty and genuine SAML staff
-    // already outrank TAs, and touching their affiliations could not be
-    // undone safely.
-    const affiliations = parseAffiliations(targetUser);
-    if (affiliations.includes("faculty") ||
-        (affiliations.includes("staff") && !targetUser.staffViaTaPromotion)) {
+    if (await isFaculty(targetUser)) {
       return res.status(400).json({
         success: false,
-        error: "Only students can be promoted to TA",
-      });
-    }
-    if (!affiliations.includes("student") && !affiliations.includes("affiliate")) {
-      return res.status(400).json({
-        success: false,
-        error: "Only students can be promoted to TA",
+        error: "Instructors cannot be made TAs",
       });
     }
 
-    await setUserCourseRole(userId, courseId, TA_COURSE_ROLE);
-    // Fresh promotions start with full access (every permission enabled);
-    // the instructor can restrict individual capabilities afterwards.
-    await setUserCourseTaPermissions(userId, courseId, null);
-    await grantPromotedStaffAffiliation(userId);
+    const actorId = requesterIdOf(req);
+    await applyTaPromotion(userId, courseId, actorId);
+    await recordCourseAccessEvent({
+      courseId,
+      targetUserId: userId,
+      actorUserId: actorId,
+      action: ACCESS_ACTIONS.PROMOTED,
+      role: TA_COURSE_ROLE,
+    });
 
     res.json({
       success: true,
@@ -117,9 +194,10 @@ const promoteUserToTaHandler = async (req, res) => {
 
 /**
  * POST /api/users/course/:courseId/demote
- * Demote a TA back to student in this course. The staff affiliation granted
- * by promotion is only revoked once the user holds no TA role in any course;
- * SAML-granted staff affiliations are never touched.
+ * Remove the TA designation in this course. A promoted student returns to
+ * being a student; SAML staff return to ordinary course staff. The staff
+ * affiliation granted by promotion is only revoked once the user holds no TA
+ * role in any course; SAML-granted staff affiliations are never touched.
  */
 const demoteTaToStudentHandler = async (req, res) => {
   try {
@@ -136,19 +214,24 @@ const demoteTaToStudentHandler = async (req, res) => {
       });
     }
 
-    await setUserCourseRole(userId, courseId, null);
-    // A later re-promotion starts from a clean (full-access) slate.
-    await setUserCourseTaPermissions(userId, courseId, null);
-
-    const remainingTaCourses = await countTaMemberships(userId);
-    const targetUser = await getUserById(userId);
-    if (remainingTaCourses === 0 && targetUser?.staffViaTaPromotion) {
-      await revokePromotedStaffAffiliation(userId);
-    }
+    const actorId = requesterIdOf(req);
+    const targetUser = await applyTaDemotion(userId, courseId, actorId);
+    const revertedTo = targetUser ? baseCourseRole(targetUser) : 'student';
+    await recordCourseAccessEvent({
+      courseId,
+      targetUserId: userId,
+      actorUserId: actorId,
+      action: ACCESS_ACTIONS.DEMOTED,
+      role: revertedTo,
+    });
 
     res.json({
       success: true,
-      message: "TA demoted to student. The change applies on their next login.",
+      message:
+        revertedTo === 'staff'
+          ? "TA role removed. They remain course staff; the change applies on their next login."
+          : "TA demoted to student. The change applies on their next login.",
+      role: revertedTo,
     });
   } catch (error) {
     console.error("Error demoting TA to student:", error);
@@ -187,6 +270,14 @@ const updateTaPermissionsHandler = async (req, res) => {
     }
 
     await setUserCourseTaPermissions(userId, courseId, sanitized);
+    await recordCourseAccessEvent({
+      courseId,
+      targetUserId: userId,
+      actorUserId: requesterIdOf(req),
+      action: ACCESS_ACTIONS.PERMISSIONS_UPDATED,
+      role: TA_COURSE_ROLE,
+      details: { permissions: sanitized },
+    });
 
     res.json({
       success: true,
@@ -281,22 +372,31 @@ const getCourseUsersHandler = async (req, res) => {
 
     const users = [];
     for (const courseUser of courseUsers) {
-      const userIsFaculty = await isFaculty(courseUser.user || courseUser);
-      const courseRole = resolveCourseRole(
-        courseUser.user || courseUser,
-        courseUser,
-        userIsFaculty
-      );
+      const userDoc = courseUser.user || courseUser;
+      const userIsFaculty = await isFaculty(userDoc);
+      const courseRole = resolveCourseRole(userDoc, courseUser, userIsFaculty);
 
       // Instructors, TAs, and genuine staff are course-level members and
       // visible to every instructor. TA rows carry their effective permission
-      // map so the Users page can prefill the permissions editor.
+      // map so the Users page can prefill the permissions editor, plus the
+      // role they revert to if the designation is removed.
       if (courseRole !== "student") {
         const row = { ...courseUser, courseRole };
         if (courseRole === "ta") {
           row.taPermissions = getEffectiveTaPermissions(courseUser.taPermissions);
+          row.baseRole = baseCourseRole(userDoc);
         }
         users.push(row);
+        continue;
+      }
+
+      // Manually added students were let in by an instructor, not by a section
+      // roster, so they have no section to be scoped by: every instructor sees
+      // them, the same as the course-level members above. Otherwise a guest
+      // added by one co-instructor would be invisible — and unrevokable — to
+      // the others.
+      if (courseUser.source === MEMBERSHIP_SOURCES.MANUAL) {
+        users.push({ ...courseUser, courseRole });
         continue;
       }
 
@@ -446,10 +546,69 @@ const getAllUsersNotInCourseHandler = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/users/search/not-in-course/:courseId?q=
+ * Find accounts to add by hand (issue #115). Search-only: the instructor
+ * types an email or name and gets at most a handful of non-member matches —
+ * never a browsable list of every GRASP account. Instructor accounts are
+ * left out; they join a course with its invite code, as before.
+ */
+const searchUsersNotInCourseHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({
+        success: false,
+        error: "Only faculty can search for users to add",
+      });
+    }
+
+    if (!(await isUserInCourse(requesterIdOf(req), courseId))) {
+      return res.status(403).json({ success: false, error: "User is not in course" });
+    }
+
+    if (query.length < SEARCH_MIN_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        error: `Enter at least ${SEARCH_MIN_LENGTH} characters of an email or name`,
+      });
+    }
+
+    const matches = await searchUsersNotInCourse(courseId, query, { limit: SEARCH_RESULT_LIMIT });
+    const users = [];
+    for (const user of matches) {
+      if (await isFaculty(user)) continue;
+      users.push({
+        _id: user._id,
+        email: user.email,
+        displayName: user.displayName,
+        legalName: user.legalName,
+        affiliation: user.affiliation,
+        role: baseCourseRole(user),
+        courseCount: user.courseCount || 0,
+      });
+    }
+
+    res.json({ success: true, users });
+  } catch (error) {
+    console.error("Error searching users not in course:", error);
+    res.status(500).json({ success: false, error: "Failed to search users" });
+  }
+};
+
+/**
+ * POST /api/users/course/:courseId/add
+ * Grant course access to an account by hand. Body: { userId, role } where
+ * role is 'member' (default — effective role follows their affiliation) or
+ * 'ta'. The membership records who granted it and when, and the grant is
+ * appended to the course access log (issue #115).
+ */
 const addUserToCourseHandler = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { userId } = req.body;
+    const { userId, role = ADD_ROLES.MEMBER } = req.body || {};
 
     // Only faculty can add users to courses
     if (!(await isFaculty(req.user))) {
@@ -460,7 +619,8 @@ const addUserToCourseHandler = async (req, res) => {
     }
 
     // Check if current user is in course
-    if (!(await isUserInCourse(req.user.id || req.user._id, courseId))) {
+    const actorId = requesterIdOf(req);
+    if (!(await isUserInCourse(actorId, courseId))) {
       return res.status(403).json({
         success: false,
         error: "User is not in course"
@@ -474,6 +634,13 @@ const addUserToCourseHandler = async (req, res) => {
       });
     }
 
+    if (!ADD_ROLE_VALUES.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: `role must be one of: ${ADD_ROLE_VALUES.join(', ')}`,
+      });
+    }
+
     // Check if user is already in course
     if (await isUserInCourse(userId, courseId)) {
       return res.status(409).json({ 
@@ -482,12 +649,45 @@ const addUserToCourseHandler = async (req, res) => {
       });
     }
 
-    // Add user to course
-    await createUserCourse(userId, courseId);
+    const targetUser = await getUserById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // Instructors are course-level peers, not guests: they join with the
+    // course invite code, and only the owner can remove them again.
+    if (await isFaculty(targetUser)) {
+      return res.status(400).json({
+        success: false,
+        error: "Instructors join a course with its invite code",
+      });
+    }
+
+    await createUserCourse(userId, courseId, {
+      source: MEMBERSHIP_SOURCES.MANUAL,
+      addedBy: actorId,
+    });
+
+    const asTa = role === ADD_ROLES.TA;
+    if (asTa) {
+      await applyTaPromotion(userId, courseId, actorId);
+    }
+
+    const grantedRole = asTa ? TA_COURSE_ROLE : baseCourseRole(targetUser);
+    await recordCourseAccessEvent({
+      courseId,
+      targetUserId: userId,
+      actorUserId: actorId,
+      action: ACCESS_ACTIONS.ADDED,
+      role: grantedRole,
+    });
 
     res.json({
       success: true,
-      message: "User added to course successfully",
+      message: asTa
+        ? "User added to the course as a TA. TA access applies on their next login."
+        : "User added to course successfully",
+      role: grantedRole,
     });
   } catch (error) {
     console.error("Error adding user to course:", error);
@@ -539,15 +739,37 @@ const removeUserFromCourseHandler = async (req, res) => {
     // Only the course owner (or an app administrator) may remove another
     // instructor; co-instructors can only remove non-instructor users.
     const targetUser = await getUserById(userId);
-    if (targetUser && (await isFaculty(targetUser)) && !(await isCourseManager(req.user, courseId))) {
+    const targetIsFaculty = targetUser ? await isFaculty(targetUser) : false;
+    if (targetIsFaculty && !(await isCourseManager(req.user, courseId))) {
       return res.status(403).json({
         success: false,
         error: "Only the course owner can remove other instructors"
       });
     }
 
+    // Read the membership before it goes: the audit entry records the role
+    // being revoked, and a TA's promoted affiliation has to be reconsidered.
+    const membership = await getUserCourseMembership(userId, courseId);
+    const heldRole = targetUser
+      ? resolveCourseRole(targetUser, membership, targetIsFaculty)
+      : null;
+
     // Remove user from course
     const result = await deleteUserCourse(userId, courseId);
+
+    // Removing a TA is a revocation too: without this, the staff affiliation
+    // granted by their promotion would outlive the course it was granted for.
+    if (membership?.courseRole === TA_COURSE_ROLE) {
+      await applyTaDemotion(userId, courseId, currentUserId, { membershipRemoved: true });
+    }
+
+    await recordCourseAccessEvent({
+      courseId,
+      targetUserId: userId,
+      actorUserId: currentUserId,
+      action: ACCESS_ACTIONS.REMOVED,
+      role: heldRole,
+    });
 
     res.json({
       success: true,
@@ -563,15 +785,51 @@ const removeUserFromCourseHandler = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/users/course/:courseId/access-log?limit=
+ * Newest-first record of who granted, changed, or revoked access in this
+ * course. Instructors only — it is the evidence behind every manual grant.
+ */
+const getCourseAccessLogHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    if (!(await isFaculty(req.user))) {
+      return res.status(403).json({
+        success: false,
+        error: "Only instructors can view the access history",
+      });
+    }
+
+    if (!(await isUserInCourse(requesterIdOf(req), courseId))) {
+      return res.status(403).json({ success: false, error: "User is not in course" });
+    }
+
+    const requested = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requested) && requested > 0
+      ? requested
+      : ACCESS_LOG_DEFAULT_LIMIT;
+
+    const events = await getCourseAccessLog(courseId, { limit });
+    res.json({ success: true, events });
+  } catch (error) {
+    console.error("Error fetching course access log:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch access history" });
+  }
+};
+
 module.exports = {
+  ADD_ROLES,
   getCourseAccessHandler,
   getCourseUsersHandler,
   getStaffUsersNotInCourseHandler,
   getStudentsNotInCourseHandler,
   getAllUsersNotInCourseHandler,
+  searchUsersNotInCourseHandler,
   addUserToCourseHandler,
   removeUserFromCourseHandler,
   promoteUserToTaHandler,
   demoteTaToStudentHandler,
-  updateTaPermissionsHandler
+  updateTaPermissionsHandler,
+  getCourseAccessLogHandler,
 };
