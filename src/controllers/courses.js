@@ -14,7 +14,7 @@ const {
   listArchivedCoursesForOwner,
 } = require('../services/course');
 
-const { createUserCourse, getUserCourses, setUserCourseOrder, isUserInCourse, getCourseUsers } = require('../services/user-course');
+const { createUserCourse, getUserCourses, setUserCourseOrder, isUserInCourse, getCourseUsers, MEMBERSHIP_SOURCES } = require('../services/user-course');
 const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner, getSectionsForViewer } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
@@ -285,7 +285,7 @@ async function syncStudentsToCourse(courseId, sectionIds, academicPeriod) {
         if (!user) continue;
 
         if (!(await isUserInCourse(user._id, courseId))) {
-          await createUserCourse(user._id, courseId);
+          await createUserCourse(user._id, courseId, { source: MEMBERSHIP_SOURCES.ROSTER_SYNC });
           added += 1;
         }
 
@@ -372,7 +372,7 @@ const createNewCourse = async (req, res) => {
 
     if (userId) {
       try {
-        await createUserCourse(userId, courseId);
+        await createUserCourse(userId, courseId, { source: MEMBERSHIP_SOURCES.OWNER });
       } catch (userCourseError) {
         console.error("Error creating user-course relationship:", userCourseError);
       }
@@ -460,7 +460,7 @@ const joinCourseWithCode = async (req, res) => {
       return res.status(403).json({ error: "Invalid invite code" });
     }
 
-    await createUserCourse(userId, course._id);
+    await createUserCourse(userId, course._id, { source: MEMBERSHIP_SOURCES.INVITE_CODE });
     res.json({
       success: true,
       message: "You have been added to the course",
@@ -495,7 +495,7 @@ const joinCourseByEnrollmentCode = async (req, res) => {
       });
     }
 
-    await createUserCourse(userId, course._id);
+    await createUserCourse(userId, course._id, { source: MEMBERSHIP_SOURCES.INVITE_CODE });
     res.json({
       success: true,
       message: "You have been added to the course",

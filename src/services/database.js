@@ -101,6 +101,9 @@ class DatabaseService {
       await this.db.collection("grasp_question").createIndex({ questionTitle: 1 });
       await this.db.collection("grasp_question").createIndex({ courseId: 1, granularObjectiveId: 1 });
       await this.db.collection("grasp_user_course").createIndex({ userId: 1, courseId: 1 }, { unique: true });
+      // Append-only record of who granted, changed, or revoked a person's
+      // course access (issue #115). Always read newest-first per course.
+      await this.db.collection("grasp_course_access_log").createIndex({ courseId: 1, createdAt: -1 });
       await this.db.collection("grasp_material").createIndex({ sourceId: 1 }, { unique: true });
       await this.db.collection("grasp_objective").createIndex({ parent: 1 });
       await this.db.collection("grasp_objective_material").createIndex({ objectiveId: 1, materialId: 1 }, { unique: true });

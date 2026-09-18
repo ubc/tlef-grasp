@@ -1,7 +1,27 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
 
-const createUserCourse = async (userId, courseId) => {
+// How a membership came to exist. Only 'manual' memberships are granted by an
+// instructor by hand (issue #115); the rest are produced by GRASP itself.
+const MEMBERSHIP_SOURCES = {
+    MANUAL: 'manual',
+    ROSTER_SYNC: 'roster-sync',
+    INVITE_CODE: 'invite-code',
+    OWNER: 'owner',
+};
+
+const toObjectIdIfValid = (value) =>
+    typeof value === 'string' && ObjectId.isValid(value) ? new ObjectId(value) : value;
+
+/**
+ * Create a membership linking a user to a course.
+ * @param {string|ObjectId} userId
+ * @param {string|ObjectId} courseId
+ * @param {Object} [meta] - Provenance, kept on the document for the roster and audits
+ * @param {string} [meta.source] - One of MEMBERSHIP_SOURCES
+ * @param {string|ObjectId} [meta.addedBy] - The instructor who granted a manual membership
+ */
+const createUserCourse = async (userId, courseId, meta = {}) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user_course");
@@ -10,10 +30,15 @@ const createUserCourse = async (userId, courseId) => {
         const userIdObj = typeof userId === 'string' ? new ObjectId(userId) : userId;
         const courseIdObj = typeof courseId === 'string' ? new ObjectId(courseId) : courseId;
         
-        const userCourse = await collection.insertOne({ 
-            userId: userIdObj, 
-            courseId: courseIdObj 
-        });
+        const membership = {
+            userId: userIdObj,
+            courseId: courseIdObj,
+            createdAt: new Date(),
+        };
+        if (meta.source) membership.source = meta.source;
+        if (meta.addedBy) membership.addedBy = toObjectIdIfValid(meta.addedBy);
+
+        const userCourse = await collection.insertOne(membership);
         return userCourse;
     } catch (error) {
         console.error("Error creating user course:", error);
@@ -289,6 +314,19 @@ const getCourseUsers = async (courseId) => {
                     as: "userSections"
                 }
             },
+            // Resolve the instructor who granted a manual membership (absent
+            // for roster-synced, invite-code, and owner memberships).
+            {
+                $lookup: {
+                    from: "grasp_user",
+                    let: { addedById: "$addedBy" },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ["$_id", "$$addedById"] } } },
+                        { $project: { _id: 1, displayName: 1, legalName: 1, email: 1 } }
+                    ],
+                    as: "addedByUser"
+                }
+            },
             // Reshape the output to include user fields at top level
             {
                 $project: {
@@ -297,6 +335,12 @@ const getCourseUsers = async (courseId) => {
                     courseId: 1,
                     courseRole: 1,
                     taPermissions: 1,
+                    // Membership provenance (issue #115): how and when this
+                    // person got in, and who let them in if it was by hand.
+                    source: 1,
+                    joinedAt: "$createdAt",
+                    addedBy: { $first: "$addedByUser" },
+                    courseRoleChangedAt: 1,
                     // Include all user fields at top level for easier access
                     puid: "$user.puid",
                     displayName: "$user.displayName",
@@ -399,13 +443,17 @@ const getUserCourseMembership = async (userId, courseId) => {
 };
 
 /**
- * Set or clear the course-scoped role on a membership document.
+ * Set or clear the course-scoped role on a membership document. When the
+ * caller says who made the change, the membership records them and the time,
+ * so the roster can show who granted (or revoked) a TA designation.
  * @param {string|ObjectId} userId - User ID
  * @param {string|ObjectId} courseId - Course ID
  * @param {string|null} courseRole - Role to set (e.g. 'ta'), or null to clear
+ * @param {Object} [meta]
+ * @param {string|ObjectId} [meta.changedBy] - The instructor making the change
  * @returns {Promise} Update result
  */
-const setUserCourseRole = async (userId, courseId, courseRole) => {
+const setUserCourseRole = async (userId, courseId, courseRole, meta = {}) => {
     try {
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user_course");
@@ -420,9 +468,18 @@ const setUserCourseRole = async (userId, courseId, courseRole) => {
                 { userId: String(userId), courseId: String(courseId) }
             ]
         };
+        const stamp = meta.changedBy
+            ? {
+                courseRoleChangedBy: toObjectIdIfValid(meta.changedBy),
+                courseRoleChangedAt: new Date(),
+            }
+            : {};
         const update = courseRole
-            ? { $set: { courseRole } }
-            : { $unset: { courseRole: '' } };
+            ? { $set: { courseRole, ...stamp } }
+            : {
+                $unset: { courseRole: '' },
+                ...(meta.changedBy ? { $set: stamp } : {}),
+            };
         return collection.updateOne(filter, update);
     } catch (error) {
         console.error("Error setting user course role:", error);
@@ -623,6 +680,7 @@ const setUserCourseOrder = async (userId, courseIds) => {
 };
 
 module.exports = {
+    MEMBERSHIP_SOURCES,
     createUserCourse,
     getUserCourses,
     setUserCourseOrder,

@@ -20,6 +20,10 @@ const { MongoClient, ObjectId } = require('mongodb');
 const BIO_PROF2_PUID = '45678901';
 const BIO_STUDENT_PUID = '34567890';
 const BIO_STUDENT3_PUID = '67890123';
+// The plain `student` persona: logged in by saml.setup.js so its grasp_user
+// row exists, but never seeded into any course. The add-people spec (issue
+// #115) uses it as the guest an instructor lets in by hand.
+const STUDENT_PUID = '87654321';
 
 // Fixed identifiers so the seed is idempotent across runs.
 const COURSE_CODE = 'E2E-BIOC-302';
@@ -475,6 +479,39 @@ async function resetSeededQuizAttemptState() {
  *
  * @param {string} puid - PUID of the student to reset (defaults to bio_student).
  */
+/**
+ * The guest persona's current grasp_user record. Its email and names come
+ * from whatever the local IdP and academic-API fake last wrote (a login
+ * refreshes them), so specs must read them rather than hardcode them.
+ */
+async function getGuestPersonaUser() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI is required to look up the guest persona');
+
+  const client = new MongoClient(uri, {
+    connectTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 8000,
+  });
+  await client.connect();
+  try {
+    const db = client.db(process.env.MONGODB_DB_NAME || 'grasp_db');
+    const user = await getUserByPuid(db, STUDENT_PUID);
+    if (!user) {
+      throw new Error(
+        'getGuestPersonaUser: the `student` persona has not logged in — saml.setup.js must run first'
+      );
+    }
+    return {
+      _id: String(user._id),
+      email: user.email,
+      displayName: user.displayName,
+      legalName: user.legalName,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
 async function resetSeededAiQuizAttemptState(puid = BIO_STUDENT_PUID) {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI is required to reset seeded AI quiz attempt state');
@@ -512,6 +549,7 @@ module.exports = {
   seedStudentJourneyCourse,
   resetSeededQuizAttemptState,
   resetSeededAiQuizAttemptState,
+  getGuestPersonaUser,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,
@@ -524,6 +562,7 @@ module.exports = {
     BIO_PROF2_PUID,
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,
+    STUDENT_PUID,
     QUESTION_COUNT: SEED_QUESTIONS.length,
     AI_QUESTION_COUNT: AI_SEED_QUESTIONS.length,
     // Seeded question titles in insertion order, for question-bank assertions.

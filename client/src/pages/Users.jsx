@@ -9,6 +9,9 @@ import {
   useUpdateTaPermissions,
 } from "../hooks/useUsers";
 import TaPermissionsModal from "./users/TaPermissionsModal";
+import AddPeoplePanel from "./users/AddPeoplePanel";
+import AccessHistory from "./users/AccessHistory";
+import RoleBadge from "./users/RoleBadge";
 import { useMyCourseSections } from "../hooks/useSections";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { getUserRole } from "../lib/utils";
@@ -16,6 +19,7 @@ import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import { LoadingRow } from "../components/ui/states";
 import {
+  describeMembershipSource,
   filterAndSortCourseUsers,
   getUserNames,
   UNKNOWN_USER_NAME,
@@ -23,36 +27,7 @@ import {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function RoleBadge({ role }) {
-  const config = {
-    faculty: {
-      icon: "fa-graduation-cap",
-      label: "Faculty",
-      classes: "bg-purple-100 text-purple-700",
-    },
-    ta: {
-      icon: "fa-chalkboard-teacher",
-      label: "TA",
-      classes: "bg-amber-100 text-amber-700",
-    },
-    staff: { icon: "fa-user-tie", label: "Staff", classes: "bg-blue-100 text-blue-700" },
-    student: {
-      icon: "fa-user-graduate",
-      label: "Student",
-      classes: "bg-green-100 text-green-700",
-    },
-  }[role];
-  if (!config) return null;
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${config.classes}`}
-    >
-      <i className={`fas ${config.icon}`} /> {config.label}
-    </span>
-  );
-}
-
-function UserNameCell({ legalName, displayName, isCurrentUser }) {
+function UserNameCell({ legalName, displayName, isCurrentUser, note }) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100">
@@ -69,6 +44,12 @@ function UserNameCell({ legalName, displayName, isCurrentUser }) {
         </div>
         {displayName && (
           <span className="block text-xs text-muted">Display name: {displayName}</span>
+        )}
+        {note && (
+          <span className="block text-xs text-muted">
+            <i className="fas fa-user-check mr-1 text-amber-600" aria-hidden="true" />
+            {note}
+          </span>
         )}
       </div>
     </div>
@@ -110,7 +91,8 @@ export default function Users() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
   const [removeTarget, setRemoveTarget] = useState(null);
-  // { userId, displayName, action: 'promote' | 'demote' }
+  // { userId, displayName, action: 'promote' | 'demote', baseRole }
+  // baseRole: what a TA reverts to on demotion ('student' | 'staff').
   const [roleChangeTarget, setRoleChangeTarget] = useState(null);
   // { userId, displayName, taPermissions } — the TA whose permissions are open
   const [permissionsTarget, setPermissionsTarget] = useState(null);
@@ -163,9 +145,9 @@ export default function Users() {
   });
 
   const demoteMutation = useDemoteToStudent(courseId, {
-    onSuccess: () =>
+    onSuccess: (data) =>
       showToast(
-        "TA demoted to student. The change applies on their next login.",
+        data?.message || "TA demoted to student. The change applies on their next login.",
         "success"
       ),
     onError: (error) => showToast(error.message || "Failed to demote TA", "error"),
@@ -187,6 +169,9 @@ export default function Users() {
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
       <h1 className="mb-6 text-2xl font-bold text-ink">Course Users</h1>
+
+      {/* Manual access grants (issue #115): instructors only */}
+      {isFaculty && <AddPeoplePanel courseId={courseId} />}
 
       {/* Users in course */}
       <section className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
@@ -281,11 +266,18 @@ export default function Users() {
                     const isCurrentUser = userId === currentUserId;
                     const canRemove =
                       isFaculty && !isCurrentUser && (role !== "faculty" || fullAccess);
+                    // Anyone but an instructor can hold the TA role: students,
+                    // and staff whose Workday affiliation is not a reliable
+                    // signal of TA work.
                     const canChangeCourseRole =
                       isFaculty &&
                       !isCurrentUser &&
-                      (role === "student" || role === "ta");
+                      (role === "student" || role === "staff" || role === "ta");
                     const showActions = canChangeCourseRole || canRemove;
+                    const baseRole = user.baseRole || "student";
+                    const demoteLabel =
+                      baseRole === "staff" ? "Remove TA Role" : "Demote to Student";
+                    const provenance = describeMembershipSource(user);
 
                     return (
                       <tr key={userId} className="hover:bg-gray-50">
@@ -294,6 +286,7 @@ export default function Users() {
                             legalName={legalName}
                             displayName={distinctDisplayName}
                             isCurrentUser={isCurrentUser}
+                            note={provenance}
                           />
                         </td>
                         <td className={tableCellClass}>
@@ -320,7 +313,7 @@ export default function Users() {
                         <td className={tableCellClass}>
                           {showActions ? (
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {canChangeCourseRole && role === "student" && (
+                              {canChangeCourseRole && role !== "ta" && (
                                 <button
                                   type="button"
                                   title="Promote to TA"
@@ -330,6 +323,7 @@ export default function Users() {
                                       userId,
                                       displayName: targetName,
                                       action: "promote",
+                                      baseRole: role,
                                     })
                                   }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/85 disabled:opacity-50"
@@ -356,18 +350,19 @@ export default function Users() {
                               {canChangeCourseRole && role === "ta" && (
                                 <button
                                   type="button"
-                                  title="Demote to Student"
+                                  title={demoteLabel}
                                   disabled={roleChangePending}
                                   onClick={() =>
                                     setRoleChangeTarget({
                                       userId,
                                       displayName: targetName,
                                       action: "demote",
+                                      baseRole,
                                     })
                                   }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600/85 disabled:opacity-50"
                                 >
-                                  <i className="fas fa-arrow-down" /> Demote to Student
+                                  <i className="fas fa-arrow-down" /> {demoteLabel}
                                 </button>
                               )}
                               {canRemove && (
@@ -467,6 +462,8 @@ export default function Users() {
         )}
       </section>
 
+      {isFaculty && <AccessHistory courseId={courseId} />}
+
       <ConfirmModal
         open={!!roleChangeTarget}
         onClose={() => setRoleChangeTarget(null)}
@@ -475,12 +472,20 @@ export default function Users() {
           (action === "promote" ? promoteMutation : demoteMutation).mutate(userId);
         }}
         title={
-          roleChangeTarget?.action === "promote" ? "Promote to TA" : "Demote to Student"
+          roleChangeTarget?.action === "promote"
+            ? "Promote to TA"
+            : roleChangeTarget?.baseRole === "staff"
+              ? "Remove TA Role"
+              : "Demote to Student"
         }
         message={
           roleChangeTarget?.action === "promote"
-            ? `Promote ${roleChangeTarget?.displayName || "this user"} to TA for this course? They keep their student role and gain TA access on their next login.`
-            : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed on their next login.`
+            ? roleChangeTarget?.baseRole === "staff"
+              ? `Make ${roleChangeTarget?.displayName || "this user"} a TA for this course? They keep their staff role and can be limited with TA permissions; the change applies on their next login.`
+              : `Promote ${roleChangeTarget?.displayName || "this user"} to TA for this course? They keep their student role and gain TA access on their next login.`
+            : roleChangeTarget?.baseRole === "staff"
+              ? `Remove the TA role from ${roleChangeTarget?.displayName || "this user"}? They remain course staff; the change applies on their next login.`
+              : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed on their next login.`
         }
         confirmLabel="Confirm"
       />

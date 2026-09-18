@@ -11,16 +11,30 @@ jest.mock('../../src/services/database', () => ({
   connect: jest.fn(),
 }));
 
-jest.mock('../../src/services/user-course', () => ({
-  getCourseUsers: jest.fn(),
-  createUserCourse: jest.fn(),
-  deleteUserCourse: jest.fn(),
-  isUserInCourse: jest.fn(),
-  getUserCourseMembership: jest.fn(),
-  setUserCourseRole: jest.fn(),
-  setUserCourseTaPermissions: jest.fn(),
-  countTaMemberships: jest.fn(),
-}));
+jest.mock('../../src/services/user-course', () => {
+  const { MEMBERSHIP_SOURCES } = jest.requireActual('../../src/services/user-course');
+  return {
+    MEMBERSHIP_SOURCES,
+    getCourseUsers: jest.fn(),
+    createUserCourse: jest.fn(),
+    deleteUserCourse: jest.fn(),
+    isUserInCourse: jest.fn(),
+    getUserCourseMembership: jest.fn(),
+    setUserCourseRole: jest.fn(),
+    setUserCourseTaPermissions: jest.fn(),
+    countTaMemberships: jest.fn(),
+  };
+});
+
+jest.mock('../../src/services/course-access-log', () => {
+  const { ACCESS_ACTIONS } = jest.requireActual('../../src/services/course-access-log');
+  return {
+    ACCESS_ACTIONS,
+    recordCourseAccessEvent: jest.fn(),
+    getCourseAccessLog: jest.fn(),
+  };
+});
+
 
 jest.mock('../../src/services/user', () => ({
   getStaffUsersNotInCourse: jest.fn(),

@@ -9,6 +9,7 @@ router.use("/course/:courseId", requireActiveCourse());
 router.use("/staff/not-in-course/:courseId", requireActiveCourse());
 router.use("/students/not-in-course/:courseId", requireActiveCourse());
 router.use("/all/not-in-course/:courseId", requireActiveCourse());
+router.use("/search/not-in-course/:courseId", requireActiveCourse());
 
 // Resolve the current user's effective role in the selected course.
 router.get("/course/:courseId/access", usersController.getCourseAccessHandler);
@@ -25,7 +26,13 @@ router.get("/students/not-in-course/:courseId", usersController.getStudentsNotIn
 // Get all users not in a course (combined - faculty, staff, students)
 router.get("/all/not-in-course/:courseId", usersController.getAllUsersNotInCourseHandler);
 
-// Add a user to a course
+// Search non-member accounts by email or name, to add one by hand (issue #115)
+router.get("/search/not-in-course/:courseId", usersController.searchUsersNotInCourseHandler);
+
+// Who granted, changed, or revoked access in this course, newest first
+router.get("/course/:courseId/access-log", usersController.getCourseAccessLogHandler);
+
+// Add a user to a course, as a plain member or straight in as a TA
 router.post("/course/:courseId/add", express.json(), usersController.addUserToCourseHandler);
 
 // Remove a user from a course

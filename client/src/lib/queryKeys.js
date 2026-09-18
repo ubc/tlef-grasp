@@ -36,6 +36,8 @@ export const queryKeys = {
   courseUsers: (courseId) => ["course-users", courseId],
   courseAccess: (courseId) => ["course-access", courseId],
   availableUsers: (courseId) => ["available-users", courseId],
+  userSearch: (courseId, query) => ["user-search", courseId, query],
+  courseAccessLog: (courseId) => ["course-access-log", courseId],
 
   courseSettings: (courseId) => ["course-settings", courseId],
   settingsDefaults: ["course-settings-defaults"],
