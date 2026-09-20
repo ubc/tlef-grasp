@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { selectSeededCourse } = require('./helpers');
 
 // The SAML login round-trip is a first-class spec, not just plumbing hidden in
 // SAML setup. It drives the SP-initiated login through the local
@@ -8,6 +9,8 @@ const { test, expect } = require('@playwright/test');
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 const USERNAME = process.env.E2E_USERNAME || 'faculty';
 const PASSWORD = process.env.E2E_PASSWORD || 'faculty';
+const BIO_PROF2_USERNAME = process.env.E2E_BIO_PROF2_USERNAME || 'bio_prof2';
+const BIO_PROF2_PASSWORD = process.env.E2E_BIO_PROF2_PASSWORD || 'bio_prof2';
 
 async function loginThroughIdp(page, username = USERNAME, password = PASSWORD) {
   await page.goto('/auth/ubcshib');
@@ -68,6 +71,41 @@ test.describe('SAML login round-trip', () => {
     await expect(
       page.getByRole('link', { name: /log in with cwl/i })
     ).toBeVisible();
+  });
+
+  test('an already-logged-in visitor is redirected off the landing page', async ({
+    page,
+  }) => {
+    await loginThroughIdp(page);
+
+    // A visitor who still holds a session must never be shown the login page
+    // again. With no course picked yet, Landing's redirect sends them to
+    // onboarding.
+    await page.goto('/');
+
+    await expect(page).toHaveURL('/onboarding');
+    await expect(
+      page.getByRole('link', { name: /log in with cwl/i })
+    ).toHaveCount(0);
+  });
+
+  test('an already-logged-in visitor with a selected course is sent to the dashboard', async ({
+    page,
+  }) => {
+    // bio_prof2 owns the seeded course (see tests/e2e/seed.js), so this branch
+    // signs in as them rather than the default faculty account.
+    await loginThroughIdp(page, BIO_PROF2_USERNAME, BIO_PROF2_PASSWORD);
+
+    // The redirect's other branch. selectedCourse is read from sessionStorage
+    // when the store is created, so it must be seeded before the app boots.
+    await selectSeededCourse(page, { role: 'instructor' });
+
+    await page.goto('/');
+
+    await expect(page).toHaveURL('/dashboard');
+    await expect(
+      page.getByRole('link', { name: /log in with cwl/i })
+    ).toHaveCount(0);
   });
 
   test('a wrong password keeps the user on the IdP login form', async ({ page }) => {

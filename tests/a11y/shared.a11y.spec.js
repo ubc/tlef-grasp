@@ -40,4 +40,25 @@ test.describe('Accessibility: unauthenticated pages', () => {
 
     await expectNoA11yViolations(page);
   });
+
+  test('team page has no blocking axe violations', async ({ page }) => {
+    await page.goto('/team');
+
+    await expect(
+      page.getByRole('heading', { name: 'Meet the team behind GRASP' })
+    ).toBeVisible();
+
+    await expectNoA11yViolations(page);
+  });
+
+  test('landing footer team link is keyboard operable', async ({ page }) => {
+    await page.goto('/');
+
+    const teamLink = page.getByRole('link', { name: 'Team behind GRASP' });
+    await teamLink.focus();
+    await expect(teamLink).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/team');
+  });
 });
