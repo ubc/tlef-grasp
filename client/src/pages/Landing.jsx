@@ -46,8 +46,8 @@ export default function Landing() {
       <main className="flex flex-1 flex-col items-center justify-center gap-8 p-5">
         <div className="w-full max-w-4xl">
           <div className="rounded-[20px] bg-white p-6 shadow-[0_20px_40px_rgba(0,0,0,0.1)] sm:p-10">
-            {/* Two columns only from md — at 640px each would be about 260px,
-              too narrow for the wordmark and the button.
+            {/* Two columns only from lg, the breakpoint where the steps below
+              leave their 2x2 grid, so the two blocks change shape together.
 
               A 2x2 grid rather than two flex columns: heading | button on row 1,
               description | note on row 2. Row 1 sizes to the heading and both
@@ -58,10 +58,10 @@ export default function Landing() {
               description, button, note, leaving the stacked order untouched.
               Keep the row gap at 0: it is what joins the two border-l segments
               into one unbroken divider. */}
-            <div className="flex flex-col md:grid md:grid-cols-2 md:gap-x-8">
-              <div className="flex flex-col justify-end text-center md:col-start-1 md:row-start-1 md:text-left">
+            <div className="flex flex-col lg:grid lg:grid-cols-2 lg:gap-x-8">
+              <div className="flex flex-col justify-end text-center lg:col-start-1 lg:row-start-1 lg:text-left">
                 <div
-                  className="mx-auto mb-5 h-1 w-12 rounded-full bg-welcome-to md:mx-0"
+                  className="mx-auto mb-5 h-1 w-12 rounded-full bg-welcome-to lg:mx-0"
                   aria-hidden="true"
                 />
                 {/* Keep both spans inside this single <h1>, separated by real
@@ -74,7 +74,7 @@ export default function Landing() {
                   <span className="block text-welcome-to">GRASP</span>
                 </h1>
               </div>
-              <p className="mt-4 text-center text-base text-muted sm:text-lg md:col-start-1 md:row-start-2 md:text-left">
+              <p className="mt-4 text-center text-base text-muted sm:text-lg lg:col-start-1 lg:row-start-2 lg:text-left">
                 A web application that helps UBC instructors turn course materials into
                 evidence-based formative assessments.
               </p>
@@ -89,7 +89,7 @@ export default function Landing() {
                     stacked, a left border once side by side. items-center holds the
                     button at its natural width — as a flex item it would otherwise
                     stretch full-bleed. */}
-                  <div className="mt-8 flex flex-col items-center justify-end border-t border-surface-border pt-8 md:col-start-2 md:row-start-1 md:mt-0 md:border-t-0 md:border-l md:pt-0 md:pl-8">
+                  <div className="mt-8 flex flex-col items-center justify-end border-t border-surface-border pt-8 lg:col-start-2 lg:row-start-1 lg:mt-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
                     {/* welcome-to, not welcome-from: at text-lg/600 this counts as
                       normal text, so it owes 4.5:1 — welcome-from gives only
                       3.66:1, welcome-to 6.37:1. brightness-90 replaces the app's
@@ -104,7 +104,7 @@ export default function Landing() {
                   </div>
                   {/* Padding, not a top margin: a margin would open a gap in the
                     border-l and break the divider in two. */}
-                  <p className="mx-auto mt-4 max-w-sm text-center text-sm text-muted md:col-start-2 md:row-start-2 md:mx-0 md:mt-0 md:max-w-none md:border-l md:border-surface-border md:pt-4 md:pl-8">
+                  <p className="mx-auto mt-4 max-w-sm text-center text-sm text-muted lg:col-start-2 lg:row-start-2 lg:mx-0 lg:mt-0 lg:max-w-none lg:border-l lg:border-surface-border lg:pt-4 lg:pl-8">
                     Instructors and TAs sign in with CWL. Students reach their quizzes
                     through the same login.
                   </p>
