@@ -44,7 +44,9 @@ export default function Landing() {
     // contrast ratios and why text must not sit directly on the gradient.
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-welcome-from to-welcome-to">
       <main className="flex flex-1 flex-col items-center justify-center gap-8 p-5">
-        <div className="w-full max-w-4xl">
+        {/* max-w-2xl matches the steps grid below while both are stacked, so
+          their edges line up; keep the two in step if either changes. */}
+        <div className="w-full max-w-2xl lg:max-w-4xl">
           <div className="rounded-[20px] bg-white p-6 shadow-[0_20px_40px_rgba(0,0,0,0.1)] sm:p-10">
             {/* Two columns only from lg, the breakpoint where the steps below
               leave their 2x2 grid, so the two blocks change shape together.
@@ -145,7 +147,6 @@ export default function Landing() {
             Built by the Learning Technology Innovation Centre (LTIC) at the University of
             British Columbia, supported by the Teaching and Learning Enhancement Fund
             (TLEF).{" "}
-
             <Link
               to="/team"
               className="font-semibold underline underline-offset-2 hover:no-underline focus:outline-2 focus:outline-offset-2 focus:outline-white"
