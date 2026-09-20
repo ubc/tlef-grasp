@@ -12,6 +12,7 @@ import Landing from "./pages/Landing";
 
 // Every page beyond the landing screen is lazy-loaded so each route ships as
 // its own chunk (KaTeX/SMILES only load with the pages that render questions).
+const Team = lazy(() => import("./pages/Team"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const CourseMaterials = lazy(() => import("./pages/CourseMaterials"));
@@ -44,6 +45,9 @@ export default function App() {
     <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/" element={<Landing />} />
+        {/* Public, like the landing page it is reached from: the footer link
+            has to work before anyone has signed in. */}
+        <Route path="/team" element={<Team />} />
 
         <Route element={<RequireAuth />}>
           <Route path="/onboarding" element={<Onboarding />} />

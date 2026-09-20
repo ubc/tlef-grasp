@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useAppStore } from "../stores/appStore";
 
@@ -144,15 +144,22 @@ export default function Landing() {
           <p className="mx-auto max-w-2xl">
             Built by the Learning Technology Innovation Centre (LTIC) at the University of
             British Columbia, supported by the Teaching and Learning Enhancement Fund
-            (TLEF).
+            (TLEF).{" "}
+
+            <Link
+              to="/team"
+              className="font-semibold underline underline-offset-2 hover:no-underline focus:outline-2 focus:outline-offset-2 focus:outline-white"
+            >
+              Team behind GRASP
+            </Link>
           </p>
           <p className="mt-2">
             Contact support:{" "}
             <a
-              href="mailto:REPLACE-WITH-SUPPORT-ADDRESS@ubc.ca"
+              href="mailto:LT.hub@ubc.ca"
               className="font-semibold underline underline-offset-2 hover:no-underline focus:outline-2 focus:outline-offset-2 focus:outline-white"
             >
-              REPLACE-WITH-SUPPORT-ADDRESS@ubc.ca
+              LT.hub@ubc.ca
             </a>
           </p>
         </div>
