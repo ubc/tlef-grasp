@@ -2,6 +2,8 @@ import { describe, it, expect } from '@jest/globals';
 import {
   appendObjectiveGroups,
   itemFromGranular,
+  totalQuestionsForGroups,
+  withQuestionTypes,
 } from '../../client/src/pages/question-generation/objectiveGroups.js';
 
 // Ids are otherwise Date.now()+Math.random(); a counter keeps assertions readable.
@@ -131,5 +133,99 @@ describe('itemFromGranular', () => {
 
     expect(item.granularId).toBeNull();
     expect(item.count).toBe(0);
+  });
+});
+
+// totalQuestionsForGroups backs the single number under the last card on
+// step 1: "Total: 8 questions across 2 learning objectives".
+//
+// The shape it walks, outermost first:
+//   group          one meta learning objective — one card on the page
+//   item           a granular objective inside that card
+//   questionTypes  one row per Bloom level and question type, each with a count
+//
+// So the page total is every count, of every row, of every item, of every card.
+describe('totalQuestionsForGroups', () => {
+  // Built by hand instead of through itemFromGranular because only
+  // questionTypes matters here — and the last test needs an item whose count
+  // field is deliberately wrong, which itemFromGranular would never produce.
+  const item = (questionTypes, extra = {}) => ({ questionTypes, ...extra });
+  const group = (items) => ({ id: 1, title: 'Objective', items });
+
+  it('is 0 with no groups', () => {
+    expect(totalQuestionsForGroups([])).toBe(0);
+  });
+
+  // Defensive rather than a state the page can reach: the helper runs inside
+  // a render, so it answers 0 for whatever it is handed instead of throwing.
+  it('is 0 for a missing group list', () => {
+    expect(totalQuestionsForGroups(undefined)).toBe(0);
+    expect(totalQuestionsForGroups(null)).toBe(0);
+  });
+
+  // A card whose granular objectives have all been deleted, and — second
+  // case — a group built before any items were attached to it.
+  it('is 0 for a group with no items', () => {
+    expect(totalQuestionsForGroups([group([])])).toBe(0);
+    expect(totalQuestionsForGroups([{ id: 1, title: 'No items yet' }])).toBe(0);
+  });
+
+  // Objectives added, but no Bloom levels picked on any of them. 0 is the
+  // useful answer here: it is the page's only warning that Continue will
+  // reject the step, which QuestionGeneration.jsx does for any item left
+  // without Bloom levels.
+  it('is 0 when items carry no question types', () => {
+    expect(totalQuestionsForGroups([group([item([]), item(undefined)])])).toBe(0);
+  });
+
+  // Deleting the last question type is not the same as deleting the objective.
+  // The card stays on the page, so the line has to read "0 questions across 1
+  // learning objective" rather than vanish.
+  it('counts 0 when the last question type is deleted, keeping the objective', () => {
+    const configured = [
+      group([item([{ bloomLevel: 'Remember', questionType: 'multiple-choice', count: 1 }])]),
+    ];
+    expect(totalQuestionsForGroups(configured)).toBe(1);
+
+    // Routed through withQuestionTypes because that is what the page's delete
+    // handler calls, so `emptied` is the exact item shape the page ends up
+    // holding — count field included.
+    const emptied = [group([withQuestionTypes(configured[0].items[0], [])])];
+    expect(totalQuestionsForGroups(emptied)).toBe(0);
+    expect(emptied).toHaveLength(1);
+  });
+
+  // Two cards, three granular objectives, five rows: 2 + 3 + 1 + 4 + 5.
+  it('sums every type of every item of every group', () => {
+    const groups = [
+      group([
+        item([
+          { bloomLevel: 'Remember', questionType: 'multiple-choice', count: 2 },
+          { bloomLevel: 'Understand', questionType: 'true-false', count: 3 },
+        ]),
+        item([{ bloomLevel: 'Apply', questionType: 'calculation', count: 1 }]),
+      ]),
+      group([
+        item([
+          { bloomLevel: 'Analyze', questionType: 'short-answer', count: 4 },
+          { bloomLevel: 'Analyze', questionType: 'matching', count: 5 },
+        ]),
+      ]),
+    ];
+
+    expect(totalQuestionsForGroups(groups)).toBe(15);
+  });
+
+  // Every card prints its own "Total questions to generate". The page number
+  // has to be those numbers added up, or the page contradicts itself.
+  it('agrees with the per-group totals it is built from', () => {
+    const groups = [
+      group([item([{ bloomLevel: 'Remember', questionType: 'multiple-choice', count: 2 }])]),
+      group([item([{ bloomLevel: 'Apply', questionType: 'calculation', count: 6 }])]),
+    ];
+
+    const perGroup = groups.map((one) => totalQuestionsForGroups([one]));
+    expect(perGroup).toEqual([2, 6]);
+    expect(totalQuestionsForGroups(groups)).toBe(perGroup[0] + perGroup[1]);
   });
 });
