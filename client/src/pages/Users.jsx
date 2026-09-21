@@ -18,6 +18,7 @@ import { getUserRole } from "../lib/utils";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import { LoadingRow } from "../components/ui/states";
+import Pagination from "../components/ui/Pagination";
 import {
   describeMembershipSource,
   filterAndSortCourseUsers,
@@ -416,47 +417,12 @@ export default function Users() {
                   </select>
                 </div>
               </div>
-              {totalPages > 1 && (
-                <nav
-                  className="flex items-center gap-1"
-                  aria-label="User list pagination"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    aria-label="Previous page"
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:opacity-40"
-                  >
-                    <i className="fas fa-chevron-left" aria-hidden="true" />
-                  </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setPage(n)}
-                      aria-label={`Page ${n}`}
-                      aria-current={n === currentPage ? "page" : undefined}
-                      className={`rounded-lg border px-3 py-1.5 transition-colors ${
-                        n === currentPage
-                          ? "border-primary bg-primary text-white"
-                          : "border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    aria-label="Next page"
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 transition-colors hover:bg-gray-50 disabled:opacity-40"
-                  >
-                    <i className="fas fa-chevron-right" aria-hidden="true" />
-                  </button>
-                </nav>
-              )}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                ariaLabel="User list pagination"
+              />
             </div>
           </>
         )}
