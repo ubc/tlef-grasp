@@ -406,7 +406,13 @@ export default function QuestionGeneration() {
       )}
 
       {/* Footer actions */}
-      <div className="mt-8 flex items-center justify-end gap-3">
+      {/* Step 1 now ends with its own total line, so the footer tightens up
+          underneath it: the usual mt-8 leaves that total stranded between the
+          cards and the buttons instead of reading as the end of the list.
+          Steps 2 and 3 end with a card and keep the full gap. */}
+      <div
+        className={`${step === 1 ? "mt-2" : "mt-8"} flex items-center justify-end gap-3`}
+      >
         <button
           type="button"
           disabled={step === 1 || generating}

@@ -179,6 +179,24 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     await expect(
       page.getByRole('button', { name: /questions to generate for this objective/ })
     ).toHaveCount(0);
+
+    // Under the last card sits one number for the whole step. Rather than
+    // hard-code a total the stubbed generator could change, check the page
+    // against itself: every card's own total, added up, must equal the number
+    // on the bottom line.
+    const cardTotals = await page
+      .getByText(/Total questions to generate:\s*\d+/)
+      .allInnerTexts();
+    expect(cardTotals.length).toBeGreaterThan(0);
+    const expected = cardTotals.reduce(
+      (sum, text) => sum + Number(text.match(/\d+/)[0]),
+      0
+    );
+    const summary = page.getByText(
+      /Total:\s*\d+\s+questions?\s+across\s+\d+\s+learning objectives?/
+    );
+    await expect(summary).toBeVisible();
+    expect(Number((await summary.innerText()).match(/\d+/)[0])).toBe(expected);
   });
 
   test('does not invent objectives for unrelated material, but preserves instructor objectives (#32)', async () => {

@@ -87,3 +87,21 @@ export function appendObjectiveGroups(existingGroups, additions, makeId = newGro
 
   return next;
 }
+
+// Questions one group will generate — the same number its own card prints.
+const groupTotal = (group) =>
+  (group.items || []).reduce((sum, item) => sum + totalQuestions(item.questionTypes), 0);
+
+/**
+ * Total questions every objective group on the page will generate — the one
+ * number under the last card on step 1.
+ *
+ * Walks group → items (its granular objectives) → questionTypes (one row per
+ * Bloom level and question type, each with its own count) and adds the counts.
+ *
+ * Summed from questionTypes and not from item.count: count is the copy
+ * withQuestionTypes keeps in step (see above), and a copy can fall behind.
+ */
+export function totalQuestionsForGroups(groups) {
+  return (groups || []).reduce((sum, group) => sum + groupTotal(group), 0);
+}

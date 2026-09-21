@@ -7,7 +7,11 @@ import { useToast } from "../../components/ui/Toast";
 import AIGenerateModal from "./AIGenerateModal";
 import ObjectiveGroupCard from "./ObjectiveGroupCard";
 import { totalQuestions, defaultTypeForLevel } from "../../lib/questionTypes";
-import { appendObjectiveGroups, withQuestionTypes } from "./objectiveGroups";
+import {
+  appendObjectiveGroups,
+  totalQuestionsForGroups,
+  withQuestionTypes,
+} from "./objectiveGroups";
 import { generateAndSaveObjectives, deleteObjectives } from "./objectiveGeneration";
 import { runPool } from "../../lib/async-pool";
 import { MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
@@ -537,6 +541,11 @@ export default function ObjectivesStep({
     });
   };
 
+  // The two numbers in the summary line under the cards. Recomputed on every
+  // render rather than stored, so they follow any edit on their own.
+  const grandTotal = totalQuestionsForGroups(objectiveGroups);
+  const objectiveCount = objectiveGroups.length;
+
   return (
     <div>
       <h1 className="text-xl font-bold text-ink">
@@ -733,6 +742,22 @@ export default function ObjectivesStep({
         </div>
       )}
       </fieldset>
+
+      {/* One total for the whole step, sitting above the wizard's Back /
+          Continue row. Summed from objectiveGroups during render rather than
+          held in state, so it follows every count, chip, granular objective
+          and card change on its own.
+
+          With no objectives the line is hidden — the empty state above already
+          says there is nothing. With objectives but no Bloom levels picked it
+          shows 0, which is the page's only hint that Continue is about to
+          reject the step. */}
+      {objectiveCount > 0 && (
+        <p className="mt-4 text-right text-sm text-ink">
+          Total: {grandTotal} question{grandTotal === 1 ? "" : "s"} across{" "}
+          {objectiveCount} learning objective{objectiveCount === 1 ? "" : "s"}
+        </p>
+      )}
 
       {/* AI generate modal */}
       {aiModalOpen && (
