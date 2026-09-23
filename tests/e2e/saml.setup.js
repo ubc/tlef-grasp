@@ -10,7 +10,7 @@ const {
   BIO_STUDENT_AUTH_FILE,
   BIO_STUDENT3_AUTH_FILE,
 } = require('./auth');
-const { seedStudentJourneyCourse } = require('./seed');
+const { seedStudentJourneyCourse, seedCanvasSyncCourse } = require('./seed');
 
 const roles = [
   {
@@ -104,4 +104,7 @@ test('save SAML sessions and seed authenticated e2e data', async ({
   }
 
   await seedStudentJourneyCourse();
+  // The Canvas-linked course and bio_prof2's fake-Canvas token (issue #113).
+  // The Canvas specs reset it again before they run.
+  await seedCanvasSyncCourse();
 });

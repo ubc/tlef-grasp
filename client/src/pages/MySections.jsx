@@ -14,14 +14,29 @@ import { ConfirmModal } from "../components/ui/Modal";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import CanvasSectionLinkModal from "../components/lms/CanvasSectionLinkModal";
 import MoodleSectionLinkModal from "../components/lms/MoodleSectionLinkModal";
-import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import RosterSyncConfirmModal from "../components/lms/RosterSyncConfirmModal";
+import {
+  useCanvasStatus,
+  useSyncCanvasSectionStudents,
+} from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
 import { useUnlinkLmsSection } from "../hooks/useLmsSectionLink";
 import { prettyPeriod } from "../lib/academicPeriod";
+import {
+  CANVAS_ROSTER_SYNC_DISABLED_NOTE,
+  canvasSyncRowState,
+  describeCanvasSyncResult,
+  formatLastSynced,
+  sectionSyncMode,
+} from "../lib/lmsRosterSync";
 
 const headClass =
   "border-b border-gray-200 px-4 py-3 text-left text-sm font-semibold text-muted";
 const cellClass = "border-b border-gray-100 px-4 py-3 text-sm";
+const rowButtonClass =
+  "inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
+// Long enough to read a sync summary with notes.
+const SYNC_TOAST_MS = 8000;
 
 export default function MySections() {
   const showToast = useToast();
@@ -43,6 +58,9 @@ export default function MySections() {
   const [canvasLinkTarget, setCanvasLinkTarget] = useState(null);
   const [moodleLinkTarget, setMoodleLinkTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
+  // { section, reason, plan } while a Canvas sync waits for the instructor
+  // to review its drops; nothing has been applied yet.
+  const [syncConfirm, setSyncConfirm] = useState(null);
 
   const canvasStatus = useCanvasStatus();
   const moodleStatus = useMoodleStatus();
@@ -105,7 +123,7 @@ export default function MySections() {
       showToast(error.message || "Failed to recycle section", "error"),
   });
 
-  const syncMutation = useSyncSectionStudents(courseId, {
+  const academicSyncMutation = useSyncSectionStudents(courseId, {
     onSuccess: (data) =>
       showToast(
         `Students synced${data?.syncResult?.added != null ? ` — ${data.syncResult.added} added` : ""}.`,
@@ -114,6 +132,57 @@ export default function MySections() {
     onError: (error) =>
       showToast(error.message || "Failed to sync students", "error"),
   });
+
+  const canvasSyncMutation = useSyncCanvasSectionStudents(courseId, {
+    onSuccess: (data, variables) => {
+      if (data?.status === "confirmation-required") {
+        setSyncConfirm({
+          section: variables.section,
+          reason: data.reason,
+          plan: data.plan,
+        });
+        return;
+      }
+      const { message, type, hasNotes } = describeCanvasSyncResult(data?.summary);
+      showToast(message, type, hasNotes ? SYNC_TOAST_MS : undefined);
+    },
+    // A 401 with connected:false also flips canvasStatus to disconnected (see
+    // the hook), so the row swaps this button for "Connect Canvas".
+    onError: (error) =>
+      showToast(
+        error.body?.connected === false
+          ? "Canvas rejected the request. Use \"Connect Canvas\" on this section to reconnect, then sync again. If this keeps happening, the GRASP Canvas developer key may be missing a permission."
+          : error.message || "Failed to sync students from Canvas",
+        "error",
+        SYNC_TOAST_MS
+      ),
+  });
+
+  const isAcademicSyncing = (section) =>
+    academicSyncMutation.isPending &&
+    academicSyncMutation.variables?.sectionId === section.sectionId;
+  // One Canvas sync at a time on this page (see canvasSyncRowState).
+  const canvasSyncBusy = canvasSyncMutation.isPending;
+  const isCanvasSyncing = (section) =>
+    canvasSyncRowState(canvasSyncMutation, section).syncing;
+
+  // Which per-row sync a section gets (see sectionSyncMode): Canvas-linked
+  // sections sync from Canvas whenever Canvas is configured here (and only when
+  // this instructor is connected and the deployment's scopes allow it);
+  // everything else keeps the UBC Academic API sync.
+  const syncModeFor = (section) =>
+    sectionSyncMode(section, {
+      pending: canvasStatus.isPending,
+      enabled: showCanvasIntegration,
+      connected: canvasStatus.connected,
+      capabilities: canvasStatus.capabilities,
+    });
+  // A connected instructor on a deployment whose Canvas scopes leave out
+  // linking gets no Link/Change/Switch Canvas button.
+  const canLinkCanvas = canvasStatus.capabilities.link;
+
+  const startCanvasSync = (section, extra = {}) =>
+    canvasSyncMutation.mutate({ sectionId: section.sectionId, section, ...extra });
 
   const unlinkMutation = useUnlinkLmsSection(courseId, {
     onSuccess: () => showToast("LMS section link removed", "success"),
@@ -340,6 +409,14 @@ export default function MySections() {
                                 : "Moodle"}{" "}
                               · {section.lmsLink.externalSectionName}
                             </p>
+                            {section.lmsLink.provider === "canvas" &&
+                            section.lmsLink.lastSync?.at ? (
+                              <p className="mt-0.5 text-xs text-muted">
+                                <time dateTime={section.lmsLink.lastSync.at}>
+                                  {formatLastSynced(section.lmsLink.lastSync.at)}
+                                </time>
+                              </p>
+                            ) : null}
                           </div>
                         ) : (
                           <span className="text-muted">Not linked</span>
@@ -348,38 +425,59 @@ export default function MySections() {
                     ) : null}
                     <td className={cellClass}>
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={syncMutation.isPending && syncMutation.variables?.sectionId === section.sectionId}
-                          onClick={() =>
-                            syncMutation.mutate({
-                              sectionId: section.sectionId,
-                              academicPeriod: section.academicPeriod,
-                              academicPeriodName: section.academicPeriodName || prettyPeriod(section),
-                            })
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
-                        >
-                          {syncMutation.isPending && syncMutation.variables?.sectionId === section.sectionId ? (
-                            <><i className="fas fa-spinner fa-spin" /> Syncing…</>
-                          ) : (
-                            <><i className="fas fa-rotate" /> Sync Students</>
-                          )}
-                        </button>
+                        {syncModeFor(section) === "canvas" ? (
+                          <button
+                            type="button"
+                            aria-disabled={canvasSyncBusy}
+                            onClick={() => {
+                              if (!canvasSyncBusy) startCanvasSync(section);
+                            }}
+                            className={rowButtonClass}
+                          >
+                            {isCanvasSyncing(section) ? (
+                              <><i className="fas fa-spinner fa-spin" aria-hidden="true" /> Syncing…</>
+                            ) : (
+                              <><i className="fas fa-rotate" aria-hidden="true" /> Sync from Canvas</>
+                            )}
+                          </button>
+                        ) : syncModeFor(section) === "canvas-disabled" ? (
+                          <span className="text-xs text-muted">
+                            {CANVAS_ROSTER_SYNC_DISABLED_NOTE}
+                          </span>
+                        ) : syncModeFor(section) === "academic" ? (
+                          <button
+                            type="button"
+                            aria-disabled={isAcademicSyncing(section)}
+                            onClick={() => {
+                              if (!isAcademicSyncing(section)) {
+                                academicSyncMutation.mutate({ sectionId: section.sectionId });
+                              }
+                            }}
+                            className={rowButtonClass}
+                          >
+                            {isAcademicSyncing(section) ? (
+                              <><i className="fas fa-spinner fa-spin" aria-hidden="true" /> Syncing…</>
+                            ) : (
+                              <><i className="fas fa-rotate" aria-hidden="true" /> Sync Students</>
+                            )}
+                          </button>
+                        ) : null}
                         {showCanvasIntegration ? (
                           canvasStatus.connected ? (
-                            <button
-                              type="button"
-                              onClick={() => setCanvasLinkTarget(section)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
-                            >
-                              <i className="fas fa-link" />
-                              {section.lmsLink?.provider === "canvas"
-                                ? "Change Canvas Link"
-                                : section.lmsLink
-                                  ? "Switch to Canvas"
-                                  : "Link Canvas"}
-                            </button>
+                            canLinkCanvas ? (
+                              <button
+                                type="button"
+                                onClick={() => setCanvasLinkTarget(section)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/5"
+                              >
+                                <i className="fas fa-link" />
+                                {section.lmsLink?.provider === "canvas"
+                                  ? "Change Canvas Link"
+                                  : section.lmsLink
+                                    ? "Switch to Canvas"
+                                    : "Link Canvas"}
+                              </button>
+                            ) : null
                           ) : (
                             <a
                               href="/settings?canvas=connect"
@@ -460,6 +558,27 @@ export default function MySections() {
         courseId={courseId}
         localSection={moodleLinkTarget}
         onLinked={() => showToast("Moodle group linked", "success")}
+      />
+      <RosterSyncConfirmModal
+        open={!!syncConfirm}
+        onClose={() => setSyncConfirm(null)}
+        sectionLabel={
+          syncConfirm
+            ? syncConfirm.section.sectionNumber || syncConfirm.section.sectionId
+            : ""
+        }
+        reason={syncConfirm?.reason}
+        plan={syncConfirm?.plan}
+        onConfirmDrops={(confirmDropUserIds) => {
+          const { section } = syncConfirm;
+          setSyncConfirm(null);
+          startCanvasSync(section, { confirmDropUserIds });
+        }}
+        onSkipDrops={() => {
+          const { section } = syncConfirm;
+          setSyncConfirm(null);
+          startCanvasSync(section, { skipDrops: true });
+        }}
       />
       <ConfirmModal
         open={!!unlinkTarget}

@@ -106,8 +106,10 @@ test.describe('Course switcher ordering and nicknames', () => {
 
     await expect(page.getByText('Tuesday cohort')).toBeVisible();
 
-    // The nickname is what makes the switcher option distinguishable.
-    await page.getByRole('button', { name: 'Access' }).first().click();
+    // The nickname is what makes the switcher option distinguishable. Open the
+    // course that was just nicknamed: the first card may be another course
+    // (one the persona does not own, or one already nicknamed).
+    await page.getByRole('button', { name: `Access ${owned}`, exact: true }).first().click();
     await expect(page.getByLabel('Select a course')).toContainText('Tuesday cohort');
 
     // A closed <select> truncates in the narrow sidebar, cutting off exactly

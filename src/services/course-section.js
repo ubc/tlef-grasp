@@ -4,6 +4,25 @@ const { ObjectId } = require('mongodb');
 const toObjectId = (id) =>
   typeof id === 'string' && ObjectId.isValid(id) ? new ObjectId(id) : id;
 
+// Where a section enrollment was last confirmed from. Legacy rows carry no
+// source and count as academic-api.
+const SECTION_ENROLLMENT_SOURCES = {
+  ACADEMIC_API: 'academic-api',
+  CANVAS: 'canvas',
+};
+
+// Why a section enrollment was soft-dropped. A dropped row keeps its history
+// (and lets a later sync restore it) but grants nothing: every reader that
+// decides access or visibility only considers active rows.
+const DROPPED_REASONS = {
+  LMS_ROSTER: 'lms-roster',
+  REMOVED_FROM_COURSE: 'removed-from-course',
+};
+
+// Query fragment matching active (not soft-dropped) rows. `null` in a query
+// matches a missing field as well as an explicit null.
+const ACTIVE_ENROLLMENT = { droppedAt: null };
+
 const upsertCourseSection = async (courseId, { sectionId, sectionNumber, academicPeriod, academicPeriodName, owner }) => {
   const db = await databaseService.connect();
   const updateData = { sectionNumber, academicPeriod, academicPeriodName };
@@ -23,30 +42,114 @@ const getCourseSections = async (courseId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_course_section')
     .find({ courseId: toObjectId(courseId) })
-    .project({ 'lmsLink.linkedBy': 0 })
+    .project({ 'lmsLink.linkedBy': 0, 'lmsLink.lastSync.by': 0 })
     .toArray();
 };
 
-const upsertUserCourseSection = async (userId, courseId, sectionId) => {
+/**
+ * Record (or confirm) that a user is enrolled in a section. A roster sync is
+ * authoritative, so this also restores a soft-dropped row — re-syncing re-adds
+ * a student who was dropped or removed, as the Academic API sync always has.
+ * @param {string|ObjectId} userId
+ * @param {string|ObjectId} courseId
+ * @param {string} sectionId
+ * @param {Object} [options]
+ * @param {string} [options.source] - One of SECTION_ENROLLMENT_SOURCES (default academic-api)
+ * @param {Date} [options.now]
+ */
+const upsertUserCourseSection = async (userId, courseId, sectionId, options = {}) => {
+  const { source = SECTION_ENROLLMENT_SOURCES.ACADEMIC_API, now = new Date() } = options;
   const db = await databaseService.connect();
   await db.collection('grasp_user_course_section').updateOne(
     { userId: toObjectId(userId), courseId: toObjectId(courseId), sectionId },
-    { $setOnInsert: { userId: toObjectId(userId), courseId: toObjectId(courseId), sectionId } },
+    {
+      $set: { source, syncedAt: now },
+      $unset: { droppedAt: '', droppedReason: '', droppedBy: '' },
+      $setOnInsert: {
+        userId: toObjectId(userId),
+        courseId: toObjectId(courseId),
+        sectionId,
+        createdAt: now,
+      },
+    },
     { upsert: true }
   );
 };
 
+/**
+ * Soft-drop one active section enrollment. Returns whether a row was dropped
+ * (false when it was already dropped or does not exist).
+ * @param {string|ObjectId} userId
+ * @param {string|ObjectId} courseId
+ * @param {string} sectionId
+ * @param {{ reason: string, droppedBy?: string|ObjectId, now?: Date }} options
+ */
+const dropUserCourseSection = async (userId, courseId, sectionId, { reason, droppedBy, now = new Date() }) => {
+  const db = await databaseService.connect();
+  const result = await db.collection('grasp_user_course_section').updateOne(
+    {
+      userId: toObjectId(userId),
+      courseId: toObjectId(courseId),
+      sectionId,
+      ...ACTIVE_ENROLLMENT,
+    },
+    {
+      $set: {
+        droppedAt: now,
+        droppedReason: reason,
+        ...(droppedBy ? { droppedBy: toObjectId(droppedBy) } : {}),
+      },
+    }
+  );
+  return result.modifiedCount === 1;
+};
+
+/**
+ * Soft-drop every active section enrollment a user has in a course — used when
+ * an instructor removes them from the course, so a leftover section row cannot
+ * keep granting quiz access. Returns the number of rows dropped.
+ * @param {string|ObjectId} userId
+ * @param {string|ObjectId} courseId
+ * @param {{ reason: string, droppedBy?: string|ObjectId, now?: Date }} options
+ */
+const dropUserCourseSections = async (userId, courseId, { reason, droppedBy, now = new Date() }) => {
+  const db = await databaseService.connect();
+  const result = await db.collection('grasp_user_course_section').updateMany(
+    { userId: toObjectId(userId), courseId: toObjectId(courseId), ...ACTIVE_ENROLLMENT },
+    {
+      $set: {
+        droppedAt: now,
+        droppedReason: reason,
+        ...(droppedBy ? { droppedBy: toObjectId(droppedBy) } : {}),
+      },
+    }
+  );
+  return result.modifiedCount || 0;
+};
+
+/** Number of active section enrollments a user has in a course. */
+const countActiveUserCourseSections = async (userId, courseId) => {
+  const db = await databaseService.connect();
+  return db.collection('grasp_user_course_section').countDocuments({
+    userId: toObjectId(userId),
+    courseId: toObjectId(courseId),
+    ...ACTIVE_ENROLLMENT,
+  });
+};
+
+/** The user's active section enrollments in a course (dropped rows excluded). */
 const getUserCourseSections = async (userId, courseId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_user_course_section')
-    .find({ userId: toObjectId(userId), courseId: toObjectId(courseId) })
+    .find({ userId: toObjectId(userId), courseId: toObjectId(courseId), ...ACTIVE_ENROLLMENT })
     .toArray();
 };
 
+/** Active students of one section (dropped rows excluded). */
 const getSectionStudents = async (courseId, sectionId) => {
   const db = await databaseService.connect();
   return db.collection('grasp_user_course_section').aggregate([
-    { $match: { courseId: toObjectId(courseId), sectionId } },
+    { $match: { courseId: toObjectId(courseId), sectionId, ...ACTIVE_ENROLLMENT } },
     {
       $lookup: {
         from: 'grasp_user',
@@ -144,14 +247,17 @@ const recycleSection = async (courseId, sectionId) => {
   const db = await databaseService.connect();
   const cId = toObjectId(courseId);
 
-  // Get all users in this section before deleting
+  // Users actively enrolled in this section before deleting. A soft-dropped
+  // row already grants nothing, so recycling its section must not change that
+  // user's course membership.
   const userCourseSections = await db.collection('grasp_user_course_section').find({
     courseId: cId,
-    sectionId: sectionId
+    sectionId: sectionId,
+    ...ACTIVE_ENROLLMENT,
   }).toArray();
   const userIds = [...new Set(userCourseSections.map(doc => doc.userId.toString()))];
 
-  // Detach all users from this section
+  // Detach all users from this section (dropped rows included)
   await db.collection('grasp_user_course_section').deleteMany({
     courseId: cId,
     sectionId: sectionId
@@ -168,7 +274,8 @@ const recycleSection = async (courseId, sectionId) => {
       const uId = toObjectId(userIdStr);
       const remaining = await db.collection('grasp_user_course_section').countDocuments({
         courseId: cId,
-        userId: uId
+        userId: uId,
+        ...ACTIVE_ENROLLMENT,
       });
 
       if (remaining === 0) {
@@ -196,9 +303,14 @@ const recycleSection = async (courseId, sectionId) => {
 };
 
 module.exports = {
+  SECTION_ENROLLMENT_SOURCES,
+  DROPPED_REASONS,
   upsertCourseSection,
   getCourseSections,
   upsertUserCourseSection,
+  dropUserCourseSection,
+  dropUserCourseSections,
+  countActiveUserCourseSections,
   getUserCourseSections,
   getSectionStudents,
   getSectionsByOwner,

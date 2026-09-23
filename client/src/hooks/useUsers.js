@@ -37,7 +37,8 @@ export function useSearchUsersNotInCourse(courseId, query) {
         `/api/users/search/not-in-course/${courseId}?q=${encodeURIComponent(trimmed)}`
       ),
     enabled,
-    // Roster changes invalidate this via useInvalidateUserLists; otherwise a
+    // Roster changes invalidate this via useInvalidateUserLists and
+    // invalidateSectionRosterQueries (student syncs); otherwise a
     // repeated search for the same text can reuse the result briefly.
     staleTime: 30 * 1000,
   });

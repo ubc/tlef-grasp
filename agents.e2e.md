@@ -210,6 +210,72 @@ LO = `parent: 0`; granular = `parent: <parentId>`; both carry `courseId`), `gras
 `grasp_quiz` (`published`, `deliveryFormat`), `grasp_quiz_question` (`quizId`+`questionId`),
 `grasp_quiz_section_schedule` (`quizId`+`courseSectionId`, `releaseDate`/`expireDate`).
 
+### Fake Canvas (LMS roster sync, issue #113)
+
+Canvas in e2e is an **in-repo fake HTTP server**, `tests/e2e/stubs/fake-canvas.js`,
+never a real Canvas (the developer's `.env` usually points `CANVAS_DOMAIN` at a local
+Canvas on :9100 — the e2e server must not talk to it).
+
+- **Wiring.** `playwright.config.js` gives the webServer `E2E_FAKE_CANVAS_PORT` (9111) and
+  `CANVAS_DOMAIN=http://127.0.0.1:9111` plus placeholder `CANVAS_CLIENT_ID/SECRET/REDIRECT_URI`
+  and `CANVAS_SCOPES` = `FAKE_CANVAS.SCOPES`, the value recommended for UBC's scoped production
+  key (so `link` and `rosterSync` are on and `assignments` is off, as in production)
+  (`webServer.env` wins over `.env`, since dotenv never overrides a set variable). When
+  `E2E_FAKE_CANVAS_PORT` is set, `start-server-with-stubs.js` boots the fake **in the GRASP
+  server process** before requiring `src/server.js`; a port clash exits the boot. GRASP reaches
+  it over HTTP through the real LMS toolkit client, so no `src/` module is swapped. The e2e and
+  a11y workflows set the same `CANVAS_*` values as job env.
+- **What it serves** (Canvas REST JSON shapes): `GET /api/v1/courses?enrollment_type=teacher`,
+  `GET /api/v1/courses/:id/sections`, `GET /api/v1/courses/:id/enrollments` with `type[]` /
+  `state[]` (default active + invited) / `section_ids[]`, every enrollment embedding its `user`.
+  Like Canvas it paginates every list with a `Link` header and caps `per_page` (at 2, below the
+  toolkit's 100, so the small roster spans pages), answers an unknown token **and** a caller who
+  does not teach the course with **401**, and returns `sis_user_id`/`integration_id`/`login_id`
+  only while `readSis` is on.
+- **Enforced scopes (optional).** By default the fake behaves like a key **without** Enforce
+  Scopes. `setFakeCanvasEnforcedScopes(scopes)` makes the seeded token carry exactly `scopes`:
+  any API call outside them gets **401** `{"errors":[{"message":"Insufficient scopes on access
+  token."}]}` **without** `WWW-Authenticate` (an invalid token keeps it), and `include[]` /
+  `includes[]` are stripped to `uuid`, as Canvas does for a scoped key. The roster-sync spec runs
+  with `FAKE_CANVAS.SCOPES` enforced, proving GRASP stays within the recommended scopes and relies
+  on no include. Note an out-of-scope 401 makes the toolkit try a token refresh, which the fake
+  refuses, so the token row is deleted (the instructor looks disconnected). `POST /login/oauth2/token`
+  always refuses: the seeded token never expires, so a refresh means something is wrong (and the
+  toolkit then deletes the token row, as it would for a revoked Canvas grant).
+- **Fixtures** live in `tests/e2e/stubs/fake-canvas-fixtures.js` (`FAKE_CANVAS` constants +
+  `defaultCanvasFixtures()`), shared by the server, the seed and the specs. Canvas course 7001,
+  sections 8101 (linked) and 8102; students carry the IdP personas' PUIDs as `integration_id`:
+  bio_student3 (active in 8101), a never-signed-in student `99990001` (invited in 8101 → a
+  placeholder user on sync), bio_student (in **8102**, so the first sync proposes dropping them)
+  and a concluded student Canvas leaves out.
+- **Control API + request recorder**, for specs only, via `tests/e2e/fake-canvas-client.js`:
+  `resetFakeCanvas()`, `setFakeCanvasSectionStudents(sectionId, canvasUserIds)` (change the roster
+  between syncs), `setFakeCanvasSisVisibility(bool)`, `setFakeCanvasEnforcedScopes(list|null)`,
+  `getFakeCanvasRequests()` / `clearFakeCanvasRequests()`
+  (`[{ method, path, query: [[k, v]], authorized, scopesEnforced, status }]`; `query` is as GRASP
+  sent it, before include stripping). The
+  fake keeps state in memory in the server process, so **reset it in `beforeAll`**; the specs
+  also reset it in `afterAll`.
+- **Seed.** `seedCanvasSyncCourse()` (called by `saml.setup.js`, and again by each Canvas spec
+  as a full reset) builds the separate `Canvas Roster Sync (seeded)` course owned by bio_prof2:
+  section 101 with a fresh `lmsLink` to 8101 (`instance` = the fake origin, no
+  `lastSync`/`dropsReviewedAt`, so the next sync is a first sync), unlinked section 102,
+  bio_student (membership source `invite-code`) and bio_student3 active in 101, a published quiz
+  scheduled on 101 only, and a `grasp_lms_canvas_tokens` row for bio_prof2
+  (`{ userKey: String(user._id), tokens: { accessToken, refreshToken, expiresAt: 2099, canvasUserId } }`,
+  the toolkit's Mongo token-store shape). It deletes placeholder users for the fake-only PUIDs and
+  the course's access-log rows. **It overwrites any real Canvas token bio_prof2 had in that DB** —
+  another reason to point e2e at its own database.
+- **Guard (reuseExistingServer trap).** Locally Playwright reuses whatever serves :8052, and a dev
+  server there talks to your real Canvas (or none). Every Canvas spec calls
+  `fakeCanvasSkipReason()` first: it reads `/api/lms/canvas/status` as bio_prof2 and **skips with
+  a message** unless the server reports `canvasDomain === FAKE_CANVAS.ORIGIN` (404 = Canvas not
+  configured also skips). Free :8052 so Playwright boots its own server.
+- **The older Canvas/Moodle link specs** (`instructor-seeded-course.spec.js`,
+  `instructor-settings.spec.js`) still fake the LMS with `page.route`. They run on the shared
+  BIOC 302 course, whose sections are never linked, so the real (fake-backed) status they
+  override does not change what they assert.
+
 ### Journey specs are one serial user story
 
 A multi-step journey (onboarding → materials → objectives → questions → approve → publish)
@@ -384,7 +450,12 @@ layer. What exists today:
   (module-loader swap; no prod edits — see "No real AI calls" above).
 - **Seeding**: `tests/e2e/seed.js` (`seedStudentJourneyCourse()`, called by `saml.setup.js`;
   builds the shared BIOC 302 course + approved questions + published/scheduled quiz for
-  the student journey; exports `SEED` constants the specs read back).
+  the student journey; exports `SEED` constants the specs read back). The attempt resets also
+  clear `grasp_quiz_session` (the immutable first-start deadline): a session left from a run
+  more than the time limit ago otherwise opens every later attempt already expired.
+  `seedCanvasSyncCourse()` builds the Canvas-linked course (see **Fake Canvas** above).
+- **Fake Canvas**: `tests/e2e/stubs/fake-canvas.js` (+ `fake-canvas-fixtures.js`), booted by
+  `start-server-with-stubs.js`; spec helpers in `tests/e2e/fake-canvas-client.js`.
 - **Scripts** (root `package.json`): `start:test` (runs the server with
   `NODE_ENV=test` — see the cookie finding below), `test:e2e`, `test:e2e:headed`,
   `test:ui`, `test:report`.
@@ -406,6 +477,17 @@ layer. What exists today:
   - `tests/e2e/student-journey.spec.js` — the student loop as `bio_student` against the
     seeded quiz: find it in Available Quizzes → take it answering correctly → see 100% →
     retry.
+  - `tests/e2e/instructor-canvas-roster-sync.spec.js` — per-section Canvas roster sync
+    (issue #113) as bio_prof2 against the fake Canvas (serial story, shared instructor and
+    bio_student pages): the unlinked section keeps Academic API `Sync Students`, the linked one
+    shows `Sync from Canvas`; the whole story runs with the fake enforcing `FAKE_CANVAS.SCOPES`
+    (status reports `capabilities` link + rosterSync on, assignments off); the first sync opens
+    `Review Canvas sync` listing bio_student (and reads `GET /courses/:id/enrollments` with
+    `type[]`/`state[]`, no include, over several pages, with no call outside the scopes); confirming drops them and
+    their section quiz disappears; after `setFakeCanvasSectionStudents` a later sync restores
+    them; a later small drop applies without asking; the Users-page access history shows the
+    sync; with SIS hidden the sync explains itself and changes nothing. The a11y counterpart is
+    in `tests/a11y/modals.a11y.spec.js`.
   - `tests/e2e/instructor-add-people.spec.js` — manual course access (issue #115) as
     `bio_prof2`: search the Users page picker for the plain `student` persona (signed
     in, in no course), add them straight in as a TA, see the "Added by … on …" line and

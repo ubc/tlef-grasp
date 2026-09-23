@@ -7,7 +7,7 @@
 const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
-const { createOrUpdateUser, getUserByPuid, updateUserNames } = require('../services/user');
+const { createOrUpdateUser, getUserByPuid, updateUserNames, backfillUserEmail } = require('../services/user');
 const { getUserRole, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
 const { samlRequestCache } = require('../services/samlRequestCache');
@@ -133,6 +133,20 @@ const strategy = new Strategy(
 				if (Object.keys(updates).length > 0) {
 					await updateUserNames(ubcEduCwlPuid, updates);
 					user = { ...user, ...updates };
+				}
+			}
+
+			// A roster-sync placeholder (created before the student ever
+			// signed in) may have no email. Fill it from SAML — never
+			// overwriting one that is set — best-effort, like the names.
+			const samlEmail = typeof email === 'string' ? email.trim() : '';
+			if (user && !user.email && samlEmail.includes('@')) {
+				try {
+					if (await backfillUserEmail(ubcEduCwlPuid, samlEmail)) {
+						user = { ...user, email: samlEmail };
+					}
+				} catch (backfillError) {
+					console.warn('Email backfill failed:', backfillError.message);
 				}
 			}
 

@@ -38,4 +38,22 @@ Module._load = function load(request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
+// The fake Canvas (tests/e2e/stubs/fake-canvas.js) runs in this same process
+// when the e2e env asks for it; playwright.config.js sets E2E_FAKE_CANVAS_PORT
+// and points CANVAS_DOMAIN at it. GRASP reaches it over HTTP through the real
+// LMS toolkit client, so nothing in src/ is swapped for it. A port clash fails
+// the boot loudly instead of letting GRASP talk to whatever holds the port.
+if (process.env.E2E_FAKE_CANVAS_PORT) {
+  const { createFakeCanvas } = require('./stubs/fake-canvas');
+  createFakeCanvas()
+    .listen()
+    .then(({ address, port }) => {
+      console.log(`[e2e] fake Canvas listening on http://${address}:${port}`);
+    })
+    .catch((error) => {
+      console.error(`[e2e] fake Canvas could not start: ${error.message}`);
+      process.exit(1);
+    });
+}
+
 require(resolve('server.js'));

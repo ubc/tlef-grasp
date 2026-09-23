@@ -30,6 +30,7 @@ async function canUseEnrollmentCode(user) {
 }
 const { createOrUpdateUser, getUserByPuid, updateUserLegalName } = require('../services/user');
 const ubcApiService = require('../services/ubcApiService');
+const { isCanvasConfigured } = require('../lms/canvas');
 const { buildCourseCode, campusDisplaySuffix } = require('../utils/slug');
 
 const COURSE_ACCESS_CODE_LENGTH = 12;
@@ -647,7 +648,12 @@ const addSectionsToCourseHandler = async (req, res) => {
 
     let syncResult = { added: 0 };
     if (syncStudents) {
-      syncResult = await syncStudentsToCourse(courseId, sectionIds, academicPeriod);
+      // A Canvas-linked section takes its students from Canvas; syncing it
+      // from the Academic API as well would re-add everyone Canvas dropped.
+      const idsToSync = await withoutCanvasLinkedSections(courseId, sectionIds);
+      if (idsToSync.length > 0) {
+        syncResult = await syncStudentsToCourse(courseId, idsToSync, academicPeriod);
+      }
     }
 
     res.json({
@@ -658,6 +664,56 @@ const addSectionsToCourseHandler = async (req, res) => {
   } catch (error) {
     console.error("Error adding sections:", error);
     res.status(500).json({ error: "Failed to add sections" });
+  }
+};
+
+const isCanvasLinked = (section) => section?.lmsLink?.provider === 'canvas';
+
+/**
+ * Drop the Canvas-linked sections from a list of section ids when Canvas is
+ * configured. Without Canvas configured (or for Moodle-linked sections) the
+ * Academic API stays the source of students.
+ */
+async function withoutCanvasLinkedSections(courseId, sectionIds) {
+  if (!isCanvasConfigured()) return sectionIds;
+  const sections = await getCourseSections(courseId);
+  const canvasLinked = new Set(
+    sections.filter(isCanvasLinked).map((section) => String(section.sectionId))
+  );
+  return sectionIds.filter((id) => !canvasLinked.has(String(id)));
+}
+
+/**
+ * POST /api/courses/:courseId/sections/:sectionId/sync-students
+ * Re-sync one section's students from the UBC Academic API. Guarded by
+ * requireOwnedSection (req.localCourseSection); the section document and its
+ * owner are left untouched.
+ */
+const syncSectionStudentsHandler = async (req, res) => {
+  try {
+    const section = req.localCourseSection;
+    if (isCanvasLinked(section) && isCanvasConfigured()) {
+      return res.status(409).json({
+        success: false,
+        error: 'This section syncs students from Canvas.',
+      });
+    }
+
+    const syncResult = await syncStudentsToCourse(
+      req.params.courseId,
+      [section.sectionId],
+      section.academicPeriod
+    );
+    if (syncResult.error) {
+      return res.status(502).json({
+        success: false,
+        error: 'The UBC Academic API could not return the students for this section. Please try again.',
+      });
+    }
+    res.json({ success: true, syncResult });
+  } catch (error) {
+    console.error("Error syncing section students:", error);
+    res.status(500).json({ success: false, error: "Failed to sync section students" });
   }
 };
 
@@ -891,4 +947,5 @@ module.exports = {
   getVisibleCourseSectionsHandler,
   recycleSectionHandler,
   addSectionsToCourseHandler,
+  syncSectionStudentsHandler,
 };

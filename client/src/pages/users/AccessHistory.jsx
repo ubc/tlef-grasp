@@ -4,7 +4,7 @@ import { LoadingRow } from "../../components/ui/states";
 import { describeAccessEvent, formatDateTime } from "./userListUtils";
 
 // Instructor-only, newest-first record of who added, promoted, demoted, or
-// removed people in this course (issue #115). Collapsed by default and only
+// removed people in this course (issue #115), plus LMS roster syncs (#113). Collapsed by default and only
 // fetched once opened, so the roster page stays light.
 export default function AccessHistory({ courseId }) {
   const [open, setOpen] = useState(false);
@@ -24,7 +24,7 @@ export default function AccessHistory({ courseId }) {
             Access History
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Who added, promoted, demoted, or removed people in this course, newest first.
+            Who added, promoted, demoted, removed, or synced people in this course, newest first.
           </p>
         </div>
         <button

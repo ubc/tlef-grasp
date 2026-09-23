@@ -4,6 +4,7 @@ const coursesController = require('../controllers/courses');
 const settingsController = require('../controllers/settings');
 const { requireRole } = require('../middleware/auth');
 const { requireActiveCourse } = require('../middleware/course-archive');
+const { requireOwnedSection } = require('../middleware/lms-section-access');
 const { ROLES } = require('../utils/auth');
 
 
@@ -49,6 +50,9 @@ router.post(
 // Section routes (must be before /:courseId to avoid param capture)
 router.get("/my-owned-sections", coursesController.getMyOwnedSectionsHandler);
 router.post("/:courseId/sections/:sectionId/recycle", express.json(), coursesController.recycleSectionHandler);
+// Per-section Academic API student sync. Owner-guarded, and it never touches
+// the section document itself (the add-sections route re-stamps its owner).
+router.post("/:courseId/sections/:sectionId/sync-students", express.json(), requireOwnedSection, coursesController.syncSectionStudentsHandler);
 router.post("/:courseId/sections", express.json(), coursesController.addSectionsToCourseHandler);
 router.get("/:courseId/sections", coursesController.getCourseSectionsHandler);
 router.get("/:courseId/visible-sections", coursesController.getVisibleCourseSectionsHandler);

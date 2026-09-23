@@ -36,6 +36,23 @@ beforeEach(() => {
 });
 
 describe('recordCourseAccessEvent', () => {
+  // Issue #113: Canvas roster sync writes its adds/restores and drops here too.
+  it.each([['sync-added'], ['sync-dropped']])('accepts the roster-sync action %p with its details', async (action) => {
+    await recordCourseAccessEvent({
+      courseId: COURSE_ID,
+      targetUserId: TARGET_ID,
+      actorUserId: ACTOR_ID,
+      action,
+      role: 'student',
+      details: { provider: 'canvas', sectionId: '101', restored: false },
+    });
+
+    const [doc] = collection.insertOne.mock.calls[0];
+    expect(doc.action).toBe(action);
+    expect(doc.role).toBe('student');
+    expect(doc.details).toEqual({ provider: 'canvas', sectionId: '101', restored: false });
+  });
+
   it('stores the event with ObjectId references, the role, and a timestamp', async () => {
     const before = Date.now();
     const stored = await recordCourseAccessEvent({

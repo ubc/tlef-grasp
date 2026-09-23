@@ -48,6 +48,15 @@ jobs:
       E2E_USERNAME: faculty
       E2E_PASSWORD: faculty
       UBC_API_USE_MOCK: 'true'
+      # The in-repo fake Canvas, booted by the e2e server (same values as
+      # playwright.config.js; see the E2E workflow).
+      E2E_FAKE_CANVAS_PORT: '9111'
+      CANVAS_DOMAIN: http://127.0.0.1:9111
+      CANVAS_CLIENT_ID: e2e-fake-canvas
+      CANVAS_CLIENT_SECRET: e2e-fake-canvas-secret
+      CANVAS_REDIRECT_URI: http://localhost:8052/api/lms/canvas/auth/callback
+      # Same as FAKE_CANVAS.SCOPES (the value recommended for UBC's scoped key).
+      CANVAS_SCOPES: 'url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments'
 
     steps:
       - uses: actions/checkout@v4

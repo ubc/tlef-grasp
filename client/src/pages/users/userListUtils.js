@@ -115,6 +115,13 @@ export function describeMembershipSource(user) {
   return when ? `Added by ${by} on ${when}` : `Added by ${by}`;
 }
 
+const LMS_PROVIDER_LABELS = { canvas: "Canvas", moodle: "Moodle" };
+
+function lmsRosterLabel(details) {
+  const provider = LMS_PROVIDER_LABELS[details?.provider];
+  return provider ? `the ${provider} roster` : "the LMS roster";
+}
+
 // Sentence for one access-log event, e.g. "Ada Lovelace added Bob Student
 // to the course as TA".
 export function describeAccessEvent(event) {
@@ -133,6 +140,20 @@ export function describeAccessEvent(event) {
       return `${actor} removed ${target} from the course${role ? ` (was ${role})` : ""}`;
     case "permissions-updated":
       return `${actor} updated the TA permissions of ${target}`;
+    // LMS roster sync (issue #113): the actor is the instructor who ran it.
+    case "sync-added": {
+      const roster = lmsRosterLabel(event.details);
+      if (!event.details?.restored) {
+        return `${actor} added ${target} to a section from ${roster}`;
+      }
+      return `${actor} restored ${target} to a section from ${roster}${
+        event.details.previouslyRemoved ? " (they had been removed from the course)" : ""
+      }`;
+    }
+    case "sync-dropped":
+      return `${actor} dropped ${target} from a section (no longer on ${lmsRosterLabel(
+        event.details
+      )})${event.details?.membershipRemoved ? " and removed them from the course" : ""}`;
     default:
       return `${actor} changed the access of ${target}`;
   }
