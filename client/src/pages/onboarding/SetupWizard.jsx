@@ -241,7 +241,7 @@ export default function SetupWizard() {
           <span className="text-sm text-ink">
             Sync students from the selected section(s) now
             <span className="block text-xs text-muted">
-              You can also sync later from the Users page.
+              You can also sync later from My Sections.
             </span>
           </span>
         </label>

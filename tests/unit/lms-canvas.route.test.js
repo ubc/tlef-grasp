@@ -36,7 +36,7 @@ class FakeCanvasApiError extends Error {
 
 class FakeCanvasOAuthError extends Error {}
 
-function createIntegration({ connected = true } = {}) {
+function createIntegration({ connected = true, capabilities } = {}) {
   const authRouter = express.Router();
   authRouter.get('/login', (_req, res) =>
     res.redirect('https://canvas.example.test/oauth')
@@ -62,7 +62,7 @@ function createIntegration({ connected = true } = {}) {
     getCourseSections: jest.fn(),
   };
 
-  return { configured: true, canvas, config: {} };
+  return { configured: true, canvas, config: {}, capabilities };
 }
 
 function buildApp(integration, user = { _id: '507f1f77bcf86cd799439011' }) {
@@ -108,6 +108,70 @@ describe('Canvas LMS section routes', () => {
       .get('/api/lms/canvas/status');
     expect(disconnected.status).toBe(401);
     expect(disconnected.body.connected).toBe(false);
+  });
+
+  it('reports every Canvas capability as enabled when no scopes are configured', async () => {
+    const response = await request(buildApp(createIntegration()))
+      .get('/api/lms/canvas/status');
+
+    expect(response.status).toBe(200);
+    expect(response.body.capabilities).toEqual({
+      link: true,
+      rosterSync: true,
+      assignments: true,
+    });
+  });
+
+  it('reports the capabilities the configured scopes enable', async () => {
+    const capabilities = { link: true, rosterSync: false, assignments: false };
+    const response = await request(buildApp(createIntegration({ capabilities })))
+      .get('/api/lms/canvas/status');
+
+    expect(response.status).toBe(200);
+    expect(response.body.capabilities).toEqual(capabilities);
+  });
+
+  describe('when the configured scopes do not enable linking', () => {
+    const capabilities = { link: false, rosterSync: true, assignments: false };
+
+    it.each([
+      ['GET', `${sectionBase}/available-courses`],
+      ['GET', `${sectionBase}/canvas-courses/42/sections`],
+      ['PUT', `${sectionBase}/link`],
+    ])('%s %s answers 409 capability-disabled without calling Canvas', async (method, url) => {
+      const integration = createIntegration({ capabilities });
+
+      const response = await request(buildApp(integration))[method.toLowerCase()](url)
+        .send({ canvasCourseId: '42' });
+
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({
+        success: false,
+        code: 'capability-disabled',
+        capability: 'link',
+        error: 'This Canvas feature is not enabled on this GRASP deployment.',
+      });
+      expect(integration.canvas.getCourses).not.toHaveBeenCalled();
+      expect(integration.canvas.getCourseSections).not.toHaveBeenCalled();
+      expect(lmsSectionLinkService.setCanvasSectionLink).not.toHaveBeenCalled();
+    });
+  });
+
+  it('explains a Canvas 401 as expired-or-missing-permission and marks the user disconnected', async () => {
+    const integration = createIntegration();
+    integration.canvas.getCourses.mockRejectedValue(new FakeCanvasApiError(401));
+
+    const response = await request(buildApp(integration))
+      .get(`${sectionBase}/available-courses`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      success: false,
+      connected: false,
+      error:
+        'Canvas rejected the request. Reconnect Canvas; if this keeps happening, ' +
+        'the GRASP Canvas developer key may be missing a permission.',
+    });
   });
 
   it('returns Canvas OAuth denials to the Settings connection UI', async () => {

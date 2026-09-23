@@ -5,6 +5,13 @@ const COURSE_KEY = 'grasp-selected-course';
 const ROLE_KEY = 'grasp-current-role';
 
 async function selectSeededCourse(page, { role }) {
+  return selectCourseByName(page, SEED.COURSE_NAME, { role });
+}
+
+// Select a course the persona belongs to by name, the way the app remembers a
+// selection: sessionStorage is not part of storageState, so it is injected
+// before the first navigation.
+async function selectCourseByName(page, courseName, { role }) {
   const endpoint = role === 'student' ? '/api/student/courses' : '/api/courses/my';
   const response = await page.request.get(endpoint);
   expect(
@@ -14,11 +21,11 @@ async function selectSeededCourse(page, { role }) {
 
   const body = await response.json();
   const course = (body.courses || []).find(
-    (candidate) => (candidate.courseName || candidate.name) === SEED.COURSE_NAME
+    (candidate) => (candidate.courseName || candidate.name) === courseName
   );
   expect(
     course,
-    `seeded course "${SEED.COURSE_NAME}" is present for ${role}`
+    `seeded course "${courseName}" is present for ${role}`
   ).toBeTruthy();
 
   const selected = {
@@ -96,6 +103,7 @@ function escapeRegExp(str) {
 
 module.exports = {
   selectSeededCourse,
+  selectCourseByName,
   answerSeededQuizCorrectly,
   getQuizCard,
   startQuizFromList,

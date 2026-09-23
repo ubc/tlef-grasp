@@ -1,11 +1,14 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { expectNoA11yViolations } = require('./axe-helper');
-const { FACULTY_AUTH_FILE } = require('../e2e/auth');
+const { FACULTY_AUTH_FILE, BIO_PROF2_AUTH_FILE } = require('../e2e/auth');
 const {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
 } = require('./authenticated-helper');
+const { SEED, seedCanvasSyncCourse } = require('../e2e/seed');
+const { selectCourseByName } = require('../e2e/helpers');
+const { resetFakeCanvas, fakeCanvasSkipReason } = require('../e2e/fake-canvas-client');
 
 // MANUAL: verify screen-reader announcement of modal titles, that focus returns
 // to the trigger after close, and that the background is inert while each modal
@@ -92,4 +95,60 @@ test.describe('Accessibility: dialogs and modal states', () => {
       await expect(trigger).toBeFocused();
     }
   );
+});
+
+// MANUAL: verify a screen reader reads the sync reason before the drop list,
+// and that the danger-styled "Sync and drop N" button is announced with its
+// count. Axe cannot judge whether the explanation is understandable.
+test.describe('Accessibility: Canvas roster sync confirmation', () => {
+  test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
+
+  test.beforeEach(async ({ baseURL }) => {
+    // The dialog only exists when the server syncs against the in-repo fake
+    // Canvas (see tests/e2e/fake-canvas-client.js).
+    const reason = await fakeCanvasSkipReason({ baseURL, storageState: BIO_PROF2_AUTH_FILE });
+    test.skip(!!reason, reason || '');
+    // A linked, never-synced section whose first sync proposes a drop. The
+    // dialog applies nothing until confirmed, and this test only cancels.
+    await resetFakeCanvas();
+    await seedCanvasSyncCourse();
+  });
+
+  test('first-sync review dialog has no blocking axe violations and handles focus', async ({
+    page,
+  }) => {
+    await selectCourseByName(page, SEED.CANVAS_COURSE_NAME, { role: 'instructor' });
+    await page.goto('/my-sections');
+
+    const trigger = page
+      .getByRole('row')
+      .filter({
+        has: page.getByRole('cell', { name: SEED.CANVAS_LINKED_SECTION_NUMBER, exact: true }),
+      })
+      .getByRole('button', { name: 'Sync from Canvas' });
+    await expect(trigger).toBeVisible();
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+
+    const dialog = page.getByRole('dialog', { name: 'Review Canvas sync' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('region', { name: /would be dropped/ })).toBeVisible();
+    // Focus moves into the dialog on open.
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
+
+    await expectNoA11yViolations(page, { include: '[role="dialog"]' });
+
+    // The scrollable drop list is the next Tab stop after Close, so keyboard
+    // users can scroll it; the actions follow.
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('region', { name: /would be dropped/ })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+
+    // Escape closes without syncing and focus returns to the row's trigger.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
 });

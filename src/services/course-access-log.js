@@ -21,6 +21,10 @@ const ACCESS_ACTIONS = {
   DEMOTED: 'demoted',
   REMOVED: 'removed',
   PERMISSIONS_UPDATED: 'permissions-updated',
+  // An LMS roster sync (Canvas) added or restored a student's section
+  // enrollment, or dropped it. The actor is the instructor who ran the sync.
+  SYNC_ADDED: 'sync-added',
+  SYNC_DROPPED: 'sync-dropped',
 };
 
 const KNOWN_ACTIONS = new Set(Object.values(ACCESS_ACTIONS));

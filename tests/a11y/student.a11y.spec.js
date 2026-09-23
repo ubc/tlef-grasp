@@ -135,7 +135,15 @@ test.describe('Accessibility: seeded student quiz states', () => {
 
     await startQuizFromList(page, SEED.QUIZ_NAME);
     await expect(page.getByRole('heading', { name: SEED.QUIZ_NAME })).toBeVisible();
-    await expect(page.getByRole('button', { name: SEED.CORRECT_OPTION_TEXTS[0] })).toBeVisible();
+    // Quiz questions come back in storage order (no sort), so the first one
+    // shown is not necessarily the first seeded one.
+    await expect(
+      page
+        .getByRole('button', {
+          name: new RegExp(SEED.CORRECT_OPTION_TEXTS.map(escapeRegExp).join('|')),
+        })
+        .first()
+    ).toBeVisible();
     await expectNoA11yViolations(page);
 
     await answerCurrentQuestionCorrectly(page);

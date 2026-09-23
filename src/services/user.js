@@ -93,6 +93,96 @@ function updateUserLegalName(puid, legalName) {
     return updateUserNames(puid, { legalName });
 }
 
+/**
+ * Fill in a user's email from SAML when none is stored — a roster-sync
+ * placeholder is created before the student ever signs in, so it may have no
+ * email. Never overwrites an email that is already set: the filter only
+ * matches a missing, null, or empty one.
+ * @param {string} puid - CWL PUID
+ * @param {string} email - The email SAML released at sign-in
+ * @returns {Promise<boolean>} Whether an email was written
+ */
+async function backfillUserEmail(puid, email) {
+    try {
+        if (!puid) throw new Error("Puid is required");
+        const value = typeof email === 'string' ? email.trim() : '';
+        if (!value) return false;
+        const db = await databaseService.connect();
+        const result = await db.collection("grasp_user").updateOne(
+            { puid, $or: [{ email: { $exists: false } }, { email: null }, { email: '' }] },
+            { $set: { email: value, updatedAt: new Date() } }
+        );
+        return result.modifiedCount === 1;
+    } catch (error) {
+        console.error("Error backfilling user email:", error);
+        throw error;
+    }
+}
+
+/**
+ * Record which LMS account belongs to a GRASP user: one entry per
+ * (provider, instance) in `lmsAccounts`, updated in place or appended.
+ *
+ * One LMS identity maps to one GRASP user, so the same
+ * (provider, instance, externalUserId) is first pulled from any other user
+ * holding it (logged, since it means the identity moved).
+ *
+ * @param {string|ObjectId} userId
+ * @param {Object} account
+ * @param {string} account.provider - e.g. 'canvas'
+ * @param {string} account.instance - Normalized LMS origin (src/lms/instance.js)
+ * @param {string} account.externalUserId - The LMS's own user id
+ * @param {string} [account.sisUserId]
+ * @param {string} [account.loginId]
+ * @param {string} [account.name]
+ * @param {string} [account.sortableName]
+ * @param {Date} [account.updatedAt]
+ */
+async function upsertUserLmsAccount(userId, account) {
+    try {
+        const { provider, instance } = account;
+        const externalUserId = String(account.externalUserId);
+        if (!provider || !instance || !externalUserId) {
+            throw new Error("provider, instance and externalUserId are required");
+        }
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user");
+        const uid = userId && ObjectId.isValid(String(userId)) ? new ObjectId(String(userId)) : userId;
+
+        const identity = { provider, instance, externalUserId };
+        const pulled = await collection.updateMany(
+            { _id: { $ne: uid }, lmsAccounts: { $elemMatch: identity } },
+            { $pull: { lmsAccounts: identity } }
+        );
+        if (pulled.modifiedCount > 0) {
+            console.warn(
+                `[lmsAccounts] ${provider} user ${externalUserId} on ${instance} moved to GRASP user ${String(uid)}; ` +
+                `removed from ${pulled.modifiedCount} other user(s)`
+            );
+        }
+
+        const entry = { provider, instance, externalUserId, updatedAt: account.updatedAt || new Date() };
+        for (const field of ['sisUserId', 'loginId', 'name', 'sortableName']) {
+            if (typeof account[field] === 'string' && account[field]) entry[field] = account[field];
+        }
+
+        const updated = await collection.updateOne(
+            { _id: uid, lmsAccounts: { $elemMatch: { provider, instance } } },
+            { $set: { 'lmsAccounts.$': entry } }
+        );
+        if (updated.matchedCount === 0) {
+            // Guarded so two concurrent syncs cannot both append an entry.
+            await collection.updateOne(
+                { _id: uid, lmsAccounts: { $not: { $elemMatch: { provider, instance } } } },
+                { $push: { lmsAccounts: entry } }
+            );
+        }
+    } catch (error) {
+        console.error("Error saving user LMS account:", error);
+        throw error;
+    }
+}
+
 async function getUserById(userId) {
     try {
         const db = await databaseService.connect();
@@ -456,6 +546,8 @@ module.exports = {
     getUserById,
     updateUserLegalName,
     updateUserNames,
+    backfillUserEmail,
+    upsertUserLmsAccount,
     grantPromotedStaffAffiliation,
     revokePromotedStaffAffiliation,
     updateUserProfile,

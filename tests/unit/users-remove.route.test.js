@@ -41,6 +41,8 @@ jest.mock('../../src/services/course', () => ({
 
 jest.mock('../../src/services/course-section', () => ({
   getSectionsOwnedByUser: jest.fn(),
+  dropUserCourseSections: jest.fn(),
+  DROPPED_REASONS: { REMOVED_FROM_COURSE: 'removed-from-course' },
 }));
 
 jest.mock('../../src/utils/auth', () => ({
@@ -53,6 +55,7 @@ jest.mock('../../src/utils/co-instructor-permissions', () => ({
 }));
 
 const userCourseService = require('../../src/services/user-course');
+const courseSectionService = require('../../src/services/course-section');
 const userService = require('../../src/services/user');
 const accessLog = require('../../src/services/course-access-log');
 const { isFaculty, parseAffiliations } = require('../../src/utils/auth');
@@ -204,5 +207,42 @@ describe('DELETE /api/users/course/:courseId/remove/:userId', () => {
 
     expect(response.status).toBe(200);
     expect(userService.revokePromotedStaffAffiliation).not.toHaveBeenCalled();
+  });
+  // Issue #113: a leftover active section row kept granting quiz access after
+  // the membership was gone. Removal soft-drops the rows, first, so a failure
+  // leaves the user fully in the course and the removal retryable.
+  it('soft-drops the removed student\'s section rows, as the remover, before deleting the membership', async () => {
+    isCourseManager.mockResolvedValue(false);
+    userService.getUserById.mockResolvedValue(TARGET_STUDENT);
+    courseSectionService.dropUserCourseSections.mockResolvedValue(2);
+
+    const response = await request(buildApp(CO_INSTRUCTOR)).delete(
+      '/api/users/course/course-1/remove/student-1'
+    );
+
+    expect(response.status).toBe(200);
+    expect(courseSectionService.dropUserCourseSections).toHaveBeenCalledWith(
+      'student-1',
+      'course-1',
+      { reason: 'removed-from-course', droppedBy: 'co-1' }
+    );
+    expect(courseSectionService.dropUserCourseSections.mock.invocationCallOrder[0])
+      .toBeLessThan(userCourseService.deleteUserCourse.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps the membership when the section rows could not be dropped', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    isCourseManager.mockResolvedValue(false);
+    userService.getUserById.mockResolvedValue(TARGET_STUDENT);
+    courseSectionService.dropUserCourseSections.mockRejectedValue(new Error('db down'));
+
+    const response = await request(buildApp(CO_INSTRUCTOR)).delete(
+      '/api/users/course/course-1/remove/student-1'
+    );
+    console.error.mockRestore();
+
+    expect(response.status).toBe(500);
+    expect(userCourseService.deleteUserCourse).not.toHaveBeenCalled();
+    expect(accessLog.recordCourseAccessEvent).not.toHaveBeenCalled();
   });
 });

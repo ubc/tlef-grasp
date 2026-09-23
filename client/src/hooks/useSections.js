@@ -52,6 +52,18 @@ function useInvalidateSections(courseId) {
   };
 }
 
+// After a student sync (Academic API or Canvas): the section list (for
+// lmsLink.lastSync) and every Users-page list the roster change can reach.
+export function invalidateSectionRosterQueries(queryClient, courseId) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.myCourseSections(courseId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.courseSections(courseId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.courseUsers(courseId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.availableUsers(courseId) });
+  // Prefix of queryKeys.userSearch: every cached "add person" search.
+  queryClient.invalidateQueries({ queryKey: ["user-search", courseId] });
+  queryClient.invalidateQueries({ queryKey: queryKeys.courseAccessLog(courseId) });
+}
+
 export function useAddSections(courseId, options) {
   const invalidate = useInvalidateSections(courseId);
   return useMutation({
@@ -77,19 +89,19 @@ export function useRecycleSection(courseId, options) {
   });
 }
 
+// Per-row UBC Academic API sync. Owner-guarded route of its own, so it never
+// goes through add-sections (which re-stamps section ownership).
 export function useSyncSectionStudents(courseId, options) {
-  const invalidate = useInvalidateSections(courseId);
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ sectionId, academicPeriod, academicPeriodName }) =>
-      api.post(`/api/courses/${courseId}/sections`, {
-        sectionIds: [sectionId],
-        academicPeriod,
-        academicPeriodName,
-        syncStudents: true,
-      }),
+    mutationFn: ({ sectionId }) =>
+      api.post(
+        `/api/courses/${encodeURIComponent(courseId)}/sections/${encodeURIComponent(sectionId)}/sync-students`,
+        {}
+      ),
     ...options,
     onSuccess: (...args) => {
-      invalidate();
+      invalidateSectionRosterQueries(queryClient, courseId);
       options?.onSuccess?.(...args);
     },
   });

@@ -1,5 +1,6 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
+const { FAKE_CANVAS } = require('./tests/e2e/stubs/fake-canvas-fixtures');
 
 // GRASP is a single Express server that also serves the built React client from
 // client/dist, so one port (8052 everywhere — see agents.e2e.md) covers the API,
@@ -12,6 +13,25 @@ const baseURL = `http://localhost:${PORT}`;
 // setup project (see tests/e2e/saml.setup.js). By default the suite runs only
 // public / unauthenticated flows, which need no IdP and no stored session.
 const useSaml = process.env.E2E_SAML === '1';
+
+// Canvas for the e2e server is the in-repo fake (tests/e2e/stubs/fake-canvas.js),
+// which start-server-with-stubs.js boots in the server process when
+// E2E_FAKE_CANVAS_PORT is set. These values override the developer's .env
+// (dotenv never replaces a variable that is already set), so a local run can
+// never reach a real Canvas. The client id/secret are placeholders: the fake
+// issues no tokens, and seed.js stores the persona's token directly.
+// CANVAS_SCOPES is set like production's scoped key; the Canvas spec has the
+// fake enforce the same scopes on the seeded token.
+const fakeCanvasEnv = {
+  E2E_FAKE_CANVAS_PORT: String(FAKE_CANVAS.PORT),
+  CANVAS_DOMAIN: FAKE_CANVAS.ORIGIN,
+  CANVAS_CLIENT_ID: 'e2e-fake-canvas',
+  CANVAS_CLIENT_SECRET: 'e2e-fake-canvas-secret',
+  CANVAS_REDIRECT_URI: `${baseURL}/api/lms/canvas/auth/callback`,
+  // The scopes recommended for UBC's production key (Enforce Scopes on), so
+  // the e2e server gates its Canvas features exactly as production would.
+  CANVAS_SCOPES: FAKE_CANVAS.SCOPES.join(' '),
+};
 
 module.exports = defineConfig({
   testDir: './tests/e2e',
@@ -90,9 +110,13 @@ module.exports = defineConfig({
   // swapped for in-memory test stubs (no live LLM / Qdrant — hard rule). If a
   // dev server is reused locally instead, LLM-touching specs would hit the
   // real provider — run the suite with :8052 free so Playwright boots this one.
+  // The same trap applies to Canvas: a reused server keeps whatever
+  // CANVAS_DOMAIN it was started with, so the Canvas specs check
+  // /api/lms/canvas/status and skip unless it reports the fake.
   webServer: {
     command:
       'npm run build && cross-env NODE_ENV=test node tests/e2e/start-server-with-stubs.js',
+    env: fakeCanvasEnv,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

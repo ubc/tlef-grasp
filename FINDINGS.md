@@ -48,6 +48,7 @@
 - Added additional branch coverage for calculation-service impossible integer ranges, unsupported formula syntax, retry exhaustion on non-finite sampled formulas, malformed/expired signed tokens, auth role-precedence helper negatives, and settings read/write error propagation.
 
 ### Issues Found
+- Add-sections still overwrites section ownership: `POST /api/courses/:courseId/sections` (`addSectionsToCourseHandler` in `src/controllers/courses.js`, via `upsertCourseSection` in `src/services/course-section.js`) re-stamps `owner` on sections that already exist in the course, so any faculty member of the course can take over another instructor's section by "adding" it again. Expected: an existing section's owner only changes when the requester actually teaches that section (an "instructor teaches this section" check against the Academic API). Issue #113 removed the path the per-row "Sync Students" button used to hit (it now calls the owner-guarded `POST /api/courses/:courseId/sections/:sectionId/sync-students`), but the add-sections overwrite itself is left as-is so the co-instructor claim flow keeps working until that check exists.
 - `src/services/calculation-question.js` normalizes `πr²` to `PIr^2` instead of `PI*r^2`, so formulas using a math constant directly adjacent to a declared variable do not parse as expected. Covered by `tests/unit/calculation-question.service.test.js` with an `it.failing` test until the app fix lands.
 
 ### Limitations

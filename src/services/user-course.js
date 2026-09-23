@@ -307,7 +307,11 @@ const getCourseUsers = async (courseId) => {
                                         { $eq: ["$userId", "$$userIdMatch"] },
                                         { $eq: ["$courseId", "$$courseIdMatch"] }
                                     ]
-                                }
+                                },
+                                // Soft-dropped section rows grant nothing, so
+                                // they do not count as a section here either
+                                // (Users page, Quiz Scores section scoping).
+                                droppedAt: null
                             }
                         }
                     ],

@@ -89,6 +89,19 @@ jobs:
       UBC_API_CLIENT_SECRET: mock-secret
       UBC_API_ENV: dev
 
+      # Canvas is the in-repo fake (tests/e2e/stubs/fake-canvas.js), booted
+      # inside the e2e server process by start-server-with-stubs.js. These
+      # match what playwright.config.js passes to the webServer; the specs
+      # skip unless /api/lms/canvas/status reports this CANVAS_DOMAIN. Never
+      # a real Canvas from CI, and no Canvas secret is needed.
+      E2E_FAKE_CANVAS_PORT: '9111'
+      CANVAS_DOMAIN: http://127.0.0.1:9111
+      CANVAS_CLIENT_ID: e2e-fake-canvas
+      CANVAS_CLIENT_SECRET: e2e-fake-canvas-secret
+      CANVAS_REDIRECT_URI: http://localhost:8052/api/lms/canvas/auth/callback
+      # Same as FAKE_CANVAS.SCOPES (the value recommended for UBC's scoped key).
+      CANVAS_SCOPES: 'url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments'
+
       # LLM/RAG are stubbed in-process by tests/e2e/start-server-with-stubs.js
       # (Playwright boots the server with it), so no Qdrant/Ollama/OpenAI here.
 

@@ -62,6 +62,13 @@ class DatabaseService {
   async initializeCollections() {
     try {
       await this.db.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
+      // LMS accounts synced from a roster (one per provider + instance). Not
+      // unique: the sync service moves an identity between users itself.
+      await this.db.collection("grasp_user").createIndex({
+        "lmsAccounts.provider": 1,
+        "lmsAccounts.instance": 1,
+        "lmsAccounts.externalUserId": 1,
+      });
       // Course codes are unique among LIVE courses only. Archiving releases a
       // course's code so next term's shell can reuse it — a plain unique index
       // would defeat that with a duplicate-key error at insert, no matter what

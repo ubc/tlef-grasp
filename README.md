@@ -85,6 +85,94 @@ Copy the template and fill in your values:
 cp .env.example .env
 ```
 
+#### Optional Canvas connection
+
+Set `CANVAS_DOMAIN`, `CANVAS_CLIENT_ID`, `CANVAS_CLIENT_SECRET`, and
+`CANVAS_REDIRECT_URI` (see `.env.example`) to enable the Canvas controls in
+instructor Settings and My Sections. If any of them is absent, Canvas is hidden
+and every section keeps syncing students from the UBC Academic API.
+
+Each instructor connects their own Canvas account (OAuth, per GRASP user) and
+links a GRASP section to one Canvas section. GRASP calls these Canvas API
+endpoints with that instructor's token, and never relies on `include[]`
+parameters (a scoped developer key strips them):
+
+- `GET /api/v1/courses` — the courses the instructor teaches (`enrollment_type=teacher`)
+- `GET /api/v1/courses/:course_id/sections` — sections offered for linking
+- `GET /api/v1/courses/:course_id/enrollments` (`type[]=StudentEnrollment`,
+  `state[]=active,invited`) — the roster read by **Sync from Canvas**; Canvas
+  embeds each enrollment's user, with `integration_id` when the token may read
+  SIS data
+
+##### Canvas scopes (`CANVAS_SCOPES`)
+
+A developer key with **Enforce Scopes** on refuses an OAuth request that names
+no scopes (or any scope the key lacks), and answers any API call outside the
+token's scopes with 401. Set `CANVAS_SCOPES` to the scopes GRASP should request
+(whitespace- or comma-separated, each one of the key's scopes):
+
+- **Unset/empty** — GRASP requests no scopes and every Canvas feature is on.
+  This only works on a key **without** Enforce Scopes (e.g. local dev Canvas).
+- **Set** — GRASP requests exactly that list, and each Canvas feature is on only
+  when all of its scopes are listed (`src/lms/canvas-scopes.js` holds the map;
+  `/api/lms/canvas/status` reports the result as `capabilities`). A disabled
+  feature is hidden in the UI and its routes answer 409 `capability-disabled`.
+  A Canvas-linked section whose deployment lacks the roster-sync scopes shows
+  "Canvas roster sync isn't enabled on this deployment" and never falls back to
+  the Academic API.
+
+Recommended value for UBC's current production key (enables linking and
+roster sync):
+
+```
+CANVAS_SCOPES="url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments"
+```
+
+| GRASP feature | Scopes it needs |
+|---|---|
+| Link a section (`link`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/sections` |
+| Sync from Canvas (`rosterSync`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/enrollments` |
+| Canvas assignments (`assignments`, issue #113 item 4, not built yet) | `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
+
+To enable Canvas assignments, add these four scopes to the developer key and
+then to `CANVAS_SCOPES`:
+
+```
+url:POST|/api/v1/courses/:course_id/assignments
+url:GET|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
+url:PUT|/api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id
+url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
+```
+
+Changing `CANVAS_SCOPES` requires instructors to **reconnect Canvas**: an
+existing token keeps the scopes it was granted. Canvas answers both an expired
+token and a call outside the token's scopes with 401, so GRASP reports either as
+"Canvas rejected the request. Reconnect Canvas; if this keeps happening, the
+GRASP Canvas developer key may be missing a permission."
+
+**Sync from Canvas** (My Sections, per linked section) replaces the Academic API
+sync for Canvas-linked sections while Canvas is configured; unlinked and
+Moodle-linked sections keep the Academic API sync. It works like this:
+
+- It reads the Canvas students (`StudentEnrollment`, active or invited) of the
+  linked Canvas section only — Test Student, TAs, teachers, and observers are
+  excluded — after re-checking that the instructor still teaches the linked
+  Canvas course.
+- Students are matched to GRASP accounts by Canvas `integration_id`, which at
+  UBC is the PUID, and by nothing else. Students who have never signed in get a
+  placeholder account keyed by their PUID. Rows without an `integration_id` are
+  reported as unmatched, never guessed. Canvas only returns `integration_id` to
+  tokens allowed to read SIS data, so the instructor's Canvas role needs that
+  permission: with no `integration_id` at all the sync refuses and changes
+  nothing, and below 80% coverage it adds who it can but drops no one.
+- Students no longer on the Canvas section are soft-dropped from the GRASP
+  section (they lose quiz access for it; a later sync restores them if they
+  come back). The first sync after linking or re-linking a section never drops
+  anyone without the instructor confirming the list, and neither does a sync
+  that would drop more than half the section.
+- Adds, restores, and drops are recorded in the course's access history with
+  the syncing instructor as the actor.
+
 #### Optional Moodle connection
 
 Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for

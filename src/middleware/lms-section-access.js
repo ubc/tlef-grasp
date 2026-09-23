@@ -5,6 +5,11 @@ const {
   getSectionsOwnedByUser,
 } = require('../services/course-section');
 
+/**
+ * Gate a section-scoped write to the section's owner (a legacy section with no
+ * owner counts as the course owner's) or an app administrator. Used by the LMS
+ * link routes and by per-section student sync. Sets req.localCourseSection.
+ */
 async function requireOwnedSection(req, res, next) {
   try {
     const { courseId, sectionId } = req.params;
@@ -31,7 +36,7 @@ async function requireOwnedSection(req, res, next) {
     if (!section) {
       return res.status(403).json({
         success: false,
-        error: 'You can only manage LMS links for sections that you own',
+        error: 'You can only manage sections that you own',
       });
     }
 

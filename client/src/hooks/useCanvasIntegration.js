@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
 import { lmsRequest, parseLmsResponse } from "../lib/lmsApi";
 import { queryKeys } from "../lib/queryKeys";
+import { invalidateSectionRosterQueries } from "./useSections";
+import { canvasCapabilities } from "../lib/lmsRosterSync";
 
 function markCanvasDisconnected(queryClient, error) {
   if (error?.body?.connected !== false) return;
@@ -50,6 +52,8 @@ export function useCanvasStatus() {
     configured: query.data?.configured === true,
     connected: query.data?.connected === true,
     canvasDomain: query.data?.canvasDomain || "",
+    // What this deployment's Canvas scopes allow (known once connected).
+    capabilities: canvasCapabilities(query.data),
   };
 }
 
@@ -119,6 +123,37 @@ export function useLinkCanvasSection(courseId, sectionId, options) {
       queryClient.invalidateQueries({ queryKey: queryKeys.myCourseSections(courseId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.courseSections(courseId) });
       options?.onSuccess?.(...args);
+    },
+    onError: (error, ...args) => {
+      markCanvasDisconnected(queryClient, error);
+      options?.onError?.(error, ...args);
+    },
+  });
+}
+
+// Roster sync from the linked Canvas section (issue #113). Resolves with
+// { status: 'confirmation-required', reason, plan } (nothing applied) or
+// { status: 'applied', summary }. Re-POST with confirmDropUserIds (the
+// plan's drop ids) or skipDrops: true after the instructor reviews a plan.
+export function useSyncCanvasSectionStudents(courseId, options) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sectionId, confirmDropUserIds, skipDrops }) => {
+      const body = {};
+      if (Array.isArray(confirmDropUserIds)) body.confirmDropUserIds = confirmDropUserIds;
+      if (skipDrops === true) body.skipDrops = true;
+      return lmsRequest(`${sectionPath(courseId, sectionId)}/sync-students`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    },
+    ...options,
+    onSuccess: (data, ...args) => {
+      if (data?.status === "applied") {
+        invalidateSectionRosterQueries(queryClient, courseId);
+      }
+      options?.onSuccess?.(data, ...args);
     },
     onError: (error, ...args) => {
       markCanvasDisconnected(queryClient, error);

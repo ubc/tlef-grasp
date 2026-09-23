@@ -22,7 +22,11 @@ const {
   recordCourseAccessEvent,
   getCourseAccessLog,
 } = require('../services/course-access-log');
-const { getSectionsOwnedByUser } = require('../services/course-section');
+const {
+  getSectionsOwnedByUser,
+  dropUserCourseSections,
+  DROPPED_REASONS,
+} = require('../services/course-section');
 const { isFaculty } = require('../utils/auth');
 const { TA_COURSE_ROLE, hasStaffAccessInCourse, resolveCourseRole } = require('../utils/course-access');
 const { isCourseManager } = require('../utils/co-instructor-permissions');
@@ -753,6 +757,15 @@ const removeUserFromCourseHandler = async (req, res) => {
     const heldRole = targetUser
       ? resolveCourseRole(targetUser, membership, targetIsFaculty)
       : null;
+
+    // Soft-drop their section enrollments first: a leftover active section
+    // row would otherwise keep granting quiz access after the membership is
+    // gone. Done before the delete so a failure leaves them fully in the
+    // course (and the removal retryable) rather than half removed.
+    await dropUserCourseSections(userId, courseId, {
+      reason: DROPPED_REASONS.REMOVED_FROM_COURSE,
+      droppedBy: currentUserId,
+    });
 
     // Remove user from course
     const result = await deleteUserCourse(userId, courseId);
