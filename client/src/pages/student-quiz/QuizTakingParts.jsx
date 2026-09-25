@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
+import { canRetry, isSolved, latestResult } from "./answerState";
 
 export function Timer({ expiresAt, onExpire }) {
   const [, forceTick] = useState(0);
@@ -42,7 +43,12 @@ export function TextAnswerInput({
   hint,
 }) {
   const [value, setValue] = useState(typeof saved === "string" ? saved : "");
-  const answered = !!feedback;
+  // A wrong calculation answer stays editable so the student can try again;
+  // the input locks once they find the answer, or after the single
+  // fill-in-the-blank or open-ended submission.
+  const retrying = canRetry(feedback);
+  const locked = !!feedback && !retrying;
+  const latest = latestResult(feedback);
 
   // Sync when navigating between questions
   useEffect(() => {
@@ -52,11 +58,11 @@ export function TextAnswerInput({
 
   // isCorrect null = awaiting manual grading (neutral); AI-graded open-ended
   // answers carry a boolean and tint like any other graded answer.
-  const borderClass = !answered
+  const borderClass = !latest
     ? "border-gray-200"
-    : feedback.isCorrect === null
+    : latest.isCorrect === null
       ? "border-primary/50 bg-primary/5"
-      : feedback.isCorrect
+      : latest.isCorrect
         ? "border-success/60 bg-success/5"
         : "border-danger/60 bg-danger/5";
 
@@ -78,7 +84,7 @@ export function TextAnswerInput({
         autoComplete="off"
         placeholder={placeholder}
         value={value}
-        disabled={answered || submitting}
+        disabled={locked || submitting}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (
@@ -86,26 +92,32 @@ export function TextAnswerInput({
             (!multiline || event.ctrlKey || event.metaKey)
           ) {
             event.preventDefault();
-            if (!answered && !submitting) onSubmit(value);
+            if (!locked && !submitting) onSubmit(value);
           }
         }}
         className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:border-primary focus:outline-none disabled:bg-gray-50"
       />
       <button
         type="button"
-        disabled={answered || submitting}
+        disabled={locked || submitting}
         onClick={() => onSubmit(value)}
         className="mt-3 rounded-lg bg-primary px-5 py-2 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
       >
-        {submitting ? "Checking..." : "Submit answer"}
+        {submitting ? "Checking..." : retrying ? "Try again" : "Submit answer"}
       </button>
     </div>
   );
 }
 
-export function McqOptions({ question, answers, feedback, submitting, onSelect }) {
+export function McqOptions({ question, feedback, submitting, onSelect }) {
   const questionId = question.id;
-  const questionFeedback = feedback[questionId];
+  const entry = feedback[questionId];
+  const solved = isSolved(entry);
+  // Only options the student picked are ever marked — the one they found to
+  // be correct and the wrong ones they tried — so a wrong pick never points at
+  // the right answer (issue #128).
+  const foundKey = solved ? latestResult(entry).selectedKey : null;
+  const wrongKeys = entry?.wrongKeys || [];
 
   return (
     <div className="space-y-3">
@@ -117,25 +129,21 @@ export function McqOptions({ question, answers, feedback, submitting, onSelect }
             : optionRaw || "";
         if (!optionText) return null;
 
-        const selected = answers[questionId] === index;
+        const triedWrong = wrongKeys.includes(key);
         let stateClass = "border-gray-200 hover:border-primary/50";
-        if (questionFeedback) {
-          if (key === questionFeedback.correctAnswer) {
-            stateClass = "border-success bg-success/5";
-          } else if (selected && !questionFeedback.isCorrect) {
-            stateClass = "border-danger bg-danger/5";
-          } else {
-            stateClass = "border-gray-200 opacity-70";
-          }
-        } else if (selected) {
-          stateClass = "border-primary bg-primary/5";
+        if (key === foundKey) {
+          stateClass = "border-success bg-success/5";
+        } else if (triedWrong) {
+          stateClass = "border-danger bg-danger/5";
+        } else if (solved) {
+          stateClass = "border-gray-200 opacity-70";
         }
 
         return (
           <button
             key={key}
             type="button"
-            disabled={!!questionFeedback || submitting}
+            disabled={solved || triedWrong || submitting}
             onClick={() => onSelect(index, key, questionId)}
             className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors disabled:cursor-default ${stateClass}`}
           >
@@ -146,6 +154,8 @@ export function McqOptions({ question, answers, feedback, submitting, onSelect }
               text={escapeHtml(optionText)}
               className="min-w-0 flex-1 pt-1 text-ink"
             />
+            {key === foundKey && <span className="sr-only"> (correct)</span>}
+            {triedWrong && <span className="sr-only"> (incorrect)</span>}
           </button>
         );
       })}
@@ -208,7 +218,7 @@ export function GradeReviewControl({ feedback, questionId, onGradeReview }) {
   );
 }
 
-export function FeedbackPanel({ feedback, questionId, onGradeReview }) {
+export function FeedbackPanel({ feedback, questionId, onGradeReview, practice = false }) {
   if (!feedback) return null;
 
   const reviewControl = (
@@ -324,35 +334,40 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview }) {
     );
   }
 
-  if (feedback.isCorrect) {
+  // Multiple-choice, fill-in-the-blank and calculation: the panel describes the
+  // latest check. A wrong multiple-choice or calculation answer never shows the
+  // correct one (issue #128); the student keeps trying until they find it, and
+  // the grade stays on their first answer. Fill-in-the-blank is answered once,
+  // so a wrong answer shows the correct one straight away.
+  const latest = latestResult(feedback);
+  const retrying = canRetry(feedback);
+  const correctText =
+    !retrying && feedback.correctOptionText != null
+      ? String(feedback.correctOptionText).trim()
+      : "";
+
+  if (isSolved(feedback)) {
     return (
       <div className="mt-5 rounded-xl border border-success/40 bg-success/5 p-5">
         <div className="font-semibold text-success">
           <i className="fas fa-check-circle mr-2" />
           Correct!
         </div>
-        {feedback.feedbackText && (
+        {latest.feedbackText && (
           <RichText
-            text={escapeHtml(feedback.feedbackText)}
+            text={escapeHtml(latest.feedbackText)}
             className="mt-2 text-sm text-gray-600"
           />
+        )}
+        {feedback.retry && !practice && (
+          <p className="mt-2 text-sm text-gray-600">
+            Your grade uses your first answer, so this question still counts as missed.
+          </p>
         )}
         {reviewControl}
       </div>
     );
   }
-
-  const isMcq = feedback.questionType === QUESTION_TYPES.MULTIPLE_CHOICE;
-  const revealType =
-    isMcq ||
-    feedback.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
-    feedback.questionType === QUESTION_TYPES.CALCULATION;
-  const correctText =
-    feedback.correctOptionText != null ? String(feedback.correctOptionText).trim() : "";
-  const reveal = revealType && correctText !== "";
-  const revealText = isMcq && feedback.correctAnswer
-    ? `${feedback.correctAnswer}) ${correctText}`
-    : correctText;
 
   return (
     <div className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-5">
@@ -360,17 +375,23 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview }) {
         <i className="fas fa-times-circle mr-2" />
         Incorrect.
       </div>
-      {reveal && (
+      {correctText && (
         <RichText
-          text={`The correct answer is ${escapeHtml(revealText)}.`}
+          text={`The correct answer is ${escapeHtml(correctText)}.`}
           className="mt-2 text-sm text-gray-600"
         />
       )}
-      {feedback.feedbackText && (
+      {latest.feedbackText && (
         <RichText
-          text={escapeHtml(feedback.feedbackText)}
+          text={escapeHtml(latest.feedbackText)}
           className="mt-2 text-sm text-gray-600"
         />
+      )}
+      {retrying && (
+        <p className="mt-2 text-sm text-gray-600">
+          Try again until you find the right answer.
+          {!practice && " Only your first answer counts toward your grade."}
+        </p>
       )}
       {reviewControl}
     </div>

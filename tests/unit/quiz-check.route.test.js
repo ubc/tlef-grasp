@@ -1,7 +1,10 @@
 // LLM grading paths of POST /api/quiz/:quizId/question/:questionId/check
 // (issue #45): open-ended answers are judged by the LLM with graceful
 // degradation to manual grading, and fill-in-the-blank answers get an LLM
-// rescue fallback that never downgrades an exact match.
+// rescue fallback that never downgrades an exact match. A wrong multiple-choice
+// or calculation answer never carries the correct one back to the student
+// (issue #128) — those can be retried — while fill-in-the-blank is answered
+// once and shows it straight away.
 
 const express = require('express');
 const request = require('supertest');
@@ -55,6 +58,7 @@ const answerGrading = require('../../src/services/answer-grading');
 const quizSessionService = require('../../src/services/quiz-session');
 const courseAccess = require('../../src/utils/course-access');
 const sectionService = require('../../src/services/course-section');
+const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
 const quizRouter = require('../../src/routes/quiz');
 
 function buildApp(user = { _id: 'user-1' }) {
@@ -264,6 +268,7 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         feedback: 'Correct.',
         aiGraded: false,
         correctAnswer: 'mitochondrion',
+        correctOptionText: 'mitochondrion',
       });
       expect(answerGrading.gradeFillInTheBlankAnswer).not.toHaveBeenCalled();
     });
@@ -314,11 +319,13 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         .send({ answerText: 'chloroplast' });
 
       expect(res.status).toBe(200);
+      // Answered once, so the accepted answer is shown straight away.
       expect(res.body).toMatchObject({
         isCorrect: false,
         aiGraded: true,
         feedback: 'You named a different organelle.',
         correctAnswer: null,
+        correctOptionText: 'mitochondrion',
       });
     });
 
@@ -335,6 +342,8 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         isCorrect: false,
         aiGraded: false,
         feedback: '',
+        correctAnswer: null,
+        correctOptionText: 'mitochondrion',
       });
       expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
         expect.objectContaining({ isCorrect: false, aiGraded: false, feedbackText: null })
@@ -353,7 +362,7 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   });
 
   describe('multiple-choice questions', () => {
-    it('reveals the correct answer on a wrong selection and persists it', async () => {
+    it('withholds the correct answer on a wrong selection but still records it', async () => {
       getQuestion.mockResolvedValue(mcqQuestion);
 
       const res = await request(buildApp())
@@ -361,12 +370,13 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         .send({ selectedIndex: 0 });
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({
+      // Only the picked option's own feedback — nothing that names option B.
+      expect(res.body).toEqual({
         success: true,
         isCorrect: false,
         feedback: 'Chloroplasts photosynthesize.',
-        correctAnswer: 'B',
-        correctOptionText: 'Mitochondrion',
+        correctAnswer: null,
+        correctOptionText: null,
       });
       expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -395,6 +405,27 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       });
     });
 
+    it('grades a retry on its own answer once the first answer is recorded', async () => {
+      // saveStudentPerformance keeps the first answer (first-answer-wins) and
+      // hands back that stored attempt; the retry's verdict is still its own.
+      getQuestion.mockResolvedValue(mcqQuestion);
+      quizService.saveStudentPerformance.mockResolvedValue({
+        isCorrect: false,
+        selectedAnswer: 'A',
+      });
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 1 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        isCorrect: true,
+        correctAnswer: 'B',
+        correctOptionText: 'Mitochondrion',
+      });
+    });
+
     it('rejects a missing selectedIndex', async () => {
       getQuestion.mockResolvedValue(mcqQuestion);
 
@@ -402,6 +433,55 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
 
       expect(res.status).toBe(400);
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('calculation questions', () => {
+    const calcQuestion = {
+      _id: 'question-1',
+      questionType: 'calculation',
+      stem: 'What is {x} + 1?',
+      calculationFormula: 'x + 1',
+      calculationVariables: [{ name: 'x', min: 1, max: 5, integerOnly: true }],
+      calculationAnswerDecimals: 2,
+      learningObjectiveId: 'lo-1',
+      bloom: 'Apply',
+    };
+    // x = 3 in this attempt, so the expected answer is 4.
+    const calculationToken = CalculationQuestion.signCalculationToken('question-1', { x: 3 });
+    const expected = CalculationQuestion.formatAnswerForDisplay(4, 2);
+
+    it('withholds the expected value on a wrong answer but still records it', async () => {
+      getQuestion.mockResolvedValue(calcQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: '5', calculationToken });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        isCorrect: false,
+        correctAnswer: null,
+        correctOptionText: null,
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({ isCorrect: false, correctOptionText: expected })
+      );
+    });
+
+    it('returns the expected value on a right answer', async () => {
+      getQuestion.mockResolvedValue(calcQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: '4', calculationToken });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        isCorrect: true,
+        correctAnswer: expected,
+        correctOptionText: expected,
+      });
     });
   });
 
@@ -419,12 +499,13 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         .send({ selectedIndex: 0, practice: true });
 
       expect(res.status).toBe(200);
-      // Same graded payload as a real attempt...
+      // Same graded payload as a real attempt — practice hides the correct
+      // answer too...
       expect(res.body).toMatchObject({
         success: true,
         isCorrect: false,
-        correctAnswer: 'B',
-        correctOptionText: 'Mitochondrion',
+        correctAnswer: null,
+        correctOptionText: null,
       });
       // ...but nothing is recorded toward the grade.
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
@@ -463,7 +544,7 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   describe('practice flag during the graded attempt (no score yet)', () => {
     // Answer probing: sending practice: true before completing the graded
     // attempt must behave exactly like a real check — recorded and
-    // deadline-bound — or a student could learn the revealed correct answer
+    // deadline-bound — or a student could find the correct answer by trial
     // without committing to an attempt row (first-answer-wins would then let
     // them re-answer correctly for real).
     it('ignores the flag and records the attempt', async () => {

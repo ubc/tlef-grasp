@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
+import { canRetry, latestResult, recordCheck } from "./answerState";
 
 // Where to resume a restored attempt: the first question without recorded
 // feedback, or the last question when everything is already answered.
@@ -76,7 +77,10 @@ export function useQuizSession({ onLoadError } = {}) {
       } else {
         restoredAnswers[qid] = prev.selectedAnswer;
       }
-      restoredFeedback[qid] = {
+      // Restored as the graded first answer. A wrong multiple-choice or
+      // calculation answer arrives without the correct answer and can still
+      // be retried.
+      restoredFeedback[qid] = recordCheck(undefined, {
         isCorrect: prev.isCorrect,
         selectedAnswer:
           prev.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
@@ -94,7 +98,7 @@ export function useQuizSession({ onLoadError } = {}) {
         questionType: prev.questionType,
         // Accept/deny reaction the student already recorded (issue #76).
         studentGradeReview: prev.studentGradeReview || null,
-      };
+      });
     });
     return { restoredAnswers, restoredFeedback };
   };
@@ -217,14 +221,19 @@ export function useQuizSession({ onLoadError } = {}) {
   // Swallowing this used to read as a broken quiz: the option never
   // highlighted, no feedback appeared, and clicking again did nothing.
   const selectMcqAnswer = async (selectedIndex, rawKey, questionId) => {
-    if (submitting || feedback[questionId]) return null;
+    const entry = feedback[questionId];
+    // Open until the student finds the answer; an option already found to be
+    // wrong can't be picked again.
+    if (submitting || (entry && !canRetry(entry)) || entry?.wrongKeys.includes(rawKey)) {
+      return null;
+    }
     setSubmitting(true);
     try {
       const result = await checkAnswer(questionId, { selectedIndex });
       setAnswers((prev) => ({ ...prev, [questionId]: selectedIndex }));
       setFeedback((prev) => ({
         ...prev,
-        [questionId]: {
+        [questionId]: recordCheck(prev[questionId], {
           isCorrect: result.isCorrect,
           selectedAnswer: selectedIndex,
           selectedKey: rawKey,
@@ -232,7 +241,7 @@ export function useQuizSession({ onLoadError } = {}) {
           feedbackText: result.feedback,
           correctOptionText: result.correctOptionText,
           questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-        },
+        }),
       }));
       return null;
     } catch (error) {
@@ -287,6 +296,12 @@ export function useQuizSession({ onLoadError } = {}) {
     if (type === QUESTION_TYPES.CALCULATION && !question.calculationToken) {
       return "Missing calculation data. Please reload the quiz.";
     }
+    const entry = feedback[questionId];
+    if (entry && !canRetry(entry)) return null;
+    // Checking the same wrong answer again would only repeat the verdict.
+    if (entry && latestResult(entry).selectedAnswer === answerText) {
+      return "You already tried that answer. Change it and try again.";
+    }
 
     setSubmitting(true);
     try {
@@ -299,7 +314,8 @@ export function useQuizSession({ onLoadError } = {}) {
       setAnswers((prev) => ({ ...prev, [questionId]: answerText }));
       setFeedback((prev) => ({
         ...prev,
-        [questionId]:
+        [questionId]: recordCheck(
+          prev[questionId],
           type === QUESTION_TYPES.OPEN_ENDED
             ? {
                 isCorrect: result.isCorrect,
@@ -323,7 +339,8 @@ export function useQuizSession({ onLoadError } = {}) {
                 // exact-match or a calculation answer does not.
                 autoGraded: !!result.aiGraded,
                 questionType: type,
-              },
+              }
+        ),
       }));
       return null;
     } catch (error) {
@@ -335,7 +352,8 @@ export function useQuizSession({ onLoadError } = {}) {
   };
 
   // Start a practice round over the questions answered incorrectly in the
-  // just-finished round. Reuses the in-memory question objects (stem, options,
+  // just-finished round — wrong on the first try, even if a retry later found
+  // the answer. Reuses the in-memory question objects (stem, options,
   // calculationToken) filtered to the wrong set — no refetch. Practice is
   // untimed and, via the `practice` flag on each check, never persisted.
   const startPracticeWrong = () => {
@@ -423,6 +441,8 @@ export function useQuizSession({ onLoadError } = {}) {
   // server-authoritative result (which also awards achievements). The local
   // figure is provisional until submitStatus reads "saved".
   const finishQuiz = async () => {
+    // isCorrect is the first answer's verdict — a later retry never changes
+    // the score, as on the server.
     // Open-ended questions count once the LLM judge graded them; only those
     // still awaiting manual grading (isCorrect null) are excluded from the
     // local score, mirroring the server's isCorrect !== null filter.

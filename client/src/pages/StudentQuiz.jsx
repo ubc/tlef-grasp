@@ -302,7 +302,6 @@ export default function StudentQuiz() {
         ) : (
           <McqOptions
             question={question}
-            answers={answers}
             feedback={feedback}
             submitting={submitting}
             onSelect={selectMcqAnswer}
@@ -313,6 +312,7 @@ export default function StudentQuiz() {
           feedback={questionFeedback}
           questionId={questionId}
           onGradeReview={practiceMode ? undefined : session.submitGradeReview}
+          practice={practiceMode}
         />
         {(isStudent || currentRole === "student") && (
           <QuestionFlagControl quizId={quizData.quizId} question={question} />
