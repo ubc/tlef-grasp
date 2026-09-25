@@ -381,12 +381,21 @@ const getQuizQuestionsHandler = async (req, res) => {
         const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
         const optionKeys = ['A', 'B', 'C', 'D'];
         attempts.forEach(attempt => {
+          // A resumed wrong multiple-choice or calculation answer must not
+          // reveal the correct one (issue #128): the student keeps retrying
+          // until they find it. Fill-in-the-blank and open-ended answers are
+          // submitted once and already showed their answer, so they come back
+          // as recorded.
+          const answerShownOnSubmit =
+            attempt.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
+            attempt.questionType === QUESTION_TYPES.OPEN_ENDED;
+          const hideAnswer = attempt.isCorrect !== true && !answerShownOnSubmit;
           const entry = {
             questionType: attempt.questionType,
             selectedAnswer: attempt.selectedAnswer,
             isCorrect: attempt.isCorrect,
-            correctAnswer: attempt.correctAnswer,
-            correctOptionText: attempt.correctOptionText,
+            correctAnswer: hideAnswer ? null : attempt.correctAnswer,
+            correctOptionText: hideAnswer ? null : attempt.correctOptionText,
             sampleAnswer: attempt.sampleAnswer,
             gradingCriteria: attempt.gradingCriteria,
             feedbackText: attempt.feedbackText,

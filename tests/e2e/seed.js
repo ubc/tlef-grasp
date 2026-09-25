@@ -866,6 +866,8 @@ module.exports = {
     CORRECT_OPTION_LETTER: 'A',
     // Correct option text per seeded question (option A of each), in quiz order.
     CORRECT_OPTION_TEXTS: SEED_QUESTIONS.map((q) => q.options.A.text),
+    // One known-wrong option text per seeded question (option B of each).
+    WRONG_OPTION_TEXTS: SEED_QUESTIONS.map((q) => q.options.B.text),
     // AI-graded quiz (issue #45): distinct quiz in the same course.
     AI_QUIZ_NAME,
     AI_OPEN_ENDED_TITLE,

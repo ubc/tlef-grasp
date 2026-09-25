@@ -888,7 +888,16 @@ const getQuizQuestionsHandler = async (req, res) => {
 };
 
 /**
- * Check if a selected answer is correct and return the feedback securely
+ * Check if a selected answer is correct and return the feedback securely.
+ *
+ * Multiple-choice and calculation answers only get the correct answer back
+ * when they are correct (issue #128): a wrong one gets its verdict and
+ * feedback, and the student may keep trying until they find it. Fill-in-the-
+ * blank and open-ended answers are submitted once and show the answer straight
+ * away — retrying typed answers would only invite guessing. Only the first
+ * answer is graded — saveStudentPerformance keeps the first attempt and
+ * ignores retries — and that stored attempt still carries the correct answer
+ * for the instructor's review.
  */
 const checkQuestionAnswerHandler = async (req, res) => {
   try {
@@ -899,8 +908,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
     // they are graded for feedback but never persisted, so they can't affect
     // the score, mastery, or achievements, and aren't bound by the deadline.
     // Only honored after the graded attempt is complete — otherwise a student
-    // could send practice checks during the graded attempt to probe for the
-    // revealed correct answer without recording anything.
+    // could send practice checks during the graded attempt to find the correct
+    // answer by trial before their first, graded answer is recorded.
     const practice =
       req.body.practice === true &&
       !!userId &&
@@ -1013,7 +1022,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         isCorrect,
         feedback: isCorrect ? "Correct." : "",
         correctAnswer: isCorrect ? displayCorrect : null,
-        correctOptionText: displayCorrect,
+        correctOptionText: isCorrect ? displayCorrect : null,
       });
       return;
     }
@@ -1212,8 +1221,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       success: true,
       isCorrect,
       feedback,
-      correctAnswer: correctAnswerLetter,
-      correctOptionText
+      correctAnswer: isCorrect ? correctAnswerLetter : null,
+      correctOptionText: isCorrect ? correctOptionText : null,
     });
   } catch (error) {
     console.error("Error checking question answer:", error);

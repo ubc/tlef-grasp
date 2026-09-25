@@ -108,4 +108,5 @@ module.exports = {
   getQuizCard,
   startQuizFromList,
   completeSeededQuiz,
+  escapeRegExp,
 };

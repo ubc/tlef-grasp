@@ -313,3 +313,65 @@ describe('gradeAttempt', () => {
     expect(scoreCollection.updateOne).not.toHaveBeenCalled();
   });
 });
+
+describe('saveStudentPerformance keeps the first answer', () => {
+  // A student may retry a wrong answer until they find it (issue #128), and
+  // every retry goes through the same check endpoint, so only the first
+  // answer may ever be written — to the attempt row or to mastery.
+  const userId = new ObjectId();
+  const quizId = new ObjectId();
+  const questionId = new ObjectId();
+  const recorded = { _id: new ObjectId(), userId, quizId, questionId, isCorrect: false, selectedAnswer: 'A' };
+
+  let attemptCollection;
+  let otherCollection;
+
+  const correctRetry = () =>
+    quizService.saveStudentPerformance({
+      userId: userId.toString(),
+      quizId: quizId.toString(),
+      questionId: questionId.toString(),
+      learningObjectiveId: new ObjectId().toString(),
+      bloom: 'Remember',
+      questionType: 'multiple-choice',
+      isCorrect: true,
+      selectedAnswer: 'B',
+      correctAnswer: 'B',
+    });
+
+  beforeEach(() => {
+    attemptCollection = {
+      findOne: jest.fn(),
+      insertOne: jest.fn(),
+    };
+    otherCollection = {
+      findOne: jest.fn().mockResolvedValue({ _id: quizId, courseId: new ObjectId() }),
+      updateOne: jest.fn(),
+    };
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) =>
+        name === 'grasp_student_attempt' ? attemptCollection : otherCollection
+      ),
+    });
+  });
+
+  it('returns the recorded attempt and writes nothing for a later answer', async () => {
+    attemptCollection.findOne.mockResolvedValue(recorded);
+
+    await expect(correctRetry()).resolves.toBe(recorded);
+
+    expect(attemptCollection.insertOne).not.toHaveBeenCalled();
+    expect(otherCollection.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('keeps the first answer when a concurrent check inserts it first', async () => {
+    attemptCollection.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(recorded);
+    attemptCollection.insertOne.mockRejectedValue(Object.assign(new Error('dup'), { code: 11000 }));
+
+    await expect(correctRetry()).resolves.toBe(recorded);
+
+    expect(otherCollection.updateOne).not.toHaveBeenCalled();
+  });
+});

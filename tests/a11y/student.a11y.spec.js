@@ -151,6 +151,26 @@ test.describe('Accessibility: seeded student quiz states', () => {
     await expectNoA11yViolations(page);
   });
 
+  test('wrong-answer retry state and the retry that finds the answer have no blocking axe violations', async ({
+    page,
+  }) => {
+    // Issue #128: the wrong pick stays marked and disabled, the right option
+    // is not revealed, and the student retries until they find it.
+    await startSeededQuiz(page);
+    await page
+      .getByRole('button', {
+        name: new RegExp(SEED.WRONG_OPTION_TEXTS.map(escapeRegExp).join('|')),
+      })
+      .first()
+      .click();
+    await expect(page.getByText('Incorrect.')).toBeVisible();
+    await expectNoA11yViolations(page);
+
+    await answerCurrentQuestionCorrectly(page);
+    await expect(page.getByText(/still counts as missed/)).toBeVisible();
+    await expectNoA11yViolations(page);
+  });
+
   test('quiz calendar events and month controls are keyboard accessible', async ({ page }) => {
     await prepareSeededStudentCourse(page);
     await page.goto('/student-dashboard');
