@@ -197,7 +197,16 @@ test.describe('Accessibility: delete scope choice in question generation', () =>
       await expect(dialog).toBeHidden();
       await expect(trigger).toBeFocused();
     } finally {
-      await page.request.delete(`/api/objective/${objectiveId}?questionAction=delete`);
+      // Bounded so a slow cleanup fails here with its status instead of
+      // silently using up the rest of the test timeout.
+      const response = await page.request.delete(
+        `/api/objective/${objectiveId}?questionAction=delete`,
+        { timeout: 5_000 }
+      );
+      expect(
+        response.ok() || response.status() === 404,
+        `objective cleanup failed with HTTP ${response.status()}`
+      ).toBe(true);
     }
   });
 });
