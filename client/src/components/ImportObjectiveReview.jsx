@@ -45,7 +45,8 @@ export default function ImportObjectiveReview({ groups, checkedKeys, onToggle, o
           <div key={group.metaKey || group.metaName}>
             <p className="text-xs font-semibold text-muted">
               {group.metaName}
-              {!group.existingMetaId && (
+              {/* A meta is only created as a container for new granulars. */}
+              {!group.existingMetaId && group.granulars.some((g) => !g.existingId) && (
                 <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
                   new
                 </span>
