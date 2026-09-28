@@ -291,12 +291,18 @@ const saveQuestionHandler = async (req, res) => {
     // Import sets dedupe: reject questions that already exist in the course
     // rather than creating duplicates.
     const savedQuestionIds = [];
+    // One entry per submitted question, in request order, null where the save
+    // failed. savedQuestionIds skips failures, so it cannot be lined up by index.
+    const questionIdsByIndex = [];
     let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
         const questionResult = await saveQuestion(courseId, questionData, { dedupe: dedupe === true });
-        savedQuestionIds.push(questionResult.insertedId.toString());
+        const savedId = questionResult.insertedId.toString();
+        savedQuestionIds.push(savedId);
+        questionIdsByIndex.push(savedId);
       } catch (error) {
+        questionIdsByIndex.push(null);
         if (error.code === "DUPLICATE_QUESTION") {
           duplicateCount += 1;
         } else {
@@ -324,7 +330,8 @@ const saveQuestionHandler = async (req, res) => {
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
       duplicateCount,
-      questionIds: savedQuestionIds
+      questionIds: savedQuestionIds,
+      questionIdsByIndex,
     });
   } catch (error) {
     console.error("Error saving question:", error);

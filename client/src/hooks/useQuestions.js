@@ -104,6 +104,27 @@ export function useBulkUpdateQuestions(courseId, options) {
   });
 }
 
+// Delete one question from the bank. Rejects on failure, unlike the bulk delete.
+// A 404 counts as success — the question is already gone.
+export function useDeleteQuestion(courseId, options) {
+  const invalidate = useInvalidateQuestions(courseId);
+  return useMutation({
+    mutationFn: async (questionId) => {
+      try {
+        return await api.delete(`/api/question/${questionId}`);
+      } catch (error) {
+        if (error.status === 404) return { success: true, alreadyDeleted: true };
+        throw error;
+      }
+    },
+    ...options,
+    onSuccess: (...args) => {
+      invalidate();
+      options?.onSuccess?.(...args);
+    },
+  });
+}
+
 export function useBulkDeleteQuestions(courseId, options) {
   const invalidate = useInvalidateQuestions(courseId);
   return useMutation({

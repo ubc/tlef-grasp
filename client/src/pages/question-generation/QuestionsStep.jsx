@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { ConfirmModal } from "../../components/ui/Modal";
+import { useToast } from "../../components/ui/Toast";
+import { useCurrentUser } from "../../hooks/useCurrentUser";
+import { useDeleteQuestion } from "../../hooks/useQuestions";
 import QuestionCard from "./QuestionCard";
+import DeleteSavedQuestionModal from "./DeleteSavedQuestionModal";
 
 export default function QuestionsStep({
   questionGroups,
@@ -11,8 +15,12 @@ export default function QuestionsStep({
   onRegenerateAll,
   onRetry,
   onSaveDraft,
+  courseId,
 }) {
-  const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const showToast = useToast();
+  const { isFaculty } = useCurrentUser();
+  // The question whose delete confirmation is open, or null.
+  const [deleteTarget, setDeleteTarget] = useState(null);
   // Sets the starting state of every card's objective/Bloom disclosure, so
   // checking alignment across a whole batch is one click instead of one per
   // card. Off by default (#102).
@@ -32,10 +40,9 @@ export default function QuestionsStep({
     );
   };
 
-  const deleteQuestion = (questionId) => setDeleteTargetId(questionId);
+  const deleteQuestion = (question) => setDeleteTarget(question);
 
-  const confirmDeleteQuestion = () => {
-    const questionId = deleteTargetId;
+  const removeFromPage = (questionId) => {
     setQuestionGroups((prev) =>
       prev
         .map((group) => ({
@@ -52,6 +59,23 @@ export default function QuestionsStep({
         .filter((group) => group.los.length > 0)
     );
     onSaveDraft();
+  };
+
+  const deleteQuestionMutation = useDeleteQuestion(courseId);
+
+  // Deletes from the bank first; the page copy goes only once that succeeds.
+  const deleteFromBank = (question) => {
+    deleteQuestionMutation.mutate(question._id, {
+      onSuccess: () => {
+        removeFromPage(question.id);
+        setDeleteTarget(null);
+        showToast("Deleted 1 question from the Question Bank", "success");
+      },
+      onError: (error) => {
+        setDeleteTarget(null);
+        showToast(error.message || "Failed to delete question", "error");
+      },
+    });
   };
 
   if (generating) {
@@ -160,7 +184,7 @@ export default function QuestionsStep({
                           key={question.id}
                           question={question}
                           onChange={(updates) => updateQuestion(question.id, updates)}
-                          onDelete={() => deleteQuestion(question.id)}
+                          onDelete={() => deleteQuestion(question)}
                           onSaveDraft={onSaveDraft}
                           detailsOpen={showDetails}
                         />
@@ -174,10 +198,24 @@ export default function QuestionsStep({
         ))}
       </div>
 
+      {/* Questions already in the bank (those with a database _id) get the
+          two-option modal; never-saved ones get the plain confirm below. */}
+      <DeleteSavedQuestionModal
+        open={!!deleteTarget?._id}
+        canDeleteFromBank={isFaculty}
+        isDeleting={deleteQuestionMutation.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onRemoveFromPage={() => {
+          removeFromPage(deleteTarget.id);
+          setDeleteTarget(null);
+        }}
+        onDeleteFromBank={() => deleteFromBank(deleteTarget)}
+      />
+
       <ConfirmModal
-        open={!!deleteTargetId}
-        onClose={() => setDeleteTargetId(null)}
-        onConfirm={confirmDeleteQuestion}
+        open={!!deleteTarget && !deleteTarget._id}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => removeFromPage(deleteTarget.id)}
         title="Delete Question"
         message="Are you sure you want to delete this question? This action cannot be undone."
         confirmLabel="Delete"
