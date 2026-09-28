@@ -155,7 +155,7 @@ test.describe('Accessibility: Canvas roster sync confirmation', () => {
 
 // MANUAL: verify a screen reader announces the two deletes as one group with
 // the safe option already chosen, and that the difference between them is
-// understandable when read aloud. Axe cannot judge wording.
+// understandable read aloud. Axe cannot judge wording.
 test.describe('Accessibility: delete scope choice in question generation', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
   test.use({ storageState: FACULTY_AUTH_FILE });
@@ -168,34 +168,23 @@ test.describe('Accessibility: delete scope choice in question generation', () =>
     // its second option for a record that exists, so create one to delete.
     const name = `A11y delete scope ${Date.now()}`;
     const created = await page.request.post('/api/objective', {
-      data: {
-        name,
-        courseId: course.id,
-        granularObjectives: [{ text: `${name} granular` }],
-      },
+      data: { name, courseId: course.id, granularObjectives: [{ text: name }] },
     });
     expect(created.ok(), 'objective for the dialog is created').toBe(true);
     const objectiveId = String((await created.json()).objective._id);
 
     try {
       await page.goto('/question-generation');
-      await page
-        .getByRole('button', { name: 'Add Existing Learning Objectives' })
-        .click();
+      await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
       await page.getByRole('checkbox', { name, exact: true }).check();
       await page.getByRole('button', { name: 'Add 1 objective' }).click();
 
       const trigger = page.getByRole('button', { name: `Delete ${name}` });
-      await expect(trigger).toBeVisible();
       await trigger.focus();
       await page.keyboard.press('Enter');
 
-      const dialog = page.getByRole('dialog', {
-        name: 'Delete Learning Objective?',
-      });
-      await expect(dialog).toBeVisible();
-      // Focus moves into the dialog on open, and the safe option is the one
-      // already chosen.
+      const dialog = page.getByRole('dialog', { name: 'Delete Learning Objective?' });
+      // Focus moves into the dialog on open, and the safe option is chosen.
       await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
       await expect(
         dialog.getByRole('radio', { name: /Remove from this page/ })
@@ -203,14 +192,12 @@ test.describe('Accessibility: delete scope choice in question generation', () =>
 
       await expectNoA11yViolations(page, { include: '[role="dialog"]' });
 
-      // Escape closes without deleting, and focus returns to the card's trash.
+      // Escape closes without deleting, and focus returns to the trash.
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(trigger).toBeFocused();
     } finally {
-      await page.request.delete(
-        `/api/objective/${objectiveId}?questionAction=delete`
-      );
+      await page.request.delete(`/api/objective/${objectiveId}?questionAction=delete`);
     }
   });
 });

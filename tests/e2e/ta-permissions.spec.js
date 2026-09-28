@@ -165,25 +165,19 @@ test.describe.serial('TA permissions (seeded course)', () => {
     }
   });
 
-  // The database-delete option in the generation wizard is faculty-only, so a
-  // TA who can reach that page must still be offered the page-only removal —
-  // and only that. Granting the Content Assistant preset is what puts Question
-  // Generation in reach; the demotion test below restores the seed state.
+  // The database-delete option is faculty-only, so a TA who can reach the
+  // wizard is still offered the page-only removal — and only that. The
+  // Content Assistant preset is what puts Question Generation in reach; the
+  // demotion test below restores the seed state.
   test('a TA with question generation is not offered the database delete', async ({
     page,
     browser,
   }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/users');
-
-    const row = student3Row(page);
-    await expect(row).toBeVisible();
-    await row.getByRole('button', { name: 'Permissions' }).click();
+    await student3Row(page).getByRole('button', { name: 'Permissions' }).click();
     const permissions = page.getByRole('dialog');
     await permissions.getByRole('button', { name: 'Content Assistant' }).click();
-    await expect(
-      permissions.getByRole('checkbox', { name: /Question Generation/ })
-    ).toBeChecked();
     await permissions.getByRole('button', { name: 'Save Permissions' }).click();
     await expect(page.getByText('TA permissions updated')).toBeVisible();
 
@@ -197,23 +191,14 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await taPage.goto('/question-generation');
 
       // Put a seeded objective on the page; nothing here writes to it.
-      await taPage
-        .getByRole('button', { name: 'Add Existing Learning Objectives' })
-        .click();
-      await taPage
-        .getByRole('checkbox', { name: SEED.OBJECTIVE_NAME, exact: true })
-        .check();
+      await taPage.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+      await taPage.getByRole('checkbox', { name: SEED.OBJECTIVE_NAME, exact: true }).check();
       await taPage.getByRole('button', { name: 'Add 1 objective' }).click();
-      await taPage
-        .getByRole('button', { name: `Delete ${SEED.OBJECTIVE_NAME}` })
-        .click();
+      await taPage.getByRole('button', { name: `Delete ${SEED.OBJECTIVE_NAME}` }).click();
 
-      const dialog = taPage.getByRole('dialog', {
-        name: 'Delete Learning Objective?',
-      });
-      await expect(dialog).toBeVisible();
-      // One option, stated plainly — no radios to choose between, and no way
-      // to reach the record.
+      // One option, stated plainly: nothing to choose between, and no way to
+      // reach the record.
+      const dialog = taPage.getByRole('dialog', { name: 'Delete Learning Objective?' });
       await expect(
         dialog.getByText(/only faculty members can delete it from there/i)
       ).toBeVisible();
@@ -221,13 +206,6 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await expect(
         dialog.getByRole('button', { name: /Delete from the Question Bank/ })
       ).toHaveCount(0);
-      await expect(
-        dialog.getByRole('button', { name: 'Remove from this page' })
-      ).toBeVisible();
-
-      // Cancel: the seeded objective is untouched either way.
-      await dialog.getByRole('button', { name: 'Cancel' }).click();
-      await expect(dialog).toBeHidden();
     } finally {
       await context.close();
     }

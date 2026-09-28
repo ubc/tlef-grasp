@@ -1,20 +1,47 @@
 import { useEffect, useState } from "react";
 import Modal from "./ui/Modal";
 
+// One radio card per meaning of "delete". Class names are spelled out rather
+// than built from `danger`: Tailwind only generates what it can find verbatim.
+function ScopeOption({ value, action, setAction, danger, disabled, title, children }) {
+  const selected = action === value;
+  const tone = danger
+    ? { on: "border-danger bg-danger/5", off: "hover:border-danger/40", accent: "accent-danger" }
+    : { on: "border-primary bg-primary/5", off: "hover:border-primary/40", accent: "accent-primary" };
+  return (
+    <label
+      className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
+        selected ? tone.on : `border-gray-200 ${tone.off}`
+      }`}
+    >
+      <input
+        type="radio"
+        name="deleteScopeAction"
+        value={value}
+        checked={selected}
+        onChange={() => setAction(value)}
+        disabled={disabled}
+        className={`mt-1 h-4 w-4 ${tone.accent}`}
+      />
+      <span className="text-sm">
+        <span className="block font-semibold text-ink">{title}</span>
+        <span className="block text-muted">{children}</span>
+      </span>
+    </label>
+  );
+}
+
 // "Delete" means two things in the generation wizard, and this is where the
 // instructor says which they meant: drop it from the page in front of them, or
 // delete the record from the Question Bank. Questions (step 2) and learning
-// objectives (step 1) share the modal because the question is the same either
-// way — only the noun changes.
-//
-// The safe option is pre-selected. The database option is left out entirely,
-// with copy saying why, when there is no saved record to delete or the
-// instructor is not faculty. Nothing here calls a page-only removal permanent.
+// objectives (step 1) share it because the question is the same either way —
+// only the noun changes. The safe option is pre-selected, the database option
+// is left out entirely (with copy saying why) when there is no saved record or
+// the instructor is not faculty, and nothing calls a page removal permanent.
 //
 // `handoff` marks the one difference between callers: a question is deleted the
-// moment this modal is confirmed, while an objective goes on to the
-// linked-questions choice (DeleteObjectiveModal). Either way the caller does
-// the deleting — this modal only reports the choice.
+// moment this is confirmed, while an objective goes on to the linked-questions
+// choice (DeleteObjectiveModal). Either way the caller does the deleting.
 export default function DeleteScopeModal({
   open,
   noun,
@@ -23,7 +50,7 @@ export default function DeleteScopeModal({
   isDeleting = false,
   handoff = false,
   // Extra records the database delete takes with it, e.g. "its granular
-  // objectives". Named in the copy so the blast radius is not a surprise.
+  // objectives", so the blast radius is not a surprise.
   alsoDeletes = "",
   onClose,
   onRemoveFromPage,
@@ -38,16 +65,13 @@ export default function DeleteScopeModal({
 
   const offerDbOption = existsInDb && canDeleteFromDb;
   const deleting = offerDbOption && action === "database";
-  // Title-cased so a two-word noun reads "Delete Learning Objective?" rather
-  // than "Delete Learning objective?".
-  const title = `Delete ${noun.replace(/\b./g, (c) => c.toUpperCase())}?`;
 
   return (
     <Modal
       open={open}
       // Not closable while the delete is in flight.
       onClose={isDeleting ? undefined : onClose}
-      title={title}
+      title={`Delete ${noun.replace(/\b./g, (c) => c.toUpperCase())}?`}
       footer={
         <>
           <button
@@ -88,63 +112,28 @@ export default function DeleteScopeModal({
           <legend className="mb-3 text-ink">
             This {noun} is saved in the Question Bank. What would you like to do?
           </legend>
-
-          <label
-            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
-              action === "page"
-                ? "border-primary bg-primary/5"
-                : "border-gray-200 hover:border-primary/40"
-            }`}
+          <ScopeOption
+            value="page"
+            action={action}
+            setAction={setAction}
+            disabled={isDeleting}
+            title="Remove from this page"
           >
-            <input
-              type="radio"
-              name="deleteScopeAction"
-              value="page"
-              checked={action === "page"}
-              onChange={() => setAction("page")}
-              disabled={isDeleting}
-              className="mt-1 h-4 w-4 accent-primary"
-            />
-            <span className="text-sm">
-              <span className="block font-semibold text-ink">
-                Remove from this page
-              </span>
-              <span className="block text-muted">
-                The record stays in the Question Bank.
-              </span>
-            </span>
-          </label>
-
-          <label
-            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
-              action === "database"
-                ? "border-danger bg-danger/5"
-                : "border-gray-200 hover:border-danger/40"
-            }`}
+            The record stays in the Question Bank.
+          </ScopeOption>
+          <ScopeOption
+            value="database"
+            action={action}
+            setAction={setAction}
+            danger
+            disabled={isDeleting}
+            title="Delete from the Question Bank"
           >
-            <input
-              type="radio"
-              name="deleteScopeAction"
-              value="database"
-              checked={action === "database"}
-              onChange={() => setAction("database")}
-              disabled={isDeleting}
-              className="mt-1 h-4 w-4 accent-danger"
-            />
-            <span className="text-sm">
-              <span className="block font-semibold text-ink">
-                Delete from the Question Bank
-              </span>
-              <span className="block text-muted">
-                Deletes it everywhere{alsoDeletes ? `, with ${alsoDeletes}` : ""}.{" "}
-                {/* Conditional, because a record with nothing attached is
-                    deleted on confirm without a follow-up prompt. */}
-                {handoff
-                  ? "If any questions are attached, you'll choose what happens to them next."
-                  : "This cannot be undone."}
-              </span>
-            </span>
-          </label>
+            Deletes it everywhere{alsoDeletes ? `, with ${alsoDeletes}` : ""}.{" "}
+            {handoff
+              ? "If any questions are attached, you'll choose what happens to them next."
+              : "This cannot be undone."}
+          </ScopeOption>
         </fieldset>
       )}
     </Modal>

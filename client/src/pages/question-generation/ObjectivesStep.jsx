@@ -455,6 +455,16 @@ export default function ObjectivesStep({
 
   /* ---------------------------- Delete / remove ---------------------------- */
 
+  // Both trash buttons open the same first modal; `item` is what makes it a
+  // granular rather than the whole objective.
+  const requestDelete = (group, item) =>
+    setRemoveTarget({
+      kind: item ? "granular" : "objective",
+      groupId: group.id,
+      objectiveId: group.objectiveId,
+      item,
+    });
+
   // The page-only removal both trash buttons used to do on their own.
   const confirmRemoveFromPage = () => {
     if (!removeTarget) return;
@@ -466,28 +476,35 @@ export default function ObjectivesStep({
     setRemoveTarget(null);
   };
 
-  // Deletes the record first; the page copy goes only once that succeeds, so a
-  // failed call leaves the objective exactly where it was.
-  const runDatabaseDelete = (target, questionAction) => {
-    if (!target) return;
-
-    const onError = (error) => {
+  // The page copy goes only once the record is gone, so a failed call leaves
+  // the objective exactly where it was.
+  const settle = (prune, noun) => ({
+    onSuccess: () => {
+      prune();
+      setDbDeleteTarget(null);
+      showToast(`${noun} deleted`, "success");
+    },
+    onError: (error) => {
       console.error("Error deleting objective from database:", error);
       setDbDeleteTarget(null);
       showToast(error.message || "Failed to delete from the database", "error");
-    };
+    },
+  });
+
+  const runDatabaseDelete = (target, questionAction) => {
+    if (!target) return;
+    const dropItem = (g) => ({
+      ...g,
+      items: g.items.filter((i) => i.id !== target.item?.id),
+    });
 
     if (target.kind === "objective") {
       deleteObjectiveMutation.mutate(
         { objectiveId: target.objectiveId, questionAction },
-        {
-          onSuccess: () => {
-            setObjectiveGroups((prev) => prev.filter((g) => g.id !== target.groupId));
-            setDbDeleteTarget(null);
-            showToast("Learning objective deleted", "success");
-          },
-          onError,
-        }
+        settle(
+          () => setObjectiveGroups((prev) => prev.filter((g) => g.id !== target.groupId)),
+          "Learning objective"
+        )
       );
       return;
     }
@@ -495,29 +512,16 @@ export default function ObjectivesStep({
     const group = objectiveGroupsRef.current.find((g) => g.id === target.groupId);
     if (!group?.objectiveId) return;
     // A granular objective is deleted by saving its objective without it: the
-    // server treats any granular missing from the payload as deleted.
+    // server treats any granular missing from the payload as deleted. It is
+    // dropped outright rather than detached, so it cannot ride along in the
+    // next save and come back.
     deleteGranularMutation.mutate(
       {
         objectiveId: group.objectiveId,
-        granularObjectives: granularObjectivesPayload({
-          ...group,
-          items: group.items.filter((i) => i.id !== target.item.id),
-        }),
+        granularObjectives: granularObjectivesPayload(dropItem(group)),
         questionAction,
       },
-      {
-        onSuccess: () => {
-          // Dropped outright rather than detached: the record is gone, so it
-          // must not ride along in the next save and come back.
-          updateGroup(target.groupId, (g) => ({
-            ...g,
-            items: g.items.filter((i) => i.id !== target.item.id),
-          }));
-          setDbDeleteTarget(null);
-          showToast("Granular objective deleted", "success");
-        },
-        onError,
-      }
+      settle(() => updateGroup(target.groupId, dropItem), "Granular objective")
     );
   };
 
@@ -845,22 +849,9 @@ export default function ObjectivesStep({
               onChangeTypeCount={(item, bloomLevel, questionType, delta) =>
                 changeTypeCount(group, item, bloomLevel, questionType, delta)
               }
-              onDeleteItem={(item) =>
-                setRemoveTarget({
-                  kind: "granular",
-                  groupId: group.id,
-                  objectiveId: group.objectiveId,
-                  item,
-                })
-              }
+              onDeleteItem={(item) => requestDelete(group, item)}
               onAddGranular={() => addNewGranular(group)}
-              onRequestDelete={() =>
-                setRemoveTarget({
-                  kind: "objective",
-                  groupId: group.id,
-                  objectiveId: group.objectiveId,
-                })
-              }
+              onRequestDelete={() => requestDelete(group)}
               onRequestGranularize={() => {
                 setGranularCount(3);
                 setUseDefaults(true);
