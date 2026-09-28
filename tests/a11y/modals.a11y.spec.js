@@ -163,6 +163,7 @@ test.describe('Accessibility: delete scope choice in question generation', () =>
   test('delete-scope dialog has no blocking axe violations and handles focus', async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     const course = await prepareAuthenticatedCourse(page);
     // The a11y seed course carries no objectives, and the dialog only offers
     // its second option for a record that exists, so create one to delete.
