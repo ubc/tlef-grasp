@@ -53,6 +53,17 @@ router.get(
 /** Quiz release/deadline events scoped to the current viewer. */
 router.get("/course/:courseId/calendar", quizController.getQuizCalendarHandler);
 
+/**
+ * POST /api/quiz/course/:courseId/schedules/shift
+ * Shift the schedules of several quizzes by one offset; `dryRun` previews.
+ */
+router.post(
+  "/course/:courseId/schedules/shift",
+  requireRole(ROLES.FACULTY),
+  express.json(),
+  quizController.shiftQuizSchedulesHandler
+);
+
 router.get("/my-scores", quizController.getMyScoresHandler);
 
 /** Quiz-question reports submitted by students, separate from bank flagStatus. */

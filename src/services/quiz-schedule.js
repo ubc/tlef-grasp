@@ -118,6 +118,144 @@ const getSchedulesForQuizzes = async (quizIds = [], courseSectionIds = []) => {
   return byQuiz;
 };
 
+// Offset of `timeZone` from UTC at instant `date`, in ms.
+const tzOffsetMs = (date, timeZone) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric',
+    }).formatToParts(date).map((p) => [p.type, Number(p.value)])
+  );
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
+};
+
+const isValidTimeZone = (timeZone) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Shift an instant by whole days in wall-clock terms for `timeZone` (a 23:59
+ * deadline stays 23:59 across a DST change), then by `minutes` in absolute time.
+ */
+const shiftDate = (date, { days = 0, minutes = 0 }, timeZone = 'UTC') => {
+  const start = new Date(date);
+  const naive = start.getTime() + days * 86400000;
+  let result = naive;
+  if (days) {
+    // Correct by the change in UTC offset; a second pass settles results that
+    // land on the far side of the DST boundary.
+    const base = tzOffsetMs(start, timeZone);
+    for (let i = 0; i < 2; i++) result = naive + base - tzOffsetMs(new Date(result), timeZone);
+  }
+  return new Date(result + minutes * 60000);
+};
+
+/**
+ * Compute the shifted windows for `rows` without writing anything. Each entry
+ * is flagged when the new window has already closed (`expired`), would open
+ * immediately although it was upcoming (`opens-now`), or starts at the exact
+ * moment as another quiz in the same section (`collision`).
+ *
+ * @param {Array<{_id, quizId, courseSectionId, releaseDate, expireDate}>} rows - Rows being shifted.
+ * @param {Array<{quizId, courseSectionId, releaseDate}>} otherRows - Unshifted rows in the same sections.
+ */
+const planShift = (rows, offset, { timeZone = 'UTC', otherRows = [], now = new Date() } = {}) => {
+  const planned = rows.map((r) => ({
+    _id: r._id,
+    quizId: r.quizId.toString(),
+    courseSectionId: r.courseSectionId.toString(),
+    oldReleaseDate: new Date(r.releaseDate),
+    oldExpireDate: new Date(r.expireDate),
+    releaseDate: shiftDate(r.releaseDate, offset, timeZone),
+    expireDate: shiftDate(r.expireDate, offset, timeZone),
+  }));
+
+  const startsBySection = new Map();
+  const addStart = (sectionId, quizId, time) => {
+    const key = `${sectionId}|${time}`;
+    if (!startsBySection.has(key)) startsBySection.set(key, new Set());
+    startsBySection.get(key).add(quizId);
+  };
+  for (const r of otherRows) addStart(r.courseSectionId.toString(), r.quizId.toString(), new Date(r.releaseDate).getTime());
+  for (const p of planned) addStart(p.courseSectionId, p.quizId, p.releaseDate.getTime());
+
+  return planned.map((p) => {
+    const flags = [];
+    if (p.expireDate <= now) flags.push('expired');
+    else if (p.releaseDate <= now && p.oldReleaseDate > now) flags.push('opens-now');
+    if (startsBySection.get(`${p.courseSectionId}|${p.releaseDate.getTime()}`).size > 1) flags.push('collision');
+    return { ...p, flags };
+  });
+};
+
+/**
+ * Shift every schedule row of `quizIds` (limited to `restrictToSectionIds`) by
+ * `offset`. Running quiz sessions are deliberately untouched: a student
+ * mid-attempt keeps the deadline they started with.
+ *
+ * All-or-nothing: rows are written with their old dates as a guard, and if any
+ * write fails or finds its row changed underneath it, the rows already moved
+ * are written back. (No multi-document transactions — deployments may run a
+ * standalone mongod.)
+ *
+ * @returns {Promise<Array>} The plan (see `planShift`), applied unless `dryRun`.
+ */
+const shiftSchedules = async (
+  quizIds,
+  offset,
+  { restrictToSectionIds, timeZone = 'UTC', dryRun = false, now = new Date() } = {}
+) => {
+  if (!quizIds.length || !restrictToSectionIds.length) return [];
+  const db = await databaseService.connect();
+  const collection = db.collection(COLLECTION);
+  const sectionFilter = { $in: restrictToSectionIds.map(toObjectId) };
+  const quizFilter = quizIds.map(toObjectId);
+
+  const [rows, otherRows] = await Promise.all([
+    collection.find({ quizId: { $in: quizFilter }, courseSectionId: sectionFilter }).toArray(),
+    collection.find({ quizId: { $nin: quizFilter }, courseSectionId: sectionFilter }).toArray(),
+  ]);
+  const plan = planShift(rows, offset, { timeZone, otherRows, now });
+
+  for (const p of plan) {
+    if (!(p.expireDate > p.releaseDate)) {
+      throw Object.assign(new Error("A shifted expire date would not be after its release date."), { status: 400 });
+    }
+  }
+  if (dryRun || plan.length === 0) return plan;
+
+  const applied = [];
+  try {
+    for (const p of plan) {
+      const res = await collection.updateOne(
+        { _id: p._id, releaseDate: p.oldReleaseDate, expireDate: p.oldExpireDate },
+        { $set: { releaseDate: p.releaseDate, expireDate: p.expireDate, updatedAt: new Date() } }
+      );
+      if (res.matchedCount !== 1) {
+        throw Object.assign(new Error("A schedule changed while shifting; nothing was moved. Please retry."), { status: 409 });
+      }
+      applied.push(p);
+    }
+  } catch (error) {
+    for (const p of applied) {
+      await collection.updateOne(
+        { _id: p._id, releaseDate: p.releaseDate, expireDate: p.expireDate },
+        { $set: { releaseDate: p.oldReleaseDate, expireDate: p.oldExpireDate, updatedAt: new Date() } }
+      );
+    }
+    throw error;
+  }
+  return plan;
+};
+
 /**
  * Translate the section(s) a student belongs to in a course (stored by the
  * `sectionId` string in grasp_user_course_section) into the section document
@@ -248,6 +386,10 @@ module.exports = {
   getSchedulesForQuiz,
   setSchedules,
   getSchedulesForQuizzes,
+  shiftDate,
+  isValidTimeZone,
+  planShift,
+  shiftSchedules,
   getStudentSectionObjectIds,
   removeSchedulesForSection,
   removeSchedulesForQuiz,

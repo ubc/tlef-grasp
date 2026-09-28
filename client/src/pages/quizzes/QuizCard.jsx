@@ -5,20 +5,12 @@ import Modal from "../../components/ui/Modal";
 import MultiSelect from "../../components/ui/MultiSelect";
 import {
   applyScheduleWindow,
+  scheduleStatus,
   schedulesWithout,
   sectionPickerOptions,
 } from "./schedulePayload";
 import { useQuizSchedules, useUpdateQuizSchedules } from "../../hooks/useQuizzes";
 import { useToast } from "../../components/ui/Toast";
-
-// Active / Scheduled (upcoming) / Expired badge for a section's window.
-function scheduleStatus(row, now) {
-  const release = new Date(row.releaseDate);
-  const expire = new Date(row.expireDate);
-  if (now < release) return { label: "Scheduled", cls: "bg-primary/10 text-primary" };
-  if (now > expire) return { label: "Expired", cls: "bg-gray-100 text-muted" };
-  return { label: "Active", cls: "bg-success/15 text-success" };
-}
 
 // Set a release/expire window: on one section when editing, on any number of
 // them when scheduling (instructors run the same window across 002, 005, ...).
@@ -249,7 +241,7 @@ function SectionSchedule({ courseId, quizId, sections }) {
   );
 }
 
-export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onReview, onExport, onDelete }) {
+export default function QuizCard({ quiz, courseId, sections = [], selected = false, onToggleSelect, onUpdate, onReview, onExport, onDelete }) {
   const totalQuestions = quiz.questions.length;
   const approvedQuestions = quiz.questions.filter(
     (q) => q.status === "Approved"
@@ -264,9 +256,20 @@ export default function QuizCard({ quiz, courseId, sections = [], onUpdate, onRe
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-ink">{quiz.name}</h3>
-        <div className="text-xs text-muted">Created: {formatDate(quiz.createdAt)}</div>
+      <div className="mb-4 flex items-start gap-3">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(quiz.id)}
+            aria-label={`Select ${quiz.name}`}
+            className="mt-1.5 h-4 w-4 accent-primary"
+          />
+        )}
+        <div>
+          <h3 className="text-lg font-semibold text-ink">{quiz.name}</h3>
+          <div className="text-xs text-muted">Created: {formatDate(quiz.createdAt)}</div>
+        </div>
       </div>
 
       <div className="mb-4">

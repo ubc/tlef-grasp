@@ -3,6 +3,7 @@ import {
   applyScheduleWindow,
   schedulesWithout,
   sectionPickerOptions,
+  shiftRequestBody,
 } from '../../client/src/pages/quizzes/schedulePayload.js';
 
 // Stored rows come back from the API with ISO strings.
@@ -87,5 +88,25 @@ describe('sectionPickerOptions', () => {
 
   it('falls back to the section id when there is no section number', () => {
     expect(sectionPickerOptions([section('s9', null)], [])[0].label).toBe('SEC-s9');
+  });
+});
+
+describe('shiftRequestBody', () => {
+  it('builds a request carrying the browser time zone', () => {
+    expect(shiftRequestBody({ quizIds: ['q1'], amount: '-2', unit: 'days', dryRun: true })).toEqual({
+      quizIds: ['q1'],
+      amount: -2,
+      unit: 'days',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      dryRun: true,
+    });
+  });
+
+  it.each([['0'], ['1.5'], [''], ['abc']])('rejects amount %j', (amount) => {
+    expect(shiftRequestBody({ quizIds: ['q1'], amount, unit: 'days' })).toBeNull();
+  });
+
+  it('rejects an empty selection', () => {
+    expect(shiftRequestBody({ quizIds: [], amount: '7', unit: 'days' })).toBeNull();
   });
 });

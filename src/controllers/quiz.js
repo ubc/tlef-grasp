@@ -1483,7 +1483,67 @@ const updateQuizSchedulesHandler = async (req, res) => {
   }
 };
 
+const MAX_SHIFT_DAYS = 730;
+
+/**
+ * Shift every schedule row of several quizzes by one offset (term rollover,
+ * slipped week). `unit: "days"` moves by wall-clock days in `timeZone`;
+ * `unit: "hours"` moves by absolute time. With `dryRun` it only returns the
+ * old → new preview. Only the caller's own sections are moved.
+ */
+const shiftQuizSchedulesHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { quizIds, amount, unit, timeZone = "UTC", dryRun = false } = req.body || {};
+
+    const n = Number(amount);
+    if (!Array.isArray(quizIds) || quizIds.length === 0) {
+      return res.status(400).json({ success: false, error: "quizIds must be a non-empty array" });
+    }
+    if (!Number.isInteger(n) || n === 0 || !["days", "hours"].includes(unit)) {
+      return res.status(400).json({ success: false, error: "amount must be a non-zero integer and unit 'days' or 'hours'" });
+    }
+    if (Math.abs(unit === "days" ? n : n / 24) > MAX_SHIFT_DAYS) {
+      return res.status(400).json({ success: false, error: `Shifts are limited to ${MAX_SHIFT_DAYS} days` });
+    }
+    if (!quizScheduleService.isValidTimeZone(timeZone)) {
+      return res.status(400).json({ success: false, error: "Unknown timeZone" });
+    }
+
+    const userId = req.user._id || req.user.id;
+    if (!await isFaculty(req.user) && !await isUserInCourse(userId, courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
+    const courseQuizIds = new Set(
+      (await quizService.getQuizzesByCourse(courseId)).map((q) => q._id.toString())
+    );
+    if (quizIds.some((id) => !courseQuizIds.has(String(id)))) {
+      return res.status(404).json({ success: false, error: "One or more quizzes were not found in this course" });
+    }
+
+    // Same scoping as updateQuizSchedulesHandler: only sections the caller owns.
+    const ownedSections = await sectionService.getSectionsOwnedByUser(courseId, userId);
+    const offset = unit === "days" ? { days: n } : { minutes: n * 60 };
+    const plan = await quizScheduleService.shiftSchedules(quizIds.map(String), offset, {
+      restrictToSectionIds: ownedSections.map((s) => s._id.toString()),
+      timeZone,
+      dryRun: dryRun === true,
+    });
+
+    res.json({
+      success: true,
+      applied: dryRun !== true,
+      rows: plan.map(({ _id, ...row }) => row),
+    });
+  } catch (error) {
+    console.error("Error shifting quiz schedules:", error);
+    res.status(error.status || 500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
+  shiftQuizSchedulesHandler,
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,
