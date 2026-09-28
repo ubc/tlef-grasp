@@ -106,3 +106,113 @@ export function toSavePayload(question, granularObjectiveId, { preserveStatus = 
   };
   return payload;
 }
+
+// --- Objectives carried by an imported file ---------------------------------
+// An export's `objectives` array is [{ metaObjectiveId, metaObjectiveName,
+// granularObjectives: [{ id, name }] }] (buildObjectivesSummary, src/controllers/
+// question.js).
+
+// Comparison rule for objective text, matching matchGranular's name branch.
+export function normalizeObjectiveText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+// Bucket the file's objectives against the course's granulars, matching on text.
+// Granular text is deduped across the whole file, so one text yields one granular
+// however many metas carry it.
+//
+// Returns [{ metaName, metaKey, existingMetaId, existingGranulars, granulars }],
+// each granular { key, name, existingId }; existingId is set when the course
+// already has that text, existingMetaId when it already has that meta name.
+export function bucketImportedObjectives(fileObjectives, flatGranulars) {
+  const ownedByText = new Map();
+  const metaIdByName = new Map();
+  const ownedByMetaId = new Map();
+
+  (flatGranulars || []).forEach((g) => {
+    const text = normalizeObjectiveText(g.name);
+    if (text && !ownedByText.has(text)) ownedByText.set(text, g);
+    const meta = normalizeObjectiveText(g.metaName);
+    if (meta && !metaIdByName.has(meta)) metaIdByName.set(meta, g.metaId);
+    ownedByMetaId.set(g.metaId, [...(ownedByMetaId.get(g.metaId) || []), g]);
+  });
+
+  const seen = new Set();
+  return (fileObjectives || []).flatMap((meta) => {
+    const metaName = String(meta?.metaObjectiveName || "").trim();
+    const metaKey = normalizeObjectiveText(metaName);
+    const existingMetaId = (metaKey && metaIdByName.get(metaKey)) || null;
+
+    const granulars = (meta?.granularObjectives || [])
+      .map((g) => String(g?.name || g?.text || "").trim())
+      .filter((name) => {
+        const key = normalizeObjectiveText(name);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((name) => {
+        const key = normalizeObjectiveText(name);
+        return { key, name, existingId: ownedByText.get(key)?.id || null };
+      });
+
+    if (granulars.length === 0) return [];
+    return [{
+      metaName: metaName || "Ungrouped objectives",
+      metaKey,
+      existingMetaId,
+      existingGranulars: (existingMetaId && ownedByMetaId.get(existingMetaId)) || [],
+      granulars,
+    }];
+  });
+}
+
+// Keys of every granular the course does not already have.
+export function creatableKeys(groups) {
+  return (groups || []).flatMap((group) =>
+    group.granulars.filter((g) => !g.existingId).map((g) => g.key)
+  );
+}
+
+// Split the checked granulars into the two operations they need:
+//   creates → POST /api/objective, a new meta with its granulars
+//   appends → PUT  /api/objective/:id, which replaces the granular set, so the
+//             meta's existing children are resent with their ids alongside.
+export function planObjectiveCreations(groups, checkedKeys) {
+  const checked = checkedKeys instanceof Set ? checkedKeys : new Set(checkedKeys || []);
+  const creates = [];
+  const appends = [];
+
+  (groups || []).forEach((group) => {
+    const added = group.granulars
+      .filter((g) => !g.existingId && checked.has(g.key))
+      .map((g) => ({ text: g.name }));
+    if (added.length === 0) return;
+
+    if (group.existingMetaId) {
+      appends.push({
+        objectiveId: group.existingMetaId,
+        metaName: group.metaName,
+        granularObjectives: [
+          ...group.existingGranulars.map((g) => ({ _id: g.id, text: g.name })),
+          ...added,
+        ],
+      });
+    } else {
+      creates.push({ name: group.metaName, granularObjectives: added });
+    }
+  });
+
+  return { creates, appends };
+}
+
+// Bucketing key for the objective a question arrived pointing at.
+export function importedGranularKey(question) {
+  return normalizeObjectiveText(question?.granularObjectiveName);
+}
+
+// True when the row matched an objective, or names one queued for creation.
+export function isRowResolved(row, checkedKeys) {
+  const key = row.granularId ? "" : importedGranularKey(row.question);
+  return Boolean(row.granularId || (key && checkedKeys?.has(key)));
+}
