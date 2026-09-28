@@ -15,6 +15,7 @@ import {
   convertQuestionsToGroups,
   buildQuestionPayload,
 } from "./question-generation/generationApi";
+import { attachSavedIds } from "./question-generation/savedQuestionIds";
 
 const STEP_TITLES = {
   1: "Create Objectives",
@@ -174,6 +175,10 @@ export default function QuestionGeneration() {
   const addToBankMutation = useSaveQuestions(courseId, {
     onSuccess: (data, variables) => {
       const count = data.savedCount || variables.questions.length;
+      // Record the bank ids so Step 2 can offer to delete from the bank.
+      setQuestionGroups((prev) =>
+        attachSavedIds(prev, variables.localIds, data.questionIdsByIndex)
+      );
       clearDraft();
       setSuccessMessage(
         `Successfully added ${count} question${count !== 1 ? "s" : ""} to the Question Bank!`
@@ -334,15 +339,17 @@ export default function QuestionGeneration() {
   };
 
   const handleAddAllToBank = () => {
-    const questions = questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
+    const pageQuestions = questionGroups.flatMap((group) =>
+      group.los.flatMap((lo) => lo.questions)
     );
+    const questions = pageQuestions.map(buildQuestionPayload);
 
     if (questions.length === 0) {
       showToast("No questions to add", "warning");
       return;
     }
-    addToBankMutation.mutate({ questions });
+    // localIds rides along in the mutation variables; it is not sent to the server.
+    addToBankMutation.mutate({ questions, localIds: pageQuestions.map((q) => q.id) });
   };
 
   /* --------------------------------- Render -------------------------------- */
@@ -385,6 +392,7 @@ export default function QuestionGeneration() {
           }}
           onRetry={runGeneration}
           onSaveDraft={persistDraft}
+          courseId={courseId}
         />
       )}
 

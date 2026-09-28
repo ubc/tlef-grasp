@@ -165,6 +165,52 @@ test.describe.serial('TA permissions (seeded course)', () => {
     }
   });
 
+  // The database-delete option is faculty-only, so a TA who can reach the
+  // wizard is still offered the page-only removal — and only that. The
+  // Content Assistant preset is what puts Question Generation in reach; the
+  // demotion test below restores the seed state.
+  test('a TA with question generation is not offered the database delete', async ({
+    page,
+    browser,
+  }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/users');
+    await student3Row(page).getByRole('button', { name: 'Permissions' }).click();
+    const permissions = page.getByRole('dialog');
+    await permissions.getByRole('button', { name: 'Content Assistant' }).click();
+    await permissions.getByRole('button', { name: 'Save Permissions' }).click();
+    await expect(page.getByText('TA permissions updated')).toBeVisible();
+
+    // Fresh login for the same reason as the test above: the session snapshots
+    // the TA's access at sign-in.
+    const context = await browser.newContext({ baseURL: BASE_URL });
+    const taPage = await context.newPage();
+    try {
+      await login(taPage, TA_USERNAME, TA_PASSWORD);
+      await selectSeededCourse(taPage, { role: 'instructor' });
+      await taPage.goto('/question-generation');
+
+      // Put a seeded objective on the page; nothing here writes to it.
+      await taPage.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+      await taPage.getByRole('checkbox', { name: SEED.OBJECTIVE_NAME, exact: true }).check();
+      await taPage.getByRole('button', { name: 'Add 1 objective' }).click();
+      await taPage.getByRole('button', { name: `Delete ${SEED.OBJECTIVE_NAME}` }).click();
+
+      // One option, stated plainly: nothing to choose between, and no way to
+      // reach the record.
+      const dialog = taPage.getByRole('dialog', { name: 'Delete Learning Objective?' });
+      await expect(
+        dialog.getByText(/only faculty members can delete it from there/i)
+      ).toBeVisible();
+      await expect(dialog.getByRole('radio')).toHaveCount(0);
+      await expect(
+        dialog.getByRole('button', { name: /Delete from the Question Bank/ })
+      ).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('instructor demotes the TA back to student', async ({ page }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/users');

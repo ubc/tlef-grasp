@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
-import { useCourseObjectives, useInvalidateObjectives } from "../../hooks/useObjectives";
+import {
+  useCourseObjectives,
+  useInvalidateObjectives,
+  useDeleteObjective,
+  useUpdateGranularObjectives,
+  useObjectiveDeletionImpact,
+} from "../../hooks/useObjectives";
 import { useCourseMaterials } from "../../hooks/useMaterials";
+import { useCurrentUser } from "../../hooks/useCurrentUser";
 import Modal from "../../components/ui/Modal";
+import DeleteObjectiveModal from "../../components/DeleteObjectiveModal";
+import DeleteScopeModal from "../../components/DeleteScopeModal";
 import { useToast } from "../../components/ui/Toast";
 import AIGenerateModal from "./AIGenerateModal";
 import ObjectiveGroupCard from "./ObjectiveGroupCard";
 import { totalQuestions, defaultTypeForLevel } from "../../lib/questionTypes";
 import {
   appendObjectiveGroups,
+  granularObjectivesPayload,
   totalQuestionsForGroups,
   withQuestionTypes,
 } from "./objectiveGroups";
@@ -33,6 +43,9 @@ export default function ObjectivesStep({
 }) {
   const showToast = useToast();
   const invalidateObjectives = useInvalidateObjectives(course?.id);
+  // Deleting a record from the database is a faculty action in the Question
+  // Bank, so it is one here too — a TA still gets the page-only removal.
+  const { isFaculty } = useCurrentUser();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
   // Checked-but-not-yet-added objectives, keyed by stringified _id. Discarded
@@ -45,7 +58,12 @@ export default function ObjectivesStep({
   // exactly this, and the modal it came from is long gone by then.
   const [lastRun, setLastRun] = useState(null);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  // Deleting is two modals. The first asks which delete was meant:
+  // { kind: 'objective' | 'granular', groupId, objectiveId, item? }.
+  const [removeTarget, setRemoveTarget] = useState(null);
+  // The second, only on the database branch, asks what happens to the
+  // questions attached to it. Same shape, plus what DeleteObjectiveModal reads.
+  const [dbDeleteTarget, setDbDeleteTarget] = useState(null);
   const [granularizeTarget, setGranularizeTarget] = useState(null);
   const [granularCount, setGranularCount] = useState(3);
   const [useDefaults, setUseDefaults] = useState(true);
@@ -59,6 +77,23 @@ export default function ObjectivesStep({
 
   const { objectives: dbObjectives } = useCourseObjectives(course?.id);
   const { materials: courseMaterials } = useCourseMaterials(course?.id);
+
+  // Both hooks refresh the objective lists and the Question Bank on success.
+  // Their callbacks are passed per call instead of here, so a slow delete
+  // reports against its own target rather than whatever was opened next.
+  const deleteObjectiveMutation = useDeleteObjective(course?.id);
+  const deleteGranularMutation = useUpdateGranularObjectives(course?.id);
+
+  // Loaded while the first modal is open, so a database delete with no
+  // questions attached can finish there: the keep-or-delete prompt would be
+  // asking about nothing.
+  const removeImpactId =
+    removeTarget?.kind === "granular"
+      ? removeTarget.item?.granularId
+      : removeTarget?.objectiveId;
+  const { data: removeImpact } = useObjectiveDeletionImpact(removeImpactId, {
+    enabled: removeTarget !== null && isFaculty && !!removeImpactId,
+  });
 
   // Closing always discards the pending search and selection, so reopening the
   // list starts clean rather than resurrecting checkboxes from a session the
@@ -105,19 +140,7 @@ export default function ObjectivesStep({
   // detached items must keep riding along in every save (#41).
   const saveObjectiveToDatabase = async (group) => {
     if (!group?.objectiveId || !course?.id) return;
-    const granularObjectives = [...group.items, ...(group.detachedItems || [])].map(
-      (item) => {
-        // No questionCount: questionTypes carries the total, and a second copy
-        // of the same number could only ever disagree with it.
-        const granularObj = {
-          text: item.text,
-          bloomTaxonomies: item.bloom || [],
-          questionTypes: item.questionTypes || [],
-        };
-        if (item.granularId) granularObj.id = item.granularId;
-        return granularObj;
-      }
-    );
+    const granularObjectives = granularObjectivesPayload(group);
 
     try {
       const data = await api.put(`/api/objective/${group.objectiveId}`, {
@@ -297,7 +320,12 @@ export default function ObjectivesStep({
       }
 
       const replaced = replaceableIds(objectiveGroupsRef.current);
-      const { deleted, failed: deleteFailures } = await deleteObjectives(replaced);
+      // "keep": a regenerate replaces the objectives, not the questions
+      // written against them — those become drafts to reattach.
+      const { deleted, failed: deleteFailures } = await deleteObjectives(
+        replaced,
+        "keep"
+      );
       const replacedSet = new Set(deleted);
       setObjectiveGroups((prev) =>
         appendObjectiveGroups(
@@ -411,8 +439,8 @@ export default function ObjectivesStep({
   // Remove a granular from this page only. Saved granulars move to
   // detachedItems so they survive future saves in the database (#41);
   // never-saved ones (no granularId) are simply dropped.
-  const deleteItem = (group, item) => {
-    updateGroup(group.id, (g) => {
+  const detachItemFromPage = (groupId, item) => {
+    updateGroup(groupId, (g) => {
       const updated = {
         ...g,
         items: g.items.filter((i) => i.id !== item.id),
@@ -423,6 +451,98 @@ export default function ObjectivesStep({
       saveObjectiveToDatabase(updated);
       return updated;
     });
+  };
+
+  /* ---------------------------- Delete / remove ---------------------------- */
+
+  // Both trash buttons open the same first modal; `item` is what makes it a
+  // granular rather than the whole objective.
+  const requestDelete = (group, item) =>
+    setRemoveTarget({
+      kind: item ? "granular" : "objective",
+      groupId: group.id,
+      objectiveId: group.objectiveId,
+      item,
+    });
+
+  // The page-only removal both trash buttons used to do on their own.
+  const confirmRemoveFromPage = () => {
+    if (!removeTarget) return;
+    if (removeTarget.kind === "objective") {
+      setObjectiveGroups((prev) => prev.filter((g) => g.id !== removeTarget.groupId));
+    } else {
+      detachItemFromPage(removeTarget.groupId, removeTarget.item);
+    }
+    setRemoveTarget(null);
+  };
+
+  // The page copy goes only once the record is gone, so a failed call leaves
+  // the objective exactly where it was.
+  const settle = (prune, noun) => ({
+    onSuccess: () => {
+      prune();
+      setDbDeleteTarget(null);
+      showToast(`${noun} deleted`, "success");
+    },
+    onError: (error) => {
+      console.error("Error deleting objective from database:", error);
+      setDbDeleteTarget(null);
+      showToast(error.message || "Failed to delete from the database", "error");
+    },
+  });
+
+  const runDatabaseDelete = (target, questionAction) => {
+    if (!target) return;
+    const dropItem = (g) => ({
+      ...g,
+      items: g.items.filter((i) => i.id !== target.item?.id),
+    });
+
+    if (target.kind === "objective") {
+      deleteObjectiveMutation.mutate(
+        { objectiveId: target.objectiveId, questionAction },
+        settle(
+          () => setObjectiveGroups((prev) => prev.filter((g) => g.id !== target.groupId)),
+          "Learning objective"
+        )
+      );
+      return;
+    }
+
+    const group = objectiveGroupsRef.current.find((g) => g.id === target.groupId);
+    if (!group?.objectiveId) return;
+    // A granular objective is deleted by saving its objective without it: the
+    // server treats any granular missing from the payload as deleted. It is
+    // dropped outright rather than detached, so it cannot ride along in the
+    // next save and come back.
+    deleteGranularMutation.mutate(
+      {
+        objectiveId: group.objectiveId,
+        granularObjectives: granularObjectivesPayload(dropItem(group)),
+        questionAction,
+      },
+      settle(() => updateGroup(target.groupId, dropItem), "Granular objective")
+    );
+  };
+
+  // The database branch of the first modal. With questions attached it hands
+  // off to the keep-or-delete prompt; with none it finishes here rather than
+  // making the instructor confirm a second time for no new information.
+  const requestDatabaseDelete = () => {
+    if (!removeTarget) return;
+    const target =
+      removeTarget.kind === "objective"
+        ? removeTarget
+        : { ...removeTarget, granularId: removeTarget.item.granularId };
+    setRemoveTarget(null);
+
+    // Until the check has landed, fall back to the prompt — it runs the same
+    // check itself and shows its own spinner meanwhile.
+    if (removeImpact && (removeImpact.questionCount || 0) === 0) {
+      runDatabaseDelete(target, "keep");
+      return;
+    }
+    setDbDeleteTarget(target);
   };
 
   const addNewGranular = (group) => {
@@ -729,9 +849,9 @@ export default function ObjectivesStep({
               onChangeTypeCount={(item, bloomLevel, questionType, delta) =>
                 changeTypeCount(group, item, bloomLevel, questionType, delta)
               }
-              onDeleteItem={(item) => deleteItem(group, item)}
+              onDeleteItem={(item) => requestDelete(group, item)}
               onAddGranular={() => addNewGranular(group)}
-              onRequestDelete={() => setDeleteTarget(group.id)}
+              onRequestDelete={() => requestDelete(group)}
               onRequestGranularize={() => {
                 setGranularCount(3);
                 setUseDefaults(true);
@@ -811,37 +931,45 @@ export default function ObjectivesStep({
         )}
       </Modal>
 
-      {/* Delete confirmation modal */}
-      <Modal
-        open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        title="Remove Learning Objective?"
-        footer={null}
-      >
-        <p className="mb-5 text-ink">
-          This will remove the learning objective from the current page. It will not be
-          deleted from the database.
-        </p>
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setObjectiveGroups((prev) => prev.filter((g) => g.id !== deleteTarget));
-              setDeleteTarget(null);
-            }}
-            className="rounded-lg bg-danger px-4 py-2.5 font-medium text-white transition-colors hover:bg-danger/85"
-          >
-            <i className="fas fa-trash-alt mr-2" /> Remove from current view
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(null)}
-            className="text-sm text-muted underline"
-          >
-            Cancel
-          </button>
-        </div>
-      </Modal>
+      {/* Delete, step one: page-only removal or a real database delete. The
+          same modal step 2 uses for questions. */}
+      <DeleteScopeModal
+        open={removeTarget !== null}
+        noun={
+          removeTarget?.kind === "granular"
+            ? "granular objective"
+            : "learning objective"
+        }
+        existsInDb={
+          removeTarget?.kind === "granular"
+            ? !!removeTarget.item?.granularId
+            : !!removeTarget?.objectiveId
+        }
+        canDeleteFromDb={isFaculty}
+        alsoDeletes={
+          removeTarget?.kind === "objective" ? "its granular objectives" : ""
+        }
+        // The database branch opens the linked-questions choice below rather
+        // than deleting on this click.
+        handoff
+        onClose={() => setRemoveTarget(null)}
+        onRemoveFromPage={confirmRemoveFromPage}
+        onDeleteFromDb={requestDatabaseDelete}
+      />
+
+      {/* Delete, step two: keep the attached questions, or delete them too.
+          The same modal the Question Bank's Objectives tab uses. */}
+      <DeleteObjectiveModal
+        open={dbDeleteTarget !== null}
+        target={dbDeleteTarget}
+        onClose={() => setDbDeleteTarget(null)}
+        onConfirm={(questionAction) =>
+          runDatabaseDelete(dbDeleteTarget, questionAction)
+        }
+        isSubmitting={
+          deleteObjectiveMutation.isPending || deleteGranularMutation.isPending
+        }
+      />
 
       {/* Granularization modal */}
       <Modal
