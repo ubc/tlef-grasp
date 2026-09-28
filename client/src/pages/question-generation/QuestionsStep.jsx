@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { ConfirmModal } from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
+import DeleteScopeModal from "../../components/DeleteScopeModal";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useDeleteQuestion } from "../../hooks/useQuestions";
 import QuestionCard from "./QuestionCard";
-import DeleteSavedQuestionModal from "./DeleteSavedQuestionModal";
 
 export default function QuestionsStep({
   questionGroups,
@@ -198,28 +197,21 @@ export default function QuestionsStep({
         ))}
       </div>
 
-      {/* Questions already in the bank (those with a database _id) get the
-          two-option modal; never-saved ones get the plain confirm below. */}
-      <DeleteSavedQuestionModal
-        open={!!deleteTarget?._id}
-        canDeleteFromBank={isFaculty}
+      {/* A question added to the bank (one with a database _id) gets both
+          options; a never-saved draft gets the same modal with nothing to
+          delete in the bank, so it reads as the plain confirm it is. */}
+      <DeleteScopeModal
+        open={deleteTarget !== null}
+        noun="question"
+        existsInDb={!!deleteTarget?._id}
+        canDeleteFromDb={isFaculty}
         isDeleting={deleteQuestionMutation.isPending}
         onClose={() => setDeleteTarget(null)}
         onRemoveFromPage={() => {
           removeFromPage(deleteTarget.id);
           setDeleteTarget(null);
         }}
-        onDeleteFromBank={() => deleteFromBank(deleteTarget)}
-      />
-
-      <ConfirmModal
-        open={!!deleteTarget && !deleteTarget._id}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => removeFromPage(deleteTarget.id)}
-        title="Delete Question"
-        message="Are you sure you want to delete this question? This action cannot be undone."
-        confirmLabel="Delete"
-        danger
+        onDeleteFromDb={() => deleteFromBank(deleteTarget)}
       />
     </div>
   );
