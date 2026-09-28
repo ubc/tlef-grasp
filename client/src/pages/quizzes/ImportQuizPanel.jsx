@@ -7,7 +7,9 @@ import {
   flattenGranulars,
   matchGranular,
   toSavePayload,
+  isRowResolved,
 } from "../../lib/questionImport";
+import { useImportedObjectives } from "../../hooks/useImportedObjectives";
 import ImportQuestionReview from "../../components/ImportQuestionReview";
 
 const inputClass =
@@ -50,6 +52,8 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
     return Array.from(byMeta.values());
   }, [flatGranulars]);
 
+  const objectives = useImportedObjectives(courseId, flatGranulars);
+
   const createMutation = useCreateQuiz(courseId, {
     onSuccess: (data) => {
       const added = data?.questionsAdded ?? rows.length;
@@ -75,6 +79,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
       const importedMeta = { ...DEFAULT_META, ...(parsed.quiz || {}) };
       setMeta(importedMeta);
       setName(importedMeta.name || "");
+      objectives.load(parsed.objectives);
       setRows(
         parsed.questions.map((question) => ({
           question,
@@ -83,6 +88,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
       );
     } catch (error) {
       setRows([]);
+      objectives.load([]);
       setParseError(error.message || "Could not read that file.");
     }
   };
@@ -110,16 +116,33 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, granularId } : row)));
   };
 
-  const unresolvedCount = rows.filter((row) => !row.granularId).length;
+  const unresolvedCount = rows.filter((row) => !isRowResolved(row, objectives.checkedKeys)).length;
   const canCreate =
     Boolean(name.trim()) &&
     rows.length > 0 &&
     unresolvedCount === 0 &&
-    flatGranulars.length > 0 &&
-    !createMutation.isPending;
+    // A course with no objectives is allowed when the file carries some.
+    (flatGranulars.length > 0 || objectives.checkedKeys.size > 0) &&
+    !createMutation.isPending &&
+    !objectives.creating;
 
-  const handleCreate = () => {
+  // Creates the checked objectives, re-matches the rows, then saves the quiz.
+  const handleCreate = async () => {
     if (!canCreate) return;
+    const granulars = await objectives.createChecked();
+    if (!granulars) {
+      showToast("Failed to create learning objectives", "error");
+      return;
+    }
+    const resolved = rows.map((row) => ({
+      ...row,
+      granularId: row.granularId || matchGranular(row.question, granulars),
+    }));
+    if (resolved.some((row) => !row.granularId)) {
+      setRows(resolved);
+      showToast("Some questions still need a learning objective", "error");
+      return;
+    }
     createMutation.mutate({
       courseId,
       name: name.trim(),
@@ -132,7 +155,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
           : undefined,
       // Quiz import keeps each question's original status so an approved quiz
       // comes back ready to schedule.
-      newQuestions: rows.map((row) =>
+      newQuestions: resolved.map((row) =>
         toSavePayload(row.question, row.granularId, { preserveStatus: true })
       ),
     });
@@ -200,6 +223,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
 
           <ImportQuestionReview
             rows={rows}
+            objectives={objectives}
             granularGroups={granularGroups}
             flatGranularsEmpty={flatGranulars.length === 0}
             objectivesLoading={objectivesLoading}
