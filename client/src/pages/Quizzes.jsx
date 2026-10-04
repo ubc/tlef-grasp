@@ -8,6 +8,7 @@ import {
 } from "../hooks/useQuizzes";
 import { useMyCourseSections } from "../hooks/useSections";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { downloadQuizExport } from "../lib/exports";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
@@ -30,6 +31,8 @@ export default function Quizzes() {
 
   const { can } = useCoInstructorAccess();
   const canCreate = can("createQuiz");
+  // The shift endpoint is faculty-only.
+  const { isFaculty: canShift } = useCurrentUser();
   // Co-instructors can always schedule existing quizzes (Manage tab); creating
   // is a separate, owner-granted permission.
   const tabs = canCreate ? TABS : TABS.filter((tab) => tab.id !== "create-quiz");
@@ -118,34 +121,36 @@ export default function Quizzes() {
           />
         ) : (
           <>
-          <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-sm">
-            <span className="text-sm font-medium text-ink">
-              {selectedQuizzes.length} of {quizzes.length} selected
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setSelectedIds(
-                  selectedQuizzes.length === quizzes.length
-                    ? new Set()
-                    : new Set(quizzes.map((q) => q.id))
-                )
-              }
-              className="text-sm font-medium text-primary hover:underline"
-            >
-              {selectedQuizzes.length === quizzes.length ? "Clear selection" : "Select all"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShiftOpen(true)}
-              disabled={selectedQuizzes.length === 0 || sections.length === 0}
-              title={sections.length === 0 ? "You have no sections in this course" : undefined}
-              className="ml-auto rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <i className="fas fa-calendar-plus mr-1.5" />
-              Shift deadlines
-            </button>
-          </div>
+          {canShift && (
+            <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-sm">
+              <span className="text-sm font-medium text-ink">
+                {selectedQuizzes.length} of {quizzes.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedIds(
+                    selectedQuizzes.length === quizzes.length
+                      ? new Set()
+                      : new Set(quizzes.map((q) => q.id))
+                  )
+                }
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {selectedQuizzes.length === quizzes.length ? "Clear selection" : "Select all"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShiftOpen(true)}
+                disabled={selectedQuizzes.length === 0 || sections.length === 0}
+                title={sections.length === 0 ? "You have no sections in this course" : undefined}
+                className="ml-auto rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <i className="fas fa-calendar-plus mr-1.5" />
+                Shift deadlines
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
             {quizzes.map((quiz) => (
               <div
@@ -158,7 +163,7 @@ export default function Quizzes() {
                   courseId={courseId}
                   sections={sections}
                   selected={selectedIds.has(quiz.id)}
-                  onToggleSelect={toggleSelect}
+                  onToggleSelect={canShift ? toggleSelect : undefined}
                   onUpdate={(quizId, updates, successMessage) =>
                     updateMutation.mutate({ quizId, updates, successMessage })
                   }

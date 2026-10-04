@@ -161,7 +161,9 @@ const shiftDate = (date, { days = 0, minutes = 0 }, timeZone = 'UTC') => {
 /**
  * Compute the shifted windows for `rows` without writing anything. Each entry
  * is flagged when the new window has already closed (`expired`), would open
- * immediately although it was upcoming (`opens-now`), or starts at the exact
+ * immediately although it was upcoming (`opens-now`), is open now but would
+ * not be released yet (`becomes-upcoming`; students mid-attempt can still
+ * finish), was closed but would reopen (`reopens`), or starts at the exact
  * moment as another quiz in the same section (`collision`).
  *
  * @param {Array<{_id, quizId, courseSectionId, releaseDate, expireDate}>} rows - Rows being shifted.
@@ -189,10 +191,28 @@ const planShift = (rows, offset, { timeZone = 'UTC', otherRows = [], now = new D
 
   return planned.map((p) => {
     const flags = [];
+    const wasOpen = p.oldReleaseDate <= now && p.oldExpireDate > now;
     if (p.expireDate <= now) flags.push('expired');
     else if (p.releaseDate <= now && p.oldReleaseDate > now) flags.push('opens-now');
+    else if (wasOpen && p.releaseDate > now) flags.push('becomes-upcoming');
+    else if (p.oldExpireDate <= now) flags.push('reopens');
     if (startsBySection.get(`${p.courseSectionId}|${p.releaseDate.getTime()}`).size > 1) flags.push('collision');
     return { ...p, flags };
+  });
+};
+
+const scheduleKey = (quizId, courseSectionId) => `${quizId}|${courseSectionId}`;
+
+const matchesPreview = (plan, expected) => {
+  if (plan.length !== expected.length) return false;
+  const byKey = new Map(expected.map((e) => [scheduleKey(e.quizId, e.courseSectionId), e]));
+  return plan.every((p) => {
+    const e = byKey.get(scheduleKey(p.quizId, p.courseSectionId));
+    return (
+      e &&
+      new Date(e.oldReleaseDate).getTime() === p.oldReleaseDate.getTime() &&
+      new Date(e.oldExpireDate).getTime() === p.oldExpireDate.getTime()
+    );
   });
 };
 
@@ -200,6 +220,9 @@ const planShift = (rows, offset, { timeZone = 'UTC', otherRows = [], now = new D
  * Shift every schedule row of `quizIds` (limited to `restrictToSectionIds`) by
  * `offset`. Running quiz sessions are deliberately untouched: a student
  * mid-attempt keeps the deadline they started with.
+ *
+ * `expected` lists the previewed rows with their old dates; if the rows or
+ * dates differ, nothing is written (409), so a retried apply can't shift twice.
  *
  * All-or-nothing: rows are written with their old dates as a guard, and if any
  * write fails or finds its row changed underneath it, the rows already moved
@@ -211,7 +234,7 @@ const planShift = (rows, offset, { timeZone = 'UTC', otherRows = [], now = new D
 const shiftSchedules = async (
   quizIds,
   offset,
-  { restrictToSectionIds, timeZone = 'UTC', dryRun = false, now = new Date() } = {}
+  { restrictToSectionIds, timeZone = 'UTC', dryRun = false, expected, now = new Date() } = {}
 ) => {
   if (!quizIds.length || !restrictToSectionIds.length) return [];
   const db = await databaseService.connect();
@@ -230,7 +253,14 @@ const shiftSchedules = async (
       throw Object.assign(new Error("A shifted expire date would not be after its release date."), { status: 400 });
     }
   }
-  if (dryRun || plan.length === 0) return plan;
+  if (dryRun) return plan;
+  if (expected && !matchesPreview(plan, expected)) {
+    throw Object.assign(
+      new Error("These schedules have changed since your preview. Preview again before applying."),
+      { status: 409 }
+    );
+  }
+  if (plan.length === 0) return plan;
 
   const applied = [];
   try {
@@ -245,11 +275,19 @@ const shiftSchedules = async (
       applied.push(p);
     }
   } catch (error) {
+    // Keep restoring the other rows, and surface the original error.
     for (const p of applied) {
-      await collection.updateOne(
-        { _id: p._id, releaseDate: p.releaseDate, expireDate: p.expireDate },
-        { $set: { releaseDate: p.oldReleaseDate, expireDate: p.oldExpireDate, updatedAt: new Date() } }
-      );
+      try {
+        const res = await collection.updateOne(
+          { _id: p._id, releaseDate: p.releaseDate, expireDate: p.expireDate },
+          { $set: { releaseDate: p.oldReleaseDate, expireDate: p.oldExpireDate, updatedAt: new Date() } }
+        );
+        if (res.matchedCount !== 1) {
+          console.error(`[quiz-schedule] Could not roll back schedule ${p._id}: it changed after being shifted`);
+        }
+      } catch (rollbackError) {
+        console.error(`[quiz-schedule] Could not roll back schedule ${p._id}:`, rollbackError);
+      }
     }
     throw error;
   }

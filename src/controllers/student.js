@@ -11,28 +11,12 @@ const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
 
 // A student who started a quiz inside its window keeps access to their
-// in-progress attempt after the window closes: recorded answers exist (answers
-// are only recordable while the quiz is open) but no final score has been
-// saved yet. Lets them resume/submit so started-in-time progress is never lost.
-const hasUnsubmittedAttempt = async (userId, quizId) => {
-  const db = await databaseService.connect();
-  const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
-  const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
-  const existingScore = await db
-    .collection("grasp_quiz_score")
-    .findOne({ userId: userIdObj, quizId: quizIdObj });
-  if (existingScore) return false;
-  const attempt = await db
-    .collection("grasp_student_attempt")
-    .findOne({ userId: userIdObj, quizId: quizIdObj });
-  if (attempt) return true;
-
-  // A timed session can expire before the student submits an answer. Keep it
-  // reachable long enough for the client to perform its automatic zero-score
-  // submission instead of silently abandoning that started attempt.
-  const session = await quizSessionService.getSession(userId, quizId);
-  return Boolean(session && !session.submittedAt);
-};
+// in-progress attempt after the window closes or is shifted later: recorded
+// answers exist (answers are only recordable while the quiz is open) but no
+// final score has been saved yet. Lets them resume/submit so started-in-time
+// progress is never lost.
+const hasUnsubmittedAttempt = async (userId, quizId) =>
+  (await quizSessionService.getUnsubmittedQuizIds(userId, [quizId])).has(quizId);
 
 // Resolve whether a student may access a quiz right now, based on the
 // release/expire window of the section(s) they belong to. Students with no
@@ -66,6 +50,10 @@ const resolveStudentQuizAccess = async (quiz, user) => {
   }
 
   if (window.reason === "not-yet") {
+    // Grace path: the quiz was shifted later after the student started.
+    if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
+      return { success: true, scheduledExpiresAt: window.expireDate || null };
+    }
     return {
       success: false,
       status: 403,

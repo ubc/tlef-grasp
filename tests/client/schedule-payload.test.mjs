@@ -4,6 +4,7 @@ import {
   schedulesWithout,
   sectionPickerOptions,
   shiftRequestBody,
+  shiftApplyBody,
 } from '../../client/src/pages/quizzes/schedulePayload.js';
 
 // Stored rows come back from the API with ISO strings.
@@ -108,5 +109,35 @@ describe('shiftRequestBody', () => {
 
   it('rejects an empty selection', () => {
     expect(shiftRequestBody({ quizIds: [], amount: '7', unit: 'days' })).toBeNull();
+  });
+});
+
+describe('shiftApplyBody', () => {
+  it('turns a preview into an apply that names the rows and dates it expects to move', () => {
+    const body = shiftRequestBody({ quizIds: ['q1'], amount: '7', unit: 'days', dryRun: true });
+    const previewRows = [
+      {
+        quizId: 'q1',
+        courseSectionId: 's1',
+        oldReleaseDate: '2026-10-01T00:00:00.000Z',
+        oldExpireDate: '2026-10-05T00:00:00.000Z',
+        releaseDate: '2026-10-08T00:00:00.000Z',
+        expireDate: '2026-10-12T00:00:00.000Z',
+        flags: [],
+      },
+    ];
+
+    expect(shiftApplyBody(body, previewRows)).toEqual({
+      ...body,
+      dryRun: false,
+      expected: [
+        {
+          quizId: 'q1',
+          courseSectionId: 's1',
+          oldReleaseDate: '2026-10-01T00:00:00.000Z',
+          oldExpireDate: '2026-10-05T00:00:00.000Z',
+        },
+      ],
+    });
   });
 });

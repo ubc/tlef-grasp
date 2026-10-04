@@ -8,11 +8,10 @@ function quizTimeLimitMinutes(quiz) {
   return Number.isInteger(value) && value > 0 ? value : DEFAULT_TIME_LIMIT_MINUTES;
 }
 
+const toId = (id) => (ObjectId.isValid(id) ? new ObjectId(id) : id);
+
 function ids(userId, quizId) {
-  return {
-    userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
-    quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId,
-  };
+  return { userId: toId(userId), quizId: toId(quizId) };
 }
 
 // The first start is immutable: refreshing, reopening, or calling this again
@@ -80,6 +79,27 @@ async function markSubmitted(userId, quizId) {
   );
 }
 
+// Of `quizIds`, those the student started (answers or an unsubmitted session)
+// but has no score for. A session alone counts so a timed-out student with no
+// answers can still auto-submit.
+async function getUnsubmittedQuizIds(userId, quizIds) {
+  if (!quizIds.length) return new Set();
+  const db = await databaseService.connect();
+  const filter = { userId: toId(userId), quizId: { $in: quizIds.map(toId) } };
+  const options = { projection: { quizId: 1 } };
+  const [scores, attempts, sessions] = await Promise.all([
+    db.collection("grasp_quiz_score").find(filter, options).toArray(),
+    db.collection("grasp_student_attempt").find(filter, options).toArray(),
+    db.collection("grasp_quiz_session").find({ ...filter, submittedAt: null }, options).toArray(),
+  ]);
+  const scored = new Set(scores.map((doc) => doc.quizId.toString()));
+  return new Set(
+    [...attempts, ...sessions]
+      .map((doc) => doc.quizId.toString())
+      .filter((quizId) => !scored.has(quizId))
+  );
+}
+
 function isExpired(session, now = new Date()) {
   return Boolean(session?.expiresAt && new Date(session.expiresAt) <= now);
 }
@@ -91,5 +111,6 @@ module.exports = {
   getSession,
   recordQuestionCount,
   markSubmitted,
+  getUnsubmittedQuizIds,
   isExpired,
 };

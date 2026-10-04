@@ -3,7 +3,7 @@ import Modal from "../../components/ui/Modal";
 import { formatDateTime } from "../../lib/format";
 import { useShiftQuizSchedules } from "../../hooks/useQuizzes";
 import { useToast } from "../../components/ui/Toast";
-import { scheduleStatus, shiftRequestBody } from "./schedulePayload";
+import { scheduleStatus, shiftApplyBody, shiftRequestBody } from "./schedulePayload";
 
 // Identifies which inputs a preview was computed for, so a stale one can't be applied.
 const previewKey = (body) => (body ? `${body.amount}|${body.unit}|${body.quizIds.join(",")}` : null);
@@ -11,6 +11,11 @@ const previewKey = (body) => (body ? `${body.amount}|${body.unit}|${body.quizIds
 const FLAG_LABELS = {
   expired: { label: "Already closed", cls: "bg-danger/10 text-danger" },
   "opens-now": { label: "Opens immediately", cls: "bg-warning/15 text-warning" },
+  "becomes-upcoming": {
+    label: "Open now — hidden until the new release",
+    cls: "bg-warning/15 text-warning",
+  },
+  reopens: { label: "Closed — will reopen", cls: "bg-warning/15 text-warning" },
   collision: { label: "Same start as another quiz", cls: "bg-warning/15 text-warning" },
 };
 
@@ -45,7 +50,11 @@ export default function ShiftDeadlinesModal({ open, courseId, quizzes, sections,
         onApplied?.();
       }
     },
-    onError: (error) => showToast(error.message || "Failed to shift deadlines", "error"),
+    onError: (error, sent) => {
+      // The apply may have gone through anyway; require a fresh preview.
+      if (!sent.dryRun) setPreview(null);
+      showToast(error.message || "Failed to shift deadlines", "error");
+    },
   });
 
   const now = new Date();
@@ -76,7 +85,7 @@ export default function ShiftDeadlinesModal({ open, courseId, quizzes, sections,
           </button>
           <button
             type="button"
-            onClick={() => mutation.mutate(body)}
+            onClick={() => mutation.mutate(shiftApplyBody(body, preview.rows))}
             disabled={!previewIsCurrent || preview.rows.length === 0 || mutation.isPending}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
           >
@@ -114,7 +123,8 @@ export default function ShiftDeadlinesModal({ open, courseId, quizzes, sections,
           Use a negative number to move earlier. Release and expire dates move together
           on every one of your sections, so spacing is preserved. Day shifts keep the same
           local time of day across daylight-saving changes. Students already mid-attempt
-          keep the deadline they started with.
+          keep the deadline they started with; moving an open quiz later hides it from
+          everyone else until its new release date.
         </p>
         {!body && <p className="text-xs text-danger">Enter a whole, non-zero number.</p>}
 

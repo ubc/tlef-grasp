@@ -51,6 +51,7 @@ jest.mock('../../src/services/quiz-session', () => ({
   getSession: jest.fn(),
   recordQuestionCount: jest.fn(),
   markSubmitted: jest.fn(),
+  getUnsubmittedQuizIds: jest.requireActual('../../src/services/quiz-session').getUnsubmittedQuizIds,
 }));
 
 const quizService = require('../../src/services/quiz');
@@ -84,10 +85,14 @@ function mockDb({ scoreDoc = null, attemptDocs = [] } = {}) {
   const collections = {
     grasp_quiz_score: {
       findOne: jest.fn().mockResolvedValue(scoreDoc),
+      find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue(scoreDoc ? [scoreDoc] : []) })),
     },
     grasp_student_attempt: {
       findOne: jest.fn().mockResolvedValue(attemptDocs[0] || null),
       find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue(attemptDocs) })),
+    },
+    grasp_quiz_session: {
+      find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue([]) })),
     },
   };
   databaseService.connect.mockResolvedValue({
@@ -110,6 +115,17 @@ function mockExpiredWindow() {
     releaseDate: new Date('2026-01-01T00:00:00Z'),
     expireDate: new Date('2026-01-02T00:00:00Z'),
     reason: 'expired',
+  });
+}
+
+function mockNotYetWindow() {
+  quizScheduleService.getStudentSectionObjectIds.mockResolvedValue([SECTION_ID]);
+  quizScheduleService.getSchedulesForQuiz.mockResolvedValue([]);
+  quizScheduleService.resolveWindow.mockReturnValue({
+    accessibleNow: false,
+    releaseDate: new Date('2099-01-08T00:00:00Z'),
+    expireDate: new Date('2099-01-09T00:00:00Z'),
+    reason: 'not-yet',
   });
 }
 
@@ -331,6 +347,32 @@ describe('student quiz access past the expiry window (#37)', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.message).toMatch(/expired/i);
+    });
+  });
+
+  describe('quiz shifted later while a student is mid-attempt', () => {
+    it('accepts the submission', async () => {
+      mockNotYetWindow();
+      mockDb({ scoreDoc: null, attemptDocs: [mcqAttempt({ isCorrect: true })] });
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(200);
+      expect(quizService.saveQuizScore).toHaveBeenCalled();
+    });
+
+    it('still blocks a student who had not started', async () => {
+      mockNotYetWindow();
+      mockDb({ scoreDoc: null, attemptDocs: [] });
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/not yet available/i);
     });
   });
 

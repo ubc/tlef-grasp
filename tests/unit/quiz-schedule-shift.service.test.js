@@ -51,6 +51,16 @@ describe('planShift', () => {
     expect(opens.flags).toEqual(['opens-now']);
   });
 
+  it('flags an open quiz that a later shift would make not-yet-released', () => {
+    const [p] = planShift([row('2026-09-14T00:00:00Z', '2026-09-20T00:00:00Z')], { days: 7 }, { now });
+    expect(p.flags).toEqual(['becomes-upcoming']);
+  });
+
+  it('flags a closed quiz that the shift reopens', () => {
+    const [p] = planShift([row('2026-09-10T00:00:00Z', '2026-09-12T00:00:00Z')], { days: 7 }, { now });
+    expect(p.flags).toEqual(['reopens']);
+  });
+
   it('flags a collision with another quiz starting at the same moment in the same section', () => {
     const other = { quizId: new ObjectId(), courseSectionId: section, releaseDate: new Date('2026-10-08T00:00:00Z') };
     const [p] = planShift([row('2026-10-01T00:00:00Z', '2026-10-05T00:00:00Z')], { days: 7 }, { now, otherRows: [other] });
@@ -91,6 +101,54 @@ describe('shiftSchedules', () => {
     const plan = await run({ dryRun: true });
     expect(plan).toHaveLength(2);
     expect(collection.updateOne).not.toHaveBeenCalled();
+  });
+
+  const previewed = () =>
+    rows.map((r) => ({
+      quizId: r.quizId.toString(),
+      courseSectionId: r.courseSectionId.toString(),
+      oldReleaseDate: new Date(r.releaseDate),
+      oldExpireDate: new Date(r.expireDate),
+    }));
+
+  it('applies when every row still has its previewed dates', async () => {
+    const plan = await run({ expected: previewed() });
+    expect(plan).toHaveLength(2);
+    expect(collection.updateOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a repeated apply: rows already moved no longer match the preview', async () => {
+    const expected = previewed();
+    rows = rows.map((r) => ({ ...r, releaseDate: new Date('2026-10-08T00:00:00Z'), expireDate: new Date('2026-10-12T00:00:00Z') }));
+
+    await expect(run({ expected })).rejects.toMatchObject({ status: 409 });
+    expect(collection.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses when a row appeared or disappeared since the preview', async () => {
+    await expect(run({ expected: previewed().slice(1) })).rejects.toMatchObject({ status: 409 });
+    expect(collection.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('keeps rolling back and re-throws the original error when a write-back fails', async () => {
+    rows.push({ ...rows[0], _id: new ObjectId(), quizId: new ObjectId() });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    collection.updateOne
+      .mockResolvedValueOnce({ matchedCount: 1 })
+      .mockResolvedValueOnce({ matchedCount: 1 })
+      .mockResolvedValueOnce({ matchedCount: 0 }) // third row changed underneath us
+      .mockRejectedValueOnce(new Error('connection reset')) // rolling back row 0 fails
+      .mockResolvedValueOnce({ matchedCount: 1 }); // row 1 is still rolled back
+
+    await expect(run()).rejects.toMatchObject({ status: 409 });
+
+    expect(collection.updateOne).toHaveBeenCalledTimes(5);
+    expect(collection.updateOne.mock.calls[4][0]._id).toBe(rows[1]._id);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining(rows[0]._id.toString()),
+      expect.any(Error)
+    );
+    consoleError.mockRestore();
   });
 
   it('rolls back already-moved rows when a later row fails', async () => {

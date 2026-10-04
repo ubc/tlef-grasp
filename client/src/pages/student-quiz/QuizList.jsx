@@ -34,19 +34,26 @@ function QuizListCard({ quiz, completed, onStart }) {
         {quiz.description || "No description available"}
       </p>
 
-      <div className="mb-3 space-y-1.5 text-sm text-muted">
-        <div>
-          <i className="fas fa-calendar-alt mr-1.5" />
-          Released:{" "}
-          {quiz.releaseDate ? new Date(quiz.releaseDate).toLocaleDateString() : "Not set"}
+      {quiz.resumeOnly ? (
+        <div className="mb-3 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+          <i className="fas fa-hourglass-half mr-1.5" />
+          In progress — finish your attempt before your timer runs out.
         </div>
-        {quiz.expireDate && (
-          <div className="text-warning">
-            <i className="fas fa-clock mr-1.5" />
-            Due: {new Date(quiz.expireDate).toLocaleDateString()}
+      ) : (
+        <div className="mb-3 space-y-1.5 text-sm text-muted">
+          <div>
+            <i className="fas fa-calendar-alt mr-1.5" />
+            Released:{" "}
+            {quiz.releaseDate ? new Date(quiz.releaseDate).toLocaleDateString() : "Not set"}
           </div>
-        )}
-      </div>
+          {quiz.expireDate && (
+            <div className="text-warning">
+              <i className="fas fa-clock mr-1.5" />
+              Due: {new Date(quiz.expireDate).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2 text-xs font-medium">
         {quiz.deliveryFormat === "spaced-3phase" ? (
@@ -103,7 +110,7 @@ function QuizListCard({ quiz, completed, onStart }) {
         className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
       >
         <i className="fas fa-play" />
-        {completed ? "Retake Quiz" : "Start Quiz"}
+        {quiz.resumeOnly ? "Resume Quiz" : completed ? "Retake Quiz" : "Start Quiz"}
       </button>
     </div>
   );
@@ -131,9 +138,9 @@ export default function QuizList({ onStart }) {
   const { quizzes, completedQuizIds, isPending, isError } =
     useStudentQuizList(courseId);
 
-  const pending = quizzes.filter(
-    (q) => !q.achievements.some((a) => a.type === "quiz_completed")
-  );
+  const pending = quizzes
+    .filter((q) => !q.achievements.some((a) => a.type === "quiz_completed"))
+    .sort((a, b) => Number(!!b.resumeOnly) - Number(!!a.resumeOnly));
   const completed = quizzes.filter((q) =>
     q.achievements.some((a) => a.type === "quiz_completed")
   );

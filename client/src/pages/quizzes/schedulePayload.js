@@ -78,3 +78,16 @@ export function shiftRequestBody({ quizIds, amount, unit, dryRun = false }) {
     dryRun,
   };
 }
+
+export function shiftApplyBody(body, previewRows) {
+  return {
+    ...body,
+    dryRun: false,
+    expected: previewRows.map(({ quizId, courseSectionId, oldReleaseDate, oldExpireDate }) => ({
+      quizId,
+      courseSectionId,
+      oldReleaseDate,
+      oldExpireDate,
+    })),
+  };
+}
