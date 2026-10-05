@@ -187,7 +187,8 @@ const getQuizzesByCourseWithQuestionsHandler = async (req, res) => {
 };
 
 /**
- * Student quiz overview: published, currently-open quizzes with this
+ * Student quiz overview: published, currently-open quizzes (plus closed ones
+ * with an attempt the student can still finish, marked `resumeOnly`) with this
  * student's personalized question counts (no question content or answers).
  */
 const getStudentQuizOverviewHandler = async (req, res) => {
@@ -218,6 +219,7 @@ const getStudentQuizOverviewHandler = async (req, res) => {
       );
 
       active = [];
+      const closed = [];
       for (const quiz of published) {
         const window = quizScheduleService.resolveWindow(
           schedulesByQuiz.get(quiz._id.toString()) || [],
@@ -226,6 +228,19 @@ const getStudentQuizOverviewHandler = async (req, res) => {
         );
         if (window.accessibleNow) {
           active.push({ ...quiz, releaseDate: window.releaseDate, expireDate: window.expireDate });
+        } else if (window.reason === "not-yet" || window.reason === "expired") {
+          closed.push({ quiz, window });
+        }
+      }
+
+      // Closed quizzes the student can still finish (see resolveStudentQuizAccess).
+      const unsubmitted = await quizSessionService.getUnsubmittedQuizIds(
+        userId,
+        closed.map(({ quiz }) => quiz._id.toString())
+      );
+      for (const { quiz, window } of closed) {
+        if (unsubmitted.has(quiz._id.toString())) {
+          active.push({ ...quiz, releaseDate: window.releaseDate, expireDate: window.expireDate, resumeOnly: true });
         }
       }
     }
@@ -1483,7 +1498,109 @@ const updateQuizSchedulesHandler = async (req, res) => {
   }
 };
 
+const MAX_SHIFT_DAYS = 730;
+
+// An integer, or a string of plain digits: Number() alone would also accept
+// true, [5] and "0x10".
+function parseShiftAmount(amount) {
+  if (typeof amount === "number") return amount;
+  if (typeof amount === "string" && /^-?\d+$/.test(amount)) return Number(amount);
+  return NaN;
+}
+
+const isValidDate = (value) => !Number.isNaN(new Date(value).getTime());
+
+// Null if malformed.
+function parseExpectedRows(expected) {
+  if (!Array.isArray(expected)) return null;
+  const rows = expected.map((row) =>
+    row &&
+    typeof row.quizId === "string" &&
+    typeof row.courseSectionId === "string" &&
+    isValidDate(row.oldReleaseDate) &&
+    isValidDate(row.oldExpireDate)
+      ? {
+          quizId: row.quizId,
+          courseSectionId: row.courseSectionId,
+          oldReleaseDate: new Date(row.oldReleaseDate),
+          oldExpireDate: new Date(row.oldExpireDate),
+        }
+      : null
+  );
+  return rows.includes(null) ? null : rows;
+}
+
+/**
+ * Shift every schedule row of several quizzes by one offset (term rollover,
+ * slipped week). `unit: "days"` moves by wall-clock days in `timeZone`;
+ * `unit: "hours"` moves by absolute time. With `dryRun` it only returns the
+ * old → new preview; an apply must send the previewed rows as `expected`
+ * (see shiftSchedules). Only the caller's own sections are moved.
+ */
+const shiftQuizSchedulesHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { quizIds, amount, unit, timeZone = "UTC", dryRun = false } = req.body || {};
+
+    const n = parseShiftAmount(amount);
+    if (!Array.isArray(quizIds) || quizIds.length === 0) {
+      return res.status(400).json({ success: false, error: "quizIds must be a non-empty array" });
+    }
+    if (typeof dryRun !== "boolean") {
+      return res.status(400).json({ success: false, error: "dryRun must be a boolean" });
+    }
+    const expected = dryRun ? undefined : parseExpectedRows(req.body.expected);
+    if (expected === null) {
+      return res.status(400).json({
+        success: false,
+        error: "expected must list the previewed rows (quizId, courseSectionId, oldReleaseDate, oldExpireDate)",
+      });
+    }
+    if (!Number.isInteger(n) || n === 0 || !["days", "hours"].includes(unit)) {
+      return res.status(400).json({ success: false, error: "amount must be a non-zero integer and unit 'days' or 'hours'" });
+    }
+    if (Math.abs(unit === "days" ? n : n / 24) > MAX_SHIFT_DAYS) {
+      return res.status(400).json({ success: false, error: `Shifts are limited to ${MAX_SHIFT_DAYS} days` });
+    }
+    if (!quizScheduleService.isValidTimeZone(timeZone)) {
+      return res.status(400).json({ success: false, error: "Unknown timeZone" });
+    }
+
+    const userId = req.user._id || req.user.id;
+    if (!await isFaculty(req.user) && !await isUserInCourse(userId, courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
+    const courseQuizIds = new Set(
+      (await quizService.getQuizzesByCourse(courseId)).map((q) => q._id.toString())
+    );
+    if (quizIds.some((id) => !courseQuizIds.has(String(id)))) {
+      return res.status(404).json({ success: false, error: "One or more quizzes were not found in this course" });
+    }
+
+    // Same scoping as updateQuizSchedulesHandler: only sections the caller owns.
+    const ownedSections = await sectionService.getSectionsOwnedByUser(courseId, userId);
+    const offset = unit === "days" ? { days: n } : { minutes: n * 60 };
+    const plan = await quizScheduleService.shiftSchedules(quizIds.map(String), offset, {
+      restrictToSectionIds: ownedSections.map((s) => s._id.toString()),
+      timeZone,
+      dryRun,
+      ...(dryRun ? {} : { expected }),
+    });
+
+    res.json({
+      success: true,
+      applied: !dryRun,
+      rows: plan.map(({ _id, ...row }) => row),
+    });
+  } catch (error) {
+    console.error("Error shifting quiz schedules:", error);
+    res.status(error.status || 500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
+  shiftQuizSchedulesHandler,
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,

@@ -95,7 +95,8 @@ export default function StudentDashboard() {
   });
 
   // The student-overview endpoint already returns only quizzes that are open for
-  // this student's section(s), so the count is simply its length.
+  // this student's section(s), plus any attempt they can still finish, so the
+  // count is simply its length.
   const quizCount = quizzesQuery.quizzes.length;
 
   const completedCount = achievementsQuery.achievements.filter(

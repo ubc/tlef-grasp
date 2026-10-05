@@ -52,6 +52,28 @@ describe('quiz session service', () => {
     expect(session.scheduledExpiresAt).toEqual(scheduledExpiresAt);
   });
 
+  describe('getUnsubmittedQuizIds', () => {
+    it('returns quizzes with recorded answers or an unsubmitted session, minus scored ones', async () => {
+      const { ObjectId } = require('mongodb');
+      const [answered, startedOnly, scored, untouched] = [1, 2, 3, 4].map(() => new ObjectId());
+      const found = (docs) => ({ find: jest.fn(() => ({ toArray: async () => docs })) });
+      const collections = {
+        grasp_quiz_score: found([{ quizId: scored }]),
+        grasp_student_attempt: found([{ quizId: answered }, { quizId: scored }]),
+        grasp_quiz_session: found([{ quizId: startedOnly }, { quizId: scored }]),
+      };
+      databaseService.connect.mockResolvedValue({ collection: jest.fn((name) => collections[name]) });
+
+      const ids = await quizSessionService.getUnsubmittedQuizIds(
+        new ObjectId().toString(),
+        [answered, startedOnly, scored, untouched].map(String)
+      );
+
+      expect([...ids].sort()).toEqual([answered, startedOnly].map(String).sort());
+      expect(collections.grasp_quiz_session.find.mock.calls[0][0]).toMatchObject({ submittedAt: null });
+    });
+  });
+
   describe('recordQuestionCount', () => {
     it('records the served question count only when not already set', async () => {
       const collection = { updateOne: jest.fn().mockResolvedValue({}) };

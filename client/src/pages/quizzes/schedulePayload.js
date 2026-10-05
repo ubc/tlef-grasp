@@ -52,3 +52,42 @@ export function sectionPickerOptions(sections, schedules) {
     hint: scheduled.has(section._id) ? "Scheduled" : undefined,
   }));
 }
+
+// Active / Scheduled (upcoming) / Expired badge for a section's window.
+export function scheduleStatus(row, now) {
+  const release = new Date(row.releaseDate);
+  const expire = new Date(row.expireDate);
+  if (now < release) return { label: "Scheduled", cls: "bg-primary/10 text-primary" };
+  if (now > expire) return { label: "Expired", cls: "bg-gray-100 text-muted" };
+  return { label: "Active", cls: "bg-success/15 text-success" };
+}
+
+/**
+ * Request body for POST /api/quiz/course/:courseId/schedules/shift, or null
+ * when the offset is not a non-zero whole number. Days shift in wall-clock time
+ * for the browser's zone, so a 23:59 deadline stays 23:59 across DST.
+ */
+export function shiftRequestBody({ quizIds, amount, unit, dryRun = false }) {
+  const n = Number(amount);
+  if (!quizIds.length || !Number.isInteger(n) || n === 0) return null;
+  return {
+    quizIds,
+    amount: n,
+    unit,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    dryRun,
+  };
+}
+
+export function shiftApplyBody(body, previewRows) {
+  return {
+    ...body,
+    dryRun: false,
+    expected: previewRows.map(({ quizId, courseSectionId, oldReleaseDate, oldExpireDate }) => ({
+      quizId,
+      courseSectionId,
+      oldReleaseDate,
+      oldExpireDate,
+    })),
+  };
+}

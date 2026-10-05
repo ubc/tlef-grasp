@@ -3,6 +3,8 @@ import {
   applyScheduleWindow,
   schedulesWithout,
   sectionPickerOptions,
+  shiftRequestBody,
+  shiftApplyBody,
 } from '../../client/src/pages/quizzes/schedulePayload.js';
 
 // Stored rows come back from the API with ISO strings.
@@ -87,5 +89,55 @@ describe('sectionPickerOptions', () => {
 
   it('falls back to the section id when there is no section number', () => {
     expect(sectionPickerOptions([section('s9', null)], [])[0].label).toBe('SEC-s9');
+  });
+});
+
+describe('shiftRequestBody', () => {
+  it('builds a request carrying the browser time zone', () => {
+    expect(shiftRequestBody({ quizIds: ['q1'], amount: '-2', unit: 'days', dryRun: true })).toEqual({
+      quizIds: ['q1'],
+      amount: -2,
+      unit: 'days',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      dryRun: true,
+    });
+  });
+
+  it.each([['0'], ['1.5'], [''], ['abc']])('rejects amount %j', (amount) => {
+    expect(shiftRequestBody({ quizIds: ['q1'], amount, unit: 'days' })).toBeNull();
+  });
+
+  it('rejects an empty selection', () => {
+    expect(shiftRequestBody({ quizIds: [], amount: '7', unit: 'days' })).toBeNull();
+  });
+});
+
+describe('shiftApplyBody', () => {
+  it('turns a preview into an apply that names the rows and dates it expects to move', () => {
+    const body = shiftRequestBody({ quizIds: ['q1'], amount: '7', unit: 'days', dryRun: true });
+    const previewRows = [
+      {
+        quizId: 'q1',
+        courseSectionId: 's1',
+        oldReleaseDate: '2026-10-01T00:00:00.000Z',
+        oldExpireDate: '2026-10-05T00:00:00.000Z',
+        releaseDate: '2026-10-08T00:00:00.000Z',
+        expireDate: '2026-10-12T00:00:00.000Z',
+        flags: [],
+      },
+    ];
+
+    expect(shiftApplyBody(body, previewRows)).toEqual({
+      ...body,
+      dryRun: false,
+      expected: [
+        {
+          quizId: 'q1',
+          courseSectionId: 's1',
+          oldReleaseDate: '2026-10-01T00:00:00.000Z',
+          oldExpireDate: '2026-10-05T00:00:00.000Z',
+        },
+      ],
+    });
   });
 });

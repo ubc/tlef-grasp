@@ -62,12 +62,12 @@ async function answerSeededQuizCorrectly(page) {
 }
 
 function getQuizCard(page, quizName) {
-  // The heading sits inside the card header, so its grandparent is the card
-  // containing the corresponding controls. Scoping controls to this card keeps
-  // the tests deterministic when a course has more than one published quiz.
+  // Scope to the nearest quiz-card container around the named heading. This is
+  // resilient to header markup changes (e.g., added wrappers/checkboxes) while
+  // still keeping card-local selectors deterministic.
   return page
     .getByRole('heading', { name: quizName, exact: true })
-    .locator('xpath=../..');
+    .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
 }
 
 async function startQuizFromList(page, quizName) {
