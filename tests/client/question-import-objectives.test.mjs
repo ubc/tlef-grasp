@@ -30,8 +30,21 @@ describe('bucketImportedObjectives', () => {
     const [group] = bucket([fromFile('thermodynamics', ['Calculate entropy change'])], [FIRST_LAW]);
     expect(group.granulars[0].existingId).toBeNull();
     expect(group.existingMetaId).toBe('m1');
-    expect(group.existingGranulars.map((g) => g.id)).toEqual(['g1']);
     expect(creatableKeys([group])).toEqual(['calculate entropy change']);
+  });
+
+  // One group per meta *name*, not per file entry. Two entries naming the same
+  // meta used to produce two writes to the same parent, the second undoing the
+  // first, and a duplicate React key on the review list.
+  it('merges metas whose names differ only in case or surrounding space', () => {
+    const groups = bucket(
+      [fromFile('Thermodynamics', ['Carnot']), fromFile('thermodynamics ', ['Entropy'])],
+      [FIRST_LAW]
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].metaName).toBe('Thermodynamics');
+    expect(groups[0].existingMetaId).toBe('m1');
+    expect(creatableKeys(groups)).toEqual(['carnot', 'entropy']);
   });
 
   it('emits repeated text once across metas', () => {
@@ -66,18 +79,21 @@ describe('planObjectiveCreations', () => {
     });
   });
 
-  it('PUTs an owned meta with its current children resent alongside the new one', () => {
-    const groups = bucket([fromFile('Thermodynamics', ['Calculate entropy change'])], [FIRST_LAW]);
-    expect(planObjectiveCreations(groups, new Set(['calculate entropy change']))).toEqual({
+  // Appends carry only the new children. Resending the siblings — which is what
+  // PUT /api/objective/:id requires — cleared their bloom levels and
+  // question-type counts, and deleted any child added since the dialog opened.
+  it('appends only the new children, one request per owned meta', () => {
+    const groups = bucket(
+      [fromFile('Thermodynamics', ['Carnot']), fromFile('THERMODYNAMICS ', ['Entropy'])],
+      [FIRST_LAW]
+    );
+    expect(planObjectiveCreations(groups, new Set(['carnot', 'entropy']))).toEqual({
       creates: [],
       appends: [
         {
           objectiveId: 'm1',
           metaName: 'Thermodynamics',
-          granularObjectives: [
-            { _id: 'g1', text: 'Explain the first law' },
-            { text: 'Calculate entropy change' },
-          ],
+          granularObjectives: [{ text: 'Carnot' }, { text: 'Entropy' }],
         },
       ],
     });

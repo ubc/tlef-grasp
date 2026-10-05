@@ -1,7 +1,7 @@
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
-const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
+const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, appendGranularObjectives, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
 
 const getAllObjectives = async (req, res) => {
@@ -306,6 +306,65 @@ const updateObjectiveHandler = async (req, res) => {
 };
 
 /**
+ * POST /api/objective/:id/granular
+ * Add granular objectives without touching the ones the objective already has.
+ * Body: { granularObjectives: Array<{text: string, bloomTaxonomies?: string[], questionTypes?: Array}> }
+ * Cannot delete anything, so it takes no questionAction.
+ */
+const appendGranularObjectivesHandler = async (req, res) => {
+  try {
+    const objectiveId = req.params.id;
+    // courseId comes from the objective, never the body — see updateObjectiveHandler.
+    const { granularObjectives } = req.body;
+
+    const courseId = await getObjectiveCourseId(objectiveId);
+    if (!courseId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Learning objective not found',
+      });
+    }
+
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+
+    const named = (Array.isArray(granularObjectives) ? granularObjectives : []).filter(
+      (granular) => String(granular?.text || granular?.name || '').trim()
+    );
+    if (named.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one granular objective with text is required',
+      });
+    }
+
+    const result = await appendGranularObjectives(objectiveId, named);
+
+    res.json({
+      success: true,
+      objective: result.parent,
+      granularObjectives: result.granular,
+      addedCount: result.added.length,
+    });
+  } catch (error) {
+    console.error('Error appending granular objectives:', error);
+    if (error.message === 'Objective not found') {
+      return res.status(404).json({
+        success: false,
+        error: 'Learning objective not found',
+      });
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Failed to add granular objectives',
+    });
+  }
+};
+
+/**
  * GET /api/objective/:id/deletion-impact
  * Report how many questions (and which quizzes) would be affected by deleting
  * this learning objective, so the client can prompt the instructor first.
@@ -374,6 +433,7 @@ module.exports = {
   getObjectiveMaterials,
   updateObjectiveMaterials,
   updateObjectiveHandler,
+  appendGranularObjectivesHandler,
   getObjectiveDeletionImpactHandler,
   deleteObjectiveHandler
 };

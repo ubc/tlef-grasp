@@ -129,9 +129,11 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
   // Creates the checked objectives, re-matches the rows, then saves the quiz.
   const handleCreate = async () => {
     if (!canCreate) return;
-    const granulars = await objectives.createChecked();
-    if (!granulars) {
-      showToast("Failed to create learning objectives", "error");
+    let granulars;
+    try {
+      granulars = await objectives.createChecked();
+    } catch (error) {
+      showToast(error.message || "Failed to create learning objectives", "error");
       return;
     }
     const resolved = rows.map((row) => ({

@@ -119,29 +119,30 @@ export function normalizeObjectiveText(value) {
 
 // Bucket the file's objectives against the course's granulars, matching on text.
 // Granular text is deduped across the whole file, so one text yields one granular
-// however many metas carry it.
+// however many metas carry it. Metas are keyed by normalized name, so file
+// entries naming the same meta ("Thermo", "thermo ") land in one group — one
+// write per parent, and one React key per group.
 //
-// Returns [{ metaName, metaKey, existingMetaId, existingGranulars, granulars }],
-// each granular { key, name, existingId }; existingId is set when the course
-// already has that text, existingMetaId when it already has that meta name.
+// Returns [{ metaName, metaKey, existingMetaId, granulars }], each granular
+// { key, name, existingId }; existingId is set when the course already has that
+// text, existingMetaId when it already has that meta name.
 export function bucketImportedObjectives(fileObjectives, flatGranulars) {
   const ownedByText = new Map();
   const metaIdByName = new Map();
-  const ownedByMetaId = new Map();
 
   (flatGranulars || []).forEach((g) => {
     const text = normalizeObjectiveText(g.name);
     if (text && !ownedByText.has(text)) ownedByText.set(text, g);
     const meta = normalizeObjectiveText(g.metaName);
     if (meta && !metaIdByName.has(meta)) metaIdByName.set(meta, g.metaId);
-    ownedByMetaId.set(g.metaId, [...(ownedByMetaId.get(g.metaId) || []), g]);
   });
 
   const seen = new Set();
-  return (fileObjectives || []).flatMap((meta) => {
+  const byMetaKey = new Map();
+
+  (fileObjectives || []).forEach((meta) => {
     const metaName = String(meta?.metaObjectiveName || "").trim();
     const metaKey = normalizeObjectiveText(metaName);
-    const existingMetaId = (metaKey && metaIdByName.get(metaKey)) || null;
 
     const granulars = (meta?.granularObjectives || [])
       .map((g) => String(g?.name || g?.text || "").trim())
@@ -156,15 +157,22 @@ export function bucketImportedObjectives(fileObjectives, flatGranulars) {
         return { key, name, existingId: ownedByText.get(key)?.id || null };
       });
 
-    if (granulars.length === 0) return [];
-    return [{
+    if (granulars.length === 0) return;
+
+    const group = byMetaKey.get(metaKey);
+    if (group) {
+      group.granulars.push(...granulars);
+      return;
+    }
+    byMetaKey.set(metaKey, {
       metaName: metaName || "Ungrouped objectives",
       metaKey,
-      existingMetaId,
-      existingGranulars: (existingMetaId && ownedByMetaId.get(existingMetaId)) || [],
+      existingMetaId: (metaKey && metaIdByName.get(metaKey)) || null,
       granulars,
-    }];
+    });
   });
+
+  return [...byMetaKey.values()];
 }
 
 // Keys of every granular the course does not already have.
@@ -176,8 +184,11 @@ export function creatableKeys(groups) {
 
 // Split the checked granulars into the two operations they need:
 //   creates → POST /api/objective, a new meta with its granulars
-//   appends → PUT  /api/objective/:id, which replaces the granular set, so the
-//             meta's existing children are resent with their ids alongside.
+//   appends → POST /api/objective/:id/granular, which inserts under an existing
+//             meta and leaves its current children alone. Not PUT /:id: that
+//             replaces the granular set, so appending through it had to resend
+//             the siblings, clearing their settings and deleting any sibling
+//             added since this list was loaded.
 export function planObjectiveCreations(groups, checkedKeys) {
   const checked = checkedKeys instanceof Set ? checkedKeys : new Set(checkedKeys || []);
   const creates = [];
@@ -193,10 +204,7 @@ export function planObjectiveCreations(groups, checkedKeys) {
       appends.push({
         objectiveId: group.existingMetaId,
         metaName: group.metaName,
-        granularObjectives: [
-          ...group.existingGranulars.map((g) => ({ _id: g.id, text: g.name })),
-          ...added,
-        ],
+        granularObjectives: added,
       });
     } else {
       creates.push({ name: group.metaName, granularObjectives: added });

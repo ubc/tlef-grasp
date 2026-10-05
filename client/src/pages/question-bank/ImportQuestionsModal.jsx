@@ -109,9 +109,11 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
   // now exist, then saves. The server derives each meta from the granular's parent.
   const handleImport = async () => {
     if (!canImport) return;
-    const granulars = await objectives.createChecked();
-    if (!granulars) {
-      showToast("Failed to create learning objectives", "error");
+    let granulars;
+    try {
+      granulars = await objectives.createChecked();
+    } catch (error) {
+      showToast(error.message || "Failed to create learning objectives", "error");
       return;
     }
     const resolved = rows.map((row) => ({
