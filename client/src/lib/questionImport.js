@@ -24,6 +24,11 @@ export function parseQuestionsFile(text) {
   };
 }
 
+// The course's parent objectives in their own right, childless ones included.
+export function metaObjectivesOf(detailedObjectives) {
+  return (detailedObjectives || []).map((meta) => ({ id: meta.id, name: meta.name || "" }));
+}
+
 // Flatten the course's detailed objectives (meta → granular) into a single list
 // for matching and for the picker dropdown.
 export function flattenGranulars(detailedObjectives) {
@@ -105,4 +110,176 @@ export function toSavePayload(question, granularObjectiveId, { preserveStatus = 
       question.calculationAnswerTolerancePercent ?? null,
   };
   return payload;
+}
+
+// --- Objectives carried by an imported file ---------------------------------
+// An export's `objectives` array is [{ metaObjectiveId, metaObjectiveName,
+// granularObjectives: [{ id, name }] }] (buildObjectivesSummary, src/controllers/
+// question.js).
+
+// Comparison rule for objective text, matching matchGranular's name branch.
+export function normalizeObjectiveText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+// Bucket the file's objectives against the course's granulars, matching on text.
+// Granular text is deduped across the whole file, so one text yields one granular
+// however many metas carry it. Metas are keyed by normalized name, so file
+// entries naming the same meta ("Thermo", "thermo ") land in one group — one
+// write per parent, and one React key per group.
+//
+// Returns [{ metaName, metaKey, existingMetaId, granulars }], each granular
+// { key, name, existingId }; existingId is set when the course already has that
+// text, existingMetaId when it already has that parent — by id if the file's
+// parent is still in this course, otherwise by name. `metaObjectives` is the
+// course's own parent list; see registerMeta for why the granulars alone are
+// not enough.
+
+// Parent name for granulars the file left unparented. Resolved like any other,
+// so repeat imports reuse the one they created rather than adding another.
+export const UNGROUPED_META_NAME = "Ungrouped objectives";
+
+export function bucketImportedObjectives(fileObjectives, flatGranulars, metaObjectives) {
+  const ownedById = new Map();
+  const ownedByText = new Map();
+  const metaIdByName = new Map();
+  const metaNameById = new Map();
+
+  const registerMeta = (id, name) => {
+    if (!id) return;
+    metaNameById.set(String(id), name || "");
+    const key = normalizeObjectiveText(name);
+    if (key && !metaIdByName.has(key)) metaIdByName.set(key, id);
+  };
+
+  (flatGranulars || []).forEach((g) => {
+    if (g.id) ownedById.set(String(g.id), g);
+    const text = normalizeObjectiveText(g.name);
+    if (text && !ownedByText.has(text)) ownedByText.set(text, g);
+    registerMeta(g.metaId, g.metaName);
+  });
+  // A parent with no granulars is absent from flatGranulars entirely, since
+  // flattenGranulars only reaches a parent through its children. Importing under
+  // such a parent matched neither its id nor its name and created a duplicate of
+  // it. The course's own parent list carries them.
+  (metaObjectives || []).forEach((meta) => registerMeta(meta?.id, meta?.name));
+
+  const seen = new Set();
+  const byMetaKey = new Map();
+
+  (fileObjectives || []).forEach((meta) => {
+    const metaName = String(meta?.metaObjectiveName || "").trim() || UNGROUPED_META_NAME;
+    const metaKey = normalizeObjectiveText(metaName);
+
+    const granulars = (meta?.granularObjectives || [])
+      .map((g) => ({
+        id: String(g?.id || g?._id || ""),
+        name: String(g?.name || g?.text || "").trim(),
+      }))
+      .filter(({ name }) => {
+        const key = normalizeObjectiveText(name);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(({ id, name }) => {
+        // Id first, then text — the order matchGranular resolves a question in,
+        // so the checklist and the question rows agree about what already
+        // exists. Keyed on the file's text either way, since that is what a
+        // question names. The course's own text is shown when the id resolves.
+        const key = normalizeObjectiveText(name);
+        const owned = ownedById.get(id) || ownedByText.get(key) || null;
+        return { key, name: owned?.name || name, existingId: owned?.id || null };
+      });
+
+    if (granulars.length === 0) return;
+
+    // Prefer the id the file carries, falling back to the name. On a same-course
+    // round trip the parent may have been renamed since the export, and matching
+    // only its old name would create a second copy of it alongside the renamed
+    // one. An id from another course is not in this course, so it falls through.
+    const fileMetaId = String(meta?.metaObjectiveId || "");
+    const existingMetaId =
+      (metaNameById.has(fileMetaId) && fileMetaId) || metaIdByName.get(metaKey) || null;
+
+    const group = byMetaKey.get(metaKey);
+    if (group) {
+      group.existingMetaId = group.existingMetaId || existingMetaId;
+      group.granulars.push(...granulars);
+      return;
+    }
+    byMetaKey.set(metaKey, {
+      // The course's own name for a parent resolved by id; the file's copy of it
+      // may be a rename behind.
+      metaName: metaNameById.get(existingMetaId) || metaName,
+      metaKey,
+      existingMetaId,
+      granulars,
+    });
+  });
+
+  return [...byMetaKey.values()];
+}
+
+// Keys of every granular the course does not already have.
+export function creatableKeys(groups) {
+  return (groups || []).flatMap((group) =>
+    group.granulars.filter((g) => !g.existingId).map((g) => g.key)
+  );
+}
+
+// Of the creatable granulars, the ones an unmatched question actually names.
+// A same-course round trip whose LO was renamed after export carries the old
+// name: it matches nothing, so it would be offered as "new" and checked, and
+// the import would create an LO no question uses. Those stay unchecked.
+export function neededKeys(groups, questions, flatGranulars) {
+  const wanted = new Set(
+    (questions || [])
+      .filter((question) => !matchGranular(question, flatGranulars || []))
+      .map(importedGranularKey)
+  );
+  return creatableKeys(groups).filter((key) => wanted.has(key));
+}
+
+// Split the checked granulars into the two operations they need:
+//   creates → POST /api/objective, a new meta with its granulars
+//   appends → POST /api/objective/:id/granular, which inserts under an existing
+//             meta and leaves its current children alone. Not PUT /:id: that
+//             replaces the granular set, so appending through it had to resend
+//             the siblings, clearing their settings and deleting any sibling
+//             added since this list was loaded.
+export function planObjectiveCreations(groups, checkedKeys) {
+  const checked = checkedKeys instanceof Set ? checkedKeys : new Set(checkedKeys || []);
+  const creates = [];
+  const appends = [];
+
+  (groups || []).forEach((group) => {
+    const added = group.granulars
+      .filter((g) => !g.existingId && checked.has(g.key))
+      .map((g) => ({ text: g.name }));
+    if (added.length === 0) return;
+
+    if (group.existingMetaId) {
+      appends.push({
+        objectiveId: group.existingMetaId,
+        metaName: group.metaName,
+        granularObjectives: added,
+      });
+    } else {
+      creates.push({ name: group.metaName, granularObjectives: added });
+    }
+  });
+
+  return { creates, appends };
+}
+
+// Bucketing key for the objective a question arrived pointing at.
+export function importedGranularKey(question) {
+  return normalizeObjectiveText(question?.granularObjectiveName);
+}
+
+// True when the row matched an objective, or names one queued for creation.
+export function isRowResolved(row, checkedKeys) {
+  const key = row.granularId ? "" : importedGranularKey(row.question);
+  return Boolean(row.granularId || (key && checkedKeys?.has(key)));
 }

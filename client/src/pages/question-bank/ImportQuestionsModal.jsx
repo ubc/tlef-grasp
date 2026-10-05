@@ -8,7 +8,9 @@ import {
   flattenGranulars,
   matchGranular,
   toSavePayload,
+  isRowResolved,
 } from "../../lib/questionImport";
+import { useImportedObjectives } from "../../hooks/useImportedObjectives";
 import ImportQuestionReview from "../../components/ImportQuestionReview";
 
 // Import questions from a GRASP JSON export into the course question bank. Each
@@ -39,6 +41,8 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
     return Array.from(byMeta.values());
   }, [flatGranulars]);
 
+  const objectives = useImportedObjectives(courseId, flatGranulars, detailedObjectives);
+
   const saveMutation = useSaveQuestions(courseId, {
     onSuccess: (data) => {
       const count = data?.savedCount ?? rows.length;
@@ -59,15 +63,17 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
     setParseError("");
     try {
       const text = await file.text();
-      const { questions } = parseQuestionsFile(text);
+      const parsed = parseQuestionsFile(text);
+      objectives.load(parsed.objectives, parsed.questions);
       setRows(
-        questions.map((question) => ({
+        parsed.questions.map((question) => ({
           question,
           granularId: matchGranular(question, flatGranulars),
         }))
       );
     } catch (error) {
       setRows([]);
+      objectives.load([]);
       setParseError(error.message || "Could not read that file.");
     }
   };
@@ -95,13 +101,35 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, granularId } : row)));
   };
 
-  const unresolvedCount = rows.filter((row) => !row.granularId).length;
-  const canImport = rows.length > 0 && unresolvedCount === 0 && !saveMutation.isPending;
+  const unresolvedCount = rows.filter((row) => !isRowResolved(row, objectives.checkedKeys)).length;
+  const canImport =
+    rows.length > 0 && unresolvedCount === 0 && !saveMutation.isPending && !objectives.creating;
 
-  const handleImport = () => {
+  // Creates the checked objectives, re-matches the rows against the granulars that
+  // now exist, then saves. The server derives each meta from the granular's parent.
+  const handleImport = async () => {
     if (!canImport) return;
-    const questions = rows.map((row) => toSavePayload(row.question, row.granularId));
-    saveMutation.mutate({ questions, quizId: null, dedupe: true });
+    let granulars;
+    try {
+      granulars = await objectives.createChecked();
+    } catch (error) {
+      showToast(error.message || "Failed to create learning objectives", "error");
+      return;
+    }
+    const resolved = rows.map((row) => ({
+      ...row,
+      granularId: row.granularId || matchGranular(row.question, granulars),
+    }));
+    if (resolved.some((row) => !row.granularId)) {
+      setRows(resolved);
+      showToast("Some questions still need a learning objective", "error");
+      return;
+    }
+    saveMutation.mutate({
+      questions: resolved.map((row) => toSavePayload(row.question, row.granularId)),
+      quizId: null,
+      dedupe: true,
+    });
   };
 
   return (
@@ -134,7 +162,9 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
             onClick={handleImport}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-60"
           >
-            {saveMutation.isPending
+            {objectives.creating
+              ? "Creating objectives..."
+              : saveMutation.isPending
               ? "Importing..."
               : rows.length > 0
                 ? `Import ${rows.length} question${rows.length === 1 ? "" : "s"}`
@@ -172,6 +202,7 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
 
         <ImportQuestionReview
           rows={rows}
+          objectives={objectives}
           granularGroups={granularGroups}
           flatGranularsEmpty={flatGranulars.length === 0}
           objectivesLoading={objectivesLoading}
