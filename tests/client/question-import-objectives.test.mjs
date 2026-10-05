@@ -3,6 +3,7 @@ import {
   bucketImportedObjectives,
   creatableKeys,
   planObjectiveCreations,
+  neededKeys,
   isRowResolved,
   matchGranular,
 } from '../../client/src/lib/questionImport.js';
@@ -10,7 +11,8 @@ import {
 // `owned` is a course granular as flattenGranulars produces it; `fromFile` is one
 // meta of an export's `objectives` array as buildObjectivesSummary writes it.
 const owned = (id, name, metaId = 'm1', metaName = 'Thermodynamics') => ({ id, name, metaId, metaName });
-const fromFile = (metaObjectiveName, names) => ({
+const fromFile = (metaObjectiveName, names, metaObjectiveId = null) => ({
+  metaObjectiveId,
   metaObjectiveName,
   granularObjectives: names.map((name, i) => ({ id: `fg-${i}`, name })),
 });
@@ -68,6 +70,43 @@ describe('bucketImportedObjectives', () => {
     expect(bucketImportedObjectives(null, null)).toEqual([]);
     expect(bucket([fromFile('', ['Orphan'])])[0].metaName).toBe('Ungrouped objectives');
   });
+
+  // matchGranular resolves a question by id before text, and bucketing now does
+  // the same — so a granular renamed after the export is not offered as "new".
+  it('resolves a renamed granular by the id the file carries', () => {
+    const [group] = bucket(
+      [{ metaObjectiveName: 'Thermodynamics', granularObjectives: [{ id: 'g1', name: 'Explain the first law' }] }],
+      [owned('g1', 'Explain the first law (revised)')]
+    );
+    expect(group.granulars[0].existingId).toBe('g1');
+    // Shown under the course's text, but still keyed on the file's: that is the
+    // name a question carries.
+    expect(group.granulars[0].name).toBe('Explain the first law (revised)');
+    expect(group.granulars[0].key).toBe('explain the first law');
+    expect(creatableKeys([group])).toEqual([]);
+  });
+
+  // A same-course round trip whose parent was renamed after the export: matching
+  // on the old name alone created a second parent beside the renamed one.
+  it('resolves a renamed parent by the id the file carries', () => {
+    const renamed = owned('g1', 'Explain the first law', 'm1', 'Thermo (2026)');
+    const [group] = bucket([fromFile('Thermodynamics', ['Carnot'], 'm1')], [renamed]);
+    expect(group.existingMetaId).toBe('m1');
+    // Shown under the course's current name, not the file's stale copy.
+    expect(group.metaName).toBe('Thermo (2026)');
+  });
+
+  it('ignores a meta id from another course, falling back to the name', () => {
+    const [group] = bucket([fromFile('Thermodynamics', ['Carnot'], 'm-elsewhere')], [FIRST_LAW]);
+    expect(group.existingMetaId).toBe('m1');
+  });
+
+  // Otherwise every import of an unparented granular added another parent.
+  it('reuses an existing Ungrouped objectives parent', () => {
+    const existing = owned('g8', 'Orphan one', 'm9', 'Ungrouped objectives');
+    const [group] = bucket([fromFile('', ['Orphan two'])], [existing]);
+    expect(group.existingMetaId).toBe('m9');
+  });
 });
 
 describe('planObjectiveCreations', () => {
@@ -104,6 +143,19 @@ describe('planObjectiveCreations', () => {
     expect(planObjectiveCreations(groups, new Set())).toEqual({ creates: [], appends: [] });
     expect(planObjectiveCreations(groups, ['carnot']).creates).toHaveLength(1);
   });
+});
+
+// A same-course round trip whose LO was renamed after export carries the old
+// name, which matches nothing; pre-checking it created an LO no question used.
+it('pre-checks only the objectives an unmatched question names', () => {
+  const groups = bucket([fromFile('Thermo', ['Stale old name', 'Carnot'])], [FIRST_LAW]);
+  const questions = [
+    // Renamed since export: still resolves by id, so its old name is not needed.
+    { granularObjectiveId: 'g1', granularObjectiveName: 'Stale old name' },
+    { granularObjectiveId: 'gone', granularObjectiveName: 'Carnot' },
+  ];
+  expect(creatableKeys(groups)).toEqual(['stale old name', 'carnot']);
+  expect(neededKeys(groups, questions, [FIRST_LAW])).toEqual(['carnot']);
 });
 
 it('isRowResolved settles on an existing match or a checked box, not on neither', () => {

@@ -64,7 +64,7 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
     try {
       const text = await file.text();
       const parsed = parseQuestionsFile(text);
-      objectives.load(parsed.objectives);
+      objectives.load(parsed.objectives, parsed.questions);
       setRows(
         parsed.questions.map((question) => ({
           question,

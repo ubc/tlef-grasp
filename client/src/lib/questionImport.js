@@ -125,49 +125,78 @@ export function normalizeObjectiveText(value) {
 //
 // Returns [{ metaName, metaKey, existingMetaId, granulars }], each granular
 // { key, name, existingId }; existingId is set when the course already has that
-// text, existingMetaId when it already has that meta name.
+// text, existingMetaId when it already has that parent — by id if the file's
+// parent is still in this course, otherwise by name.
+
+// Parent name for granulars the file left unparented. Resolved like any other,
+// so repeat imports reuse the one they created rather than adding another.
+export const UNGROUPED_META_NAME = "Ungrouped objectives";
+
 export function bucketImportedObjectives(fileObjectives, flatGranulars) {
+  const ownedById = new Map();
   const ownedByText = new Map();
   const metaIdByName = new Map();
+  const metaNameById = new Map();
 
   (flatGranulars || []).forEach((g) => {
+    if (g.id) ownedById.set(String(g.id), g);
     const text = normalizeObjectiveText(g.name);
     if (text && !ownedByText.has(text)) ownedByText.set(text, g);
     const meta = normalizeObjectiveText(g.metaName);
     if (meta && !metaIdByName.has(meta)) metaIdByName.set(meta, g.metaId);
+    if (g.metaId) metaNameById.set(String(g.metaId), g.metaName || "");
   });
 
   const seen = new Set();
   const byMetaKey = new Map();
 
   (fileObjectives || []).forEach((meta) => {
-    const metaName = String(meta?.metaObjectiveName || "").trim();
+    const metaName = String(meta?.metaObjectiveName || "").trim() || UNGROUPED_META_NAME;
     const metaKey = normalizeObjectiveText(metaName);
 
     const granulars = (meta?.granularObjectives || [])
-      .map((g) => String(g?.name || g?.text || "").trim())
-      .filter((name) => {
+      .map((g) => ({
+        id: String(g?.id || g?._id || ""),
+        name: String(g?.name || g?.text || "").trim(),
+      }))
+      .filter(({ name }) => {
         const key = normalizeObjectiveText(name);
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
       })
-      .map((name) => {
+      .map(({ id, name }) => {
+        // Id first, then text — the order matchGranular resolves a question in,
+        // so the checklist and the question rows agree about what already
+        // exists. Keyed on the file's text either way, since that is what a
+        // question names. The course's own text is shown when the id resolves.
         const key = normalizeObjectiveText(name);
-        return { key, name, existingId: ownedByText.get(key)?.id || null };
+        const owned = ownedById.get(id) || ownedByText.get(key) || null;
+        return { key, name: owned?.name || name, existingId: owned?.id || null };
       });
 
     if (granulars.length === 0) return;
 
+    // Prefer the id the file carries, falling back to the name. On a same-course
+    // round trip the parent may have been renamed since the export, and matching
+    // only its old name would create a second copy of it alongside the renamed
+    // one. An id from another course is not in this course, so it falls through.
+    const fileMetaId = String(meta?.metaObjectiveId || "");
+    const existingMetaId =
+      (metaNameById.has(fileMetaId) && fileMetaId) || metaIdByName.get(metaKey) || null;
+
     const group = byMetaKey.get(metaKey);
     if (group) {
+      group.existingMetaId = group.existingMetaId || existingMetaId;
       group.granulars.push(...granulars);
       return;
     }
     byMetaKey.set(metaKey, {
-      metaName: metaName || "Ungrouped objectives",
+      // The course's own name for a parent resolved by id; the file's copy of it
+      // may be a rename behind.
+      metaName: metaNameById.get(existingMetaId) || metaName,
       metaKey,
-      existingMetaId: (metaKey && metaIdByName.get(metaKey)) || null,
+      existingMetaId,
       granulars,
     });
   });
@@ -180,6 +209,19 @@ export function creatableKeys(groups) {
   return (groups || []).flatMap((group) =>
     group.granulars.filter((g) => !g.existingId).map((g) => g.key)
   );
+}
+
+// Of the creatable granulars, the ones an unmatched question actually names.
+// A same-course round trip whose LO was renamed after export carries the old
+// name: it matches nothing, so it would be offered as "new" and checked, and
+// the import would create an LO no question uses. Those stay unchecked.
+export function neededKeys(groups, questions, flatGranulars) {
+  const wanted = new Set(
+    (questions || [])
+      .filter((question) => !matchGranular(question, flatGranulars || []))
+      .map(importedGranularKey)
+  );
+  return creatableKeys(groups).filter((key) => wanted.has(key));
 }
 
 // Split the checked granulars into the two operations they need:

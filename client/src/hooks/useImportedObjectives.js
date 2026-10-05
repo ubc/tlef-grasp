@@ -5,6 +5,7 @@ import { useInvalidateObjectives } from "./useObjectives";
 import {
   bucketImportedObjectives,
   creatableKeys,
+  neededKeys,
   planObjectiveCreations,
   flattenGranulars,
 } from "../lib/questionImport";
@@ -22,12 +23,12 @@ export function useImportedObjectives(courseId, flatGranulars) {
     [fileObjectives, flatGranulars]
   );
 
-  // Loads a parsed file's objectives, checking every creatable one by default.
-  const load = (objectives) => {
+  // Loads a parsed file's objectives, pre-checking the creatable ones the file's
+  // own questions need. The rest are listed unchecked for the user to opt into.
+  const load = (objectives, questions) => {
     setFileObjectives(objectives || []);
-    setCheckedKeys(
-      new Set(creatableKeys(bucketImportedObjectives(objectives || [], flatGranulars)))
-    );
+    const loaded = bucketImportedObjectives(objectives || [], flatGranulars);
+    setCheckedKeys(new Set(neededKeys(loaded, questions, flatGranulars)));
   };
 
   const toggle = (key) =>

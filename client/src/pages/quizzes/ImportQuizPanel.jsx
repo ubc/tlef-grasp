@@ -79,7 +79,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
       const importedMeta = { ...DEFAULT_META, ...(parsed.quiz || {}) };
       setMeta(importedMeta);
       setName(importedMeta.name || "");
-      objectives.load(parsed.objectives);
+      objectives.load(parsed.objectives, parsed.questions);
       setRows(
         parsed.questions.map((question) => ({
           question,
