@@ -112,6 +112,17 @@ class DatabaseService {
       // course access (issue #115). Always read newest-first per course.
       await this.db.collection("grasp_course_access_log").createIndex({ courseId: 1, createdAt: -1 });
       await this.db.collection("grasp_material").createIndex({ sourceId: 1 }, { unique: true });
+      // One material per LMS file per course: importing the same Canvas file
+      // twice (a double submit, two instructors at once) must not create a
+      // second copy. Uploads and pasted text carry no `lms` and are not indexed.
+      await this.db.collection("grasp_material").createIndex(
+        { courseId: 1, "lms.provider": 1, "lms.instance": 1, "lms.externalFileId": 1 },
+        {
+          name: "course_lms_file_unique",
+          unique: true,
+          partialFilterExpression: { "lms.externalFileId": { $exists: true } },
+        }
+      );
       await this.db.collection("grasp_objective").createIndex({ parent: 1 });
       await this.db.collection("grasp_objective_material").createIndex({ objectiveId: 1, materialId: 1 }, { unique: true });
       await this.db.collection("grasp_objective_material").createIndex({ objectiveId: 1 });

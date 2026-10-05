@@ -1,14 +1,13 @@
 const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, restoreMaterialDocument, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
-const settingsService = require('../services/settings');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const ragService = require('../services/rag');
 const databaseService = require('../services/database');
-const { parseInWorker } = require('../utils/parse-in-worker');
-const { effortForStage } = require('../utils/llm-effort');
 const outlineService = require('../services/material-outline');
+const { ingestMaterialFile } = require('../services/material-ingest');
+const { MaterialIngestError } = require('../utils/material-file-types');
 const { fetchReadableText, BlockedUrlError } = require('../utils/safe-fetch-url');
 
 const TITLE_ONLY_UPDATE_TYPES = new Set(['pdf', 'file']);
@@ -333,6 +332,9 @@ const updateMaterialHandler = async (req, res) => {
                     fileSize: fileSize,
                     fileContent: documentType === 'link' ? url : materialContent, // For links, save URL to fileContent; for text, save content
                     documentTitle: updatedDocumentTitle || null,
+                    // An edited text file imported from Canvas is still that
+                    // Canvas file, so importing it again adds no second copy.
+                    ...(existingMaterial.lms ? { lms: existingMaterial.lms } : {}),
                 },
             });
 
@@ -501,116 +503,29 @@ const uploadFileHandler = async (req, res) => {
         if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
         if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
-        const fileName = file.originalname.toLowerCase();
-        let content = "";
-        let tokenUsage = 0;
-        let storedFileType = file.mimetype;
-        
-        console.log(`Processing uploaded file: ${fileName} (${file.size} bytes)`);
-
-        // Parsing runs in a worker thread (parse-in-worker.js): OCR/layout
-        // analysis on a large file takes seconds of pure CPU, which would
-        // otherwise freeze every in-flight request on the event loop.
-        // Resolved here, not in the worker: the worker thread has no database
-        // connection, so it cannot read the course's settings itself.
-        let parsingEffort = null;
-        try {
-            parsingEffort = effortForStage(await settingsService.getSettings(courseId), 'pdf-page-image');
-        } catch (settingsError) {
-            console.error("Error resolving parsing reasoning effort:", settingsError);
-        }
-
-        if (file.mimetype === "application/pdf" || fileName.endsWith(".pdf")) {
-            const parsed = await parseInWorker("pdf", file.buffer, parsingEffort);
-            content = parsed.content;
-            tokenUsage = parsed.tokenUsage || 0;
-            storedFileType = "application/pdf";
-        } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
-            const parsed = await parseInWorker("docx", file.buffer);
-            content = parsed.content;
-            tokenUsage = parsed.tokenUsage || 0;
-            storedFileType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        } else if (file.mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || fileName.endsWith(".pptx")) {
-            let powerPointPrompt;
-            try {
-                const settings = await settingsService.getSettings(courseId);
-                powerPointPrompt = settings?.prompts?.powerPointImageDescription;
-            } catch (settingsError) {
-                console.error("Error getting PowerPoint extraction prompt:", settingsError);
-            }
-            const parsed = await parseInWorker("pptx", file.buffer, file.originalname, powerPointPrompt, parsingEffort);
-            content = parsed.content;
-            tokenUsage = parsed.tokenUsage || 0;
-            storedFileType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-        } else if (file.mimetype === "text/plain" || fileName.endsWith(".txt")) {
-            content = file.buffer.toString('utf8');
-            storedFileType = "text/plain";
-        } else if (file.mimetype === "application/msword" || fileName.endsWith(".doc")) {
-             return res.status(400).json({ error: "DOC files are not fully supported for content extraction. Please convert to DOCX, PDF, or PPTX." });
-        } else if (file.mimetype === "application/vnd.ms-powerpoint" || fileName.endsWith(".ppt")) {
-             return res.status(400).json({ error: "PPT files are not fully supported for content extraction. Please convert to PPTX." });
-        } else {
-            return res.status(400).json({ error: "Unsupported file type. Supported file types are PDF, DOCX, PPTX, and TXT." });
-        }
-        
-        if (!content || content.trim().length === 0) {
-           return res.status(400).json({ error: "Could not extract content from file" });
-        }
-
-        console.log(`✅ Extraction complete: ${content.length} characters (includes embedded image descriptions)`);
-        console.log(`📊 Total VLM Token Usage for Upload: ${tokenUsage} tokens`);
-
-        const actualSourceId = sourceId || `${courseId}-${Date.now()}-${Math.random()}`;
-
-        // Get course name for RAG metadata
-        let courseName = "Unknown Course";
-        try {
-            const course = await getCourseById(courseId);
-            if (course) {
-                courseName = course.courseName || "Unknown Course";
-            }
-        } catch (courseError) {
-            console.error("Error getting course name:", courseError);
-        }
-
-        // Save to RAG
-        await ragService.addDocumentToRAG(content, {
-            source: file.originalname,
-            type: "file",
-            course: courseName,
-            courseId: courseId,
-            sourceId: actualSourceId,
-            documentTitle: documentTitle || file.originalname,
-        }, courseId);
-
-        // Save to Database
-        await saveMaterial(actualSourceId, courseId, {
-            fileType: storedFileType,
-            fileSize: file.size,
-            fileContent: content, // Save extracted text
-            documentTitle: documentTitle || file.originalname,
+        // Parse, index, store and outline: the same step a Canvas import takes
+        // (services/material-ingest.js).
+        const result = await ingestMaterialFile({
+            courseId,
+            buffer: file.buffer,
+            fileName: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+            sourceId,
+            documentTitle,
         });
-
-        // Best-effort: the upload path already tolerates long work (OCR, and a
-        // vision call per slide for PPTX), so this is the right place to spend
-        // it. But a failed summary must never cost a material that parsed and
-        // stored fine — the instructor can generate it from the materials page.
-        try {
-            await outlineService.generateOutline(actualSourceId);
-        } catch (outlineError) {
-            console.warn(
-                `⚠️ Could not generate an outline for ${actualSourceId}:`,
-                outlineError.message
-            );
-        }
 
         res.json({
             success: true,
             message: "File uploaded and processed successfully",
-            sourceId: actualSourceId,
-            contentLength: content.length
+            sourceId: result.sourceId,
+            contentLength: result.contentLength
         });
     } catch (error) {
+        // An unsupported type or a file with no extractable text.
+        if (error instanceof MaterialIngestError) {
+            return res.status(400).json({ error: error.message });
+        }
         console.error("Error processing file upload:", error);
         res.status(500).json({ error: "Failed to process file upload", details: error.message });
     }

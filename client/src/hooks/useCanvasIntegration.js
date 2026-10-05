@@ -5,7 +5,9 @@ import { queryKeys } from "../lib/queryKeys";
 import { invalidateSectionRosterQueries } from "./useSections";
 import { canvasCapabilities } from "../lib/lmsRosterSync";
 
-function markCanvasDisconnected(queryClient, error) {
+// A 401 with connected:false means Canvas refused this user's token: flip the
+// cached status so every Canvas control falls back to "Connect Canvas".
+export function markCanvasDisconnected(queryClient, error) {
   if (error?.body?.connected !== false) return;
   queryClient.setQueryData(queryKeys.canvasStatus, (current) => ({
     ...current,

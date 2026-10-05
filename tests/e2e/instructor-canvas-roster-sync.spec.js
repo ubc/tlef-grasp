@@ -94,11 +94,13 @@ test.describe('Canvas roster sync from My Sections (fake Canvas)', () => {
   test('the server gates Canvas features on the recommended scopes', async () => {
     const response = await instructor.request.get('/api/lms/canvas/status');
     expect(response.status()).toBe(200);
-    // Linking and roster sync are in the recommended scopes; creating Canvas
-    // assignments (item 4) needs scopes UBC's key does not have yet.
+    // Linking and roster sync are in the recommended scopes; importing course
+    // files (#141) and creating Canvas assignments (item 4) need scopes UBC's
+    // key does not have yet.
     expect((await response.json()).capabilities).toEqual({
       link: true,
       rosterSync: true,
+      files: false,
       assignments: false,
     });
   });

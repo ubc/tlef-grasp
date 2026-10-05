@@ -33,7 +33,8 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete, on
           <p className="text-sm text-muted">{meta.label}</p>
           <p className="text-xs text-muted">Size: {formatFileSize(material.fileSize)}</p>
           <p className="text-xs text-muted">
-            Uploaded on {new Date(material.createdAt).toLocaleDateString()}
+            {material.lms?.provider === "canvas" ? "Imported from Canvas" : "Uploaded"} on{" "}
+            {new Date(material.createdAt).toLocaleDateString()}
           </p>
         </div>
       </div>

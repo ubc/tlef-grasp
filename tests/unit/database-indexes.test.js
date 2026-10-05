@@ -105,6 +105,30 @@ describe('initializeCollections index definitions', () => {
       .toBeLessThan(course.createIndex.mock.invocationCallOrder[0]);
   });
 
+  // Importing the same Canvas file twice must not create a second material
+  // (issue #141). The route checks first, but only an index holds against two
+  // imports running at once.
+  it('allows one material per LMS file per course, and leaves uploads unconstrained', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    const lmsFileCall = collectionFor('grasp_material').createIndex.mock.calls.find(
+      ([keys]) => keys && keys['lms.externalFileId'] === 1
+    );
+
+    expect(lmsFileCall).toBeDefined();
+    const [keys, options] = lmsFileCall;
+    expect(keys).toEqual({
+      courseId: 1,
+      'lms.provider': 1,
+      'lms.instance': 1,
+      'lms.externalFileId': 1,
+    });
+    expect(options.unique).toBe(true);
+    // Uploads and pasted text have no `lms`; without the filter they would all
+    // collide on the same missing key.
+    expect(options.partialFilterExpression).toEqual({ 'lms.externalFileId': { $exists: true } });
+  });
+
   // The suite above mocks createIndex, so MongoDB never parses these specs and
   // an unsupported operator sails through as a green test right up until it
   // throws CannotCreateIndex at boot. partialFilterExpression accepts only a
@@ -133,7 +157,7 @@ describe('initializeCollections index definitions', () => {
     };
 
     const specs = [];
-    for (const name of ['grasp_course', 'grasp_question', 'grasp_user', 'grasp_user_course']) {
+    for (const name of ['grasp_course', 'grasp_question', 'grasp_user', 'grasp_user_course', 'grasp_material']) {
       for (const [, options] of collectionFor(name).createIndex.mock.calls) {
         if (options?.partialFilterExpression) specs.push([name, options.partialFilterExpression]);
       }

@@ -6,6 +6,7 @@ const {
   requireActiveCourse,
   resolveCourseFromMaterial,
 } = require("../middleware/course-archive");
+const { MAX_MATERIAL_FILE_BYTES } = require("../utils/material-file-types");
 
 // Material bodies carry full parsed document text, so they get a much larger
 // limit than the app-wide 1mb default in server.js.
@@ -16,7 +17,7 @@ const largeJson = express.json({ limit: MATERIAL_BODY_LIMIT });
 // The fileSize cap keeps a burst of concurrent uploads from exhausting RAM.
 const upload = multer({
 	storage: multer.memoryStorage(),
-	limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+	limits: { fileSize: MAX_MATERIAL_FILE_BYTES }, // 50 MB
 });
 
 // The archived-course gate goes AFTER each body parser here, not at the top of

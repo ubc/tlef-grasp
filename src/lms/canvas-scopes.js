@@ -43,6 +43,28 @@ const CANVAS_CAPABILITY_SCOPES = Object.freeze({
     'url:GET|/api/v1/courses/:course_id/enrollments',
   ]),
 
+  // Importing course files into Course Materials (issue #141).
+  files: Object.freeze([
+    // canvas.getCourses(client, { enrollment_type: 'teacher' }) — re-checks that
+    // the instructor still teaches the Canvas course before listing or importing
+    // its files (controllers/lms-canvas.js listMaterialImportFiles,
+    // importMaterialFile).
+    'url:GET|/api/v1/courses',
+    // canvas.getCourseFiles(client, canvasCourseId, { contentTypes, sort, order })
+    // — the course's files offered for import (listMaterialImportFiles).
+    'url:GET|/api/v1/courses/:course_id/files',
+    // client.get('/courses/:course_id/files/:id') — one file's name, type and size,
+    // read before anything is downloaded (importMaterialFile), and again by
+    // canvas.downloadFile, which only downloads a file Canvas confirms is in the
+    // course.
+    'url:GET|/api/v1/courses/:course_id/files/:id',
+    // canvas.downloadFile(client, canvasCourseId, fileId, { via: 'public-url' }) —
+    // a signed, time-limited download link. The file's own URL
+    // (/files/:id/download) is not an /api/v1 path, so no scope can cover it and
+    // an Enforce Scopes key is refused there.
+    'url:GET|/api/v1/files/:id/public_url',
+  ]),
+
   // Creating and scheduling quizzes as Canvas assignments (issue #113 item 4, not
   // implemented yet): nothing calls these today, so no route is gated on it.
   assignments: Object.freeze([
@@ -87,7 +109,7 @@ function parseCanvasScopes(value) {
  * Which capabilities a requested scope list enables.
  *
  * @param {string[]} scopes - Parsed CANVAS_SCOPES; [] = no scopes requested
- * @returns {{ link: boolean, rosterSync: boolean, assignments: boolean }}
+ * @returns {{ link: boolean, rosterSync: boolean, files: boolean, assignments: boolean }}
  */
 function resolveCanvasCapabilities(scopes) {
   const requested = new Set(scopes || []);

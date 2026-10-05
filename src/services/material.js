@@ -16,11 +16,49 @@ const saveMaterial = async (sourceId, courseId, materialData) => {
             fileSize: materialData.fileSize,
             fileContent: materialData.fileContent || null,
             documentTitle: materialData.documentTitle || null,
+            // Where the material came from when it was imported from an LMS
+            // (see findLmsImportedMaterials); absent for uploads and pasted text.
+            ...(materialData.lms ? { lms: materialData.lms } : {}),
             createdAt: new Date(),
         });
     }
     catch (error) {
         console.error("Error uploading material:", error);
+        throw error;
+    }
+};
+
+/**
+ * The materials of a course that were imported from one LMS course, without
+ * their text. Each carries
+ * `lms: { provider, instance, externalCourseId, externalFileId, externalFileName,
+ * externalUpdatedAt, importedAt }`, which is how an import recognises a file it
+ * has already brought in.
+ *
+ * @param {string|ObjectId} courseId - The GRASP course
+ * @param {{ provider: string, instance: string|null, externalCourseId: string, externalFileId?: string }} source
+ * @returns {Promise<Array<{ sourceId: string, documentTitle: string|null, lms: Object }>>}
+ */
+const findLmsImportedMaterials = async (courseId, { provider, instance, externalCourseId, externalFileId }) => {
+    try {
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_material");
+        const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+
+        const query = {
+            courseId: courseIdObj,
+            'lms.provider': provider,
+            'lms.instance': instance,
+            'lms.externalCourseId': String(externalCourseId),
+        };
+        if (externalFileId !== undefined) query['lms.externalFileId'] = String(externalFileId);
+
+        return await collection
+            .find(query, { projection: { sourceId: 1, documentTitle: 1, lms: 1 } })
+            .toArray();
+    }
+    catch (error) {
+        console.error("Error finding LMS-imported materials:", error);
         throw error;
     }
 };
@@ -150,6 +188,7 @@ const clearMaterialOutline = async (sourceId) => {
 
 module.exports = {
     saveMaterial,
+    findLmsImportedMaterials,
     deleteMaterial,
     restoreMaterialDocument,
     getCourseMaterials,

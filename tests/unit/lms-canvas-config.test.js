@@ -51,7 +51,7 @@ describe('Canvas integration scopes (CANVAS_SCOPES)', () => {
 
     expect(integration.config).not.toHaveProperty('scopes');
     expect(integration.scopes).toEqual([]);
-    expect(integration.capabilities).toEqual({ link: true, rosterSync: true, assignments: true });
+    expect(integration.capabilities).toEqual({ link: true, rosterSync: true, files: true, assignments: true });
   });
 
   it('requests exactly the configured scopes and gates capabilities on them', () => {
@@ -67,7 +67,7 @@ describe('Canvas integration scopes (CANVAS_SCOPES)', () => {
       'url:GET|/api/v1/courses/:course_id/enrollments',
       'url:GET|/api/v1/courses/:course_id/assignments',
     ]);
-    expect(integration.capabilities).toEqual({ link: true, rosterSync: true, assignments: false });
+    expect(integration.capabilities).toEqual({ link: true, rosterSync: true, files: false, assignments: false });
   });
 
   it('sends the configured scopes as one space-delimited scope parameter on the authorize URL', () => {
