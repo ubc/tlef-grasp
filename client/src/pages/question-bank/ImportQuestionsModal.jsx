@@ -41,7 +41,7 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
     return Array.from(byMeta.values());
   }, [flatGranulars]);
 
-  const objectives = useImportedObjectives(courseId, flatGranulars);
+  const objectives = useImportedObjectives(courseId, flatGranulars, detailedObjectives);
 
   const saveMutation = useSaveQuestions(courseId, {
     onSuccess: (data) => {

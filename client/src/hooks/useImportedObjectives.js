@@ -8,26 +8,33 @@ import {
   neededKeys,
   planObjectiveCreations,
   flattenGranulars,
+  metaObjectivesOf,
 } from "../lib/questionImport";
 
 // Holds the objectives an imported file carried and which of them to create in
 // this course. Used by both import screens.
-export function useImportedObjectives(courseId, flatGranulars) {
+export function useImportedObjectives(courseId, flatGranulars, detailedObjectives) {
   const [fileObjectives, setFileObjectives] = useState([]);
   const [checkedKeys, setCheckedKeys] = useState(() => new Set());
   const [creating, setCreating] = useState(false);
   const invalidateObjectives = useInvalidateObjectives(courseId);
 
+  // Parents in their own right: a childless one is invisible in flatGranulars.
+  const metaObjectives = useMemo(
+    () => metaObjectivesOf(detailedObjectives),
+    [detailedObjectives]
+  );
+
   const groups = useMemo(
-    () => bucketImportedObjectives(fileObjectives, flatGranulars),
-    [fileObjectives, flatGranulars]
+    () => bucketImportedObjectives(fileObjectives, flatGranulars, metaObjectives),
+    [fileObjectives, flatGranulars, metaObjectives]
   );
 
   // Loads a parsed file's objectives, pre-checking the creatable ones the file's
   // own questions need. The rest are listed unchecked for the user to opt into.
   const load = (objectives, questions) => {
     setFileObjectives(objectives || []);
-    const loaded = bucketImportedObjectives(objectives || [], flatGranulars);
+    const loaded = bucketImportedObjectives(objectives || [], flatGranulars, metaObjectives);
     setCheckedKeys(new Set(neededKeys(loaded, questions, flatGranulars)));
   };
 
@@ -41,15 +48,14 @@ export function useImportedObjectives(courseId, flatGranulars) {
 
   const toggleAll = (on) => setCheckedKeys(on ? new Set(creatableKeys(groups)) : new Set());
 
-  const fetchGranulars = async () => {
+  const fetchObjectives = async () => {
     const data = await api.get(`/api/objective/detailed?courseId=${courseId}`);
-    return flattenGranulars(
-      (data.objectives || []).map((objective) => ({
-        id: getObjectId(objective),
-        name: objective.name,
-        granular: objective.granularObjectives || [],
-      }))
-    );
+    const objectives = (data.objectives || []).map((objective) => ({
+      id: getObjectId(objective),
+      name: objective.name,
+      granular: objective.granularObjectives || [],
+    }));
+    return { granulars: flattenGranulars(objectives), metas: metaObjectivesOf(objectives) };
   };
 
   // Persists the checked objectives and returns the course's granulars as they now
@@ -62,12 +68,12 @@ export function useImportedObjectives(courseId, flatGranulars) {
     try {
       // Plan against the course as it stands now: an earlier attempt may have
       // created some of these before failing, and re-POSTing one would duplicate it.
-      const current = await fetchGranulars();
+      const current = await fetchObjectives();
       const { creates, appends } = planObjectiveCreations(
-        bucketImportedObjectives(fileObjectives, current),
+        bucketImportedObjectives(fileObjectives, current.granulars, current.metas),
         checkedKeys
       );
-      if (creates.length === 0 && appends.length === 0) return current;
+      if (creates.length === 0 && appends.length === 0) return current.granulars;
 
       for (const objective of creates) {
         const result = await api.post("/api/objective", { ...objective, courseId });
@@ -81,7 +87,7 @@ export function useImportedObjectives(courseId, flatGranulars) {
           throw new Error(result.error || `Could not update ${objective.metaName}`);
         }
       }
-      return await fetchGranulars();
+      return (await fetchObjectives()).granulars;
     } finally {
       // Whatever landed before a failure still has to reach the cache.
       invalidateObjectives();

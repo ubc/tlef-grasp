@@ -52,7 +52,7 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
     return Array.from(byMeta.values());
   }, [flatGranulars]);
 
-  const objectives = useImportedObjectives(courseId, flatGranulars);
+  const objectives = useImportedObjectives(courseId, flatGranulars, detailedObjectives);
 
   const createMutation = useCreateQuiz(courseId, {
     onSuccess: (data) => {

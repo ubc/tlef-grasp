@@ -24,6 +24,11 @@ export function parseQuestionsFile(text) {
   };
 }
 
+// The course's parent objectives in their own right, childless ones included.
+export function metaObjectivesOf(detailedObjectives) {
+  return (detailedObjectives || []).map((meta) => ({ id: meta.id, name: meta.name || "" }));
+}
+
 // Flatten the course's detailed objectives (meta → granular) into a single list
 // for matching and for the picker dropdown.
 export function flattenGranulars(detailedObjectives) {
@@ -126,26 +131,38 @@ export function normalizeObjectiveText(value) {
 // Returns [{ metaName, metaKey, existingMetaId, granulars }], each granular
 // { key, name, existingId }; existingId is set when the course already has that
 // text, existingMetaId when it already has that parent — by id if the file's
-// parent is still in this course, otherwise by name.
+// parent is still in this course, otherwise by name. `metaObjectives` is the
+// course's own parent list; see registerMeta for why the granulars alone are
+// not enough.
 
 // Parent name for granulars the file left unparented. Resolved like any other,
 // so repeat imports reuse the one they created rather than adding another.
 export const UNGROUPED_META_NAME = "Ungrouped objectives";
 
-export function bucketImportedObjectives(fileObjectives, flatGranulars) {
+export function bucketImportedObjectives(fileObjectives, flatGranulars, metaObjectives) {
   const ownedById = new Map();
   const ownedByText = new Map();
   const metaIdByName = new Map();
   const metaNameById = new Map();
 
+  const registerMeta = (id, name) => {
+    if (!id) return;
+    metaNameById.set(String(id), name || "");
+    const key = normalizeObjectiveText(name);
+    if (key && !metaIdByName.has(key)) metaIdByName.set(key, id);
+  };
+
   (flatGranulars || []).forEach((g) => {
     if (g.id) ownedById.set(String(g.id), g);
     const text = normalizeObjectiveText(g.name);
     if (text && !ownedByText.has(text)) ownedByText.set(text, g);
-    const meta = normalizeObjectiveText(g.metaName);
-    if (meta && !metaIdByName.has(meta)) metaIdByName.set(meta, g.metaId);
-    if (g.metaId) metaNameById.set(String(g.metaId), g.metaName || "");
+    registerMeta(g.metaId, g.metaName);
   });
+  // A parent with no granulars is absent from flatGranulars entirely, since
+  // flattenGranulars only reaches a parent through its children. Importing under
+  // such a parent matched neither its id nor its name and created a duplicate of
+  // it. The course's own parent list carries them.
+  (metaObjectives || []).forEach((meta) => registerMeta(meta?.id, meta?.name));
 
   const seen = new Set();
   const byMetaKey = new Map();

@@ -17,7 +17,7 @@ const fromFile = (metaObjectiveName, names, metaObjectiveId = null) => ({
   granularObjectives: names.map((name, i) => ({ id: `fg-${i}`, name })),
 });
 const FIRST_LAW = owned('g1', 'Explain the first law');
-const bucket = (file, course = []) => bucketImportedObjectives(file, course);
+const bucket = (file, course = [], metas) => bucketImportedObjectives(file, course, metas);
 
 describe('bucketImportedObjectives', () => {
   it('matches owned text ignoring case and space, exactly as matchGranular does', () => {
@@ -99,6 +99,19 @@ describe('bucketImportedObjectives', () => {
   it('ignores a meta id from another course, falling back to the name', () => {
     const [group] = bucket([fromFile('Thermodynamics', ['Carnot'], 'm-elsewhere')], [FIRST_LAW]);
     expect(group.existingMetaId).toBe('m1');
+  });
+
+  // flattenGranulars reaches a parent only through its children, so a childless
+  // one is absent from the course list the matcher sees — and the import created
+  // a second parent with the same name. The course's parent list has it.
+  it('reuses a parent that has no granulars yet', () => {
+    const [group] = bucket(
+      [fromFile('Thermodynamics', ['Carnot'], 'm1')],
+      [],
+      [{ id: 'm1', name: 'Thermodynamics' }]
+    );
+    expect(group.existingMetaId).toBe('m1');
+    expect(creatableKeys([group])).toEqual(['carnot']);
   });
 
   // Otherwise every import of an unparented granular added another parent.
