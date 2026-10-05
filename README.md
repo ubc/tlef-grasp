@@ -89,8 +89,9 @@ cp .env.example .env
 
 Set `CANVAS_DOMAIN`, `CANVAS_CLIENT_ID`, `CANVAS_CLIENT_SECRET`, and
 `CANVAS_REDIRECT_URI` (see `.env.example`) to enable the Canvas controls in
-instructor Settings and My Sections. If any of them is absent, Canvas is hidden
-and every section keeps syncing students from the UBC Academic API.
+instructor Settings, My Sections, and Course Materials. If any of them is
+absent, Canvas is hidden, every section keeps syncing students from the UBC
+Academic API, and materials are added by upload or pasted text only.
 
 Each instructor connects their own Canvas account (OAuth, per GRASP user) and
 links a GRASP section to one Canvas section. GRASP calls these Canvas API
@@ -103,6 +104,14 @@ parameters (a scoped developer key strips them):
   `state[]=active,invited`) — the roster read by **Sync from Canvas**; Canvas
   embeds each enrollment's user, with `integration_id` when the token may read
   SIS data
+- `GET /api/v1/courses/:course_id/files` (`content_types[]` = PDF, DOCX, PPTX,
+  plain text) — the files offered by **From Canvas** in Course Materials
+- `GET /api/v1/courses/:course_id/files/:id` — one file's name, type and size,
+  read inside the course before anything is downloaded
+- `GET /api/v1/files/:id/public_url` — a signed, time-limited link the file is
+  downloaded through. The file's own URL (`/files/:id/download`) is not an
+  `/api/v1` path, so no scope can cover it and an Enforce Scopes key is refused
+  there
 
 ##### Canvas scopes (`CANVAS_SCOPES`)
 
@@ -132,6 +141,7 @@ CANVAS_SCOPES="url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sectio
 |---|---|
 | Link a section (`link`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/sections` |
 | Sync from Canvas (`rosterSync`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/enrollments` |
+| Import course files (`files`, issue #141) | `url:GET\|/api/v1/courses` plus the three below |
 | Canvas assignments (`assignments`, issue #113 item 4, not built yet) | `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
 
 To enable Canvas assignments, add these four scopes to the developer key and
@@ -142,6 +152,15 @@ url:POST|/api/v1/courses/:course_id/assignments
 url:GET|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
 url:PUT|/api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id
 url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
+```
+
+To enable importing course files, add these three scopes to the developer key
+and then to `CANVAS_SCOPES`:
+
+```
+url:GET|/api/v1/courses/:course_id/files
+url:GET|/api/v1/courses/:course_id/files/:id
+url:GET|/api/v1/files/:id/public_url
 ```
 
 Changing `CANVAS_SCOPES` requires instructors to **reconnect Canvas**: an
@@ -172,6 +191,29 @@ Moodle-linked sections keep the Academic API sync. It works like this:
   that would drop more than half the section.
 - Adds, restores, and drops are recorded in the course's access history with
   the syncing instructor as the actor.
+
+**From Canvas** (Course Materials → Upload Materials) imports course files
+straight from Canvas, as an alternative to uploading them. It works like this:
+
+- The option appears only for an instructor who can use it: Canvas is
+  connected, the deployment's scopes include files, and they own at least one
+  section linked to Canvas. Upload and pasted text are unchanged.
+- GRASP links sections, not courses, so the instructor picks from the Canvas
+  courses their own linked sections point to. Files are read with that
+  instructor's own Canvas token, after re-checking that they still teach the
+  Canvas course. Adding materials needs the same course permissions as upload.
+- The picker lists the course's PDF, DOCX, PPTX and TXT files, newest first,
+  across all Canvas folders. Files over 50 MB (the upload limit) are shown but
+  cannot be picked.
+- Each imported file goes through the same parsing, indexing and outline step
+  as an uploaded one (`src/services/material-ingest.js`) and is titled with its
+  Canvas file name.
+- Each material remembers the Canvas file it came from (`lms` on the
+  `grasp_material` document), and a unique index allows one material per
+  Canvas file per course: importing the same file again creates no second
+  copy. Replacing a file in Canvas gives it a new file id, so the new version
+  is offered as a new file (flagged as replacing one imported earlier) and
+  importing it adds a second material; the earlier one is left untouched.
 
 #### Optional Moodle connection
 

@@ -2,6 +2,7 @@ const express = require('express');
 const { createCanvasIntegration } = require('../lms/canvas');
 const { createCanvasController } = require('../controllers/lms-canvas');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
+const { requireCourseMaterialsAccess } = require('../middleware/course-materials-access');
 const { requireActiveCourse } = require('../middleware/course-archive');
 const { resolveCanvasCapabilities } = require('../lms/canvas-scopes');
 
@@ -44,6 +45,7 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
   const requireCanvasAuth = canvas.requireAuth(config);
   const requireLink = requireCanvasCapability(capabilities, 'link');
   const requireRosterSync = requireCanvasCapability(capabilities, 'rosterSync');
+  const requireFiles = requireCanvasCapability(capabilities, 'files');
 
   // Canvas sends OAuth denials back as `?error=...` without an authorization
   // code. Handle that before the toolkit's callback route so users return to
@@ -94,6 +96,33 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
     requireCanvasAuth,
     controller.syncSectionStudents
   );
+
+  // Importing Canvas course files into Course Materials (issue #141). Open to
+  // whoever may upload materials to the course; the controller narrows the
+  // Canvas courses to the ones their own linked sections point to.
+  const materialImportBase = '/courses/:courseId/materials/canvas-courses';
+  router.get(
+    materialImportBase,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.listMaterialImportCourses
+  );
+  router.get(
+    `${materialImportBase}/:canvasCourseId/files`,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.listMaterialImportFiles
+  );
+  router.post(
+    `${materialImportBase}/:canvasCourseId/files/:canvasFileId/import`,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.importMaterialFile
+  );
+
   // The package deliberately avoids exposing provider details. Send OAuth
   // failures back to Settings with a generic marker rather than rendering an
   // internal error or token-exchange response in the browser.
