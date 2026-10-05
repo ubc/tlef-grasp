@@ -172,6 +172,9 @@ const deleteQuiz = async (quizId) => {
         await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_section_schedule").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_question_flag").deleteMany({ quizId: qid });
+        // GRASP's record of the quiz's LMS assignments only; the assignments
+        // themselves stay in the LMS (issue #125).
+        await db.collection("grasp_quiz_lms_assignment").deleteMany({ quizId: qid });
 
         const result = await collection.deleteOne({ _id: qid });
         

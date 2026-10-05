@@ -65,18 +65,25 @@ const CANVAS_CAPABILITY_SCOPES = Object.freeze({
     'url:GET|/api/v1/files/:id/public_url',
   ]),
 
-  // Creating and scheduling quizzes as Canvas assignments (issue #113 item 4, not
-  // implemented yet): nothing calls these today, so no route is gated on it.
+  // A Canvas assignment for each scheduled quiz on a linked section (issue
+  // #125, #113 item 4). All calls are in lms/canvas-assignments.js.
   assignments: Object.freeze([
-    // Find an existing assignment to reconcile with (`search_term`, no includes).
+    // canvas.getCourses(client, { enrollment_type: 'teacher' }) — re-checks that
+    // the instructor still teaches the linked Canvas course before writing to
+    // it (controllers/lms-canvas-assignments.js ensureQuizAssignments).
+    'url:GET|/api/v1/courses',
+    // findAssignmentByName — an assignment with this name already in the course
+    // (`search_term`, no includes), reused instead of created twice.
     'url:GET|/api/v1/courses/:course_id/assignments',
-    // Create the assignment.
+    // createAssignment — the assignment, with its section override inline.
     'url:POST|/api/v1/courses/:course_id/assignments',
-    // Read the section overrides (the create response does not include them).
+    // findSectionOverride — the override's id (the create response does not
+    // include it), and the override of a reused assignment.
     'url:GET|/api/v1/courses/:course_id/assignments/:assignment_id/overrides',
-    // Update a section override's dates.
+    // updateOverrideDueAt — a rescheduled quiz moves the due date.
     'url:PUT|/api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id',
-    // Add a section override.
+    // createSectionOverride — a reused assignment, or one whose override was
+    // removed in Canvas, gets the section override back.
     'url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/overrides',
   ]),
 });

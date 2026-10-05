@@ -310,6 +310,24 @@ const getStudentSectionObjectIds = async (userId, courseId) => {
     .map((s) => s._id.toString());
 };
 
+/**
+ * Every quiz scheduled on one section (the section's own view, e.g. which
+ * quizzes need a Canvas assignment after the section is linked).
+ * @returns {Promise<Array<{quizId: string, releaseDate: Date, expireDate: Date}>>}
+ */
+const getSchedulesForSection = async (courseSectionId) => {
+  const db = await databaseService.connect();
+  const rows = await db
+    .collection(COLLECTION)
+    .find({ courseSectionId: toObjectId(courseSectionId) })
+    .toArray();
+  return rows.map((r) => ({
+    quizId: r.quizId.toString(),
+    releaseDate: r.releaseDate,
+    expireDate: r.expireDate,
+  }));
+};
+
 /** Remove all schedule rows pointing at a section (recycle cleanup). */
 const removeSchedulesForSection = async (courseSectionId) => {
   const db = await databaseService.connect();
@@ -424,6 +442,7 @@ module.exports = {
   getSchedulesForQuiz,
   setSchedules,
   getSchedulesForQuizzes,
+  getSchedulesForSection,
   shiftDate,
   isValidTimeZone,
   planShift,

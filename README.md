@@ -142,10 +142,10 @@ CANVAS_SCOPES="url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sectio
 | Link a section (`link`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/sections` |
 | Sync from Canvas (`rosterSync`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/enrollments` |
 | Import course files (`files`, issue #141) | `url:GET\|/api/v1/courses` plus the three below |
-| Canvas assignments (`assignments`, issue #113 item 4, not built yet) | `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
+| Canvas assignments for scheduled quizzes (`assignments`, issue #125) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
 
-To enable Canvas assignments, add these four scopes to the developer key and
-then to `CANVAS_SCOPES`:
+To enable Canvas assignments for scheduled quizzes, add these four scopes to
+the developer key and then to `CANVAS_SCOPES`:
 
 ```
 url:POST|/api/v1/courses/:course_id/assignments
@@ -214,6 +214,33 @@ straight from Canvas, as an alternative to uploading them. It works like this:
   copy. Replacing a file in Canvas gives it a new file id, so the new version
   is offered as a new file (flagged as replacing one imported earlier) and
   importing it adds a second material; the earlier one is left untouched.
+
+**Canvas assignments for scheduled quizzes** (issue #125) give each scheduled
+quiz a gradebook column in Canvas, for the grade export of #113 item 5. It
+works like this:
+
+- When a quiz is scheduled on a Canvas-linked section, GRASP asks whether to
+  create the assignment; when a section with scheduled quizzes is linked, it
+  asks for those quizzes. Scheduling an unlinked section does nothing in
+  Canvas. "Don't create" is remembered; the section's schedule chip on the quiz
+  offers "Canvas" (create) later.
+- The assignment is plain: `submission_types: ["none"]`, 100 points, published
+  (Canvas's grade import only matches published assignments), visible only to
+  the linked Canvas section through a section override whose `due_at` is the
+  section's close time in GRASP. It is named `<quiz> — <section> (GRASP)` and
+  its description tells students to take the quiz in GRASP, with a link.
+- Rescheduling moves the Canvas due date automatically. If Canvas cannot be
+  reached, the GRASP schedule is still saved, the chip shows the failure and
+  offers a retry. Unscheduling, deleting a quiz or recycling a section never
+  deletes anything in Canvas; deleting a quiz says so.
+- One assignment per quiz per GRASP section: `grasp_quiz_lms_assignment` holds
+  the mapping (unique on quiz + section), a row is claimed before Canvas is
+  called, and a create first looks for an assignment that already carries the
+  name. Both instructors must own the section; the write uses the clicking
+  instructor's own Canvas token after re-checking they teach the Canvas course.
+- Schedule times are sent from the browser as instants (with the zone the
+  instructor typed them in), so the stored window and the Canvas due date are
+  the same moment whatever timezone the server runs in.
 
 #### Optional Moodle connection
 

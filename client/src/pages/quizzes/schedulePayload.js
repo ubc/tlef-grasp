@@ -6,6 +6,17 @@
 // to several sections at once, which is the same replace with more rows in it,
 // so both paths go through here and are covered by tests.
 
+/**
+ * A datetime-local input gives a wall-clock string with no zone
+ * ("2026-09-30T23:59"). Send the instant it means in the browser's zone, so
+ * the server stores the same moment whatever timezone it runs in, and the
+ * Canvas due date (issue #125) is the moment the instructor saw.
+ */
+export function localToIso(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 // Rows carry Dates from the API; the payload only needs the stored values back.
 const asRow = (schedule) => ({
   courseSectionId: schedule.courseSectionId,

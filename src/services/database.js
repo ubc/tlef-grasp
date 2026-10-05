@@ -211,6 +211,11 @@ class DatabaseService {
       // --- Per-Section Quiz Scheduling ---
       await this.db.collection("grasp_quiz_section_schedule").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });
       await this.db.collection("grasp_quiz_section_schedule").createIndex({ courseSectionId: 1 });
+      // One LMS assignment per quiz per section (issue #125). The unique index
+      // is what makes claiming a row before creating in Canvas safe: two
+      // simultaneous requests cannot both create an assignment.
+      await this.db.collection("grasp_quiz_lms_assignment").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });
+      await this.db.collection("grasp_quiz_lms_assignment").createIndex({ courseSectionId: 1 });
 
       // --- Course Section Tracking ---
       await this.db.collection("grasp_course_section").createIndex({ courseId: 1, sectionId: 1 }, { unique: true });

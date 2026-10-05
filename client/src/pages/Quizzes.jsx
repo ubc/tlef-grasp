@@ -12,6 +12,9 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { downloadQuizExport } from "../lib/exports";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import { useQuizCanvasAssignments } from "../hooks/useCanvasAssignments";
+import { canvasAssignmentsEnabled } from "../lib/canvasAssignments";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import QuizCard from "./quizzes/QuizCard";
 import CreateQuizWizard from "./quizzes/CreateQuizWizard";
@@ -48,6 +51,16 @@ export default function Quizzes() {
   // so the schedule picker only offers their own sections.
   const { sections } = useMyCourseSections(courseId);
   const targetQuizId = searchParams.get("quiz");
+
+  // Canvas assignments for scheduled quizzes (issue #125). Deleting a quiz
+  // never deletes them, so the confirmation says they will stay behind.
+  const canvas = useCanvasStatus();
+  const deleteTargetAssignments = useQuizCanvasAssignments(courseId, deleteTarget, {
+    enabled: canvasAssignmentsEnabled(canvas) && !!deleteTarget,
+  });
+  const deleteTargetCanvasCount = deleteTargetAssignments.sections.filter(
+    (section) => section.assignment?.status === "created"
+  ).length;
 
   // Filter against the live list so deleted or other-course quizzes never count.
   const selectedQuizzes = quizzes.filter((q) => selectedIds.has(q.id));
@@ -162,6 +175,7 @@ export default function Quizzes() {
                   quiz={quiz}
                   courseId={courseId}
                   sections={sections}
+                  canvas={canvas}
                   selected={selectedIds.has(quiz.id)}
                   onToggleSelect={canShift ? toggleSelect : undefined}
                   onUpdate={(quizId, updates, successMessage) =>
@@ -208,7 +222,15 @@ export default function Quizzes() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteMutation.mutate(deleteTarget)}
         title="Delete Quiz"
-        message="Are you sure you want to delete this quiz? This action cannot be undone."
+        message={
+          deleteTargetCanvasCount > 0
+            ? `Are you sure you want to delete this quiz? This action cannot be undone. ${
+                deleteTargetCanvasCount === 1
+                  ? "The Canvas assignment created for it will stay in Canvas; delete it there if you no longer want it."
+                  : `The ${deleteTargetCanvasCount} Canvas assignments created for it will stay in Canvas; delete them there if you no longer want them.`
+              }`
+            : "Are you sure you want to delete this quiz? This action cannot be undone."
+        }
         danger
       />
     </div>
