@@ -510,7 +510,11 @@ export default function ObjectivesStep({
     }
 
     const group = objectiveGroupsRef.current.find((g) => g.id === target.groupId);
-    if (!group?.objectiveId) return;
+    if (!group?.objectiveId) {
+      setDbDeleteTarget(null);
+      showToast("This objective is no longer on the page", "error");
+      return;
+    }
     // A granular objective is deleted by saving its objective without it: the
     // server treats any granular missing from the payload as deleted. It is
     // dropped outright rather than detached, so it cannot ride along in the
@@ -518,7 +522,9 @@ export default function ObjectivesStep({
     deleteGranularMutation.mutate(
       {
         objectiveId: group.objectiveId,
-        granularObjectives: granularObjectivesPayload(dropItem(group)),
+        // Saved granulars only: an unsaved row sent here would be created
+        // without its id coming back, and the next autosave would duplicate it.
+        granularObjectives: granularObjectivesPayload(dropItem(group)).filter((g) => g.id),
         questionAction,
       },
       settle(() => updateGroup(target.groupId, dropItem), "Granular objective")

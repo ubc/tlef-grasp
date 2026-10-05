@@ -347,6 +347,12 @@ const updateQuestionHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
+    // As in deleteQuestionHandler: a missing question is a 404, not an access
+    // failure. The wizard re-saves a question as new when its update 404s.
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }

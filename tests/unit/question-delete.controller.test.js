@@ -23,7 +23,7 @@ jest.mock('../../src/utils/auth', () => ({
 
 const questionService = require('../../src/services/question');
 const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
-const { deleteQuestionHandler } = require('../../src/controllers/question');
+const { deleteQuestionHandler, updateQuestionHandler } = require('../../src/controllers/question');
 
 const makeRes = () => {
   const res = {};
@@ -61,5 +61,28 @@ describe('DELETE /api/question/:questionId', () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(questionService.deleteQuestion).not.toHaveBeenCalled();
+  });
+});
+
+describe('PUT /api/question/:questionId', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Add to Question Bank updates saved questions and re-saves any whose bank
+  // copy was deleted, which it recognises by this 404.
+  it('returns 404 for a question that no longer exists, before the access check', async () => {
+    questionService.getQuestionCourseId.mockResolvedValue(undefined);
+    hasStaffAccessInCourse.mockResolvedValue(false);
+    const res = makeRes();
+
+    await updateQuestionHandler(
+      { params: { questionId: 'gone' }, user: { id: 'prof' }, body: { stem: 'x' } },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(hasStaffAccessInCourse).not.toHaveBeenCalled();
+    expect(questionService.updateQuestion).not.toHaveBeenCalled();
   });
 });
