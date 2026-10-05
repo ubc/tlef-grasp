@@ -553,6 +553,7 @@ export default function ObjectivesTab({ courseId, isFaculty, materialFilter, onM
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
         isSubmitting={deleteMutation.isPending || granularMutation.isPending}
+        canDeleteQuestions={isFaculty}
       />
     </div>
   );

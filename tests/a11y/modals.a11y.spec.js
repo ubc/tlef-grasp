@@ -5,6 +5,7 @@ const { FACULTY_AUTH_FILE, BIO_PROF2_AUTH_FILE } = require('../e2e/auth');
 const {
   IDP_ENABLED,
   prepareAuthenticatedCourse,
+  prepareSeededInstructorCourse,
 } = require('./authenticated-helper');
 const { SEED, seedCanvasSyncCourse } = require('../e2e/seed');
 const { selectCourseByName } = require('../e2e/helpers');
@@ -155,59 +156,45 @@ test.describe('Accessibility: Canvas roster sync confirmation', () => {
 
 // MANUAL: verify a screen reader announces the two deletes as one group with
 // the safe option already chosen, and that the difference between them is
-// understandable read aloud. Axe cannot judge wording.
+// understandable when read aloud. Axe cannot judge wording.
+//
+// Runs on the seeded BIOC 302 course: the wizard only offers existing
+// objectives once the course has materials, and that course has both a
+// material and a stored objective (so the dialog's database option is shown).
+// Nothing here writes: the dialog is opened and dismissed with Escape.
 test.describe('Accessibility: delete scope choice in question generation', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
-  test.use({ storageState: FACULTY_AUTH_FILE });
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
   test('delete-scope dialog has no blocking axe violations and handles focus', async ({
     page,
   }) => {
-    test.setTimeout(60_000);
-    const course = await prepareAuthenticatedCourse(page);
-    // The a11y seed course carries no objectives, and the dialog only offers
-    // its second option for a record that exists, so create one to delete.
-    const name = `A11y delete scope ${Date.now()}`;
-    const created = await page.request.post('/api/objective', {
-      data: { name, courseId: course.id, granularObjectives: [{ text: name }] },
-    });
-    expect(created.ok(), 'objective for the dialog is created').toBe(true);
-    const objectiveId = String((await created.json()).objective._id);
+    await prepareSeededInstructorCourse(page);
+    await page.goto('/question-generation');
+    // Fail fast if the page is not on step 1 with materials loaded, rather
+    // than waiting out the test timeout on a button that never renders.
+    await expect(page.getByRole('heading', { name: 'Create Objectives' })).toBeVisible();
 
-    try {
-      await page.goto('/question-generation');
-      await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
-      await page.getByRole('checkbox', { name, exact: true }).check();
-      await page.getByRole('button', { name: 'Add 1 objective' }).click();
+    await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+    await page.getByRole('checkbox', { name: SEED.OBJECTIVE_NAME, exact: true }).check();
+    await page.getByRole('button', { name: 'Add 1 objective' }).click();
 
-      const trigger = page.getByRole('button', { name: `Delete ${name}` });
-      await trigger.focus();
-      await page.keyboard.press('Enter');
+    const trigger = page.getByRole('button', { name: `Delete ${SEED.OBJECTIVE_NAME}` });
+    await expect(trigger).toBeVisible();
+    await trigger.focus();
+    await page.keyboard.press('Enter');
 
-      const dialog = page.getByRole('dialog', { name: 'Delete Learning Objective?' });
-      // Focus moves into the dialog on open, and the safe option is chosen.
-      await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
-      await expect(
-        dialog.getByRole('radio', { name: /Remove from this page/ })
-      ).toBeChecked();
+    const dialog = page.getByRole('dialog', { name: 'Delete Learning Objective?' });
+    await expect(dialog).toBeVisible();
+    // Focus moves into the dialog on open. That the safe option starts
+    // selected is covered in instructor-question-bank.spec.js.
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
 
-      await expectNoA11yViolations(page, { include: '[role="dialog"]' });
+    await expectNoA11yViolations(page, { include: '[role="dialog"]' });
 
-      // Escape closes without deleting, and focus returns to the trash.
-      await page.keyboard.press('Escape');
-      await expect(dialog).toBeHidden();
-      await expect(trigger).toBeFocused();
-    } finally {
-      // Bounded so a slow cleanup fails here with its status instead of
-      // silently using up the rest of the test timeout.
-      const response = await page.request.delete(
-        `/api/objective/${objectiveId}?questionAction=delete`,
-        { timeout: 5_000 }
-      );
-      expect(
-        response.ok() || response.status() === 404,
-        `objective cleanup failed with HTTP ${response.status()}`
-      ).toBe(true);
-    }
+    // Escape closes without deleting, and focus returns to the card's trash.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
   });
 });

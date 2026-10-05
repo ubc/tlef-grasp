@@ -16,12 +16,14 @@ import { useObjectiveDeletionImpact } from "../hooks/useObjectives";
 // All this reads from `target` is a kind and the id to check:
 // { kind: 'objective', objectiveId } or { kind: 'granular', granularId }.
 // Callers may carry more on it; nothing here depends on that.
+
 export default function DeleteObjectiveModal({
   open,
   target,
   onClose,
   onConfirm,
   isSubmitting,
+  canDeleteQuestions = true,
 }) {
   const impactId =
     target?.kind === "objective" ? target.objectiveId : target?.granularId;
@@ -41,6 +43,7 @@ export default function DeleteObjectiveModal({
   const inQuizCount = impact.inQuizCount || 0;
   const quizNames = impact.quizNames || [];
   const hasLinkedQuestions = questionCount > 0;
+  const offerQuestionDelete = hasLinkedQuestions && canDeleteQuestions;
   const loading = isPending && !data;
 
   const title = isObjective
@@ -67,12 +70,12 @@ export default function DeleteObjectiveModal({
           <button
             type="button"
             disabled={loading || isSubmitting}
-            onClick={() => onConfirm(hasLinkedQuestions ? questionAction : "keep")}
+            onClick={() => onConfirm(offerQuestionDelete ? questionAction : "keep")}
             className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/85 disabled:opacity-60"
           >
             {isSubmitting
               ? "Deleting..."
-              : hasLinkedQuestions && questionAction === "delete"
+              : offerQuestionDelete && questionAction === "delete"
                 ? "Delete objective & questions"
                 : "Delete"}
           </button>
@@ -109,8 +112,13 @@ export default function DeleteObjectiveModal({
                 </strong>
               </>
             )}
-            . Choose what should happen to{" "}
-            {questionCount === 1 ? "it" : "them"}:
+            .
+            {canDeleteQuestions && (
+              <>
+                {" "}
+                Choose what should happen to {questionCount === 1 ? "it" : "them"}:
+              </>
+            )}
           </p>
 
           {quizNames.length > 0 && (
@@ -121,61 +129,72 @@ export default function DeleteObjectiveModal({
             </div>
           )}
 
-          <label
-            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
-              questionAction === "keep"
-                ? "border-primary bg-primary/5"
-                : "border-gray-200 hover:border-primary/40"
-            }`}
-          >
-            <input
-              type="radio"
-              name="questionAction"
-              value="keep"
-              checked={questionAction === "keep"}
-              onChange={() => setQuestionAction("keep")}
-              disabled={isSubmitting}
-              className="mt-1 h-4 w-4 accent-primary"
-            />
-            <span className="text-sm">
-              <span className="block font-semibold text-ink">
-                Keep the questions
-              </span>
-              <span className="block text-muted">
-                Questions are moved to <strong>Draft</strong> and removed from any
-                quizzes. They can't be approved until you attach a new learning
-                objective to them in the Questions tab.
-              </span>
-            </span>
-          </label>
+          {!canDeleteQuestions ? (
+            <p className="text-sm text-muted">
+              {questionCount === 1 ? "It" : "They"} will be kept: moved to{" "}
+              <strong>Draft</strong> and removed from any quizzes, and can't be
+              approved until a new learning objective is attached. Only faculty
+              members can delete questions.
+            </p>
+          ) : (
+            <>
+              <label
+                className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                  questionAction === "keep"
+                    ? "border-primary bg-primary/5"
+                    : "border-gray-200 hover:border-primary/40"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="questionAction"
+                  value="keep"
+                  checked={questionAction === "keep"}
+                  onChange={() => setQuestionAction("keep")}
+                  disabled={isSubmitting}
+                  className="mt-1 h-4 w-4 accent-primary"
+                />
+                <span className="text-sm">
+                  <span className="block font-semibold text-ink">
+                    Keep the questions
+                  </span>
+                  <span className="block text-muted">
+                    Questions are moved to <strong>Draft</strong> and removed from any
+                    quizzes. They can't be approved until you attach a new learning
+                    objective to them in the Questions tab.
+                  </span>
+                </span>
+              </label>
 
-          <label
-            className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
-              questionAction === "delete"
-                ? "border-danger bg-danger/5"
-                : "border-gray-200 hover:border-danger/40"
-            }`}
-          >
-            <input
-              type="radio"
-              name="questionAction"
-              value="delete"
-              checked={questionAction === "delete"}
-              onChange={() => setQuestionAction("delete")}
-              disabled={isSubmitting}
-              className="mt-1 h-4 w-4 accent-danger"
-            />
-            <span className="text-sm">
-              <span className="block font-semibold text-ink">
-                Delete the questions
-              </span>
-              <span className="block text-muted">
-                Permanently delete{" "}
-                {questionCount === 1 ? "this question" : "these questions"} along
-                with the objective. This cannot be undone.
-              </span>
-            </span>
-          </label>
+              <label
+                className={`flex cursor-pointer gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                  questionAction === "delete"
+                    ? "border-danger bg-danger/5"
+                    : "border-gray-200 hover:border-danger/40"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="questionAction"
+                  value="delete"
+                  checked={questionAction === "delete"}
+                  onChange={() => setQuestionAction("delete")}
+                  disabled={isSubmitting}
+                  className="mt-1 h-4 w-4 accent-danger"
+                />
+                <span className="text-sm">
+                  <span className="block font-semibold text-ink">
+                    Delete the questions
+                  </span>
+                  <span className="block text-muted">
+                    Permanently delete{" "}
+                    {questionCount === 1 ? "this question" : "these questions"} along
+                    with the objective. This cannot be undone.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
         </div>
       )}
     </Modal>

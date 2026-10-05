@@ -446,6 +446,13 @@ const deleteQuestionHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
+    // A question that no longer exists has no course to check access against,
+    // so say so instead of reporting it as an access failure. Clients treat
+    // 404 as "already deleted" (e.g. removed from the Question Bank tab first).
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }

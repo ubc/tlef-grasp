@@ -969,6 +969,7 @@ export default function ObjectivesStep({
         isSubmitting={
           deleteObjectiveMutation.isPending || deleteGranularMutation.isPending
         }
+        canDeleteQuestions={isFaculty}
       />
 
       {/* Granularization modal */}

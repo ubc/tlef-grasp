@@ -211,6 +211,42 @@ test.describe.serial('TA permissions (seeded course)', () => {
     }
   });
 
+  // Hiding the option is not enough: deleting an objective's questions is a
+  // Question Bank delete, and the API has to refuse it from a TA too. 
+  test('the API refuses a TA request to delete an objective\'s questions', async ({
+    page,
+    browser,
+  }) => {
+    await selectSeededCourse(page, { role: 'instructor' });
+    const name = `TA delete guard ${Date.now()}`;
+    const created = await page.request.post('/api/objective', {
+      data: { name, courseId, granularObjectives: [{ text: name }] },
+    });
+    expect(created.ok(), 'instructor creates a throwaway objective').toBe(true);
+    const objectiveId = String((await created.json()).objective._id);
+
+    const context = await browser.newContext({ baseURL: BASE_URL });
+    const taPage = await context.newPage();
+    try {
+      await login(taPage, TA_USERNAME, TA_PASSWORD);
+
+      const del = await taPage.request.delete(
+        `/api/objective/${objectiveId}?questionAction=delete`
+      );
+      expect(del.status(), 'DELETE with questionAction=delete').toBe(403);
+      expect((await del.json()).error).toMatch(/only faculty/i);
+
+      const put = await taPage.request.put(`/api/objective/${objectiveId}`, {
+        data: { granularObjectives: [], questionAction: 'delete' },
+      });
+      expect(put.status(), 'PUT with questionAction=delete').toBe(403);
+      expect((await put.json()).error).toMatch(/only faculty/i);
+    } finally {
+      await context.close();
+      await page.request.delete(`/api/objective/${objectiveId}?questionAction=delete`);
+    }
+  });
+
   test('instructor demotes the TA back to student', async ({ page }) => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/users');
