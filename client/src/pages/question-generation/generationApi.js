@@ -1,6 +1,7 @@
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { runPool } from "../../lib/async-pool";
+import { normalizeMcOptionCount, optionKeysOf, optionRowsOf } from "../../lib/mcOptions";
 
 // Question generation + review pipeline (port of generation-questions.js and
 // the step-2 helpers in question-generation.js).
@@ -39,6 +40,8 @@ const RATE_LIMIT_CIRCUIT_BREAK = 5;
 // completion order.
 export async function generateQuestions(course, objectiveGroups, onProgress, options = {}) {
   const concurrency = resolveConcurrency(options.concurrency, import.meta.env?.VITE_GENERATION_CONCURRENCY);
+  // Options per multiple-choice question for this run (issue #144).
+  const mcOptionCount = normalizeMcOptionCount(options.mcOptionCount);
 
   // One task per granular objective, flattened so the pool sees a single list
   // while results stay addressable by their original position.
@@ -83,6 +86,7 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
         // generation step. When present, the server generates exactly this
         // breakdown instead of resolving type via course-wide preferences.
         ...(granular.questionTypes?.length ? { questionTypes: granular.questionTypes } : {}),
+        mcOptionCount,
       });
     } catch (error) {
       if (error?.status === 429) {
@@ -304,10 +308,13 @@ function firstWords(text, splitter, fallback) {
   return words.slice(0, 10).join(" ") || fallback;
 }
 
+// Card options for whatever letters the generated question has (two to
+// eight). A question with none at all gets four placeholders.
 function normalizeOptions(opts) {
   if (!opts || typeof opts !== "object") return {};
+  const keys = optionKeysOf(opts);
   const out = {};
-  ["A", "B", "C", "D"].forEach((key) => {
+  (keys.length ? keys : ["A", "B", "C", "D"]).forEach((key) => {
     const opt = opts[key];
     if (typeof opt === "string") {
       out[key] = { id: key, text: opt, feedback: "" };
@@ -584,11 +591,7 @@ export function cardToWizardForm(card) {
 
   if (qt === QUESTION_TYPES.MULTIPLE_CHOICE) {
     const opts = card.options || {};
-    form.options = ["A", "B", "C", "D"].map((id) => ({
-      id,
-      text: opts[id]?.text || "",
-      feedback: opts[id]?.feedback || "",
-    }));
+    form.options = optionRowsOf(opts);
     form.correctAnswer =
       card.correctAnswer && opts[card.correctAnswer] ? card.correctAnswer : "A";
   } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
@@ -627,6 +630,7 @@ export async function generateWizardQuestion({
   granularObjectiveText,
   bloom,
   questionType,
+  mcOptionCount,
 }) {
   const objectiveGroups = [
     {
@@ -645,7 +649,9 @@ export async function generateWizardQuestion({
     },
   ];
 
-  const { questions } = await generateQuestions(course, objectiveGroups);
+  const { questions } = await generateQuestions(course, objectiveGroups, undefined, {
+    mcOptionCount,
+  });
   const groups = convertQuestionsToGroups(questions);
 
   const card = groups[0]?.los?.[0]?.questions?.[0];

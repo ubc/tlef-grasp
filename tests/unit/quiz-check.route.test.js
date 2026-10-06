@@ -109,6 +109,22 @@ const mcqQuestion = {
   bloom: 'Remember',
 };
 
+const fiveOptionQuestion = {
+  _id: 'question-5',
+  questionType: 'multiple-choice',
+  question: 'Which of these is a noble gas?',
+  options: {
+    A: { text: 'Oxygen', feedback: 'Oxygen is reactive.' },
+    B: { text: 'Nitrogen', feedback: 'Nitrogen forms N2 but is not noble.' },
+    C: { text: 'Hydrogen', feedback: 'Hydrogen is reactive.' },
+    D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+    E: { text: 'Argon', feedback: 'Correct — group 18.' },
+  },
+  correctAnswer: 'E',
+  learningObjectiveId: 'lo-1',
+  bloom: 'Remember',
+};
+
 describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   let consoleErrorSpy;
 
@@ -362,6 +378,38 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   });
 
   describe('multiple-choice questions', () => {
+    // Issue #144: a question may have more than four options, and the index
+    // must name one the question actually has.
+    it('grades a fifth option', async () => {
+      getQuestion.mockResolvedValue(fiveOptionQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 4 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        isCorrect: true,
+        correctAnswer: 'E',
+        correctOptionText: 'Argon',
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({ selectedAnswer: 'E', correctAnswer: 'E' })
+      );
+    });
+
+    it('rejects an index past the options the question has', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 4 });
+
+      expect(res.status).toBe(400);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
     it('withholds the correct answer on a wrong selection but still records it', async () => {
       getQuestion.mockResolvedValue(mcqQuestion);
 

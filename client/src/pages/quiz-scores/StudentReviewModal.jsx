@@ -5,6 +5,7 @@ import { escapeHtml } from "../../lib/format";
 import Modal from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { scoreClasses } from "./ScoreBadge";
+import { optionKeysOf, optionTextOf } from "../../lib/mcOptions";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
@@ -232,12 +233,8 @@ function TextAttempt({ attempt, canOverride, grading, onGrade }) {
 function McqAttempt({ attempt }) {
   return (
     <div className="space-y-2">
-      {["A", "B", "C", "D"].map((key) => {
-        const optionRaw = attempt.options?.[key];
-        const optionText =
-          typeof optionRaw === "object" && optionRaw !== null
-            ? optionRaw.text || ""
-            : optionRaw || "";
+      {optionKeysOf(attempt.options).map((key) => {
+        const optionText = optionTextOf(attempt.options[key]);
         if (!optionText) return null;
 
         let stateClass = "border-gray-200";

@@ -1,4 +1,5 @@
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey } = require('./mc-options');
 
 // Shared helpers for the quiz export paths (Canvas QTI, H5P, CSV). Questions
 // are stored inconsistently across types: multiple-choice keeps its prompt in
@@ -20,32 +21,36 @@ function getQuestionText(q) {
   return String(q.stem || q.question || q.text || q.title || '').trim();
 }
 
-// Options are stored as an object keyed A-D; values are strings or { text, feedback }.
+// The letters a multiple-choice question exports, in order: whatever it has
+// (two to eight), or A to D for a legacy row with no options at all.
+function getOptionKeys(q) {
+  const keys = optionKeysOf(q.options);
+  return keys.length > 0 ? keys : MC_OPTION_KEYS.slice(0, 4);
+}
+
+// Options are stored as an object keyed by letter; values are strings or { text, feedback }.
 function getOptionText(q, key) {
-  if (!q.options || typeof q.options !== 'object') return '';
-  const opt = q.options[key];
+  const opt = optionAt(q.options, key);
   if (typeof opt === 'string') return opt;
   return (opt && (opt.text || '')) || '';
 }
 
 // Per-option feedback for multiple-choice (empty for string-form options).
 function getOptionFeedback(q, key) {
-  if (!q.options || typeof q.options !== 'object') return '';
-  const opt = q.options[key];
+  const opt = optionAt(q.options, key);
   if (!opt || typeof opt !== 'object') return '';
   return String(opt.feedback || '');
 }
 
-// correctAnswer may be a letter (A-D) or a numeric index (0-3).
+// The correct option's position among getOptionKeys(q). correctAnswer may be
+// a letter or a numeric index; anything that names no option becomes 0.
 function getCorrectAnswerIndex(q) {
+  const keys = getOptionKeys(q);
   if (typeof q.correctAnswer === 'number') {
-    return q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0;
+    return q.correctAnswer >= 0 && q.correctAnswer < keys.length ? q.correctAnswer : 0;
   }
-  if (typeof q.correctAnswer === 'string') {
-    const idx = ['A', 'B', 'C', 'D'].indexOf(q.correctAnswer.toUpperCase());
-    return idx === -1 ? 0 : idx;
-  }
-  return 0;
+  const idx = keys.indexOf(correctAnswerKey(q.correctAnswer, ''));
+  return idx === -1 ? 0 : idx;
 }
 
 // Instructor-attached stem images as an array (handles the legacy
@@ -70,6 +75,7 @@ function getAcceptableAnswers(q) {
 module.exports = {
   normalizeQuestionType,
   getQuestionText,
+  getOptionKeys,
   getOptionText,
   getOptionFeedback,
   getCorrectAnswerIndex,

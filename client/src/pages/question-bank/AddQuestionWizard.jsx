@@ -9,6 +9,12 @@ import Modal from "../../components/ui/Modal";
 import QuestionDetailsFields from "./QuestionDetailsFields";
 import ImportQuestionsModal from "./ImportQuestionsModal";
 import { useToast } from "../../components/ui/Toast";
+import {
+  MC_DEFAULT_OPTION_COUNT,
+  MC_OPTION_COUNT_CHOICES,
+  emptyOptionRows,
+  optionRowsToObject,
+} from "../../lib/mcOptions";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
@@ -25,18 +31,13 @@ const STEP_TITLES = {
 };
 
 const QUESTION_TYPE_CARDS = [
-  { type: QUESTION_TYPES.MULTIPLE_CHOICE, icon: "fa-list-ul", name: "Multiple Choice", desc: "4 options, one correct answer" },
+  { type: QUESTION_TYPES.MULTIPLE_CHOICE, icon: "fa-list-ul", name: "Multiple Choice", desc: "2 to 8 options, one correct answer" },
   { type: QUESTION_TYPES.FILL_IN_THE_BLANK, icon: "fa-pencil-alt", name: "Fill-in-the-Blank", desc: "Sentence with a blank to complete" },
   { type: QUESTION_TYPES.CALCULATION, icon: "fa-calculator", name: "Calculation", desc: "Formula with randomised variables" },
   { type: QUESTION_TYPES.OPEN_ENDED, icon: "fa-paragraph", name: "Open-Ended", desc: "Free-text with sample answer & rubric" },
 ];
 
-const DEFAULT_OPTIONS = [
-  { id: "A", text: "", feedback: "" },
-  { id: "B", text: "", feedback: "" },
-  { id: "C", text: "", feedback: "" },
-  { id: "D", text: "", feedback: "" },
-];
+const DEFAULT_OPTIONS = emptyOptionRows();
 
 const DEFAULT_VAR = { name: "", min: "1", max: "10", type: "integer" };
 
@@ -76,6 +77,8 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
 
   // Source of question details: manual authoring or AI generation.
   const [source, setSource] = useState("manual");
+  // How many options the AI drafts for a multiple-choice question (#144).
+  const [aiOptionCount, setAiOptionCount] = useState(MC_DEFAULT_OPTION_COUNT);
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState(null);
   const [aiGenerated, setAiGenerated] = useState(false);
@@ -152,7 +155,11 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
       }
       if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
         if (form.options.some((o) => !o.text.trim())) {
-          showToast("All 4 option texts are required", "error");
+          showToast("All option texts are required", "error");
+          return false;
+        }
+        if (!form.options.some((o) => o.id === form.correctAnswer)) {
+          showToast("Select which option is the correct answer", "error");
           return false;
         }
         const texts = form.options.map((o) => o.text.trim().toLowerCase());
@@ -259,6 +266,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           selectedGranular.name || selectedGranular.text || "",
         bloom,
         questionType,
+        mcOptionCount: aiOptionCount,
       });
       setForm(result.form);
       setReviewFlag(result.reviewFlag);
@@ -290,11 +298,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     };
 
     if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
-      const optionsObj = {};
-      form.options.forEach((o) => {
-        optionsObj[o.id] = { text: o.text.trim(), feedback: o.feedback.trim() };
-      });
-      payload.options = optionsObj;
+      payload.options = optionRowsToObject(form.options);
       payload.correctAnswer = form.correctAnswer;
     } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = form.fibAcceptable
@@ -645,6 +649,29 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
                 the question yourself.
               </span>
             </p>
+          )}
+          {source === "ai" && questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
+            <div>
+              <label htmlFor="wiz-ai-option-count" className={labelClass}>
+                Answer options
+              </label>
+              <select
+                id="wiz-ai-option-count"
+                value={aiOptionCount}
+                onChange={(event) => setAiOptionCount(Number(event.target.value))}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              >
+                {MC_OPTION_COUNT_CHOICES.map((n) => (
+                  <option key={n} value={n}>
+                    {n} options
+                  </option>
+                ))}
+              </select>
+              <p className={hintClass}>
+                How many answer options the AI drafts. You can add or remove options
+                afterwards.
+              </p>
+            </div>
           )}
         </div>
       )}

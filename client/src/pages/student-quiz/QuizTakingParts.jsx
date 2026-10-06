@@ -3,6 +3,7 @@ import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
 import { canRetry, isSolved, latestResult } from "./answerState";
+import { optionIndexOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
 
 export function Timer({ expiresAt, onExpire }) {
   const [, forceTick] = useState(0);
@@ -121,12 +122,11 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
 
   return (
     <div className="space-y-3">
-      {["A", "B", "C", "D"].map((key, index) => {
-        const optionRaw = question.options?.[key];
-        const optionText =
-          typeof optionRaw === "object" && optionRaw !== null
-            ? optionRaw.text || ""
-            : optionRaw || "";
+      {optionKeysOf(question.options).map((key) => {
+        // The server maps selectedIndex back to a letter by position in A
+        // to H, so the index sent is the letter's, not the row's.
+        const index = optionIndexOf(key);
+        const optionText = optionTextOf(question.options[key]);
         if (!optionText) return null;
 
         const triedWrong = wrongKeys.includes(key);

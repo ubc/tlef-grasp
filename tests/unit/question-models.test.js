@@ -34,7 +34,24 @@ describe('question model normalization', () => {
       'explanation',
     ]);
     expect(MultipleChoiceQuestion.getPromptInstruction()).toContain(
-      'Generate 4 answer options'
+      'Generate 4 answer options (A-D)'
+    );
+    // The option count is a generation setting (issue #144): the schema and
+    // the instruction follow it, and an out-of-range request gets the default.
+    const five = MultipleChoiceQuestion.getJsonSchema({ mcOptionCount: 5 });
+    expect(five.properties.options.required).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(five.properties.correctAnswer.enum).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(MultipleChoiceQuestion.getJsonSchema().properties.options.required).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+    ]);
+    expect(MultipleChoiceQuestion.getJsonSchema({ mcOptionCount: 9 })).toBe(
+      MultipleChoiceQuestion.getJsonSchema()
+    );
+    expect(MultipleChoiceQuestion.getPromptInstruction({ mcOptionCount: 5 })).toContain(
+      'Generate 5 answer options (A-E)'
     );
     expect(
       MultipleChoiceQuestion.getRetrySuffix(2, new Error('duplicate options'))
@@ -127,6 +144,59 @@ describe('question model normalization', () => {
         explanation: '',
       })
     ).toThrow('Two or more answer options have identical or near-identical text.');
+  });
+
+  it('accepts two to eight multiple-choice options and rejects malformed sets', () => {
+    const option = (text, feedback) => ({ text, feedback });
+    const five = MultipleChoiceQuestion.validateAndNormalize({
+      question: 'Five?',
+      options: {
+        A: option('One', 'Not one.'),
+        B: option('Two', 'Not two.'),
+        C: option('Three', 'Not three.'),
+        D: option('Four', 'Not four.'),
+        E: option('Five', ''),
+      },
+      correctAnswer: 'e',
+      explanation: 'Five.',
+    });
+    expect(Object.keys(five.options)).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(five.correctAnswer).toBe('E');
+
+    const two = MultipleChoiceQuestion.validateAndNormalize({
+      question: 'True or false?',
+      options: { A: option('True', ''), B: option('False', 'It is true.') },
+      correctAnswer: 'A',
+      explanation: '',
+    });
+    expect(Object.keys(two.options)).toEqual(['A', 'B']);
+
+    expect(() =>
+      MultipleChoiceQuestion.validateAndNormalize({
+        question: 'One?',
+        options: { A: option('Only', '') },
+        correctAnswer: 'A',
+        explanation: '',
+      })
+    ).toThrow('at least 2 answer options');
+
+    expect(() =>
+      MultipleChoiceQuestion.validateAndNormalize({
+        question: 'Gap?',
+        options: { A: option('One', ''), B: option('Two', 'x'), D: option('Four', 'x') },
+        correctAnswer: 'A',
+        explanation: '',
+      })
+    ).toThrow('lettered consecutively from A');
+
+    expect(() =>
+      MultipleChoiceQuestion.validateAndNormalize({
+        question: 'Outside?',
+        options: { A: option('One', 'x'), B: option('Two', 'x') },
+        correctAnswer: 'C',
+        explanation: '',
+      })
+    ).toThrow('correctAnswer must be one of A, B');
   });
 
   it('normalizes fill-in-the-blank fallback fields', () => {

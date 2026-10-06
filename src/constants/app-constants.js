@@ -334,6 +334,16 @@ const QUESTION_TYPES = {
   OPEN_ENDED: "open-ended",
 };
 
+// Multiple-choice options are stored as an object keyed by letter. A question
+// carries between MC_MIN_OPTIONS and MC_MAX_OPTIONS of them, lettered
+// consecutively from A; AI generation produces MC_DEFAULT_OPTION_COUNT unless
+// the request asks for another count (issue #144). Mirrored in
+// client/src/lib/constants.js.
+const MC_OPTION_KEYS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const MC_MIN_OPTIONS = 2;
+const MC_MAX_OPTIONS = MC_OPTION_KEYS.length;
+const MC_DEFAULT_OPTION_COUNT = 4;
+
 const DEFAULT_PROMPTS = {
   questionGeneration: QUESTION_GENERATION_PROMPT,
   objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
@@ -403,6 +413,10 @@ module.exports = {
   MAX_OUTLINE_CHARS,
   BLOOM_LEVELS,
   QUESTION_TYPES,
+  MC_OPTION_KEYS,
+  MC_MIN_OPTIONS,
+  MC_MAX_OPTIONS,
+  MC_DEFAULT_OPTION_COUNT,
   DEFAULT_PROMPTS,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   MAX_MATERIALS_PER_OBJECTIVE,

@@ -1,6 +1,7 @@
 import { QUESTION_TYPES } from "../../lib/constants";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
+import McOptionEditor from "../../components/McOptionEditor";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
@@ -78,60 +79,16 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                   — select the radio button next to the correct answer
                 </span>
               </label>
-              <div className="space-y-3">
-                {form.options.map((option, index) => (
-                  <div key={option.id} className="flex items-start gap-3">
-                    <label className="flex items-center gap-2 pt-2">
-                      <input
-                        type="radio"
-                        name="wiz-correct-answer"
-                        aria-label={`Mark option ${option.id} as the correct answer`}
-                        checked={form.correctAnswer === option.id}
-                        onChange={() =>
-                          setForm((prev) => ({ ...prev, correctAnswer: option.id }))
-                        }
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-page text-sm font-bold text-ink">
-                        {option.id}
-                      </span>
-                    </label>
-                    <div className="flex-1 space-y-1.5">
-                      <input
-                        type="text"
-                        aria-label={`Option ${option.id} text`}
-                        value={option.text}
-                        placeholder="Enter option text..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = { ...options[index], text: event.target.value };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={inputClass}
-                      />
-                      <input
-                        type="text"
-                        aria-label={`Option ${option.id} feedback`}
-                        value={option.feedback}
-                        placeholder="Feedback shown after submission (optional)..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = {
-                              ...options[index],
-                              feedback: event.target.value,
-                            };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={`${inputClass} bg-gray-50 italic`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <McOptionEditor
+                options={form.options}
+                correctAnswer={form.correctAnswer}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswer }))
+                }
+                radioName="wiz-correct-answer"
+                inputClass={inputClass}
+                feedbackPlaceholder="Feedback shown after submission (optional)..."
+              />
             </div>
           )}
 

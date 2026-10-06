@@ -7,6 +7,7 @@ const answerGradingService = require("../services/answer-grading");
 const questionFlagService = require("../services/quiz-question-flag");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey } = require("../utils/mc-options");
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -851,29 +852,17 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      let optionsObj = {};
-      if (q.options && typeof q.options === 'object') {
-        if (!Array.isArray(q.options)) {
-          optionsObj = {
-            A: { ...(q.options.A || { text: "" }), index: 0 },
-            B: { ...(q.options.B || { text: "" }), index: 1 },
-            C: { ...(q.options.C || { text: "" }), index: 2 },
-            D: { ...(q.options.D || { text: "" }), index: 3 }
-          };
-        } else {
-          optionsObj = {
-            A: { ...(q.options[0] || { text: "" }), index: 0 },
-            B: { ...(q.options[1] || { text: "" }), index: 1 },
-            C: { ...(q.options[2] || { text: "" }), index: 2 },
-            D: { ...(q.options[3] || { text: "" }), index: 3 }
-          };
-        }
-      }
+      // Every option the question has, two to eight, each carrying its
+      // position so the client can send it back as selectedIndex.
+      const optionsObj = {};
+      optionKeysOf(q.options).forEach((key) => {
+        const raw = optionAt(q.options, key);
+        const option = raw && typeof raw === "object" ? { ...raw } : { text: raw ?? "" };
+        optionsObj[key] = { ...option, index: MC_OPTION_KEYS.indexOf(key) };
+      });
       if (withholdAnswers) {
-        ['A', 'B', 'C', 'D'].forEach(key => {
-          if (optionsObj[key] && typeof optionsObj[key] === 'object') {
-            delete optionsObj[key].feedback;
-          }
+        Object.values(optionsObj).forEach((option) => {
+          delete option.feedback;
         });
       }
 
@@ -883,7 +872,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         question: questionText || "Question text not available",
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
-        correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
+        correctAnswer: correctAnswerKey(q.correctAnswer)
       };
 
       const finalQuestion = formattedQuestion;
@@ -1192,28 +1181,24 @@ const checkQuestionAnswerHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: "selectedIndex is required" });
     }
 
-    const optionKeys = ['A', 'B', 'C', 'D'];
-    const selectedKey = optionKeys[selectedIndex];
+    // The index must name an option this question actually has: E on a
+    // four-option question is as invalid as index 9.
+    const selectedKey = MC_OPTION_KEYS[selectedIndex];
+    const selectedOptionObj = selectedKey ? optionAt(question.options, selectedKey) : undefined;
 
-    if (!selectedKey) {
+    if (!selectedKey || selectedOptionObj === undefined || selectedOptionObj === null) {
         return res.status(400).json({ success: false, error: "Invalid selectedIndex provided" });
     }
 
-    let correctAnswerLetter = question.correctAnswer || 'A';
-    if (typeof correctAnswerLetter === 'number') {
-      correctAnswerLetter = optionKeys[correctAnswerLetter] || 'A';
-    } else if (typeof correctAnswerLetter === 'string') {
-      correctAnswerLetter = correctAnswerLetter.toUpperCase();
-    }
-    
+    const correctAnswerLetter = correctAnswerKey(question.correctAnswer);
+
     const isCorrect = selectedKey === correctAnswerLetter;
 
-    const selectedOptionObj = question.options[selectedKey];
-    const feedback = typeof selectedOptionObj === 'object' && selectedOptionObj !== null 
+    const feedback = typeof selectedOptionObj === 'object'
       ? (selectedOptionObj.feedback || "")
       : "";
 
-    const correctOptionObj = question.options[correctAnswerLetter];
+    const correctOptionObj = optionAt(question.options, correctAnswerLetter);
     const correctOptionText = typeof correctOptionObj === 'object' && correctOptionObj !== null 
       ? (correctOptionObj.text || "")
       : (correctOptionObj || "");

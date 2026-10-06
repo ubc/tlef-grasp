@@ -15,6 +15,7 @@ import {
 import { generateAndSaveObjectives, deleteObjectives } from "./objectiveGeneration";
 import { runPool } from "../../lib/async-pool";
 import { MAX_QUESTIONS_PER_OBJECTIVE } from "../../lib/constants";
+import { MC_OPTION_COUNT_CHOICES } from "../../lib/mcOptions";
 
 // How many objectives the "Add Existing" list loads at a time. Each one costs
 // two cheap GETs, so this only exists to keep a select-all over a large course
@@ -30,6 +31,8 @@ export default function ObjectivesStep({
   showValidation,
   regenerating,
   setRegenerating,
+  mcOptionCount,
+  setMcOptionCount,
 }) {
   const showToast = useToast();
   const invalidateObjectives = useInvalidateObjectives(course?.id);
@@ -753,10 +756,31 @@ export default function ObjectivesStep({
           shows 0, which is the page's only hint that Continue is about to
           reject the step. */}
       {objectiveCount > 0 && (
-        <p className="mt-4 text-right text-sm text-ink">
-          Total: {grandTotal} question{grandTotal === 1 ? "" : "s"} across{" "}
-          {objectiveCount} learning objective{objectiveCount === 1 ? "" : "s"}
-        </p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          {/* Options per multiple-choice question for this run (issue #144).
+              Always offered: an objective saved before type breakdowns
+              existed names no types here yet still generates multiple
+              choice through the course's Bloom preferences. */}
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <span>Answer options per multiple-choice question</span>
+            <select
+              value={mcOptionCount}
+              onChange={(event) => setMcOptionCount(Number(event.target.value))}
+              aria-label="Answer options per multiple-choice question"
+              className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
+            >
+              {MC_OPTION_COUNT_CHOICES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-right text-sm text-ink">
+            Total: {grandTotal} question{grandTotal === 1 ? "" : "s"} across{" "}
+            {objectiveCount} learning objective{objectiveCount === 1 ? "" : "s"}
+          </p>
+        </div>
       )}
 
       {/* AI generate modal */}

@@ -7,6 +7,7 @@ const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, optionTextOf } = require('../utils/mc-options');
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
 
@@ -308,27 +309,12 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      const optionText = (raw) =>
-        (raw && typeof raw === "object" ? raw.text ?? "" : raw ?? "").toString();
-
-      let optionsObj = {};
-      if (q.options && typeof q.options === 'object') {
-        if (!Array.isArray(q.options)) {
-          optionsObj = {
-            A: optionText(q.options.A),
-            B: optionText(q.options.B),
-            C: optionText(q.options.C),
-            D: optionText(q.options.D)
-          };
-        } else {
-          optionsObj = {
-            A: optionText(q.options[0]),
-            B: optionText(q.options[1]),
-            C: optionText(q.options[2]),
-            D: optionText(q.options[3])
-          };
-        }
-      }
+      // Only the option text goes to the student; feedback and the answer stay
+      // on the server. Whatever letters the question has (two to eight).
+      const optionsObj = {};
+      optionKeysOf(q.options).forEach((key) => {
+        optionsObj[key] = optionTextOf(optionAt(q.options, key));
+      });
 
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
@@ -367,7 +353,6 @@ const getQuizQuestionsHandler = async (req, res) => {
       alreadyCompleted = !!existingScore;
       if (!existingScore) {
         const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
-        const optionKeys = ['A', 'B', 'C', 'D'];
         attempts.forEach(attempt => {
           // A resumed wrong multiple-choice or calculation answer must not
           // reveal the correct one (issue #128): the student keeps retrying
@@ -394,7 +379,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             studentGradeReview: attempt.studentGradeReview || null,
           };
           if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
-            entry.selectedIndex = optionKeys.indexOf(attempt.selectedAnswer);
+            entry.selectedIndex = MC_OPTION_KEYS.indexOf(attempt.selectedAnswer);
           }
           previousAnswers[attempt.questionId.toString()] = entry;
         });

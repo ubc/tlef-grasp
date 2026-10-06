@@ -5,6 +5,8 @@ import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
+import McOptionEditor from "../../components/McOptionEditor";
+import { optionRowsOf, optionRowsToObject, MC_OPTION_KEYS } from "../../lib/mcOptions";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none read-only:cursor-not-allowed read-only:bg-gray-100";
@@ -79,27 +81,17 @@ function buildFormState(question) {
     };
   }
 
-  const optionKeys = ["A", "B", "C", "D"];
-  const options = optionKeys.map((key) => {
-    const opt = question.options?.[key];
-    if (typeof opt === "string") return { id: key, text: opt, feedback: "" };
-    if (opt && typeof opt === "object") {
-      return {
-        id: opt.id || key,
-        text: opt.text || String(opt),
-        feedback: String(opt.feedback || ""),
-      };
-    }
-    return { id: key, text: String(opt || ""), feedback: "" };
-  });
+  // Rows for whatever options the question has (two to eight, issue #144).
+  const options = optionRowsOf(question.options);
   let correct = question.correctAnswer;
   if (typeof correct === "number") {
-    correct = optionKeys[correct] || "A";
+    correct = MC_OPTION_KEYS[correct] || "A";
   } else if (typeof correct === "string") {
     correct = correct.toUpperCase();
   } else {
     correct = "A";
   }
+  if (!options.some((option) => option.id === correct)) correct = options[0].id;
   return {
     questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
     title: question.title || question.stem || "",
@@ -107,7 +99,6 @@ function buildFormState(question) {
     stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
     options,
     correctAnswer: correct,
-    originalOptions: question.options || {},
   };
 }
 
@@ -244,28 +235,22 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       if (form.options.some((opt) => !opt.text.trim())) {
         return showToast("All options must have text", "error");
       }
-      const optionsObject = {};
-      form.options.forEach((opt) => {
-        const oldOption = form.originalOptions[opt.id];
-        if (typeof oldOption === "object" && oldOption !== null) {
-          optionsObject[opt.id] = {
-            ...oldOption,
-            text: opt.text.trim(),
-            feedback: opt.feedback.trim(),
-          };
-        } else {
-          optionsObject[opt.id] = { text: opt.text.trim(), feedback: opt.feedback.trim() };
-        }
-        // Options no longer carry images; drop any legacy per-option image.
-        delete optionsObject[opt.id].image;
-      });
+      const texts = form.options.map((opt) => opt.text.trim().toLowerCase());
+      if (new Set(texts).size !== texts.length) {
+        return showToast("Options must be unique — no two options may be identical", "error");
+      }
+      if (!form.options.some((opt) => opt.id === form.correctAnswer)) {
+        return showToast("Select which option is the correct answer", "error");
+      }
+      // Options are rebuilt from the rows; a legacy per-option image is
+      // dropped here as the server would drop it anyway.
       updateData = {
         title: title || stem,
         stem: stem || title,
         stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-        options: optionsObject,
-        correctAnswer: (form.correctAnswer || "A").toUpperCase(),
+        options: optionRowsToObject(form.options),
+        correctAnswer: form.correctAnswer.toUpperCase(),
       };
     }
 
@@ -507,60 +492,16 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
             <div>
               <label className={labelClass}>Options</label>
-              <div className="space-y-3">
-                {form.options.map((option, index) => (
-                  <div key={option.id} className="flex items-start gap-3">
-                    <label className="flex items-center gap-2 pt-2">
-                      <input
-                        type="radio"
-                        name="question-correct-answer"
-                        checked={form.correctAnswer === option.id}
-                        disabled={readOnly}
-                        onChange={() =>
-                          setForm((prev) => ({ ...prev, correctAnswer: option.id }))
-                        }
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-page text-sm font-bold text-ink">
-                        {option.id}
-                      </span>
-                    </label>
-                    <div className="flex-1 space-y-1.5">
-                      <input
-                        type="text"
-                        value={option.text}
-                        readOnly={readOnly}
-                        placeholder="Enter option text..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = { ...options[index], text: event.target.value };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={inputClass}
-                      />
-                      <input
-                        type="text"
-                        value={option.feedback}
-                        readOnly={readOnly}
-                        placeholder="Feedback for this option..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = {
-                              ...options[index],
-                              feedback: event.target.value,
-                            };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={`${inputClass} bg-gray-50 italic`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <McOptionEditor
+                options={form.options}
+                correctAnswer={form.correctAnswer}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswer }))
+                }
+                readOnly={readOnly}
+                radioName="question-correct-answer"
+                inputClass={inputClass}
+              />
             </div>
           )}
         </div>

@@ -112,6 +112,21 @@ describe('per-type params', () => {
     expect(params.behaviour.type).toBe('single');
   });
 
+  test('multiple-choice keeps a fifth option (issue #144)', () => {
+    const five = {
+      ...mcQuestion,
+      options: { ...mcQuestion.options, E: { text: 'Argon', feedback: 'Argon is inert.' } },
+      correctAnswer: 'E',
+    };
+    const { content: c } = buildH5PPackage('Quiz', [five]);
+    const params = c.questions[0].params;
+    expect(params.answers).toHaveLength(5);
+    expect(params.answers[4].text).toContain('Argon');
+    expect(params.answers.filter((a) => a.correct).map((a) => a.text)).toEqual([
+      expect.stringContaining('Argon'),
+    ]);
+  });
+
   test('fill-in-the-blank converts the underscore blank to H5P markup with alternatives', () => {
     const params = content.questions[1].params;
     expect(params.questions[0]).toContain('*mitochondrion/mitochondria*');

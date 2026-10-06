@@ -1,5 +1,6 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const { MC_OPTION_KEYS } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { deleteImages, collectQuestionImageIds } = require('./image');
 const { ObjectId } = require('mongodb');
@@ -41,7 +42,8 @@ const sanitizeImageRefArray = (value) => {
 };
 
 /**
- * Strip any per-option `image` field — images are only attached to the
+ * Keep only the lettered option keys the app can show (A to H, issue #144)
+ * and strip any per-option `image` field — images are only attached to the
  * question stem now, not to individual options. Legacy option images are
  * dropped on the next save.
  */
@@ -50,6 +52,7 @@ const sanitizeOptions = (options) => {
 
     const sanitized = {};
     for (const key of Object.keys(options)) {
+        if (!MC_OPTION_KEYS.includes(key)) continue;
         const option = options[key];
         if (option && typeof option === "object" && !Array.isArray(option)) {
             const { image, ...rest } = option;
