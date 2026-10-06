@@ -12,11 +12,13 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const {
   normalizeQuestionType,
   getQuestionText,
+  getOptionKeys,
   getOptionText,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
   stemImagesOf,
 } = require('../utils/question-export-helpers');
+const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
 const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
 const databaseService = require('../services/database');
 
@@ -562,15 +564,20 @@ const exportQuestionsHandler = async (req, res) => {
 };
 
 // CSV export covers every question type with a shared, spreadsheet-friendly set
-// of columns. Columns that don't apply to a given type are left blank.
+// of columns. Columns that don't apply to a given type are left blank. There
+// is one option column per letter in use across the export, never fewer than
+// four, so a file of four-option questions keeps its familiar shape and a
+// five-option question is never truncated.
 function createCSVExport(course, questions) {
+  const optionColumnCount = questions.reduce((max, q) => {
+    if (normalizeQuestionType(q) !== QUESTION_TYPES.MULTIPLE_CHOICE) return max;
+    return Math.max(max, getOptionKeys(q).length);
+  }, 4);
+  const optionColumns = MC_OPTION_KEYS.slice(0, optionColumnCount);
   const headers = [
     'Type',
     'Question',
-    'Option A',
-    'Option B',
-    'Option C',
-    'Option D',
+    ...optionColumns.map((key) => `Option ${key}`),
     'Correct Answer',
     'Acceptable Answers',
     'Sample Answer',
@@ -589,10 +596,7 @@ function createCSVExport(course, questions) {
     const row = {
       type,
       question: getQuestionText(q),
-      optA: '',
-      optB: '',
-      optC: '',
-      optD: '',
+      options: optionColumns.map(() => ''),
       correctAnswer: '',
       acceptableAnswers: '',
       sampleAnswer: '',
@@ -606,17 +610,10 @@ function createCSVExport(course, questions) {
     };
 
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
-      row.optA = getOptionText(q, 'A');
-      row.optB = getOptionText(q, 'B');
-      row.optC = getOptionText(q, 'C');
-      row.optD = getOptionText(q, 'D');
+      row.options = optionColumns.map((key) => getOptionText(q, key));
 
-      // correctAnswer may be a letter (A-D) or a numeric index (0-3).
-      let letter = q.correctAnswer;
-      if (typeof letter === 'number') {
-        letter = ['A', 'B', 'C', 'D'][letter] || 'A';
-      }
-      letter = String(letter || '').toUpperCase();
+      // correctAnswer may be a letter or a numeric index.
+      const letter = correctAnswerKey(q.correctAnswer);
       row.correctAnswer = getOptionText(q, letter) || letter;
     } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = getAcceptableAnswers(q);
@@ -638,10 +635,7 @@ function createCSVExport(course, questions) {
     csv += [
       row.type,
       row.question,
-      row.optA,
-      row.optB,
-      row.optC,
-      row.optD,
+      ...row.options,
       row.correctAnswer,
       row.acceptableAnswers,
       row.sampleAnswer,
@@ -1102,27 +1096,22 @@ function qtiItemMetadata(qtiType, assessmentQuestionId, extraFields = '') {
 }
 
 function buildMultipleChoiceItem(q, index, questionHtml) {
-  let optA = getOptionText(q, 'A') || 'Option A';
-  let optB = getOptionText(q, 'B') || 'Option B';
-  let optC = getOptionText(q, 'C') || 'Option C';
-  let optD = getOptionText(q, 'D') || 'Option D';
-
-  // Canvas requires non-empty options.
-  if (!optA.trim()) optA = 'Option A';
-  if (!optB.trim()) optB = 'Option B';
-  if (!optC.trim()) optC = 'Option C';
-  if (!optD.trim()) optD = 'Option D';
+  // Every option the question has (two to eight). Canvas requires non-empty
+  // option text, so a blank one is exported as its letter.
+  const options = getOptionKeys(q).map((key) => {
+    const text = getOptionText(q, key);
+    return text.trim() ? text : `Option ${key}`;
+  });
 
   // Canvas uses numeric string IDs (4+ digits) for answer choices.
   const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
-  const answerIds = [generateNumericId(), generateNumericId(), generateNumericId(), generateNumericId()];
+  const answerIds = options.map(() => generateNumericId());
 
   const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
 
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
   const responseId = `response${index + 1}`;
-  const options = [optA, optB, optC, optD];
 
   const choices = answerIds
     .map(

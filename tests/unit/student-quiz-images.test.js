@@ -237,11 +237,33 @@ describe("student quiz questions include stem images", () => {
       },
     ]);
 
+    // Only the options the question has are sent (issue #144): a null slot
+    // is not an option, so there is no D.
     expect(questions[0].options).toEqual({
       A: "Nucleus",
       B: "",
       C: "Golgi",
-      D: "",
     });
+  });
+
+  it("sends every option of a five-option question", async () => {
+    const questions = await getQuestions([
+      {
+        _id: new ObjectId(),
+        title: "Five options",
+        questionType: "multiple-choice",
+        options: {
+          A: { text: "One", feedback: "" },
+          B: { text: "Two", feedback: "" },
+          C: { text: "Three", feedback: "" },
+          D: { text: "Four", feedback: "" },
+          E: { text: "Five", feedback: "" },
+        },
+        correctAnswer: "E",
+      },
+    ]);
+
+    expect(Object.keys(questions[0].options)).toEqual(["A", "B", "C", "D", "E"]);
+    expect(questions[0].options.E).toBe("Five");
   });
 });

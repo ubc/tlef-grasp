@@ -3,6 +3,7 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const {
   normalizeQuestionType,
   getQuestionText,
+  getOptionKeys,
   getOptionText,
   getOptionFeedback,
   getCorrectAnswerIndex,
@@ -179,7 +180,7 @@ function buildQuestionSetContent(title, questions, imageMap) {
 
 function buildMultiChoiceParams(q) {
   const correctIndex = getCorrectAnswerIndex(q);
-  const answers = ['A', 'B', 'C', 'D'].map((key, i) => {
+  const answers = getOptionKeys(q).map((key, i) => {
     const feedback = getOptionFeedback(q, key);
     return {
       text: `<div>${escapeHtml(getOptionText(q, key) || `Option ${key}`)}</div>`,

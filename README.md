@@ -9,10 +9,12 @@ adaptive, and elaborative practice — all behind UBC Single Sign-On.
 
 - **AI question generation** — Upload lecture material (text, PDF, DOCX, URLs) and
   generate evidence-based questions grounded in your content via a
-  retrieval-augmented (RAG) pipeline.
-- **Multiple question types** — Multiple choice, fill-in-the-blank, calculation,
-  and open-ended questions, with support for math (KaTeX) and chemistry
-  (SMILES) rendering.
+  retrieval-augmented (RAG) pipeline. Multiple-choice questions are drafted
+  with four options unless the generation step asks for another count (two to
+  eight).
+- **Multiple question types** — Multiple choice (two to eight answer options),
+  fill-in-the-blank, calculation, and open-ended questions, with support for
+  math (KaTeX) and chemistry (SMILES) rendering.
 - **Question review & banking** — Review, edit, flag, and organize generated
   questions in a per-course question bank before they reach students.
 - **Quizzes & scoring** — Build quizzes from the bank, publish them to students,

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelectedCourse } from "../stores/appStore";
 import { useCourseMaterials } from "../hooks/useMaterials";
@@ -10,6 +10,7 @@ import ObjectivesStep from "./question-generation/ObjectivesStep";
 import QuestionsStep from "./question-generation/QuestionsStep";
 import SaveQuizStep from "./question-generation/SaveQuizStep";
 import { useQuestionDraft } from "./question-generation/useQuestionDraft";
+import { normalizeMcOptionCount } from "../lib/mcOptions";
 import {
   generateQuestions,
   convertQuestionsToGroups,
@@ -103,6 +104,39 @@ function NoMaterialsState({ noCourse, onRefresh }) {
   );
 }
 
+const MC_OPTION_COUNT_KEY_PREFIX = "grasp-mc-option-count";
+
+// The multiple-choice option count chosen for generation, remembered per
+// course. localStorage can be unavailable (private windows, blocked storage),
+// so both reads and writes are guarded and the default simply applies.
+function useMcOptionCountSetting(courseId) {
+  const key = courseId ? `${MC_OPTION_COUNT_KEY_PREFIX}-${courseId}` : null;
+  const [count, setCount] = useState(() => {
+    try {
+      return normalizeMcOptionCount(key ? localStorage.getItem(key) : null);
+    } catch {
+      return normalizeMcOptionCount(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      setCount(normalizeMcOptionCount(key ? localStorage.getItem(key) : null));
+    } catch {
+      setCount(normalizeMcOptionCount(null));
+    }
+  }, [key]);
+  const update = (value) => {
+    const next = normalizeMcOptionCount(value);
+    setCount(next);
+    try {
+      if (key) localStorage.setItem(key, String(next));
+    } catch {
+      // Storage unavailable: the choice still applies to this visit.
+    }
+  };
+  return [count, update];
+}
+
 export default function QuestionGeneration() {
   const navigate = useNavigate();
   const showToast = useToast();
@@ -114,6 +148,11 @@ export default function QuestionGeneration() {
   const [regeneratingObjectives, setRegeneratingObjectives] = useState(false);
   const [questionGroups, setQuestionGroups] = useState([]);
   const [showValidation, setShowValidation] = useState(false);
+
+  // Options per multiple-choice question for this run (issue #144). Kept per
+  // course in localStorage so a course that always writes five-option
+  // questions does not have to re-pick it every visit.
+  const [mcOptionCount, setMcOptionCount] = useMcOptionCountSetting(courseId);
 
   // Generation state
   const [generating, setGenerating] = useState(false);
@@ -208,7 +247,8 @@ export default function QuestionGeneration() {
         ({ generated, total }) =>
           setGenerationMessage(
             `Generating questions — ${generated} of ${total} (includes automatic quality review and fixes)`
-          )
+          ),
+        { mcOptionCount }
       );
 
       if (failures?.length > 0) {
@@ -369,6 +409,8 @@ export default function QuestionGeneration() {
           showValidation={showValidation}
           regenerating={regeneratingObjectives}
           setRegenerating={setRegeneratingObjectives}
+          mcOptionCount={mcOptionCount}
+          setMcOptionCount={setMcOptionCount}
         />
       )}
 
