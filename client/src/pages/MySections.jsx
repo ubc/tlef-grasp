@@ -15,6 +15,8 @@ import { LoadingState, EmptyState } from "../components/ui/states";
 import CanvasSectionLinkModal from "../components/lms/CanvasSectionLinkModal";
 import MoodleSectionLinkModal from "../components/lms/MoodleSectionLinkModal";
 import RosterSyncConfirmModal from "../components/lms/RosterSyncConfirmModal";
+import LinkedSectionAssignmentsPrompt from "../components/lms/LinkedSectionAssignmentsPrompt";
+import { canvasAssignmentsEnabled } from "../lib/canvasAssignments";
 import {
   useCanvasStatus,
   useSyncCanvasSectionStudents,
@@ -58,6 +60,9 @@ export default function MySections() {
   const [canvasLinkTarget, setCanvasLinkTarget] = useState(null);
   const [moodleLinkTarget, setMoodleLinkTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
+  // A section just linked to Canvas, while GRASP asks about the quizzes
+  // already scheduled on it (issue #125).
+  const [assignmentPromptSection, setAssignmentPromptSection] = useState(null);
   // { section, reason, plan } while a Canvas sync waits for the instructor
   // to review its drops; nothing has been applied yet.
   const [syncConfirm, setSyncConfirm] = useState(null);
@@ -550,7 +555,16 @@ export default function MySections() {
         onClose={() => setCanvasLinkTarget(null)}
         courseId={courseId}
         localSection={canvasLinkTarget}
-        onLinked={() => showToast("Canvas section linked", "success")}
+        onLinked={() => {
+          showToast("Canvas section linked", "success");
+          setAssignmentPromptSection(canvasLinkTarget);
+        }}
+      />
+      <LinkedSectionAssignmentsPrompt
+        courseId={courseId}
+        section={assignmentPromptSection}
+        enabled={canvasAssignmentsEnabled(canvasStatus)}
+        onClose={() => setAssignmentPromptSection(null)}
       />
       <MoodleSectionLinkModal
         open={!!moodleLinkTarget}

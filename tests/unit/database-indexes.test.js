@@ -129,6 +129,19 @@ describe('initializeCollections index definitions', () => {
     expect(options.partialFilterExpression).toEqual({ 'lms.externalFileId': { $exists: true } });
   });
 
+  // One Canvas assignment per quiz per section (issue #125): the claim that
+  // precedes a create relies on this index refusing a second row.
+  it('allows one LMS assignment row per quiz per section', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    const call = collectionFor('grasp_quiz_lms_assignment').createIndex.mock.calls.find(
+      ([keys]) => keys && keys.quizId === 1 && keys.courseSectionId === 1
+    );
+
+    expect(call).toBeDefined();
+    expect(call[1]).toEqual({ unique: true });
+  });
+
   // The suite above mocks createIndex, so MongoDB never parses these specs and
   // an unsupported operator sails through as a green test right up until it
   // throws CannotCreateIndex at boot. partialFilterExpression accepts only a

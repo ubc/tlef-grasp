@@ -1,15 +1,29 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toDatetimeLocal, formatDate } from "../../lib/format";
 import DeliveryFormatToggle from "../../components/DeliveryFormatToggle";
 import Modal from "../../components/ui/Modal";
 import MultiSelect from "../../components/ui/MultiSelect";
+import CanvasAssignmentPromptModal from "../../components/lms/CanvasAssignmentPromptModal";
 import {
   applyScheduleWindow,
+  localToIso,
   scheduleStatus,
   schedulesWithout,
   sectionPickerOptions,
 } from "./schedulePayload";
 import { useQuizSchedules, useUpdateQuizSchedules } from "../../hooks/useQuizzes";
+import {
+  useDeclineQuizCanvasAssignments,
+  useEnsureQuizCanvasAssignments,
+  useQuizCanvasAssignments,
+} from "../../hooks/useCanvasAssignments";
+import {
+  canvasAssignmentsEnabled,
+  canvasChipState,
+  describeEnsureResults,
+  partitionAfterSave,
+  promptItemsForSections,
+} from "../../lib/canvasAssignments";
 import { useToast } from "../../components/ui/Toast";
 
 // Set a release/expire window: on one section when editing, on any number of
@@ -121,18 +135,15 @@ function ScheduleModal({ open, mode, section, options, initial, onClose, onSave,
   );
 }
 
-function SectionSchedule({ courseId, quizId, sections }) {
+function SectionSchedule({ courseId, quizId, sections, canvas }) {
   const showToast = useToast();
   const { schedules } = useQuizSchedules(quizId);
   const [modal, setModal] = useState(null); // null | { mode, courseSectionId? }
-
-  const updateMutation = useUpdateQuizSchedules(courseId, quizId, {
-    onSuccess: () => {
-      showToast("Schedule saved", "success");
-      setModal(null);
-    },
-    onError: (error) => showToast(error.message || "Failed to save schedule", "error"),
-  });
+  // The "Create in Canvas?" question on screen: which sections, and whether a
+  // "no" is remembered (after a schedule save) or is just a cancel (the chip).
+  const [canvasPrompt, setCanvasPrompt] = useState(null); // null | { sections, remember }
+  // The sections of the save in flight, for the Canvas follow-up once it lands.
+  const lastSavedRef = useRef([]);
 
   // courseSectionId -> human label
   const labelFor = useMemo(() => {
@@ -140,6 +151,53 @@ function SectionSchedule({ courseId, quizId, sections }) {
     for (const s of sections) map.set(s._id, s.sectionNumber || s.sectionId);
     return (id) => map.get(id) || "Unknown section";
   }, [sections]);
+
+  // Canvas assignments (issue #125): one per quiz per linked section, created
+  // after the instructor says yes, and kept at the section's close time.
+  const canvasOn = canvasAssignmentsEnabled(canvas);
+  const assignmentsQuery = useQuizCanvasAssignments(courseId, quizId, { enabled: canvasOn });
+  const canvasBySection = useMemo(
+    () => new Map(assignmentsQuery.sections.map((s) => [s.courseSectionId, s])),
+    [assignmentsQuery.sections]
+  );
+  const ensureMutation = useEnsureQuizCanvasAssignments(courseId, quizId, {
+    onSuccess: (data) => {
+      const { message, type } = describeEnsureResults(data.results, labelFor);
+      if (message) showToast(message, type);
+    },
+    onError: (error) =>
+      showToast(error.message || "Canvas could not be updated. Please try again.", "error"),
+  });
+  const declineMutation = useDeclineQuizCanvasAssignments(courseId, quizId, {
+    onError: (error) => showToast(error.message || "Could not save your choice.", "error"),
+  });
+
+  // Rescheduling moves the Canvas due date on its own; a newly scheduled linked
+  // section is asked about first. The GRASP save has already succeeded either
+  // way, so a Canvas failure only warns and leaves a retry on the chip.
+  const followUpInCanvas = async (savedSectionIds) => {
+    if (!canvasOn || savedSectionIds.length === 0) return;
+    const { data } = await assignmentsQuery.refetch();
+    const { sync, prompt } = partitionAfterSave(data?.sections || [], savedSectionIds);
+    if (sync.length > 0) ensureMutation.mutate(sync);
+    if (prompt.length > 0) setCanvasPrompt({ sections: prompt, remember: true });
+  };
+
+  // The chip's "Canvas" button asks first too: nothing is created in Canvas
+  // without the instructor seeing what and when.
+  const offerFromChip = (courseSectionId) => {
+    const section = canvasBySection.get(courseSectionId);
+    if (section) setCanvasPrompt({ sections: [section], remember: false });
+  };
+
+  const updateMutation = useUpdateQuizSchedules(courseId, quizId, {
+    onSuccess: () => {
+      showToast("Schedule saved", "success");
+      setModal(null);
+      followUpInCanvas(lastSavedRef.current);
+    },
+    onError: (error) => showToast(error.message || "Failed to save schedule", "error"),
+  });
 
   // `sections` are the ones this instructor owns; only those sections' schedules
   // are theirs to view and edit. Other instructors' schedules are left alone.
@@ -155,14 +213,23 @@ function SectionSchedule({ courseId, quizId, sections }) {
   const pickerOptions = sectionPickerOptions(sections, mySchedules);
 
   const handleSave = ({ courseSectionIds, releaseDate, expireDate }) => {
+    lastSavedRef.current = courseSectionIds;
     updateMutation.mutate(
-      applyScheduleWindow(mySchedules, { courseSectionIds, releaseDate, expireDate })
+      applyScheduleWindow(mySchedules, {
+        courseSectionIds,
+        releaseDate: localToIso(releaseDate),
+        expireDate: localToIso(expireDate),
+      })
     );
   };
 
+  // Unscheduling never touches Canvas: the assignment stays there.
   const handleRemove = (courseSectionId) => {
+    lastSavedRef.current = [];
     updateMutation.mutate(schedulesWithout(mySchedules, [courseSectionId]));
   };
+
+  const promptIds = (canvasPrompt?.sections || []).map((s) => s.courseSectionId);
 
   const editing =
     modal?.mode === "edit"
@@ -205,22 +272,53 @@ function SectionSchedule({ courseId, quizId, sections }) {
         <div className="flex flex-wrap gap-2">
           {mySchedules.map((row) => {
             const status = scheduleStatus(row, now);
+            const chip = canvasOn ? canvasChipState(canvasBySection.get(row.courseSectionId)) : null;
+            const label = labelFor(row.courseSectionId);
             return (
-              <button
-                key={row.courseSectionId}
-                type="button"
-                onClick={() => setModal({ mode: "edit", courseSectionId: row.courseSectionId })}
-                className="flex items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
-              >
-                <span className="font-semibold text-ink">{labelFor(row.courseSectionId)}</span>
-                <span className={`rounded-full px-2 py-0.5 font-medium ${status.cls}`}>
-                  {status.label}
-                </span>
-              </button>
+              <div key={row.courseSectionId} className="flex items-stretch gap-1">
+                <button
+                  type="button"
+                  onClick={() => setModal({ mode: "edit", courseSectionId: row.courseSectionId })}
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
+                >
+                  <span className="font-semibold text-ink">{label}</span>
+                  <span className={`rounded-full px-2 py-0.5 font-medium ${status.cls}`}>
+                    {status.label}
+                  </span>
+                </button>
+                {chip && (
+                  <CanvasChip
+                    chip={chip}
+                    label={label}
+                    busy={ensureMutation.isPending}
+                    onCreate={() => offerFromChip(row.courseSectionId)}
+                    onRetry={() => ensureMutation.mutate([row.courseSectionId])}
+                  />
+                )}
+              </div>
             );
           })}
         </div>
       )}
+
+      <CanvasAssignmentPromptModal
+        open={!!canvasPrompt}
+        items={promptItemsForSections(canvasPrompt?.sections)}
+        busy={ensureMutation.isPending || declineMutation.isPending}
+        onClose={() => setCanvasPrompt(null)}
+        onCreate={() => {
+          setCanvasPrompt(null);
+          ensureMutation.mutate(promptIds);
+        }}
+        onDecline={
+          canvasPrompt?.remember
+            ? () => {
+                setCanvasPrompt(null);
+                declineMutation.mutate(promptIds);
+              }
+            : undefined
+        }
+      />
 
       <ScheduleModal
         open={!!modal}
@@ -241,7 +339,67 @@ function SectionSchedule({ courseId, quizId, sections }) {
   );
 }
 
-export default function QuizCard({ quiz, courseId, sections = [], selected = false, onToggleSelect, onUpdate, onReview, onExport, onDelete }) {
+// Beside a schedule chip: the Canvas assignment, a retry, or an offer to create
+// one. Never a button inside the chip button (nested buttons are invalid HTML).
+// `onCreate` opens the confirmation; `onRetry` re-syncs an existing assignment.
+function CanvasChip({ chip, label, busy, onCreate, onRetry }) {
+  const base =
+    "inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors";
+  if (chip.kind === "created") {
+    const content = (
+      <>
+        <i className="fas fa-graduation-cap" aria-hidden="true" />
+        <span>Canvas</span>
+      </>
+    );
+    return chip.href ? (
+      <a
+        href={chip.href}
+        target="_blank"
+        rel="noreferrer"
+        title={chip.title}
+        aria-label={`Canvas assignment for section ${label}`}
+        className={`${base} border-success/40 text-success hover:bg-success/10`}
+      >
+        {content}
+      </a>
+    ) : (
+      <span title={chip.title} aria-label={`Canvas assignment for section ${label}`} className={`${base} border-success/40 text-success`}>
+        {content}
+      </span>
+    );
+  }
+  if (chip.kind === "failed") {
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={busy}
+        title={chip.title}
+        aria-label={`Retry Canvas update for section ${label}`}
+        className={`${base} border-warning/50 text-warning hover:bg-warning/10 disabled:opacity-60`}
+      >
+        <i className="fas fa-triangle-exclamation" aria-hidden="true" />
+        <span>Retry Canvas</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onCreate}
+      disabled={busy}
+      title="Create a Canvas assignment for this section"
+      aria-label={`Create in Canvas for section ${label}`}
+      className={`${base} border-dashed border-gray-300 text-muted hover:border-primary hover:text-primary disabled:opacity-60`}
+    >
+      <i className="fas fa-plus" aria-hidden="true" />
+      <span>Canvas</span>
+    </button>
+  );
+}
+
+export default function QuizCard({ quiz, courseId, sections = [], canvas, selected = false, onToggleSelect, onUpdate, onReview, onExport, onDelete }) {
   const totalQuestions = quiz.questions.length;
   const approvedQuestions = quiz.questions.filter(
     (q) => q.status === "Approved"
@@ -282,7 +440,7 @@ export default function QuizCard({ quiz, courseId, sections = [], selected = fal
         <div className="mt-1 text-xs text-muted">{Math.round(progress)}% Approved</div>
       </div>
 
-      <SectionSchedule courseId={courseId} quizId={quiz.id} sections={sections} />
+      <SectionSchedule courseId={courseId} quizId={quiz.id} sections={sections} canvas={canvas} />
 
       <div className="mb-5">
         <label className="mb-1 block text-xs font-semibold text-muted">

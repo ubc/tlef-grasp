@@ -11,6 +11,7 @@ const {
 } = require('../utils/material-file-types');
 const { isAppAdministrator } = require('../utils/auth');
 const { getLmsAdapter } = require('../lms/adapters');
+const { canvasApiErrorResponse } = require('../lms/canvas-errors');
 const { currentLmsInstance } = require('../lms/instance');
 const { LmsRosterError, ROSTER_ERROR_CODES } = require('../lms/roster-errors');
 
@@ -542,36 +543,9 @@ function createCanvasController(canvas, { capabilities } = {}) {
   }
 
   function sendCanvasApiError(error, res, next) {
-    if (!(error instanceof canvas.CanvasApiError)) return next(error);
-
-    // Canvas answers both an expired/revoked token and a call outside the
-    // token's scopes ("Insufficient scopes on access token.") with 401, and
-    // CanvasApiError keeps only the status, so the message covers both.
-    if (error.statusCode === 401) {
-      return res.status(401).json({
-        success: false,
-        connected: false,
-        error:
-          'Canvas rejected the request. Reconnect Canvas; if this keeps happening, ' +
-          'the GRASP Canvas developer key may be missing a permission.',
-      });
-    }
-    if (error.statusCode === 403) {
-      return res.status(403).json({
-        success: false,
-        error: 'Your connected Canvas account does not have permission for this course.',
-      });
-    }
-    if (error.statusCode === 404) {
-      return res.status(404).json({
-        success: false,
-        error: 'The requested Canvas resource could not be found.',
-      });
-    }
-    return res.status(502).json({
-      success: false,
-      error: 'Canvas could not complete the request. Please try again.',
-    });
+    const response = canvasApiErrorResponse(canvas, error);
+    if (!response) return next(error);
+    return res.status(response.status).json(response.body);
   }
 
   return {

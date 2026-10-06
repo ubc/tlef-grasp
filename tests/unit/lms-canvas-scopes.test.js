@@ -42,6 +42,30 @@ jest.mock('../../src/services/material', () => ({
   findLmsImportedMaterials: jest.fn(),
 }));
 
+jest.mock('../../src/services/quiz', () => ({
+  getQuizById: jest.fn(),
+  getQuizzesByCourse: jest.fn(),
+}));
+
+jest.mock('../../src/services/quiz-schedule', () => ({
+  getSchedulesForQuiz: jest.fn(),
+  getSchedulesForSection: jest.fn(),
+}));
+
+// GRASP's own record of each quiz's Canvas assignment; the Mongo side is
+// quiz-lms-assignment.service.test.js. The pure helpers stay real.
+jest.mock('../../src/services/quiz-lms-assignment', () => ({
+  ...jest.requireActual('../../src/services/quiz-lms-assignment'),
+  getRowsForQuiz: jest.fn(),
+  getRowsForSection: jest.fn(),
+  claimRow: jest.fn(),
+  releaseClaim: jest.fn(),
+  markCreated: jest.fn(),
+  markSynced: jest.fn(),
+  markSyncFailed: jest.fn(),
+  markDeclined: jest.fn(),
+}));
+
 // The import's parse/index/outline step; nothing in it talks to Canvas.
 jest.mock('../../src/services/material-ingest', () => ({
   ingestMaterialFile: jest.fn(),
@@ -65,6 +89,9 @@ const { getSectionsOwnedByUser } = require('../../src/services/course-section');
 const lmsSectionLinkService = require('../../src/services/lms-section-link');
 const { syncSectionRoster } = require('../../src/services/lms-roster-sync');
 const { findLmsImportedMaterials } = require('../../src/services/material');
+const quizService = require('../../src/services/quiz');
+const quizScheduleService = require('../../src/services/quiz-schedule');
+const quizLmsAssignmentService = require('../../src/services/quiz-lms-assignment');
 const { ingestMaterialFile } = require('../../src/services/material-ingest');
 const { assertCoInstructorPermission } = require('../../src/utils/co-instructor-permissions');
 const { assertTaPermission } = require('../../src/utils/ta-permissions');
@@ -89,6 +116,20 @@ const FILE_IMPORT_SCOPES = [
   'url:GET|/api/v1/courses/:course_id/files/:id',
   'url:GET|/api/v1/files/:id/public_url',
 ];
+
+const QUIZ_BASE = '/api/lms/canvas/courses/course-1/quizzes/quiz-1/assignments';
+const SECTION_OBJECT_ID = 'sec-1';
+const DUE_AT = new Date('2026-11-01T06:59:00Z');
+// The assignment row a second POST finds: created earlier with an older due
+// date, so the route takes the update path (PUT on the override).
+const CREATED_ROW = {
+  _id: 'row-1',
+  status: 'created',
+  externalAssignmentId: '9001',
+  externalOverrideId: '77',
+  dueAt: new Date('2026-10-25T06:59:00Z'),
+};
+let assignmentRows = new Map();
 
 const CANVAS_FILE_BYTES = Buffer.from('%PDF-1.7 lecture notes');
 const CANVAS_FILE = {
@@ -139,6 +180,11 @@ function cannedResponse(apiPath) {
   if (/^\/api\/v1\/courses\/[^/]+\/sections$/.test(apiPath)) {
     return [{ id: 501, name: 'Section 1', course_id: 42 }];
   }
+  // No assignment carries the quiz's name yet, so a create goes ahead.
+  if (/^\/api\/v1\/courses\/[^/]+\/assignments$/.test(apiPath)) return [];
+  if (/^\/api\/v1\/courses\/[^/]+\/assignments\/[^/]+\/overrides$/.test(apiPath)) {
+    return [{ id: 77, assignment_id: 9001, course_section_id: 501, due_at: DUE_AT.toISOString() }];
+  }
   if (/^\/api\/v1\/courses\/[^/]+\/files$/.test(apiPath)) return [CANVAS_FILE];
   if (/^\/api\/v1\/courses\/[^/]+\/files\/[^/]+$/.test(apiPath)) return CANVAS_FILE;
   if (/^\/api\/v1\/files\/[^/]+\/public_url$/.test(apiPath)) return { public_url: CANVAS_FILE_PUBLIC_URL };
@@ -171,8 +217,13 @@ function recordingClient(calls, downloads = []) {
   return {
     getAll: jest.fn(async (p) => cannedResponse(record('GET', p))),
     get: jest.fn(async (p) => cannedResponse(record('GET', p))),
-    post: jest.fn(async (p) => { record('POST', p); return {}; }),
-    put: jest.fn(async (p) => { record('PUT', p); return {}; }),
+    post: jest.fn(async (p) => {
+      const apiPath = record('POST', p);
+      if (/\/assignments$/.test(apiPath)) return { id: 9001, html_url: `${CANVAS_DOMAIN}/courses/42/assignments/9001` };
+      if (/\/overrides$/.test(apiPath)) return { id: 78, course_section_id: 501 };
+      return {};
+    }),
+    put: jest.fn(async (p) => { record('PUT', p); return { id: 77, due_at: DUE_AT.toISOString() }; }),
     delete: jest.fn(async (p) => { record('DELETE', p); return {}; }),
     // Not a Canvas API call: the bytes come from whatever URL this is handed.
     download: jest.fn(async (url, options) => {
@@ -222,8 +273,21 @@ const ROUTES_BY_CAPABILITY = {
     (app) => request(app).get(`${MATERIALS_BASE}/42/files`),
     (app) => request(app).post(`${MATERIALS_BASE}/42/files/7001/import`),
   ],
-  // Nothing calls the assignment endpoints yet (issue #113 item 4).
-  assignments: [],
+  assignments: [
+    (app) => request(app).get(QUIZ_BASE),
+    // No row yet: the create path.
+    (app) => {
+      assignmentRows = new Map();
+      return request(app).post(QUIZ_BASE).send({ courseSectionIds: [SECTION_OBJECT_ID] });
+    },
+    // A row with an older due date: the update path.
+    (app) => {
+      assignmentRows = new Map([[SECTION_OBJECT_ID, CREATED_ROW]]);
+      return request(app).post(QUIZ_BASE).send({ courseSectionIds: [SECTION_OBJECT_ID] });
+    },
+    (app) => request(app).put(`${QUIZ_BASE}/declined`).send({ courseSectionIds: [SECTION_OBJECT_ID] }),
+    (app) => request(app).get(`${SECTION_BASE}/quiz-assignments`),
+  ],
 };
 
 describe('Canvas scope coverage', () => {
@@ -244,7 +308,9 @@ describe('Canvas scope coverage', () => {
     isAppAdministrator.mockResolvedValue(false);
     getCourseById.mockResolvedValue({ _id: 'course-1', archived: false });
     getSectionsOwnedByUser.mockResolvedValue([{
+      _id: SECTION_OBJECT_ID,
       sectionId: '101',
+      sectionNumber: '101',
       lmsLink: {
         provider: 'canvas',
         instance: CANVAS_DOMAIN,
@@ -258,6 +324,19 @@ describe('Canvas scope coverage', () => {
     assertTaPermission.mockResolvedValue(true);
     findLmsImportedMaterials.mockResolvedValue([]);
     ingestMaterialFile.mockResolvedValue({ sourceId: 'source-1', documentTitle: 'Lecture 1.pdf' });
+    quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1', name: 'Quiz 1' });
+    quizService.getQuizzesByCourse.mockResolvedValue([{ _id: 'quiz-1', courseId: 'course-1', name: 'Quiz 1' }]);
+    quizScheduleService.getSchedulesForQuiz.mockResolvedValue([
+      { courseSectionId: SECTION_OBJECT_ID, releaseDate: new Date('2026-10-01T07:00:00Z'), expireDate: DUE_AT },
+    ]);
+    quizScheduleService.getSchedulesForSection.mockResolvedValue([
+      { quizId: 'quiz-1', releaseDate: new Date('2026-10-01T07:00:00Z'), expireDate: DUE_AT },
+    ]);
+    assignmentRows = new Map();
+    quizLmsAssignmentService.getRowsForQuiz.mockImplementation(async () => assignmentRows);
+    quizLmsAssignmentService.getRowsForSection.mockResolvedValue(new Map());
+    quizLmsAssignmentService.claimRow.mockResolvedValue({ row: { _id: 'row-new' }, previousStatus: null });
+    quizLmsAssignmentService.markDeclined.mockResolvedValue([SECTION_OBJECT_ID]);
   });
 
   it.each(Object.keys(ROUTES_BY_CAPABILITY))(
@@ -322,6 +401,32 @@ describe('Canvas scope coverage', () => {
     for (const scope of FILE_IMPORT_SCOPES) {
       expect(calls.some((call) => scopeCovers(scope, call))).toBe(true);
     }
+  });
+
+  it('creating an assignment searches by name, creates with the override inline, then reads the override id', async () => {
+    const calls = [];
+    const response = await ROUTES_BY_CAPABILITY.assignments[1](buildApp(calls));
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toEqual([{ courseSectionId: SECTION_OBJECT_ID, status: 'created' }]);
+    expect(calls).toEqual([
+      { method: 'GET', path: '/api/v1/courses' },
+      { method: 'GET', path: '/api/v1/courses/42/assignments' },
+      { method: 'POST', path: '/api/v1/courses/42/assignments' },
+      { method: 'GET', path: '/api/v1/courses/42/assignments/9001/overrides' },
+    ]);
+  });
+
+  it('rescheduling moves the override due date with one PUT', async () => {
+    const calls = [];
+    const response = await ROUTES_BY_CAPABILITY.assignments[2](buildApp(calls));
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toEqual([{ courseSectionId: SECTION_OBJECT_ID, status: 'updated' }]);
+    expect(calls).toEqual([
+      { method: 'GET', path: '/api/v1/courses' },
+      { method: 'PUT', path: '/api/v1/courses/42/assignments/9001/overrides/77' },
+    ]);
   });
 
   it('the recommended UBC scopes enable linking and roster sync, and every call they make', async () => {

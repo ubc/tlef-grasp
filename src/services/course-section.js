@@ -293,6 +293,10 @@ const recycleSection = async (courseId, sectionId) => {
   if (sectionDoc) {
     const quizScheduleService = require('./quiz-schedule');
     await quizScheduleService.removeSchedulesForSection(sectionDoc._id);
+    // GRASP's record of the section's LMS assignments; the assignments
+    // themselves stay in the LMS (issue #125).
+    const quizLmsAssignmentService = require('./quiz-lms-assignment');
+    await quizLmsAssignmentService.removeForSection(sectionDoc._id);
   }
 
   // Delete the section itself
