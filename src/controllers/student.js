@@ -304,10 +304,17 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
 
       // Only the option text goes to the student; feedback and the answer stay
-      // on the server. Whatever letters the question has (two to eight).
+      // on the server. Whatever letters the question has (two to eight). An
+      // option with an image (issue #146) is sent as { text, image } with just
+      // the file id and the alt text: the stored filename could name the answer.
       const optionsObj = {};
       optionKeysOf(q.options).forEach((key) => {
-        optionsObj[key] = optionTextOf(optionAt(q.options, key));
+        const raw = optionAt(q.options, key);
+        const text = optionTextOf(raw);
+        const image = raw && typeof raw === 'object' ? raw.image : null;
+        optionsObj[key] = image?.fileId
+          ? { text, image: { fileId: String(image.fileId), caption: image.caption || '' } }
+          : text;
       });
 
       return {

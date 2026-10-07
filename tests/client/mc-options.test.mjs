@@ -8,6 +8,8 @@ import {
   addOptionRow,
   removeOptionRow,
   optionRowsToObject,
+  optionRowsError,
+  optionImageOf,
   normalizeMcOptionCount,
 } from '../../client/src/lib/mcOptions.js';
 
@@ -24,7 +26,7 @@ describe('optionRowsOf', () => {
       E: { text: 'Five', feedback: 'nope' },
     });
     expect(rows.map((r) => r.id)).toEqual(['A', 'B', 'C', 'D', 'E']);
-    expect(rows[1]).toEqual({ id: 'B', text: 'Two', feedback: '' });
+    expect(rows[1]).toEqual({ id: 'B', text: 'Two', feedback: '', image: null });
     expect(rows[4].feedback).toBe('nope');
   });
 
@@ -71,6 +73,48 @@ describe('optionRowsToObject', () => {
         { id: 'B', text: 'two', feedback: '' },
       ])
     ).toEqual({ A: { text: 'one', feedback: 'x' }, B: { text: 'two', feedback: '' } });
+  });
+});
+
+// Issue #146: an option may carry one image, and an image-only option is valid.
+describe('option images', () => {
+  const image = { fileId: '665f1a0000000000000000aa', caption: 'Benzene ring' };
+
+  it('reads an option image into its row and writes it back', () => {
+    const rows = optionRowsOf({ A: { text: '', feedback: '', image }, B: 'Two' });
+    expect(rows[0].image).toEqual(image);
+    expect(rows[1].image).toBe(null);
+    expect(optionRowsToObject(rows)).toEqual({
+      A: { text: '', feedback: '', image },
+      B: { text: 'Two', feedback: '' },
+    });
+  });
+
+  it('keeps an image with its row when an earlier row is removed', () => {
+    const rows = optionRowsOf({ A: 'a', B: 'b', C: { text: 'c', image } });
+    const { rows: next } = removeOptionRow(rows, 0, 'A');
+    expect(next[1]).toMatchObject({ id: 'B', text: 'c', image });
+  });
+
+  it('ignores an image ref without a file id', () => {
+    expect(optionImageOf({ text: 'x', image: { caption: 'orphan' } })).toBe(null);
+    expect(optionImageOf('plain')).toBe(null);
+  });
+
+  it('requires text or an image on every option', () => {
+    expect(optionRowsError(optionRowsOf({ A: 'a', B: '' }))).toBe('Each option needs text or an image');
+    expect(optionRowsError(optionRowsOf({ A: 'a', B: { text: '', image } }))).toBe('');
+  });
+
+  it('tells identical options apart by their images', () => {
+    const other = { fileId: '665f1a0000000000000000bb', caption: '' };
+    expect(optionRowsError(optionRowsOf({ A: 'Same', B: ' same ' }))).toMatch(/unique/);
+    expect(
+      optionRowsError(optionRowsOf({ A: { text: '', image }, B: { text: '', image: other } }))
+    ).toBe('');
+    expect(
+      optionRowsError(optionRowsOf({ A: { text: '', image }, B: { text: '', image } }))
+    ).toMatch(/unique/);
   });
 });
 

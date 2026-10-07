@@ -42,10 +42,9 @@ const sanitizeImageRefArray = (value) => {
 };
 
 /**
- * Keep only the lettered option keys the app can show (A to H, issue #144)
- * and strip any per-option `image` field — images are only attached to the
- * question stem now, not to individual options. Legacy option images are
- * dropped on the next save.
+ * Keep only the lettered option keys the app can show (A to H, issue #144).
+ * An option may carry one image (issue #146), validated like a stem image;
+ * a malformed one is dropped rather than stored.
  */
 const sanitizeOptions = (options) => {
     if (!options || typeof options !== "object" || Array.isArray(options)) return options;
@@ -56,7 +55,8 @@ const sanitizeOptions = (options) => {
         const option = options[key];
         if (option && typeof option === "object" && !Array.isArray(option)) {
             const { image, ...rest } = option;
-            sanitized[key] = rest;
+            const imageRef = sanitizeImageRef(image);
+            sanitized[key] = imageRef ? { ...rest, image: imageRef } : rest;
         } else {
             sanitized[key] = option;
         }
@@ -69,8 +69,8 @@ const normalizeText = (value) => String(value ?? "").replace(/\s+/g, " ").trim()
 
 // A stable signature of a question's answer content, so two questions that only
 // differ in whitespace/casing still count as the same. Multiple-choice compares
-// the option texts (keyed A–D) and the correct letter; the other types compare
-// their acceptable/correct answers.
+// the option texts and images (keyed by letter) and the correct letter; the
+// other types compare their acceptable/correct answers.
 const answerSignature = (q) => {
     const type = String(q.questionType || q.type || "").toLowerCase();
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
@@ -80,7 +80,8 @@ const answerSignature = (q) => {
             .map((key) => {
                 const opt = options[key];
                 const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
-                return `${key}:${normalizeText(text)}`;
+                const imageId = (opt && opt.image && opt.image.fileId) || "";
+                return `${key}:${normalizeText(text)}@${imageId}`;
             })
             .join("|");
         return `mc:${opts}#${normalizeText(q.correctAnswer)}`;

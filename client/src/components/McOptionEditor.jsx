@@ -1,10 +1,15 @@
 import { MC_MAX_OPTIONS, MC_MIN_OPTIONS, addOptionRow, removeOptionRow } from "../lib/mcOptions";
+import QuestionImageField from "./QuestionImageField";
+import { discardImageFile } from "../lib/questionImages";
+
+// Alt text only: a caption shown under a structure could name the answer.
+export const OPTION_IMAGE_CAPTION_PLACEHOLDER = "Alt text for screen readers (not shown on screen)";
 
 // The answer-option rows of a multiple-choice form: one radio per row for the
-// correct answer, text and feedback inputs, and add/remove controls between
-// two and eight rows (issue #144). Shared by the add-question wizard and the
-// edit modal, which keep the rows in `form.options` and the answer in
-// `form.correctAnswer`.
+// correct answer, text and feedback inputs, an optional image (issue #146),
+// and add/remove controls between two and eight rows (issue #144). Shared by
+// the add-question wizard and the edit modal, which keep the rows in
+// `form.options` and the answer in `form.correctAnswer`.
 export default function McOptionEditor({
   options,
   correctAnswer,
@@ -13,6 +18,7 @@ export default function McOptionEditor({
   radioName = "mc-correct-answer",
   inputClass = "",
   feedbackPlaceholder = "Feedback for this option...",
+  courseId,
 }) {
   const update = (index, patch) => {
     const next = [...options];
@@ -46,7 +52,7 @@ export default function McOptionEditor({
               aria-label={`Option ${option.id} text`}
               value={option.text}
               readOnly={readOnly}
-              placeholder="Enter option text..."
+              placeholder="Enter option text, or attach an image..."
               onChange={(event) => update(index, { text: event.target.value })}
               className={inputClass}
             />
@@ -59,6 +65,17 @@ export default function McOptionEditor({
               onChange={(event) => update(index, { feedback: event.target.value })}
               className={`${inputClass} bg-gray-50 italic`}
             />
+            {(option.image || !readOnly) && (
+              <QuestionImageField
+                single
+                label={`Option ${option.id}`}
+                value={option.image ? [option.image] : []}
+                onChange={(images) => update(index, { image: images[0] || null })}
+                disabled={readOnly}
+                courseId={courseId}
+                captionPlaceholder={OPTION_IMAGE_CAPTION_PLACEHOLDER}
+              />
+            )}
           </div>
           {!readOnly && (
             <button
@@ -66,7 +83,10 @@ export default function McOptionEditor({
               aria-label={`Remove option ${option.id}`}
               title={canRemove ? "Remove this option" : `Keep at least ${MC_MIN_OPTIONS} options`}
               disabled={!canRemove}
-              onClick={() => onChange(removeOptionRow(options, index, correctAnswer))}
+              onClick={() => {
+                discardImageFile(option.image?.fileId);
+                onChange(removeOptionRow(options, index, correctAnswer));
+              }}
               className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
             >
               <i className="fas fa-times" aria-hidden="true" />

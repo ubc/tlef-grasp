@@ -858,6 +858,13 @@ const getQuizQuestionsHandler = async (req, res) => {
       if (withholdAnswers) {
         Object.values(optionsObj).forEach((option) => {
           delete option.feedback;
+          // An option image's filename could name the answer; keep only what
+          // the student view needs.
+          if (option.image?.fileId) {
+            option.image = { fileId: String(option.image.fileId), caption: option.image.caption || "" };
+          } else {
+            delete option.image;
+          }
         });
       }
 

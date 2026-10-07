@@ -1,8 +1,9 @@
 // Multiple-choice options are an object keyed by letter ({ A: { text,
-// feedback }, ... }), two to eight of them lettered consecutively from A
-// (issue #144). Forms edit them as an ordered list of rows ({ id, text,
-// feedback }) and convert back on save. Everything that reads or edits
-// options goes through here so no screen assumes exactly four.
+// feedback, image }, ... }), two to eight of them lettered consecutively from
+// A (issue #144). An option may carry one image (issue #146). Forms edit them
+// as an ordered list of rows ({ id, text, feedback, image }) and convert back
+// on save. Everything that reads or edits options goes through here so no
+// screen assumes exactly four.
 
 import {
   MC_OPTION_KEYS,
@@ -40,6 +41,11 @@ export function optionTextOf(raw) {
   return raw === undefined || raw === null ? "" : String(raw);
 }
 
+/** One option value's attached image ({ fileId, caption, ... }), or null. */
+export function optionImageOf(raw) {
+  return raw && typeof raw === "object" && raw.image?.fileId ? raw.image : null;
+}
+
 /** The index the server expects back for a letter (its position in A to H). */
 export function optionIndexOf(key) {
   return MC_OPTION_KEYS.indexOf(key);
@@ -47,7 +53,7 @@ export function optionIndexOf(key) {
 
 /** `count` blank rows lettered from A. */
 export function emptyOptionRows(count = MC_DEFAULT_OPTION_COUNT) {
-  return MC_OPTION_KEYS.slice(0, count).map((id) => ({ id, text: "", feedback: "" }));
+  return MC_OPTION_KEYS.slice(0, count).map((id) => ({ id, text: "", feedback: "", image: null }));
 }
 
 /**
@@ -63,6 +69,7 @@ export function optionRowsOf(options) {
       id,
       text: optionTextOf(raw),
       feedback: raw && typeof raw === "object" ? String(raw.feedback || "") : "",
+      image: optionImageOf(raw),
     };
   });
 }
@@ -75,7 +82,7 @@ export function relabelOptionRows(rows) {
 /** Append a blank row, up to the maximum. */
 export function addOptionRow(rows) {
   if (rows.length >= MC_MAX_OPTIONS) return rows;
-  return relabelOptionRows([...rows, { id: "", text: "", feedback: "" }]);
+  return relabelOptionRows([...rows, { id: "", text: "", feedback: "", image: null }]);
 }
 
 /**
@@ -99,11 +106,33 @@ export function removeOptionRow(rows, index, correctAnswer) {
 /** Rows back into the stored object shape (text and feedback trimmed). */
 export function optionRowsToObject(rows) {
   return Object.fromEntries(
-    relabelOptionRows(rows).map((row) => [
-      row.id,
-      { text: String(row.text || "").trim(), feedback: String(row.feedback || "").trim() },
-    ])
+    relabelOptionRows(rows).map((row) => {
+      const option = {
+        text: String(row.text || "").trim(),
+        feedback: String(row.feedback || "").trim(),
+      };
+      if (row.image?.fileId) option.image = row.image;
+      return [row.id, option];
+    })
   );
+}
+
+/**
+ * Why a set of option rows cannot be saved, or "" when it can. Each option
+ * needs text or an image, and no two may be the same: same text and same
+ * image (or none). Two image-only options with different images are distinct.
+ */
+export function optionRowsError(rows) {
+  if (rows.some((row) => !String(row.text || "").trim() && !row.image?.fileId)) {
+    return "Each option needs text or an image";
+  }
+  const signatures = rows.map(
+    (row) => `${String(row.text || "").trim().toLowerCase()}@${row.image?.fileId || ""}`
+  );
+  if (new Set(signatures).size !== signatures.length) {
+    return "Options must be unique — no two options may be identical";
+  }
+  return "";
 }
 
 /** A requested generation option count, or the default when out of range. */

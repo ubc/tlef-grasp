@@ -127,6 +127,24 @@ describe('per-type params', () => {
     ]);
   });
 
+  test('multiple-choice writes an image-only option as its caption, never blank (issue #146)', () => {
+    const withImages = {
+      ...mcQuestion,
+      options: {
+        ...mcQuestion.options,
+        A: { text: '', image: { fileId: '665f1a0000000000000000aa', caption: 'Benzene ring' } },
+        B: { text: '', image: { fileId: '665f1a0000000000000000bb', caption: '' } },
+      },
+    };
+    const { manifest, content: c } = buildH5PPackage('Quiz', [withImages]);
+    const params = c.questions[0].params;
+    expect(params.answers[0].text).toBe('<div>Benzene ring</div>');
+    expect(params.answers[1].text).toBe('<div>Option B (image)</div>');
+    expect(JSON.stringify(params.answers)).not.toContain('<img');
+    // Option images are left out, so no Image library is declared for them.
+    expect(JSON.stringify(manifest)).not.toContain('H5P.Image');
+  });
+
   test('fill-in-the-blank converts the underscore blank to H5P markup with alternatives', () => {
     const params = content.questions[1].params;
     expect(params.questions[0]).toContain('*mitochondrion/mitochondria*');

@@ -15,6 +15,8 @@ const {
   getQuestionText,
   getOptionKeys,
   getOptionText,
+  getOptionImage,
+  getOptionTextOrImageLabel,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
   stemImagesOf,
@@ -611,11 +613,12 @@ function createCSVExport(course, questions) {
     };
 
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
-      row.options = optionColumns.map((key) => getOptionText(q, key));
+      // CSV has no images: an image-only option shows its caption instead.
+      row.options = optionColumns.map((key) => getOptionTextOrImageLabel(q, key));
 
       // correctAnswer may be a letter or a numeric index.
       const letter = correctAnswerKey(q.correctAnswer);
-      row.correctAnswer = getOptionText(q, letter) || letter;
+      row.correctAnswer = getOptionTextOrImageLabel(q, letter) || letter;
     } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = getAcceptableAnswers(q);
       row.correctAnswer = String(q.correctAnswer || acceptable[0] || '');
@@ -679,9 +682,10 @@ function generateCanvasId(prefix = 'g') {
 
 /**
  * Collect every instructor-attached image ref ({ fileId, filename, ... })
- * across the exported questions, de-duplicated by fileId.
+ * across the exported questions, de-duplicated by fileId. Option images
+ * (issue #146) are included only for formats that can show them.
  */
-function collectExportImageRefs(questions) {
+function collectExportImageRefs(questions, { includeOptionImages = false } = {}) {
   const refs = new Map();
   const add = (ref) => {
     if (ref && typeof ref === 'object' && ref.fileId && !refs.has(String(ref.fileId))) {
@@ -690,6 +694,9 @@ function collectExportImageRefs(questions) {
   };
   for (const q of questions) {
     stemImagesOf(q).forEach(add);
+    if (includeOptionImages && normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      getOptionKeys(q).forEach((key) => add(getOptionImage(q, key)));
+    }
   }
   return refs;
 }
@@ -703,8 +710,8 @@ function collectExportImageRefs(questions) {
  * and imageFiles: [{ buffer, zipPath, href }] for the archive and manifest.
  * Missing GridFS files are skipped so one lost image never fails the export.
  */
-async function prepareExportImages(questions, { zipDir, imageSrc }) {
-  const refs = collectExportImageRefs(questions);
+async function prepareExportImages(questions, { zipDir, imageSrc, includeOptionImages }) {
+  const refs = collectExportImageRefs(questions, { includeOptionImages });
   const imageMap = new Map();
   const imageFiles = [];
 
@@ -743,11 +750,13 @@ function prepareQTIExportImages(questions) {
   return prepareExportImages(questions, {
     zipDir: 'web_resources/grasp',
     imageSrc: (name) => `$IMS-CC-FILEBASE$/grasp/${encodeURIComponent(name)}`,
+    includeOptionImages: true,
   });
 }
 
 // H5P media files live under content/; content.json references them with
-// paths relative to that folder (filenames are already URL-safe).
+// paths relative to that folder (filenames are already URL-safe). H5P answers
+// cannot hold images, so option images are not bundled.
 function prepareH5PExportImages(questions) {
   return prepareExportImages(questions, {
     zipDir: 'content/images',
@@ -1082,7 +1091,7 @@ function createQTIItem(q, index, imageMap) {
       return '';
     case QUESTION_TYPES.MULTIPLE_CHOICE:
     default:
-      return buildMultipleChoiceItem(q, index, questionHtml);
+      return buildMultipleChoiceItem(q, index, questionHtml, imageMap);
   }
 }
 
@@ -1108,13 +1117,27 @@ function qtiItemMetadata(qtiType, assessmentQuestionId, extraFields = '') {
         </itemmetadata>`;
 }
 
-function buildMultipleChoiceItem(q, index, questionHtml) {
-  // Every option the question has (two to eight). Canvas requires non-empty
-  // option text, so a blank one is exported as its letter.
-  const options = getOptionKeys(q).map((key) => {
-    const text = getOptionText(q, key);
-    return text.trim() ? text : `Option ${key}`;
-  });
+// One answer choice's <mattext>. An option with a bundled image (issue #146)
+// becomes HTML: its text, if any, then the image, whose caption is alt text
+// only. Otherwise plain text; Canvas requires a non-empty answer, so a blank
+// option is exported as its caption or its letter.
+function buildOptionMattext(q, key, imageMap) {
+  const text = getOptionText(q, key).trim();
+  const image = getOptionImage(q, key);
+  const entry = image ? imageMap?.get(String(image.fileId)) : null;
+  if (entry) {
+    const alt = escapeXml(image.caption || image.alt || '');
+    const textHtml = text ? `<p>${escapeXml(text)}</p>` : '';
+    const html = `<div>${textHtml}<p><img src="${entry.src}" alt="${alt}"></p></div>`;
+    return `<mattext texttype="text/html">${escapeXml(html)}</mattext>`;
+  }
+  const label = getOptionTextOrImageLabel(q, key).trim() || `Option ${key}`;
+  return `<mattext texttype="text/plain">${escapeXml(label)}</mattext>`;
+}
+
+function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
+  // Every option the question has (two to eight).
+  const options = getOptionKeys(q).map((key) => buildOptionMattext(q, key, imageMap));
 
   // Canvas uses numeric string IDs (4+ digits) for answer choices.
   const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
@@ -1131,7 +1154,7 @@ function buildMultipleChoiceItem(q, index, questionHtml) {
       (id, i) => `
               <response_label ident="${id}">
                 <material>
-                  <mattext texttype="text/plain">${escapeXml(options[i])}</mattext>
+                  ${options[i]}
                 </material>
               </response_label>`
     )

@@ -147,7 +147,7 @@ describe("image service", () => {
   });
 
   describe("collectQuestionImageIds", () => {
-    it("collects stem images, the legacy single image, and legacy option images", () => {
+    it("collects stem images, the legacy single image, and option images", () => {
       const stemA = new ObjectId().toString();
       const stemB = new ObjectId().toString();
       const legacyStem = new ObjectId().toString();
@@ -174,6 +174,38 @@ describe("image service", () => {
           options: { A: "just a string" },
         })
       ).toEqual([]);
+    });
+  });
+
+  describe("isImageInUse", () => {
+    function mockQuestions(match) {
+      const findOne = jest.fn().mockResolvedValue(match);
+      databaseService.connect.mockResolvedValue({
+        collection: jest.fn(() => ({ findOne })),
+      });
+      return findOne;
+    }
+
+    it("looks for the file as a stem image, the legacy stem image, or any option's image", async () => {
+      const fileId = new ObjectId().toString();
+      const findOne = mockQuestions({ _id: new ObjectId() });
+
+      await expect(imageService.isImageInUse(fileId)).resolves.toBe(true);
+
+      const [filter] = findOne.mock.calls[0];
+      expect(filter.$or).toEqual(
+        expect.arrayContaining([
+          { "stemImages.fileId": fileId },
+          { "stemImage.fileId": fileId },
+          { "options.A.image.fileId": fileId },
+          { "options.H.image.fileId": fileId },
+        ])
+      );
+    });
+
+    it("is false when no question uses the file", async () => {
+      mockQuestions(null);
+      await expect(imageService.isImageInUse(new ObjectId().toString())).resolves.toBe(false);
     });
   });
 });
