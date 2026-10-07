@@ -2,8 +2,10 @@ import { useRef, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelectedCourse } from "../stores/appStore";
 import { useCourseMaterials } from "../hooks/useMaterials";
-import { useCourseQuizzes, useCreateQuiz } from "../hooks/useQuizzes";
-import { useSaveQuestions } from "../hooks/useQuestions";
+import { useCourseQuizzes, useInvalidateQuizzes } from "../hooks/useQuizzes";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateQuestions } from "../hooks/useQuestions";
+import { api } from "../lib/api";
 import { useToast } from "../components/ui/Toast";
 import Modal from "../components/ui/Modal";
 import ObjectivesStep from "./question-generation/ObjectivesStep";
@@ -16,6 +18,7 @@ import {
   convertQuestionsToGroups,
   buildQuestionPayload,
 } from "./question-generation/generationApi";
+import { attachSavedIds } from "./question-generation/savedQuestionIds";
 
 const STEP_TITLES = {
   1: "Create Objectives",
@@ -180,42 +183,51 @@ export default function QuestionGeneration() {
 
   /* ------------------------------ Mutations ------------------------------ */
 
-  const createQuizMutation = useCreateQuiz(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.questionsAdded || variables.newQuestions.length;
-      clearDraft();
-      setSuccessMessage(
-        `Successfully created quiz and added ${count} question${count !== 1 ? "s" : ""}!`
-      );
-      setQuizForm((prev) => ({ ...prev, quizName: "", quizDescription: "" }));
-    },
-    onError: (error) => {
-      console.error("Error adding questions to quiz:", error);
-      showToast(error.message || "Failed to add questions to quiz", "error");
-    },
-  });
+  // Save the page's questions to the bank. Questions already there (they
+  // have an _id) are updated with this page's edits rather than saved again;
+  // one whose bank copy has since been deleted (404) is saved as new, like a
+  // question that was never saved. New ids are recorded on the page straight
+  // away, so a later failure cannot make a retry save them twice. Returns the
+  // bank id of every page question, in page order (null where a save failed).
+  const invalidateQuestions = useInvalidateQuestions(courseId);
+  const invalidateQuizzes = useInvalidateQuizzes(courseId);
+  const saveToBank = async (pageQuestions) => {
+    const deleted = [];
+    await Promise.all(
+      pageQuestions
+        .filter((q) => q._id)
+        .map((q) =>
+          api.put(`/api/question/${q._id}`, buildQuestionPayload(q)).catch((error) => {
+            if (error.status !== 404) throw error;
+            deleted.push(q);
+          })
+        )
+    );
+    const toSave = [...pageQuestions.filter((q) => !q._id), ...deleted];
+    const data = toSave.length
+      ? await api.post("/api/question/save", {
+          courseId,
+          questions: toSave.map(buildQuestionPayload),
+        })
+      : {};
+    const localIds = toSave.map((q) => q.id);
+    // Record the bank ids so Step 2 can offer to delete from the bank.
+    setQuestionGroups((prev) => attachSavedIds(prev, localIds, data.questionIdsByIndex));
+    invalidateQuestions();
+    clearDraft();
+    const newIds = new Map(localIds.map((id, i) => [id, data.questionIdsByIndex?.[i] || null]));
+    return {
+      ids: pageQuestions.map((q) => (newIds.has(q.id) ? newIds.get(q.id) : q._id)),
+      // Updated questions plus the ones the save call actually stored.
+      savedCount: pageQuestions.length - localIds.length + (data.savedCount || 0),
+    };
+  };
 
-  const addToQuizMutation = useSaveQuestions(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.questionsAdded || variables.questions.length;
-      clearDraft();
+  const addToBankMutation = useMutation({
+    mutationFn: saveToBank,
+    onSuccess: ({ savedCount: count }) => {
       setSuccessMessage(
-        `Successfully added ${count} question${count !== 1 ? "s" : ""} to quiz!`
-      );
-      setQuizForm((prev) => ({ ...prev, selectedQuizId: "" }));
-    },
-    onError: (error) => {
-      console.error("Error adding questions to quiz:", error);
-      showToast(error.message || "Failed to add questions to quiz", "error");
-    },
-  });
-
-  const addToBankMutation = useSaveQuestions(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.savedCount || variables.questions.length;
-      clearDraft();
-      setSuccessMessage(
-        `Successfully added ${count} question${count !== 1 ? "s" : ""} to the Question Bank!`
+        `Successfully saved ${count} question${count !== 1 ? "s" : ""} to the Question Bank!`
       );
     },
     onError: (error) => {
@@ -224,7 +236,38 @@ export default function QuestionGeneration() {
     },
   });
 
-  const saving = createQuizMutation.isPending || addToQuizMutation.isPending;
+  // Step 3 goes through the bank first, so a quiz only ever gets the bank's
+  // own questions: never a second copy of one already saved.
+  const saveToQuizMutation = useMutation({
+    mutationFn: async ({ pageQuestions, quiz }) => {
+      const questionIds = (await saveToBank(pageQuestions)).ids.filter(Boolean);
+      if (quiz.quizId) {
+        const data = await api.post(`/api/quiz/${quiz.quizId}/existing-questions`, {
+          questionIds,
+        });
+        return data.insertedCount;
+      }
+      const data = await api.post("/api/quiz", { courseId, ...quiz, questionIds });
+      return data.questionsAdded;
+    },
+    onSuccess: (count, { quiz }) => {
+      invalidateQuizzes();
+      const plural = count !== 1 ? "s" : "";
+      if (quiz.quizId) {
+        setSuccessMessage(`Successfully added ${count} question${plural} to quiz!`);
+        setQuizForm((prev) => ({ ...prev, selectedQuizId: "" }));
+      } else {
+        setSuccessMessage(`Successfully created quiz and added ${count} question${plural}!`);
+        setQuizForm((prev) => ({ ...prev, quizName: "", quizDescription: "" }));
+      }
+    },
+    onError: (error) => {
+      console.error("Error adding questions to quiz:", error);
+      showToast(error.message || "Failed to add questions to quiz", "error");
+    },
+  });
+
+  const saving = saveToQuizMutation.isPending;
   const addingToBank = addToBankMutation.isPending;
 
   /* ------------------------------ Generation ------------------------------ */
@@ -341,13 +384,11 @@ export default function QuestionGeneration() {
   /* ------------------------------ Step 3 save ------------------------------ */
 
   const collectQuestions = () =>
-    questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
-    );
+    questionGroups.flatMap((group) => group.los.flatMap((lo) => lo.questions));
 
   const handleSaveToQuiz = () => {
-    const questions = collectQuestions();
-    if (questions.length === 0) {
+    const pageQuestions = collectQuestions();
+    if (pageQuestions.length === 0) {
       showToast("No questions to save", "error");
       return;
     }
@@ -357,32 +398,30 @@ export default function QuestionGeneration() {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      createQuizMutation.mutate({
-        courseId,
-        name: quizForm.quizName.trim(),
-        description: quizForm.quizDescription.trim() || "",
-        deliveryFormat: quizForm.deliveryFormat || "all-approved",
-        newQuestions: questions,
+      saveToQuizMutation.mutate({
+        pageQuestions,
+        quiz: {
+          name: quizForm.quizName.trim(),
+          description: quizForm.quizDescription.trim() || "",
+          deliveryFormat: quizForm.deliveryFormat || "all-approved",
+        },
       });
     } else {
       if (!quizForm.selectedQuizId) {
         showToast("Please select or create a quiz", "error");
         return;
       }
-      addToQuizMutation.mutate({ questions, quizId: quizForm.selectedQuizId });
+      saveToQuizMutation.mutate({ pageQuestions, quiz: { quizId: quizForm.selectedQuizId } });
     }
   };
 
   const handleAddAllToBank = () => {
-    const questions = questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
-    );
-
-    if (questions.length === 0) {
+    const pageQuestions = collectQuestions();
+    if (pageQuestions.length === 0) {
       showToast("No questions to add", "warning");
       return;
     }
-    addToBankMutation.mutate({ questions });
+    addToBankMutation.mutate(pageQuestions);
   };
 
   /* --------------------------------- Render -------------------------------- */
@@ -427,6 +466,7 @@ export default function QuestionGeneration() {
           }}
           onRetry={runGeneration}
           onSaveDraft={persistDraft}
+          courseId={courseId}
         />
       )}
 

@@ -365,3 +365,154 @@ test.describe('Instructor question bank (seeded course)', () => {
     await expect(page.getByText(SEED.GRANULAR_NAME)).toBeVisible();
   });
 });
+
+// Deleting a learning objective from step 1 of the generation wizard, which
+// now asks whether "delete" means this page or the record, and routes the
+// destructive branch through the Objectives tab's keep-or-delete prompt.
+//
+// Both tests create their own throwaway objective through the API, so the
+// seeded BIOC 302 records other specs depend on are never at risk.
+test.describe('Deleting objectives from question generation (seeded course)', () => {
+  test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
+
+  const DIALOG = 'Delete Learning Objective?';
+  const DB_OPTION = /Delete from the Question Bank/;
+
+  async function throwawayObjective(page, courseId, label) {
+    const name = `[[e2e-delete]] ${label} ${Date.now()}`;
+    const response = await page.request.post('/api/objective', {
+      data: { name, courseId, granularObjectives: [{ text: `${name} granular` }] },
+    });
+    expect(response.ok(), `objective created (HTTP ${response.status()})`).toBe(true);
+    const body = await response.json();
+    return {
+      id: String(body.objective._id),
+      name,
+      granularId: String((body.granularObjectives || [])[0]?._id || ''),
+    };
+  }
+
+  async function objectiveNames(page, courseId) {
+    const response = await page.request.get(`/api/objective/?courseId=${courseId}`);
+    expect(response.ok()).toBe(true);
+    return ((await response.json()).objectives || []).map((o) => o.name);
+  }
+
+  // Put the objective on step 1 the way an instructor would, and hand back the
+  // card's trash control — its accessible name carries the objective name.
+  async function addToPage(page, name) {
+    await page.goto('/question-generation');
+    await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+    await page.getByRole('checkbox', { name, exact: true }).check();
+    await page.getByRole('button', { name: 'Add 1 objective' }).click();
+    const trash = page.getByRole('button', { name: `Delete ${name}` });
+    await expect(trash).toBeVisible();
+    return trash;
+  }
+
+  test('a page removal keeps the bank record; a database delete removes it', async ({
+    page,
+  }) => {
+    const course = await selectSeededCourse(page, { role: 'instructor' });
+    const objective = await throwawayObjective(page, course.id, 'both-branches');
+
+    try {
+      let trash = await addToPage(page, objective.name);
+      await trash.click();
+      let dialog = page.getByRole('dialog', { name: DIALOG });
+      // The safe option is pre-selected, and nothing calls it permanent.
+      await expect(dialog.getByRole('radio', { name: /Remove from this page/ })).toBeChecked();
+      await expect(dialog.getByText(/cannot be undone/i)).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Remove from this page' }).click();
+      await expect(trash).toHaveCount(0);
+      expect(await objectiveNames(page, course.id)).toContain(objective.name);
+
+      // Same objective, other branch. Nothing is attached to it, so the
+      // keep-or-delete prompt would be asking about nothing: the delete
+      // finishes on this click with no second dialog.
+      trash = await addToPage(page, objective.name);
+      await trash.click();
+      dialog = page.getByRole('dialog', { name: DIALOG });
+      await dialog.getByRole('radio', { name: DB_OPTION }).check();
+      const [deleted] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().includes(`/api/objective/${objective.id}`) &&
+            r.request().method() === 'DELETE'
+        ),
+        dialog.getByRole('button', { name: DB_OPTION }).click(),
+      ]);
+      expect(deleted.ok()).toBe(true);
+      expect(new URL(deleted.url()).searchParams.get('questionAction')).toBe('keep');
+      await expect(page.getByText('Learning objective deleted')).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect(await objectiveNames(page, course.id)).not.toContain(objective.name);
+    } finally {
+      await page.request.delete(`/api/objective/${objective.id}?questionAction=delete`);
+    }
+  });
+
+  test('deleting an objective with questions asks what happens to them first', async ({
+    page,
+  }) => {
+    const course = await selectSeededCourse(page, { role: 'instructor' });
+    const objective = await throwawayObjective(page, course.id, 'with-questions');
+    const questionTitle = `[[e2e-delete]] attached question ${Date.now()}`;
+
+    try {
+      const saved = await page.request.post('/api/question/save', {
+        data: {
+          courseId: course.id,
+          questions: [
+            {
+              title: questionTitle,
+              stem: 'Which delete did you mean?',
+              questionType: 'multiple-choice',
+              options: { A: { text: 'This page' }, B: { text: 'Everywhere' } },
+              correctAnswer: 'A',
+              bloom: 'Understand',
+              status: 'Approved',
+              granularObjectiveId: objective.granularId,
+            },
+          ],
+        },
+      });
+      expect(saved.ok(), 'attached question is created').toBe(true);
+
+      const trash = await addToPage(page, objective.name);
+      await trash.click();
+      const scope = page.getByRole('dialog', { name: DIALOG });
+      await scope.getByRole('radio', { name: DB_OPTION }).check();
+      await scope.getByRole('button', { name: DB_OPTION }).click();
+
+      // Second prompt: the Objectives tab's, reporting the attached question
+      // and defaulting to keeping it.
+      const questions = page.getByRole('dialog', { name: 'Delete Learning Objective' });
+      await expect(questions.getByText(/1 question/)).toBeVisible();
+      await expect(questions.getByRole('radio', { name: /Keep the questions/ })).toBeChecked();
+      const [deleted] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().includes(`/api/objective/${objective.id}`) &&
+            r.request().method() === 'DELETE'
+        ),
+        questions.getByRole('button', { name: 'Delete', exact: true }).click(),
+      ]);
+      expect(new URL(deleted.url()).searchParams.get('questionAction')).toBe('keep');
+
+      // Objective gone, question kept — orphaned back to Draft.
+      expect(await objectiveNames(page, course.id)).not.toContain(objective.name);
+      const listed = await page.request.get(`/api/question?courseId=${course.id}`);
+      expect(listed.ok()).toBe(true);
+      const kept = ((await listed.json()).questions || []).find(
+        (q) => q.title === questionTitle
+      );
+      expect(kept, 'the attached question survives the delete').toBeTruthy();
+      expect(kept.status).toBe('Draft');
+    } finally {
+      await page.request.delete(`/api/objective/${objective.id}?questionAction=delete`);
+      await deleteQuestionsByTitle([questionTitle]);
+    }
+  });
+});

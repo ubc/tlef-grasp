@@ -296,12 +296,18 @@ const saveQuestionHandler = async (req, res) => {
     // Import sets dedupe: reject questions that already exist in the course
     // rather than creating duplicates.
     const savedQuestionIds = [];
+    // One entry per submitted question, in request order, null where the save
+    // failed. savedQuestionIds skips failures, so it cannot be lined up by index.
+    const questionIdsByIndex = [];
     let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
         const questionResult = await saveQuestion(courseId, questionData, { dedupe: dedupe === true });
-        savedQuestionIds.push(questionResult.insertedId.toString());
+        const savedId = questionResult.insertedId.toString();
+        savedQuestionIds.push(savedId);
+        questionIdsByIndex.push(savedId);
       } catch (error) {
+        questionIdsByIndex.push(null);
         if (error.code === "DUPLICATE_QUESTION") {
           duplicateCount += 1;
         } else {
@@ -329,7 +335,8 @@ const saveQuestionHandler = async (req, res) => {
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
       duplicateCount,
-      questionIds: savedQuestionIds
+      questionIds: savedQuestionIds,
+      questionIdsByIndex,
     });
   } catch (error) {
     console.error("Error saving question:", error);
@@ -344,6 +351,12 @@ const updateQuestionHandler = async (req, res) => {
     const updateData = req.body;
 
     const courseId = await getQuestionCourseId(questionId);
+
+    // As in deleteQuestionHandler: a missing question is a 404, not an access
+    // failure. The wizard re-saves a question as new when its update 404s.
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
@@ -443,6 +456,13 @@ const deleteQuestionHandler = async (req, res) => {
     const { questionId } = req.params;
 
     const courseId = await getQuestionCourseId(questionId);
+
+    // A question that no longer exists has no course to check access against,
+    // so say so instead of reporting it as an access failure. Clients treat
+    // 404 as "already deleted" (e.g. removed from the Question Bank tab first).
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
