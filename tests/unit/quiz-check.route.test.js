@@ -531,6 +531,99 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         correctOptionText: expected,
       });
     });
+
+    // Issue #145: text that is not a number is a typo, not a wrong answer.
+    it('asks for a number instead of grading text, and records nothing', async () => {
+      getQuestion.mockResolvedValue(calcQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: '4 moles', calculationToken });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ success: false, code: 'NOT_A_NUMBER' });
+      expect(res.body.error).toMatch(/1\.5e3/);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('accepts scientific notation and thousands separators', async () => {
+      getQuestion.mockResolvedValue({
+        ...calcQuestion,
+        stem: 'What is {x} times 500?',
+        calculationFormula: 'x * 500',
+      });
+      for (const answerText of ['1500', '1,500', '1.5e3', '1.5 x 10^3', ' 1500 ']) {
+        const res = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText, calculationToken });
+        expect(res.status).toBe(200);
+        expect(res.body.isCorrect).toBe(true);
+      }
+    });
+
+    describe('fixed-answer questions (no variables)', () => {
+      const fixedQuestion = {
+        _id: 'question-1',
+        questionType: 'calculation',
+        stem: 'How many molecules are in two moles?',
+        calculationFormula: '6.02e23 * 2',
+        calculationVariables: [],
+        calculationAnswerDecimals: 2,
+        calculationTolerance: { mode: 'absolute', value: 1e22 },
+        learningObjectiveId: 'lo-1',
+        bloom: 'Apply',
+      };
+      // Every student shares one instance, so the token carries no values.
+      const fixedToken = CalculationQuestion.signCalculationToken('question-1', {});
+
+      it('grades within an absolute tolerance and shows the answer in scientific notation', async () => {
+        getQuestion.mockResolvedValue(fixedQuestion);
+
+        const right = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1.21e24', calculationToken: fixedToken });
+        expect(right.status).toBe(200);
+        expect(right.body).toMatchObject({ isCorrect: true, correctAnswer: '1.2 × 10^24' });
+
+        const wrong = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1.3 x 10^24', calculationToken: fixedToken });
+        expect(wrong.status).toBe(200);
+        expect(wrong.body).toMatchObject({ isCorrect: false, correctAnswer: null });
+      });
+
+      it('grades a range on its bounds', async () => {
+        getQuestion.mockResolvedValue({
+          ...fixedQuestion,
+          calculationFormula: '7.4',
+          calculationTolerance: { mode: 'range', min: 7, max: 7.8 },
+        });
+
+        const inside = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '7.0', calculationToken: fixedToken });
+        expect(inside.body).toMatchObject({ isCorrect: true, correctAnswer: '7.4' });
+
+        const outside = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '6.9', calculationToken: fixedToken });
+        expect(outside.body).toMatchObject({ isCorrect: false });
+      });
+
+      it('still honours the legacy percent field on older questions', async () => {
+        getQuestion.mockResolvedValue({
+          ...fixedQuestion,
+          calculationFormula: '1500',
+          calculationTolerance: undefined,
+          calculationAnswerTolerancePercent: 2,
+        });
+
+        const res = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1529', calculationToken: fixedToken });
+        expect(res.body).toMatchObject({ isCorrect: true, correctAnswer: '1500' });
+      });
+    });
   });
 
   describe('practice mode (practice: true)', () => {

@@ -9,6 +9,7 @@ const quizService = require('../services/quiz');
 const { downloadImageBuffer } = require('../services/image');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const {
   normalizeQuestionType,
   getQuestionText,
@@ -629,6 +630,18 @@ function createCSVExport(course, questions) {
         row.acceptableAnswers = specs
           .map((v) => `${v.name} ∈ [${v.min}, ${v.max}]`)
           .join('; ');
+      } else {
+        // A fixed-answer question: the formula is a constant, so the sheet can
+        // show the answer itself.
+        try {
+          const { answerDec } = CalculationQuestion.readGradingSettings(q);
+          row.correctAnswer = CalculationQuestion.formatAnswerForDisplay(
+            CalculationQuestion.evaluateCalculationFormula(row.formula, {}),
+            answerDec
+          );
+        } catch {
+          row.correctAnswer = '';
+        }
       }
     }
 

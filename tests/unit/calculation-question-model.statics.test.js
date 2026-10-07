@@ -66,9 +66,22 @@ describe('CalculationQuestion static helpers', () => {
     expect(() =>
       CalculationQuestion.validateFormulaAgainstVariableSpecs('x + ∫', [{ name: 'x' }])
     ).toThrow('unsupported characters');
+    // No variables: the formula must be a finite constant (issue #145).
     expect(() =>
       CalculationQuestion.validateFormulaAgainstVariableSpecs('x + 1', [])
-    ).toThrow('calculationVariables must define at least one valid variable name');
+    ).toThrow('Formula uses variable(s) x but no variables are declared');
+    expect(() =>
+      CalculationQuestion.validateFormulaAgainstVariableSpecs('1 / 0', [])
+    ).toThrow('non-finite value');
+    expect(() =>
+      CalculationQuestion.validateFormulaAgainstVariableSpecs('6.02e23 * 2', [])
+    ).not.toThrow();
+    expect(() =>
+      CalculationQuestion.validateStemReferencesAllVariables('Find {{x}} and {{y}}.', [])
+    ).toThrow('stem uses placeholder(s) {{x}}, {{y}} but no variables are declared');
+    expect(() =>
+      CalculationQuestion.validateStemReferencesAllVariables('How many moles?', [])
+    ).not.toThrow();
 
     expect(() =>
       CalculationQuestion.validateFormulaReferencesAllVariables('x + 1', [
@@ -97,9 +110,8 @@ describe('CalculationQuestion static helpers', () => {
       { name: '!!!', min: 1, max: 2 },
     ]);
     expect(values).toEqual({ x: 3, rate: 0.3, fixed: 7 });
-    expect(() => CalculationQuestion.generateVariableValues([])).toThrow(
-      'Calculation questions require at least one variable definition'
-    );
+    // A fixed-answer question samples nothing.
+    expect(CalculationQuestion.generateVariableValues([])).toEqual({});
     expect(() =>
       CalculationQuestion.generateVariableValues([{ name: 'x', min: 'bad', max: 2 }])
     ).toThrow('Invalid min/max for variable "x"');
@@ -173,7 +185,146 @@ describe('CalculationQuestion static helpers', () => {
     expect(Number.isNaN(CalculationQuestion.parseStudentNumericAnswer('   '))).toBe(true);
     expect(CalculationQuestion.parseStudentNumericAnswer('1,234.5')).toBe(1234.5);
     expect(CalculationQuestion.numericAnswersMatch(NaN, 1, 2)).toBe(false);
-    expect(CalculationQuestion.numericAnswersMatch(0.001, 0.002, 2, 10)).toBe(true);
+    // An expected value that is tiny but not zero is now shown in scientific
+    // notation, so a percent tolerance applies to it literally: 0.001 is 50 %
+    // off 0.002. Only an expected value of exactly 0 falls back to "rounds to 0".
+    expect(CalculationQuestion.numericAnswersMatch(0.001, 0.002, 2, 10)).toBe(false);
+    expect(CalculationQuestion.numericAnswersMatch(0.004, 0, 2, 10)).toBe(true);
+    expect(CalculationQuestion.numericAnswersMatch(0.006, 0, 2, 10)).toBe(false);
+  });
+
+  // Issue #145: students write numbers many ways; anything that is not a
+  // number is NaN so the route can ask again instead of grading it wrong.
+  it('parses plain, thousands-separated and scientific-notation answers', () => {
+    const parse = CalculationQuestion.parseStudentNumericAnswer;
+    for (const text of [
+      '1500',
+      ' 1500 ',
+      '1,500',
+      '+1500',
+      '1500.',
+      '1.5e3',
+      '1.5E3',
+      '1.5e+3',
+      '1.5 x 10^3',
+      '1.5 X 10 ^ 3',
+      '1.5×10^3',
+      '1.5*10^3',
+      '1.5·10^3',
+      '1.5 × 10³',
+      '1.5x10**3',
+    ]) {
+      expect(parse(text)).toBe(1500);
+    }
+    expect(parse('−1500')).toBe(-1500); // Unicode minus
+    expect(parse('-10^3')).toBe(-1000);
+    expect(parse('10^3')).toBe(1000);
+    expect(parse('1.5 × 10⁻³')).toBe(0.0015);
+    expect(parse('1.5e-3')).toBe(0.0015);
+    expect(parse('.5')).toBe(0.5);
+
+    for (const text of [
+      'abc',
+      '1500 J',
+      '12abc',
+      '3/4',
+      '50%',
+      '1.5e',
+      'e3',
+      '.',
+      '-',
+      '110^3', // not 1 × 10^3: a mantissa needs × or *
+      '1.5 10^3',
+      '0x10',
+    ]) {
+      expect(Number.isNaN(parse(text))).toBe(true);
+    }
+  });
+
+  it('shows very large and very small answers in scientific notation and grades them on their digits', () => {
+    const format = CalculationQuestion.formatAnswerForDisplay;
+    expect(format(6.02e23, 2)).toBe('6.02 × 10^23');
+    expect(format(-6.02e23, 2)).toBe('-6.02 × 10^23');
+    expect(format(1.5e-7, 2)).toBe('1.5 × 10^-7');
+    expect(format(0.0001, 2)).toBe('1 × 10^-4');
+    expect(format(9.996e9, 2)).toBe('1 × 10^10'); // mantissa rounds up to 10
+    expect(format(1e9, 2)).toBe('1 × 10^9');
+    // Ordinary magnitudes are untouched.
+    expect(format(1500, 2)).toBe('1500');
+    expect(format(0.012, 2)).toBe('0.01');
+    expect(format(0.0001, 4)).toBe('0.0001');
+    expect(format(0, 2)).toBe('0');
+    expect(format(144, 1)).toBe('144');
+
+    // Exact mode compares the mantissa at the chosen decimals, not 10^23 decimal places.
+    const match = CalculationQuestion.numericAnswersMatch;
+    expect(match(6.02e23, 6.02e23, 2, null)).toBe(true);
+    expect(match(6.021e23, 6.02e23, 2, null)).toBe(true);
+    expect(match(6.0e23, 6.02e23, 2, null)).toBe(false);
+    expect(match(1500.004, 1500, 2, null)).toBe(true);
+    expect(match(1500.006, 1500, 2, null)).toBe(false);
+  });
+
+  it('normalizes tolerance settings and grades with each mode', () => {
+    const normalize = CalculationQuestion.normalizeTolerance;
+    expect(normalize(null)).toBeNull();
+    expect(normalize('')).toBeNull();
+    expect(normalize({ mode: 'none' })).toBeNull();
+    expect(normalize(2)).toEqual({ mode: 'percent', value: 2 });
+    expect(normalize('2')).toEqual({ mode: 'percent', value: 2 });
+    expect(normalize(150)).toEqual({ mode: 'percent', value: 100 });
+    expect(normalize({ mode: 'percent', value: '2' })).toEqual({ mode: 'percent', value: 2 });
+    expect(normalize({ mode: 'absolute', value: 0.5 })).toEqual({ mode: 'absolute', value: 0.5 });
+    expect(normalize({ mode: 'range', min: '10', max: '12' })).toEqual({ mode: 'range', min: 10, max: 12 });
+    expect(() => normalize({ mode: 'range', min: 5, max: 1 })).toThrow('min ≤ max');
+    expect(() => normalize({ mode: 'percent', value: 101 })).toThrow('0 to 100');
+    expect(() => normalize({ mode: 'absolute', value: -1 })).toThrow('0 or more');
+    expect(() => normalize({ mode: 'weird' })).toThrow('Unknown tolerance mode');
+
+    // A stored question: the object wins, the legacy percent is the fallback.
+    expect(CalculationQuestion.resolveTolerance({ calculationAnswerTolerancePercent: 5 }))
+      .toEqual({ mode: 'percent', value: 5 });
+    expect(
+      CalculationQuestion.resolveTolerance({
+        calculationTolerance: { mode: 'absolute', value: 0.2 },
+        calculationAnswerTolerancePercent: null,
+      })
+    ).toEqual({ mode: 'absolute', value: 0.2 });
+    expect(CalculationQuestion.resolveTolerance({ calculationTolerance: null, calculationAnswerTolerancePercent: 5 }))
+      .toBeNull();
+    expect(CalculationQuestion.legacyPercentOf({ mode: 'percent', value: 3 })).toBe(3);
+    expect(CalculationQuestion.legacyPercentOf({ mode: 'absolute', value: 3 })).toBeNull();
+    // Students learn the rule but never a range's bounds.
+    expect(CalculationQuestion.toleranceForStudent({ mode: 'range', min: 10, max: 12 })).toEqual({ mode: 'range' });
+    expect(CalculationQuestion.toleranceForStudent({ mode: 'percent', value: 2 })).toEqual({ mode: 'percent', value: 2 });
+    expect(CalculationQuestion.toleranceForStudent(null)).toBeNull();
+
+    const match = CalculationQuestion.numericAnswersMatch;
+    expect(match(1530, 1500, 2, { mode: 'percent', value: 2 })).toBe(true);
+    expect(match(1531, 1500, 2, { mode: 'percent', value: 2 })).toBe(false);
+    expect(match(1530, 1500, 2, 2)).toBe(true); // legacy number still works
+    expect(match(1500.2, 1500, 2, { mode: 'absolute', value: 0.2 })).toBe(true); // float noise absorbed
+    expect(match(1500.3, 1500, 2, { mode: 'absolute', value: 0.2 })).toBe(false);
+    expect(match(0.1 + 0.2, 0.3, 2, { mode: 'absolute', value: 0 })).toBe(true);
+    expect(match(11, 0, 2, { mode: 'range', min: 10, max: 12 })).toBe(true);
+    expect(match(12, 0, 2, { mode: 'range', min: 10, max: 12 })).toBe(true);
+    expect(match(12.001, 0, 2, { mode: 'range', min: 10, max: 12 })).toBe(false);
+
+    // A range needs a fixed answer.
+    expect(() =>
+      CalculationQuestion.validateToleranceFitsVariables({ mode: 'range', min: 1, max: 2 }, [{ name: 'x' }])
+    ).toThrow('A range tolerance needs a fixed answer');
+    expect(() =>
+      CalculationQuestion.validateToleranceFitsVariables({ mode: 'range', min: 1, max: 2 }, [])
+    ).not.toThrow();
+    expect(CalculationQuestion.readGradingSettings({
+      calculationAnswerDecimals: 0,
+      calculationTolerance: { mode: 'range', min: 1, max: 2 },
+    })).toEqual({ answerDec: 0, tolerance: { mode: 'range', min: 1, max: 2 }, tolerancePercent: null });
+    // 0 decimal places is a real setting, not "unset".
+    expect(CalculationQuestion.normalizeAnswerDecimals(0)).toBe(0);
+    expect(CalculationQuestion.normalizeAnswerDecimals('abc')).toBe(2);
+    expect(CalculationQuestion.normalizeAnswerDecimals(40)).toBe(12);
   });
 
   it('signs, verifies, and rejects invalid calculation tokens', () => {
@@ -233,7 +384,7 @@ describe('CalculationQuestion static helpers', () => {
         formula: 'x + 1',
         variableSpecs: [],
       }).error.message
-    ).toBe('calculationVariables is empty');
+    ).toContain('but no variables are declared');
     expect(
       CalculationQuestion.buildStudentCalculationInstance({
         template: 'Use {x}',
@@ -241,6 +392,35 @@ describe('CalculationQuestion static helpers', () => {
         variableSpecs: [{ name: 'x', min: 1, max: 5 }],
       }).error.message
     ).toContain('Formula uses variable(s) not defined');
+  });
+
+  it('builds a fixed-answer instance that every student shares', () => {
+    const built = CalculationQuestion.buildStudentCalculationInstance({
+      template: 'How many molecules are in two moles?',
+      formula: '6.02e23 * 2',
+      variableSpecs: [],
+      qid: 'question-1',
+      answerDec: 2,
+    });
+    expect(built.ok).toBe(true);
+    expect(built.rendered).toBe('How many molecules are in two moles?');
+    expect(CalculationQuestion.verifyCalculationToken(built.token).values).toEqual({});
+    expect(
+      CalculationQuestion.formatAnswerForDisplay(
+        CalculationQuestion.evaluateCalculationFormula('6.02e23 * 2', {}),
+        2
+      )
+    ).toBe('1.2 × 10^24');
+    // Nothing is sampled, so there is nothing to retry: a broken constant fails at once.
+    expect(
+      CalculationQuestion.buildStudentCalculationInstance({
+        template: 'Divide.',
+        formula: '1 / 0',
+        variableSpecs: [],
+        qid: 'question-1',
+        answerDec: 2,
+      }).error.message
+    ).toContain('non-finite value');
   });
 
   it('tailors retry suffixes for malformed JSON, missing variables, and calculus notation', () => {

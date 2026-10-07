@@ -69,6 +69,9 @@ export function TextAnswerInput({
 
   const InputTag = multiline ? "textarea" : "input";
 
+  // Calculation answers get the plain text keyboard, not a numeric keypad:
+  // phones' decimal keypads have no minus sign, "e" or "x", so negative
+  // numbers and scientific notation (1.5e3, 1.5 x 10^3) could not be typed.
   return (
     <div className={`rounded-xl border-2 p-5 ${borderClass}`}>
       <label
@@ -81,7 +84,7 @@ export function TextAnswerInput({
         id={`answer-${question.id}`}
         type={multiline ? undefined : "text"}
         rows={multiline ? 6 : undefined}
-        inputMode={hint === "calc" ? "decimal" : undefined}
+        inputMode={hint === "calc" ? "text" : undefined}
         autoComplete="off"
         placeholder={placeholder}
         value={value}

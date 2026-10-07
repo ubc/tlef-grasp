@@ -255,15 +255,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           vars
         );
         const formula = (q.calculationFormula || "").trim();
-        const answerDec =
-          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
-            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
-            : 2;
-        const tolerancePercent =
-          q.calculationAnswerTolerancePercent != null &&
-          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
-            ? Number(q.calculationAnswerTolerancePercent)
-            : null;
+        const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
         const built = CalculationQuestion.buildStudentCalculationInstance({
           template,
@@ -280,6 +272,8 @@ const getQuizQuestionsHandler = async (req, res) => {
             stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
             calculationToken: built.token,
             answerDecimalPlaces: built.answerDecimalPlaces,
+            // The rule the student is graded by, minus a range's bounds.
+            calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
             calculationAnswerTolerancePercent: tolerancePercent,
             options: {},
             learningObjectiveId: q.learningObjectiveId,

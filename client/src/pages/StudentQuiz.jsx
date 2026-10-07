@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { QUESTION_TYPES } from "../lib/constants";
 import { escapeHtml } from "../lib/format";
+import { resolveTolerance } from "../lib/calculationTolerance";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useAppStore } from "../stores/appStore";
 import { useToast } from "../components/ui/Toast";
@@ -18,25 +19,47 @@ import {
   CompletionScreen,
 } from "./student-quiz/QuizTakingParts";
 
-// Calculation questions tell the student the rounding/tolerance rule up front.
+// Calculation questions tell the student the grading rule up front: the
+// tolerance mode the instructor chose (a range's bounds never reach the
+// client), or the rounding when there is none, plus the number formats the
+// server accepts (issue #145).
 function CalculationHint({ question }) {
-  const tolerance = Number(question.calculationAnswerTolerancePercent);
-  if (Number.isFinite(tolerance) && tolerance > 0) {
-    return (
-      <p className="mb-4 text-sm text-muted">
-        Your answer will be accepted within <strong>{tolerance}%</strong> of the
-        correct value.
-      </p>
+  const tolerance = resolveTolerance(question);
+  let rule;
+  if (tolerance?.mode === "percent" && tolerance.value > 0) {
+    rule = (
+      <>
+        Your answer will be accepted within <strong>{tolerance.value}%</strong> of
+        the correct value.
+      </>
+    );
+  } else if (tolerance?.mode === "absolute" && tolerance.value > 0) {
+    rule = (
+      <>
+        Your answer will be accepted within <strong>±{tolerance.value}</strong> of
+        the correct value.
+      </>
+    );
+  } else if (tolerance?.mode === "range") {
+    rule = <>Your answer is accepted if it falls within the range your instructor set.</>;
+  } else if (tolerance && tolerance.value === 0) {
+    rule = <>Your answer must match the correct value exactly.</>;
+  } else {
+    const places = Number(question.answerDecimalPlaces);
+    const decimals = Number.isFinite(places)
+      ? Math.max(0, Math.min(12, Math.round(places)))
+      : 2;
+    rule = (
+      <>
+        Round your answer to <strong>{decimals}</strong> decimal place
+        {decimals === 1 ? "" : "s"}.
+      </>
     );
   }
-  const places = Number(question.answerDecimalPlaces);
-  const decimals = Number.isFinite(places)
-    ? Math.max(0, Math.min(12, Math.round(places)))
-    : 2;
   return (
     <p className="mb-4 text-sm text-muted">
-      Round your answer to <strong>{decimals}</strong> decimal place
-      {decimals === 1 ? "" : "s"}.
+      {rule} You can type a plain number or scientific notation, e.g.{" "}
+      <code>1.5e3</code> or <code>1.5 x 10^3</code>.
     </p>
   );
 }

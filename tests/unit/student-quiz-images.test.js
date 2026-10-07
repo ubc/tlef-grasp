@@ -20,6 +20,8 @@ jest.mock("../../src/utils/course-access", () => ({
 jest.mock("../../src/models/questions/CalculationQuestion", () => ({
   resolveCalculationDisplayTemplate: jest.fn(),
   buildStudentCalculationInstance: jest.fn(),
+  readGradingSettings: jest.fn(() => ({ answerDec: 2, tolerance: null, tolerancePercent: null })),
+  toleranceForStudent: jest.fn(() => null),
 }));
 jest.mock("../../src/services/achievement", () => ({
   awardQuizAchievements: jest.fn(),

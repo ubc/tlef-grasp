@@ -106,6 +106,9 @@ export function toSavePayload(question, granularObjectiveId, { preserveStatus = 
       : [],
     calculationAnswerDecimals:
       question.calculationAnswerDecimals ?? 2,
+    // The tolerance object when the file has one; the server also reads the
+    // legacy percent from older exports.
+    calculationTolerance: question.calculationTolerance ?? null,
     calculationAnswerTolerancePercent:
       question.calculationAnswerTolerancePercent ?? null,
   };

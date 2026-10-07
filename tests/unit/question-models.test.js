@@ -337,6 +337,66 @@ describe('question model normalization', () => {
     });
   });
 
+  // Issue #145: a calculation question with no variables is a fixed numeric
+  // answer, and the tolerance can be a percent, an absolute amount or a range.
+  it('normalizes fixed-answer calculation questions and their tolerance', () => {
+    const fixed = CalculationQuestion.validateAndNormalize({
+      topicTitle: 'Avogadro',
+      stem: 'How many molecules are in two moles of water?',
+      calculationFormula: '6.02e23 * 2',
+      calculationVariables: [],
+      calculationAnswerDecimals: 0,
+      calculationTolerance: { mode: 'range', min: '1.2e24', max: '1.21e24' },
+    });
+    expect(fixed).toMatchObject({
+      calculationFormula: '6.02e23 * 2',
+      calculationVariables: [],
+      calculationAnswerDecimals: 0,
+      calculationTolerance: { mode: 'range', min: 1.2e24, max: 1.21e24 },
+      calculationAnswerTolerancePercent: null,
+    });
+
+    // The LLM schema only knows the percent field; it is mirrored into the object.
+    const legacy = CalculationQuestion.validateAndNormalize({
+      stem: 'Use {{x}}.',
+      calculationFormula: 'x + 1',
+      calculationVariables: [{ name: 'x', min: 1, max: 2, integerOnly: true, decimals: null }],
+      calculationAnswerTolerancePercent: 5,
+    });
+    expect(legacy.calculationTolerance).toEqual({ mode: 'percent', value: 5 });
+    expect(legacy.calculationAnswerTolerancePercent).toBe(5);
+
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Find {{x}}.',
+        calculationFormula: '42',
+        calculationVariables: [],
+      })
+    ).toThrow('stem uses placeholder(s) {{x}} but no variables are declared');
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Find it.',
+        calculationFormula: 'x + 1',
+        calculationVariables: [],
+      })
+    ).toThrow('but no variables are declared');
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Use {{x}}.',
+        calculationFormula: 'x + 1',
+        calculationVariables: [{ name: 'x', min: 1, max: 2 }],
+        calculationTolerance: { mode: 'range', min: 1, max: 3 },
+      })
+    ).toThrow('A range tolerance needs a fixed answer');
+    expect(() =>
+      CalculationQuestion.validateAndNormalize({
+        stem: 'Find it.',
+        calculationFormula: '42',
+        calculationVariables: 'x',
+      })
+    ).toThrow('calculationVariables must be an array');
+  });
+
   it('normalizes calculation questions and rejects malformed variables', () => {
     const normalized = CalculationQuestion.validateAndNormalize({
       topicTitle: 'Projectile speed?',
