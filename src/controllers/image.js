@@ -1,4 +1,4 @@
-const { uploadImage, getImageStream, deleteImage } = require("../services/image");
+const { uploadImage, getImageStream, deleteImage, isImageInUse } = require("../services/image");
 const { isUserInCourse } = require("../services/user-course");
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require("../utils/co-instructor-permissions");
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
@@ -125,6 +125,12 @@ const deleteImageHandler = async (req, res) => {
         const courseId = result.file.metadata?.courseId;
         if (courseId && !(await isUserInCourse(userId, courseId))) {
             return res.status(403).json({ error: "User is not in course" });
+        }
+
+        // A saved question still uses it: the edit that removed it may yet be
+        // cancelled. Saving that edit is what cleans the file up.
+        if (await isImageInUse(fileId)) {
+            return res.json({ success: true, kept: true });
         }
 
         await deleteImage(fileId);

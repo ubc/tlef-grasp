@@ -3,7 +3,9 @@ import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
 import { canRetry, isSolved, latestResult } from "./answerState";
-import { optionIndexOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import { optionImageOf, optionIndexOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import { ImageZoomOverlay } from "../../components/QuestionImage";
+import { questionImageSrc } from "../../lib/questionImages";
 
 export function Timer({ expiresAt, onExpire }) {
   const [, forceTick] = useState(0);
@@ -122,6 +124,8 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
   // the right answer (issue #128).
   const foundKey = solved ? latestResult(entry).selectedKey : null;
   const wrongKeys = entry?.wrongKeys || [];
+  // The option image open in the zoom overlay, if any.
+  const [zoomedImage, setZoomedImage] = useState(null);
 
   return (
     <div className="space-y-3">
@@ -130,7 +134,9 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
         // to H, so the index sent is the letter's, not the row's.
         const index = optionIndexOf(key);
         const optionText = optionTextOf(question.options[key]);
-        if (!optionText) return null;
+        // An option may be an image alone (issue #146).
+        const image = optionImageOf(question.options[key]);
+        if (!optionText && !image) return null;
 
         const triedWrong = wrongKeys.includes(key);
         let stateClass = "border-gray-200 hover:border-primary/50";
@@ -142,26 +148,59 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
           stateClass = "border-gray-200 opacity-70";
         }
 
+        // The whole option, image included, is the answer button. Zooming has
+        // its own button beside it (a button cannot hold another), in the
+        // corner, so it never picks the option and stays usable once solved.
         return (
-          <button
-            key={key}
-            type="button"
-            disabled={solved || triedWrong || submitting}
-            onClick={() => onSelect(index, key, questionId)}
-            className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors disabled:cursor-default ${stateClass}`}
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-page font-bold text-ink">
-              {key}
-            </span>
-            <RichText
-              text={escapeHtml(optionText)}
-              className="min-w-0 flex-1 pt-1 text-ink"
-            />
-            {key === foundKey && <span className="sr-only"> (correct)</span>}
-            {triedWrong && <span className="sr-only"> (incorrect)</span>}
-          </button>
+          <div key={key} className="relative">
+            <button
+              type="button"
+              disabled={solved || triedWrong || submitting}
+              onClick={() => onSelect(index, key, questionId)}
+              className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors disabled:cursor-default ${stateClass} ${image ? "pr-14" : ""}`}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-page font-bold text-ink">
+                {key}
+              </span>
+              <div className="min-w-0 flex-1 pt-1">
+                {optionText && (
+                  <RichText text={escapeHtml(optionText)} className="text-ink" />
+                )}
+                {image && (
+                  // The caption is the image's alt text and part of the
+                  // button's name; it is not shown, as it could name the answer.
+                  <img
+                    src={questionImageSrc(image)}
+                    alt={image.caption || ""}
+                    loading="lazy"
+                    className={`block max-h-56 max-w-full rounded-lg border border-gray-200 bg-white object-contain ${optionText ? "mt-2" : ""}`}
+                  />
+                )}
+              </div>
+              {key === foundKey && <span className="sr-only"> (correct)</span>}
+              {triedWrong && <span className="sr-only"> (incorrect)</span>}
+            </button>
+            {image && (
+              <button
+                type="button"
+                onClick={() => setZoomedImage(image)}
+                aria-label={`Enlarge the image in option ${key}`}
+                title="Enlarge image"
+                className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-muted shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                <i className="fas fa-search-plus" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         );
       })}
+      {zoomedImage && (
+        <ImageZoomOverlay
+          image={zoomedImage}
+          showCaption={false}
+          onClose={() => setZoomedImage(null)}
+        />
+      )}
     </div>
   );
 }

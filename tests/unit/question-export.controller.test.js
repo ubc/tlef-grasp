@@ -126,6 +126,19 @@ describe('createCSVExport', () => {
     expect(row).toContain(QUESTION_TYPES.MULTIPLE_CHOICE);
   });
 
+  test('an image-only option shows its caption in the CSV (issue #146)', () => {
+    const withImage = {
+      ...mcQuestion,
+      options: {
+        ...mcQuestion.options,
+        B: { text: '', image: { fileId: '665f1a0000000000000000aa', caption: 'CO2 structure' } },
+      },
+    };
+    const row = createCSVExport('COURSE', [withImage]).trim().split('\n')[1];
+    // Once as option B, once as the correct answer.
+    expect(row.match(/"CO2 structure"/g)).toHaveLength(2);
+  });
+
   test('fill-in-the-blank row lists acceptable answers', () => {
     const csv = createCSVExport('COURSE', [fibQuestion]);
     const row = csv.trim().split('\n')[1];

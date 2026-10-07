@@ -35,6 +35,23 @@ function getOptionText(q, key) {
   return (opt && (opt.text || '')) || '';
 }
 
+// One option's attached image ref (issue #146), or null.
+function getOptionImage(q, key) {
+  const opt = optionAt(q.options, key);
+  return opt && typeof opt === 'object' && opt.image && opt.image.fileId ? opt.image : null;
+}
+
+// What an export that cannot carry option images (H5P, CSV) writes for an
+// option: its text, or for an image-only option the image's caption, or
+// "Option B (image)" so it is never blank. Empty when the option has neither.
+function getOptionTextOrImageLabel(q, key) {
+  const text = getOptionText(q, key);
+  if (text.trim()) return text;
+  const image = getOptionImage(q, key);
+  if (!image) return text;
+  return String(image.caption || '').trim() || `Option ${key} (image)`;
+}
+
 // Per-option feedback for multiple-choice (empty for string-form options).
 function getOptionFeedback(q, key) {
   const opt = optionAt(q.options, key);
@@ -77,6 +94,8 @@ module.exports = {
   getQuestionText,
   getOptionKeys,
   getOptionText,
+  getOptionImage,
+  getOptionTextOrImageLabel,
   getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,

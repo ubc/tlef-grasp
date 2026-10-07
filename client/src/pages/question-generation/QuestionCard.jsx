@@ -11,6 +11,8 @@ import {
 } from "../../lib/mcOptions";
 import QuestionImage from "../../components/QuestionImage";
 import QuestionImageField from "../../components/QuestionImageField";
+import { discardImageFile } from "../../lib/questionImages";
+import { OPTION_IMAGE_CAPTION_PLACEHOLDER } from "../../components/McOptionEditor";
 import { useToast } from "../../components/ui/Toast";
 
 // Draft options (keyed by letter) as ordered rows for the row helpers.
@@ -83,8 +85,12 @@ export default function QuestionCard({
   let reviewFlag = question.reviewFlag;
   let reviewIssue = question.reviewIssue;
   if (!reviewFlag && isMcq && question.options) {
-    const texts = Object.values(question.options).map((o) =>
-      (typeof o === "string" ? o : o.text || "").trim().toLowerCase()
+    // Options with the same text but different images are distinct (#146).
+    const texts = Object.values(question.options).map(
+      (o) =>
+        `${(typeof o === "string" ? o : o.text || "").trim().toLowerCase()}@${
+          (typeof o === "object" && o?.image?.fileId) || ""
+        }`
     );
     if (texts.some((t, i) => texts.indexOf(t) !== i)) {
       reviewFlag = true;
@@ -102,7 +108,13 @@ export default function QuestionCard({
       ...prev,
       options: optionRowsToObject(addOptionRow(draftRowsOf(prev.options))),
     }));
-  const removeDraftOption = (id) =>
+  const setDraftOption = (id, patch) =>
+    setDraft((prev) => ({
+      ...prev,
+      options: { ...prev.options, [id]: { ...prev.options[id], ...patch } },
+    }));
+  const removeDraftOption = (id) => {
+    discardImageFile(draft?.options?.[id]?.image?.fileId);
     setDraft((prev) => {
       const rows = draftRowsOf(prev.options);
       const { rows: next, correctAnswer } = removeOptionRow(
@@ -112,6 +124,7 @@ export default function QuestionCard({
       );
       return { ...prev, options: optionRowsToObject(next), correctAnswer };
     });
+  };
 
   const startEdit = () => {
     setDraft({
@@ -138,6 +151,7 @@ export default function QuestionCard({
               {
                 text: opt.text || "",
                 feedback: opt.feedback || "",
+                ...(opt.image?.fileId ? { image: opt.image } : {}),
               },
             ])
           )
@@ -229,6 +243,7 @@ export default function QuestionCard({
             id: key,
             text: opt.text.trim(),
             feedback: opt.feedback.trim(),
+            ...(opt.image?.fileId ? { image: opt.image } : {}),
           },
         ])
       );
@@ -627,25 +642,17 @@ export default function QuestionCard({
                       <input
                         type="text"
                         value={draft.options[option.id]?.text || ""}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            options: {
-                              ...prev.options,
-                              [option.id]: {
-                                ...prev.options[option.id],
-                                text: event.target.value,
-                              },
-                            },
-                          }))
-                        }
+                        onChange={(event) => setDraftOption(option.id, { text: event.target.value })}
                         className={fieldInput}
                       />
                     ) : (
-                      <RichText
-                        text={`${option.id}. ${escapeHtml(option.text)}`}
-                        className="min-w-0 flex-1 text-sm text-ink"
-                      />
+                      <div className="min-w-0 flex-1">
+                        <RichText
+                          text={`${option.id}. ${escapeHtml(option.text)}`}
+                          className="text-sm text-ink"
+                        />
+                        <QuestionImage image={option.image} showCaption={false} />
+                      </div>
                     )}
                     {isEditing && (
                       <button
@@ -660,26 +667,26 @@ export default function QuestionCard({
                     )}
                   </div>
                   {isEditing ? (
-                    <div className="mt-1 ml-7 flex items-center gap-2">
-                      <span className="text-xs text-muted">Feedback:</span>
-                      <input
-                        type="text"
-                        value={draft.options[option.id]?.feedback || ""}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            options: {
-                              ...prev.options,
-                              [option.id]: {
-                                ...prev.options[option.id],
-                                feedback: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className={`${fieldInput} text-xs italic`}
-                      />
-                    </div>
+                    <>
+                      <div className="mt-1 ml-7 flex items-center gap-2">
+                        <span className="text-xs text-muted">Feedback:</span>
+                        <input
+                          type="text"
+                          value={draft.options[option.id]?.feedback || ""}
+                          onChange={(event) => setDraftOption(option.id, { feedback: event.target.value })}
+                          className={`${fieldInput} text-xs italic`}
+                        />
+                      </div>
+                      <div className="mt-1 ml-7">
+                        <QuestionImageField
+                          single
+                          label={`Option ${option.id}`}
+                          value={draft.options[option.id]?.image ? [draft.options[option.id].image] : []}
+                          onChange={(images) => setDraftOption(option.id, { image: images[0] || null })}
+                          captionPlaceholder={OPTION_IMAGE_CAPTION_PLACEHOLDER}
+                        />
+                      </div>
+                    </>
                   ) : (
                     !isCorrect &&
                     option.feedback && (

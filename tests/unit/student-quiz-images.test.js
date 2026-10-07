@@ -268,4 +268,26 @@ describe("student quiz questions include stem images", () => {
     expect(Object.keys(questions[0].options)).toEqual(["A", "B", "C", "D", "E"]);
     expect(questions[0].options.E).toBe("Five");
   });
+
+  it("sends an option's image as { text, image } with only the file id and alt text (#146)", async () => {
+    const image = stemImage();
+    const questions = await getQuestions([
+      {
+        _id: new ObjectId(),
+        title: "Which structure is benzene?",
+        questionType: "multiple-choice",
+        options: {
+          A: { text: "", feedback: "Right", image: { ...image, filename: "benzene.png" } },
+          B: { text: "Cyclohexane", feedback: "No" },
+        },
+        correctAnswer: "A",
+      },
+    ]);
+
+    // The stored filename could name the answer, and feedback stays server-side.
+    expect(questions[0].options).toEqual({
+      A: { text: "", image: { fileId: image.fileId, caption: image.caption } },
+      B: "Cyclohexane",
+    });
+  });
 });

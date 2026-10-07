@@ -20,6 +20,7 @@ import {
   MC_OPTION_COUNT_CHOICES,
   emptyOptionRows,
   optionRowsToObject,
+  optionRowsError,
 } from "../../lib/mcOptions";
 
 const inputClass =
@@ -160,20 +161,13 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         return false;
       }
       if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
-        if (form.options.some((o) => !o.text.trim())) {
-          showToast("All option texts are required", "error");
+        const optionsError = optionRowsError(form.options);
+        if (optionsError) {
+          showToast(optionsError, "error");
           return false;
         }
         if (!form.options.some((o) => o.id === form.correctAnswer)) {
           showToast("Select which option is the correct answer", "error");
-          return false;
-        }
-        const texts = form.options.map((o) => o.text.trim().toLowerCase());
-        if (new Set(texts).size !== texts.length) {
-          showToast(
-            "Options must be unique — no two options may be identical",
-            "error"
-          );
           return false;
         }
       } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {

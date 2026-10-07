@@ -5,7 +5,8 @@ import { escapeHtml } from "../../lib/format";
 import Modal from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { scoreClasses } from "./ScoreBadge";
-import { optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import { optionImageOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import QuestionImage from "../../components/QuestionImage";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
@@ -235,7 +236,8 @@ function McqAttempt({ attempt }) {
     <div className="space-y-2">
       {optionKeysOf(attempt.options).map((key) => {
         const optionText = optionTextOf(attempt.options[key]);
-        if (!optionText) return null;
+        const image = optionImageOf(attempt.options[key]);
+        if (!optionText && !image) return null;
 
         let stateClass = "border-gray-200";
         if (key === attempt.correctAnswer) {
@@ -252,10 +254,12 @@ function McqAttempt({ attempt }) {
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page text-xs font-bold text-ink">
               {key}
             </span>
-            <RichText
-              text={escapeHtml(optionText)}
-              className="min-w-0 flex-1 text-sm text-ink"
-            />
+            <div className="min-w-0 flex-1">
+              {optionText && (
+                <RichText text={escapeHtml(optionText)} className="text-sm text-ink" />
+              )}
+              <QuestionImage image={image} showCaption={false} />
+            </div>
           </div>
         );
       })}

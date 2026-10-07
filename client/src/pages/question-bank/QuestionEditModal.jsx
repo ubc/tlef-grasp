@@ -7,7 +7,12 @@ import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
 import CalculationToleranceFields from "../../components/CalculationToleranceFields";
-import { optionRowsOf, optionRowsToObject, MC_OPTION_KEYS } from "../../lib/mcOptions";
+import {
+  optionRowsOf,
+  optionRowsToObject,
+  optionRowsError,
+  MC_OPTION_KEYS,
+} from "../../lib/mcOptions";
 import {
   toleranceToForm,
   toleranceFromForm,
@@ -247,18 +252,11 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       if (!title && !stem) {
         return showToast("Question title or stem is required", "error");
       }
-      if (form.options.some((opt) => !opt.text.trim())) {
-        return showToast("All options must have text", "error");
-      }
-      const texts = form.options.map((opt) => opt.text.trim().toLowerCase());
-      if (new Set(texts).size !== texts.length) {
-        return showToast("Options must be unique — no two options may be identical", "error");
-      }
+      const optionsError = optionRowsError(form.options);
+      if (optionsError) return showToast(optionsError, "error");
       if (!form.options.some((opt) => opt.id === form.correctAnswer)) {
         return showToast("Select which option is the correct answer", "error");
       }
-      // Options are rebuilt from the rows; a legacy per-option image is
-      // dropped here as the server would drop it anyway.
       updateData = {
         title: title || stem,
         stem: stem || title,
@@ -511,6 +509,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 readOnly={readOnly}
                 radioName="question-correct-answer"
                 inputClass={inputClass}
+                courseId={courseId}
               />
             </div>
           )}

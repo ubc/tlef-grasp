@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { api } from "../lib/api";
+import { discardImageFile } from "../lib/questionImages";
 import { useToast } from "./ui/Toast";
 import { useSelectedCourseId } from "../stores/appStore";
 
@@ -12,8 +13,19 @@ const MAX_SIZE_BYTES = 5 * 1024 * 1024; // matches server limit
  * ({ fileId, filename, mimeType, size }); multiple images can be attached.
  * Uploads happen immediately on file select. Renders thumbnails with a
  * corner remove button plus a dashed "add" tile.
+ *
+ * `single` holds at most one image, as an answer option does (issue #146):
+ * the add button becomes "Replace image" once one is attached.
  */
-export default function QuestionImageField({ value, onChange, disabled, courseId: courseIdProp }) {
+export default function QuestionImageField({
+  value,
+  onChange,
+  disabled,
+  courseId: courseIdProp,
+  single = false,
+  captionPlaceholder = "Caption (shown to students; also used as alt text)",
+  label = "",
+}) {
   const showToast = useToast();
   const selectedCourseId = useSelectedCourseId();
   const courseId = courseIdProp || selectedCourseId;
@@ -54,20 +66,44 @@ export default function QuestionImageField({ value, onChange, disabled, courseId
           showToast(error.message || `Failed to upload ${file.name}`, "error");
         }
       }
-      if (uploaded.length > 0) onChange([...images, ...uploaded]);
+      if (uploaded.length > 0) {
+        if (single) {
+          // Free the replaced file; the server keeps it while a saved
+          // question still uses it.
+          images.forEach((img) => discardImageFile(img.fileId));
+          onChange(uploaded.slice(-1));
+        } else {
+          onChange([...images, ...uploaded]);
+        }
+      }
     } finally {
       setUploading(false);
     }
   };
 
   const handleRemove = (fileId) => {
-    if (fileId) {
-      // Best-effort: frees storage when the image was never saved on a
-      // question. Saved questions clean up their own images server-side.
-      api.delete(`/api/image/${fileId}`).catch(() => {});
-    }
+    discardImageFile(fileId);
     onChange(images.filter((img) => img.fileId !== fileId));
   };
+
+  const addLabel =
+    images.length === 0 ? "Attach image" : single ? "Replace image" : "Add another image";
+  // "Option B image alt text" etc., so each option's controls are told apart.
+  const namePrefix = label ? `${label} ` : "";
+  // A single image is replaced from its own row, keeping an option compact.
+  const replaceInRow = single && images.length > 0;
+  const pickButton = (className, text) => (
+    <button
+      type="button"
+      disabled={uploading}
+      aria-label={label && !uploading ? `${addLabel} for ${label}` : undefined}
+      onClick={() => inputRef.current?.click()}
+      className={className}
+    >
+      <i className={uploading ? "fas fa-spinner fa-spin" : "fas fa-image"} />
+      {uploading ? "Uploading..." : text}
+    </button>
+  );
 
   const handleCaptionChange = (fileId, caption) => {
     onChange(images.map((img) => (img.fileId === fileId ? { ...img, caption } : img)));
@@ -79,7 +115,7 @@ export default function QuestionImageField({ value, onChange, disabled, courseId
         ref={inputRef}
         type="file"
         accept={ACCEPT_ATTR}
-        multiple
+        multiple={!single}
         className="hidden"
         onChange={handleFilesSelected}
       />
@@ -98,14 +134,22 @@ export default function QuestionImageField({ value, onChange, disabled, courseId
             type="text"
             value={img.caption ?? img.alt ?? ""}
             disabled={disabled}
-            placeholder="Caption (shown to students; also used as alt text)"
+            placeholder={captionPlaceholder}
+            aria-label={`${namePrefix}image ${single ? "alt text" : "caption"}`}
             onChange={(event) => handleCaptionChange(img.fileId, event.target.value)}
             className="mt-1 min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-xs focus:border-primary focus:outline-none disabled:bg-gray-100"
           />
+          {!disabled &&
+            replaceInRow &&
+            pickButton(
+              "mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50",
+              "Replace"
+            )}
           {!disabled && (
             <button
               type="button"
               title="Remove image"
+              aria-label={label ? `Remove the image from ${label}` : undefined}
               onClick={() => handleRemove(img.fileId)}
               className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger/10 hover:text-danger"
             >
@@ -115,17 +159,12 @@ export default function QuestionImageField({ value, onChange, disabled, courseId
         </div>
       ))}
 
-      {!disabled && (
-        <button
-          type="button"
-          disabled={uploading}
-          onClick={() => inputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <i className={uploading ? "fas fa-spinner fa-spin" : "fas fa-image"} />
-          {uploading ? "Uploading..." : images.length > 0 ? "Add another image" : "Attach image"}
-        </button>
-      )}
+      {!disabled &&
+        !replaceInRow &&
+        pickButton(
+          "inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50",
+          addLabel
+        )}
     </div>
   );
 }

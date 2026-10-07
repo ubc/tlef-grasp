@@ -1,6 +1,7 @@
 const { ObjectId, GridFSBucket } = require("mongodb");
 const { Readable } = require("stream");
 const databaseService = require("./database");
+const { MC_OPTION_KEYS } = require("../utils/mc-options");
 
 const BUCKET_NAME = "grasp_question_images";
 
@@ -116,7 +117,7 @@ const deleteImages = async (fileIds) => {
 
 /**
  * Collect every image fileId referenced by a question doc
- * (stem image + per-option images). Used by cleanup and export.
+ * (stem images + per-option images). Used by cleanup and export.
  */
 const collectQuestionImageIds = (question) => {
     const ids = [];
@@ -124,10 +125,10 @@ const collectQuestionImageIds = (question) => {
         if (ref?.fileId) ids.push(String(ref.fileId));
     };
 
-    // Current: an array of stem images.
     if (Array.isArray(question?.stemImages)) question.stemImages.forEach(pushRef);
-    // Legacy: a single stem image / per-option images (still cleaned up).
+    // Legacy: a single stem image (still cleaned up).
     pushRef(question?.stemImage);
+    // One image per multiple-choice option (issue #146).
     const options = question?.options;
     if (options && typeof options === "object") {
         for (const key of Object.keys(options)) {
@@ -135,6 +136,28 @@ const collectQuestionImageIds = (question) => {
         }
     }
     return ids;
+};
+
+/**
+ * Whether a saved question still uses this image, as a stem image or as an
+ * option image. Edit forms delete an image as soon as it is removed, before
+ * the question is saved; the delete route asks this first so cancelling the
+ * edit cannot leave a saved question pointing at a deleted file. Saving the
+ * question cleans up what it no longer uses.
+ */
+const isImageInUse = async (fileId) => {
+    const id = String(fileId);
+    const paths = [
+        "stemImages.fileId",
+        "stemImage.fileId",
+        ...MC_OPTION_KEYS.map((key) => `options.${key}.image.fileId`),
+    ];
+    const db = await databaseService.connect();
+    const match = await db.collection("grasp_question").findOne(
+        { $or: paths.map((path) => ({ [path]: id })) },
+        { projection: { _id: 1 } }
+    );
+    return Boolean(match);
 };
 
 module.exports = {
@@ -145,4 +168,5 @@ module.exports = {
     deleteImage,
     deleteImages,
     collectQuestionImageIds,
+    isImageInUse,
 };
