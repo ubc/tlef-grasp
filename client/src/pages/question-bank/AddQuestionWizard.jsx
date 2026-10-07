@@ -10,6 +10,12 @@ import QuestionDetailsFields from "./QuestionDetailsFields";
 import ImportQuestionsModal from "./ImportQuestionsModal";
 import { useToast } from "../../components/ui/Toast";
 import {
+  EMPTY_TOLERANCE_FORM,
+  toleranceFromForm,
+  tolerancePayload,
+  stemPlaceholderNames,
+} from "../../lib/calculationTolerance";
+import {
   MC_DEFAULT_OPTION_COUNT,
   MC_OPTION_COUNT_CHOICES,
   emptyOptionRows,
@@ -33,7 +39,7 @@ const STEP_TITLES = {
 const QUESTION_TYPE_CARDS = [
   { type: QUESTION_TYPES.MULTIPLE_CHOICE, icon: "fa-list-ul", name: "Multiple Choice", desc: "2 to 8 options, one correct answer" },
   { type: QUESTION_TYPES.FILL_IN_THE_BLANK, icon: "fa-pencil-alt", name: "Fill-in-the-Blank", desc: "Sentence with a blank to complete" },
-  { type: QUESTION_TYPES.CALCULATION, icon: "fa-calculator", name: "Calculation", desc: "Formula with randomised variables" },
+  { type: QUESTION_TYPES.CALCULATION, icon: "fa-calculator", name: "Calculation", desc: "Numeric answer, with or without randomised variables" },
   { type: QUESTION_TYPES.OPEN_ENDED, icon: "fa-paragraph", name: "Open-Ended", desc: "Free-text with sample answer & rubric" },
 ];
 
@@ -52,7 +58,7 @@ const EMPTY_FORM = {
   calcFormula: "",
   calcVars: [DEFAULT_VAR],
   calcDecimals: "2",
-  calcTolerance: "",
+  ...EMPTY_TOLERANCE_FORM,
   openSample: "",
   openCriteria: "",
 };
@@ -187,9 +193,17 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           showToast("Answer formula is required", "error");
           return false;
         }
+        // No variables is allowed (a fixed answer), but then the template
+        // must not ask for values nobody will fill in.
         if (form.calcVars.length === 0) {
-          showToast("At least one variable is required", "error");
-          return false;
+          const stray = stemPlaceholderNames(form.stem);
+          if (stray.length > 0) {
+            showToast(
+              `The template uses {{${stray[0]}}} but has no variables — add the variable or remove the braces`,
+              "error"
+            );
+            return false;
+          }
         }
         const reserved = new Set(["e", "E", "pi", "PI"]);
         for (const v of form.calcVars) {
@@ -219,6 +233,11 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         const dup = names.find((n, i) => names.indexOf(n) !== i);
         if (dup) {
           showToast(`Variable name "${dup}" is used more than once`, "error");
+          return false;
+        }
+        const toleranceCheck = toleranceFromForm(form, form.calcVars.length);
+        if (toleranceCheck.error) {
+          showToast(toleranceCheck.error, "error");
           return false;
         }
       } else if (questionType === QUESTION_TYPES.OPEN_ENDED) {
@@ -328,10 +347,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
       payload.calculationAnswerDecimals = Number.isFinite(dec)
         ? Math.max(0, Math.min(12, dec))
         : 2;
-      const tol = parseFloat(form.calcTolerance);
-      payload.calculationAnswerTolerancePercent = Number.isFinite(tol)
-        ? Math.max(0, Math.min(100, tol))
-        : null;
+      // validateStep already refused a malformed tolerance.
+      const { tolerance } = toleranceFromForm(form, form.calcVars.length);
+      Object.assign(payload, tolerancePayload(tolerance));
     } else if (questionType === QUESTION_TYPES.OPEN_ENDED) {
       payload.openEndedSampleAnswer = form.openSample.trim();
       payload.openEndedGradingCriteria = form.openCriteria.trim();

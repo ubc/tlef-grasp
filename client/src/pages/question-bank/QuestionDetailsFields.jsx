@@ -2,6 +2,7 @@ import { QUESTION_TYPES } from "../../lib/constants";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
+import CalculationToleranceFields from "../../components/CalculationToleranceFields";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
@@ -134,7 +135,9 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 <p className="text-gray-600">
                   Each student receives a unique version with randomly sampled variable
                   values. The system substitutes them into the question template and
-                  evaluates the answer formula automatically.
+                  evaluates the answer formula automatically. Leave the variables empty
+                  for a fixed numeric answer: every student then sees the same question
+                  and the formula (e.g. <code>6.02e23 * 2</code>) is the answer.
                 </p>
                 <div className="mt-2 space-y-1 text-xs text-gray-600">
                   <div>
@@ -177,9 +180,15 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 <label className={labelClass}>
                   Variables{" "}
                   <span className="font-normal text-muted">
-                    — up to 3; single-letter names only (a–z, except e)
+                    — optional, up to 3; single-letter names only (a–z, except e)
                   </span>
                 </label>
+                {form.calcVars.length === 0 && (
+                  <p className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-muted">
+                    No variables: this is a fixed-answer question. Every student sees the
+                    same template, and the formula is evaluated once as the answer.
+                  </p>
+                )}
                 <div className="space-y-2">
                   {form.calcVars.map((variable, index) => (
                     <div key={index} className="flex items-center gap-2">
@@ -250,16 +259,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                       <button
                         type="button"
                         title="Remove variable"
-                        onClick={() => {
-                          if (form.calcVars.length > 1) {
-                            setForm((prev) => ({
-                              ...prev,
-                              calcVars: prev.calcVars.filter((_, i) => i !== index),
-                            }));
-                          } else {
-                            showToast("At least one variable is required", "warning");
-                          }
-                        }}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            calcVars: prev.calcVars.filter((_, i) => i !== index),
+                          }))
+                        }
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger/10 hover:text-danger"
                       >
                         <i className="fas fa-times" />
@@ -285,44 +290,33 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-4">
-                <div className="min-w-36 flex-1">
-                  <label htmlFor="qdf-calc-decimals" className={labelClass}>
-                    Answer decimal places
-                  </label>
-                  <input
-                    id="qdf-calc-decimals"
-                    type="number"
-                    min={0}
-                    max={12}
-                    value={form.calcDecimals}
-                    onChange={set("calcDecimals")}
-                    className={`${inputClass} max-w-32`}
-                  />
-                  <p className={hintClass}>
-                    Decimal places shown in the correct answer (0 = integer answer).
-                  </p>
-                </div>
-                <div className="min-w-36 flex-1">
-                  <label htmlFor="qdf-calc-tolerance" className={labelClass}>
-                    Tolerance % <span className="font-normal text-muted">(optional)</span>
-                  </label>
-                  <input
-                    id="qdf-calc-tolerance"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={form.calcTolerance}
-                    onChange={set("calcTolerance")}
-                    placeholder="e.g. 2"
-                    className={`${inputClass} max-w-44`}
-                  />
-                  <p className={hintClass}>
-                    Accept answers within ±N% of correct. Leave blank for exact match.
-                  </p>
-                </div>
+              <div>
+                <label htmlFor="qdf-calc-decimals" className={labelClass}>
+                  Answer decimal places
+                </label>
+                <input
+                  id="qdf-calc-decimals"
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={form.calcDecimals}
+                  onChange={set("calcDecimals")}
+                  className={`${inputClass} max-w-32`}
+                />
+                <p className={hintClass}>
+                  Decimal places shown in the correct answer (0 = integer answer). Very
+                  large or small answers are shown as a × 10^n with this many decimals.
+                </p>
               </div>
+
+              <CalculationToleranceFields
+                form={form}
+                setForm={setForm}
+                inputClass={inputClass}
+                labelClass={labelClass}
+                hintClass={hintClass}
+                idPrefix="qdf-calc"
+              />
             </>
           )}
 

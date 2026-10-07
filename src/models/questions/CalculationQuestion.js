@@ -17,6 +17,41 @@ const EXPR_EVAL_CALLABLE_NAMES = new Set([
 /** Names expr-eval already supplies as math constants; declaring them as variables would override them. */
 const RESERVED_VARIABLE_NAMES = new Set(["pi", "PI", "e", "E"]);
 
+/**
+ * How a student's number is compared with the expected value (issue #145).
+ * Stored on the question as `calculationTolerance`:
+ *   null                                  → exact match after rounding to calculationAnswerDecimals
+ *   { mode: "percent",  value: 2 }        → |student − expected| / |expected| ≤ 2 %
+ *   { mode: "absolute", value: 0.05 }     → |student − expected| ≤ 0.05
+ *   { mode: "range",    min: 10, max: 12 } → 10 ≤ student ≤ 12 (fixed-answer questions only)
+ * The older `calculationAnswerTolerancePercent` number is kept in sync for
+ * percent mode and still read when the object is missing.
+ */
+const TOLERANCE_MODES = Object.freeze({
+  PERCENT: "percent",
+  ABSOLUTE: "absolute",
+  RANGE: "range",
+});
+
+/** Superscript digits and minus, as students paste them from "1.5 × 10⁻³". */
+const SUPERSCRIPT_CHARS = {
+  "⁰": "0",
+  "¹": "1",
+  "²": "2",
+  "³": "3",
+  "⁴": "4",
+  "⁵": "5",
+  "⁶": "6",
+  "⁷": "7",
+  "⁸": "8",
+  "⁹": "9",
+  "⁻": "-",
+  "⁺": "+",
+};
+
+/** Answers at or beyond this magnitude are shown as a × 10^n. */
+const SCIENTIFIC_DISPLAY_MIN_MAGNITUDE = 1e9;
+
 // A variable is either integer-only or has a fixed decimal count. OpenAI strict
 // mode requires every property in `required`, so the either/or fields are
 // required-but-nullable; validateAndNormalize resolves the precedence.
@@ -189,9 +224,11 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
         if (!formula) {
             throw new Error("Missing required field: calculationFormula");
         }
-        const vars = merged.calculationVariables;
-        if (!Array.isArray(vars) || vars.length === 0) {
-            throw new Error("calculationVariables must be a non-empty array");
+        // An empty array is a fixed-answer question: the formula is a constant
+        // expression and every student gets the same stem (issue #145).
+        const vars = merged.calculationVariables ?? [];
+        if (!Array.isArray(vars)) {
+            throw new Error("calculationVariables must be an array");
         }
         const normalizedVars = vars.map((v, i) => {
             if (!v || typeof v !== "object") {
@@ -217,14 +254,17 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
             }
             return out;
         });
-        let answerDec = parseInt(merged.calculationAnswerDecimals, 10);
-        if (!Number.isFinite(answerDec)) answerDec = 2;
-        answerDec = Math.max(0, Math.min(12, answerDec));
+        const answerDec = CalculationQuestion.normalizeAnswerDecimals(
+            merged.calculationAnswerDecimals
+        );
 
-        const tolRaw = parseFloat(merged.calculationAnswerTolerancePercent);
-        const answerTolerance = Number.isFinite(tolRaw)
-            ? Math.max(0, Math.min(100, tolRaw))
-            : null;
+        // The LLM schema only knows the percent field; imports and the
+        // instructor UI send the richer object.
+        const tolerance = CalculationQuestion.normalizeTolerance(
+            merged.calculationTolerance !== undefined
+                ? merged.calculationTolerance
+                : merged.calculationAnswerTolerancePercent
+        );
         let topicTitle = (merged.topicTitle || merged.topic || merged.shortTitle || "")
             .trim()
             .replace(/\?+$/, "");
@@ -247,6 +287,7 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
             stemText,
             normalizedVars
         );
+        CalculationQuestion.validateToleranceFitsVariables(tolerance, normalizedVars);
         const formulaCanonical =
             CalculationQuestion.prepareCalculationFormula(
                 formula,
@@ -261,10 +302,122 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
             calculationFormula: formulaCanonical,
             calculationVariables: normalizedVars,
             calculationAnswerDecimals: answerDec,
-            calculationAnswerTolerancePercent: answerTolerance,
+            calculationTolerance: tolerance,
+            calculationAnswerTolerancePercent: CalculationQuestion.legacyPercentOf(tolerance),
             explanation: merged.explanation != null ? String(merged.explanation) : "",
             options: null,
         };
+    }
+
+    /** Clamp the displayed decimal places to 0–12; non-numbers fall back to 2. 0 is a real value, not "unset". */
+        static normalizeAnswerDecimals(raw, fallback = 2) {
+      if (raw === undefined || raw === null || raw === "") return fallback;
+      const d = parseInt(raw, 10);
+      if (!Number.isFinite(d)) return fallback;
+      return Math.max(0, Math.min(12, d));
+    }
+
+    /**
+     * Normalize a tolerance setting to one of the shapes documented on
+     * TOLERANCE_MODES, or null for exact matching. Accepts the stored object, a
+     * bare number or numeric string (the legacy percent field), and null/"" for
+     * none. A malformed object throws rather than silently degrading to exact
+     * matching, so a bad range can never make a question ungradeable.
+     */
+        static normalizeTolerance(raw) {
+      if (raw === undefined || raw === null || raw === "") return null;
+      if (typeof raw === "number" || typeof raw === "string") {
+        const pct = parseFloat(raw);
+        if (!Number.isFinite(pct)) return null;
+        return { mode: TOLERANCE_MODES.PERCENT, value: Math.max(0, Math.min(100, pct)) };
+      }
+      if (typeof raw !== "object") return null;
+      const mode = String(raw.mode || "").trim().toLowerCase();
+      if (!mode || mode === "none" || mode === "exact") return null;
+      if (mode === TOLERANCE_MODES.PERCENT) {
+        const value = parseFloat(raw.value);
+        if (!Number.isFinite(value) || value < 0 || value > 100) {
+          throw new Error("Percent tolerance must be a number from 0 to 100");
+        }
+        return { mode, value };
+      }
+      if (mode === TOLERANCE_MODES.ABSOLUTE) {
+        const value = parseFloat(raw.value);
+        if (!Number.isFinite(value) || value < 0) {
+          throw new Error("Absolute tolerance must be a number of 0 or more");
+        }
+        return { mode, value };
+      }
+      if (mode === TOLERANCE_MODES.RANGE) {
+        const min = parseFloat(raw.min);
+        const max = parseFloat(raw.max);
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+          throw new Error("Range tolerance needs a numeric min and max with min ≤ max");
+        }
+        return { mode, min, max };
+      }
+      throw new Error(`Unknown tolerance mode "${raw.mode}". Use percent, absolute or range.`);
+    }
+
+    /** The tolerance a stored question grades with: the object when present, else the legacy percent field. */
+        static resolveTolerance(question) {
+      if (!question || typeof question !== "object") return null;
+      if (question.calculationTolerance !== undefined) {
+        try {
+          return CalculationQuestion.normalizeTolerance(question.calculationTolerance);
+        } catch {
+          // A corrupt stored object falls back to the legacy field below.
+        }
+      }
+      return CalculationQuestion.normalizeTolerance(question.calculationAnswerTolerancePercent);
+    }
+
+    /** Value for the legacy calculationAnswerTolerancePercent field: the percent, or null for any other mode. */
+        static legacyPercentOf(tolerance) {
+      return tolerance && tolerance.mode === TOLERANCE_MODES.PERCENT ? tolerance.value : null;
+    }
+
+    /** What the student may see: the rule, but never the bounds of a range (they would give the answer away). */
+        static toleranceForStudent(tolerance) {
+      if (!tolerance) return null;
+      if (tolerance.mode === TOLERANCE_MODES.RANGE) return { mode: TOLERANCE_MODES.RANGE };
+      return { ...tolerance };
+    }
+
+    /** A range only makes sense when every student gets the same expected value. */
+        static validateToleranceFitsVariables(tolerance, variableSpecs) {
+      if (!tolerance || tolerance.mode !== TOLERANCE_MODES.RANGE) return;
+      if (CalculationQuestion.buildAllowedVariableNames(variableSpecs).size > 0) {
+        throw new Error(
+          "A range tolerance needs a fixed answer: remove the variables, or use a percent or absolute tolerance for a randomised question."
+        );
+      }
+    }
+
+    /** Decimal places and tolerance a stored question grades with, as the controllers need them. */
+        static readGradingSettings(question) {
+      const answerDec = CalculationQuestion.normalizeAnswerDecimals(question?.calculationAnswerDecimals);
+      const tolerance = CalculationQuestion.resolveTolerance(question);
+      return {
+        answerDec,
+        tolerance,
+        tolerancePercent: CalculationQuestion.legacyPercentOf(tolerance),
+      };
+    }
+
+    /**
+     * Everything the save path must check on a calculation question: the formula
+     * only uses declared variables (and is a finite constant when there are
+     * none), a fixed-answer stem has no stray {{placeholders}}, and a range
+     * tolerance is only used with a fixed answer.
+     */
+        static validateCalculationDefinition({ formula, variableSpecs, stem, tolerance }) {
+      const specs = Array.isArray(variableSpecs) ? variableSpecs : [];
+      CalculationQuestion.validateFormulaAgainstVariableSpecs(formula, specs);
+      if (CalculationQuestion.buildAllowedVariableNames(specs).size === 0) {
+        CalculationQuestion.validateStemReferencesAllVariables(stem, specs);
+      }
+      CalculationQuestion.validateToleranceFitsVariables(tolerance, specs);
     }
 
         static randomIntegerInclusive(min, max) {
@@ -483,10 +636,27 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       return found;
     }
 
-    /** Enforce that the stem references every declared variable as {{name}} using the exact declared name. */
+    /**
+     * Enforce that the stem references every declared variable as {{name}} using
+     * the exact declared name. With no variables, the stem must not contain any
+     * {{placeholder}} at all — it would render as "?" for every student.
+     */
         static validateStemReferencesAllVariables(template, variableSpecs) {
       const allowed = CalculationQuestion.buildAllowedVariableNames(variableSpecs);
-      if (allowed.size === 0) return;
+      if (allowed.size === 0) {
+        const stray = [];
+        const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+        let m;
+        while ((m = re.exec(String(template || ""))) !== null) {
+          if (!stray.includes(m[1])) stray.push(m[1]);
+        }
+        if (stray.length > 0) {
+          throw new Error(
+            `stem uses placeholder(s) ${stray.map((n) => `{{${n}}}`).join(", ")} but no variables are declared. Declare the variable, or remove the braces for a fixed-answer question.`
+          );
+        }
+        return;
+      }
       const referenced = CalculationQuestion.getStemReferencedVariableNames(template, variableSpecs);
       const missing = [...allowed].filter((n) => !referenced.has(n));
       if (missing.length > 0) {
@@ -496,12 +666,13 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       }
     }
 
-    /** Ensure every identifier used in the formula is declared in calculationVariables. */
+    /**
+     * Ensure every identifier used in the formula is declared in
+     * calculationVariables. With no variables the formula must be a constant
+     * expression that evaluates to a finite number — it is the fixed answer.
+     */
         static validateFormulaAgainstVariableSpecs(formula, variableSpecs) {
       const allowed = CalculationQuestion.buildAllowedVariableNames(variableSpecs);
-      if (allowed.size === 0) {
-        throw new Error("calculationVariables must define at least one valid variable name");
-      }
 
       const f = CalculationQuestion.prepareCalculationFormula(formula, variableSpecs);
       if (!f) {
@@ -521,9 +692,19 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
         (n) => !allowed.has(n) && !EXPR_EVAL_CONST_NAMES.has(n)
       );
       if (missing.length > 0) {
+        if (allowed.size === 0) {
+          throw new Error(
+            `Formula uses variable(s) ${missing.join(", ")} but no variables are declared. Declare them in calculationVariables, or replace them with numbers for a fixed-answer question.`
+          );
+        }
         throw new Error(
           `Formula uses variable(s) not defined in calculationVariables: ${missing.join(", ")}. Add each name to the variables list or fix the formula.`
         );
+      }
+
+      if (allowed.size === 0) {
+        // Nothing is sampled, so a non-finite result would break every attempt.
+        CalculationQuestion.evaluateCalculationFormula(f, {});
       }
     }
 
@@ -539,24 +720,24 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       if (!f) {
         return { ok: false, error: new Error("calculationFormula is empty") };
       }
-      if (!Array.isArray(variableSpecs) || variableSpecs.length === 0) {
-        return { ok: false, error: new Error("calculationVariables is empty") };
-      }
+      // No variables: a fixed-answer question. Every student gets the same stem
+      // and the token carries an empty value set.
+      const specs = Array.isArray(variableSpecs) ? variableSpecs : [];
 
       try {
-        CalculationQuestion.validateFormulaAgainstVariableSpecs(f, variableSpecs);
+        CalculationQuestion.validateFormulaAgainstVariableSpecs(f, specs);
       } catch (e) {
         return { ok: false, error: e };
       }
 
-      const maxDrawAttempts = 40;
+      const maxDrawAttempts = specs.length === 0 ? 1 : 40;
       let lastError;
       for (let attempt = 0; attempt < maxDrawAttempts; attempt++) {
         try {
-          const values = CalculationQuestion.generateVariableValues(variableSpecs);
+          const values = CalculationQuestion.generateVariableValues(specs);
           CalculationQuestion.evaluateCalculationFormula(f, values);
-          const renderResult = CalculationQuestion.renderCalculationTemplate(template, values, variableSpecs);
-          const rendered = CalculationQuestion.composeStudentCalculationStem(renderResult, values, variableSpecs);
+          const renderResult = CalculationQuestion.renderCalculationTemplate(template, values, specs);
+          const rendered = CalculationQuestion.composeStudentCalculationStem(renderResult, values, specs);
           const token = CalculationQuestion.signCalculationToken(qid, values);
           return {
             ok: true,
@@ -587,9 +768,8 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
     }
 
         static generateVariableValues(variables) {
-      if (!Array.isArray(variables) || variables.length === 0) {
-        throw new Error("Calculation questions require at least one variable definition");
-      }
+      // A fixed-answer question samples nothing.
+      if (!Array.isArray(variables) || variables.length === 0) return {};
       const out = {};
       for (const spec of variables) {
         const name = CalculationQuestion.sanitizeVariableName(spec);
@@ -796,56 +976,133 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       return Math.round(num * f) / f;
     }
 
+    /** Power of ten of |num|, corrected for log10 rounding at exact powers (log10(1000) is 2.9999…). */
+        static decimalExponentOf(num) {
+      const a = Math.abs(num);
+      if (!Number.isFinite(a) || a === 0) return 0;
+      let exp = Math.floor(Math.log10(a));
+      if (a / 10 ** exp >= 10) exp += 1;
+      else if (a / 10 ** exp < 1) exp -= 1;
+      return exp;
+    }
+
+    /**
+     * Very large answers, and answers that would show as "0" at the chosen
+     * decimal places (|num| < 10^-decimals), are displayed and graded as
+     * a × 10^n so "6.02 × 10^23" or "1.5 × 10^-7" keep their digits.
+     */
+        static usesScientificDisplay(num, decimals) {
+      const d = Math.max(0, Math.min(12, parseInt(decimals, 10) || 0));
+      const a = Math.abs(num);
+      if (!Number.isFinite(a) || a === 0) return false;
+      return a >= SCIENTIFIC_DISPLAY_MIN_MAGNITUDE || a < 10 ** -d;
+    }
+
         static formatAnswerForDisplay(num, decimals) {
       const d = Math.max(0, Math.min(12, parseInt(decimals, 10) || 0));
-      const r = CalculationQuestion.roundToDecimals(num, d);
-      if (d === 0) return String(Math.round(r));
-      let s = r.toFixed(d);
+      if (CalculationQuestion.usesScientificDisplay(num, d)) {
+        let exp = CalculationQuestion.decimalExponentOf(num);
+        let mantissa = CalculationQuestion.roundToDecimals(num / 10 ** exp, d);
+        if (Math.abs(mantissa) >= 10) {
+          // 9.996 rounds up to 10.00: carry into the exponent.
+          exp += 1;
+          mantissa = CalculationQuestion.roundToDecimals(num / 10 ** exp, d);
+        }
+        return `${CalculationQuestion.formatPlainNumber(mantissa, d)} × 10^${exp}`;
+      }
+      return CalculationQuestion.formatPlainNumber(CalculationQuestion.roundToDecimals(num, d), d);
+    }
+
+    /** Fixed decimals with trailing zeros removed: 144.00 → "144", 1.50 → "1.5". */
+        static formatPlainNumber(rounded, d) {
+      if (d === 0) return String(Math.round(rounded));
+      let s = rounded.toFixed(d);
       if (s.includes(".")) s = s.replace(/\.?0+$/, "");
       return s;
     }
 
+    /**
+     * Read a student's number the way they write it (issue #145): plain digits,
+     * a leading + or −, thousands commas, a trailing period, e-notation
+     * (1.5e3, 1.5E-3) and "times ten to the" forms (1.5 x 10^3, 1.5×10³,
+     * 1.5*10^-3, 10^5). Anything else — letters, units, fractions, a percent
+     * sign — is NaN, so the caller can ask for a number instead of grading it
+     * wrong.
+     */
         static parseStudentNumericAnswer(text) {
       if (text === undefined || text === null) return NaN;
-      const cleaned = String(text)
-        .trim()
+      let s = String(text)
+        .replace(/[−–—]/g, "-")
+        .replace(/[×⋅·]/g, "x")
+        .replace(/[⁰¹²³⁴-⁹⁺⁻]+/g, (run) =>
+          `^${run.split("").map((ch) => SUPERSCRIPT_CHARS[ch] || "").join("")}`
+        )
         .replace(/,/g, "")
-        .replace(/\s+/g, "");
-      if (cleaned === "") return NaN;
-      const n = parseFloat(cleaned);
-      return n;
+        .replace(/\s+/g, "")
+        .toLowerCase();
+      if (s === "") return NaN;
+
+      const decimal = String.raw`(\d+\.?\d*|\.\d+)`;
+      const plain = new RegExp(`^([+-]?${decimal})(e[+-]?\\d+)?$`);
+      // A mantissa must be joined to the 10 by × or *, so "110^3" is not misread as 1 × 10^3.
+      const timesTen = new RegExp(`^([+-])?(?:(${decimal})(?:x|\\*))?10(?:\\^|\\*\\*)([+-]?\\d+)$`);
+
+      let m = s.match(plain);
+      if (m) return Number(s.replace(/\.$/, "").replace(/\.e/, "e"));
+      m = s.match(timesTen);
+      if (m) {
+        const sign = m[1] || "";
+        const mantissa = (m[2] || "1").replace(/\.$/, "");
+        return Number(`${sign}${mantissa}e${m[4]}`);
+      }
+      return NaN;
     }
 
     /**
-     * Compare student answer to expected value.
-     * When tolerancePercent is a finite number 0–100, grades by relative error:
-     *   |student − expected| / |expected| ≤ tolerancePercent / 100
-     * When expected ≈ 0 (|expected| < 1e-10), falls back to absolute error with the
-     * same threshold to avoid division by zero.
-     * When tolerancePercent is absent/null, uses existing decimal-rounding behaviour.
+     * Compare a student's number with the expected value.
+     *
+     * `tolerance` is a normalized tolerance object (see TOLERANCE_MODES), the
+     * legacy percent number, or null:
+     *   percent  → |student − expected| / |expected| ≤ value / 100
+     *              (an expected value of exactly 0 accepts anything that rounds
+     *              to 0 at the displayed precision instead)
+     *   absolute → |student − expected| ≤ value
+     *   range    → min ≤ student ≤ max
+     *   null     → both round to the same number at `answerDecimals` places; for
+     *              answers shown in scientific notation the mantissas are compared
+     *              so 6.02 × 10^23 is graded on its digits, not on decimal places.
+     * A tiny magnitude-scaled epsilon absorbs floating-point noise throughout.
      */
-        static numericAnswersMatch(studentValue, expectedValue, answerDecimals, tolerancePercent) {
+        static numericAnswersMatch(studentValue, expectedValue, answerDecimals, tolerance) {
       if (!Number.isFinite(studentValue) || !Number.isFinite(expectedValue)) return false;
 
       const d = Math.max(0, Math.min(12, parseInt(answerDecimals, 10) || 0));
-      const tol = Number(tolerancePercent);
-      if (Number.isFinite(tol) && tol >= 0) {
-        const threshold = Math.max(0, Math.min(100, tol)) / 100;
-        const diff = Math.abs(studentValue - expectedValue);
-        // Use absolute comparison when expected rounds to zero at the displayed precision.
-        // Relative error would always be ~100% for sub-ULP values, even when both sides
-        // display as "0" — e.g. formula 1/n with large n gives 0.0001 which rounds to 0.00.
-        const displayZeroThreshold = 0.5 * Math.pow(10, -d);
-        if (Math.abs(expectedValue) < displayZeroThreshold) {
-          return diff < displayZeroThreshold;
-        }
-        return diff / Math.abs(expectedValue) <= threshold;
+      let tol = null;
+      try {
+        tol = CalculationQuestion.normalizeTolerance(tolerance);
+      } catch {
+        tol = null;
+      }
+      const diff = Math.abs(studentValue - expectedValue);
+      const eps = 1e-9 * Math.max(1, Math.abs(expectedValue));
+
+      if (tol && tol.mode === TOLERANCE_MODES.RANGE) {
+        return studentValue >= tol.min - eps && studentValue <= tol.max + eps;
+      }
+      if (tol && tol.mode === TOLERANCE_MODES.ABSOLUTE) {
+        return diff <= tol.value + eps;
+      }
+      if (tol && tol.mode === TOLERANCE_MODES.PERCENT) {
+        if (expectedValue === 0) return diff < 0.5 * 10 ** -d;
+        return diff / Math.abs(expectedValue) <= tol.value / 100 + 1e-12;
       }
 
-      const a = CalculationQuestion.roundToDecimals(studentValue, d);
-      const b = CalculationQuestion.roundToDecimals(expectedValue, d);
-      const eps = Math.max(10 ** -(d + 2), 1e-12);
-      return Math.abs(a - b) <= eps;
+      const scale = CalculationQuestion.usesScientificDisplay(expectedValue, d)
+        ? 10 ** CalculationQuestion.decimalExponentOf(expectedValue)
+        : 1;
+      const a = CalculationQuestion.roundToDecimals(studentValue / scale, d);
+      const b = CalculationQuestion.roundToDecimals(expectedValue / scale, d);
+      return Math.abs(a - b) <= Math.max(10 ** -(d + 2), 1e-12);
     }
 
         static signCalculationToken(questionId, values) {
@@ -884,5 +1141,7 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
 
 
 }
+
+CalculationQuestion.TOLERANCE_MODES = TOLERANCE_MODES;
 
 module.exports = CalculationQuestion;

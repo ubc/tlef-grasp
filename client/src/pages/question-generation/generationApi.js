@@ -2,6 +2,12 @@ import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { runPool } from "../../lib/async-pool";
 import { normalizeMcOptionCount, optionKeysOf, optionRowsOf } from "../../lib/mcOptions";
+import {
+  EMPTY_TOLERANCE_FORM,
+  resolveTolerance,
+  toleranceToForm,
+  tolerancePayload,
+} from "../../lib/calculationTolerance";
 
 // Question generation + review pipeline (port of generation-questions.js and
 // the step-2 helpers in question-generation.js).
@@ -154,6 +160,7 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
         base.calculationVariables = questionData.calculationVariables || [];
         base.calculationAnswerDecimals =
           questionData.calculationAnswerDecimals ?? 2;
+        base.calculationTolerance = questionData.calculationTolerance ?? null;
         base.calculationAnswerTolerancePercent =
           questionData.calculationAnswerTolerancePercent ?? null;
       } else if (resolvedType === QUESTION_TYPES.OPEN_ENDED) {
@@ -401,6 +408,7 @@ export function convertQuestionsToGroups(questions) {
             ? question.calculationVariables
             : [],
           calculationAnswerDecimals: question.calculationAnswerDecimals ?? 2,
+          calculationTolerance: question.calculationTolerance ?? null,
           calculationAnswerTolerancePercent:
             question.calculationAnswerTolerancePercent ?? null,
         };
@@ -538,6 +546,7 @@ export function buildQuestionPayload(question) {
     let d = parseInt(question.calculationAnswerDecimals, 10);
     if (!Number.isFinite(d)) d = 2;
     payload.calculationAnswerDecimals = Math.max(0, Math.min(12, d));
+    Object.assign(payload, tolerancePayload(resolveTolerance(question)));
   }
   if (qt === QUESTION_TYPES.OPEN_ENDED) {
     payload.options = {};
@@ -584,7 +593,7 @@ export function cardToWizardForm(card) {
     calcFormula: "",
     calcVars: [{ name: "", min: "1", max: "10", type: "integer" }],
     calcDecimals: "2",
-    calcTolerance: "",
+    ...EMPTY_TOLERANCE_FORM,
     openSample: "",
     openCriteria: "",
   };
@@ -605,12 +614,10 @@ export function cardToWizardForm(card) {
     const vars = Array.isArray(card.calculationVariables)
       ? card.calculationVariables
       : [];
-    if (vars.length) form.calcVars = vars.map(calcVarToForm);
+    // A generated card always has variables; an empty list is a fixed answer.
+    form.calcVars = vars.map(calcVarToForm);
     form.calcDecimals = String(card.calculationAnswerDecimals ?? 2);
-    form.calcTolerance =
-      card.calculationAnswerTolerancePercent != null
-        ? String(card.calculationAnswerTolerancePercent)
-        : "";
+    Object.assign(form, toleranceToForm(card));
   } else if (qt === QUESTION_TYPES.OPEN_ENDED) {
     form.openSample = card.openEndedSampleAnswer || "";
     form.openCriteria = card.openEndedGradingCriteria || "";

@@ -784,15 +784,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           vars
         );
         const formula = (q.calculationFormula || "").trim();
-        const answerDec =
-          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
-            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
-            : 2;
-        const tolerancePercent =
-          q.calculationAnswerTolerancePercent != null &&
-          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
-            ? Number(q.calculationAnswerTolerancePercent)
-            : null;
+        const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
 
         if (withholdAnswers) {
@@ -811,6 +803,8 @@ const getQuizQuestionsHandler = async (req, res) => {
               stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
               calculationToken: built.token,
               answerDecimalPlaces: built.answerDecimalPlaces,
+              // The rule the student is graded by, minus a range's bounds.
+              calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
               calculationAnswerTolerancePercent: tolerancePercent,
               options: {},
               learningObjectiveId: q.learningObjectiveId,
@@ -849,6 +843,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           calculationFormula: formula,
           calculationVariables: vars,
           calculationAnswerDecimals: answerDec,
+          calculationTolerance: tolerance,
         };
       }
 
@@ -973,17 +968,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         });
       }
       const formula = (question.calculationFormula || "").trim();
-      const vars = question.calculationVariables;
-      const answerDec =
-        question.calculationAnswerDecimals !== undefined &&
-        question.calculationAnswerDecimals !== null
-          ? Math.max(0, Math.min(12, parseInt(question.calculationAnswerDecimals, 10) || 2))
-          : 2;
-      const tolerancePercent =
-        question.calculationAnswerTolerancePercent != null &&
-        Number.isFinite(Number(question.calculationAnswerTolerancePercent))
-          ? Number(question.calculationAnswerTolerancePercent)
-          : null;
+      const { answerDec, tolerance } = CalculationQuestion.readGradingSettings(question);
       let expected;
       try {
         expected = CalculationQuestion.evaluateCalculationFormula(formula, verified.values);
@@ -1003,8 +988,18 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: clientError ? msg : "Could not grade this calculation question",
         });
       }
+      // Something that is not a number is a typo, not an answer: tell the
+      // student instead of recording a wrong attempt (issue #145).
       const studentNum = CalculationQuestion.parseStudentNumericAnswer(answerText);
-      const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
+      if (!Number.isFinite(studentNum)) {
+        return res.status(400).json({
+          success: false,
+          code: "NOT_A_NUMBER",
+          error:
+            "Please enter a number such as 1500, 1.5e3 or 1.5 x 10^3, without units or other text.",
+        });
+      }
+      const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerance);
       const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
       if (userId && quizId && !practice) {
         // Awaited: if the attempt can't be persisted, fail the request so the

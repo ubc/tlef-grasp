@@ -6,7 +6,14 @@ import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
+import CalculationToleranceFields from "../../components/CalculationToleranceFields";
 import { optionRowsOf, optionRowsToObject, MC_OPTION_KEYS } from "../../lib/mcOptions";
+import {
+  toleranceToForm,
+  toleranceFromForm,
+  tolerancePayload,
+  stemPlaceholderNames,
+} from "../../lib/calculationTolerance";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none read-only:cursor-not-allowed read-only:bg-gray-100";
@@ -44,7 +51,6 @@ function buildFormState(question) {
   }
 
   if (qType === QUESTION_TYPES.CALCULATION) {
-    const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
     const dec =
       question.calculationAnswerDecimals !== undefined &&
       question.calculationAnswerDecimals !== null
@@ -64,9 +70,7 @@ function buildFormState(question) {
         2
       ),
       calculationAnswerDecimals: Number.isFinite(dec) ? String(dec) : "2",
-      calculationAnswerTolerancePercent: Number.isFinite(rawTol)
-        ? String(Math.max(0, Math.min(100, rawTol)))
-        : "",
+      ...toleranceToForm(question),
     };
   }
 
@@ -145,8 +149,19 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       } catch {
         return showToast("Variables must be valid JSON", "error");
       }
-      if (!Array.isArray(variables) || variables.length === 0) {
-        return showToast("Add at least one variable in the JSON array", "error");
+      // [] is a fixed-answer question: the formula is a constant and the
+      // template must not ask for values nobody fills in.
+      if (!Array.isArray(variables)) {
+        return showToast("Variables must be a JSON array (use [] for a fixed answer)", "error");
+      }
+      if (variables.length === 0) {
+        const stray = stemPlaceholderNames(stem);
+        if (stray.length > 0) {
+          return showToast(
+            `The template uses {{${stray[0]}}} but has no variables — add the variable or remove the braces`,
+            "error"
+          );
+        }
       }
       for (const v of variables) {
         if (!v || typeof v.name !== "string" || !v.name.trim()) {
@@ -161,8 +176,8 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       let dec = parseInt(form.calculationAnswerDecimals, 10);
       if (!Number.isFinite(dec)) dec = 2;
       dec = Math.max(0, Math.min(12, dec));
-      let tolPct = parseFloat(form.calculationAnswerTolerancePercent);
-      tolPct = Number.isFinite(tolPct) ? Math.max(0, Math.min(100, tolPct)) : null;
+      const toleranceCheck = toleranceFromForm(form, variables.length);
+      if (toleranceCheck.error) return showToast(toleranceCheck.error, "error");
 
       updateData = {
         title,
@@ -172,7 +187,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
         calculationFormula: formula,
         calculationVariables: variables,
         calculationAnswerDecimals: dec,
-        calculationAnswerTolerancePercent: tolPct,
+        ...tolerancePayload(toleranceCheck.tolerance),
         options: {},
         acceptableAnswers: [],
       };
@@ -414,7 +429,12 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 />
               </div>
               <div>
-                <label className={labelClass}>Variables (JSON array)</label>
+                <label className={labelClass}>
+                  Variables (JSON array){" "}
+                  <span className="font-normal text-muted">
+                    — <code>[]</code> for a fixed answer
+                  </span>
+                </label>
                 <textarea
                   rows={8}
                   value={form.calculationVariables}
@@ -436,25 +456,15 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   className={`${inputClass} max-w-32`}
                 />
               </div>
-              <div>
-                <label className={labelClass}>
-                  Answer tolerance %{" "}
-                  <span className="font-normal text-muted">
-                    (optional — leave blank for exact decimal rounding)
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={form.calculationAnswerTolerancePercent}
-                  onChange={set("calculationAnswerTolerancePercent")}
-                  readOnly={readOnly}
-                  placeholder="e.g. 2 for chemistry, 5 for engineering"
-                  className={`${inputClass} max-w-44`}
-                />
-              </div>
+              <CalculationToleranceFields
+                form={form}
+                setForm={setForm}
+                readOnly={readOnly}
+                inputClass={inputClass}
+                labelClass={labelClass}
+                hintClass="mt-1 text-xs text-muted"
+                idPrefix="qem-calc"
+              />
             </>
           )}
 

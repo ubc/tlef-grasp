@@ -163,29 +163,18 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             questionData.type ||
             QUESTION_TYPES.MULTIPLE_CHOICE;
 
-        if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
-            CalculationQuestion.validateFormulaAgainstVariableSpecs(
-                typeof questionData.calculationFormula === "string"
-                    ? questionData.calculationFormula
-                    : "",
-                Array.isArray(questionData.calculationVariables)
-                    ? questionData.calculationVariables
-                    : []
-            );
-        }
-
-        // Save the full question data including granularObjectiveId
-        const answerDecRaw = questionData.calculationAnswerDecimals;
-        const calculationAnswerDecimals =
-            answerDecRaw !== undefined && answerDecRaw !== null && answerDecRaw !== ""
-                ? Math.max(0, Math.min(12, parseInt(answerDecRaw, 10) || 2))
-                : 2;
-
-        const tolRaw = questionData.calculationAnswerTolerancePercent;
+        const calculationAnswerDecimals = CalculationQuestion.normalizeAnswerDecimals(
+            questionData.calculationAnswerDecimals
+        );
+        // The tolerance object is authoritative; the legacy percent number is
+        // still accepted from older clients and kept in sync for older readers.
+        const calculationTolerance = CalculationQuestion.normalizeTolerance(
+            questionData.calculationTolerance !== undefined
+                ? questionData.calculationTolerance
+                : questionData.calculationAnswerTolerancePercent
+        );
         const calculationAnswerTolerancePercent =
-            tolRaw !== undefined && tolRaw !== null && tolRaw !== ""
-                ? Math.max(0, Math.min(100, parseFloat(tolRaw) || 0))
-                : null;
+            CalculationQuestion.legacyPercentOf(calculationTolerance);
 
         const calcVarsForStore = Array.isArray(questionData.calculationVariables)
             ? questionData.calculationVariables
@@ -194,6 +183,15 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             typeof questionData.calculationFormula === "string"
                 ? questionData.calculationFormula
                 : "";
+
+        if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
+            CalculationQuestion.validateCalculationDefinition({
+                formula: calcFormulaRaw,
+                variableSpecs: calcVarsForStore,
+                stem: questionData.stem || questionData.title || "",
+                tolerance: calculationTolerance,
+            });
+        }
 
         const qtLower = String(questionType).toLowerCase();
 
@@ -240,6 +238,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                     : calcFormulaRaw,
             calculationVariables: calcVarsForStore,
             calculationAnswerDecimals,
+            calculationTolerance,
             calculationAnswerTolerancePercent,
             bloom: questionData.bloom,
             courseId: courseIdObj,
@@ -462,16 +461,21 @@ const updateQuestion = async (questionId, updateData) => {
                 : [];
         }
         if (updateData.calculationAnswerDecimals !== undefined) {
-            const d = parseInt(updateData.calculationAnswerDecimals, 10);
-            update.calculationAnswerDecimals = Math.max(0, Math.min(12, Number.isFinite(d) ? d : 2));
+            update.calculationAnswerDecimals = CalculationQuestion.normalizeAnswerDecimals(
+                updateData.calculationAnswerDecimals
+            );
         }
-        if (updateData.calculationAnswerTolerancePercent !== undefined) {
-            const t = parseFloat(updateData.calculationAnswerTolerancePercent);
-            update.calculationAnswerTolerancePercent = (updateData.calculationAnswerTolerancePercent === null ||
-                updateData.calculationAnswerTolerancePercent === "" ||
-                !Number.isFinite(t))
-                ? null
-                : Math.max(0, Math.min(100, t));
+        if (
+            updateData.calculationTolerance !== undefined ||
+            updateData.calculationAnswerTolerancePercent !== undefined
+        ) {
+            const tolerance = CalculationQuestion.normalizeTolerance(
+                updateData.calculationTolerance !== undefined
+                    ? updateData.calculationTolerance
+                    : updateData.calculationAnswerTolerancePercent
+            );
+            update.calculationTolerance = tolerance;
+            update.calculationAnswerTolerancePercent = CalculationQuestion.legacyPercentOf(tolerance);
         }
         if (updateData.openEndedSampleAnswer !== undefined) {
             update.openEndedSampleAnswer =
@@ -529,9 +533,13 @@ const updateQuestion = async (questionId, updateData) => {
             }
         }
 
+        // The stem matters too: a fixed-answer question must not gain a
+        // {{placeholder}} it cannot fill.
         const touchesCalculation =
             update.calculationFormula !== undefined ||
             update.calculationVariables !== undefined ||
+            update.calculationTolerance !== undefined ||
+            update.stem !== undefined ||
             update.questionType !== undefined;
         const touchesImages =
             update.stemImages !== undefined || update.options !== undefined;
@@ -555,10 +563,12 @@ const updateQuestion = async (questionId, updateData) => {
                     const mergedVars = Array.isArray(merged.calculationVariables)
                         ? merged.calculationVariables
                         : [];
-                    CalculationQuestion.validateFormulaAgainstVariableSpecs(
-                        mergedFormula,
-                        mergedVars
-                    );
+                    CalculationQuestion.validateCalculationDefinition({
+                        formula: mergedFormula,
+                        variableSpecs: mergedVars,
+                        stem: merged.stem || merged.title || "",
+                        tolerance: CalculationQuestion.resolveTolerance(merged),
+                    });
                     update.calculationFormula =
                         CalculationQuestion.prepareCalculationFormula(
                             mergedFormula,

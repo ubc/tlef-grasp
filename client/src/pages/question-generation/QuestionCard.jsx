@@ -188,8 +188,9 @@ export default function QuestionCard({
       } catch {
         vars = question.calculationVariables;
       }
-      if (!Array.isArray(vars) || vars.length === 0) {
-        return showToast("At least one variable is required (JSON array)", "error");
+      // An empty array is allowed: the formula is then the fixed answer.
+      if (!Array.isArray(vars)) {
+        return showToast("Variables must be a JSON array (use [] for a fixed answer)", "error");
       }
       for (let i = 0; i < vars.length; i++) {
         const v = vars[i];
@@ -495,7 +496,7 @@ export default function QuestionCard({
                   ))}
                 </ul>
               ) : (
-                "—"
+                "None — every student gets the same question and the formula is the answer"
               )}
             </FibBlock>
             <FibBlock label="Answer decimal places">
