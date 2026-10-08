@@ -222,6 +222,35 @@ class DatabaseService {
       await this.db.collection("grasp_user_course_section").createIndex({ userId: 1, courseId: 1, sectionId: 1 }, { unique: true });
       await this.db.collection("grasp_user_course_section").createIndex({ courseId: 1, sectionId: 1 });
 
+      // --- Canvas import provenance (#140) ---
+      // Re-importing an export finds what it created before by Canvas ident,
+      // per course. Only imported rows carry `source`, so the indexes are
+      // partial and leave every other document out.
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_question"),
+        { courseId: 1, "source.itemIdent": 1 },
+        {
+          name: "course_source_item",
+          partialFilterExpression: { "source.itemIdent": { $exists: true } },
+        }
+      );
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_objective"),
+        { courseId: 1, "source.slotIdent": 1 },
+        {
+          name: "course_source_slot",
+          partialFilterExpression: { "source.slotIdent": { $exists: true } },
+        }
+      );
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_quiz"),
+        { courseId: 1, "source.quizIdent": 1 },
+        {
+          name: "course_source_quiz",
+          partialFilterExpression: { "source.quizIdent": { $exists: true } },
+        }
+      );
+
       // --- SAML request-ID cache ---
       await this.createSamlRequestIndexes(this.db);
 

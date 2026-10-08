@@ -142,6 +142,28 @@ describe('initializeCollections index definitions', () => {
     expect(call[1]).toEqual({ unique: true });
   });
 
+  // Re-importing a Canvas export (#140) finds what it created before by Canvas
+  // ident, per course. Only imported rows carry `source`, so the indexes are
+  // partial and every other document stays out of them.
+  it.each([
+    ['grasp_question', 'source.itemIdent', 'course_source_item'],
+    ['grasp_objective', 'source.slotIdent', 'course_source_slot'],
+    ['grasp_quiz', 'source.quizIdent', 'course_source_quiz'],
+  ])('indexes %s by course and %s for imported rows only', async (collection, field, name) => {
+    const collectionFor = await runInitializeCollections();
+
+    const calls = collectionFor(collection).createIndex.mock.calls.filter(
+      ([keys]) => keys && keys[field] === 1
+    );
+
+    expect(calls).toEqual([
+      [
+        { courseId: 1, [field]: 1 },
+        { name, partialFilterExpression: { [field]: { $exists: true } } },
+      ],
+    ]);
+  });
+
   // The suite above mocks createIndex, so MongoDB never parses these specs and
   // an unsupported operator sails through as a green test right up until it
   // throws CannotCreateIndex at boot. partialFilterExpression accepts only a
@@ -170,7 +192,15 @@ describe('initializeCollections index definitions', () => {
     };
 
     const specs = [];
-    for (const name of ['grasp_course', 'grasp_question', 'grasp_user', 'grasp_user_course', 'grasp_material']) {
+    for (const name of [
+      'grasp_course',
+      'grasp_question',
+      'grasp_objective',
+      'grasp_quiz',
+      'grasp_user',
+      'grasp_user_course',
+      'grasp_material',
+    ]) {
       for (const [, options] of collectionFor(name).createIndex.mock.calls) {
         if (options?.partialFilterExpression) specs.push([name, options.partialFilterExpression]);
       }

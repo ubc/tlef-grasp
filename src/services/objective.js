@@ -3,6 +3,7 @@ const objectiveMaterialService = require('./objective-material');
 const questionService = require('./question');
 const { ObjectId } = require('mongodb');
 const { normalizeQuestionTypes } = require('../utils/question-type-selection');
+const { OBJECTIVE_SOURCE_KEYS, pickImportSource } = require('../utils/import-provenance');
 
 // Same comparison rule as the client's import matcher, so "already in this
 // course" means the same thing on both sides.
@@ -129,7 +130,8 @@ const getGranularObjectives = async (parentId, courseId = null) => {
 
 /**
  * Create a new learning objective with granular objectives
- * @param {Object} objectiveData - { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> }
+ * @param {Object} objectiveData - { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> },
+ *   plus `source` ({ kind, quizIdent, slotIdent }) when a Canvas import (#140) creates it
  */
 const createObjective = async (objectiveData) => {
   try {
@@ -149,6 +151,10 @@ const createObjective = async (objectiveData) => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+    // Re-import finds the parent made for a Canvas group by this; it lives on
+    // the parent only, and documents without it keep their exact shape.
+    const source = pickImportSource(objectiveData.source, OBJECTIVE_SOURCE_KEYS);
+    if (source) parentObjective.source = source;
     
     const parentResult = await collection.insertOne(parentObjective);
     const parentId = parentResult.insertedId;

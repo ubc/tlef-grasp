@@ -22,6 +22,7 @@ const {
   stemImagesOf,
 } = require('../utils/question-export-helpers');
 const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
+const { withoutImportFields } = require('../utils/import-provenance');
 const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
 const databaseService = require('../services/database');
 
@@ -299,7 +300,9 @@ const saveQuestionHandler = async (req, res) => {
     let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
-        const questionResult = await saveQuestion(courseId, questionData, { dedupe: dedupe === true });
+        // Canvas provenance is set only by the Canvas importer; a client could
+        // otherwise mark a question as an already-imported Canvas item.
+        const questionResult = await saveQuestion(courseId, withoutImportFields(questionData), { dedupe: dedupe === true });
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
         if (error.code === "DUPLICATE_QUESTION") {
