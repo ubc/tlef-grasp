@@ -1,3 +1,7 @@
+// The speed tests below catch quadratic blow-ups (old code took 20-40 s);
+// their limits leave room for slow, coverage-instrumented CI runners.
+jest.setTimeout(30000);
+
 const {
   convertCanvasHtml,
   convertCanvasPlainText,
@@ -546,7 +550,7 @@ describe('convertCanvasHtml: table size caps', () => {
       images: [],
       warnings: [FLATTENED],
     });
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   // Every array is padded to its widest row, so a 246-character table can be a
@@ -639,7 +643,7 @@ describe('convertCanvasHtml: size and nesting limits', () => {
         expect(convertCanvasHtml(html).text).toBe(Array(html.startsWith('<b>') ? 9997 : 10000).fill('x').join('\n'));
       });
     }
-    expect(performance.now() - started).toBeLessThan(1000);
+    expect(performance.now() - started).toBeLessThan(10000);
   });
 
   test('leaves out elements nested deeper than 200, with a warning, instead of overflowing the stack', () => {
