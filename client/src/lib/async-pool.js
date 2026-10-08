@@ -1,6 +1,6 @@
-// Bounded-concurrency runner for independent async tasks.
+// Bounded-concurrency runner for independent async tasks
 //
-// Question generation issues one request per granular objective, and those
+// Question generation issues one request per granular objective, and tho
 // requests have no reason to wait for each other. This runs a fixed number at
 // a time and — critically — reports results in INPUT order, so the questions a
 // run produces are ordered by the objectives the instructor chose rather than
