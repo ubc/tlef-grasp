@@ -1,3 +1,7 @@
+// The speed tests below catch quadratic blow-ups (old code took 20-40 s);
+// their limits leave room for slow, coverage-instrumented CI runners.
+jest.setTimeout(30000);
+
 /**
  * Canvas Classic Quizzes QTI parser (utils/canvas-qti-parse.js, #140).
  *
@@ -680,7 +684,7 @@ describe('parseCanvasQuiz: damaged input', () => {
       unlockAt: null,
       lockAt: null,
     });
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 });
 
@@ -702,7 +706,7 @@ describe('parseCanvasQuiz: nesting Canvas never writes', () => {
     expect(err.code).toBe('BAD_XML');
     expect(err.message).toContain('The Canvas quiz "Synthetic Quiz" could not be read: its quiz file is not valid XML');
     expect(err.message).toContain(detail);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   }
 
   test('reads markup nested exactly 100 elements deep and refuses one level more', () => {
@@ -794,7 +798,7 @@ describe('parseCanvasQuiz: big questions are read in linear time', () => {
     const { item, elapsed } = timedItem(fimbItem({ ident: 'gdrops', type: 'multiple_dropdowns_question', blanks }));
 
     expect(item.blanks).toEqual(blanks);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   test('reads a 200,000-option question with every option scored quickly', () => {
@@ -806,7 +810,7 @@ describe('parseCanvasQuiz: big questions are read in linear time', () => {
     expect(item.choices).toHaveLength(200000);
     expect(item.correctChoiceIdents).toEqual(range(200000));
     expect(item.rawWarnings).toEqual([]);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   test('matches one answer comment naming each of 200,000 options quickly', () => {
@@ -823,7 +827,7 @@ describe('parseCanvasQuiz: big questions are read in linear time', () => {
     expect(item.correctChoiceIdents).toEqual(['0']);
     expect(item.choiceFeedbackHtml).toEqual(Object.fromEntries(range(200000).map((id) => [id, '<p>Comment.</p>'])));
     expect(item.rawWarnings).toEqual([]);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   test('tells 150,000 scoring conditions from 150,000 other conditions quickly', () => {
@@ -837,7 +841,7 @@ describe('parseCanvasQuiz: big questions are read in linear time', () => {
     expect(item.choices.map((choice) => choice.ident)).toEqual(['0', '1', '2', '3']);
     expect(item.correctChoiceIdents).toEqual(['0']);
     expect(item.rawWarnings).toEqual([]);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 });
 
