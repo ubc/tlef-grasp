@@ -52,6 +52,7 @@ const { samlErrorHandler } = require('./middleware/samlErrorHandler');
 
 const authRoutes = require('./routes/auth');
 const questionRoutes = require("./routes/question");
+const canvasQuizImportRoutes = require("./routes/canvas-quiz-import");
 const courseRoutes = require("./routes/courses");
 const studentRoutes = require("./routes/student");
 const ragLlmRoutes = require("./routes/rag-llm");
@@ -161,6 +162,8 @@ app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRou
 // API endpoints
 // Question generation, materials - require at least staff role
 app.use("/api/question", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), questionRoutes);
+// Canvas quiz export upload (multipart, so the 1mb JSON cap does not apply).
+app.use("/api/question-import/canvas", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), canvasQuizImportRoutes);
 app.use("/api/rag-llm", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ragLlmRoutes);
 app.use("/api/material", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), materialRoutes);
 app.use("/api/objective", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), objectiveRoutes);
