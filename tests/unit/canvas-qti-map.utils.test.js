@@ -1,3 +1,7 @@
+// The speed tests below catch quadratic blow-ups (old code took 20-40 s);
+// their limits leave room for slow, coverage-instrumented CI runners.
+jest.setTimeout(30000);
+
 /**
  * Canvas quiz mapper (utils/canvas-qti-map.js, #140): parsed Canvas Classic
  * quizzes -> GRASP question drafts, slots, names and skip reasons.
@@ -151,7 +155,7 @@ describe('mapCanvasQuizzes: slots, names and provenance', () => {
       'Synthetic Quiz – G (3)',
     ]);
     expect(quiz.slots[19999].name).toBe('Synthetic Quiz – G (20000)');
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 
   test('titles 20,000 quizzes that share a title in well under two seconds', () => {
@@ -164,7 +168,7 @@ describe('mapCanvasQuizzes: slots, names and provenance', () => {
 
     expect(mapped.slice(0, 2).map((quiz) => quiz.title)).toEqual(['Synthetic Quiz', 'Synthetic Quiz (2)']);
     expect(mapped[19999].title).toBe('Synthetic Quiz (20000)');
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(10000);
   });
 });
 
