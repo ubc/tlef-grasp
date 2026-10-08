@@ -6,6 +6,7 @@ import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
+import AutoHeightTextarea from "../../components/AutoHeightTextarea";
 import CalculationToleranceFields from "../../components/CalculationToleranceFields";
 import {
   optionRowsOf,
@@ -320,6 +321,20 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
             </div>
           )}
 
+          {question?.status === "Draft" && question.importWarnings?.length > 0 && (
+            <div className="rounded-lg border border-warning/60 bg-warning/10 px-4 py-3 text-sm text-yellow-800">
+              <p className="font-semibold">
+                <i className="fas fa-triangle-exclamation mr-2" aria-hidden="true" />
+                Imported from Canvas. Check before approving:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-6">
+                {question.importWarnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {form.questionType !== QUESTION_TYPES.MULTIPLE_CHOICE && (
             <TypeChip
               type={form.questionType}
@@ -334,18 +349,31 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           )}
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qem-title" className={labelClass}>
               {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
                 ? "Question Title"
                 : "Topic title"}
             </label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={set("title")}
-              readOnly={readOnly}
-              className={inputClass}
-            />
+            {/* The MC title is the prompt students see, which can run to
+                several lines; other types' titles are short topic labels. */}
+            {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? (
+              <AutoHeightTextarea
+                id="qem-title"
+                value={form.title}
+                onChange={set("title")}
+                readOnly={readOnly}
+                className={inputClass}
+              />
+            ) : (
+              <input
+                id="qem-title"
+                type="text"
+                value={form.title}
+                onChange={set("title")}
+                readOnly={readOnly}
+                className={inputClass}
+              />
+            )}
           </div>
 
           <div>

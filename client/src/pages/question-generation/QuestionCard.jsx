@@ -296,7 +296,7 @@ export default function QuestionCard({
             <RichText
               text={escapeHtml(question.title)}
               as="h5"
-              className="mb-2 font-semibold text-ink"
+              className="mb-2 whitespace-pre-line font-semibold text-ink"
             />
           )}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -426,7 +426,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Question stem">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Correct answer">
@@ -490,7 +490,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Template">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Formula">
@@ -560,7 +560,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Prompt">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Sample answer">
@@ -593,7 +593,7 @@ export default function QuestionCard({
             <div className="mb-3">
               <RichText
                 text={escapeHtml(question.stem)}
-                className="text-sm text-ink"
+                className="whitespace-pre-line text-sm text-ink"
               />
               <div className="flex flex-wrap gap-2">
                 {stemImages.map((img) => (
@@ -649,7 +649,7 @@ export default function QuestionCard({
                       <div className="min-w-0 flex-1">
                         <RichText
                           text={`${option.id}. ${escapeHtml(option.text)}`}
-                          className="text-sm text-ink"
+                          className="whitespace-pre-line text-sm text-ink"
                         />
                         <QuestionImage image={option.image} showCaption={false} />
                       </div>

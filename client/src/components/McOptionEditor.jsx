@@ -1,15 +1,18 @@
 import { MC_MAX_OPTIONS, MC_MIN_OPTIONS, addOptionRow, removeOptionRow } from "../lib/mcOptions";
 import QuestionImageField from "./QuestionImageField";
+import AutoHeightTextarea from "./AutoHeightTextarea";
 import { discardImageFile } from "../lib/questionImages";
 
 // Alt text only: a caption shown under a structure could name the answer.
 export const OPTION_IMAGE_CAPTION_PLACEHOLDER = "Alt text for screen readers (not shown on screen)";
 
 // The answer-option rows of a multiple-choice form: one radio per row for the
-// correct answer, text and feedback inputs, an optional image (issue #146),
+// correct answer, text and feedback fields, an optional image (issue #146),
 // and add/remove controls between two and eight rows (issue #144). Shared by
 // the add-question wizard and the edit modal, which keep the rows in
-// `form.options` and the answer in `form.correctAnswer`.
+// `form.options` and the answer in `form.correctAnswer`. Text and feedback are
+// one-line textareas that grow, not inputs: an input strips line breaks, and
+// options imported from Canvas can span paragraphs (issue #140).
 export default function McOptionEditor({
   options,
   correctAnswer,
@@ -47,23 +50,23 @@ export default function McOptionEditor({
             </span>
           </label>
           <div className="flex-1 space-y-1.5">
-            <input
-              type="text"
+            <AutoHeightTextarea
+              rows={1}
               aria-label={`Option ${option.id} text`}
               value={option.text}
               readOnly={readOnly}
               placeholder="Enter option text, or attach an image..."
               onChange={(event) => update(index, { text: event.target.value })}
-              className={inputClass}
+              className={`${inputClass} resize-none`}
             />
-            <input
-              type="text"
+            <AutoHeightTextarea
+              rows={1}
               aria-label={`Option ${option.id} feedback`}
               value={option.feedback}
               readOnly={readOnly}
               placeholder={feedbackPlaceholder}
               onChange={(event) => update(index, { feedback: event.target.value })}
-              className={`${inputClass} bg-gray-50 italic`}
+              className={`${inputClass} resize-none bg-gray-50 italic`}
             />
             {(option.image || !readOnly) && (
               <QuestionImageField
