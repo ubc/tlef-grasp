@@ -1,22 +1,10 @@
 import { useEffect, useRef } from "react";
 import renderMathInElement from "katex/dist/contrib/auto-render";
 import SmilesDrawer from "smiles-drawer";
+import { parseSmilesTags } from "../lib/smiles";
 
 // Renders question/option text that may contain HTML, KaTeX math delimiters,
 // and [SMILES]...[/SMILES] chemical structure tags (ported from smiles-renderer.js).
-
-let smilesGlobalIndex = 0;
-
-export function parseSmilesTags(text) {
-  if (!text) return text;
-  return String(text).replace(
-    /\[SMILES\]\s*(.*?)\s*\[\/SMILES\]/gi,
-    (match, smiles) => {
-      const id = `smiles-canvas-${Date.now()}-${smilesGlobalIndex++}-${Math.floor(Math.random() * 1000)}`;
-      return `<canvas id="${id}" data-smiles="${smiles.trim()}" width="200" height="200" style="display: inline-block; vertical-align: middle;"></canvas>`;
-    }
-  );
-}
 
 function decodeHTMLEntities(text) {
   const textarea = document.createElement("textarea");
@@ -41,6 +29,8 @@ export function renderSmilesIn(element) {
 
   const drawer = new SmilesDrawer.Drawer(SMILES_OPTIONS);
   canvases.forEach((canvas) => {
+    // The HTML parser decodes the attribute's entities, so this is the tag's
+    // text from before escapeHtml and parseSmilesTags escaped it.
     const raw = canvas.getAttribute("data-smiles");
     if (!raw || !canvas.id) return;
     const smiles = decodeHTMLEntities(raw);
