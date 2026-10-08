@@ -409,7 +409,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
       >
         <p className="mb-5 text-sm text-muted">
           Create a new question from scratch (or with AI), or import questions from a GRASP
-          JSON export.
+          JSON export or a Canvas quiz export.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -428,7 +428,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
           >
             <i className="fas fa-file-import text-2xl text-primary" />
             <span className="font-semibold text-ink">Import Questions</span>
-            <span className="text-xs text-muted">Upload a JSON export file</span>
+            <span className="text-xs text-muted">Upload a GRASP JSON or Canvas quiz export</span>
           </button>
         </div>
       </Modal>
