@@ -164,7 +164,7 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
               </span>
               <div className="min-w-0 flex-1 pt-1">
                 {optionText && (
-                  <RichText text={escapeHtml(optionText)} className="text-ink" />
+                  <RichText text={escapeHtml(optionText)} className="whitespace-pre-line text-ink" />
                 )}
                 {image && (
                   // The caption is the image's alt text and part of the
@@ -301,7 +301,7 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview, practice = 
           {feedback.feedbackText && (
             <RichText
               text={escapeHtml(feedback.feedbackText)}
-              className="mt-2 text-sm text-gray-600"
+              className="mt-2 whitespace-pre-line text-sm text-gray-600"
             />
           )}
           {aiCriteria.length > 0 && (
@@ -398,7 +398,7 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview, practice = 
         {latest.feedbackText && (
           <RichText
             text={escapeHtml(latest.feedbackText)}
-            className="mt-2 text-sm text-gray-600"
+            className="mt-2 whitespace-pre-line text-sm text-gray-600"
           />
         )}
         {feedback.retry && !practice && (
@@ -420,13 +420,13 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview, practice = 
       {correctText && (
         <RichText
           text={`The correct answer is ${escapeHtml(correctText)}.`}
-          className="mt-2 text-sm text-gray-600"
+          className="mt-2 whitespace-pre-line text-sm text-gray-600"
         />
       )}
       {latest.feedbackText && (
         <RichText
           text={escapeHtml(latest.feedbackText)}
-          className="mt-2 text-sm text-gray-600"
+          className="mt-2 whitespace-pre-line text-sm text-gray-600"
         />
       )}
       {retrying && (

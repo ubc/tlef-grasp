@@ -316,7 +316,7 @@ function AddExistingQuestionsModal({
                   <RichText
                     as="span"
                     text={escapeHtml(question.title || question.stem || "Untitled question")}
-                    className="block text-sm font-medium text-ink"
+                    className="block whitespace-pre-line text-sm font-medium text-ink"
                   />
                   <span className="mt-1 block text-xs text-muted">
                     {question.glo || "Learning objective unavailable"}
@@ -899,7 +899,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                           <RichText
                             as="span"
                             text={escapeHtml(question.title)}
-                            className="min-w-0"
+                            className="min-w-0 whitespace-pre-line"
                           />
                         </div>
                         <div className="mt-1.5 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">

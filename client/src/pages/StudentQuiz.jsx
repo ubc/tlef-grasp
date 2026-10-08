@@ -255,13 +255,13 @@ export default function StudentQuiz() {
           text={escapeHtml(
             question.question || question.title || "Question text not available"
           )}
-          className="mb-2 text-ink"
+          className="mb-2 whitespace-pre-line text-ink"
         />
 
         {question.stem && !isGenericFibStem && (
           <RichText
             text={escapeHtml(question.stem)}
-            className="mb-4 text-[1.05em] font-medium text-[#34495e]"
+            className="mb-4 whitespace-pre-line text-[1.05em] font-medium text-[#34495e]"
           />
         )}
 

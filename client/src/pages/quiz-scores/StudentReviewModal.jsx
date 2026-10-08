@@ -256,7 +256,7 @@ function McqAttempt({ attempt }) {
             </span>
             <div className="min-w-0 flex-1">
               {optionText && (
-                <RichText text={escapeHtml(optionText)} className="text-sm text-ink" />
+                <RichText text={escapeHtml(optionText)} className="whitespace-pre-line text-sm text-ink" />
               )}
               <QuestionImage image={image} showCaption={false} />
             </div>
@@ -373,7 +373,7 @@ export default function StudentReviewModal({ review, onClose }) {
 
                   <RichText
                     text={escapeHtml(attempt.questionText)}
-                    className="mb-3 font-medium text-ink"
+                    className="mb-3 whitespace-pre-line font-medium text-ink"
                   />
 
                   {isOpenEnded ? (
