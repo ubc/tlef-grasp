@@ -2,11 +2,15 @@ const { ObjectId } = require("mongodb");
 const databaseService = require("./database");
 const quizScheduleService = require("./quiz-schedule");
 const { BLOOM_LEVELS } = require("../constants/app-constants");
+const { QUIZ_SOURCE_KEYS, pickImportSource } = require("../utils/import-provenance");
+
+const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 
 /**
  * Create a new quiz
  * @param {string} courseId - The ID of the course
- * @param {Object} quizData - { name, description, deliveryFormat }
+ * @param {Object} quizData - { name, description, deliveryFormat }, plus for a
+ *   Canvas import (#140) `source` ({ kind, quizIdent }) and `createdAt` (a Date)
  * @returns {Promise<Object>} The created quiz object
  */
 const createQuiz = async (courseId, quizData) => {
@@ -26,9 +30,13 @@ const createQuiz = async (courseId, quizData) => {
                 ? Number(quizData.timeLimitMinutes)
                 : 60,
             // Availability is configured per section in grasp_quiz_section_schedule.
-            createdAt: new Date(),
+            // An import sets createdAt so its quizzes sort in Canvas due order
+            // (unscheduled quizzes are ordered by createdAt).
+            createdAt: isValidDate(quizData.createdAt) ? new Date(quizData.createdAt.getTime()) : new Date(),
             updatedAt: new Date()
         };
+        const source = pickImportSource(quizData.source, QUIZ_SOURCE_KEYS);
+        if (source) newQuiz.source = source;
         
         const result = await collection.insertOne(newQuiz);
         return { ...newQuiz, _id: result.insertedId };

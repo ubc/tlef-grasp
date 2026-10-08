@@ -3,6 +3,11 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const { MC_OPTION_KEYS } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { deleteImages, collectQuestionImageIds } = require('./image');
+const {
+    QUESTION_SOURCE_KEYS,
+    pickImportSource,
+    pickImportWarnings,
+} = require('../utils/import-provenance');
 const { ObjectId } = require('mongodb');
 
 const MAX_IMAGE_CAPTION_LENGTH = 300;
@@ -212,7 +217,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             }
         }
 
-        const question = await collection.insertOne({
+        const doc = {
             title: questionData.title,
             stem: questionData.stem,
             stemImages: sanitizeImageRefArray(questionData.stemImages ?? questionData.stemImage),
@@ -252,7 +257,16 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 ? String(questionData.flagReason || "").trim()
                 : "",
             createdAt: new Date(),
-        });
+        };
+
+        // Canvas import provenance and lossy-conversion notes (#140). Written
+        // only when given, so other questions keep their exact shape.
+        const source = pickImportSource(questionData.source, QUESTION_SOURCE_KEYS);
+        if (source) doc.source = source;
+        const importWarnings = pickImportWarnings(questionData.importWarnings);
+        if (importWarnings) doc.importWarnings = importWarnings;
+
+        const question = await collection.insertOne(doc);
         
         console.log("Question saved with ID:", question.insertedId);
         return question;

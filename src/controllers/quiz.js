@@ -14,6 +14,7 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 const quizSessionService = require('../services/quiz-session');
+const { withoutImportFields, withoutQuizImportFields } = require('../utils/import-provenance');
 
 function isBooleanIfPresent(value) {
   return value === undefined || typeof value === "boolean";
@@ -158,9 +159,10 @@ const getQuizzesByCourseHandler = async (req, res) => {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
     const allQuizzes = await quizService.getQuizzesByCourse(courseId);
+    // Canvas import provenance (#140) is for instructors only.
     const quizzes = await hasStaffAccessInCourse(req.user, courseId)
       ? allQuizzes
-      : allQuizzes.filter((quiz) => quiz.published === true);
+      : allQuizzes.filter((quiz) => quiz.published === true).map(withoutQuizImportFields);
     res.json({ success: true, quizzes });
   } catch (error) {
     console.error("Error fetching quizzes:", error);
@@ -283,7 +285,8 @@ const getStudentQuizOverviewHandler = async (req, res) => {
       })
     );
 
-    res.json({ success: true, quizzes: overview });
+    // A student view, so Canvas import provenance (#140) stays out of it.
+    res.json({ success: true, quizzes: overview.map(withoutQuizImportFields) });
   } catch (error) {
     console.error("Error building student quiz overview:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -382,7 +385,9 @@ const getQuizByIdHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
     
-    res.json({ success: true, quiz });
+    // Only the student quiz page reads this, so import provenance (#140) is
+    // left out for everyone rather than looking up staff access.
+    res.json({ success: true, quiz: withoutQuizImportFields(quiz) });
   } catch (error) {
     console.error("Error fetching quiz:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -461,7 +466,12 @@ const createQuizHandler = async (req, res) => {
     if (newQuestions && Array.isArray(newQuestions)) {
       for (const questionData of newQuestions) {
         try {
-          const questionResult = await questionService.saveQuestion(courseId, questionData, { dedupe: true });
+          // Canvas provenance (#140) is written only by the Canvas importer.
+          const questionResult = await questionService.saveQuestion(
+            courseId,
+            withoutImportFields(questionData),
+            { dedupe: true }
+          );
           finalQuestionIds.push(questionResult.insertedId.toString());
         } catch (error) {
           if (error.code === "DUPLICATE_QUESTION") {
@@ -603,8 +613,9 @@ const addQuizQuestionsHandler = async (req, res) => {
     
     for (const questionData of questions) {
       try {
-        // Save the question
-        const questionResult = await questionService.saveQuestion(courseId, questionData);
+        // Save the question. Canvas provenance (#140) is written only by the
+        // Canvas importer, never taken from a client payload.
+        const questionResult = await questionService.saveQuestion(courseId, withoutImportFields(questionData));
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
         console.error("Error saving question:", error);
@@ -886,7 +897,13 @@ const getQuizQuestionsHandler = async (req, res) => {
       return finalQuestion;
     });
 
-    res.json({ success: true, questions: transformedQuestions });
+    // Canvas import provenance and conversion warnings (#140) are for
+    // instructors. The branches above spread the whole document, so drop them
+    // here for every type.
+    res.json({
+      success: true,
+      questions: withholdAnswers ? transformedQuestions.map(withoutImportFields) : transformedQuestions,
+    });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);
     res.status(500).json({ success: false, error: error.message });
