@@ -2,33 +2,7 @@ const { uploadImage, getImageStream, deleteImage, isImageInUse } = require("../s
 const { isUserInCourse } = require("../services/user-course");
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require("../utils/co-instructor-permissions");
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
-
-// SVG is deliberately excluded: it can carry scripts (XSS vector).
-const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-/**
- * Verify the buffer's magic bytes match the claimed mime type so a renamed
- * file (e.g. an .html saved as .png) cannot lie its way into storage.
- */
-const sniffImageType = (buffer) => {
-    if (!buffer || buffer.length < 12) return null;
-    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-        return "image/png";
-    }
-    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-        return "image/jpeg";
-    }
-    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
-        return "image/gif";
-    }
-    if (
-        buffer.toString("ascii", 0, 4) === "RIFF" &&
-        buffer.toString("ascii", 8, 12) === "WEBP"
-    ) {
-        return "image/webp";
-    }
-    return null;
-};
+const { ALLOWED_IMAGE_MIME_TYPES, sniffImageType } = require("../utils/image-sniff");
 
 const uploadImageHandler = async (req, res) => {
     try {
@@ -44,7 +18,7 @@ const uploadImageHandler = async (req, res) => {
         }
 
         const sniffedType = sniffImageType(file.buffer);
-        if (!ALLOWED_MIME_TYPES.includes(file.mimetype) || sniffedType !== file.mimetype) {
+        if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.mimetype) || sniffedType !== file.mimetype) {
             return res.status(400).json({
                 error: "Unsupported image type. Allowed formats: PNG, JPEG, GIF, WebP.",
             });
