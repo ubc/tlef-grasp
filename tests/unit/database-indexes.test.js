@@ -164,6 +164,17 @@ describe('initializeCollections index definitions', () => {
     ]);
   });
 
+  // The Canvas importer locks a (course, Canvas quiz) while it commits (#140).
+  // A worker that dies mid-import leaves its lock behind; the TTL index is
+  // what removes it once its own expiresAt passes.
+  it('expires Canvas import locks at their expiresAt', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    expect(collectionFor('grasp_canvas_import_lock').createIndex.mock.calls).toEqual([
+      [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    ]);
+  });
+
   // The suite above mocks createIndex, so MongoDB never parses these specs and
   // an unsupported operator sails through as a green test right up until it
   // throws CannotCreateIndex at boot. partialFilterExpression accepts only a

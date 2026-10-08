@@ -250,6 +250,13 @@ class DatabaseService {
           partialFilterExpression: { "source.quizIdent": { $exists: true } },
         }
       );
+      // One commit per Canvas quiz per course at a time: the importer inserts a
+      // lock keyed by both. MongoDB removes a lock once its expiresAt passes,
+      // so a worker that dies mid-import does not block that quiz for good.
+      await this.db.collection("grasp_canvas_import_lock").createIndex(
+        { expiresAt: 1 },
+        { expireAfterSeconds: 0 }
+      );
 
       // --- SAML request-ID cache ---
       await this.createSamlRequestIndexes(this.db);
