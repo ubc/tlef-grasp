@@ -375,6 +375,18 @@ const DEFAULT_BLOOM_TYPE_PREFERENCES = {
 const MAX_MATERIALS_PER_OBJECTIVE = 3;
 
 /**
+ * The "From Canvas" course material (issue #165). A Canvas quiz import brings
+ * learning objectives but no course material, so every objective it creates is
+ * linked to this one instead of to nothing: an empty placeholder, one per
+ * course, created by the first import. It has no text, outline or search index,
+ * so it gives AI generation no course content.
+ */
+const CANVAS_IMPORT_MATERIAL = Object.freeze({
+  fileType: 'canvas-import',
+  documentTitle: 'From Canvas',
+});
+
+/**
  * Ceiling on the total questions for ONE GRANULAR objective, summed across every
  * Bloom level and question type it asks for. A meta objective is not capped, so a
  * meta with several granulars can still ask for a multiple of this.
@@ -420,5 +432,6 @@ module.exports = {
   DEFAULT_PROMPTS,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   MAX_MATERIALS_PER_OBJECTIVE,
+  CANVAS_IMPORT_MATERIAL,
   MAX_QUESTIONS_PER_OBJECTIVE,
 };

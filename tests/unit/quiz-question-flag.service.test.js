@@ -62,3 +62,47 @@ describe("quiz question flag service", () => {
     );
   });
 });
+
+describe("getCourseFlags student names", () => {
+  // A cursor stub for find().sort().toArray() and find().project().toArray().
+  const cursor = (rows) => {
+    const chain = {
+      sort: () => chain,
+      project: () => chain,
+      toArray: () => Promise.resolve(rows),
+    };
+    return chain;
+  };
+
+  it("names a student by legal name, else by the name Canvas gave them (issue #165)", async () => {
+    const quizId = new ObjectId();
+    const questionId = new ObjectId();
+    const signedIn = new ObjectId();
+    const synced = new ObjectId();
+    const flag = (studentId) => ({
+      _id: new ObjectId(),
+      quizId,
+      questionId,
+      studentId,
+      status: "pending",
+    });
+    const rowsByCollection = {
+      grasp_quiz_question_flag: [flag(signedIn), flag(synced)],
+      grasp_quiz: [{ _id: quizId, name: "Quiz 1" }],
+      grasp_question: [{ _id: questionId, status: "Approved" }],
+      grasp_user: [
+        { _id: signedIn, legalName: "Bruno Student", displayName: "Bruno", email: "b@ubc.ca" },
+        // Created by the Canvas roster sync and never signed in: no legal
+        // name or email, only the Canvas name.
+        { _id: synced, displayName: "Casey Canvasonly", email: null, puid: "99990001" },
+      ],
+    };
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) => ({ find: () => cursor(rowsByCollection[name]) })),
+    });
+
+    const flags = await flagService.getCourseFlags(new ObjectId().toString());
+
+    expect(flags.map((each) => each.studentName)).toEqual(["Bruno Student", "Casey Canvasonly"]);
+  });
+});

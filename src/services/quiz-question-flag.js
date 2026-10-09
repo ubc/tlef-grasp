@@ -64,13 +64,14 @@ async function enrichFlags(flags, { includeStudents = false } = {}) {
     const users = await db
       .collection("grasp_user")
       .find({ _id: { $in: studentIds } })
-      .project({ legalName: 1, email: 1, puid: 1 })
+      .project({ legalName: 1, displayName: 1, email: 1, puid: 1 })
       .toArray();
     usersById = new Map(
       users.map((user) => [
         asString(user._id),
-        // Instructor view: identify students by their authoritative legal name.
-        user.legalName || user.email || user.puid || "Unknown student",
+        // Instructor view: identify students by their authoritative legal name,
+        // else the name Canvas gave a roster-synced student (issue #165).
+        user.legalName || user.displayName || user.email || user.puid || "Unknown student",
       ])
     );
   }

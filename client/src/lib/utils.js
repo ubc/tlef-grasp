@@ -1,4 +1,4 @@
-import { QUESTION_TYPES } from "./constants";
+import { CANVAS_IMPORT_MATERIAL_TYPE, QUESTION_TYPES } from "./constants";
 
 export const toStringId = (id) => {
   if (!id) return "";
@@ -49,7 +49,9 @@ export function getMaterialIcon(type) {
   const info = { icon: "fas fa-file", color: "#718096" };
   if (!type) return info;
   const t = type.toLowerCase();
-  if (t.includes("pdf")) {
+  if (t === CANVAS_IMPORT_MATERIAL_TYPE) {
+    info.icon = "fas fa-file-import";
+  } else if (t.includes("pdf")) {
     info.icon = "fas fa-file-pdf";
     info.color = "#e74c3c";
   } else if (t.includes("text") || t.includes("plain")) {

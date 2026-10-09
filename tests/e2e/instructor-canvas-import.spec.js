@@ -160,9 +160,10 @@ async function buildExport(stamp) {
   return { buffer, kinetics, thermo, text };
 }
 
-// Everything an import makes carries its Canvas quiz ident (`source`). Deleted
-// through the API so question images go with their questions, and each
-// objective with its granular.
+// Everything an import makes carries its Canvas quiz ident (`source`), except
+// the course's "From Canvas" material. Deleted through the API so question
+// images go with their questions, and each objective with its granular and
+// its material links.
 async function deleteImported(page, quizIdents) {
   const uri = process.env.MONGODB_URI;
   if (!uri) return;
@@ -181,8 +182,15 @@ async function deleteImported(page, quizIdents) {
     for (const id of await idsOf('grasp_quiz', bySource)) {
       await page.request.delete(`/api/quiz/${id}`);
     }
-    for (const id of await idsOf('grasp_objective', { ...bySource, parent: 0 })) {
-      await page.request.delete(`/api/objective/${id}?questionAction=delete`);
+    const objectives = await db
+      .collection('grasp_objective')
+      .find({ ...bySource, parent: 0 }, { projection: { courseId: 1 } })
+      .toArray();
+    for (const objective of objectives) {
+      await page.request.delete(`/api/objective/${objective._id}?questionAction=delete`);
+    }
+    for (const courseId of new Set(objectives.map((objective) => String(objective.courseId)))) {
+      await page.request.delete(`/api/material/delete/${courseId}-from-canvas`);
     }
   } finally {
     await client.close();
@@ -359,19 +367,50 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         await expect(dialog).toBeHidden();
       });
 
-      await test.step('each imported group is a learning objective', async () => {
+      await test.step('each imported group is a learning objective, linked to "From Canvas"', async () => {
         await page.getByRole('button', { name: 'Learning Objectives' }).click();
+        const objectiveCard = (name) =>
+          page
+            .getByRole('heading', { name, exact: true })
+            .locator('xpath=ancestor::div[contains(@class, "rounded-2xl")][1]');
         for (const name of [
           `${kinetics.title} – Q01`,
           `${kinetics.title} – Q02`,
           `${thermo.title} – Question 1`,
         ]) {
           await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+          // The course's "From Canvas" material, not "No materials linked." (#165).
+          await expect(objectiveCard(name).getByText('From Canvas', { exact: true })).toBeVisible();
+          await expect(objectiveCard(name).getByText('No materials linked.')).toHaveCount(0);
         }
         // Nothing from Q03 was imported, so it has no objective.
         await expect(
           page.getByRole('heading', { name: `${kinetics.title} – Q03`, exact: true })
         ).toHaveCount(0);
+
+        // With a material linked, an imported objective can be renamed.
+        const renamed = `${kinetics.title} – rate constants`;
+        // The card's icon buttons are named by their title only.
+        await objectiveCard(`${kinetics.title} – Q02`).getByTitle('Edit Objective').click();
+        const editDialog = page.getByRole('dialog', { name: 'Edit Learning Objective' });
+        await expect(editDialog.getByRole('checkbox', { name: 'From Canvas' })).toBeChecked();
+        await editDialog.getByPlaceholder('e.g., Understanding Cellular Respiration').fill(renamed);
+        await editDialog.getByRole('button', { name: 'Save Objective' }).click();
+        await expect(editDialog).toBeHidden();
+        await expect(page.getByRole('heading', { name: renamed, exact: true })).toBeVisible();
+        await expect(objectiveCard(renamed).getByText('From Canvas', { exact: true })).toBeVisible();
+      });
+
+      await test.step('the course has one "From Canvas" material, with nothing to edit', async () => {
+        await page.goto('/course-materials');
+        const heading = page.getByRole('heading', { name: 'From Canvas', exact: true });
+        await expect(heading).toHaveCount(1);
+        const card = heading.locator('xpath=ancestor::div[contains(@class, "rounded-2xl")][1]');
+        await expect(card.getByText('Canvas quiz import', { exact: true })).toBeVisible();
+        await expect(card.getByText(/^Created by a Canvas quiz import on /)).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+        await expect(card.getByRole('button', { name: /^Outline for / })).toHaveCount(0);
+        await expect(card.getByRole('button', { name: 'Delete' })).toBeVisible();
       });
 
       await test.step('the GRASP quiz is unpublished and uses spaced delivery', async () => {

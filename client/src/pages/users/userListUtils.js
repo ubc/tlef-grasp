@@ -10,18 +10,21 @@ function cleanName(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+// `name` leads a roster row: the legal name, else the display name. A student
+// the Canvas roster sync created has no legal name until their first CWL
+// sign-in, only the name Canvas gave them (issue #165). `legalName` is "" when
+// none is on file.
 export function getUserNames(user) {
-  const legalName =
-    cleanName(user?.legalName) || cleanName(user?.user?.legalName) || UNKNOWN_USER_NAME;
+  const legalName = cleanName(user?.legalName) || cleanName(user?.user?.legalName);
   const displayName = cleanName(user?.displayName) || cleanName(user?.user?.displayName);
+  const name = legalName || displayName || UNKNOWN_USER_NAME;
 
   return {
+    name,
     legalName,
     displayName,
     distinctDisplayName:
-      displayName && nameCollator.compare(displayName, legalName) !== 0
-        ? displayName
-        : "",
+      displayName && nameCollator.compare(displayName, name) !== 0 ? displayName : "",
   };
 }
 
@@ -40,8 +43,8 @@ export function filterAndSortCourseUsers(
     )
     .filter((user) => {
       if (!normalizedSearch) return true;
-      const { legalName, displayName } = getUserNames(user);
-      return `${legalName} ${displayName}`.toLocaleLowerCase().includes(normalizedSearch);
+      const { name, displayName } = getUserNames(user);
+      return `${name} ${displayName}`.toLocaleLowerCase().includes(normalizedSearch);
     })
     .sort((a, b) => {
       const rankDifference = roleRank(a) - roleRank(b);
@@ -49,11 +52,8 @@ export function filterAndSortCourseUsers(
 
       const aNames = getUserNames(a);
       const bNames = getUserNames(b);
-      const legalNameDifference = nameCollator.compare(
-        aNames.legalName,
-        bNames.legalName
-      );
-      if (legalNameDifference !== 0) return legalNameDifference;
+      const nameDifference = nameCollator.compare(aNames.name, bNames.name);
+      if (nameDifference !== 0) return nameDifference;
 
       return nameCollator.compare(aNames.displayName, bNames.displayName);
     });

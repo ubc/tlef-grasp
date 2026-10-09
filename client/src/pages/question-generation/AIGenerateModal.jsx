@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { formatFileSize } from "../../lib/format";
 import { useCourseMaterials } from "../../hooks/useMaterials";
+import { isCanvasImportMaterial } from "../../lib/materials";
 import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
@@ -33,7 +34,11 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   const [generating, setGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState("");
 
-  const { materials, isPending: materialsPending } = useCourseMaterials(course?.id);
+  const { materials: courseMaterials, isPending: materialsPending } = useCourseMaterials(
+    course?.id
+  );
+  // The "From Canvas" material has no content to generate objectives from.
+  const materials = courseMaterials.filter((material) => !isCanvasImportMaterial(material));
 
   // Cap is enforced here as well as server-side so the instructor is stopped
   // before a rejected save, not after.

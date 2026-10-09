@@ -121,10 +121,17 @@ function createFakeDb() {
         if (index >= 0) docs.splice(index, 1);
         return { deletedCount: index >= 0 ? 1 : 0 };
       },
-      // Only what the importer sends: $addToSet with $each.
-      updateOne: async (filter, update) => {
+      // Only what the importer sends: $addToSet with $each, and an upsert
+      // with $setOnInsert (the "From Canvas" material and its links).
+      updateOne: async (filter, update, options = {}) => {
         const doc = docs.find((d) => matches(d, filter));
+        if (!doc && options.upsert) {
+          // As in MongoDB, the filter's equality fields seed the new document.
+          insert({ ...filter, ...update.$setOnInsert });
+          return { matchedCount: 0, upsertedCount: 1 };
+        }
         Object.entries(update).forEach(([op, fields]) => {
+          if (op === '$setOnInsert') return;
           if (op !== '$addToSet') throw new Error(`fake db: unsupported update ${op}`);
           if (!doc) return;
           Object.entries(fields).forEach(([field, { $each }]) => {
@@ -264,6 +271,17 @@ function linksOf(quizId) {
 }
 
 const idsOf = (...itemIdents) => itemIdents.map((ident) => String(questionBy(ident)._id)).sort();
+
+// The course's "From Canvas" material (#165) and what an objective links to.
+function canvasMaterialOf(courseId = COURSE_ID) {
+  return fake.docs('grasp_material').find((doc) => doc.sourceId === `${courseId}-from-canvas`);
+}
+
+function materialIdsOf(objective) {
+  return fake.docs('grasp_objective_material')
+    .filter((link) => same(link.objectiveId, objective._id))
+    .map((link) => String(link.materialId));
+}
 
 async function previewAlpha(buffer) {
   const report = await previewCanvasImport({ courseId: COURSE_ID, buffer, deps: { imageHosts: HOSTS } });
@@ -697,7 +715,14 @@ describe('commitCanvasQuiz', () => {
   it('imports nothing twice: a second run adds no question, objective, image or link', async () => {
     const buffer = await exportZip([alphaQuiz()], BUNDLED);
     await commit(buffer);
-    const counts = () => ['grasp_question', 'grasp_objective', 'grasp_quiz', 'grasp_quiz_question'].map((name) => fake.docs(name).length);
+    const counts = () => [
+      'grasp_question',
+      'grasp_objective',
+      'grasp_quiz',
+      'grasp_quiz_question',
+      'grasp_material',
+      'grasp_objective_material',
+    ].map((name) => fake.docs(name).length);
     const before = counts();
     uploadImage.mockClear();
     const fetcher = fakeFetcher({});
@@ -826,6 +851,87 @@ describe('commitCanvasQuiz', () => {
     expect(notAllowed.created.questions).toBe(4);
     expect(fake.docs('grasp_quiz')).toHaveLength(0);
     expect(fake.docs('grasp_quiz_question')).toHaveLength(0);
+  });
+
+  it('links each objective it creates to the course\'s one "From Canvas" material (#165)', async () => {
+    await commit(await exportZip([alphaQuiz()], BUNDLED));
+
+    expect(fake.docs('grasp_material')).toEqual([
+      {
+        _id: expect.any(ObjectId),
+        sourceId: `${COURSE_ID}-from-canvas`,
+        courseId: courseObj,
+        fileType: 'canvas-import',
+        fileSize: 0,
+        fileContent: null,
+        documentTitle: 'From Canvas',
+        createdAt: expect.any(Date),
+      },
+    ]);
+    const fromCanvas = String(canvasMaterialOf()._id);
+    const parents = fake.docs('grasp_objective').filter((doc) => doc.parent === 0);
+    expect(parents).toHaveLength(3);
+    parents.forEach((parent) => expect(materialIdsOf(parent)).toEqual([fromCanvas]));
+    // Granulars use their parent's materials and are never linked themselves.
+    expect(fake.docs('grasp_objective_material')).toHaveLength(3);
+  });
+
+  it('uses one "From Canvas" material per course across imports', async () => {
+    const buffer = await exportZip([alphaQuiz(), betaQuiz()], BUNDLED);
+    await commit(buffer, { courseId: OTHER_COURSE_ID });
+    await commit(buffer);
+    await commit(buffer, { quizIdent: BETA });
+
+    expect(fake.docs('grasp_material').map((doc) => doc.sourceId).sort()).toEqual(
+      [`${COURSE_ID}-from-canvas`, `${OTHER_COURSE_ID}-from-canvas`].sort(),
+    );
+    const ours = String(canvasMaterialOf()._id);
+    const parents = fake.docs('grasp_objective').filter((doc) => doc.parent === 0 && same(doc.courseId, courseObj));
+    expect(parents.map((parent) => parent.name)).toEqual([
+      'Alpha Quiz – Q01',
+      'Alpha Quiz – Q02',
+      'Alpha Quiz – Question 3',
+      'Beta Quiz – Question 1',
+    ]);
+    parents.forEach((parent) => expect(materialIdsOf(parent)).toEqual([ours]));
+  });
+
+  it('links an earlier imported objective only when it has no material left', async () => {
+    const seedParent = (name, slotIdent) => fake.seed('grasp_objective', {
+      name,
+      parent: 0,
+      courseId: courseObj,
+      source: { kind: 'canvas-classic', quizIdent: ALPHA, slotIdent },
+    });
+    // Imported before the "From Canvas" material existed.
+    const bare = seedParent('Alpha Quiz – Q01', 'ggroupa1');
+    // An instructor linked a lecture instead.
+    const lectured = seedParent('Alpha Quiz – Q02', 'ggroupa2');
+    const lecture = fake.seed('grasp_material', { sourceId: 'lecture-1', courseId: courseObj, fileType: 'application/pdf' });
+    fake.seed('grasp_objective_material', { objectiveId: lectured._id, materialId: lecture._id });
+    // Its only material was deleted, which leaves the link row behind.
+    const stale = seedParent('Alpha Quiz – Question 3', 'gitema4');
+    const deleted = new ObjectId();
+    fake.seed('grasp_objective_material', { objectiveId: stale._id, materialId: deleted });
+
+    const report = await commit(await exportZip([alphaQuiz()], BUNDLED));
+
+    expect(report.created.objectives).toBe(0);
+    const fromCanvas = String(canvasMaterialOf()._id);
+    expect(materialIdsOf(bare)).toEqual([fromCanvas]);
+    expect(materialIdsOf(lectured)).toEqual([String(lecture._id)]);
+    expect(materialIdsOf(stale)).toEqual([String(deleted), fromCanvas]);
+  });
+
+  it('still imports everything when the "From Canvas" material cannot be made', async () => {
+    fake.failInsertWhen((name) => name === 'grasp_material');
+
+    const report = await commit(await exportZip([alphaQuiz()], BUNDLED));
+
+    expect(report.created).toEqual({ questions: 4, approved: 4, drafts: 0, objectives: 3 });
+    expect(report.failures).toEqual([]);
+    expect(fake.docs('grasp_objective_material')).toHaveLength(0);
+    expect(consoleOutput.filter((line) => line.includes('From Canvas material'))).toHaveLength(3);
   });
 
   it('adds a granular to an imported parent objective that has lost its children', async () => {

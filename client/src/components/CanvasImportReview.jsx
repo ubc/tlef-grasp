@@ -49,7 +49,7 @@ export default function CanvasImportReview({ preview, selections, onChange, disa
           <li>
             <i className="fas fa-bullseye mr-1.5 w-4 text-center" aria-hidden="true" />
             Each Canvas question group becomes one learning objective holding all of its
-            questions.
+            questions, linked to the course material &ldquo;From Canvas&rdquo;.
           </li>
           {permissions.canCreateQuizzes ? (
             <li>
