@@ -14,6 +14,8 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 const quizSessionService = require('../services/quiz-session');
+const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
+const studentQuizDelivery = require('../services/student-quiz-delivery');
 const { withoutImportFields, withoutQuizImportFields } = require('../utils/import-provenance');
 
 function isBooleanIfPresent(value) {
@@ -730,8 +732,14 @@ const getQuizQuestionsHandler = async (req, res) => {
     let questions;
 
     if (withholdAnswers) {
-        // Students quiz view: use personalized selection logic (approved only)
+        // Students quiz view: use personalized selection logic (approved only),
+        // under the same rules as the student quiz page (issue #168), so this
+        // route serves no quiz the student cannot open yet.
         const userId = req.user ? (req.user._id || req.user.id) : null;
+        const access = await resolveStudentQuizAccess(quiz, req.user);
+        if (!access.success) {
+          return res.status(access.status).json({ success: false, error: access.message });
+        }
         questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
     } else {
         // Bank full questions view: return all questions for instructors
@@ -951,6 +959,26 @@ const checkQuestionAnswerHandler = async (req, res) => {
       }
     }
 
+    // Only someone who may open the quiz can answer in it, and only questions
+    // the quiz can serve (issue #168). Before this, any signed-in user could
+    // grade any question and record the answer under any quiz, where it
+    // counted towards the score.
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Sign in to answer questions." });
+    }
+    const quiz = await quizService.getQuizById(quizId);
+    const access = await resolveStudentQuizAccess(quiz, req.user);
+    if (!access.success) {
+      return res.status(access.status).json({ success: false, error: access.message });
+    }
+    if (!(await studentQuizDelivery.canAnswerQuestion(quiz, userId, questionId))) {
+      return res.status(403).json({
+        success: false,
+        code: "QUESTION_NOT_IN_ATTEMPT",
+        error: "This question is not part of your quiz. Reload the quiz and try again.",
+      });
+    }
+
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
     
@@ -1071,9 +1099,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       // ungraded (isCorrect: null) for manual grading in the review modal.
       let grading = null;
       try {
-        const quiz = await quizService.getQuizById(quizId);
         grading = await answerGradingService.gradeOpenEndedAnswer({
-          courseId: quiz ? quiz.courseId : null,
+          courseId: quiz.courseId,
           question: String(question.question || question.stem || ""),
           studentAnswer: String(answerText).trim(),
           sampleAnswer: sample,
@@ -1154,9 +1181,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       let aiGraded = false;
       if (!isCorrect && given && normalizedAcceptable.length > 0) {
         try {
-          const quiz = await quizService.getQuizById(quizId);
           const rescue = await answerGradingService.gradeFillInTheBlankAnswer({
-            courseId: quiz ? quiz.courseId : null,
+            courseId: quiz.courseId,
             question: String(question.question || question.stem || ""),
             studentAnswer: String(answerText).trim(),
             correctAnswer: canonical,

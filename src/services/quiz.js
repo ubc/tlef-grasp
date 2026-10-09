@@ -1481,6 +1481,7 @@ module.exports = {
     addExistingQuestionsToQuiz,
     getQuizQuestions,
     getQuizQuestionsForStudent,
+    getCourseQuizzesInStudentOrder,
     getApprovedQuestionCountsForQuizzes,
     saveStudentPerformance,
     saveQuizScore,
