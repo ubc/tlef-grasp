@@ -9,7 +9,7 @@ const { MC_OPTION_KEYS, optionKeysOf, optionAt, optionTextOf } = require('../uti
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
 const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
-
+const studentQuizDelivery = require('../services/student-quiz-delivery');
 
 const getStudentCoursesHandler = async (req, res) => {
   try {
@@ -116,7 +116,9 @@ const getQuizQuestionsHandler = async (req, res) => {
     const session = await quizSessionService.getOrCreateSession(userId, quiz, {
       scheduledExpiresAt: accessibility.scheduledExpiresAt,
     });
-    const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+    // A spaced-3phase graded attempt keeps its pick on the session, so a
+    // reload serves the same questions (issue #168).
+    const questions = await studentQuizDelivery.getStudentQuestions(quiz, userId);
 
     if (questions && questions.length > 0) {
       try {
@@ -380,13 +382,26 @@ const submitQuizHandler = async (req, res) => {
     const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
     // The denominator is the number of questions the student was served, not
     // just the ones they answered — a timed-out student who answered 6 of 10
-    // scores out of 10. Sessions created before the count was recorded fall
-    // back to the graded-attempt count.
-    const servedCount = Number(session?.questionCount);
-    const totalQuestions = Number.isInteger(servedCount) && servedCount > 0
-      ? Math.max(servedCount, gradedAttempts.length)
-      : gradedAttempts.length;
-    const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    // scores out of 10. A spaced-3phase attempt that kept its pick (issue
+    // #168) is scored on exactly that pick: its questions still served, plus
+    // any the student answered that have since been removed. Older sessions
+    // use the count recorded at the first load, and sessions from before that
+    // the graded-attempt count.
+    const scored = await studentQuizDelivery.scoredQuestionIds(quiz, userId, session, attempts);
+    let totalQuestions;
+    let correctAnswers;
+    if (scored) {
+      totalQuestions = scored.size;
+      correctAnswers = gradedAttempts.filter(
+        a => a.isCorrect === true && scored.has(String(a.questionId))
+      ).length;
+    } else {
+      const servedCount = Number(session?.questionCount);
+      totalQuestions = Number.isInteger(servedCount) && servedCount > 0
+        ? Math.max(servedCount, gradedAttempts.length)
+        : gradedAttempts.length;
+      correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    }
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
     // Achievements are decoration: a failure awarding them must not cost the

@@ -792,7 +792,6 @@ const getPhase3Questions = async (quizId, userId) => {
  */
 const getQuizQuestionsForStudent = async (quizId, userId) => {
     try {
-        const db = await databaseService.connect();
         const quiz = await getQuizById(quizId);
 
         if (!quiz) throw new Error("Quiz not found");
@@ -831,36 +830,45 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
             }
         });
 
-        const performanceCollection = db.collection("grasp_student_performance");
-        const masteryRecords = await performanceCollection.find({ 
-            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
-            courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-        }).toArray();
-
-        finalSelection.forEach(q => {
-            const currentLoId = q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString();
-            
-            if (!currentLoId) {
-                q.userLevel = "No Prior History";
-                return;
-            }
-            
-            const mastery = masteryRecords.find(m => 
-                m.learningObjectiveId?.toString() === currentLoId || m.granularObjectiveId?.toString() === currentLoId
-            );
-
-            if (!mastery) {
-                q.userLevel = "No Prior History";
-            } else {
-                q.userLevel = mastery.needsRemediation ? "⚠️ Needs Remediation" : "✅ Mastery: " + (mastery.highestBloomPassed || "Remember");
-            }
-        });
-
-        return finalSelection;
+        return await annotateUserLevels(quiz, userId, finalSelection);
     } catch (error) {
         console.error("Error in getQuizQuestionsForStudent:", error);
         throw error;
     }
+};
+
+/**
+ * Labels each question with the student's standing on its objective
+ * (`userLevel`), from their mastery records in the quiz's course. Shared by a
+ * fresh spaced-3phase pick and one read back from the student's quiz session.
+ */
+const annotateUserLevels = async (quiz, userId, questions) => {
+    const db = await databaseService.connect();
+    const masteryRecords = await db.collection("grasp_student_performance").find({
+        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
+    }).toArray();
+
+    questions.forEach(q => {
+        const currentLoId = q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString();
+
+        if (!currentLoId) {
+            q.userLevel = "No Prior History";
+            return;
+        }
+
+        const mastery = masteryRecords.find(m =>
+            m.learningObjectiveId?.toString() === currentLoId || m.granularObjectiveId?.toString() === currentLoId
+        );
+
+        if (!mastery) {
+            q.userLevel = "No Prior History";
+        } else {
+            q.userLevel = mastery.needsRemediation ? "⚠️ Needs Remediation" : "✅ Mastery: " + (mastery.highestBloomPassed || "Remember");
+        }
+    });
+
+    return questions;
 };
 
 /**
@@ -1481,6 +1489,7 @@ module.exports = {
     addExistingQuestionsToQuiz,
     getQuizQuestions,
     getQuizQuestionsForStudent,
+    annotateUserLevels,
     getCourseQuizzesInStudentOrder,
     getApprovedQuestionCountsForQuizzes,
     saveStudentPerformance,

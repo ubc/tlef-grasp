@@ -32,7 +32,7 @@ jest.mock('../../src/services/quiz-session', () => ({
 }));
 
 // Who may answer, and which questions (issue #168). The grading tests below
-// run as a student who may open the quiz and answer the question.
+// run as a student who may open the quiz and was served the question.
 jest.mock('../../src/services/student-quiz-access', () => ({
   resolveStudentQuizAccess: jest.fn(),
 }));
@@ -303,9 +303,28 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
       expect(canAnswerQuestion).toHaveBeenCalledWith(
         { _id: 'quiz-1', courseId: 'course-1' },
         'user-1',
-        'question-1'
+        'question-1',
+        { practice: false }
       );
       expect(getQuestion).not.toHaveBeenCalled();
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('asks for the practice rules once the graded attempt is done', async () => {
+      quizService.hasCompletedQuiz.mockResolvedValue(true);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0, practice: true });
+
+      expect(res.status).toBe(200);
+      expect(canAnswerQuestion).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        'question-1',
+        { practice: true }
+      );
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
     });
 

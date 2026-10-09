@@ -98,4 +98,43 @@ describe('quiz session service', () => {
       expect(collection.updateOne).not.toHaveBeenCalled();
     });
   });
+
+  describe('saveServedQuestions (issue #168)', () => {
+    const { ObjectId } = require('mongodb');
+    const userId = new ObjectId().toString();
+    const quizId = new ObjectId().toString();
+    const questionId = new ObjectId();
+
+    it('keeps the pick only when none is kept yet, and returns what is kept', async () => {
+      const kept = [{ questionId: new ObjectId(), phase: 1 }];
+      const collection = {
+        updateOne: jest.fn().mockResolvedValue({ matchedCount: 0 }),
+        findOne: jest.fn().mockResolvedValue({ servedQuestions: kept }),
+      };
+      databaseService.connect.mockResolvedValue({ collection: jest.fn(() => collection) });
+
+      const result = await quizSessionService.saveServedQuestions(userId, quizId, [
+        { questionId: String(questionId), phase: 2, title: 'not stored' },
+      ]);
+
+      expect(collection.updateOne).toHaveBeenCalledWith(
+        { userId: new ObjectId(userId), quizId: new ObjectId(quizId), servedQuestions: { $exists: false } },
+        { $set: { servedQuestions: [{ questionId, phase: 2 }] } }
+      );
+      // Another load kept its pick first: that one wins.
+      expect(result).toBe(kept);
+    });
+
+    it('returns null when there is no session to keep the pick on', async () => {
+      const collection = {
+        updateOne: jest.fn().mockResolvedValue({ matchedCount: 0 }),
+        findOne: jest.fn().mockResolvedValue(null),
+      };
+      databaseService.connect.mockResolvedValue({ collection: jest.fn(() => collection) });
+
+      await expect(
+        quizSessionService.saveServedQuestions(userId, quizId, [{ questionId, phase: 1 }])
+      ).resolves.toBeNull();
+    });
+  });
 });

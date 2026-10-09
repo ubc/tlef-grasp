@@ -31,10 +31,14 @@ jest.mock('../../src/middleware/auth', () => ({
 jest.mock('../../src/services/student-quiz-access', () => ({
   resolveStudentQuizAccess: jest.fn(),
 }));
+jest.mock('../../src/services/quiz-session', () => ({
+  getOrCreateSession: jest.fn(),
+}));
 
 const quizService = require('../../src/services/quiz');
 const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
 const { resolveStudentQuizAccess } = require('../../src/services/student-quiz-access');
+const quizSessionService = require('../../src/services/quiz-session');
 const quizRouter = require('../../src/routes/quiz');
 
 function buildApp() {
@@ -73,6 +77,7 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     quizService.getQuizQuestions.mockResolvedValue([question]);
     quizService.getQuizQuestionsForStudent.mockResolvedValue([question]);
     resolveStudentQuizAccess.mockResolvedValue({ success: true, scheduledExpiresAt: null });
+    quizSessionService.getOrCreateSession.mockResolvedValue({});
   });
 
   it('gives staff the stored option image', async () => {
@@ -113,5 +118,6 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     expect(res.status).toBe(403);
     expect(res.body.questions).toBeUndefined();
     expect(quizService.getQuizQuestionsForStudent).not.toHaveBeenCalled();
+    expect(quizSessionService.getOrCreateSession).not.toHaveBeenCalled();
   });
 });
