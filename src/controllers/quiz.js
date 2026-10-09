@@ -14,6 +14,8 @@ const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 const quizSessionService = require('../services/quiz-session');
+const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
+const studentQuizDelivery = require('../services/student-quiz-delivery');
 const { withoutImportFields, withoutQuizImportFields } = require('../utils/import-provenance');
 
 function isBooleanIfPresent(value) {
@@ -269,19 +271,14 @@ const getStudentQuizOverviewHandler = async (req, res) => {
             phase3Count: 0,
           };
         }
-        let questions = [];
+        // The kept pick of a started attempt (issue #168), else a preview.
+        let counts = { questionCount: 0, phase1Count: 0, phase2Count: 0, phase3Count: 0 };
         try {
-          questions = await quizService.getQuizQuestionsForStudent(quiz._id.toString(), userId);
+          counts = await studentQuizDelivery.getStudentQuestionCounts(quiz, userId);
         } catch (err) {
           console.error(`Error selecting questions for quiz ${quiz._id}:`, err);
         }
-        return {
-          ...quiz,
-          questionCount: questions.length,
-          phase1Count: questions.filter((q) => q.phase === 1).length,
-          phase2Count: questions.filter((q) => q.phase === 2).length,
-          phase3Count: questions.filter((q) => q.phase === 3).length,
-        };
+        return { ...quiz, ...counts };
       })
     );
 
@@ -730,9 +727,18 @@ const getQuizQuestionsHandler = async (req, res) => {
     let questions;
 
     if (withholdAnswers) {
-        // Students quiz view: use personalized selection logic (approved only)
+        // Students quiz view: the same rules and questions as the student quiz
+        // page (issue #168), so this route serves neither a quiz the student
+        // cannot open yet nor a fresh pick of a graded attempt.
         const userId = req.user ? (req.user._id || req.user.id) : null;
-        questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+        const access = await resolveStudentQuizAccess(quiz, req.user);
+        if (!access.success) {
+          return res.status(access.status).json({ success: false, error: access.message });
+        }
+        await quizSessionService.getOrCreateSession(userId, quiz, {
+          scheduledExpiresAt: access.scheduledExpiresAt,
+        });
+        questions = await studentQuizDelivery.getStudentQuestions(quiz, userId);
     } else {
         // Bank full questions view: return all questions for instructors
         questions = await quizService.getQuizQuestions(quizId, false);
@@ -951,6 +957,26 @@ const checkQuestionAnswerHandler = async (req, res) => {
       }
     }
 
+    // Only someone who may open the quiz can answer in it, and only questions
+    // their attempt serves (issue #168). Before this, any signed-in user could
+    // grade any question and record the answer under any quiz, where it
+    // counted towards the score.
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Sign in to answer questions." });
+    }
+    const quiz = await quizService.getQuizById(quizId);
+    const access = await resolveStudentQuizAccess(quiz, req.user);
+    if (!access.success) {
+      return res.status(access.status).json({ success: false, error: access.message });
+    }
+    if (!(await studentQuizDelivery.canAnswerQuestion(quiz, userId, questionId, { practice }))) {
+      return res.status(403).json({
+        success: false,
+        code: "QUESTION_NOT_IN_ATTEMPT",
+        error: "This question is not part of your quiz. Reload the quiz and try again.",
+      });
+    }
+
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
     
@@ -1071,9 +1097,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       // ungraded (isCorrect: null) for manual grading in the review modal.
       let grading = null;
       try {
-        const quiz = await quizService.getQuizById(quizId);
         grading = await answerGradingService.gradeOpenEndedAnswer({
-          courseId: quiz ? quiz.courseId : null,
+          courseId: quiz.courseId,
           question: String(question.question || question.stem || ""),
           studentAnswer: String(answerText).trim(),
           sampleAnswer: sample,
@@ -1154,9 +1179,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       let aiGraded = false;
       if (!isCorrect && given && normalizedAcceptable.length > 0) {
         try {
-          const quiz = await quizService.getQuizById(quizId);
           const rescue = await answerGradingService.gradeFillInTheBlankAnswer({
-            courseId: quiz ? quiz.courseId : null,
+            courseId: quiz.courseId,
             question: String(question.question || question.stem || ""),
             studentAnswer: String(answerText).trim(),
             correctAnswer: canonical,

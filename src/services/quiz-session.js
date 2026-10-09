@@ -70,6 +70,29 @@ async function recordQuestionCount(userId, quizId, questionCount) {
   );
 }
 
+// Locks in the questions of a spaced-3phase graded attempt (issue #168): set
+// once, at the first load, and read back by every later load, so a reload
+// cannot swap a question for another variant of it. Returns what is stored,
+// which is another load's pick when two raced; null when there is no session.
+async function saveServedQuestions(userId, quizId, served) {
+  const db = await databaseService.connect();
+  const collection = db.collection("grasp_quiz_session");
+  const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
+  await collection.updateOne(
+    { userId: userIdObj, quizId: quizIdObj, servedQuestions: { $exists: false } },
+    {
+      $set: {
+        servedQuestions: served.map(({ questionId, phase }) => ({ questionId: toId(questionId), phase })),
+      },
+    }
+  );
+  const session = await collection.findOne(
+    { userId: userIdObj, quizId: quizIdObj },
+    { projection: { servedQuestions: 1 } }
+  );
+  return session?.servedQuestions || null;
+}
+
 async function markSubmitted(userId, quizId) {
   const db = await databaseService.connect();
   const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
@@ -110,6 +133,7 @@ module.exports = {
   getOrCreateSession,
   getSession,
   recordQuestionCount,
+  saveServedQuestions,
   markSubmitted,
   getUnsubmittedQuizIds,
   isExpired,

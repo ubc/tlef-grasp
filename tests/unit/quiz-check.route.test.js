@@ -31,6 +31,15 @@ jest.mock('../../src/services/quiz-session', () => ({
   isExpired: jest.fn(),
 }));
 
+// Who may answer, and which questions (issue #168). The grading tests below
+// run as a student who may open the quiz and was served the question.
+jest.mock('../../src/services/student-quiz-access', () => ({
+  resolveStudentQuizAccess: jest.fn(),
+}));
+jest.mock('../../src/services/student-quiz-delivery', () => ({
+  canAnswerQuestion: jest.fn(),
+}));
+
 jest.mock('../../src/middleware/auth', () => ({
   requireRole: () => (_req, _res, next) => next(),
   requirePageRole: () => (_req, _res, next) => next(),
@@ -56,6 +65,8 @@ const quizService = require('../../src/services/quiz');
 const { getQuestion } = require('../../src/services/question');
 const answerGrading = require('../../src/services/answer-grading');
 const quizSessionService = require('../../src/services/quiz-session');
+const { resolveStudentQuizAccess } = require('../../src/services/student-quiz-access');
+const { canAnswerQuestion } = require('../../src/services/student-quiz-delivery');
 const courseAccess = require('../../src/utils/course-access');
 const sectionService = require('../../src/services/course-section');
 const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
@@ -144,6 +155,8 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
     quizService.hasCompletedQuiz.mockResolvedValue(false);
     quizSessionService.getSession.mockResolvedValue(null);
     quizSessionService.isExpired.mockReturnValue(false);
+    resolveStudentQuizAccess.mockResolvedValue({ success: true, scheduledExpiresAt: null });
+    canAnswerQuestion.mockResolvedValue(true);
   });
 
   describe('open-ended questions', () => {
@@ -252,6 +265,78 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
 
       expect(res.status).toBe(400);
       expect(answerGrading.gradeOpenEndedAnswer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('who may answer which question (issue #168)', () => {
+    it('refuses someone who cannot open the quiz, before grading anything', async () => {
+      resolveStudentQuizAccess.mockResolvedValue({
+        success: false,
+        status: 403,
+        message: 'This quiz is not available for your section.',
+      });
+      getQuestion.mockResolvedValue(openEndedQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: 'Light and carbon fixation.' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('This quiz is not available for your section.');
+      expect(resolveStudentQuizAccess).toHaveBeenCalledWith(
+        { _id: 'quiz-1', courseId: 'course-1' },
+        { _id: 'user-1' }
+      );
+      expect(getQuestion).not.toHaveBeenCalled();
+      expect(answerGrading.gradeOpenEndedAnswer).not.toHaveBeenCalled();
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('refuses a question the attempt did not serve, and records nothing', async () => {
+      canAnswerQuestion.mockResolvedValue(false);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp()).post(checkUrl).send({ selectedIndex: 0 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('QUESTION_NOT_IN_ATTEMPT');
+      expect(canAnswerQuestion).toHaveBeenCalledWith(
+        { _id: 'quiz-1', courseId: 'course-1' },
+        'user-1',
+        'question-1',
+        { practice: false }
+      );
+      expect(getQuestion).not.toHaveBeenCalled();
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('asks for the practice rules once the graded attempt is done', async () => {
+      quizService.hasCompletedQuiz.mockResolvedValue(true);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0, practice: true });
+
+      expect(res.status).toBe(200);
+      expect(canAnswerQuestion).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        'question-1',
+        { practice: true }
+      );
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('refuses an answer that names no quiz the server knows', async () => {
+      quizService.getQuizById.mockResolvedValue(null);
+      resolveStudentQuizAccess.mockResolvedValue({ success: false, status: 404, message: 'Quiz not found' });
+
+      const res = await request(buildApp()).post(checkUrl).send({ selectedIndex: 0 });
+
+      expect(res.status).toBe(404);
+      expect(canAnswerQuestion).not.toHaveBeenCalled();
+      expect(getQuestion).not.toHaveBeenCalled();
     });
   });
 

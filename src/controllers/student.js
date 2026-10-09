@@ -1,7 +1,5 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
-const quizScheduleService = require('../services/quiz-schedule');
-const { hasStaffAccessInCourse } = require('../utils/course-access');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
@@ -10,71 +8,8 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const { MC_OPTION_KEYS, optionKeysOf, optionAt, optionTextOf } = require('../utils/mc-options');
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
-
-// A student who started a quiz inside its window keeps access to their
-// in-progress attempt after the window closes or is shifted later: recorded
-// answers exist (answers are only recordable while the quiz is open) but no
-// final score has been saved yet. Lets them resume/submit so started-in-time
-// progress is never lost.
-const hasUnsubmittedAttempt = async (userId, quizId) =>
-  (await quizSessionService.getUnsubmittedQuizIds(userId, [quizId])).has(quizId);
-
-// Resolve whether a student may access a quiz right now, based on the
-// release/expire window of the section(s) they belong to. Students with no
-// section assignment, or whose section has no schedule for this quiz, are
-// blocked. A quiz is open if ANY of the student's scheduled sections is open.
-const resolveStudentQuizAccess = async (quiz, user) => {
-  if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
-  if (!quiz.published) return { success: false, status: 403, message: "This quiz is not available. Only published quizzes can be accessed." };
-
-  // Instructors aren't enrolled in a section. Promoted TAs only receive this
-  // preview bypass in their TA course; elsewhere they follow student windows.
-  if (await hasStaffAccessInCourse(user, quiz.courseId)) {
-    return { success: true, scheduledExpiresAt: null };
-  }
-
-  const userId = user._id || user.id;
-  const studentSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, quiz.courseId);
-  if (studentSectionIds.length === 0) {
-    return {
-      success: false,
-      status: 403,
-      message: "This quiz is not available for your section. If you believe this is a mistake, contact your instructor.",
-    };
-  }
-
-  const rows = await quizScheduleService.getSchedulesForQuiz(quiz._id.toString());
-  const window = quizScheduleService.resolveWindow(rows, studentSectionIds, new Date());
-
-  if (window.accessibleNow) {
-    return { success: true, scheduledExpiresAt: window.expireDate || null };
-  }
-
-  if (window.reason === "not-yet") {
-    // Grace path: the quiz was shifted later after the student started.
-    if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
-      return { success: true, scheduledExpiresAt: window.expireDate || null };
-    }
-    return {
-      success: false,
-      status: 403,
-      message: `This quiz is not yet available. It will be released on ${new Date(window.releaseDate).toLocaleString()}.`,
-    };
-  }
-  if (window.reason === "expired") {
-    // Grace path: the student started during the window but the quiz expired
-    // before they finished — let them resume and submit their attempt (#37).
-    if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
-      return {
-        success: true,
-        expiredGrace: true,
-        scheduledExpiresAt: window.expireDate || null,
-      };
-    }
-    return { success: false, status: 403, message: "This quiz has expired and is no longer available." };
-  }
-  return { success: false, status: 403, message: "This quiz has not been scheduled for your section yet." };
-};
+const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
+const studentQuizDelivery = require('../services/student-quiz-delivery');
 
 const getStudentCoursesHandler = async (req, res) => {
   try {
@@ -181,7 +116,9 @@ const getQuizQuestionsHandler = async (req, res) => {
     const session = await quizSessionService.getOrCreateSession(userId, quiz, {
       scheduledExpiresAt: accessibility.scheduledExpiresAt,
     });
-    const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+    // A spaced-3phase graded attempt keeps its pick on the session, so a
+    // reload serves the same questions (issue #168).
+    const questions = await studentQuizDelivery.getStudentQuestions(quiz, userId);
 
     if (questions && questions.length > 0) {
       try {
@@ -445,13 +382,26 @@ const submitQuizHandler = async (req, res) => {
     const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
     // The denominator is the number of questions the student was served, not
     // just the ones they answered — a timed-out student who answered 6 of 10
-    // scores out of 10. Sessions created before the count was recorded fall
-    // back to the graded-attempt count.
-    const servedCount = Number(session?.questionCount);
-    const totalQuestions = Number.isInteger(servedCount) && servedCount > 0
-      ? Math.max(servedCount, gradedAttempts.length)
-      : gradedAttempts.length;
-    const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    // scores out of 10. A spaced-3phase attempt that kept its pick (issue
+    // #168) is scored on exactly that pick: its questions still served, plus
+    // any the student answered that have since been removed. Older sessions
+    // use the count recorded at the first load, and sessions from before that
+    // the graded-attempt count.
+    const scored = await studentQuizDelivery.scoredQuestionIds(quiz, userId, session, attempts);
+    let totalQuestions;
+    let correctAnswers;
+    if (scored) {
+      totalQuestions = scored.size;
+      correctAnswers = gradedAttempts.filter(
+        a => a.isCorrect === true && scored.has(String(a.questionId))
+      ).length;
+    } else {
+      const servedCount = Number(session?.questionCount);
+      totalQuestions = Number.isInteger(servedCount) && servedCount > 0
+        ? Math.max(servedCount, gradedAttempts.length)
+        : gradedAttempts.length;
+      correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    }
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
     // Achievements are decoration: a failure awarding them must not cost the

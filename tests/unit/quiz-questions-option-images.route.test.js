@@ -26,9 +26,19 @@ jest.mock('../../src/middleware/auth', () => ({
   requireRole: () => (_req, _res, next) => next(),
   requirePageRole: () => (_req, _res, next) => next(),
 }));
+// Anyone the answers are withheld from goes through the student quiz rules
+// (issue #168): here a student who may open the quiz.
+jest.mock('../../src/services/student-quiz-access', () => ({
+  resolveStudentQuizAccess: jest.fn(),
+}));
+jest.mock('../../src/services/quiz-session', () => ({
+  getOrCreateSession: jest.fn(),
+}));
 
 const quizService = require('../../src/services/quiz');
 const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
+const { resolveStudentQuizAccess } = require('../../src/services/student-quiz-access');
+const quizSessionService = require('../../src/services/quiz-session');
 const quizRouter = require('../../src/routes/quiz');
 
 function buildApp() {
@@ -66,6 +76,8 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1' });
     quizService.getQuizQuestions.mockResolvedValue([question]);
     quizService.getQuizQuestionsForStudent.mockResolvedValue([question]);
+    resolveStudentQuizAccess.mockResolvedValue({ success: true, scheduledExpiresAt: null });
+    quizSessionService.getOrCreateSession.mockResolvedValue({});
   });
 
   it('gives staff the stored option image', async () => {
@@ -91,5 +103,21 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     });
     expect(sent.options.B).toEqual({ text: 'Cyclohexane', index: 1 });
     expect(sent.correctAnswer).toBeUndefined();
+  });
+
+  it('serves no questions of a quiz the student cannot open (issue #168)', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(false);
+    resolveStudentQuizAccess.mockResolvedValue({
+      success: false,
+      status: 403,
+      message: 'This quiz is not available. Only published quizzes can be accessed.',
+    });
+
+    const res = await request(buildApp()).get('/api/quiz/quiz-1/questions?approvedOnly=true');
+
+    expect(res.status).toBe(403);
+    expect(res.body.questions).toBeUndefined();
+    expect(quizService.getQuizQuestionsForStudent).not.toHaveBeenCalled();
+    expect(quizSessionService.getOrCreateSession).not.toHaveBeenCalled();
   });
 });
