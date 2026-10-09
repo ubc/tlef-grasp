@@ -1,9 +1,11 @@
-import { getMaterialTypeMeta } from "../../lib/materials";
+import { getMaterialTypeMeta, isCanvasImportMaterial } from "../../lib/materials";
 import { formatFileSize } from "../../lib/format";
 
 export default function MaterialCard({ material, onEdit, onRefetch, onDelete, onViewOutline }) {
   const fileType = (material.fileType || "").toLowerCase();
   const meta = getMaterialTypeMeta(fileType);
+  // The empty "From Canvas" material (issue #165): nothing to edit or outline.
+  const isPlaceholder = isCanvasImportMaterial(material);
   const isText = fileType.includes("text");
   const isPdf = fileType.includes("pdf");
   const isWord = fileType.includes("word") || fileType.includes("docx");
@@ -31,10 +33,21 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete, on
             {material.documentTitle || "Untitled"}
           </h3>
           <p className="text-sm text-muted">{meta.label}</p>
-          <p className="text-xs text-muted">Size: {formatFileSize(material.fileSize)}</p>
+          {isPlaceholder ? (
+            <p className="text-xs text-muted">
+              Linked to the learning objectives imported from Canvas quizzes. It has no
+              content of its own.
+            </p>
+          ) : (
+            <p className="text-xs text-muted">Size: {formatFileSize(material.fileSize)}</p>
+          )}
           <p className="text-xs text-muted">
-            {material.lms?.provider === "canvas" ? "Imported from Canvas" : "Uploaded"} on{" "}
-            {new Date(material.createdAt).toLocaleDateString()}
+            {isPlaceholder
+              ? "Created by a Canvas quiz import"
+              : material.lms?.provider === "canvas"
+                ? "Imported from Canvas"
+                : "Uploaded"}{" "}
+            on {new Date(material.createdAt).toLocaleDateString()}
           </p>
         </div>
       </div>
@@ -61,17 +74,19 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete, on
                 <i className="fas fa-sync-alt" />
               </button>
             )}
-            <button
-              type="button"
-              title={material.hasOutline ? "View outline" : "No outline — generate one"}
-              aria-label={`Outline for ${material.documentTitle || "material"}`}
-              onClick={() => onViewOutline(material)}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 ${
-                material.hasOutline ? "text-muted hover:text-ink" : "text-amber-600"
-              }`}
-            >
-              <i className={material.hasOutline ? "fas fa-list-ul" : "fas fa-triangle-exclamation"} />
-            </button>
+            {!isPlaceholder && (
+              <button
+                type="button"
+                title={material.hasOutline ? "View outline" : "No outline — generate one"}
+                aria-label={`Outline for ${material.documentTitle || "material"}`}
+                onClick={() => onViewOutline(material)}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 ${
+                  material.hasOutline ? "text-muted hover:text-ink" : "text-amber-600"
+                }`}
+              >
+                <i className={material.hasOutline ? "fas fa-list-ul" : "fas fa-triangle-exclamation"} />
+              </button>
+            )}
           </div>
           <button
             type="button"

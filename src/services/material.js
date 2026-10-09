@@ -1,5 +1,6 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
+const { CANVAS_IMPORT_MATERIAL } = require('../constants/app-constants');
 
 const saveMaterial = async (sourceId, courseId, materialData) => {
     try {
@@ -61,6 +62,48 @@ const findLmsImportedMaterials = async (courseId, { provider, instance, external
         console.error("Error finding LMS-imported materials:", error);
         throw error;
     }
+};
+
+/** Whether a material is a course's "From Canvas" placeholder. */
+const isCanvasImportMaterial = (material) =>
+    material?.fileType === CANVAS_IMPORT_MATERIAL.fileType;
+
+/**
+ * The course's "From Canvas" material (see CANVAS_IMPORT_MATERIAL), created
+ * the first time a Canvas quiz import needs it. Its sourceId is fixed per
+ * course, so the unique sourceId index keeps it to one even when two imports
+ * create it at once. An instructor may delete it; the next import makes a new
+ * one.
+ *
+ * @param {string|ObjectId} courseId
+ * @returns {Promise<Object>} The material document
+ */
+const ensureCanvasImportMaterial = async (courseId) => {
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_material");
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    const sourceId = `${courseIdObj}-from-canvas`;
+
+    try {
+        await collection.updateOne(
+            { sourceId },
+            {
+                $setOnInsert: {
+                    courseId: courseIdObj,
+                    fileType: CANVAS_IMPORT_MATERIAL.fileType,
+                    fileSize: 0,
+                    fileContent: null,
+                    documentTitle: CANVAS_IMPORT_MATERIAL.documentTitle,
+                    createdAt: new Date(),
+                },
+            },
+            { upsert: true }
+        );
+    } catch (error) {
+        // Another import created it between the lookup and the insert.
+        if (error?.code !== 11000) throw error;
+    }
+    return collection.findOne({ sourceId });
 };
 
 const deleteMaterial = async (sourceId) => {
@@ -189,6 +232,8 @@ const clearMaterialOutline = async (sourceId) => {
 module.exports = {
     saveMaterial,
     findLmsImportedMaterials,
+    isCanvasImportMaterial,
+    ensureCanvasImportMaterial,
     deleteMaterial,
     restoreMaterialDocument,
     getCourseMaterials,

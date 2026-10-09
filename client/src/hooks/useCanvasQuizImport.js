@@ -33,10 +33,12 @@ export function useCanvasQuizImport(courseId) {
       );
     } finally {
       // Even a run that failed part-way may have saved questions, objectives
-      // and quizzes. (invalidateQuestions covers quizzesWithQuestions.)
+      // (with the "From Canvas" material) and quizzes. (invalidateQuestions
+      // covers quizzesWithQuestions.)
       invalidateQuestions();
       invalidateObjectives();
       queryClient.invalidateQueries({ queryKey: queryKeys.quizzes(courseId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.materials(courseId) });
     }
   };
 

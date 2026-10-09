@@ -45,6 +45,11 @@ export const MC_DEFAULT_OPTION_COUNT = 4;
 
 export const MAX_MATERIALS_PER_OBJECTIVE = 3;
 
+// Mirrors CANVAS_IMPORT_MATERIAL.fileType in src/constants/app-constants.js:
+// the course's empty "From Canvas" material, which the learning objectives of
+// a Canvas quiz import link to (issue #165).
+export const CANVAS_IMPORT_MATERIAL_TYPE = "canvas-import";
+
 // Mirrors MAX_QUESTIONS_PER_OBJECTIVE in src/constants/app-constants.js — see
 // there for why this is the only cap. It bounds one GRANULAR objective's total.
 // The server clamps to it; the steppers disable at it so the instructor sees the

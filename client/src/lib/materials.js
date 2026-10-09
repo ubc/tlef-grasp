@@ -1,5 +1,12 @@
 // Helpers for displaying and validating course materials.
 
+import { CANVAS_IMPORT_MATERIAL_TYPE } from "./constants";
+
+/** Whether a material is the course's "From Canvas" placeholder (issue #165). */
+export function isCanvasImportMaterial(material) {
+  return material?.fileType === CANVAS_IMPORT_MATERIAL_TYPE;
+}
+
 export const MATERIAL_UPLOAD_TYPES = {
   pdf: {
     label: "PDF",
@@ -27,6 +34,9 @@ export const SUPPORTED_DOCUMENT_ACCEPT = Object.values(MATERIAL_UPLOAD_TYPES)
 // Icon, label and badge colors for a material's MIME-ish fileType string.
 export function getMaterialTypeMeta(fileType = "") {
   const normalized = fileType.toLowerCase();
+  if (normalized === CANVAS_IMPORT_MATERIAL_TYPE) {
+    return { icon: "fa-file-import", label: "Canvas quiz import", badgeClasses: "bg-gray-100 text-gray-600" };
+  }
   if (normalized.includes("pdf")) {
     return { icon: "fa-file-pdf", label: "PDF", badgeClasses: "bg-red-100 text-red-600" };
   }

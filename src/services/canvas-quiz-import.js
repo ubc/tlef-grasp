@@ -24,6 +24,8 @@ const { ObjectId } = require("mongodb");
 const databaseService = require("./database");
 const { saveQuestion } = require("./question");
 const { createObjective, appendGranularObjectives } = require("./objective");
+const { ensureCanvasImportMaterial } = require("./material");
+const { linkObjectiveToMaterial, objectivesWithMaterials } = require("./objective-material");
 const { createQuiz, addExistingQuestionsToQuiz } = require("./quiz");
 const { uploadImage, deleteImages } = require("./image");
 const { readCanvasPackage, CanvasImportError } = require("../utils/canvas-qti-package");
@@ -393,11 +395,15 @@ function createImageStore({ plan, quiz, fetcher, limits, courseId, userId }) {
 
 /**
  * The granular objective each slot's questions go on: the slot's parent is
- * found by provenance, or created with one granular of the same name.
+ * found by provenance, or created with one granular of the same name. The
+ * parent is linked to the course's "From Canvas" material, since an import
+ * brings no course material of its own (issue #165).
  */
 function createSlotObjectives({ db, courseId, courseIdObj, quiz, existing, report }) {
     let takenNames = null;
     let childrenByParent = null;
+    let parentsWithMaterial = null;
+    let canvasMaterial = null;
 
     // "<name>", else "<name> (2)", "(3)" ... against every parent in the course.
     async function uniqueParentName(base) {
@@ -434,6 +440,31 @@ function createSlotObjectives({ db, courseId, courseIdObj, quiz, existing, repor
         return childrenByParent.get(String(parentId)) || [];
     }
 
+    async function hasMaterial(parentId) {
+        if (!parentsWithMaterial) {
+            const parentIds = quiz.slots
+                .map((slot) => existing.parents.get(keyOf(quiz.ident, slot.ident)))
+                .filter(Boolean)
+                .map((parent) => parent._id);
+            parentsWithMaterial = await objectivesWithMaterials(parentIds);
+        }
+        return parentsWithMaterial.has(String(parentId));
+    }
+
+    // A parent this import made always gets the material. An earlier one gets
+    // it only when it has none: it predates the material, or its material was
+    // deleted. Best effort: the material only says where an objective came
+    // from, so a failure here is logged and the import carries on.
+    async function linkCanvasMaterial(parentId, { created }) {
+        try {
+            if (!created && (await hasMaterial(parentId))) return;
+            if (!canvasMaterial) canvasMaterial = await ensureCanvasImportMaterial(courseIdObj);
+            await linkObjectiveToMaterial(parentId, canvasMaterial._id);
+        } catch (error) {
+            console.error("Could not link an imported objective to the From Canvas material:", error.message);
+        }
+    }
+
     return async function granularFor(slot) {
         const parent = existing.parents.get(keyOf(quiz.ident, slot.ident));
         if (!parent) {
@@ -445,9 +476,11 @@ function createSlotObjectives({ db, courseId, courseIdObj, quiz, existing, repor
                 source: { kind: SOURCE_KIND, quizIdent: quiz.ident, slotIdent: slot.ident },
             });
             report.created.objectives += 1;
+            await linkCanvasMaterial(created.parent._id, { created: true });
             return created.granular[0]._id;
         }
 
+        await linkCanvasMaterial(parent._id, { created: false });
         const children = await childrenOf(parent._id);
         if (children.length === 0) {
             const text = String(parent.name || "").trim() || slot.name;
