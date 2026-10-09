@@ -9,7 +9,7 @@ import { useToast } from "../../components/ui/Toast";
 import { ConfirmModal } from "../../components/ui/Modal";
 import { LoadingRow } from "../../components/ui/states";
 import RoleBadge from "./RoleBadge";
-import { getUserNames, personLabel, ROLE_LABELS, UNKNOWN_USER_NAME } from "./userListUtils";
+import { personLabel, ROLE_LABELS } from "./userListUtils";
 
 // Instructor-only panel for granting course access by hand (issue #115):
 // anyone who has signed in to GRASP can be found by email or name and added
@@ -38,14 +38,8 @@ export default function AddPeoplePanel({ courseId }) {
   const tooShort = trimmed.length > 0 && trimmed.length < USER_SEARCH_MIN_LENGTH;
   const showResults = enabled && debouncedQuery.trim() === trimmed;
 
-  const nameOf = (user) => {
-    const { legalName, distinctDisplayName } = getUserNames(user);
-    return legalName === UNKNOWN_USER_NAME && distinctDisplayName
-      ? distinctDisplayName
-      : legalName === UNKNOWN_USER_NAME
-        ? personLabel(user)
-        : legalName;
-  };
+  // Legal name, then display name, then email.
+  const nameOf = (user) => personLabel(user);
 
   const confirmAdd = (user, role) =>
     setPendingAdd({

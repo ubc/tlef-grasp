@@ -208,6 +208,17 @@ test.describe('Canvas roster sync from My Sections (fake Canvas)', () => {
     await expect(student.getByRole('heading', { name: SEED.CANVAS_QUIZ_NAME })).toHaveCount(0);
   });
 
+  test('the student the sync added is listed under their Canvas name (issue #165)', async () => {
+    // They have never signed in, so GRASP has no legal name for them yet.
+    await instructor.goto('/users');
+    const row = instructor
+      .getByRole('row')
+      .filter({ hasText: FAKE_CANVAS.NEVER_SIGNED_IN_NAME });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByText('No legal name on file', { exact: true })).toBeVisible();
+    await expect(row.getByText('Unknown User')).toHaveCount(0);
+  });
+
   test('a later sync restores the student once Canvas lists them again', async () => {
     await setFakeCanvasSectionStudents(FAKE_CANVAS.SECTION_ID, [
       FAKE_CANVAS.USERS.BIO_STUDENT3,

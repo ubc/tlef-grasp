@@ -122,6 +122,17 @@ describe('getQuizScores roster', () => {
     expect(await namesOn()).toEqual(['Plain Student']);
   });
 
+  it('names a Canvas-synced student with no legal name yet by their Canvas name (issue #165)', async () => {
+    // The roster sync stores only the Canvas name, as displayName; the legal
+    // name arrives at the student's first CWL sign-in.
+    const synced = member('u-synced', { affiliation: ['student'] });
+    synced.displayName = 'Casey Canvasonly';
+    synced.email = null;
+    getCourseUsers.mockResolvedValue([synced]);
+
+    expect(await namesOn()).toEqual(['Casey Canvasonly']);
+  });
+
   it('skips a membership whose user document is missing', async () => {
     // The $lookup preserves orphaned memberships, so `user` can be absent.
     getCourseUsers.mockResolvedValue([

@@ -1333,9 +1333,12 @@ const getQuizScores = async (quizId) => {
                 totalQuestions: scoreRecord ? scoreRecord.totalQuestions : null,
                 timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
-                // Instructor grading view: show the student's authoritative legal
-                // name, not their editable display name.
-                studentName: student.legalName || student.puid || 'Unknown Student',
+                // Instructor grading view: the student's authoritative legal
+                // name, not their editable display name. A student the Canvas
+                // roster sync created has none until their first sign-in, so
+                // fall back to the name Canvas gave them (issue #165).
+                studentName: student.legalName || student.displayName || student.email
+                    || student.puid || 'Unknown Student',
                 studentEmail: student.email || '-',
                 sections: Array.isArray(student.sections) ? student.sections : [],
                 disputedCount: disputedByUserId.get(userStrId) || 0
