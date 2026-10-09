@@ -88,7 +88,10 @@ export default function McOptionEditor({
               disabled={!canRemove}
               onClick={() => {
                 discardImageFile(option.image?.fileId);
-                onChange(removeOptionRow(options, index, correctAnswer));
+                // removeOptionRow returns { rows, correctAnswer }; onChange
+                // takes the form's { options, correctAnswer } (issue #165).
+                const removed = removeOptionRow(options, index, correctAnswer);
+                onChange({ options: removed.rows, correctAnswer: removed.correctAnswer });
               }}
               className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
             >
