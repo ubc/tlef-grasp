@@ -18,6 +18,19 @@
 // instructors to reconnect Canvas: an existing token keeps the scopes it was
 // granted.
 
+// Connecting Canvas at all, whatever features are on. GRASP keeps a new
+// connection only once it has confirmed the Canvas account is the signed-in
+// user's (controllers/lms-canvas-connect.js), so without these every connect
+// is refused.
+const CANVAS_CONNECT_SCOPES = Object.freeze([
+  // client.get('/users/self/profile') — the authorized account's own
+  // integration_id (at UBC, the PUID), compared with the GRASP user's. The
+  // user object (/users/self, scope url:GET|/api/v1/users/:id) leaves
+  // integration_id out for anyone but account admins; the profile always has
+  // the caller's own.
+  'url:GET|/api/v1/users/:user_id/profile',
+]);
+
 const CANVAS_CAPABILITY_SCOPES = Object.freeze({
   // Linking a GRASP section to a Canvas section (My Sections → Link Canvas).
   link: Object.freeze([
@@ -129,9 +142,24 @@ function resolveCanvasCapabilities(scopes) {
   );
 }
 
+/**
+ * Connect scopes a requested scope list leaves out. Always [] when no scopes
+ * are requested (a key without Enforce Scopes allows every endpoint).
+ *
+ * @param {string[]} scopes - Parsed CANVAS_SCOPES
+ * @returns {string[]}
+ */
+function missingConnectScopes(scopes) {
+  const requested = new Set(scopes || []);
+  if (requested.size === 0) return [];
+  return CANVAS_CONNECT_SCOPES.filter((scope) => !requested.has(scope));
+}
+
 module.exports = {
   CANVAS_CAPABILITIES,
   CANVAS_CAPABILITY_SCOPES,
+  CANVAS_CONNECT_SCOPES,
+  missingConnectScopes,
   parseCanvasScopes,
   resolveCanvasCapabilities,
 };

@@ -96,10 +96,16 @@ absent, Canvas is hidden, every section keeps syncing students from the UBC
 Academic API, and materials are added by upload or pasted text only.
 
 Each instructor connects their own Canvas account (OAuth, per GRASP user) and
-links a GRASP section to one Canvas section. GRASP calls these Canvas API
-endpoints with that instructor's token, and never relies on `include[]`
-parameters (a scoped developer key strips them):
+links a GRASP section to one Canvas section. GRASP keeps a connection only when
+the Canvas account's `integration_id` (at UBC, the PUID) is the signed-in GRASP
+user's PUID, so an instructor whose browser is signed in to Canvas as someone
+else gets "That Canvas account belongs to someone else" and nothing is stored.
+GRASP calls these Canvas API endpoints with that instructor's token, and never
+relies on `include[]` parameters (a scoped developer key strips them):
 
+- `GET /api/v1/users/self/profile` — on connect, the account's own
+  `integration_id`, checked against the GRASP user's PUID. Canvas's user object
+  (`/users/self`) leaves `integration_id` out for anyone but account admins
 - `GET /api/v1/courses` — the courses the instructor teaches (`enrollment_type=teacher`)
 - `GET /api/v1/courses/:course_id/sections` — sections offered for linking
 - `GET /api/v1/courses/:course_id/enrollments` (`type[]=StudentEnrollment`,
@@ -132,15 +138,21 @@ token's scopes with 401. Set `CANVAS_SCOPES` to the scopes GRASP should request
   "Canvas roster sync isn't enabled on this deployment" and never falls back to
   the Academic API.
 
-Recommended value for UBC's current production key (enables linking and
-roster sync):
+Every connection needs `url:GET|/api/v1/users/:user_id/profile`: without it
+GRASP cannot confirm whose account was authorized, refuses every new
+connection, and logs a warning at startup. UBC's current production key does
+not have it yet, so it has to be added to the key first.
+
+Recommended value for UBC's current production key once it has that scope
+(enables linking and roster sync):
 
 ```
-CANVAS_SCOPES="url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments"
+CANVAS_SCOPES="url:GET|/api/v1/users/:user_id/profile url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments"
 ```
 
 | GRASP feature | Scopes it needs |
 |---|---|
+| Connect Canvas (every feature) | `url:GET\|/api/v1/users/:user_id/profile` |
 | Link a section (`link`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/sections` |
 | Sync from Canvas (`rosterSync`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/enrollments` |
 | Import course files (`files`, issue #141) | `url:GET\|/api/v1/courses` plus the three below |

@@ -68,6 +68,9 @@ const FAKE_CANVAS = {
   // passes it to the webServer). The Canvas spec also has the fake enforce
   // exactly these scopes on the seeded token, as a scoped key would.
   SCOPES: [
+    // Read on connect only (the OAuth callback, which these specs skip by
+    // seeding a token), but part of every recommended list.
+    'url:GET|/api/v1/users/:user_id/profile',
     'url:GET|/api/v1/courses',
     'url:GET|/api/v1/courses/:course_id/sections',
     'url:GET|/api/v1/courses/:course_id/enrollments',

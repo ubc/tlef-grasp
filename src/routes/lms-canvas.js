@@ -2,6 +2,7 @@ const express = require('express');
 const { createCanvasIntegration } = require('../lms/canvas');
 const { createCanvasController } = require('../controllers/lms-canvas');
 const { createCanvasAssignmentController } = require('../controllers/lms-canvas-assignments');
+const { createCanvasOAuthCallback } = require('../controllers/lms-canvas-connect');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
 const { requireCourseMaterialsAccess } = require('../middleware/course-materials-access');
 const { requireActiveCourse } = require('../middleware/course-archive');
@@ -50,17 +51,11 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
   const requireFiles = requireCanvasCapability(capabilities, 'files');
   const requireAssignments = requireCanvasCapability(capabilities, 'assignments');
 
-  // Canvas sends OAuth denials back as `?error=...` without an authorization
-  // code. Handle that before the toolkit's callback route so users return to
-  // the connection UI instead of seeing a low-level missing-code response.
-  router.get('/auth/callback', (req, res, next) => {
-    if (!req.query.error) return next();
-    if (req.session) {
-      delete req.session.canvasOAuthState;
-      delete req.session.canvasOAuthReturnTo;
-    }
-    return res.redirect('/settings?canvas=error');
-  });
+  // GRASP's own OAuth callback, ahead of the toolkit's, so a Canvas account
+  // that is not the signed-in user's is refused before its tokens are kept
+  // (controllers/lms-canvas-connect.js). The toolkit still serves /login and
+  // /logout.
+  router.get('/auth/callback', createCanvasOAuthCallback(canvas, config));
   router.use('/auth', canvas.createAuthRouter(config));
   router.get('/status', requireCanvasAuth, controller.getStatus);
 
