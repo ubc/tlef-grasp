@@ -147,8 +147,7 @@ const CANVAS_FILE = {
 };
 const CANVAS_FILE_PUBLIC_URL = `${CANVAS_DOMAIN}/files/7001/download?verifier=signed`;
 
-// The value README/.env.example recommend for UBC's current production key,
-// once the key has the connect scope (see the production key test below).
+// The value README/.env.example recommend.
 const UBC_RECOMMENDED_SCOPES = [
   'url:GET|/api/v1/users/:user_id/profile',
   'url:GET|/api/v1/courses',
@@ -499,8 +498,10 @@ describe('Canvas scope coverage', () => {
     expect(uncovered(calls, UBC_RECOMMENDED_SCOPES)).toEqual([]);
   });
 
-  it('the recommended UBC scopes are UBC\'s production key plus the connect scope', () => {
-    const productionKey = new Set([
+  it('the recommended scopes add only the connect scope to the 13-scope key list from #124', () => {
+    // The scopes of a UBC production developer key, recorded with #124. Not
+    // GRASP's: GRASP has no production key yet.
+    const keyFrom124 = new Set([
       'url:GET|/api/v1/users/:id',
       'url:GET|/api/v1/courses',
       'url:GET|/api/v1/courses/:course_id/sections',
@@ -515,11 +516,11 @@ describe('Canvas scope coverage', () => {
       'url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/submissions/update_grades',
       'url:GET|/api/v1/progress/:id',
     ]);
-    // Requesting a scope the key lacks fails the whole OAuth request, so the
-    // key needs the connect scope added before GRASP can use it. Its
-    // url:GET|/api/v1/users/:id (Canvas's /users/self) does not do instead:
-    // that leaves integration_id out for anyone but account admins.
-    expect(UBC_RECOMMENDED_SCOPES.filter((scope) => !productionKey.has(scope)))
+    // Requesting a scope the key lacks fails the whole OAuth request, so a key
+    // like this one needs the connect scope too. Its url:GET|/api/v1/users/:id
+    // (Canvas's /users/self) does not do instead: that leaves integration_id
+    // out for anyone but account admins.
+    expect(UBC_RECOMMENDED_SCOPES.filter((scope) => !keyFrom124.has(scope)))
       .toEqual(CANVAS_CONNECT_SCOPES);
   });
 

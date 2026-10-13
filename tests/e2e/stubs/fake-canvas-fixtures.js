@@ -64,8 +64,7 @@ const FAKE_CANVAS = {
   CONCLUDED_PUID,
 
   // The CANVAS_SCOPES the e2e server requests: the value README / .env.example
-  // recommend for UBC's current production developer key (playwright.config.js
-  // passes it to the webServer). The Canvas spec also has the fake enforce
+  // recommend (playwright.config.js passes it to the webServer). The Canvas spec also has the fake enforce
   // exactly these scopes on the seeded token, as a scoped key would.
   SCOPES: [
     // Read on connect only (the OAuth callback, which these specs skip by

@@ -138,13 +138,12 @@ token's scopes with 401. Set `CANVAS_SCOPES` to the scopes GRASP should request
   "Canvas roster sync isn't enabled on this deployment" and never falls back to
   the Academic API.
 
-Every connection needs `url:GET|/api/v1/users/:user_id/profile`: without it
-GRASP cannot confirm whose account was authorized, refuses every new
-connection, and logs a warning at startup. UBC's current production key does
-not have it yet, so it has to be added to the key first.
+Every connection needs `url:GET|/api/v1/users/:user_id/profile`, on the
+developer key and in `CANVAS_SCOPES`: without it GRASP cannot confirm whose
+account was authorized, refuses every new connection, and logs a warning at
+startup.
 
-Recommended value for UBC's current production key once it has that scope
-(enables linking and roster sync):
+Recommended value (enables linking and roster sync):
 
 ```
 CANVAS_SCOPES="url:GET|/api/v1/users/:user_id/profile url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sections url:GET|/api/v1/courses/:course_id/enrollments url:GET|/api/v1/courses/:course_id/assignments"
