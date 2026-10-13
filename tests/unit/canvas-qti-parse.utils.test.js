@@ -18,6 +18,7 @@ const {
   PARSE_WARNINGS,
   MAX_SLOTS_PER_QUIZ,
   MAX_ITEMS_PER_QUIZ,
+  MAX_VAR_SETS_READ,
   MAX_XML_DEPTH,
 } = require('../../src/utils/canvas-qti-parse');
 const { CanvasImportError } = require('../../src/utils/canvas-qti-package');
@@ -63,6 +64,7 @@ const EMPTY_ITEM_PARTS = {
   choiceFeedbackHtml: {},
   feedbackHtml: { general: null, correct: null, incorrect: null },
   numericAnswers: [],
+  calculated: null,
   blanks: [],
   shortAnswers: [],
   rawWarnings: [],
@@ -377,13 +379,58 @@ describe('parseCanvasQuiz: numerical, calculated, fill-in and other types', () =
     expect(item.rawWarnings).toEqual([PARSE_WARNINGS.FEEDBACK_NOT_READ]);
   });
 
-  test('reads a formula question without inventing numeric answers from its <other/> condition', () => {
-    const item = parseItem(calculatedItem({ ident: 'gcalc', title: 'Q04' }));
+  test('reads a formula question\'s <calculated> block as written, without inventing numeric answers from its <other/> condition', () => {
+    const item = parseItem(calculatedItem({
+      ident: 'gcalc',
+      title: 'Q04',
+      formulas: ['k = 2*x', 'k + y'],
+      variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 0 }, { name: 'y', min: '0.5', max: '2.5', scale: 2 }],
+      varSets: [
+        { ident: '4001', vars: { x: '3.0', y: '1.25' }, answer: '7.3' },
+        { ident: '4002', vars: { x: '5.0', y: '0.5' }, answer: '10.5' },
+      ],
+      tolerance: '3%',
+      decimalPlaces: 1,
+    }));
 
-    expect(item.questionType).toBe('calculated_question');
-    expect(item.numericAnswers).toEqual([]);
-    expect(item.choices).toEqual([]);
-    expect(item.stemHtml).toBe('<div>\n<p>Double [x].</p>\n</div>');
+    expect(item).toEqual({
+      ...EMPTY_ITEM_PARTS,
+      ident: 'gcalc',
+      title: 'Q04',
+      questionType: 'calculated_question',
+      pointsPossible: 1,
+      stemHtml: '<div>\n<p>Double [x].</p>\n</div>',
+      stemTexttype: 'text/html',
+      calculated: {
+        tolerance: '3%',
+        decimalPlaces: '1',
+        formulas: ['k = 2*x', 'k + y'],
+        variables: [
+          { name: 'x', scale: '0', min: '1.0', max: '9.0' },
+          { name: 'y', scale: '2', min: '0.5', max: '2.5' },
+        ],
+        varSetCount: 2,
+        varSets: [
+          { values: { x: '3.0', y: '1.25' }, answer: '7.3' },
+          { values: { x: '5.0', y: '0.5' }, answer: '10.5' },
+        ],
+      },
+    });
+  });
+
+  test('reads a formula question with no <calculated> block as having none', () => {
+    const xml = calculatedItem({ ident: 'gcalcnone' }).replace(/<itemproc_extension>[\s\S]*<\/itemproc_extension>/, '');
+
+    expect(parseItem(xml).calculated).toBeNull();
+  });
+
+  test(`keeps the first ${MAX_VAR_SETS_READ} value sets of a formula question and counts the rest`, () => {
+    const varSets = Array.from({ length: MAX_VAR_SETS_READ + 1 }, (_, i) => ({ ident: String(5000 + i), vars: { x: String(i) }, answer: String(2 * i) }));
+    const item = parseItem(calculatedItem({ ident: 'gcalcmany', varSets }));
+
+    expect(item.calculated.varSetCount).toBe(MAX_VAR_SETS_READ + 1);
+    expect(item.calculated.varSets).toHaveLength(MAX_VAR_SETS_READ);
+    expect(item.calculated.varSets[MAX_VAR_SETS_READ - 1]).toEqual({ values: { x: '199' }, answer: '398' });
   });
 
   test('accepts every label of a fill-in blank although scoring names only the first', () => {

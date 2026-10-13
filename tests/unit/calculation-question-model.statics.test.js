@@ -327,6 +327,33 @@ describe('CalculationQuestion static helpers', () => {
     expect(CalculationQuestion.normalizeAnswerDecimals(40)).toBe(12);
   });
 
+  // Issue #130: Canvas measures an absolute tolerance from the rounded answer
+  // it shows; GRASP measured it from the unrounded value, so a correctly
+  // rounded answer at the edge of the margin was rejected. Now either counts.
+  it('measures an absolute tolerance from the answer as shown or as computed, whichever is closer', () => {
+    const match = CalculationQuestion.numericAnswersMatch;
+    // Shown as -48.2 with a margin of 1.0: -47.2 is within the margin of the shown value.
+    expect(match(-47.2, -48.2345, 1, { mode: 'absolute', value: 1 })).toBe(true);
+    expect(match(-47.1, -48.2345, 1, { mode: 'absolute', value: 1 })).toBe(false);
+    // The precise value stays accepted even when it is further from the shown one.
+    expect(match(-49.2345, -48.2345, 1, { mode: 'absolute', value: 1 })).toBe(true);
+    expect(match(-49.3, -48.2345, 1, { mode: 'absolute', value: 1 })).toBe(false);
+    // Margin 0: the shown answer or the exact value.
+    expect(match(49, 49.34, 0, { mode: 'absolute', value: 0 })).toBe(true);
+    expect(match(49.34, 49.34, 0, { mode: 'absolute', value: 0 })).toBe(true);
+    expect(match(49.3, 49.34, 0, { mode: 'absolute', value: 0 })).toBe(false);
+    // Answers shown as a × 10^n round their mantissa.
+    expect(CalculationQuestion.roundAsDisplayed(1.4999e-7, 2)).toBeCloseTo(1.5e-7, 15);
+    expect(match(1.5e-7, 1.4999e-7, 2, { mode: 'absolute', value: 0 })).toBe(true);
+    expect(CalculationQuestion.roundAsDisplayed(9.996e23, 2)).toBe(1e24);
+    expect(CalculationQuestion.roundAsDisplayed(49.34, 0)).toBe(49);
+    expect(CalculationQuestion.roundAsDisplayed(-48.2345, 1)).toBe(-48.2);
+    // Percent, range and exact modes are untouched.
+    expect(match(49.34, 49.34, 0, { mode: 'percent', value: 0 })).toBe(true);
+    expect(match(49, 49.34, 0, { mode: 'percent', value: 0 })).toBe(false);
+    expect(match(49, 49.34, 0, null)).toBe(true);
+  });
+
   it('signs, verifies, and rejects invalid calculation tokens', () => {
     process.env.CALCULATION_HMAC_SECRET = 'unit-secret';
     const token = CalculationQuestion.signCalculationToken('question-1', { x: 3 });

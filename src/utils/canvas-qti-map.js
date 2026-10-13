@@ -19,9 +19,11 @@
 
 const cheerio = require('cheerio');
 const { convertCanvasHtml, convertCanvasPlainText } = require('./canvas-qti-html');
+const { canvasFormulaToGrasp, canvasPlaceholdersToGrasp } = require('./canvas-formula');
 const { CANVAS_QUESTION_TYPES, PARSE_WARNINGS } = require('./canvas-qti-parse');
 const { MC_OPTION_KEYS, MC_MIN_OPTIONS, MC_MAX_OPTIONS } = require('./mc-options');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const CalculationQuestion = require('../models/questions/CalculationQuestion');
 
 const SOURCE_KIND = 'canvas-classic';
 // Every variant of a slot gets the same level: phase 1 serves the lowest level
@@ -43,7 +45,6 @@ const SKIP_REASONS = Object.freeze({
   NEW_QUIZZES: "New Quizzes exports aren't supported yet (#147).",
   QUESTION_BANK:
     "This group draws questions from a question bank, which a quiz export doesn't include. Import the bank's questions separately when that's supported.",
-  CALCULATED: 'Formula question with variables. These come in a later update (#130).',
   MULTIPLE_ANSWERS: "Multiple-answer questions aren't supported in GRASP yet.",
   MULTIPLE_DROPDOWNS: "Multiple-dropdown questions aren't supported in GRASP.",
   MATCHING: "Matching questions aren't supported in GRASP.",
@@ -59,10 +60,12 @@ const SKIP_REASONS = Object.freeze({
   NOT_A_NUMBER: "The answer isn't a number.",
   ONE_BOUND: 'Only one bound of the answer range is set.',
   EMPTY_RANGE: "The answer range's lowest value is above its highest value.",
+  NO_FORMULA: 'The formula question has no formula.',
+  FORMULA_LINES:
+    'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".',
 });
 
 const UNSUPPORTED_TYPE_REASONS = {
-  [CANVAS_QUESTION_TYPES.CALCULATED]: SKIP_REASONS.CALCULATED,
   [CANVAS_QUESTION_TYPES.MULTIPLE_ANSWERS]: SKIP_REASONS.MULTIPLE_ANSWERS,
   [CANVAS_QUESTION_TYPES.MULTIPLE_DROPDOWNS]: SKIP_REASONS.MULTIPLE_DROPDOWNS,
   [CANVAS_QUESTION_TYPES.MATCHING]: SKIP_REASONS.MATCHING,
@@ -82,7 +85,19 @@ const DRAFT_WARNINGS = Object.freeze({
   BLANK_REPEATED: 'The blank appears more than once in the question; GRASP takes one answer for all of them.',
   RANGE_WIDENED:
     "Canvas accepted the exact answer or a range that doesn't include it; GRASP accepts everything between the two.",
+  NO_VALUE_SETS: "Canvas gave no sample values for this formula, so GRASP's version of it could not be checked.",
 });
+
+// How many of Canvas's precomputed value sets a formula is checked against (it
+// writes 10 to 200). Enough to catch a wrong function or a sign that only shows
+// for some values; bounded so a hand-made file cannot make the preview slow.
+const SELF_CHECK_VALUE_SETS = 20;
+// GRASP samples variables to at most 8 decimals and shows answers to at most 12.
+const MAX_VARIABLE_DECIMALS = 8;
+const MAX_ANSWER_DECIMALS = 12;
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// expr-eval's constants; GRASP refuses variables named after them.
+const RESERVED_VARIABLE_NAMES = new Set(['e', 'E', 'pi', 'PI']);
 
 // Option texts that refer to other options by position: shuffling would
 // break them, so the question keeps Canvas's order. A false match only keeps
@@ -660,6 +675,188 @@ function mapNumericalItem(item, slot) {
   };
 }
 
+// ---- Formula (calculated) questions ------------------------------------------------
+//
+// A Canvas formula question is GRASP's calculation question with variables: the
+// same idea in another dialect (canvas-formula.js). Everything Canvas defines is
+// mapped, and anything the mapping cannot represent exactly is a skip with a
+// named reason, never a plausible wrong answer key. As a last guard, the
+// translated formula is evaluated at Canvas's own precomputed value sets and
+// compared with the answers Canvas recorded; a mismatch makes the question a
+// Draft with a warning that shows both numbers.
+
+// Canvas variables -> GRASP variable specs, or a skip. scale is the number of
+// decimals Canvas samples the variable to; 0 means whole numbers.
+function mapCalculatedVariables(variables) {
+  const specs = [];
+  const seen = new Set();
+  for (const variable of variables) {
+    const { name } = variable;
+    if (!VARIABLE_NAME.test(name)) {
+      return { skip: `The variable name "${name}" isn't one GRASP can use: letters, digits and underscores, starting with a letter.` };
+    }
+    if (RESERVED_VARIABLE_NAMES.has(name)) return { skip: `The variable "${name}" is named after a math constant, which GRASP reserves.` };
+    if (seen.has(name)) return { skip: `Two variables are both named "${name}".` };
+    seen.add(name);
+    const min = variable.min === null ? null : parseDecimal(variable.min);
+    const max = variable.max === null ? null : parseDecimal(variable.max);
+    if (!min || !max) return { skip: `The range of the variable "${name}" isn't a pair of numbers.` };
+    const low = Number(plainString(min));
+    const high = Number(plainString(max));
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return { skip: `The range of the variable "${name}" isn't a pair of numbers.` };
+    if (low > high) return { skip: `The range of the variable "${name}" has its lowest value above its highest.` };
+    const scale = variable.scale === null ? NaN : Number(variable.scale);
+    if (!Number.isInteger(scale) || scale < 0 || scale > MAX_VARIABLE_DECIMALS) {
+      return { skip: `The variable "${name}" is sampled to ${variable.scale ?? 'an unknown number of'} decimal places; GRASP supports 0 to ${MAX_VARIABLE_DECIMALS}.` };
+    }
+    if (scale === 0 && Math.ceil(low) > Math.floor(high)) {
+      return { skip: `There is no whole number between ${variable.min} and ${variable.max} for the variable "${name}".` };
+    }
+    specs.push(scale === 0 ? { name, min: low, max: high, integerOnly: true } : { name, min: low, max: high, decimals: scale });
+  }
+  return { specs };
+}
+
+// Identifiers in `expression` that name an earlier line's value, replaced by
+// that line's (parenthesised) expression. A name followed by "(" is a function.
+function substituteDefined(expression, defined) {
+  if (defined.size === 0) return expression;
+  return expression.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (name, offset, text) => {
+    if (/^\s*\(/.test(text.slice(offset + name.length))) return name;
+    return defined.has(name) ? defined.get(name) : name;
+  });
+}
+
+// Canvas lets a formula question define values on earlier lines ("k = 2*x")
+// and the answer on the last. GRASP has one formula, so the earlier lines are
+// substituted into the last.
+function inlineFormulaLines(lines) {
+  if (lines.length === 1) return { formula: lines[0] };
+  const defined = new Map();
+  for (const line of lines.slice(0, -1)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^=]+?)\s*$/);
+    if (!match) return { skip: SKIP_REASONS.FORMULA_LINES };
+    defined.set(match[1], `(${substituteDefined(match[2], defined)})`);
+  }
+  const last = lines[lines.length - 1];
+  if (last.includes('=')) return { skip: SKIP_REASONS.FORMULA_LINES };
+  return { formula: substituteDefined(last, defined) };
+}
+
+// "1.0" -> absolute 1.0; "3%" -> percent 3; none -> exact (absolute 0, like
+// the numerical mapper).
+function mapCalculatedTolerance(raw) {
+  if (raw === null) return { tolerance: { mode: 'absolute', value: 0 } };
+  const percent = raw.match(/^(.*?)\s*%$/);
+  const parsed = parseDecimal(percent ? percent[1] : raw);
+  const value = parsed ? Number(plainString(parsed)) : NaN;
+  if (!Number.isFinite(value) || value < 0) return { skip: `The answer tolerance "${raw}" isn't a number of 0 or more.` };
+  if (percent && value > 100) return { skip: `The answer tolerance is ${raw}; GRASP percent tolerances go up to 100%.` };
+  return { tolerance: percent ? { mode: 'percent', value } : { mode: 'absolute', value } };
+}
+
+function sampleValuesText(names, set) {
+  return names.map((name) => `${name} = ${set.values[name]}`).join(', ');
+}
+
+// The translated formula evaluated at Canvas's precomputed value sets against
+// the answers Canvas recorded (rounded to its decimal places). Returns a draft
+// warning, or null when every checked set agrees.
+function checkFormulaAgainstCanvas(formula, specs, calculated, decimalPlaces) {
+  const names = specs.map((spec) => spec.name);
+  let checked = 0;
+  for (const set of calculated.varSets.slice(0, SELF_CHECK_VALUE_SETS)) {
+    const recorded = set.answer === null ? null : parseDecimal(set.answer);
+    const values = {};
+    for (const name of names) values[name] = set.values[name] === undefined ? NaN : Number(set.values[name]);
+    if (!recorded || !Object.values(values).every(Number.isFinite)) continue;
+    const expected = Number(plainString(recorded));
+    if (!Number.isFinite(expected)) continue;
+    checked += 1;
+    let actual;
+    try {
+      actual = CalculationQuestion.evaluateCalculationFormula(formula, values);
+    } catch {
+      return `For Canvas's sample values ${sampleValuesText(names, set)}, GRASP's formula gives no number (a division by zero, or a log or root of a negative number) where Canvas recorded ${set.answer}. Check the formula.`;
+    }
+    // Canvas recorded the rounded answer, so the unrounded value may sit half
+    // a unit away; anything further is a different answer.
+    const slack = 0.5 * 10 ** -decimalPlaces * (1 + 1e-6) + 1e-9 * Math.max(1, Math.abs(expected));
+    if (Math.abs(actual - expected) > slack) {
+      const shown = CalculationQuestion.formatAnswerForDisplay(actual, Math.min(MAX_ANSWER_DECIMALS, decimalPlaces + 2));
+      return `For Canvas's sample values ${sampleValuesText(names, set)}, GRASP's formula gives ${shown} where Canvas recorded ${set.answer}. Check the formula.`;
+    }
+  }
+  return checked === 0 ? DRAFT_WARNINGS.NO_VALUE_SETS : null;
+}
+
+function mapCalculatedItem(item, slot) {
+  const { calculated } = item;
+  if (!calculated || calculated.formulas.length === 0 || calculated.formulas.every((line) => !line)) {
+    return { skip: SKIP_REASONS.NO_FORMULA };
+  }
+  const variables = mapCalculatedVariables(calculated.variables);
+  if (variables.skip) return variables;
+  const names = variables.specs.map((spec) => spec.name);
+
+  const lines = inlineFormulaLines(calculated.formulas);
+  if (lines.skip) return lines;
+  const translated = canvasFormulaToGrasp(lines.formula, names);
+  if (translated.error) return { skip: `The formula ${translated.error}.` };
+
+  const tolerance = mapCalculatedTolerance(calculated.tolerance);
+  if (tolerance.skip) return tolerance;
+  const decimalPlaces = calculated.decimalPlaces === null ? NaN : Number(calculated.decimalPlaces);
+  if (!Number.isInteger(decimalPlaces) || decimalPlaces < 0 || decimalPlaces > MAX_ANSWER_DECIMALS) {
+    return { skip: `The answer is shown to ${calculated.decimalPlaces ?? 'an unknown number of'} decimal places; GRASP supports 0 to ${MAX_ANSWER_DECIMALS}.` };
+  }
+
+  const stem = convertStem(item);
+  if (!stem.text) return { skip: SKIP_REASONS.NO_TEXT };
+  // GRASP reads "{{name}}" as a placeholder and upgrades "{name}" to one for a
+  // declared name; LaTeX can produce both. Split those braces (harmless in
+  // math) before the real placeholders go in. Only declared names are
+  // placeholders: chemistry stems write concentrations as [A].
+  let text = stem.text.replace(/\{(?=\{)/g, '{ ').replace(/\}(?=\})/g, '} ');
+  for (const name of names) text = text.split(`{${name}}`).join(`{ ${name}}`);
+  text = canvasPlaceholdersToGrasp(text, names);
+
+  // What saveQuestion would refuse is refused here, with its reason, instead
+  // of becoming a failed save.
+  try {
+    CalculationQuestion.validateCalculationDefinition({
+      formula: translated.formula,
+      variableSpecs: variables.specs,
+      stem: text,
+      tolerance: tolerance.tolerance,
+    });
+  } catch (error) {
+    return { skip: `GRASP can't use the formula: ${error.message}` };
+  }
+
+  const warnings = [...stem.warnings];
+  const mismatch = checkFormulaAgainstCanvas(translated.formula, variables.specs, calculated, decimalPlaces);
+  if (mismatch) warnings.push(mismatch);
+
+  return {
+    draft: {
+      payload: {
+        questionType: QUESTION_TYPES.CALCULATION,
+        title: questionTitle(item, slot),
+        stem: text,
+        bloom: BLOOM,
+        calculationFormula: translated.formula,
+        calculationVariables: variables.specs,
+        calculationAnswerDecimals: decimalPlaces,
+        calculationTolerance: tolerance.tolerance,
+      },
+      stemImages: stem.images,
+      optionImages: {},
+      warnings: pushUnique(warnings, noFeedbackWarnings(item)),
+    },
+  };
+}
+
 // Trimmed, whitespace collapsed, empty dropped, de-duplicated ignoring case
 // (GRASP grading ignores case anyway); the first spelling wins.
 function cleanAnswers(answers) {
@@ -748,6 +945,8 @@ function mapItem(item, slot, quiz) {
       return mapChoiceItem(item, slot, quiz);
     case CANVAS_QUESTION_TYPES.NUMERICAL:
       return mapNumericalItem(item, slot);
+    case CANVAS_QUESTION_TYPES.CALCULATED:
+      return mapCalculatedItem(item, slot);
     case CANVAS_QUESTION_TYPES.FILL_IN_MULTIPLE_BLANKS:
       if (item.blanks.length !== 1) {
         return { skip: `GRASP fill-in-the-blank questions have one blank; this one has ${item.blanks.length}.` };

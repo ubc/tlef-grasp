@@ -1059,6 +1059,22 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
     }
 
     /**
+     * The expected value as the student sees it: rounded to `decimals` places,
+     * or, for an answer shown as a × 10^n, with its mantissa rounded.
+     */
+        static roundAsDisplayed(num, decimals) {
+      const d = Math.max(0, Math.min(12, parseInt(decimals, 10) || 0));
+      if (!CalculationQuestion.usesScientificDisplay(num, d)) return CalculationQuestion.roundToDecimals(num, d);
+      let exp = CalculationQuestion.decimalExponentOf(num);
+      let mantissa = CalculationQuestion.roundToDecimals(num / 10 ** exp, d);
+      if (Math.abs(mantissa) >= 10) {
+        exp += 1;
+        mantissa = CalculationQuestion.roundToDecimals(num / 10 ** exp, d);
+      }
+      return mantissa * 10 ** exp;
+    }
+
+    /**
      * Compare a student's number with the expected value.
      *
      * `tolerance` is a normalized tolerance object (see TOLERANCE_MODES), the
@@ -1066,7 +1082,11 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
      *   percent  → |student − expected| / |expected| ≤ value / 100
      *              (an expected value of exactly 0 accepts anything that rounds
      *              to 0 at the displayed precision instead)
-     *   absolute → |student − expected| ≤ value
+     *   absolute → |student − expected| ≤ value, measured from the unrounded
+     *              value or from the value as the student sees it (rounded by
+     *              roundAsDisplayed), whichever is closer. An answer shown as
+     *              −48.2 (really −48.2345) with a margin of 1.0 then accepts
+     *              −47.2, as Canvas does, and still accepts the precise −49.2345.
      *   range    → min ≤ student ≤ max
      *   null     → both round to the same number at `answerDecimals` places; for
      *              answers shown in scientific notation the mantissas are compared
@@ -1090,7 +1110,8 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
         return studentValue >= tol.min - eps && studentValue <= tol.max + eps;
       }
       if (tol && tol.mode === TOLERANCE_MODES.ABSOLUTE) {
-        return diff <= tol.value + eps;
+        const fromShown = Math.abs(studentValue - CalculationQuestion.roundAsDisplayed(expectedValue, d));
+        return Math.min(diff, fromShown) <= tol.value + eps;
       }
       if (tol && tol.mode === TOLERANCE_MODES.PERCENT) {
         if (expectedValue === 0) return diff < 0.5 * 10 ** -d;
