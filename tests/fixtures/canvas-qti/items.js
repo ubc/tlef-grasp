@@ -407,16 +407,23 @@ function shortAnswerItem({
 /**
  * Formula question, real shape: an <other/> scoring condition plus itemproc_extension.
  * variables: [{ name, min, max, scale }]; varSets: [{ ident, vars: { name: value }, answer }].
+ * The <calculated> block is written as Canvas writes it:
+ * answer_tolerance ("1.0" or "3%"), <formulas decimal_places> with one <formula> per
+ * line (`formulas` overrides `formula`; several lines is how Canvas exports a question
+ * with intermediate values), <vars> with scale/min/max, and the precomputed <var_sets>.
+ * Real exports write "1.0"-style floats for every value; the defaults mirror that.
  */
 function calculatedItem({
   ident,
   title = 'Question',
   stemHtml = '<div>\n<p>Double [x].</p>\n</div>',
   formula = '2*x',
+  formulas = [formula],
   variables = [{ name: 'x', min: '1.0', max: '9.0', scale: 0 }],
-  varSets = [{ ident: '4001', vars: { x: '3' }, answer: '6' }],
+  varSets = [{ ident: '4001', vars: { x: '3.0' }, answer: '6.0' }],
   tolerance = '0.0',
   decimalPlaces = 0,
+  generalFeedback = {},
   points = 1,
 } = {}) {
   return itemShell({
@@ -433,6 +440,7 @@ function calculatedItem({
     ],
     resprocessing: [
       decvar(),
+      generalFeedback.general && otherFeedback('general_fb'),
       el('respcondition', { title: 'correct' }, [
         el('conditionvar', {}, [el('other')]),
         textEl('setvar', { varname: 'SCORE', action: 'Set' }, '100'),
@@ -441,12 +449,14 @@ function calculatedItem({
         el('conditionvar', {}, [el('not', {}, [el('other')])]),
         textEl('setvar', { varname: 'SCORE', action: 'Set' }, '0'),
       ]),
+      generalFeedback.incorrect && otherFeedback('general_incorrect_fb'),
     ],
     extra: [
+      ...generalFeedbackItems(generalFeedback),
       el('itemproc_extension', {}, [
         el('calculated', {}, [
           textEl('answer_tolerance', {}, tolerance),
-          el('formulas', { decimal_places: String(decimalPlaces) }, [textEl('formula', {}, formula)]),
+          el('formulas', { decimal_places: String(decimalPlaces) }, formulas.map((line) => textEl('formula', {}, line))),
           el(
             'vars',
             {},

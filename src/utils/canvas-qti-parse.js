@@ -16,6 +16,9 @@
  *     blank; every response_label of a blank is accepted.
  *   - assessment_meta.xml nests an <assignment> with its own <title> and dates, so
  *     only direct children of <quiz> are read.
+ *   - A formula question's definition (formula, variables, tolerance, precomputed
+ *     value sets) is not in <resprocessing> at all but in an <itemproc_extension>
+ *     <calculated> block; its scoring condition is just <other/>.
  */
 
 const cheerio = require('cheerio');
@@ -58,6 +61,9 @@ const GENERAL_FEEDBACK_IDENTS = { general: 'general_fb', correct: 'correct_fb', 
 // later step (naming, mapping, preview, commit) slow on the shared server.
 const MAX_SLOTS_PER_QUIZ = 2000;
 const MAX_ITEMS_PER_QUIZ = 5000;
+// Canvas generates at most 200 value sets for a formula question. Reading more
+// from a hand-made file would only cost memory, so the rest are counted, not kept.
+const MAX_VAR_SETS_READ = 200;
 // Real exports nest at most 11 elements deep. htmlparser2 (under cheerio) slows
 // down with the square of the depth, and the readers below recurse, so a file
 // that nests deeper than this is refused before it is parsed.
@@ -461,6 +467,42 @@ function readNumericAnswers(scoring) {
     .filter((answer) => answer.exact !== null || answer.min !== null || answer.max !== null);
 }
 
+// The <calculated> block of a formula question, strings as written (the mapper
+// parses the numbers and decides what GRASP can do with them), or null when the
+// item has none. Every formula line is kept: Canvas lets a question define
+// intermediate values on earlier lines and the answer on the last.
+function readCalculated(itemEl) {
+  const extension = firstChild(itemEl, 'itemproc_extension');
+  const calculated = extension ? firstChild(extension, 'calculated') : null;
+  if (!calculated) return null;
+  const formulas = firstChild(calculated, 'formulas');
+  const vars = firstChild(calculated, 'vars');
+  const varSets = firstChild(calculated, 'var_sets');
+  const setElements = varSets ? childElements(varSets, 'var_set') : [];
+  return {
+    tolerance: trimmedOrNull(textOf(firstChild(calculated, 'answer_tolerance'))),
+    decimalPlaces: formulas ? trimmedOrNull(attr(formulas, 'decimal_places')) : null,
+    formulas: formulas ? childElements(formulas, 'formula').map((formula) => textOf(formula).trim()) : [],
+    variables: vars
+      ? childElements(vars, 'var').map((variable) => ({
+        name: (attr(variable, 'name') || '').trim(),
+        scale: trimmedOrNull(attr(variable, 'scale')),
+        min: trimmedOrNull(textOf(firstChild(variable, 'min'))),
+        max: trimmedOrNull(textOf(firstChild(variable, 'max'))),
+      }))
+      : [],
+    varSetCount: setElements.length,
+    varSets: setElements.slice(0, MAX_VAR_SETS_READ).map((set) => ({
+      values: Object.fromEntries(
+        childElements(set, 'var')
+          .map((variable) => [(attr(variable, 'name') || '').trim(), textOf(variable).trim()])
+          .filter(([name]) => name),
+      ),
+      answer: trimmedOrNull(textOf(firstChild(set, 'answer'))),
+    })),
+  };
+}
+
 function parseItem($, itemEl, fallbackIdent) {
   const metadata = itemMetadata(itemEl);
   const points = Number(metadata.get('points_possible') || NaN);
@@ -482,6 +524,7 @@ function parseItem($, itemEl, fallbackIdent) {
     choiceFeedbackHtml: {},
     feedbackHtml: { general: null, correct: null, incorrect: null },
     numericAnswers: [],
+    calculated: null,
     blanks: [],
     shortAnswers: [],
     rawWarnings: [],
@@ -506,6 +549,7 @@ function parseItem($, itemEl, fallbackIdent) {
   }
   if (BLANK_TYPES.has(questionType)) item.blanks = readBlanks($, questionType, lids, scoring);
   if (questionType === CANVAS_QUESTION_TYPES.NUMERICAL) item.numericAnswers = readNumericAnswers(scoring);
+  if (questionType === CANVAS_QUESTION_TYPES.CALCULATED) item.calculated = readCalculated(itemEl);
   if (questionType === CANVAS_QUESTION_TYPES.SHORT_ANSWER) item.shortAnswers = scoredValues(scoring);
 
   // Feedback with nowhere to go (a numerical answer's comment, a blank's) is
@@ -605,5 +649,6 @@ module.exports = {
   PARSE_WARNINGS,
   MAX_SLOTS_PER_QUIZ,
   MAX_ITEMS_PER_QUIZ,
+  MAX_VAR_SETS_READ,
   MAX_XML_DEPTH,
 };

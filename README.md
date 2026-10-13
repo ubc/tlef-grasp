@@ -244,6 +244,40 @@ works like this:
   instructor typed them in), so the stored window and the Canvas due date are
   the same moment whatever timezone the server runs in.
 
+#### Canvas quiz import
+
+**Import Questions** (Question Bank) also accepts a Canvas Classic Quizzes
+export (`.zip`, QTI 1.2; issue #140). It needs no Canvas connection. GRASP
+previews the file, the instructor picks the Canvas quizzes to bring in, and each
+one becomes an unpublished GRASP quiz with one objective per Canvas question or
+question group. Multiple choice and true/false, numerical (as fixed-answer
+calculation questions), fill-in-the-blank, short answer and formula questions
+are imported; multiple-answer, matching, multiple-dropdown, essay and
+file-upload questions, question-bank groups and New Quizzes exports are
+reported as skipped, each with its reason.
+
+A Canvas **formula question** (issue #130) becomes a GRASP calculation question
+with variables:
+
+- `[x]` in the question text becomes `{{x}}` for the declared variables only
+  (chemistry stems write concentrations as `[A]`). Each variable keeps its
+  range and decimal places (0 decimals → whole numbers); the answer keeps its
+  decimal places and its tolerance (`0.05` → absolute, `3%` → percent).
+- The formula is translated from Canvas's dialect (`src/utils/canvas-formula.js`):
+  Canvas's `log(x)` is base 10 and GRASP's is natural, so it becomes `log10(x)`;
+  `log(x, b)` → `(ln(x)/ln(b))`; `e`, `pi` → `E`, `PI`; `fact` → `fac`;
+  `deg_to_rad`/`rad_to_deg` are written out; several formula lines
+  (`k = 2*x` …) are combined into one. A formula using a Canvas list or
+  random function (`mean`, `sum`, `rand`, `if`, …) is skipped, naming it.
+- As a check, the translated formula is evaluated at up to 20 of Canvas's own
+  precomputed value sets and compared with the answers Canvas recorded. A
+  mismatch saves the question as a Draft with a warning that shows both numbers.
+- Canvas's precomputed value sets are not stored: GRASP samples fresh values
+  for every attempt, as it does for its own calculation questions. An absolute
+  tolerance is measured from the answer as the student sees it (rounded to the
+  question's decimal places) as well as from the exact value, so a correctly
+  rounded answer at the edge of the margin is accepted as it is in Canvas.
+
 #### Optional Moodle connection
 
 Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for

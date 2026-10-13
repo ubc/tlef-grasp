@@ -32,7 +32,7 @@ const OTHER_COURSE_ID = '64b000000000000000000002';
 const USER = { _id: '64b0000000000000000000aa' };
 const HOSTS = new Set(['canvas.example.test']);
 
-const CALCULATED_REASON = 'Formula question with variables. These come in a later update (#130).';
+const MATCHING_REASON = "Matching questions aren't supported in GRASP.";
 const ESSAY_REASON =
   "Essay questions aren't imported yet: GRASP needs a sample answer and grading criteria for them.";
 
@@ -207,7 +207,7 @@ const alphaQuiz = () => ({
       ],
     }),
     items.numericalItem({ ident: 'gitema4', title: 'Synthetic yield', answers: [{ exact: '2.5', min: '2.3', max: '2.7' }] }),
-    items.calculatedItem({ ident: 'gitema5' }),
+    items.otherItem({ ident: 'gitema5', type: 'matching_question' }),
   ],
 });
 
@@ -405,7 +405,7 @@ describe('previewCanvasImport', () => {
             { name: 'Alpha Quiz – Question 4', variants: 1, importable: 0, alreadyImported: 0 },
           ],
           existingQuiz: null,
-          skipped: [{ slotName: 'Alpha Quiz – Question 4', itemTitle: 'Question', canvasType: 'calculated_question', reason: CALCULATED_REASON }],
+          skipped: [{ slotName: 'Alpha Quiz – Question 4', itemTitle: 'Question', canvasType: 'matching_question', reason: MATCHING_REASON }],
           predictedDrafts: [],
           notes: [],
         },
@@ -559,7 +559,7 @@ describe('commitCanvasQuiz', () => {
       title: 'Alpha Quiz',
       created: { questions: 4, approved: 4, drafts: 0, objectives: 3 },
       alreadyImported: 0,
-      skipped: [{ slotName: 'Alpha Quiz – Question 4', itemTitle: 'Question', canvasType: 'calculated_question', reason: CALCULATED_REASON }],
+      skipped: [{ slotName: 'Alpha Quiz – Question 4', itemTitle: 'Question', canvasType: 'matching_question', reason: MATCHING_REASON }],
       drafts: [],
       failures: [],
       imageFailures: 0,
@@ -783,17 +783,63 @@ describe('commitCanvasQuiz', () => {
     );
   });
 
+  it('saves a formula question with its variables, Approved when Canvas\'s recorded answers check out and Draft when they do not', async () => {
+    const MISMATCH = "For Canvas's sample values x = 3.0, GRASP's formula gives 9 where Canvas recorded 7.0. Check the formula.";
+    const quiz = {
+      ident: 'gquizformula',
+      title: 'Formula Quiz',
+      slots: [
+        items.calculatedItem({
+          ident: 'gitemf1',
+          title: 'pH of HCl',
+          stemHtml: '<div><p>What is the pH of a [x] M aqueous solution of HCl?</p></div>',
+          formula: '-1.0*log(x,10)',
+          variables: [{ name: 'x', min: '0.03', max: '0.9', scale: 3 }],
+          varSets: [{ ident: '1', vars: { x: '0.1' }, answer: '1.0' }, { ident: '2', vars: { x: '0.5' }, answer: '0.3' }],
+          tolerance: '0.05',
+          decimalPlaces: 2,
+        }),
+        items.calculatedItem({ ident: 'gitemf2', title: 'Triple', formula: 'x*3', varSets: [{ ident: '3', vars: { x: '3.0' }, answer: '7.0' }] }),
+      ],
+    };
+
+    const report = await commit(await exportZip([quiz]), { quizIdent: 'gquizformula' });
+
+    expect(report.created).toEqual({ questions: 2, approved: 1, drafts: 1, objectives: 2 });
+    expect(report.skipped).toEqual([]);
+    expect(questionBy('gitemf1')).toMatchObject({
+      questionType: 'calculation',
+      title: 'pH of HCl',
+      stem: 'What is the pH of a {{x}} M aqueous solution of HCl?',
+      calculationFormula: '-1.0*log10(x)',
+      calculationVariables: [{ name: 'x', min: 0.03, max: 0.9, decimals: 3 }],
+      calculationAnswerDecimals: 2,
+      calculationTolerance: { mode: 'absolute', value: 0.05 },
+      status: 'Approved',
+    });
+    expect(questionBy('gitemf1')).not.toHaveProperty('importWarnings');
+    expect(questionBy('gitemf2')).toMatchObject({
+      calculationFormula: 'x*3',
+      calculationVariables: [{ name: 'x', min: 1, max: 9, integerOnly: true }],
+      status: 'Draft',
+      importWarnings: [MISMATCH],
+    });
+    expect(report.drafts).toEqual([
+      { slotName: 'Formula Quiz – Question 2', title: 'Triple', questionId: String(questionBy('gitemf2')._id), reasons: [MISMATCH] },
+    ]);
+  });
+
   it('makes no empty GRASP quiz for a Canvas quiz with nothing to import', async () => {
     const quiz = {
       ident: 'gquizessay',
       title: 'Essay Quiz',
-      slots: [items.otherItem({ ident: 'gitemx1' }), items.calculatedItem({ ident: 'gitemx2' })],
+      slots: [items.otherItem({ ident: 'gitemx1' }), items.otherItem({ ident: 'gitemx2', type: 'matching_question' })],
     };
 
     const report = await commit(await exportZip([quiz]), { quizIdent: 'gquizessay' });
 
     expect(report).toMatchObject({ created: { questions: 0, approved: 0, drafts: 0, objectives: 0 }, quiz: null });
-    expect(report.skipped.map((entry) => entry.reason)).toEqual([ESSAY_REASON, CALCULATED_REASON]);
+    expect(report.skipped.map((entry) => entry.reason)).toEqual([ESSAY_REASON, MATCHING_REASON]);
     expect(fake.docs('grasp_quiz')).toHaveLength(0);
     expect(fake.docs('grasp_objective')).toHaveLength(0);
   });

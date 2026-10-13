@@ -189,7 +189,7 @@ describe('mapCanvasQuizzes: [SMILES] tags in Canvas text', () => {
         items: [
           numericalItem({ ident: 'gsmnum1', title: `Check ${TAG}`, answers: [{ exact: '2' }] }),
           numericalItem({ ident: 'gsmnum2', title: 'Question', answers: [{ exact: '3' }] }),
-          calculatedItem({ ident: 'gsmcalc', title: `Formula ${TAG}` }),
+          otherItem({ ident: 'gsmmatch', title: `Matching ${TAG}`, type: 'matching_question' }),
         ],
       }),
     ], { title: `Unit ${TAG}` });
@@ -200,11 +200,11 @@ describe('mapCanvasQuizzes: [SMILES] tags in Canvas text', () => {
     expect(quiz.slots[0].name).toBe(slotName);
     expect(quiz.slots[0].questions.map((question) => question.payload.title)).toEqual([`Check ${BROKEN}`, slotName]);
     expect(quiz.skipped).toEqual([{
-      itemIdent: 'gsmcalc',
+      itemIdent: 'gsmmatch',
       slotName,
-      itemTitle: `Formula ${BROKEN}`,
-      canvasType: 'calculated_question',
-      reason: 'Formula question with variables. These come in a later update (#130).',
+      itemTitle: `Matching ${BROKEN}`,
+      canvasType: 'matching_question',
+      reason: "Matching questions aren't supported in GRASP.",
     }]);
     expect(quiz.notes).toEqual([`Canvas picked 2 questions from 'Group ${LOWER_BROKEN}'; GRASP gives one question per objective.`]);
   });
@@ -986,7 +986,6 @@ describe('mapCanvasQuizzes: fill in the blank', () => {
 
 describe('mapCanvasQuizzes: skipped items', () => {
   test.each([
-    ['calculated', calculatedItem({ ident: 'gskip1' }), 'calculated_question', 'Formula question with variables. These come in a later update (#130).'],
     [
       'multiple answers',
       mcItem({ ident: 'gskip1', type: 'multiple_answers_question', correct: ['1001', '1003'] }),
@@ -1070,8 +1069,8 @@ describe('mapCanvasQuizzes: notes', () => {
     const quiz = mapSlots([
       groupSection({ ident: 'gpick', title: 'Q01', pick: 2, items: [mcItem({ ident: 'g1' }), mcItem({ ident: 'g2' })] }),
       // Nothing imported from these two, so nothing to note.
-      groupSection({ ident: 'gpickcalc', title: 'Q02', pick: 3, items: [calculatedItem({ ident: 'g3' })] }),
-      groupSection({ ident: 'gzerocalc', title: 'Q03', pointsPerItem: 0, items: [calculatedItem({ ident: 'g4' })] }),
+      groupSection({ ident: 'gpickessay', title: 'Q02', pick: 3, items: [otherItem({ ident: 'g3' })] }),
+      groupSection({ ident: 'gzeroessay', title: 'Q03', pointsPerItem: 0, items: [otherItem({ ident: 'g4' })] }),
       groupSection({ ident: 'gzero', title: 'Q04', pointsPerItem: 0, items: [mcItem({ ident: 'g5', points: 1 })] }),
       mcItem({ ident: 'g6', points: 0 }),
       // The group's points override its item's 0.
@@ -1141,7 +1140,7 @@ describe('mapCanvasQuizzes: no URL in what gets saved or reported', () => {
         choices: htmlChoices([`<p><img src="${REMOTE}" alt="Copied from www.example.test today"></p>`, `<p><img src="${BUNDLED}" alt="b"></p>`]),
       }),
       numericalItem({ ident: 'gurl2', stemHtml: `<div><p>Read the chart.</p><p><img src="${BUNDLED}" alt="chart"></p></div>`, answers: [{ exact: '4' }] }),
-      calculatedItem({ ident: 'gurl3' }),
+      calculatedItem({ ident: 'gurl3', stemHtml: `<div><p>Double [x].</p><p><img src="${REMOTE}" alt="x"></p></div>` }),
     ], { meta: { shuffleAnswers: false, description: `<p><a href="${REMOTE}">Key</a></p>` } });
 
     const drafts = quiz.slots.flatMap((slot) => slot.questions);
@@ -1155,11 +1154,253 @@ describe('mapCanvasQuizzes: no URL in what gets saved or reported', () => {
       settings: quiz.quizSettings,
     });
 
-    expect(drafts).toHaveLength(2);
+    expect(drafts).toHaveLength(3);
     expect(reported).not.toMatch(/canvas\.example\.test|verifier|IMS-CC-FILEBASE|www\./);
     expect(drafts[0].warnings).toEqual(['Question text: A linked file was not imported.']);
     // The sources themselves stay on the image references for the service.
     expect(drafts[0].stemImages.map((image) => image.src)).toEqual([REMOTE]);
     expect(drafts[0].optionImages.A.src).toBe(REMOTE);
+  });
+});
+
+describe('mapCanvasQuizzes: formula (calculated) questions', () => {
+  // The real shape: a pH question with one variable sampled to 3 decimals, a
+  // base-10 log, an absolute tolerance, and Canvas's precomputed answers.
+  const PH = {
+    title: 'Q05',
+    stemHtml: '<div><p>What is the pH of a [x] M aqueous solution of HCl? [A] stays as written.</p></div>',
+    formula: '-1.0*log(x,10)',
+    variables: [{ name: 'x', min: '0.03', max: '0.9', scale: 3 }],
+    varSets: [
+      { ident: '4700', vars: { x: '0.088' }, answer: '1.06' },
+      { ident: '522', vars: { x: '0.5' }, answer: '0.3' },
+    ],
+    tolerance: '0.05',
+    decimalPlaces: 2,
+  };
+  const calcDraft = (extra = {}) => onlyDraft(calculatedItem({ ident: 'gcalc1', ...extra }));
+  const calcSkip = (extra = {}) => onlySkip(calculatedItem({ ident: 'gcalc2', ...extra })).reason;
+  const MISMATCH = "For Canvas's sample values x = 3.0, GRASP's formula gives 9 where Canvas recorded 7.0. Check the formula.";
+
+  // What saveQuestion checks, then a student attempt: sampled values render
+  // into the stem and the formula evaluates at them.
+  function expectUsable(payload) {
+    const tolerance = CalculationQuestion.normalizeTolerance(payload.calculationTolerance);
+    expect(() => CalculationQuestion.validateCalculationDefinition({
+      formula: payload.calculationFormula,
+      variableSpecs: payload.calculationVariables,
+      stem: payload.stem,
+      tolerance,
+    })).not.toThrow();
+    const values = CalculationQuestion.generateVariableValues(payload.calculationVariables);
+    const rendered = CalculationQuestion.renderCalculationTemplate(payload.stem, values, payload.calculationVariables);
+    expect([...rendered.unknownPlaceholderNames]).toEqual([]);
+    expect(Number.isFinite(CalculationQuestion.evaluateCalculationFormula(payload.calculationFormula, values))).toBe(true);
+    return rendered;
+  }
+
+  test('maps a real-shaped pH question to a calculation question with a variable', () => {
+    const draft = calcDraft(PH);
+
+    expect(draft.payload).toEqual({
+      questionType: 'calculation',
+      // "Q05" is a stale question number, so the slot name is used, as for every type.
+      title: 'Synthetic Quiz – Question 1',
+      stem: 'What is the pH of a {{x}} M aqueous solution of HCl? [A] stays as written.',
+      bloom: 'Understand',
+      calculationFormula: '-1.0*log10(x)',
+      calculationVariables: [{ name: 'x', min: 0.03, max: 0.9, decimals: 3 }],
+      calculationAnswerDecimals: 2,
+      calculationTolerance: { mode: 'absolute', value: 0.05 },
+    });
+    expect(draft.warnings).toEqual([]);
+    expect(draft.stemImages).toEqual([]);
+    const rendered = expectUsable(draft.payload);
+    expect([...rendered.referencedVariableNames]).toEqual(['x']);
+    expect(CalculationQuestion.evaluateCalculationFormula(draft.payload.calculationFormula, { x: 0.088 })).toBeCloseTo(1.0555, 4);
+  });
+
+  test.each([
+    ['an absolute margin', '1.0', { mode: 'absolute', value: 1 }],
+    ['a percent margin', '3%', { mode: 'percent', value: 3 }],
+    ['a decimal margin', '0.002', { mode: 'absolute', value: 0.002 }],
+    ['no margin', '0.0', { mode: 'absolute', value: 0 }],
+  ])('maps %s', (_, tolerance, expected) => {
+    expect(calcDraft({ tolerance }).payload.calculationTolerance).toEqual(expected);
+  });
+
+  test('treats a missing tolerance as exact', () => {
+    const xml = calculatedItem({ ident: 'gcalcnotol' }).replace(/<answer_tolerance>[^<]*<\/answer_tolerance>/, '');
+    expect(onlyDraft(xml).payload.calculationTolerance).toEqual({ mode: 'absolute', value: 0 });
+  });
+
+  test('samples a variable with scale 0 as whole numbers and keeps other scales as decimals', () => {
+    const draft = calcDraft({
+      stemHtml: '<div><p>[w] moles from [x] K to [z] K over [y] L.</p></div>',
+      formula: 'w*0.08206*(z-x)/y',
+      variables: [
+        { name: 'w', min: '0.2', max: '15.0', scale: 1 },
+        { name: 'x', min: '600.0', max: '900.0', scale: 0 },
+        { name: 'y', min: '6.0', max: '65.0', scale: 1 },
+        { name: 'z', min: '300.0', max: '550.0', scale: 0 },
+      ],
+      varSets: [{ ident: '1', vars: { w: '1.7', x: '781.0', y: '40.8', z: '400.0' }, answer: '-1.30' }],
+      tolerance: '0.05',
+      decimalPlaces: 2,
+    });
+
+    expect(draft.payload.calculationVariables).toEqual([
+      { name: 'w', min: 0.2, max: 15, decimals: 1 },
+      { name: 'x', min: 600, max: 900, integerOnly: true },
+      { name: 'y', min: 6, max: 65, decimals: 1 },
+      { name: 'z', min: 300, max: 550, integerOnly: true },
+    ]);
+    expect(draft.warnings).toEqual([]);
+    expectUsable(draft.payload);
+  });
+
+  test('keeps a variable the stem shows but the formula ignores, as 3 of the real questions do', () => {
+    const draft = calcDraft({
+      stemHtml: '<div><p>Mix [x] mL of [y] M acid with [x] mL of [y] M base.</p></div>',
+      formula: '14+log(sqrt(y*5.5556*10^-10/2))',
+      variables: [{ name: 'x', min: '25.0', max: '200.0', scale: 2 }, { name: 'y', min: '0.1', max: '0.8', scale: 2 }],
+      varSets: [{ ident: '1', vars: { x: '80.02', y: '0.15' }, answer: '8.81' }],
+      tolerance: '0.05',
+      decimalPlaces: 2,
+    });
+
+    expect(draft.payload.stem).toBe('Mix {{x}} mL of {{y}} M acid with {{x}} mL of {{y}} M base.');
+    expect(draft.warnings).toEqual([]);
+    expectUsable(draft.payload);
+  });
+
+  test('tells a declared [a] from a chemistry [A] and splits braces GRASP would read as placeholders', () => {
+    const draft = calcDraft({
+      stemHtml: '<div><p>[A] is [a] M; {{a}} and {a} are printed; \\(\\frac{a}{2}\\) and {b} too.</p></div>',
+      formula: '2*a',
+      variables: [{ name: 'a', min: '1.0', max: '9.0', scale: 0 }],
+      varSets: [{ ident: '1', vars: { a: '3.0' }, answer: '6.0' }],
+    });
+
+    expect(draft.payload.stem).toBe('[A] is {{a}} M; { { a} } and { a} are printed; \\(\\frac{ a}{2}\\) and {b} too.');
+    const rendered = expectUsable(draft.payload);
+    expect(rendered.text).toMatch(/^\[A\] is \d M; \{ \{ a\} \} and \{ a\} are printed; \\\(\\frac\{ a\}\{2\}\\\) and \{b\} too\.$/);
+  });
+
+  test.each([
+    ['a base-10 log', 'log(x)', { x: '1000.0' }, '3.0', 'log10(x)'],
+    ['a two-argument log', 'log(x, 3)', { x: '81.0' }, '4.0', '(ln(x)/ln(3))'],
+    ['e as a power', 'e^x', { x: '2.0' }, '7.0', 'E^x'],
+    ['a factorial and pi', 'fact(x)*pi()', { x: '3.0' }, '19.0', 'fac(x)*PI'],
+    ['implicit multiplication', '5x', { x: '3.0' }, '15.0', '5*x'],
+  ])('translates %s and confirms it against the recorded answer', (_, formula, vars, answer, translated) => {
+    const draft = calcDraft({ formula, varSets: [{ ident: '1', vars, answer }] });
+
+    expect(draft.payload.calculationFormula).toBe(translated);
+    expect(draft.warnings).toEqual([]);
+  });
+
+  test('combines several formula lines into one', () => {
+    const draft = calcDraft({
+      formulas: ['k = 2*x', 'm = k + 1', 'm * k'],
+      varSets: [{ ident: '1', vars: { x: '3.0' }, answer: '42.0' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('((2*x)+1)*(2*x)');
+    expect(draft.warnings).toEqual([]);
+    expectUsable(draft.payload);
+  });
+
+  test("saves a Draft with both numbers when GRASP's formula disagrees with Canvas's recorded answers", () => {
+    const draft = calcDraft({
+      formula: 'x*3',
+      varSets: [{ ident: '1', vars: { x: '2.0' }, answer: '6.0' }, { ident: '2', vars: { x: '3.0' }, answer: '7.0' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('x*3');
+    expect(draft.warnings).toEqual([MISMATCH]);
+  });
+
+  test('warns when the formula gives no number for a recorded value set', () => {
+    const draft = calcDraft({
+      formula: 'sqrt(x)',
+      variables: [{ name: 'x', min: '-5.0', max: '5.0', scale: 0 }],
+      varSets: [{ ident: '1', vars: { x: '-4.0' }, answer: '2.0' }],
+    });
+
+    expect(draft.warnings).toEqual([
+      "For Canvas's sample values x = -4.0, GRASP's formula gives no number (a division by zero, or a log or root of a negative number) where Canvas recorded 2.0. Check the formula.",
+    ]);
+  });
+
+  test('accepts a recorded answer that Canvas rounded, and warns when no value set can be checked', () => {
+    // 100*(-1+60)/(2*60) = 49.1666…, recorded as 49.0 at 0 decimal places.
+    const rounded = calcDraft({
+      formula: '100*(y+x)/(2*x)',
+      variables: [{ name: 'x', min: '45.0', max: '100.0', scale: 0 }, { name: 'y', min: '-45.0', max: '45.0', scale: 0 }],
+      varSets: [{ ident: '1', vars: { x: '60.0', y: '-1.0' }, answer: '49.0' }],
+    });
+    expect(rounded.warnings).toEqual([]);
+
+    const unchecked = calcDraft({ varSets: [] });
+    expect(unchecked.warnings).toEqual(["Canvas gave no sample values for this formula, so GRASP's version of it could not be checked."]);
+  });
+
+  test.each([
+    ['a list function', { formula: 'mean(x, 2)' }, "The formula uses mean(), which GRASP doesn't support."],
+    ['an undeclared name', { formula: '2*k' }, 'The formula uses "k", which isn\'t one of the question\'s variables.'],
+    ['a variable used like a function', { formula: 'x(2)' }, 'The formula uses the variable "x" like a function.'],
+    ['no formula', { formulas: [''] }, 'The formula question has no formula.'],
+    ['formula lines that do not define values', { formulas: ['2*x', 'x'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
+    ['an answer line with an equals sign', { formulas: ['k = 2*x', 'y = k'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
+    ['a variable name GRASP cannot use', { variables: [{ name: 'x-1', min: '1.0', max: '9.0', scale: 0 }], formula: '2' }, 'The variable name "x-1" isn\'t one GRASP can use: letters, digits and underscores, starting with a letter.'],
+    ['a variable named after a constant', { variables: [{ name: 'e', min: '1.0', max: '9.0', scale: 0 }], formula: '2*e' }, 'The variable "e" is named after a math constant, which GRASP reserves.'],
+    ['two variables with one name', { variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 0 }, { name: 'x', min: '1.0', max: '2.0', scale: 0 }] }, 'Two variables are both named "x".'],
+    ['a range that is not numbers', { variables: [{ name: 'x', min: 'one', max: '9.0', scale: 0 }] }, 'The range of the variable "x" isn\'t a pair of numbers.'],
+    ['an empty range', { variables: [{ name: 'x', min: '9.0', max: '1.0', scale: 0 }] }, 'The range of the variable "x" has its lowest value above its highest.'],
+    ['too many variable decimals', { variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 9 }] }, 'The variable "x" is sampled to 9 decimal places; GRASP supports 0 to 8.'],
+    ['no whole number in an integer range', { variables: [{ name: 'x', min: '1.2', max: '1.8', scale: 0 }] }, 'There is no whole number between 1.2 and 1.8 for the variable "x".'],
+    ['a tolerance that is not a number', { tolerance: 'close' }, 'The answer tolerance "close" isn\'t a number of 0 or more.'],
+    ['a negative tolerance', { tolerance: '-1' }, 'The answer tolerance "-1" isn\'t a number of 0 or more.'],
+    ['a percent tolerance above 100', { tolerance: '150%' }, 'The answer tolerance is 150%; GRASP percent tolerances go up to 100%.'],
+    ['too many answer decimals', { decimalPlaces: 13 }, 'The answer is shown to 13 decimal places; GRASP supports 0 to 12.'],
+  ])('skips a formula question with %s', (_, extra, reason) => {
+    expect(calcSkip(extra)).toBe(reason);
+  });
+
+  test('skips a formula question whose answer precision is missing', () => {
+    const xml = calculatedItem({ ident: 'gcalcnodp' }).replace(' decimal_places="0"', '');
+    expect(onlySkip(xml).reason).toBe('The answer is shown to an unknown number of decimal places; GRASP supports 0 to 12.');
+  });
+
+  test('skips a formula question with no <calculated> block', () => {
+    const xml = calculatedItem({ ident: 'gcalcnoblock' }).replace(/<itemproc_extension>[\s\S]*<\/itemproc_extension>/, '');
+    expect(onlySkip(xml).reason).toBe('The formula question has no formula.');
+  });
+
+  test('skips, with its reason, a formula GRASP itself would refuse to save', () => {
+    // Parses here but not in expr-eval: a dangling operator.
+    expect(calcSkip({ formula: 'x+' })).toMatch(/^GRASP can't use the formula: /);
+  });
+
+  test('warns once when Canvas feedback is dropped and keeps the Canvas title or the slot name like a numerical question', () => {
+    const withFeedback = calcDraft({ generalFeedback: { general: '<p>Use pH = -log[H+].</p>' } });
+    expect(withFeedback.warnings).toEqual(['Canvas feedback was not imported (GRASP has no feedback for this question type).']);
+
+    const quiz = mapSlots([groupSection({ ident: 'gcalcgroup', title: 'Acids', items: [calculatedItem({ ident: 'gcalc3', title: 'Question 2' })] })]);
+    expect(quiz.slots[0].questions[0].payload.title).toBe('Synthetic Quiz – Acids');
+  });
+
+  test('counts an imported formula question in the picks note and the points check', () => {
+    const quiz = mapSlots([
+      groupSection({ ident: 'gpickcalc', title: 'Q01', pick: 2, items: [calculatedItem({ ident: 'g1' }), calculatedItem({ ident: 'g2' })] }),
+      groupSection({ ident: 'gzerocalc', title: 'Q02', pointsPerItem: 0, items: [calculatedItem({ ident: 'g3' })] }),
+    ]);
+
+    expect(quiz.skipped).toEqual([]);
+    expect(quiz.notes).toEqual([
+      'Canvas gives no points for Q02; in GRASP its questions count like any other.',
+      "Canvas picked 2 questions from 'Q01'; GRASP gives one question per objective.",
+    ]);
   });
 });
