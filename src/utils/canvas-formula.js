@@ -17,7 +17,7 @@
  *   fact(n)             fac(n)
  *   deg_to_rad(x)       ((x)*PI/180)
  *   rad_to_deg(x)       ((x)*180/PI)
- *   round(x, n)         roundTo(x, n)
+ *   round(x, n)         round(x)          Canvas's round ignores a second argument
  *   abs ceil floor sqrt sin cos tan asin acos atan max min round   unchanged
  *   -x^2, -2^2          (-x)^2, (-2)^2    Canvas's "-" belongs to the number or name after it
  *   2^3^2               (2^3)^2           Canvas works ^ left to right; expr-eval right to left
@@ -339,7 +339,11 @@ function canvasFormulaToGrasp(formula, variableNames = [], { definitions = [] } 
       checkArity(name, args, [1]);
       return `((${argText(args)[0]})*180/PI)`;
     }
-    if (name === 'round' && args.length === 2) return `roundTo(${argText(args).join(', ')})`;
+    if (name === 'round' && args.length === 2) {
+      // Canvas's calculator rounds to a whole number whatever the second
+      // argument says; its recorded answers were worked out that way.
+      return `round(${argText(args)[0]})`;
+    }
     if (Object.prototype.hasOwnProperty.call(SAME_NAME, name)) {
       checkArity(name, args, SAME_NAME[name]);
       return `${name}(${argText(args).join(', ')})`;

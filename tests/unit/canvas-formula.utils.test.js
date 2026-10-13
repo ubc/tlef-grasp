@@ -41,7 +41,7 @@ describe('canvasFormulaToGrasp', () => {
     ['pi*r^2 + e()', ['r'], 'PI*r^2+E'],
     ['pi() * fact(n)', ['n'], 'PI*fac(n)'],
     ['deg_to_rad(x) + rad_to_deg(y)', ['x', 'y'], '((x)*PI/180)+((y)*180/PI)'],
-    ['round(x, 2) + round(y) + abs(x) + ceil(y) + floor(x) + sqrt(y)', ['x', 'y'], 'roundTo(x, 2)+round(y)+abs(x)+ceil(y)+floor(x)+sqrt(y)'],
+    ['round(x, 2) + round(y) + abs(x) + ceil(y) + floor(x) + sqrt(y)', ['x', 'y'], 'round(x)+round(y)+abs(x)+ceil(y)+floor(x)+sqrt(y)'],
     ['max(x, y, 2) - min(x, y)', ['x', 'y'], 'max(x, y, 2)-min(x, y)'],
     ['sin(x)+cos(x)+tan(x)+asin(y)+acos(y)+atan(y)', ['x', 'y'], 'sin(x)+cos(x)+tan(x)+asin(y)+acos(y)+atan(y)'],
     // Canvas reads two operands in a row as a product.
@@ -68,7 +68,8 @@ describe('canvasFormulaToGrasp', () => {
     ['fact(x)', { x: 5 }, 120],
     ['deg_to_rad(x)', { x: 180 }, Math.PI],
     ['rad_to_deg(x)', { x: Math.PI / 2 }, 90],
-    ['round(x, 2)', { x: 2.345 }, 2.35],
+    // Canvas's round() ignores a second argument.
+    ['round(x, 2)', { x: 2.345 }, 2],
     ['10^-5 * x', { x: 2 }, 2e-5],
     ['5x', { x: 3 }, 15],
     ['100*(y+x)/(2*x)', { x: 60, y: -1 }, 49.166666666666664],
@@ -89,6 +90,9 @@ describe('canvasFormulaToGrasp', () => {
     ['log()', ['x'], 'log() takes 1 or 2 arguments, not 0'],
     ['log(x, 2, 3)', ['x'], 'log() takes 1 or 2 arguments, not 3'],
     ['sqrt(x, 2)', ['x'], 'sqrt() takes 1 argument, not 2'],
+    // Canvas works out round's second argument before ignoring it.
+    ['round(x, k)', ['x'], 'uses "k", which isn\'t one of the question\'s variables'],
+    ['round(x, 2, 3)', ['x'], 'round() takes 1 argument, not 3'],
     ['max()', ['x'], 'max() needs at least one argument'],
     ['pi(2)', ['x'], 'pi() takes 0 arguments, not 1'],
     ['(x, 2)', ['x'], 'a comma outside a function call'],

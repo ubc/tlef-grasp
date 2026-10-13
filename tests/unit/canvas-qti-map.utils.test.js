@@ -1296,6 +1296,8 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     // Canvas's "-" belongs to the name after it, and ^ goes left to right.
     ['a minus before a power', '-x^2', { x: '3.0' }, '9.0', '(-x)^2'],
     ['a chain of powers', '2^x^2', { x: '3.0' }, '64.0', '(2^x)^2'],
+    // Canvas's round() ignores a second argument: round(2.34, 1) is 2 there.
+    ['a two-argument round', 'round(x, 1)', { x: '2.34' }, '2', 'round(x)'],
   ])('translates %s and confirms it against the recorded answer', (_, formula, vars, answer, translated) => {
     const draft = calcDraft({ formula, varSets: [{ ident: '1', vars, answer }] });
 
@@ -1336,17 +1338,17 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
   });
 
   test("saves a Draft when Canvas's calculator disagrees by less than the recorded rounding", () => {
-    // Canvas's round() ignores a second argument: it recorded round(2.34) = 2,
-    // and GRASP's roundTo(2.34, 1) = 2.3 rounds to that too at 0 decimals.
+    // Canvas's fact() drops the fraction, so it recorded fact(1.5) = 1; GRASP's
+    // fac(1.5) = 1.329… rounds to that too at 0 decimals.
     const draft = calcDraft({
-      formula: 'round(x, 1)',
-      variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 2 }],
-      varSets: [{ ident: '1', vars: { x: '2.34' }, answer: '2' }],
+      formula: 'fact(x)',
+      variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 1 }],
+      varSets: [{ ident: '1', vars: { x: '1.5' }, answer: '1' }],
     });
 
-    expect(draft.payload.calculationFormula).toBe('roundTo(x, 1)');
+    expect(draft.payload.calculationFormula).toBe('fac(x)');
     expect(draft.warnings).toEqual([
-      "For Canvas's sample values x = 2.34, GRASP's formula gives 2.3 where Canvas's calculator gives 2. Check the formula.",
+      "For Canvas's sample values x = 1.5, GRASP's formula gives 1.329340388179 where Canvas's calculator gives 1. Check the formula.",
     ]);
   });
 
