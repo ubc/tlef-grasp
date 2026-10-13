@@ -6,23 +6,26 @@ const databaseService = require('../../src/services/database');
 const { shiftDate, planShift, shiftSchedules } = require('../../src/services/quiz-schedule');
 const { ObjectId } = require('mongodb');
 
-const VANCOUVER = 'America/Vancouver';
+// A zone that still changes its clocks. Not America/Vancouver: B.C. stays on
+// UTC-7 from Nov 1, 2026 (tz 2026b), so its 2026 fall-back exists only in
+// older time-zone data and the result would depend on the Node version.
+const LOS_ANGELES = 'America/Los_Angeles';
 
 describe('shiftDate', () => {
   it('keeps wall-clock time when a day shift crosses a DST boundary', () => {
     // 23:59 PDT on Oct 30 → 23:59 PST on Nov 6 (clocks fall back Nov 1).
-    const shifted = shiftDate('2026-10-31T06:59:00Z', { days: 7 }, VANCOUVER);
+    const shifted = shiftDate('2026-10-31T06:59:00Z', { days: 7 }, LOS_ANGELES);
     expect(shifted.toISOString()).toBe('2026-11-07T07:59:00.000Z');
   });
 
   it('shifts backwards across spring-forward as well', () => {
     // 09:00 PDT Mar 10 → 09:00 PST Mar 3 (clocks spring forward Mar 8).
-    const shifted = shiftDate('2026-03-10T16:00:00Z', { days: -7 }, VANCOUVER);
+    const shifted = shiftDate('2026-03-10T16:00:00Z', { days: -7 }, LOS_ANGELES);
     expect(shifted.toISOString()).toBe('2026-03-03T17:00:00.000Z');
   });
 
   it('treats hour offsets as absolute time', () => {
-    const shifted = shiftDate('2026-10-31T06:59:00Z', { minutes: 7 * 24 * 60 }, VANCOUVER);
+    const shifted = shiftDate('2026-10-31T06:59:00Z', { minutes: 7 * 24 * 60 }, LOS_ANGELES);
     expect(shifted.toISOString()).toBe('2026-11-07T06:59:00.000Z');
   });
 });
