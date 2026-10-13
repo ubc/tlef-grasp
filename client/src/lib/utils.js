@@ -13,6 +13,7 @@ export const QUESTION_TYPE_LABELS = {
   calculation: "Calculation",
   "open-ended": "Open-ended",
   "multiple-choice": "Multiple choice",
+  "multiple-answer": "Multiple answer",
 };
 
 export function normalizeQuestionTypeKey(raw) {
@@ -26,6 +27,7 @@ export function formatQuestionTypeLabel(raw) {
 
 export const QUESTION_TYPE_CHIP_CLASSES = {
   "multiple-choice": "bg-blue-100 text-blue-700",
+  "multiple-answer": "bg-indigo-100 text-indigo-700",
   "fill-in-the-blank": "bg-purple-100 text-purple-700",
   calculation: "bg-orange-100 text-orange-700",
   "open-ended": "bg-teal-100 text-teal-700",

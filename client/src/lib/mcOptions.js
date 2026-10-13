@@ -3,7 +3,8 @@
 // A (issue #144). An option may carry one image (issue #146). Forms edit them
 // as an ordered list of rows ({ id, text, feedback, image }) and convert back
 // on save. Everything that reads or edits options goes through here so no
-// screen assumes exactly four.
+// screen assumes exactly four. Multiple-answer questions use the same options,
+// with a list of correct letters (["A", "C"]) in place of one.
 
 import {
   MC_OPTION_KEYS,
@@ -51,6 +52,24 @@ export function optionIndexOf(key) {
   return MC_OPTION_KEYS.indexOf(key);
 }
 
+/**
+ * The letters a multiple-answer value names, in A to H order without repeats:
+ * the stored list or a lone letter. Anything else names nothing.
+ */
+export function answerKeysOf(value) {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+  const named = new Set(raw.map((item) => String(item ?? "").trim().toUpperCase()));
+  return MC_OPTION_KEYS.filter((key) => named.has(key));
+}
+
+/** A list of letters with `key` added or removed, kept in A to H order. */
+export function toggleAnswerKey(keys, key) {
+  const next = new Set(keys);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return MC_OPTION_KEYS.filter((letter) => next.has(letter));
+}
+
 /** `count` blank rows lettered from A. */
 export function emptyOptionRows(count = MC_DEFAULT_OPTION_COUNT) {
   return MC_OPTION_KEYS.slice(0, count).map((id) => ({ id, text: "", feedback: "", image: null }));
@@ -88,7 +107,8 @@ export function addOptionRow(rows) {
 /**
  * Remove the row at `index` and re-letter the rest. The correct answer follows
  * its row to the new letter; removing the correct row leaves no answer marked
- * ("" ), so the form's validation asks for one.
+ * ("" ), so the form's validation asks for one. A multiple-answer question's
+ * list of correct letters follows its rows the same way, less the removed one.
  */
 export function removeOptionRow(rows, index, correctAnswer) {
   if (rows.length <= MC_MIN_OPTIONS || index < 0 || index >= rows.length) {
@@ -96,6 +116,13 @@ export function removeOptionRow(rows, index, correctAnswer) {
   }
   const removedId = rows[index].id;
   const remaining = relabelOptionRows(rows.filter((_, i) => i !== index));
+  if (Array.isArray(correctAnswer)) {
+    const kept = rows
+      .map((row, i) => ({ id: row.id, i }))
+      .filter(({ id, i }) => i !== index && correctAnswer.includes(id))
+      .map(({ i }) => remaining[i > index ? i - 1 : i].id);
+    return { rows: remaining, correctAnswer: kept };
+  }
   if (correctAnswer === removedId) return { rows: remaining, correctAnswer: "" };
   const correctIndex = rows.findIndex((row) => row.id === correctAnswer);
   if (correctIndex === -1) return { rows: remaining, correctAnswer };

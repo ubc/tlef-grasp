@@ -1,6 +1,7 @@
 // Resuming a partly-answered quiz restores the recorded answers, but a wrong
-// multiple-choice or calculation answer must come back without the correct
-// answer (issue #128): the student keeps retrying until they find it.
+// multiple-choice, multiple-answer or calculation answer must come back
+// without the correct answer (issue #128): the student keeps retrying until
+// they find it.
 // Fill-in-the-blank and open-ended are answered once and already showed their
 // answer, so they come back as recorded.
 
@@ -54,6 +55,16 @@ const ids = {
   fibWrong: new ObjectId(),
   calcWrong: new ObjectId(),
   openEnded: new ObjectId(),
+  maWrong: new ObjectId(),
+  maRight: new ObjectId(),
+};
+
+// Select all that apply: A and C are correct.
+const maOptions = {
+  A: { text: "Neon", feedback: "" },
+  B: { text: "Nitrogen", feedback: "Nitrogen is in group 15." },
+  C: { text: "Argon", feedback: "Argon is in group 18." },
+  D: { text: "Chlorine", feedback: "Chlorine is a halogen." },
 };
 
 const recordedAttempts = [
@@ -100,6 +111,23 @@ const recordedAttempts = [
     gradingCriteria: "Mentions both stages.",
     aiGraded: true,
   },
+  {
+    questionId: ids.maWrong,
+    questionType: "multiple-answer",
+    // A is right, B is wrong, and C was left unticked.
+    selectedAnswer: ["A", "B"],
+    isCorrect: false,
+    correctAnswer: ["A", "C"],
+    feedbackText: "B: Nitrogen is in group 15.",
+  },
+  {
+    questionId: ids.maRight,
+    questionType: "multiple-answer",
+    selectedAnswer: ["A", "C"],
+    isCorrect: true,
+    correctAnswer: ["A", "C"],
+    feedbackText: "C: Argon is in group 18.",
+  },
 ];
 
 function buildApp() {
@@ -140,6 +168,20 @@ describe("resuming a quiz restores recorded answers without revealing wrong ones
         questionType: "multiple-choice",
         title: "What does Km represent?",
         options: { A: { text: "Half of Vmax" }, B: { text: "Vmax" } },
+      },
+      {
+        _id: ids.maWrong,
+        questionType: "multiple-answer",
+        title: "Which of these are noble gases?",
+        options: maOptions,
+        correctAnswer: ["A", "C"],
+      },
+      {
+        _id: ids.maRight,
+        questionType: "multiple-answer",
+        title: "Which of these are noble gases?",
+        options: maOptions,
+        correctAnswer: ["A", "C"],
       },
     ]);
     quizScheduleService.getStudentSectionObjectIds.mockResolvedValue([
@@ -204,6 +246,34 @@ describe("resuming a quiz restores recorded answers without revealing wrong ones
       isCorrect: false,
       selectedAnswer: "nucleus",
       correctOptionText: "mitochondrion",
+    });
+  });
+
+  it("drops the correct options from a wrong multiple-answer check but keeps its hints", async () => {
+    const previous = await getPreviousAnswers();
+
+    // What the student was told when they checked, and nothing that names C.
+    expect(previous[ids.maWrong.toString()]).toMatchObject({
+      isCorrect: false,
+      selectedAnswer: ["A", "B"],
+      correctAnswer: null,
+      correctOptionText: null,
+      wrongKeys: ["B"],
+      missedCorrect: true,
+      optionFeedback: [{ key: "B", feedback: "Nitrogen is in group 15." }],
+    });
+  });
+
+  it("keeps the correct options on a multiple-answer question answered right", async () => {
+    const previous = await getPreviousAnswers();
+
+    expect(previous[ids.maRight.toString()]).toMatchObject({
+      isCorrect: true,
+      selectedAnswer: ["A", "C"],
+      correctAnswer: ["A", "C"],
+      wrongKeys: [],
+      missedCorrect: false,
+      optionFeedback: [{ key: "C", feedback: "Argon is in group 18." }],
     });
   });
 

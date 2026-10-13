@@ -39,6 +39,7 @@ const STEP_TITLES = {
 
 const QUESTION_TYPE_CARDS = [
   { type: QUESTION_TYPES.MULTIPLE_CHOICE, icon: "fa-list-ul", name: "Multiple Choice", desc: "2 to 8 options, one correct answer" },
+  { type: QUESTION_TYPES.MULTIPLE_ANSWER, icon: "fa-list-check", name: "Multiple Answer", desc: "2 to 8 options, one or more correct" },
   { type: QUESTION_TYPES.FILL_IN_THE_BLANK, icon: "fa-pencil-alt", name: "Fill-in-the-Blank", desc: "Sentence with a blank to complete" },
   { type: QUESTION_TYPES.CALCULATION, icon: "fa-calculator", name: "Calculation", desc: "Numeric answer, with or without randomised variables" },
   { type: QUESTION_TYPES.OPEN_ENDED, icon: "fa-paragraph", name: "Open-Ended", desc: "Free-text with sample answer & rubric" },
@@ -54,6 +55,8 @@ const EMPTY_FORM = {
   stemImages: [],
   options: DEFAULT_OPTIONS,
   correctAnswer: "A",
+  // A multiple-answer question's correct letters.
+  correctAnswers: [],
   fibCorrect: "",
   fibAcceptable: "",
   calcFormula: "",
@@ -97,7 +100,10 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     (g) => getObjectId(g) === granularObjectiveId
   );
   // AI generation retrieves context from the objective's linked materials.
-  const aiAvailable = (selectedObjective?.materialIds?.length || 0) > 0;
+  const hasMaterials = (selectedObjective?.materialIds?.length || 0) > 0;
+  // AI generation doesn't write multiple-answer questions yet.
+  const aiWritesType = questionType !== QUESTION_TYPES.MULTIPLE_ANSWER;
+  const aiAvailable = hasMaterials && aiWritesType;
 
   // Any change to the inputs that feed generation invalidates a prior AI draft.
   const resetGeneratedDraft = () => {
@@ -135,7 +141,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     if (step === 3) {
       if (source === "ai" && !aiAvailable) {
         showToast(
-          "This objective has no linked materials — choose manual entry or link materials first",
+          aiWritesType
+            ? "This objective has no linked materials — choose manual entry or link materials first"
+            : "AI can't draft multiple-answer questions yet — provide the question yourself",
           "error"
         );
         return false;
@@ -168,6 +176,16 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         }
         if (!form.options.some((o) => o.id === form.correctAnswer)) {
           showToast("Select which option is the correct answer", "error");
+          return false;
+        }
+      } else if (questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+        const optionsError = optionRowsError(form.options);
+        if (optionsError) {
+          showToast(optionsError, "error");
+          return false;
+        }
+        if (!form.options.some((o) => form.correctAnswers.includes(o.id))) {
+          showToast("Tick at least one correct option", "error");
           return false;
         }
       } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
@@ -313,6 +331,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
       payload.options = optionRowsToObject(form.options);
       payload.correctAnswer = form.correctAnswer;
+    } else if (questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      payload.options = optionRowsToObject(form.options);
+      payload.correctAnswer = form.correctAnswers;
     } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = form.fibAcceptable
         .split("\n")
@@ -504,6 +525,8 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
               onClick={() => {
                 setQuestionType(card.type);
                 resetGeneratedDraft();
+                // AI doesn't draft this type yet, so it can only be written by hand.
+                if (card.type === QUESTION_TYPES.MULTIPLE_ANSWER) setSource("manual");
               }}
               className={`flex flex-col items-center gap-1.5 rounded-xl border-2 p-5 text-center transition-colors ${
                 questionType === card.type
@@ -656,9 +679,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
             <p className={`${hintClass} flex items-start gap-1.5`}>
               <i className="fas fa-info-circle mt-0.5 text-warning" />
               <span>
-                AI generation is unavailable because this learning objective has no
-                linked course materials. Link materials to the objective, or provide
-                the question yourself.
+                {aiWritesType
+                  ? "AI generation is unavailable because this learning objective has no linked course materials. Link materials to the objective, or provide the question yourself."
+                  : "AI can't draft multiple-answer questions yet. Provide the question yourself."}
               </span>
             </p>
           )}

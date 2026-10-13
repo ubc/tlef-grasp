@@ -20,6 +20,7 @@ const {
   getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
+  getCorrectAnswerKeys,
   stemImagesOf,
 } = require('../utils/question-export-helpers');
 const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
@@ -203,15 +204,23 @@ function csvField(value) {
   return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
 }
 
+const QTI_MULTIPLE_ANSWER_LEFT_OUT_REASON =
+  "GRASP can't export multiple-answer questions to Canvas yet.";
+
 // What a Canvas (QTI) export contains (#63): every question, each calculation
 // question with its Canvas content worked out once (its value sets are drawn
 // at random), and the calculation questions Canvas can't represent, left out
-// with the reason.
+// with the reason. Multiple-answer questions are left out too, for now.
 function prepareQTIQuestions(questions) {
   const items = [];
   const leftOut = [];
   questions.forEach((question, index) => {
-    if (normalizeQuestionType(question) !== QUESTION_TYPES.CALCULATION) {
+    const type = normalizeQuestionType(question);
+    if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      leftOut.push({ index, reason: QTI_MULTIPLE_ANSWER_LEFT_OUT_REASON });
+      return;
+    }
+    if (type !== QUESTION_TYPES.CALCULATION) {
       items.push({ question, calculation: null });
       return;
     }
@@ -350,6 +359,9 @@ const saveQuestionHandler = async (req, res) => {
     // rather than creating duplicates.
     const savedQuestionIds = [];
     let duplicateCount = 0;
+    // Why questions that could never be graded were refused (a multiple-answer
+    // question with no correct option, say).
+    const invalidReasons = [];
     for (const questionData of questionsArray) {
       try {
         // Canvas provenance is set only by the Canvas importer; a client could
@@ -359,6 +371,8 @@ const saveQuestionHandler = async (req, res) => {
       } catch (error) {
         if (error.code === "DUPLICATE_QUESTION") {
           duplicateCount += 1;
+        } else if (error.code === "INVALID_QUESTION") {
+          invalidReasons.push(error.message);
         } else {
           console.error("Error saving individual question:", error);
         }
@@ -372,6 +386,15 @@ const saveQuestionHandler = async (req, res) => {
         error: "Every question already exists in this course.",
         savedCount: 0,
         duplicateCount,
+      });
+    }
+
+    if (savedQuestionIds.length === 0 && invalidReasons.length > 0) {
+      return res.status(400).json({
+        error: invalidReasons[0],
+        savedCount: 0,
+        duplicateCount,
+        invalidCount: invalidReasons.length,
       });
     }
 
@@ -437,6 +460,9 @@ const updateQuestionHandler = async (req, res) => {
     console.error("Error updating question:", error);
     if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
       return res.status(409).json({ error: error.message });
+    }
+    if (error.code === "INVALID_QUESTION") {
+      return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: "Failed to update question" });
   }
@@ -637,7 +663,10 @@ const exportQuestionsHandler = async (req, res) => {
 // five-option question is never truncated.
 function createCSVExport(course, questions) {
   const optionColumnCount = questions.reduce((max, q) => {
-    if (normalizeQuestionType(q) !== QUESTION_TYPES.MULTIPLE_CHOICE) return max;
+    const type = normalizeQuestionType(q);
+    if (type !== QUESTION_TYPES.MULTIPLE_CHOICE && type !== QUESTION_TYPES.MULTIPLE_ANSWER) {
+      return max;
+    }
     return Math.max(max, getOptionKeys(q).length);
   }, 4);
   const optionColumns = MC_OPTION_KEYS.slice(0, optionColumnCount);
@@ -683,6 +712,12 @@ function createCSVExport(course, questions) {
       // correctAnswer may be a letter or a numeric index.
       const letter = correctAnswerKey(q.correctAnswer);
       row.correctAnswer = getOptionTextOrImageLabel(q, letter) || letter;
+    } else if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      row.options = optionColumns.map((key) => getOptionTextOrImageLabel(q, key));
+      // Every correct option, in letter order.
+      row.correctAnswer = getCorrectAnswerKeys(q)
+        .map((key) => getOptionTextOrImageLabel(q, key) || key)
+        .join('; ');
     } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = getAcceptableAnswers(q);
       row.correctAnswer = String(q.correctAnswer || acceptable[0] || '');

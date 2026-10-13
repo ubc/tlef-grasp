@@ -112,6 +112,27 @@ describe('per-type params', () => {
     expect(params.behaviour.type).toBe('single');
   });
 
+  test('multiple-answer marks every correct option and scores the question all-or-nothing', () => {
+    const multipleAnswer = {
+      questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+      title: 'Which gases are greenhouse gases?',
+      stem: 'Which gases are greenhouse gases?',
+      options: {
+        A: { text: 'Oxygen', feedback: 'Oxygen is not a greenhouse gas.' },
+        B: { text: 'Carbon dioxide', feedback: '' },
+        C: { text: 'Methane', feedback: '' },
+      },
+      correctAnswer: ['B', 'C'],
+    };
+    const { content: c } = buildH5PPackage('Quiz', [multipleAnswer]);
+    const sub = c.questions[0];
+    expect(sub.library).toBe(content.questions[0].library);
+    expect(sub.params.question).toContain('Which gases are greenhouse gases?');
+    expect(sub.params.answers.map((a) => a.correct)).toEqual([false, true, true]);
+    expect(sub.params.answers[0].tipsAndFeedback.chosenFeedback).toContain('not a greenhouse gas');
+    expect(sub.params.behaviour).toMatchObject({ type: 'multi', singlePoint: true });
+  });
+
   test('multiple-choice keeps a fifth option (issue #144)', () => {
     const five = {
       ...mcQuestion,

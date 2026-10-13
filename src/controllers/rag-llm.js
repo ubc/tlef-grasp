@@ -30,7 +30,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -552,7 +552,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
       // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
       // at the model corrupted.
-      const allTypeInstructions = Object.values(QUESTION_TYPES)
+      const allTypeInstructions = GENERATED_QUESTION_TYPES
         .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction({ mcOptionCount })}`)
         .join("\n\n");
 

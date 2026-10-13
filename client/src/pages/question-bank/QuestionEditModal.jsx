@@ -12,6 +12,7 @@ import {
   optionRowsOf,
   optionRowsToObject,
   optionRowsError,
+  answerKeysOf,
   MC_OPTION_KEYS,
 } from "../../lib/mcOptions";
 import {
@@ -93,6 +94,21 @@ function buildFormState(question) {
 
   // Rows for whatever options the question has (two to eight, issue #144).
   const options = optionRowsOf(question.options);
+
+  // Multiple answer: the correct letters, among the options it has.
+  if (qType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+    return {
+      questionType: qType,
+      title: question.title || question.stem || "",
+      stem: question.stem || question.title || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
+      options,
+      correctAnswer: answerKeysOf(question.correctAnswer).filter((key) =>
+        options.some((option) => option.id === key)
+      ),
+    };
+  }
+
   let correct = question.correctAnswer;
   if (typeof correct === "number") {
     correct = MC_OPTION_KEYS[correct] || "A";
@@ -248,6 +264,23 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
         acceptableAnswers: acceptable,
         options: {},
       };
+    } else if (form.questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      if (!title && !stem) {
+        return showToast("Question title or stem is required", "error");
+      }
+      const optionsError = optionRowsError(form.options);
+      if (optionsError) return showToast(optionsError, "error");
+      if (!form.options.some((opt) => form.correctAnswer.includes(opt.id))) {
+        return showToast("Tick at least one correct option", "error");
+      }
+      updateData = {
+        title: title || stem,
+        stem: stem || title,
+        stemImages: form.stemImages || [],
+        questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+        options: optionRowsToObject(form.options),
+        correctAnswer: form.correctAnswer,
+      };
     } else {
       // Multiple choice
       if (!title && !stem) {
@@ -272,6 +305,11 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
   };
 
   const readOnly = !canEdit;
+  // Multiple choice and multiple answer keep the prompt students see in the
+  // title; the other types' titles are short topic labels.
+  const titleIsPrompt =
+    form?.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+    form?.questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
 
   return (
     <Modal
@@ -340,6 +378,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
               type={form.questionType}
               label={
                 {
+                  [QUESTION_TYPES.MULTIPLE_ANSWER]: "Multiple answer",
                   [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill-in-the-blank",
                   [QUESTION_TYPES.CALCULATION]: "Calculation",
                   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
@@ -350,13 +389,11 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
 
           <div>
             <label htmlFor="qem-title" className={labelClass}>
-              {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? "Question Title"
-                : "Topic title"}
+              {titleIsPrompt ? "Question Title" : "Topic title"}
             </label>
             {/* The MC title is the prompt students see, which can run to
                 several lines; other types' titles are short topic labels. */}
-            {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? (
+            {titleIsPrompt ? (
               <AutoHeightTextarea
                 id="qem-title"
                 value={form.title}
@@ -377,7 +414,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qem-stem" className={labelClass}>
               {form.questionType === QUESTION_TYPES.CALCULATION
                 ? "Question template"
                 : form.questionType === QUESTION_TYPES.OPEN_ENDED
@@ -385,6 +422,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   : "Question Stem"}
             </label>
             <textarea
+              id="qem-stem"
               rows={form.questionType === QUESTION_TYPES.OPEN_ENDED ? 6 : 4}
               value={form.stem}
               onChange={set("stem")}
@@ -523,6 +561,26 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 />
               </div>
             </>
+          )}
+
+          {form.questionType === QUESTION_TYPES.MULTIPLE_ANSWER && (
+            <div>
+              <label className={labelClass}>
+                Options{" "}
+                <span className="font-normal text-muted">— tick every correct answer</span>
+              </label>
+              <McOptionEditor
+                multiple
+                options={form.options}
+                correctAnswer={form.correctAnswer}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswer }))
+                }
+                readOnly={readOnly}
+                inputClass={inputClass}
+                courseId={courseId}
+              />
+            </div>
           )}
 
           {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (

@@ -1,10 +1,10 @@
 // LLM grading paths of POST /api/quiz/:quizId/question/:questionId/check
 // (issue #45): open-ended answers are judged by the LLM with graceful
 // degradation to manual grading, and fill-in-the-blank answers get an LLM
-// rescue fallback that never downgrades an exact match. A wrong multiple-choice
-// or calculation answer never carries the correct one back to the student
-// (issue #128) — those can be retried — while fill-in-the-blank is answered
-// once and shows it straight away.
+// rescue fallback that never downgrades an exact match. A wrong multiple-choice,
+// multiple-answer or calculation answer never carries the correct one back to
+// the student (issue #128) — those can be retried — while fill-in-the-blank is
+// answered once and shows it straight away.
 
 const express = require('express');
 const request = require('supertest');
@@ -132,6 +132,23 @@ const fiveOptionQuestion = {
     E: { text: 'Argon', feedback: 'Correct — group 18.' },
   },
   correctAnswer: 'E',
+  learningObjectiveId: 'lo-1',
+  bloom: 'Remember',
+};
+
+// Select all that apply: A and C are correct, B and D are not.
+const maQuestion = {
+  _id: 'question-1',
+  questionType: 'multiple-answer',
+  title: 'Which of these are noble gases?',
+  stem: 'Which of these are noble gases?',
+  options: {
+    A: { text: 'Neon', feedback: '' },
+    B: { text: 'Nitrogen', feedback: 'Nitrogen is in group 15.' },
+    C: { text: 'Argon', feedback: 'Argon is in group 18.' },
+    D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+  },
+  correctAnswer: ['A', 'C'],
   learningObjectiveId: 'lo-1',
   bloom: 'Remember',
 };
@@ -569,6 +586,133 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
     });
   });
 
+  describe('multiple-answer questions', () => {
+    // All-or-nothing on the exact set. A wrong check names only the wrong
+    // options the student ticked and says whether a correct one was left
+    // unticked; the correct set comes back only once found.
+    it('marks the exact set correct, in any order, and records the letters', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [2, 0] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        success: true,
+        isCorrect: true,
+        // The ticked options' feedback, as multiple choice shows the picked
+        // option's; A has none.
+        feedback: 'C: Argon is in group 18.',
+        optionFeedback: [{ key: 'C', feedback: 'Argon is in group 18.' }],
+        wrongKeys: [],
+        missedCorrect: false,
+        correctAnswer: ['A', 'C'],
+        correctOptionText: null,
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          questionType: 'multiple-answer',
+          isCorrect: true,
+          selectedAnswer: ['A', 'C'],
+          correctAnswer: ['A', 'C'],
+        })
+      );
+    });
+
+    it('names only the wrong options ticked, and says a correct one was missed', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      // A is right, B is wrong, and C was left unticked.
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [0, 1] });
+
+      expect(res.status).toBe(200);
+      // Nothing that names C, the option the student missed.
+      expect(res.body).toEqual({
+        success: true,
+        isCorrect: false,
+        feedback: 'B: Nitrogen is in group 15.',
+        optionFeedback: [{ key: 'B', feedback: 'Nitrogen is in group 15.' }],
+        wrongKeys: ['B'],
+        missedCorrect: true,
+        correctAnswer: null,
+        correctOptionText: null,
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isCorrect: false,
+          selectedAnswer: ['A', 'B'],
+          correctAnswer: ['A', 'C'],
+          feedbackText: 'B: Nitrogen is in group 15.',
+        })
+      );
+    });
+
+    it('marks a set of correct options that misses one wrong, without naming it', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [0] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        success: true,
+        isCorrect: false,
+        feedback: '',
+        optionFeedback: [],
+        wrongKeys: [],
+        missedCorrect: true,
+        correctAnswer: null,
+        correctOptionText: null,
+      });
+    });
+
+    it('gives no credit for ticking every option', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [0, 1, 2, 3] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        isCorrect: false,
+        wrongKeys: ['B', 'D'],
+        missedCorrect: false,
+        correctAnswer: null,
+      });
+    });
+
+    it('counts a repeated index once', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [0, 2, 2] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isCorrect).toBe(true);
+    });
+
+    it.each([
+      ['no selection', {}],
+      ['an empty selection', { selectedIndexes: [] }],
+      ['a multiple-choice selection', { selectedIndex: 0 }],
+      ['an index past the options the question has', { selectedIndexes: [0, 4] }],
+      ['a letter instead of an index', { selectedIndexes: ['A'] }],
+    ])('rejects %s', async (_label, body) => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp()).post(checkUrl).send(body);
+
+      expect(res.status).toBe(400);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+  });
+
   describe('calculation questions', () => {
     const calcQuestion = {
       _id: 'question-1',
@@ -734,6 +878,18 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         correctOptionText: null,
       });
       // ...but nothing is recorded toward the grade.
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('grades a multiple-answer check but does not persist it', async () => {
+      getQuestion.mockResolvedValue(maQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndexes: [1], practice: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ isCorrect: false, wrongKeys: ['B'], correctAnswer: null });
       expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
     });
 

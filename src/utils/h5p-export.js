@@ -7,6 +7,7 @@ const {
   getOptionTextOrImageLabel,
   getOptionFeedback,
   getCorrectAnswerIndex,
+  getCorrectAnswerKeys,
   getAcceptableAnswers,
   stemImagesOf,
 } = require('./question-export-helpers');
@@ -168,6 +169,9 @@ function buildQuestionSetContent(title, questions, imageMap) {
       if (isType(q, QUESTION_TYPES.OPEN_ENDED)) {
         return subContent(H5P_LIBRARIES.essay, withMedia(buildEssayParams(q)), getQuestionText(q), 'Essay');
       }
+      if (isType(q, QUESTION_TYPES.MULTIPLE_ANSWER)) {
+        return subContent(H5P_LIBRARIES.multiChoice, withMedia(buildMultipleAnswerParams(q)), getQuestionText(q), 'Multiple Choice');
+      }
       return subContent(H5P_LIBRARIES.multiChoice, withMedia(buildMultiChoiceParams(q)), getQuestionText(q), 'Multiple Choice');
     }),
     endGame: {
@@ -180,13 +184,27 @@ function buildQuestionSetContent(title, questions, imageMap) {
 
 function buildMultiChoiceParams(q) {
   const correctIndex = getCorrectAnswerIndex(q);
+  // Exactly one correct option in GRASP MC questions.
+  return choiceParams(q, (key, i) => i === correctIndex, 'single');
+}
+
+// A multiple-answer question is an H5P MultiChoice with several correct
+// answers; singlePoint scores it all-or-nothing, as GRASP grades it.
+function buildMultipleAnswerParams(q) {
+  const correctKeys = getCorrectAnswerKeys(q);
+  return choiceParams(q, (key) => correctKeys.includes(key), 'multi');
+}
+
+// H5P.MultiChoice params for the lettered-option types: `isCorrect(key, i)`
+// marks the correct answers, and `type` is H5P's single- or multi-answer mode.
+function choiceParams(q, isCorrect, type) {
   const answers = getOptionKeys(q).map((key, i) => {
     const feedback = getOptionFeedback(q, key);
     return {
       // H5P answers cannot hold images (issue #146): an image-only option
       // exports its caption, or "Option B (image)".
       text: `<div>${escapeHtml(getOptionTextOrImageLabel(q, key) || `Option ${key}`)}</div>`,
-      correct: i === correctIndex,
+      correct: isCorrect(key, i),
       tipsAndFeedback: {
         tip: '',
         chosenFeedback: escapeHtml(feedback),
@@ -201,8 +219,7 @@ function buildMultiChoiceParams(q) {
     behaviour: {
       enableRetry: true,
       enableSolutionsButton: true,
-      // Exactly one correct option in GRASP MC questions.
-      type: 'single',
+      type,
       singlePoint: true,
       randomAnswers: true,
     },
