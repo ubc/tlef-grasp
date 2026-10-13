@@ -278,6 +278,42 @@ with variables:
   question's decimal places) as well as from the exact value, so a correctly
   rounded answer at the edge of the margin is accepted as it is in Canvas.
 
+#### Canvas quiz export
+
+**Export → Canvas (QTI)** on a quiz writes a Canvas Classic Quizzes `.zip`
+(QTI 1.2) to import in Canvas under Settings → Import Course Content → "QTI
+.zip file". Calculation questions (issue #63) go out as Canvas formula
+questions, or as numerical questions when they have no variables
+(`src/utils/canvas-calculation-export.js`):
+
+- `{{x}}` becomes `[x]`, a variable the text doesn't mention gets the same
+  "Given:" line students see in GRASP, and the formula is translated with the
+  same module as the import, the other way round. Canvas's calculator only
+  negates the number or name right after a `-` and works `^` left to right, so
+  the export writes `-log10(h)` as `-1*log(h)` and `2^x^2` as `2^(x^2)`;
+  e-notation such as `6.022e23` is written `(6.022*10^(23))`.
+- Canvas serves each student one of a fixed list of value sets stored with the
+  question, so the export draws 50 with GRASP's own sampling and evaluator,
+  works each answer out from the values as Canvas shows them, and stores it to
+  the decimal places. The translated formula is then worked out by Canvas's
+  calculator rules and must give the same answer at every set.
+- Canvas accepts everything GRASP accepts, sometimes a little more:
+  - No tolerance: half a unit of the last shown digit. For answers GRASP shows
+    as a × 10^n it is one margin when they share a power of ten, else a
+    percent, the largest any set needs (up to about ten times wider than GRASP
+    for an answer with a larger mantissa). When a question's value sets mix
+    plain and a × 10^n answers, only the larger group is kept.
+  - A percent is kept, with answers stored to four more places, since GRASP
+    measures it from the exact value. Sets whose answer is 0 are left out
+    (Canvas's percent of 0 accepts only 0).
+  - An absolute margin grows by the rounding gap (0.05 → 0.055 at 2
+    decimals), since GRASP measures it from the exact or the shown answer.
+- A question Canvas can't represent (a function Canvas formulas lack, such as
+  `sinh` or `roundTo`, a formula Canvas's calculator works out differently,
+  such as `fac` of a decimal, or a variable name Canvas can't use) is left out,
+  and the export dialog lists it with the reason. H5P exports list calculation
+  questions the same way, as H5P has no type for them.
+
 #### Optional Moodle connection
 
 Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for
