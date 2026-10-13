@@ -134,6 +134,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Analytics' })).toHaveCount(0);
 
       // Dashboard widgets follow the map too: no content quick-start cards,
       // no course-building path, no schedule nudge — but flags stay.
@@ -146,6 +147,8 @@ test.describe.serial('TA permissions (seeded course)', () => {
       // Route guards bounce direct navigation to a withheld page.
       await page.goto('/question-bank');
       await expect(page).not.toHaveURL(/question-bank/);
+      await page.goto('/analytics');
+      await expect(page).not.toHaveURL(/analytics/);
 
       // A granted page still renders.
       await page.goto('/question-flags');
@@ -155,6 +158,8 @@ test.describe.serial('TA permissions (seeded course)', () => {
       // self-escalation are both 403 for this TA.
       const roster = await page.request.get(`/api/users/course/${courseId}`);
       expect(roster.status()).toBe(403);
+      const analytics = await page.request.get(`/api/analytics/course/${courseId}/questions`);
+      expect(analytics.status()).toBe(403);
       const escalate = await page.request.put(
         `/api/users/course/${courseId}/ta-permissions`,
         { data: { userId: 'anyone', permissions: { users: true } } }
