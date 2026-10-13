@@ -216,7 +216,7 @@ function prepareQTIQuestions(questions) {
   return { items, leftOut };
 }
 
-const H5P_LEFT_OUT_REASON = 'H5P has no question type for calculations with variables.';
+const H5P_LEFT_OUT_REASON = 'H5P has no question type for calculation questions.';
 
 // The questions an export left out, for the export dialog: their positions in
 // the request's question list (the client has the questions) and the reasons.
@@ -525,17 +525,20 @@ const exportQuestionsHandler = async (req, res) => {
     const { course, summary, questionIds, quizName, quizDescription, quizMeta } = req.body;
     const format = req.query.format || 'qti';
 
+    // Exports are for the course's staff, whichever way the questions arrive
+    // (and a Canvas export of calculation questions is real work per question).
+    if (!course) {
+      return res.status(400).json({ error: "Course ID is required to export" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, course))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
     // Two entry points: quiz export sends full question objects in `questions`;
     // individual export from the bank sends `questionIds`, and we fetch the full,
     // current docs from the database (the bank list carries only a slim shape).
     let questions = req.body.questions;
     if ((!questions || questions.length === 0) && Array.isArray(questionIds) && questionIds.length > 0) {
-      if (!course) {
-        return res.status(400).json({ error: "Course ID is required to export by question ID" });
-      }
-      if (!(await hasStaffAccessInCourse(req.user, course))) {
-        return res.status(403).json({ error: "User is not in course" });
-      }
       const allQuestions = await getQuestions(course);
       const wanted = new Set(questionIds.map((id) => String(id)));
       questions = (allQuestions || []).filter((q) => wanted.has(String(q._id)));
@@ -889,7 +892,7 @@ async function createQTIZipExport(res, course, items, quizName, quizDescription)
   const title = quizName || course || 'Quiz';
 
   // Generate QTI XML (Canvas format)
-  const qtiXml = createQTIExport(title, questions, assessmentId, imageMap, items);
+  const qtiXml = createQTIExport(title, items, assessmentId, imageMap);
 
   // Create manifest (Canvas Common Cartridge format)
   const { manifest, metaId } = createIMSManifest(course, assessmentId, timestamp, imageFiles);
@@ -1092,9 +1095,9 @@ function buildHtmlWithImages(text, imageRefs, imageMap) {
   return escapeXml(html);
 }
 
-// `items` is prepareQTIQuestions(questions).items, passed in when the caller has
-// already prepared them (and reported what was left out).
-function createQTIExport(course, questions, assessmentId, imageMap = new Map(), items = prepareQTIQuestions(questions).items) {
+// `items` is prepareQTIQuestions(questions).items: the questions to write, each
+// calculation question with the Canvas content the left-out report was made from.
+function createQTIExport(course, items, assessmentId, imageMap = new Map()) {
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 

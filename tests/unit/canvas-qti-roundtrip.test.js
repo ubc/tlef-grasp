@@ -17,7 +17,7 @@
  * main check that the exported answers are right.
  */
 
-const { createQTIExport } = require('../../src/controllers/question');
+const { createQTIExport, prepareQTIQuestions } = require('../../src/controllers/question');
 const { readCanvasPackage } = require('../../src/utils/canvas-qti-package');
 const { parseCanvasQuiz } = require('../../src/utils/canvas-qti-parse');
 const { mapCanvasQuizzes } = require('../../src/utils/canvas-qti-map');
@@ -69,7 +69,7 @@ async function exportThenImport(questions) {
 
   const entries = {
     'imsmanifest.xml': buildManifest({ quizzes: [{ ident: QUIZ }], files: [...images.values()].map((image) => image.zipPath) }),
-    [`${QUIZ}/${QUIZ}.xml`]: createQTIExport(QUIZ_TITLE, questions, QUIZ, imageMap),
+    [`${QUIZ}/${QUIZ}.xml`]: createQTIExport(QUIZ_TITLE, prepareQTIQuestions(questions).items, QUIZ, imageMap),
     // GRASP's export writes shuffle_answers true, as here.
     [`${QUIZ}/assessment_meta.xml`]: metaXml({ ident: QUIZ, title: QUIZ_TITLE, description: '' }),
   };
@@ -276,7 +276,7 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
       expect(drafts[0].warnings).toEqual([]);
     });
 
-    test('no tolerance with answers shown as a × 10^n comes back as a percent', async () => {
+    test('no tolerance with answers shown as a × 10^n at different powers of ten comes back as a percent', async () => {
       const { drafts } = await exportThenImport([calc({
         stem: 'What is [H+] at pH {{p}}?',
         calculationFormula: '10^(-p)',
@@ -287,7 +287,7 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
       const [draft] = drafts;
       expect(draft.payload.stem).toBe('What is [H+] at pH {{p}}?');
       expect(draft.payload.calculationTolerance.mode).toBe('percent');
-      expect(draft.payload.calculationTolerance.value).toBeLessThanOrEqual(0.5);
+      expect(draft.payload.calculationTolerance.value).toBeLessThanOrEqual(1);
       expect(draft.warnings).toEqual([]);
     });
 
@@ -296,8 +296,10 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
         calc({ stem: 'What is one third?', calculationFormula: '1/3', calculationVariables: [], calculationAnswerDecimals: 2, calculationTolerance: { mode: 'absolute', value: 0.01 } }),
         calc({ stem: 'Any value from 10 to 12?', calculationFormula: '11', calculationVariables: [], calculationAnswerDecimals: 0, calculationTolerance: { mode: 'range', min: 10, max: 12 } }),
       ]);
+      // The margin comes back grown by the gap between 1/3 and 0.33, rounded
+      // up: in Canvas it counts from 0.33, in GRASP from 0.33 or 1/3.
       expect(drafts.map((draft) => draft.payload)).toEqual([
-        expect.objectContaining({ stem: 'What is one third?', calculationFormula: '0.33', calculationVariables: [], calculationTolerance: { mode: 'absolute', value: 0.01 } }),
+        expect.objectContaining({ stem: 'What is one third?', calculationFormula: '0.33', calculationVariables: [], calculationTolerance: { mode: 'absolute', value: 0.014 } }),
         expect.objectContaining({ stem: 'Any value from 10 to 12?', calculationFormula: '11', calculationVariables: [], calculationTolerance: { mode: 'range', min: 10, max: 12 } }),
       ]);
       expect(drafts.flatMap((draft) => draft.warnings)).toEqual([]);

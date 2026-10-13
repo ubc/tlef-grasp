@@ -55,8 +55,12 @@ jest.mock("../../src/utils/co-instructor-permissions", () => ({
 jest.mock("../../src/services/image", () => ({
   downloadImageBuffer: jest.fn(),
 }));
+jest.mock("../../src/utils/course-access", () => ({
+  hasStaffAccessInCourse: jest.fn(),
+}));
 
 const archiver = require("archiver");
+const { hasStaffAccessInCourse } = require("../../src/utils/course-access");
 const questionRouter = require("../../src/routes/question");
 
 function buildApp() {
@@ -117,6 +121,15 @@ describe("export left-out report", () => {
 
   beforeEach(() => {
     archiver.instances.length = 0;
+    hasStaffAccessInCourse.mockReset().mockResolvedValue(true);
+  });
+
+  test("exports are for the course's staff: anyone else gets a 403 before any work", async () => {
+    hasStaffAccessInCourse.mockResolvedValue(false);
+    const response = await exportAs("qti", [mc, calc]);
+    expect(response.status).toBe(403);
+    expect(hasStaffAccessInCourse).toHaveBeenCalledWith({ _id: "faculty-1" }, "BIOL 200");
+    expect(archiver.instances).toHaveLength(0);
   });
 
   test("Canvas (QTI): calculation questions are exported; one Canvas can't represent is named in the header", async () => {
@@ -158,8 +171,8 @@ describe("export left-out report", () => {
     expect(leftOutHeader(response)).toEqual({
       count: 2,
       questions: [
-        { index: 0, reason: "H5P has no question type for calculations with variables." },
-        { index: 2, reason: "H5P has no question type for calculations with variables." },
+        { index: 0, reason: "H5P has no question type for calculation questions." },
+        { index: 2, reason: "H5P has no question type for calculation questions." },
       ],
     });
   });
@@ -169,7 +182,7 @@ describe("export left-out report", () => {
     expect(response.status).toBe(400);
     expect(response.body.leftOut).toEqual({
       count: 1,
-      questions: [{ index: 0, reason: "H5P has no question type for calculations with variables." }],
+      questions: [{ index: 0, reason: "H5P has no question type for calculation questions." }],
     });
   });
 });

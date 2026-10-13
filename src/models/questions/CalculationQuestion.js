@@ -907,6 +907,12 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
     }
 
         static evaluateCalculationFormula(formula, values) {
+      const coerced = CalculationQuestion.coerceFormulaValues(values);
+      return CalculationQuestion.compileCalculationFormula(formula, Object.keys(coerced))(coerced);
+    }
+
+    /** A value set as numbers for formula evaluation; a value that isn't a finite number throws. */
+        static coerceFormulaValues(values) {
       const coerced = {};
       if (values && typeof values === "object") {
         for (const [k, raw] of Object.entries(values)) {
@@ -917,10 +923,20 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
           coerced[k] = n;
         }
       }
-      const allowedFromToken = new Set(Object.keys(coerced));
+      return coerced;
+    }
+
+    /**
+     * evaluateCalculationFormula with the formula parsed once, for evaluating it
+     * at many value sets of the same variables (the Canvas export draws
+     * hundreds). Problems with the formula throw here; problems with a value
+     * set, or a non-finite answer, throw from the returned function.
+     */
+        static compileCalculationFormula(formula, variableNames) {
+      const allowed = new Set(variableNames);
       let f = CalculationQuestion.canonicalizeCalculationSyntax(formula);
       if (!f) throw new Error("calculationFormula is required");
-      f = CalculationQuestion.normalizePiToBuiltin(f, allowedFromToken);
+      f = CalculationQuestion.normalizePiToBuiltin(f, allowed);
       const parser = new Parser();
       let expr;
       try {
@@ -930,39 +946,42 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       }
       const needed = expr.variables();
       const missing = needed.filter(
-        (n) => !(n in coerced) && !EXPR_EVAL_CONST_NAMES.has(n)
+        (n) => !allowed.has(n) && !EXPR_EVAL_CONST_NAMES.has(n)
       );
       if (missing.length > 0) {
         throw new Error(
           `Formula needs variable(s): ${missing.join(", ")}. Reload the quiz to get a fresh version of this question.`
         );
       }
-      let result;
-      try {
-        result = expr.evaluate(coerced);
-      } catch (e) {
-        const msg = String(e?.message || "");
-        if (/undefined variable/i.test(msg)) {
-          const m = msg.match(/undefined variable:\s*(\w+)/i);
-          const name = m ? m[1] : "?";
+      return (values) => {
+        const coerced = CalculationQuestion.coerceFormulaValues(values);
+        let result;
+        try {
+          result = expr.evaluate(coerced);
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (/undefined variable/i.test(msg)) {
+            const m = msg.match(/undefined variable:\s*(\w+)/i);
+            const name = m ? m[1] : "?";
+            throw new Error(
+              `Formula references "${name}" but it is missing from this attempt's values. Reload the quiz or ask your instructor to align the formula with calculationVariables.`
+            );
+          }
+          if (/is not a function/i.test(msg)) {
+            throw new Error(
+              "Formula used implicit multiplication (e.g. 0.28(x+1) without *). The engine expects 0.28*(x+1). Save the question again to normalize the formula, or ask your instructor to add explicit * between a number and '('."
+            );
+          }
+          throw e;
+        }
+        const num = Number(result);
+        if (!Number.isFinite(num)) {
           throw new Error(
-            `Formula references "${name}" but it is missing from this attempt's values. Reload the quiz or ask your instructor to align the formula with calculationVariables.`
+            "Formula evaluation produced a non-finite value (NaN or Infinity). Common causes: sqrt or log of a negative number, division by zero, or a singularity inside the variable ranges (e.g. 1/(x+1) with x near -1). Narrow min/max for the variables or fix the formula."
           );
         }
-        if (/is not a function/i.test(msg)) {
-          throw new Error(
-            "Formula used implicit multiplication (e.g. 0.28(x+1) without *). The engine expects 0.28*(x+1). Save the question again to normalize the formula, or ask your instructor to add explicit * between a number and '('."
-          );
-        }
-        throw e;
-      }
-      const num = Number(result);
-      if (!Number.isFinite(num)) {
-        throw new Error(
-          "Formula evaluation produced a non-finite value (NaN or Infinity). Common causes: sqrt or log of a negative number, division by zero, or a singularity inside the variable ranges (e.g. 1/(x+1) with x near -1). Narrow min/max for the variables or fix the formula."
-        );
-      }
-      return num;
+        return num;
+      };
     }
 
     /** True when another random draw of variables might succeed (domain / singularity). */

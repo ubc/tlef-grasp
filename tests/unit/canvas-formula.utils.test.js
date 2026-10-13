@@ -4,7 +4,10 @@
  * The forward direction is what the Canvas quiz import uses; each rule is
  * also checked numerically through expr-eval, since a translation that parses
  * but means something else (log base 10 read as natural log) is the failure
- * this module exists to prevent. The reverse direction is for the QTI export.
+ * this module exists to prevent. The reverse direction is for the QTI export,
+ * and is checked with evaluateCanvasFormula, which follows Canvas's own
+ * calculator (Classic Quizzes calcCmd.js; every case below was also run
+ * through calcCmd.js from a local Canvas, with the same results).
  */
 
 const { Parser } = require('expr-eval');
@@ -13,6 +16,8 @@ const {
   graspFormulaToCanvas,
   canvasPlaceholdersToGrasp,
   graspPlaceholdersToCanvas,
+  evaluateCanvasFormula,
+  FormulaError,
   UNSUPPORTED_CANVAS_FUNCTIONS,
 } = require('../../src/utils/canvas-formula');
 
@@ -161,6 +166,67 @@ describe('graspFormulaToCanvas', () => {
       const grasp = canvasFormulaToGrasp(canvas, variables).formula;
       expect(graspFormulaToCanvas(grasp, variables)).toEqual({ formula: back });
     }
+  });
+});
+
+describe("graspFormulaToCanvas: a minus and ^ as Canvas's calculator reads them", () => {
+  // expr-eval reads -x^2 as -(x^2) and 2^3^2 as 2^(3^2); Canvas negates only
+  // the number or name after "-" and works ^ left to right.
+  test.each([
+    ['-log10(h)', '-1*log(h)'],
+    ['-x^2', '-1*x^2'],
+    ['-(a+b)', '-1*(a+b)'],
+    ['E^(-x^2/2)', 'e^(-1*x^2/2)'],
+    ['2^x^2', '2^(x^2)'],
+    ['(-x)^2', '(-x)^2'],
+    ['10^-x', '10^-x'],
+    ['-x*y', '-x*y'],
+    ['a/(b*c)', 'a/(b*c)'],
+    ['a - (b - c)', 'a-(b-c)'],
+    ['-exp(-x)', '-1*(e^(-x))'],
+  ])('%s is written %s, which Canvas works out the same', (grasp, canvas) => {
+    const values = { x: 1.3, y: 0.4, h: 0.002, a: 2, b: 7, c: 1.5 };
+    const names = Object.keys(values);
+    expect(graspFormulaToCanvas(grasp, names)).toEqual({ formula: canvas });
+    expect(evaluateCanvasFormula(canvas, values)).toBeCloseTo(evaluate(grasp, values), 12);
+  });
+});
+
+describe("evaluateCanvasFormula: Canvas's calculator rules", () => {
+  const values = { x: 3, y: 0.5, a: 2, b: 7, z: 0 };
+  test.each([
+    ['-x^2', 9],
+    ['-2^2', 4],
+    ['2^3^2', 64],
+    ['x*-y', -1.5],
+    ['a--b', 9],
+    ['a/b*a', 4 / 7],
+    ['log(100)', 2],
+    ['log(8, 2)', 3],
+    ['ln(e)', 1],
+    ['fact(3.7)', 6],
+    ['e(2)', Math.exp(2)],
+    ['pi()', Math.PI],
+    ['round(2.5)', 3],
+    ['max(1, b, a)', 7],
+    ['deg_to_rad(180)', Math.PI],
+    ['z + 1', 1],
+    ['(6.022*10^(23))*a', 1.2044e24],
+  ])('%s = %d', (formula, expected) => {
+    expect(evaluateCanvasFormula(formula, values) / expected).toBeCloseTo(1, 12);
+  });
+
+  test.each([
+    ['-log(x)', /a minus before a function/],
+    ['-(x+1)', /a number or a name after "-"/],
+    ['2x', /doesn't expect/],
+    ['2(x)', /doesn't expect/],
+    ['5.+x', /can't read "\."/],
+    ['sinh(x)', /no function sinh/],
+    ['w', /no variable "w"/],
+  ])('%s is an error, as in Canvas', (formula, message) => {
+    expect(() => evaluateCanvasFormula(formula, values)).toThrow(FormulaError);
+    expect(() => evaluateCanvasFormula(formula, values)).toThrow(message);
   });
 });
 

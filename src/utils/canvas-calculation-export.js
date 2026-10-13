@@ -11,18 +11,30 @@
  *   - GRASP draws fresh values for every attempt. Canvas serves one of a fixed
  *     list of value sets stored with the question and never evaluates the
  *     formula for a student, so the export draws that list here, with GRASP's
- *     own sampling and evaluator, and writes each answer as GRASP shows it.
+ *     own sampling and evaluator. Each answer is worked out from the values as
+ *     Canvas shows them (at the variable's decimals) and stored rounded to the
+ *     decimal places, as Canvas stores its own.
  *   - GRASP with no tolerance accepts anything that rounds to the shown answer;
- *     Canvas with a tolerance of 0 accepts only the shown answer itself. The
+ *     Canvas with a tolerance of 0 accepts only the stored answer itself. The
  *     export writes half a unit of the last shown digit instead, so the same
  *     answers are accepted. GRASP shows very large and very small answers as
- *     a × 10^n, where that half digit is relative to the size of the answer; a
- *     question whose answers are all shown that way gets the equivalent percent
- *     tolerance. One tolerance can't serve both kinds of answer, so when the
- *     value sets mix them, only the larger group is kept.
+ *     a × 10^n, where that half digit depends on the power of ten. When every
+ *     answer has the same power it is one margin, exact for small answers and
+ *     at most a unit for answers of 10^9 and up (Canvas stores those to the
+ *     decimal places, so more digits than GRASP shows). When the powers differ,
+ *     it becomes a percent, the largest any answer needs, so Canvas accepts
+ *     everything GRASP does, and up to about ten times more for an answer with
+ *     a larger mantissa. One tolerance can't serve both plain and a × 10^n
+ *     answers, so when the value sets mix them, only the larger group is kept.
+ *   - A percent or absolute tolerance keeps GRASP's meaning. Canvas measures
+ *     either from the stored answer; GRASP measures a percent from the exact
+ *     value, so for a percent the answer is stored with four more places, and
+ *     an absolute margin from the exact or the shown answer, whichever is
+ *     closer, so the margin grows by the rounding gap (under half a shown
+ *     digit, 0.05 -> 0.055 at 2 decimals).
  *   - Formulas use another dialect (canvas-formula.js). After translating, the
- *     Canvas formula is read back the way the Canvas import reads it and must
- *     give the same number at every value set, or the question is left out.
+ *     Canvas formula is worked out the way Canvas's own calculator does it and
+ *     must give GRASP's number at every value set, or the question is left out.
  *   - Canvas replaces [name] in the question text with a value. GRASP writes
  *     {{name}}, and shows a "Given:" line for a variable the text doesn't
  *     mention; the export writes that line with [name] too.
@@ -33,8 +45,9 @@
 
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const {
-  canvasFormulaToGrasp,
   graspFormulaToCanvas,
+  evaluateCanvasFormula,
+  FormulaError,
   graspPlaceholdersToCanvas,
   UNSUPPORTED_CANVAS_FUNCTIONS,
 } = require('./canvas-formula');
@@ -44,8 +57,10 @@ const {
 const VALUE_SET_COUNT = 50;
 const MAX_DRAWS = VALUE_SET_COUNT * 20;
 
-// Canvas finds variables in question text as [letters and digits]. Names it
-// would read as one of its functions or constants are refused as well.
+// Canvas's quiz editor finds variables in question text as [letters and
+// digits] and drops any other variable when the question is opened, so "_" is
+// refused even though Canvas's grading would accept it. Names it would read as
+// one of its functions or constants are refused as well.
 const CANVAS_VARIABLE_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 const CANVAS_FUNCTION_NAMES = new Set([
   ...UNSUPPORTED_CANVAS_FUNCTIONS,
@@ -53,10 +68,10 @@ const CANVAS_FUNCTION_NAMES = new Set([
   'ln', 'log', 'max', 'min', 'pi', 'rad_to_deg', 'round', 'sin', 'sqrt', 'tan',
 ]);
 
-// A number as QTI text: 12 significant digits at most, so float noise such as
+// A number as QTI text: 15 significant digits at most, so float noise such as
 // 0.30000000000000004 is written 0.3.
 function qtiNumber(value) {
-  const n = Number(Number(value).toPrecision(12));
+  const n = Number(Number(value).toPrecision(15));
   return Object.is(n, -0) ? '0' : String(n);
 }
 
@@ -80,22 +95,55 @@ function roundUpTwoDigits(x) {
   return Math.ceil(x / unit - 1e-9) * unit;
 }
 
-// Value sets and Canvas tolerance for GRASP's "no tolerance" (rounds to the
-// shown answer). Answers shown as plain decimals get half a unit of the last
-// decimal; answers shown as a × 10^n get that half digit as a percent, the
-// largest any set needs. A mix keeps the larger group.
-function exactRule(sets, decimals) {
+// The value sets a Canvas tolerance can serve, for GRASP's no tolerance
+// ("rounds to the shown answer"): plain answers and answers shown as a × 10^n
+// need different margins, so a mix keeps the larger group.
+function exactRuleSets(sets, decimals) {
   const scientific = sets.filter(({ answer }) => CalculationQuestion.usesScientificDisplay(answer, decimals));
   const plain = sets.filter(({ answer }) => !CalculationQuestion.usesScientificDisplay(answer, decimals));
-  if (scientific.length <= plain.length) {
-    return { sets: plain, tolerance: qtiNumber(0.5 * 10 ** -decimals) };
-  }
-  const relative = Math.max(...scientific.map(({ answer }) => halfShownUnit(answer, decimals) / Math.abs(answer)));
-  return { sets: scientific, tolerance: `${qtiNumber(roundUpTwoDigits(relative * 100))}%` };
+  return scientific.length <= plain.length ? plain : scientific;
 }
 
-// An answer as Canvas stores it: the formula's value rounded to the question's
-// decimal places.
+// Canvas's tolerance for GRASP's no tolerance, given each set's stored answer:
+// wide enough that Canvas accepts everything GRASP does (half the last shown
+// digit around the shown answer), from the stored answer. One margin when the
+// answers share a power of ten, else the percent the widest set needs.
+function exactRuleTolerance(sets, decimals) {
+  const reach = sets.map(({ answer, shown, stored }) => ({
+    margin: halfShownUnit(answer, decimals) + Math.abs(stored - shown),
+    stored,
+  }));
+  const powers = new Set(sets.map(({ answer }) => CalculationQuestion.decimalExponentOf(answer)));
+  const scientific = CalculationQuestion.usesScientificDisplay(sets[0].answer, decimals);
+  if (!scientific || powers.size === 1) return qtiNumber(roundUpTwoDigits(Math.max(...reach.map(({ margin }) => margin))));
+  const relative = Math.max(...reach.map(({ margin, stored }) => margin / Math.abs(stored)));
+  return `${qtiNumber(roundUpTwoDigits(relative * 100))}%`;
+}
+
+// x rounded up at the given decimal places, for a margin that must not shrink.
+function roundUpAt(x, places) {
+  const scale = 10 ** places;
+  return Math.ceil(x * scale - 1e-9) / scale;
+}
+
+// An absolute margin as Canvas needs it: GRASP's margin counts from the exact
+// or the shown answer, Canvas's from the stored one, so it grows by the
+// largest gap from the stored answer to either.
+function absoluteMargin(margin, gaps, places) {
+  return qtiNumber(roundUpAt(margin + Math.max(0, ...gaps), places + 1));
+}
+
+// GRASP's percent of an answer of exactly 0 accepts anything that rounds to 0;
+// Canvas's percent of 0 accepts only 0. Those value sets are left out, unless
+// every set's answer is 0, which is then half a unit either side.
+function percentRule(sets, percent, decimals) {
+  const nonZero = sets.filter(({ answer }) => answer !== 0);
+  if (nonZero.length > 0) return { sets: nonZero, tolerance: () => `${qtiNumber(percent)}%` };
+  return { sets, tolerance: () => qtiNumber(0.5 * 10 ** -decimals) };
+}
+
+// An answer as Canvas stores it: the formula's value rounded to the decimal
+// places.
 function roundedAnswer(value, places) {
   if (places <= 12) return CalculationQuestion.roundToDecimals(value, places);
   return Number(value.toFixed(Math.min(places, 100)));
@@ -145,24 +193,33 @@ function canvasStem(template, specs, names) {
   return { text };
 }
 
+function formatVariableValue(value, variable) {
+  return variable.scale === 0 ? String(Math.round(value)) : Number(value).toFixed(variable.scale);
+}
+
 // Up to VALUE_SET_COUNT distinct value sets with their finite answers, drawn
-// the way GRASP draws an attempt.
-function drawValueSets(formula, specs) {
+// the way GRASP draws an attempt. Each value is the one Canvas shows (the draw
+// at its variable's decimals); a draw GRASP held at a bound with more decimals
+// than that can show outside the range, and is drawn again.
+function drawValueSets(evaluate, specs, variables, decimals) {
   const sets = [];
   const seen = new Set();
   for (let draw = 0; draw < MAX_DRAWS && sets.length < VALUE_SET_COUNT; draw += 1) {
-    const values = CalculationQuestion.generateVariableValues(specs);
-    const key = JSON.stringify(values);
+    const drawn = CalculationQuestion.generateVariableValues(specs);
+    const shownValues = Object.fromEntries(variables.map((variable) => [variable.name, formatVariableValue(drawn[variable.name], variable)]));
+    const key = JSON.stringify(shownValues);
     if (seen.has(key)) continue;
     seen.add(key);
+    const numbers = Object.fromEntries(Object.entries(shownValues).map(([name, value]) => [name, Number(value)]));
+    if (variables.some(({ name, min, max }) => numbers[name] < Number(min) || numbers[name] > Number(max))) continue;
     let answer;
     try {
-      answer = CalculationQuestion.evaluateCalculationFormula(formula, values);
+      answer = evaluate(numbers);
     } catch (error) {
       if (CalculationQuestion.isRetryableCalculationDrawError(error)) continue;
       throw error;
     }
-    sets.push({ values, answer });
+    sets.push({ values: shownValues, numbers, answer, shown: CalculationQuestion.roundAsDisplayed(answer, decimals) });
   }
   return sets;
 }
@@ -171,28 +228,21 @@ function sameNumber(a, b) {
   return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a));
 }
 
-// The value sets Canvas would compute differently from GRASP, once the Canvas
-// formula is read back the way the Canvas import reads it. Normally none.
+// The first value set where Canvas's calculator works the Canvas formula out
+// differently from GRASP, or can't work it out at all. Normally none.
 function translationMismatch(canvasFormula, names, sets) {
-  const back = canvasFormulaToGrasp(canvasFormula, names);
-  if (back.error) return `it can't be read back (${back.error})`;
-  for (const { values, answer } of sets) {
-    let again;
+  for (const { values, numbers, answer } of sets) {
+    const at = names.map((name) => `${name} = ${values[name]}`).join(', ');
+    let canvas;
     try {
-      again = CalculationQuestion.evaluateCalculationFormula(back.formula, values);
-    } catch {
-      again = NaN;
+      canvas = evaluateCanvasFormula(canvasFormula, numbers);
+    } catch (error) {
+      if (error instanceof FormulaError) return `Canvas's calculator can't work it out (${error.message})`;
+      throw error;
     }
-    if (!sameNumber(answer, again)) {
-      const at = names.map((name) => `${name} = ${values[name]}`).join(', ');
-      return `at ${at} it gives ${again} where GRASP gives ${answer}`;
-    }
+    if (!sameNumber(answer, canvas)) return `at ${at} Canvas's calculator gives ${canvas} where GRASP gives ${answer}`;
   }
   return null;
-}
-
-function formatVariableValue(value, variable) {
-  return variable.scale === 0 ? String(Math.round(value)) : Number(value).toFixed(variable.scale);
 }
 
 function toCanvasFormulaQuestion({ formula, specs, template, decimals, tolerance }) {
@@ -213,9 +263,12 @@ function toCanvasFormulaQuestion({ formula, specs, template, decimals, tolerance
   const stem = canvasStem(template, specs, names);
   if (stem.skip) return stem;
 
+  const variables = specs.map(canvasVariable);
   let sets;
   try {
-    sets = drawValueSets(formula, specs);
+    // Parsed once for every draw.
+    const evaluate = CalculationQuestion.compileCalculationFormula(formula, names);
+    sets = drawValueSets(evaluate, specs, variables, decimals);
   } catch (error) {
     return { skip: `GRASP can't draw values for this question: ${error.message}` };
   }
@@ -225,25 +278,29 @@ function toCanvasFormulaQuestion({ formula, specs, template, decimals, tolerance
   const mismatch = translationMismatch(translated.formula, names, sets);
   if (mismatch) return { skip: `The formula written for Canvas (${translated.formula}) doesn't match GRASP's: ${mismatch}.` };
 
+  const percent = tolerance && tolerance.mode === CalculationQuestion.TOLERANCE_MODES.PERCENT;
   let rule;
-  if (!tolerance) rule = exactRule(sets, decimals);
-  else if (tolerance.mode === CalculationQuestion.TOLERANCE_MODES.PERCENT) rule = { sets, tolerance: `${qtiNumber(tolerance.value)}%` };
-  else rule = { sets, tolerance: qtiNumber(tolerance.value) };
+  if (!tolerance) rule = { sets: exactRuleSets(sets, decimals), tolerance: (stored) => exactRuleTolerance(stored, decimals) };
+  else if (percent) rule = percentRule(sets, tolerance.value, decimals);
+  else {
+    const gaps = (stored) => stored.map(({ answer, shown, stored: s }) => Math.max(Math.abs(answer - s), Math.abs(shown - s)));
+    rule = { sets, tolerance: (stored) => absoluteMargin(tolerance.value, gaps(stored), decimalPlaces) };
+  }
 
-  // Enough decimal places that no answer loses a digit GRASP shows.
+  // Enough decimal places that no answer loses a digit GRASP shows. Canvas
+  // measures a percent from the stored answer and GRASP from the exact one, so
+  // for a percent the answer is stored with four more places.
   const decimalPlaces = Math.max(decimals, ...rule.sets.map(({ answer }) => shownPlaces(answer, decimals)));
-  const variables = specs.map(canvasVariable);
+  const storedPlaces = percent ? decimalPlaces + 4 : decimalPlaces;
+  const stored = rule.sets.map((set) => ({ ...set, stored: roundedAnswer(set.answer, storedPlaces) }));
   return {
     type: 'calculated_question',
     stem: stem.text,
     formula: translated.formula,
     decimalPlaces,
-    tolerance: rule.tolerance,
+    tolerance: rule.tolerance(stored),
     variables,
-    valueSets: rule.sets.map(({ values, answer }) => ({
-      values: Object.fromEntries(variables.map((variable) => [variable.name, formatVariableValue(values[variable.name], variable)])),
-      answer: qtiNumber(roundedAnswer(answer, decimalPlaces)),
-    })),
+    valueSets: stored.map((set) => ({ values: set.values, answer: qtiNumber(set.stored) })),
   };
 }
 
@@ -258,14 +315,22 @@ function toCanvasNumericalQuestion({ formula, template, decimals, tolerance }) {
     return { type: 'numerical_question', stem: template, answer: { min: qtiNumber(tolerance.min), max: qtiNumber(tolerance.max) } };
   }
   const shown = CalculationQuestion.roundAsDisplayed(value, decimals);
+  const places = shownPlaces(value, decimals);
+  // As for formula questions: a percent from the exact value (stored with four
+  // more places), an absolute margin grown by the rounding gap.
+  let exact = shown;
   let margin;
   if (!tolerance) margin = halfShownUnit(value, decimals);
-  else if (tolerance.mode === CalculationQuestion.TOLERANCE_MODES.ABSOLUTE) margin = tolerance.value;
-  else margin = value === 0 ? 0.5 * 10 ** -decimals : Math.abs(value) * (tolerance.value / 100);
+  else if (tolerance.mode === CalculationQuestion.TOLERANCE_MODES.ABSOLUTE) margin = Number(absoluteMargin(tolerance.value, [Math.abs(value - shown)], places));
+  else if (value === 0) margin = 0.5 * 10 ** -decimals;
+  else {
+    exact = roundedAnswer(value, places + 4);
+    margin = roundUpAt(Math.abs(value) * (tolerance.value / 100), places + 4);
+  }
   return {
     type: 'numerical_question',
     stem: template,
-    answer: { exact: qtiNumber(shown), min: qtiNumber(shown - margin), max: qtiNumber(shown + margin) },
+    answer: { exact: qtiNumber(exact), min: qtiNumber(exact - margin), max: qtiNumber(exact + margin) },
   };
 }
 

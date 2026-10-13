@@ -9,7 +9,7 @@
 
 const { toCanvasCalculation, VALUE_SET_COUNT } = require('../../src/utils/canvas-calculation-export');
 const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
-const { canvasFormulaToGrasp } = require('../../src/utils/canvas-formula');
+const { evaluateCanvasFormula } = require('../../src/utils/canvas-formula');
 
 const calc = (overrides = {}) => ({
   questionType: 'calculation',
@@ -32,13 +32,14 @@ function canvasAccepts(student, key, tolerance) {
   return Math.abs(student - answer) <= margin + 1e-12 * Math.max(1, Math.abs(answer));
 }
 
-// The formula as Canvas reads it, evaluated at one value set (the import's
-// translator, checked against 1,610 real Canvas answers in #130).
+// The exported formula worked out at one value set the way Canvas's own
+// calculator works it out (canvas-formula.js follows calcCmd.js).
 function canvasValue(result, set) {
-  const names = result.variables.map((variable) => variable.name);
-  const { formula } = canvasFormulaToGrasp(result.formula, names);
-  return CalculationQuestion.evaluateCalculationFormula(formula, set.values);
+  const values = Object.fromEntries(Object.entries(set.values).map(([name, value]) => [name, Number(value)]));
+  return evaluateCanvasFormula(result.formula, values);
 }
+
+const graspAccepts = (student, exact, decimals = 2) => CalculationQuestion.numericAnswersMatch(student, exact, decimals, null);
 
 describe('formula questions (with variables)', () => {
   test('maps the text, variables, formula, decimals and value sets', () => {
@@ -129,10 +130,42 @@ describe('formula questions (with variables)', () => {
     expect(result.stem).toBe('A [m] g sample in [v] L?');
   });
 
-  test('tolerances: percent and absolute are kept as written', () => {
-    expect(toCanvasCalculation(calc({ calculationTolerance: { mode: 'percent', value: 2 } })).tolerance).toBe('2%');
+  test('a percent is kept as written, with each answer stored to four more places, as GRASP measures it from the exact value', () => {
+    const result = toCanvasCalculation(calc({ calculationTolerance: { mode: 'percent', value: 2 } }));
+    expect(result.tolerance).toBe('2%');
+    expect(result.decimalPlaces).toBe(2);
+    for (const set of result.valueSets) {
+      const exact = Number(set.values.m) / Number(set.values.v);
+      expect(Math.abs(Number(set.answer) - exact)).toBeLessThanOrEqual(0.5e-6);
+      for (const student of [exact * 0.9801, exact * 1.0199]) {
+        expect(CalculationQuestion.numericAnswersMatch(student, exact, 2, { mode: 'percent', value: 2 })).toBe(true);
+        expect(canvasAccepts(student, set.answer, result.tolerance)).toBe(true);
+      }
+    }
     expect(toCanvasCalculation(calc({ calculationAnswerTolerancePercent: 1.5 })).tolerance).toBe('1.5%');
-    expect(toCanvasCalculation(calc({ calculationTolerance: { mode: 'absolute', value: 0.05 } })).tolerance).toBe('0.05');
+  });
+
+  test('an absolute margin grows by the rounding gap, as GRASP measures it from the exact or the shown answer', () => {
+    const tolerance = { mode: 'absolute', value: 0.05 };
+    const result = toCanvasCalculation(calc({ calculationTolerance: tolerance }));
+    expect(Number(result.tolerance)).toBeGreaterThan(0.05);
+    expect(Number(result.tolerance)).toBeLessThanOrEqual(0.055);
+    for (const set of result.valueSets) {
+      const exact = Number(set.values.m) / Number(set.values.v);
+      const shown = CalculationQuestion.roundToDecimals(exact, 2);
+      for (const student of [exact - 0.0499, exact + 0.0499, shown - 0.0499, shown + 0.0499]) {
+        expect(CalculationQuestion.numericAnswersMatch(student, exact, 2, tolerance)).toBe(true);
+        expect(canvasAccepts(student, set.answer, result.tolerance)).toBe(true);
+      }
+    }
+    // Answers with nothing to round keep the margin as written.
+    const whole = toCanvasCalculation(calc({
+      stem: '{{a}} plus {{b}}?',
+      calculationFormula: 'a + b',
+      calculationVariables: [{ name: 'a', min: 1, max: 9, integerOnly: true }, { name: 'b', min: 1, max: 9, integerOnly: true }],
+      calculationTolerance: tolerance,
+    }));
+    expect(whole.tolerance).toBe('0.05');
   });
 
   test('no tolerance: Canvas accepts the answer GRASP shows, and anything that rounds to it, at every value set', () => {
@@ -149,41 +182,79 @@ describe('formula questions (with variables)', () => {
     }
   });
 
-  test('no tolerance, answers shown as a × 10^n: a percent tolerance of half the last shown digit', () => {
+  test('no tolerance, answers shown as a × 10^n with one power of ten: half the last shown digit, exactly', () => {
+    const result = toCanvasCalculation(calc({
+      stem: 'A synthetic rate of {{x}} units?',
+      calculationFormula: 'x * 1e-5',
+      calculationVariables: [{ name: 'x', min: 1, max: 9.9, decimals: 1 }],
+    }));
+    expect(result.tolerance).toBe('5e-8');
+    for (const set of result.valueSets) {
+      const exact = Number(set.values.x) * 1e-5;
+      const shown = CalculationQuestion.roundAsDisplayed(exact, 2);
+      const unit = 1e-7; // the last shown digit of a.bc × 10^-5
+      for (const student of [shown, exact, shown - 0.49 * unit, shown + 0.49 * unit]) {
+        expect(graspAccepts(student, exact)).toBe(true);
+        expect(canvasAccepts(student, set.answer, result.tolerance)).toBe(true);
+      }
+      // One shown digit off is wrong in both.
+      for (const student of [shown - unit, shown + unit]) {
+        expect(graspAccepts(student, exact)).toBe(false);
+        expect(canvasAccepts(student, set.answer, result.tolerance)).toBe(false);
+      }
+    }
+  });
+
+  // GRASP's margin is half the last shown digit, whose size follows the power
+  // of ten; Canvas has one tolerance per question, so it is the percent the
+  // widest set needs: never stricter than GRASP, a few digits more lenient.
+  const acceptsWhatGraspAccepts = (result, exactOf) => {
+    for (const set of result.valueSets) {
+      const exact = exactOf(set);
+      const shown = CalculationQuestion.roundAsDisplayed(exact, 2);
+      const unit = 10 ** (CalculationQuestion.decimalExponentOf(exact) - 2);
+      for (const student of [shown, exact, shown - 0.49 * unit, shown + 0.49 * unit]) {
+        expect(graspAccepts(student, exact)).toBe(true);
+        expect(canvasAccepts(student, set.answer, result.tolerance)).toBe(true);
+      }
+      expect(canvasAccepts(shown + 12 * unit, set.answer, result.tolerance)).toBe(false);
+      expect(canvasAccepts(shown - 12 * unit, set.answer, result.tolerance)).toBe(false);
+      // Stored as Canvas stores answers: rounded to the decimal places.
+      expect(Math.abs(Number(set.answer) - exact)).toBeLessThanOrEqual(Math.max(0.5 * 10 ** -result.decimalPlaces, 1e-12 * exact));
+    }
+  };
+
+  test('no tolerance, a × 10^n answers with different powers of ten: a percent that accepts everything GRASP does', () => {
     const result = toCanvasCalculation(calc({
       stem: '[H+] when the pH is {{p}}?',
       calculationFormula: '10^(-p)',
       calculationVariables: [{ name: 'p', min: 2.1, max: 6, decimals: 1 }],
     }));
-    // Half a digit of the smallest shown mantissa (1.00 at a whole pH): 0.5 %.
     expect(result.tolerance).toMatch(/%$/);
-    expect(parseFloat(result.tolerance)).toBeLessThanOrEqual(0.5);
-    expect(result.decimalPlaces).toBeGreaterThanOrEqual(8);
-    for (const set of result.valueSets) {
-      const exact = 10 ** -Number(set.values.p);
-      expect(CalculationQuestion.usesScientificDisplay(exact, 2)).toBe(true);
-      const shown = CalculationQuestion.roundAsDisplayed(exact, 2);
-      expect(canvasAccepts(shown, set.answer, result.tolerance)).toBe(true);
-      expect(canvasAccepts(exact * 1.02, set.answer, result.tolerance)).toBe(false);
-      // Stored to enough places to keep every digit GRASP shows.
-      expect(Math.abs(Number(set.answer) - exact)).toBeLessThanOrEqual(0.5 * 10 ** -result.decimalPlaces);
-    }
+    expect(parseFloat(result.tolerance)).toBeLessThanOrEqual(1);
+    expect(result.decimalPlaces).toBe(8);
+    acceptsWhatGraspAccepts(result, (set) => 10 ** -Number(set.values.p));
   });
 
-  test('very large answers get the same percent rule', () => {
-    const result = toCanvasCalculation(calc({
+  test('very large answers: the same percent rule, or one margin when they share a power of ten', () => {
+    const particles = (max) => toCanvasCalculation(calc({
       stem: 'Particles in {{n}} mol?',
       calculationFormula: '6.022e23 * n',
-      calculationVariables: [{ name: 'n', min: 1, max: 5, decimals: 1 }],
+      calculationVariables: [{ name: 'n', min: 1, max, decimals: 1 }],
     }));
-    expect(result.formula).toBe('(6.022*10^(23))*n');
-    expect(result.tolerance).toMatch(/%$/);
-    expect(parseFloat(result.tolerance)).toBeLessThanOrEqual(0.5);
-    for (const set of result.valueSets) {
-      const exact = 6.022e23 * Number(set.values.n);
-      expect(Number(set.answer) / exact).toBeCloseTo(1, 11);
-      expect(canvasAccepts(CalculationQuestion.roundAsDisplayed(exact, 2), set.answer, result.tolerance)).toBe(true);
-    }
+    const exactOf = (set) => 6.022e23 * Number(set.values.n);
+
+    const spread = particles(5);
+    expect(spread.formula).toBe('(6.022*10^(23))*n');
+    expect(spread.tolerance).toMatch(/%$/);
+    acceptsWhatGraspAccepts(spread, exactOf);
+
+    // 1 to 1.6 mol are all a.bc × 10^23. Canvas keeps the answer to the decimal
+    // places, so more digits than GRASP shows: the margin also covers that gap.
+    const narrow = particles(1.6);
+    expect(Number(narrow.tolerance)).toBeGreaterThanOrEqual(0.5e21);
+    expect(Number(narrow.tolerance)).toBeLessThanOrEqual(1e21);
+    acceptsWhatGraspAccepts(narrow, exactOf);
   });
 
   test('when plain and a × 10^n answers mix, only the larger group of value sets is kept', () => {
@@ -196,6 +267,61 @@ describe('formula questions (with variables)', () => {
     expect(result.tolerance).toBe('0.005');
     expect(result.valueSets.length).toBeGreaterThan(30);
     for (const set of result.valueSets) expect(Number(set.values.x) ** 3).toBeGreaterThanOrEqual(0.01);
+  });
+
+  test("Canvas's calculator works the exported formula out as GRASP does: a minus and ^ chains are written for it", () => {
+    // Canvas negates only the number or name right after "-" (so -h^2 would be
+    // (-h)^2 and -log(h) an error), and works ^ left to right.
+    const cases = [
+      ['-log10(h)', '-1*log(h)'],
+      ['E^(-h^2/2)', 'e^(-1*h^2/2)'],
+      ['-(h+1)', '-1*(h+1)'],
+      ['2^h^2', '2^(h^2)'],
+      ['-h^2', '-1*h^2'],
+      ['10^-h', '10^-h'],
+    ];
+    for (const [formula, canvas] of cases) {
+      const result = toCanvasCalculation(calc({
+        stem: 'With {{h}}?',
+        calculationFormula: formula,
+        calculationVariables: [{ name: 'h', min: 0.01, max: 0.9, decimals: 2 }],
+      }));
+      expect(result.formula).toBe(canvas);
+      for (const set of result.valueSets) {
+        expect(canvasValue(result, set)).toBeCloseTo(CalculationQuestion.evaluateCalculationFormula(formula, { h: Number(set.values.h) }), 9);
+      }
+    }
+  });
+
+  test('each answer is worked out from the values Canvas shows', () => {
+    // GRASP holds a draw below 1.21 at 1.21, which shows as 1.2 at one decimal:
+    // outside the range, so it is not a value set; 2.42 would have been wrong.
+    const result = toCanvasCalculation(calc({
+      stem: 'Twice {{x}}?',
+      calculationFormula: '2*x',
+      calculationVariables: [{ name: 'x', min: 1.21, max: 1.3, decimals: 1 }],
+    }));
+    expect(result.valueSets).toEqual([{ values: { x: '1.3' }, answer: '2.6' }]);
+  });
+
+  test('a percent tolerance leaves out value sets whose answer is 0, which Canvas could only match exactly', () => {
+    const difference = (formula) => toCanvasCalculation(calc({
+      stem: '{{a}} minus {{b}}?',
+      calculationFormula: formula,
+      calculationVariables: [
+        { name: 'a', min: 1, max: 3, integerOnly: true },
+        { name: 'b', min: 1, max: 3, integerOnly: true },
+      ],
+      calculationTolerance: { mode: 'percent', value: 5 },
+    }));
+    const result = difference('a - b');
+    expect(result.tolerance).toBe('5%');
+    expect(result.valueSets).toHaveLength(6);
+    for (const set of result.valueSets) expect(Number(set.answer)).not.toBe(0);
+    // When every answer is 0, GRASP's rule for 0 is half a unit either side.
+    const zero = difference('a - a + 0*b');
+    expect(zero.tolerance).toBe('0.005');
+    expect(zero.valueSets).toHaveLength(9);
   });
 
   test('value sets whose answer is not finite are left out of the list', () => {
@@ -226,6 +352,12 @@ describe('fixed-answer questions (no variables) become numerical questions', () 
       .toEqual({ exact: '9.81', min: '9.71', max: '9.91' });
     expect(toCanvasCalculation(fixed({ calculationFormula: '200', calculationTolerance: { mode: 'percent', value: 5 } })).answer)
       .toEqual({ exact: '200', min: '190', max: '210' });
+    // A rounded answer: the absolute margin grows by the gap to 0.33 (rounded
+    // up), and a percent is measured from the exact value, as in GRASP.
+    expect(toCanvasCalculation(fixed({ calculationFormula: '1/3', calculationTolerance: { mode: 'absolute', value: 0.01 } })).answer)
+      .toEqual({ exact: '0.33', min: '0.316', max: '0.344' });
+    expect(toCanvasCalculation(fixed({ calculationFormula: '1/3', calculationTolerance: { mode: 'percent', value: 5 } })).answer)
+      .toEqual({ exact: '0.333333', min: '0.316666', max: '0.35' });
     expect(toCanvasCalculation(fixed({ calculationFormula: '11', calculationTolerance: { mode: 'range', min: 10, max: 12 } })).answer)
       .toEqual({ min: '10', max: '12' });
   });
@@ -268,6 +400,12 @@ describe('questions Canvas cannot represent are left out with the reason', () =>
   test('a range tolerance with variables', () => {
     expect(reason({ calculationTolerance: { mode: 'range', min: 1, max: 2 } }))
       .toBe('A range tolerance needs a fixed answer, and this question has variables.');
+  });
+
+  test("a formula Canvas's calculator works out differently", () => {
+    // Canvas's fact() drops the fraction; GRASP's fac() of 1.4 is Γ(2.4).
+    expect(reason({ stem: '{{x}} factorial?', calculationFormula: 'fac(x)', calculationVariables: [{ name: 'x', min: 1, max: 4, decimals: 1 }] }))
+      .toMatch(/^The formula written for Canvas \(fact\(x\)\) doesn't match GRASP's: at x = \d\.\d Canvas's calculator gives /);
   });
 
   test('no finite answer anywhere in the ranges', () => {

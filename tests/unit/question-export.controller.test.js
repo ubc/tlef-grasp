@@ -353,12 +353,12 @@ describe('createQTIItem', () => {
 
 describe('createQTIExport', () => {
   test('emits one <item> per question across mixed types', () => {
-    const xml = createQTIExport('Mixed Quiz', [
+    const xml = createQTIExport('Mixed Quiz', prepareQTIQuestions([
       mcQuestion,
       fibQuestion,
       openQuestion,
       calcQuestion,
-    ]);
+    ]).items);
     expect((xml.match(/<item /g) || []).length).toBe(4);
     expect(xml).toContain('multiple_choice_question');
     expect(xml).toContain('short_answer_question');
@@ -367,8 +367,8 @@ describe('createQTIExport', () => {
     expect(xml).toContain('</questestinterop>');
   });
 
-  test('leaves out a calculation question Canvas cannot represent', () => {
-    const xml = createQTIExport('Mixed Quiz', [mcQuestion, { ...calcQuestion, calculationFormula: 'sinh(m) * v' }]);
+  test('writes only what prepareQTIQuestions kept: not a calculation question Canvas cannot represent', () => {
+    const xml = createQTIExport('Mixed Quiz', prepareQTIQuestions([mcQuestion, { ...calcQuestion, calculationFormula: 'sinh(m) * v' }]).items);
     expect((xml.match(/<item /g) || []).length).toBe(1);
     expect(xml).not.toContain('calculated_question');
   });
@@ -385,7 +385,7 @@ describe('prepareQTIQuestions', () => {
     expect(leftOut).toEqual([{ index: 1, reason: "The formula uses sinh(), which Canvas doesn't support." }]);
 
     // The prepared value sets are the ones written.
-    const xml = createQTIExport('Quiz', items.map((item) => item.question), 'g1', new Map(), items);
+    const xml = createQTIExport('Quiz', items, 'g1', new Map());
     const first = items[1].calculation.valueSets[0];
     expect(xml).toContain(`<var name="m">${first.values.m}</var>`);
   });
