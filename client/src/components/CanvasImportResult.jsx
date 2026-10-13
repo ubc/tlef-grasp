@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { draftsToCheckLabel, resultTotalsRows, slotLabel } from "../lib/canvasImport";
+import {
+  draftsToCheckLabel,
+  partialCreditNote,
+  resultTotalsRows,
+  slotLabel,
+} from "../lib/canvasImport";
 
 const summaryClass =
   "cursor-pointer rounded text-sm font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-primary";
@@ -22,6 +27,7 @@ export default function CanvasImportResult({ result }) {
   // Only the Drafts the import flagged, each with its reasons.
   const withDrafts = quizzes.filter((quiz) => quiz.drafts.length > 0);
   const draftsLabel = draftsToCheckLabel(result);
+  const gradingNote = partialCreditNote(totals);
 
   return (
     <div className="space-y-4">
@@ -45,6 +51,13 @@ export default function CanvasImportResult({ result }) {
           </div>
         ))}
       </dl>
+
+      {gradingNote && (
+        <p className="text-sm text-muted">
+          <i className="fas fa-circle-info mr-1" aria-hidden="true" />
+          {gradingNote}
+        </p>
+      )}
 
       {errors.length > 0 && (
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">

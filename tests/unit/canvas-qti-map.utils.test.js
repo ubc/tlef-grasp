@@ -758,6 +758,89 @@ describe('mapCanvasQuizzes: multiple choice', () => {
   });
 });
 
+// Multiple answers: the same options as multiple choice, with every correct
+// one kept. Canvas Classic gives them partial credit and GRASP grades the
+// exact set, which the quiz notes say; nothing is lost, so no Draft.
+describe('mapCanvasQuizzes: multiple answers', () => {
+  const MA = 'multiple_answers_question';
+
+  test('keeps every correct option through the seeded shuffle, and is not a Draft', () => {
+    const quiz = mapSlots([mcItem({
+      ident: 'gshuffle02',
+      type: MA,
+      stemHtml: '<div><p>Which of these are <em>synthetic</em>?</p></div>',
+      choices: choices(['Alpha', 'Bravo', 'Charlie', 'Delta']),
+      correct: ['1001', '1003'],
+    })]);
+    const [draft] = quiz.slots[0].questions;
+
+    // Canvas order [3, 2, 0, 1]: Alpha lands on C and Charlie on B.
+    expect(draft.payload).toEqual({
+      questionType: 'multiple-answer',
+      title: 'Which of these are synthetic?',
+      stem: 'Which of these are synthetic?',
+      bloom: 'Understand',
+      options: {
+        A: { text: 'Delta', feedback: '' },
+        B: { text: 'Charlie', feedback: '' },
+        C: { text: 'Alpha', feedback: '' },
+        D: { text: 'Bravo', feedback: '' },
+      },
+      correctAnswer: ['B', 'C'],
+    });
+    expect(draft.warnings).toEqual([]);
+    expect(quiz.notes).toEqual([
+      'Canvas gives partial credit on the multiple-answer questions in Question 1; GRASP marks them right only when exactly the correct options are ticked.',
+    ]);
+  });
+
+  test("keeps Canvas order and each option's feedback", () => {
+    const draft = onlyDraft(
+      mcItem({
+        ident: 'gma02',
+        type: MA,
+        choices: choices(['Alpha', 'Bravo', 'Charlie']),
+        correct: ['1002', '1003'],
+        answerFeedback: { 1001: 'Alpha is not one of them.' },
+      }),
+      NO_SHUFFLE,
+    );
+
+    expect(draft.payload.options).toEqual({
+      A: { text: 'Alpha', feedback: 'Alpha is not one of them.' },
+      B: { text: 'Bravo', feedback: '' },
+      C: { text: 'Charlie', feedback: '' },
+    });
+    expect(draft.payload.correctAnswer).toEqual(['B', 'C']);
+  });
+
+  test('imports a question whose every option is correct', () => {
+    const draft = onlyDraft(
+      mcItem({ ident: 'gma03', type: MA, choices: choices(['Alpha', 'Bravo']), correct: ['1001', '1002'] }),
+      NO_SHUFFLE,
+    );
+    expect(draft.payload.correctAnswer).toEqual(['A', 'B']);
+  });
+
+  test('skips one with no correct option', () => {
+    expect(onlySkip(mcItem({ ident: 'gma04', type: MA, correct: null })).reason).toBe(
+      'Canvas marks no answer as correct; GRASP multiple answer needs at least one.'
+    );
+  });
+
+  test('names every slot that has one in a single note', () => {
+    const quiz = mapSlots([
+      groupSection({ ident: 'gma05', title: 'Q01', items: [mcItem({ ident: 'gma06', type: MA, correct: ['1001', '1002'] })] }),
+      groupSection({ ident: 'gma07', title: 'Q02', items: [mcItem({ ident: 'gma08' })] }),
+      groupSection({ ident: 'gma09', title: 'Q03', items: [mcItem({ ident: 'gma10', type: MA, correct: ['1004'] })] }),
+    ]);
+
+    expect(quiz.notes).toEqual([
+      'Canvas gives partial credit on the multiple-answer questions in Q01 and Q03; GRASP marks them right only when exactly the correct options are ticked.',
+    ]);
+  });
+});
+
 describe('mapCanvasQuizzes: numerical', () => {
   const numericalDraft = (answers, extra = {}) => onlyDraft(numericalItem({ ident: 'gnum1', answers, ...extra }));
 
@@ -987,12 +1070,6 @@ describe('mapCanvasQuizzes: fill in the blank', () => {
 describe('mapCanvasQuizzes: skipped items', () => {
   test.each([
     [
-      'multiple answers',
-      mcItem({ ident: 'gskip1', type: 'multiple_answers_question', correct: ['1001', '1003'] }),
-      'multiple_answers_question',
-      "Multiple-answer questions aren't supported in GRASP yet.",
-    ],
-    [
       'multiple dropdowns',
       fimbItem({ ident: 'gskip1', type: 'multiple_dropdowns_question' }),
       'multiple_dropdowns_question',
@@ -1056,7 +1133,7 @@ describe('mapCanvasQuizzes: skipped items', () => {
     const quiz = mapSlots([groupSection({
       ident: 'gmixed',
       title: 'Q10',
-      items: [mcItem({ ident: 'gmix1' }), mcItem({ ident: 'gmix2', type: 'multiple_answers_question' }), mcItem({ ident: 'gmix3' })],
+      items: [mcItem({ ident: 'gmix1' }), fimbItem({ ident: 'gmix2', type: 'multiple_dropdowns_question' }), mcItem({ ident: 'gmix3' })],
     })]);
 
     expect(quiz.slots[0].questions.map((q) => q.itemIdent)).toEqual(['gmix1', 'gmix3']);

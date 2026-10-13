@@ -294,6 +294,25 @@ describe('createQTIItem', () => {
     expect(xml).toContain('<varequal');
   });
 
+  test('multiple-answer produces a multiple_answers_question that needs every correct choice and no other', () => {
+    const xml = createQTIItem(maQuestion, 0, new Map());
+    expect(xml).toContain('<fieldentry>multiple_answers_question</fieldentry>');
+    expect(xml).toContain('rcardinality="Multiple"');
+    const ids = [...xml.matchAll(/<response_label ident="(\d+)">/g)].map((match) => match[1]);
+    expect(ids).toHaveLength(4);
+    // B and D are correct: A and C must not be picked.
+    const scoring = xml.slice(xml.indexOf('<respcondition continue="No">'));
+    expect(scoring.replace(/\s+/g, '')).toContain(
+      '<and>' +
+        `<not><varequalrespident="response1">${ids[0]}</varequal></not>` +
+        `<varequalrespident="response1">${ids[1]}</varequal>` +
+        `<not><varequalrespident="response1">${ids[2]}</varequal></not>` +
+        `<varequalrespident="response1">${ids[3]}</varequal>` +
+        '</and>'
+    );
+    expect(scoring).toContain('<setvar action="Set" varname="SCORE">100</setvar>');
+  });
+
   test('fill-in-the-blank produces a short_answer_question with a varequal per answer', () => {
     const xml = createQTIItem(fibQuestion, 0);
     expect(xml).toContain('short_answer_question');
@@ -513,14 +532,6 @@ describe('prepareQTIQuestions', () => {
     const xml = createQTIExport('Quiz', items, 'g1', new Map());
     const first = items[1].calculation.valueSets[0];
     expect(xml).toContain(`<var name="m">${first.values.m}</var>`);
-  });
-
-  test('leaves a multiple-answer question out, by position, with the reason', () => {
-    const { items, leftOut } = prepareQTIQuestions([mcQuestion, maQuestion]);
-    expect(items.map((item) => item.question)).toEqual([mcQuestion]);
-    expect(leftOut).toEqual([
-      { index: 1, reason: "GRASP can't export multiple-answer questions to Canvas yet." },
-    ]);
   });
 
   test('a question that cannot be read is left out, not a failed export', () => {

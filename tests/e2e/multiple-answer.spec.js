@@ -2,16 +2,19 @@ const { test, expect } = require('@playwright/test');
 const { MongoClient } = require('mongodb');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
 const { SEED, seedMultipleAnswerQuiz, removeMultipleAnswerQuiz } = require('./seed');
-const { escapeRegExp, selectSeededCourse, startQuizFromList } = require('./helpers');
+const { escapeRegExp, getQuizCard, selectSeededCourse, startQuizFromList } = require('./helpers');
+const { readCanvasPackage } = require('../../src/utils/canvas-qti-package');
+const { parseCanvasQuiz } = require('../../src/utils/canvas-qti-parse');
+const { mapCanvasQuizzes } = require('../../src/utils/canvas-qti-map');
 
 // Multiple-answer questions ("select all that apply") end to end, on a quiz
 // this spec seeds and removes. A student ticks options and checks them: a
 // wrong check names the wrong options ticked and says a correct one was
 // missed, never which; the hints come back after a reload; only the exact set
 // is right, and only the first check is graded. The instructor's review shows
-// what was ticked; an instructor writes one in the Add Question wizard, has
-// the AI draft one there, and generates one on the Question Generation page.
-// Opt-in (E2E_SAML=1).
+// what was ticked, and a Canvas export keeps every correct option; an
+// instructor writes one in the Add Question wizard, has the AI draft one there,
+// and generates one on the Question Generation page. Opt-in (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 const { MA_QUESTION } = SEED;
 
@@ -169,6 +172,36 @@ test.describe('Multiple-answer questions', () => {
     await expect(dialog.getByText('Correct, ticked', { exact: true })).toHaveCount(1);
     await expect(dialog.getByText('Wrong, ticked', { exact: true })).toHaveCount(1);
     await expect(dialog.getByText('Correct, not ticked', { exact: true })).toHaveCount(1);
+    await context.close();
+  });
+
+  test('a Canvas export says how Canvas grades it and keeps every correct option', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: BIO_PROF2_AUTH_FILE });
+    const page = await context.newPage();
+    await selectSeededCourse(page, { role: 'instructor' });
+    await page.goto('/quizzes');
+    await getQuizCard(page, SEED.MA_QUIZ_NAME).getByRole('button', { name: 'Export' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export Quiz' });
+    await expect(dialog.getByText(/Canvas gives partial credit on multiple-answer questions/)).toBeVisible();
+
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: /Canvas \(QTI\)/ }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.zip$/);
+    const chunks = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+
+    // Read back the way the Canvas import reads a Canvas export.
+    const pkg = readCanvasPackage(Buffer.concat(chunks));
+    const [quiz] = mapCanvasQuizzes(
+      pkg.quizzes.map(({ ident, xml, metaXml }) => parseCanvasQuiz({ ident, xml, metaXml }))
+    );
+    expect(quiz.skipped).toEqual([]);
+    const [draft] = quiz.slots.flatMap((slot) => slot.questions);
+    expect(draft.payload.questionType).toBe('multiple-answer');
+    expect(draft.payload.correctAnswer.map((key) => draft.payload.options[key].text).sort()).toEqual(
+      [MA_QUESTION.options.A.text, MA_QUESTION.options.D.text].sort()
+    );
     await context.close();
   });
 

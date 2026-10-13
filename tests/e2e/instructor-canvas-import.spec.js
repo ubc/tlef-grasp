@@ -247,6 +247,76 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
   test.use({ storageState: BIO_PROF2_AUTH_FILE });
 
+  // Canvas Classic always gives partial credit on multiple answers; GRASP
+  // grades the exact set. Nothing is lost, so the question is Approved, and
+  // the review and the result both say how it is graded.
+  test('imports a multiple-answers question Approved, saying GRASP grades it all-or-nothing', async ({ page }) => {
+    const stamp = Date.now();
+    const quiz = { ident: `g${stamp}gases`, title: `E2E Canvas Gases ${stamp}` };
+    const prompt = `Which synthetic gases are noble? ${stamp}`;
+    const buffer = await buildExportZip({
+      entries: {
+        'imsmanifest.xml': buildManifest({ quizzes: [quiz] }),
+        [`${quiz.ident}/${quiz.ident}.xml`]: quizXml({
+          ident: quiz.ident,
+          title: quiz.title,
+          slots: [
+            mcItem({
+              ident: 'e2e-gases',
+              type: 'multiple_answers_question',
+              stemHtml: html(`<p>${prompt}</p>`),
+              choices: [
+                { ident: '1201', text: 'Synthetic neon' },
+                { ident: '1202', text: 'Synthetic nitrogen' },
+                { ident: '1203', text: 'Synthetic argon' },
+                { ident: '1204', text: 'Synthetic chlorine' },
+              ],
+              correct: ['1201', '1203'],
+            }),
+          ],
+        }),
+        [`${quiz.ident}/assessment_meta.xml`]: metaXml({ ident: quiz.ident, title: quiz.title, shuffleAnswers: false }),
+      },
+    });
+    const note =
+      'Canvas gives partial credit on the multiple-answer questions in Question 1; GRASP marks them right only when exactly the correct options are ticked.';
+
+    try {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/question-bank');
+      const dialog = await openImportDialog(page);
+      await dialog.getByLabel('Export file').setInputFiles({ name: `gases-${stamp}.zip`, mimeType: 'application/zip', buffer });
+
+      await expect(dialog.getByText('1 quiz · 1 of 1 question can be imported', { exact: true })).toBeVisible();
+      await expect(dialog.getByText(note, { exact: true })).toBeVisible();
+      await expect(dialog.getByText(/Will be saved as Draft/)).toHaveCount(0);
+
+      await dialog.getByRole('button', { name: 'Import 1 question' }).click();
+      await expect(dialog.getByRole('heading', { name: 'Import finished', exact: true })).toBeVisible();
+      await expect(
+        dialog.getByText(
+          '1 multiple-answer question: Canvas gave partial credit; GRASP marks it right only when exactly the correct options are ticked.',
+          { exact: true }
+        )
+      ).toBeVisible();
+      await expect(dialog.getByRole('definition').nth(1)).toHaveText('1');
+      await dialog.getByRole('button', { name: 'Done' }).click();
+      await expect(dialog).toBeHidden();
+
+      const row = page.getByRole('row').filter({ hasText: prompt });
+      await expect(row.getByRole('cell', { name: 'Approved', exact: true })).toBeVisible();
+      await expect(row.getByText('Multiple answer', { exact: true })).toBeVisible();
+      await row.getByRole('button', { name: 'View/Edit' }).click();
+      const edit = page.getByRole('dialog', { name: /Edit question|View question/ });
+      await expect(edit.getByLabel('Mark option A as a correct answer')).toBeChecked();
+      await expect(edit.getByLabel('Mark option B as a correct answer')).not.toBeChecked();
+      await expect(edit.getByLabel('Mark option C as a correct answer')).toBeChecked();
+      await expect(edit.getByLabel('Mark option D as a correct answer')).not.toBeChecked();
+    } finally {
+      await deleteImported(page, [quiz.ident]);
+    }
+  });
+
   test('imports a Canvas quiz export once, then finds it already imported', async ({ page }) => {
     const stamp = Date.now();
     const { buffer, kinetics, thermo, text } = await buildExport(stamp);
