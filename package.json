@@ -25,8 +25,7 @@
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",
     "usage": "node scripts/llm-usage-report.js",
-    "usage:clear": "node scripts/llm-usage-clear.js",
-    "seed:analytics-demo": "node scripts/seed-analytics-demo.js"
+    "usage:clear": "node scripts/llm-usage-clear.js"
   },
   "keywords": [],
   "author": "",
