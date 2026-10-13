@@ -1,4 +1,5 @@
 const MultipleChoiceQuestion = require('./MultipleChoiceQuestion');
+const MultipleAnswerQuestion = require('./MultipleAnswerQuestion');
 const FillInTheBlankQuestion = require('./FillInTheBlankQuestion');
 const OpenEndedQuestion = require('./OpenEndedQuestion');
 const CalculationQuestion = require('./CalculationQuestion');
@@ -9,6 +10,8 @@ class QuestionFactory {
         switch (questionType) {
             case QUESTION_TYPES.MULTIPLE_CHOICE:
                 return MultipleChoiceQuestion;
+            case QUESTION_TYPES.MULTIPLE_ANSWER:
+                return MultipleAnswerQuestion;
             case QUESTION_TYPES.FILL_IN_THE_BLANK:
                 return FillInTheBlankQuestion;
             case QUESTION_TYPES.OPEN_ENDED:

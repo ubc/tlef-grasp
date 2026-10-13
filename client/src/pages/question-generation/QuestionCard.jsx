@@ -6,8 +6,10 @@ import {
   MC_MAX_OPTIONS,
   MC_MIN_OPTIONS,
   addOptionRow,
+  answerKeysOf,
   optionRowsToObject,
   removeOptionRow,
+  toggleAnswerKey,
 } from "../../lib/mcOptions";
 import QuestionImage from "../../components/QuestionImage";
 import QuestionImageField from "../../components/QuestionImageField";
@@ -56,7 +58,13 @@ export default function QuestionCard({
   const isFib = qType === QUESTION_TYPES.FILL_IN_THE_BLANK;
   const isCalc = qType === QUESTION_TYPES.CALCULATION;
   const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
+  // Multiple choice and multiple answer share the option list; a
+  // multiple-answer question marks its correct options with checkboxes and
+  // keeps them as a list of letters.
   const isMcq = !isFib && !isCalc && !isOpen;
+  const isMultipleAnswer = qType === QUESTION_TYPES.MULTIPLE_ANSWER;
+  const isCorrectKey = (correct, key) =>
+    isMultipleAnswer ? answerKeysOf(correct).includes(key) : key === correct;
 
   // Coalesce the current array field with the legacy single-image field.
   const stemImages =
@@ -131,7 +139,9 @@ export default function QuestionCard({
       title: question.title || "",
       stem: question.stem || "",
       stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
-      correctAnswer: question.correctAnswer ?? "",
+      correctAnswer: isMultipleAnswer
+        ? answerKeysOf(question.correctAnswer)
+        : question.correctAnswer ?? "",
       acceptableAnswers: Array.isArray(question.acceptableAnswers)
         ? question.acceptableAnswers.join("\n")
         : "",
@@ -233,7 +243,11 @@ export default function QuestionCard({
       updates.openEndedGradingCriteria = criteria;
     } else {
       const optionKeys = Object.keys(draft.options);
-      if (optionKeys.length > 0 && !optionKeys.includes(draft.correctAnswer)) {
+      if (isMultipleAnswer) {
+        if (optionKeys.length > 0 && !draft.correctAnswer.some((key) => optionKeys.includes(key))) {
+          return showToast("Tick at least one correct option", "error");
+        }
+      } else if (optionKeys.length > 0 && !optionKeys.includes(draft.correctAnswer)) {
         return showToast("Select which option is the correct answer", "error");
       }
       updates.options = Object.fromEntries(
@@ -247,7 +261,9 @@ export default function QuestionCard({
           },
         ])
       );
-      updates.correctAnswer = draft.correctAnswer;
+      updates.correctAnswer = isMultipleAnswer
+        ? draft.correctAnswer.filter((key) => optionKeys.includes(key))
+        : draft.correctAnswer;
     }
     updates.stemImages = draft.stemImages || [];
 
@@ -265,7 +281,9 @@ export default function QuestionCard({
       ? "Calculation"
       : isOpen
         ? "Open-ended"
-        : null;
+        : isMultipleAnswer
+          ? "Multiple answer"
+          : null;
 
   const altAccepted = isFib
     ? (Array.isArray(question.acceptableAnswers) ? question.acceptableAnswers : [])
@@ -604,9 +622,10 @@ export default function QuestionCard({
           )}
           <div className="space-y-2">
             {(isEditing ? draftOptionRows : Object.values(question.options || {})).map((option) => {
-              const isCorrect = isEditing
-                ? option.id === draft.correctAnswer
-                : option.id === question.correctAnswer;
+              const isCorrect = isCorrectKey(
+                isEditing ? draft.correctAnswer : question.correctAnswer,
+                option.id
+              );
               return (
                 <div key={option.id}>
                   <div
@@ -615,8 +634,8 @@ export default function QuestionCard({
                     }`}
                   >
                     <input
-                      type="radio"
-                      name={`q-${question.id}`}
+                      type={isMultipleAnswer ? "checkbox" : "radio"}
+                      name={isMultipleAnswer ? undefined : `q-${question.id}`}
                       checked={isCorrect}
                       disabled={!isEditing}
                       readOnly={!isEditing}
@@ -625,13 +644,17 @@ export default function QuestionCard({
                           ? () =>
                               setDraft((prev) => ({
                                 ...prev,
-                                correctAnswer: option.id,
+                                correctAnswer: isMultipleAnswer
+                                  ? toggleAnswerKey(prev.correctAnswer, option.id)
+                                  : option.id,
                               }))
                           : undefined
                       }
                       aria-label={
                         isEditing
-                          ? `Mark option ${option.id} as the correct answer`
+                          ? isMultipleAnswer
+                            ? `Mark option ${option.id} as a correct answer`
+                            : `Mark option ${option.id} as the correct answer`
                           : undefined
                       }
                       className={`mt-1 h-4 w-4 accent-success ${

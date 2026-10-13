@@ -17,6 +17,14 @@ const MULTIPLE_CHOICE_OPTION = {
     required: ["text", "feedback"],
 };
 
+// The options object for the letters `keys`, each { text, feedback }.
+const optionsSchema = (keys) => ({
+    type: "object",
+    additionalProperties: false,
+    properties: Object.fromEntries(keys.map((key) => [key, MULTIPLE_CHOICE_OPTION])),
+    required: keys,
+});
+
 // The schema is built per request because the option count is a generation
 // setting (issue #144): a course that writes five-option questions in Canvas
 // asks for five here. scratchwork is listed first so constrained decoding
@@ -30,12 +38,7 @@ const buildSchema = (optionCount) => {
         properties: {
             scratchwork: { type: "string" },
             question: { type: "string" },
-            options: {
-                type: "object",
-                additionalProperties: false,
-                properties: Object.fromEntries(keys.map((key) => [key, MULTIPLE_CHOICE_OPTION])),
-                required: keys,
-            },
+            options: optionsSchema(keys),
             correctAnswer: { type: "string", enum: keys },
             explanation: { type: "string" },
         },
@@ -46,6 +49,12 @@ const buildSchema = (optionCount) => {
 const schemaCache = new Map();
 
 class MultipleChoiceQuestion extends Question {
+    // The options object schema for the letters `keys`; multiple answer
+    // generates the same options.
+    static optionsSchema(keys) {
+        return optionsSchema(keys);
+    }
+
     // `mcOptionCount` is how many options to generate (2 to 8, default 4).
     static getJsonSchema({ mcOptionCount } = {}) {
         const count = normalizeMcOptionCount(mcOptionCount);
@@ -94,31 +103,39 @@ class MultipleChoiceQuestion extends Question {
         return `${extra}For multiple-choice, make sure every option is genuinely distinct (no two describe the same concept), that you give exactly the number of options asked for, and that the correct option is the only correct one.`;
     }
 
-    // Shape (options keyed by letter, each {text, feedback}; correctAnswer one of
-    // the letters) is guaranteed by the JSON schema. We only check semantics the
-    // schema can't express (consecutive lettering, distinct options) and
-    // normalize the result.
-    static validateAndNormalize(data) {
+    // The generated options, trimmed, once their semantics check out: at
+    // least MC_MIN_OPTIONS, lettered consecutively from A, no two alike.
+    // Multiple answer checks its options the same way.
+    static normalizeOptions(rawOptions, typeLabel = "multiple-choice") {
         const trimOption = (opt) => ({
             text: String(opt?.text || "").trim(),
             feedback: String(opt?.feedback || "").trim(),
         });
 
-        const keys = optionKeysOf(data.options);
+        const keys = optionKeysOf(rawOptions);
         if (keys.length < MC_MIN_OPTIONS) {
-            throw new Error(`A multiple-choice question needs at least ${MC_MIN_OPTIONS} answer options.`);
+            throw new Error(`A ${typeLabel} question needs at least ${MC_MIN_OPTIONS} answer options.`);
         }
         const expectedKeys = MC_OPTION_KEYS.slice(0, keys.length);
         if (keys.some((key, i) => key !== expectedKeys[i])) {
             throw new Error(`Answer options must be lettered consecutively from A (got ${keys.join(", ")}).`);
         }
 
-        const options = Object.fromEntries(keys.map((key) => [key, trimOption(data.options[key])]));
+        const options = Object.fromEntries(keys.map((key) => [key, trimOption(rawOptions[key])]));
 
         const optionTexts = keys.map((k) => options[k].text.toLowerCase());
         if (new Set(optionTexts).size < keys.length) {
             throw new Error("Two or more answer options have identical or near-identical text.");
         }
+        return { keys, options };
+    }
+
+    // Shape (options keyed by letter, each {text, feedback}; correctAnswer one of
+    // the letters) is guaranteed by the JSON schema. We only check semantics the
+    // schema can't express (consecutive lettering, distinct options) and
+    // normalize the result.
+    static validateAndNormalize(data) {
+        const { keys, options } = MultipleChoiceQuestion.normalizeOptions(data.options);
 
         const correctAnswer = String(data.correctAnswer || "").trim().toUpperCase();
         if (!keys.includes(correctAnswer)) {

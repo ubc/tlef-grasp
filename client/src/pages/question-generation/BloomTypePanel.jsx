@@ -4,6 +4,7 @@ import { formatQuestionTypeLabel } from "../../lib/utils";
 
 const TYPE_ORDER = [
   QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.MULTIPLE_ANSWER,
   QUESTION_TYPES.FILL_IN_THE_BLANK,
   QUESTION_TYPES.CALCULATION,
   QUESTION_TYPES.OPEN_ENDED,
@@ -30,7 +31,10 @@ export default function BloomTypePanel({
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         Question types for {bloomLevel}
       </div>
-      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto">
+      {/* Wraps rather than scrolls: with five types a single row no longer
+          fits beside the objective's total, and a scrolled-off stepper is
+          easy to miss. */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {TYPE_ORDER.map((type) => {
           const count = countFor(type);
           const label = formatQuestionTypeLabel(type);

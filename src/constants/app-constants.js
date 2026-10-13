@@ -228,6 +228,12 @@ CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question l
 
 You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
 
+// Appended to QUESTION_REVIEW_PROMPT only when the questions under review
+// include a multiple-answer one.
+const QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE = `
+
+MULTIPLE ANSWER (questionType "multiple-answer"): students must select every correct option and no other, and correctAnswers lists every correct option. Re-derive each option on its own: every listed option must be correct, every unlisted option must be incorrect, and at least one option must be incorrect. Flag an option that depends on another ("both A and B", "all of the above"), and any option whose truth is ambiguous.`;
+
 const QUESTION_FIX_PROMPT = `An independent quality reviewer examined the {questionType} question you generated above (beginning: "{questionExcerpt}") and flagged it:
 
 REVIEWER'S ISSUE: {issue}
@@ -340,6 +346,7 @@ const QUESTION_TYPES = {
 // The types AI generation can write.
 const GENERATED_QUESTION_TYPES = [
   QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.MULTIPLE_ANSWER,
   QUESTION_TYPES.FILL_IN_THE_BLANK,
   QUESTION_TYPES.CALCULATION,
   QUESTION_TYPES.OPEN_ENDED,
@@ -430,6 +437,7 @@ const MAX_QUESTIONS_PER_OBJECTIVE = 20;
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
+  QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE,
   QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,

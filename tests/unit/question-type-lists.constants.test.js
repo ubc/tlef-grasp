@@ -1,7 +1,7 @@
-// Which question types each AI path may name. Multiple answer is a question
-// type but objective generation never recommends it: instructors add it
-// themselves, so the AI's suggested mix stays as it was before the type
-// existed.
+// Which question types each AI path may name. AI generation writes multiple
+// answer when an instructor asks for it, but objective generation never
+// recommends it: instructors add it themselves, so the AI's suggested mix stays
+// as it was before the type existed.
 
 const {
   QUESTION_TYPES,
@@ -26,13 +26,12 @@ describe('question type lists', () => {
     ]);
   });
 
-  it('does not ask AI generation for multiple answer yet', () => {
-    expect(GENERATED_QUESTION_TYPES).not.toContain(QUESTION_TYPES.MULTIPLE_ANSWER);
-    expect(
-      normalizeQuestionTypes([
-        { bloomLevel: 'Understand', questionType: QUESTION_TYPES.MULTIPLE_ANSWER, count: 2 },
-        { bloomLevel: 'Understand', questionType: QUESTION_TYPES.MULTIPLE_CHOICE, count: 1 },
-      ])
-    ).toEqual([{ bloomLevel: 'Understand', questionType: QUESTION_TYPES.MULTIPLE_CHOICE, count: 1 }]);
+  it('generates multiple answer when an instructor asks for it', () => {
+    expect(GENERATED_QUESTION_TYPES).toContain(QUESTION_TYPES.MULTIPLE_ANSWER);
+    const breakdown = [
+      { bloomLevel: 'Understand', questionType: QUESTION_TYPES.MULTIPLE_ANSWER, count: 2 },
+      { bloomLevel: 'Understand', questionType: QUESTION_TYPES.MULTIPLE_CHOICE, count: 1 },
+    ];
+    expect(normalizeQuestionTypes(breakdown)).toEqual(breakdown);
   });
 });

@@ -68,6 +68,49 @@ const buildResponse = () => ({
 
 const promptFromFirstCall = () => mockGenerateStructured.mock.calls[0][0].prompt;
 
+// Objective generation never suggests multiple answer (instructors add it
+// themselves), even from a model that ignores the schema's enum.
+describe('objective generation suggested question types', () => {
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetRagContentFromMaterials.mockReset();
+    mockGetRagContentFromMaterials.mockResolvedValue('### MATERIAL: Notes (SOURCE ID: material-a)\nMass and energy.');
+  });
+
+  it('drops a multiple-answer suggestion and falls back to the level default', async () => {
+    mockGenerateStructured.mockResolvedValue({
+      content: JSON.stringify({
+        materialIsRelevant: true,
+        objectives: [
+          {
+            name: 'Explain mass–energy equivalence',
+            granularObjectives: [
+              {
+                text: 'State the relation',
+                bloomTaxonomies: ['Understand', 'Apply'],
+                questionTypes: [
+                  { bloomLevel: 'Understand', questionType: 'multiple-answer', count: 2 },
+                  { bloomLevel: 'Apply', questionType: 'calculation', count: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+      usage: {},
+    });
+    const res = buildResponse();
+
+    await generateLearningObjectivesHandler(buildRequest(), res);
+
+    const [granular] = res.json.mock.calls[0][0].objectives[0].granularObjectives;
+    expect(granular.questionTypes).toEqual([
+      { bloomLevel: 'Apply', questionType: 'calculation', count: 1 },
+      { bloomLevel: 'Understand', questionType: 'multiple-choice', count: 1 },
+    ]);
+  });
+});
+
 describe('objective-generation prompt assembly', () => {
   beforeEach(() => {
     mockGenerateStructured.mockReset();

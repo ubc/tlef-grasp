@@ -17,10 +17,7 @@ describe('resolveGenerationQuestionType', () => {
 
     it('does not pin a type AI generation cannot write', () => {
       expect(
-        resolveGenerationQuestionType({
-          requestedType: QUESTION_TYPES.MULTIPLE_ANSWER,
-          bloomLevel: 'Remember',
-        })
+        resolveGenerationQuestionType({ requestedType: 'matching', bloomLevel: 'Remember' })
       ).toBe(DEFAULT_BLOOM_TYPE_PREFERENCES.Remember[0]);
     });
 
