@@ -2,7 +2,8 @@
  * Round trip (#140): GRASP's own Canvas (QTI) export, read back by the Canvas
  * quiz import. A quiz an instructor exported from GRASP to Canvas should come
  * back as the same questions: multiple choice with 2 to 8 options (shuffled
- * once, the correct answer following its option), option and stem images as
+ * once, the correct answer following its option) and their feedback, text that
+ * looks like markup, option and stem images as
  * references into the zip, and fill-in-the-blank (exported as a Canvas short
  * answer) with its accepted answers.
  *
@@ -154,6 +155,33 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
     });
     // The shuffle really ran, so the correct-answer check above means something.
     expect(reordered).toBeGreaterThan(0);
+  });
+
+  test('text that looks like markup, paragraphs and option feedback come back as written', async () => {
+    const original = {
+      questionType: 'multiple-choice',
+      title: 'If x<y and y>z, is <b>x</b> & z ordered?\n\nAnswer for the synthetic case.',
+      stem: 'Select the best answer:',
+      options: {
+        A: { text: 'x<z', feedback: 'Not implied: x<y and y>z say nothing about x and z.' },
+        B: { text: 'Cannot tell', feedback: 'Right, the order of x & z is unknown.' },
+        C: { text: 'z<x', feedback: '' },
+      },
+      correctAnswer: 'B',
+    };
+    const { drafts } = await exportThenImport([original]);
+    const [draft] = drafts;
+
+    // The import writes one line per Canvas paragraph.
+    expect(draft.payload.title).toBe('If x<y and y>z, is <b>x</b> & z ordered?\nAnswer for the synthetic case.');
+    const byText = Object.fromEntries(Object.values(draft.payload.options).map((option) => [option.text, option.feedback]));
+    expect(byText).toEqual({
+      'x<z': original.options.A.feedback,
+      'Cannot tell': original.options.B.feedback,
+      'z<x': '',
+    });
+    expect(draft.payload.options[draft.payload.correctAnswer].text).toBe('Cannot tell');
+    expect(draft.warnings).toEqual([]);
   });
 
   test('a stem image keeps its caption, without the caption paragraph in the question text', async () => {

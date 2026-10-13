@@ -2,6 +2,7 @@ const {
   createCSVExport,
   createQTIExport,
   createQTIItem,
+  createAssessmentMeta,
   buildObjectivesSummary,
   normalizeQuizMeta,
 } = require('../../src/controllers/question');
@@ -320,6 +321,103 @@ describe('createQTIItem', () => {
     };
     const xml = createQTIItem(legacy, 0);
     expect(xml).toContain('multiple_choice_question');
+  });
+});
+
+// The HTML a <mattext texttype="text/html"> carries, as Canvas reads it: the
+// XML entities decoded once.
+function htmlOf(mattextXml) {
+  return mattextXml
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+const stemHtmlOf = (xml) => htmlOf(xml.match(/<mattext texttype="text\/html">([^<]*)<\/mattext>/)[1]);
+
+describe('QTI text is exported as text', () => {
+  // GRASP shows question text escaped, so "x<y" and "<b>" are what students
+  // read. Before this fix, anything that looked like a tag went to Canvas raw.
+  test('characters that look like markup are escaped, not passed through as HTML', () => {
+    const xml = createQTIItem({ ...mcQuestion, title: 'Is x<y & y>z? Use <b>bold</b>.' }, 0);
+    expect(stemHtmlOf(xml)).toBe('<div><p>Is x&lt;y &amp; y&gt;z? Use &lt;b&gt;bold&lt;/b&gt;.</p></div>');
+  });
+
+  test('a blank line starts a new paragraph', () => {
+    const xml = createQTIItem({ ...fibQuestion, stem: 'First part.\n\n  Second part,\nsame paragraph.  \r\n\r\nThird.' }, 0);
+    expect(stemHtmlOf(xml)).toBe('<div><p>First part.</p><p>Second part,\nsame paragraph.</p><p>Third.</p></div>');
+  });
+
+  test('essay feedback keeps the sample answer and criteria as separate paragraphs', () => {
+    const xml = createQTIItem({ ...openQuestion, openEndedSampleAnswer: 'If a < b then b > a.' }, 0);
+    const feedback = htmlOf(xml.match(/<itemfeedback ident="general_fb">[\s\S]*?<mattext texttype="text\/html">([^<]*)<\/mattext>/)[1]);
+    expect(feedback).toBe(
+      '<div><p>Sample answer: If a &lt; b then b &gt; a.</p><p>Grading criteria: Mentions variation, selection pressure, and heritability.</p></div>'
+    );
+  });
+
+  test('the quiz description is escaped the same way', () => {
+    const meta = createAssessmentMeta('Quiz', 'Covers x<y & <i>z</i>', 'g1', 'g2', 3);
+    expect(htmlOf(meta.match(/<description>([^<]*)<\/description>/)[1])).toBe('<div><p>Covers x&lt;y &amp; &lt;i&gt;z&lt;/i&gt;</p></div>');
+    expect(createAssessmentMeta('Quiz', '', 'g1', 'g2', 3)).toContain('<description></description>');
+  });
+});
+
+describe('QTI multiple-choice option feedback', () => {
+  const answerIdsOf = (xml) => xml.match(/<fieldlabel>original_answer_ids<\/fieldlabel>\s*<fieldentry>([\d,]+)<\/fieldentry>/)[1].split(',');
+
+  test('each option with feedback gets a comment shown when that option is picked', () => {
+    const question = {
+      ...mcQuestion,
+      options: {
+        A: { text: 'Oxygen', feedback: 'Plants release oxygen.' },
+        B: { text: 'Carbon dioxide', feedback: 'Right: CO2 < 1% of air & still enough.' },
+        C: { text: 'Nitrogen', feedback: '  ' },
+        D: 'Hydrogen',
+      },
+    };
+    const xml = createQTIItem(question, 2);
+    const [a, b, c, d] = answerIdsOf(xml);
+
+    // A comment condition per option with feedback, both before the scoring one.
+    const conditions = xml.match(/<respcondition[\s\S]*?<\/respcondition>/g);
+    expect(conditions).toHaveLength(3);
+    expect(conditions[0]).toContain('continue="Yes"');
+    expect(conditions[0]).toContain(`<varequal respident="response3">${a}</varequal>`);
+    expect(conditions[0]).toContain(`<displayfeedback feedbacktype="Response" linkrefid="${a}_fb"/>`);
+    expect(conditions[1]).toContain(`<varequal respident="response3">${b}</varequal>`);
+    expect(conditions[2]).toContain('continue="No"');
+    expect(conditions[2]).toContain(`<varequal respident="response3">${b}</varequal>`);
+    expect(conditions[2]).toContain('<setvar action="Set" varname="SCORE">100</setvar>');
+
+    expect(xml).toMatch(new RegExp(`<itemfeedback ident="${a}_fb">[\\s\\S]*?<mattext texttype="text/plain">Plants release oxygen.</mattext>`));
+    expect(xml).toContain('<mattext texttype="text/plain">Right: CO2 &lt; 1% of air &amp; still enough.</mattext>');
+    // Blank feedback and string-form options have nothing to show.
+    expect(xml).not.toContain(`${c}_fb`);
+    expect(xml).not.toContain(`${d}_fb`);
+  });
+
+  test('no feedback writes no comment conditions', () => {
+    const question = { ...mcQuestion, options: { A: 'Oxygen', B: 'Carbon dioxide' }, correctAnswer: 'B' };
+    const xml = createQTIItem(question, 0);
+    expect(xml).not.toContain('itemfeedback');
+    expect(xml.match(/<respcondition/g)).toHaveLength(1);
+  });
+
+  test('answer ids stay distinct even when the random draws repeat', () => {
+    const spy = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const eight = Object.fromEntries('ABCDEFGH'.split('').map((key) => [key, { text: `Option ${key}`, feedback: `Because ${key}` }]));
+      const xml = createQTIItem({ ...mcQuestion, options: eight, correctAnswer: 'H' }, 0);
+      const ids = answerIdsOf(xml);
+      expect(new Set(ids).size).toBe(8);
+      expect(xml).toContain(`<varequal respident="response1">${ids[7]}</varequal>\n            </conditionvar>\n            <setvar`);
+      expect(new Set(xml.match(/<itemfeedback ident="\d+_fb">/g)).size).toBe(8);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

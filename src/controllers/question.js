@@ -17,6 +17,7 @@ const {
   getOptionText,
   getOptionImage,
   getOptionTextOrImageLabel,
+  getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
   stemImagesOf,
@@ -176,14 +177,24 @@ function escapeXml(text) {
     .replace(/'/g, '&apos;');
 }
 
-// Canvas expects HTML content escaped, wrapping bare text in div/p like Canvas does.
+// GRASP question text is plain text: the app escapes it before showing it, so
+// "x<y" or "<b>" is something the student reads, not markup. As Canvas HTML,
+// it is escaped once more, and a blank line starts a new paragraph.
+function plainTextToHtml(text) {
+  return String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeXml(paragraph)}</p>`)
+    .join('');
+}
+
+// Plain text as the escaped HTML a QTI <mattext texttype="text/html"> holds,
+// wrapped in a div like Canvas's own export.
 function escapeHtmlForQTI(text) {
-  if (!text) return '';
-  const textStr = String(text).trim();
-  if (/<[^>]+>/.test(textStr)) {
-    return escapeXml(textStr);
-  }
-  return escapeXml(`<div><p>${textStr}</p></div>`);
+  const html = plainTextToHtml(text);
+  return html ? escapeXml(`<div>${html}</div>`) : '';
 }
 
 // Wrap a value as a properly-escaped CSV field (double embedded quotes).
@@ -870,9 +881,8 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
  */
 function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, questionCount) {
   const safeQuizName = escapeXml(quizName || 'Quiz');
-  const safeDescription = escapeXml(quizDescription || '');
-  // Canvas expects description to be wrapped in <p> tags if it contains HTML
-  const descriptionXml = safeDescription ? `&lt;p&gt;${safeDescription}&lt;/p&gt;` : '';
+  // The description is HTML in Canvas and plain text in GRASP.
+  const descriptionXml = escapeHtmlForQTI(quizDescription);
   const assignmentId = generateCanvasId('g');
   // Canvas sets points_possible to the number of questions (1 point per question)
   const totalPoints = questionCount || 1;
@@ -1029,9 +1039,7 @@ function buildHtmlWithImages(text, imageRefs, imageMap) {
     .filter((x) => x.entry);
   if (bundled.length === 0) return escapeHtmlForQTI(text);
 
-  const textHtml = String(text || '').trim()
-    ? `<p>${escapeXml(String(text).trim())}</p>`
-    : '';
+  const textHtml = plainTextToHtml(text);
   const imgsHtml = bundled
     .map(({ ref, entry }) => {
       // Instructor caption doubles as alt text and a visible caption line.
@@ -1138,13 +1146,23 @@ function buildOptionMattext(q, key, imageMap) {
   return `<mattext texttype="text/plain">${escapeXml(label)}</mattext>`;
 }
 
+// Canvas uses numeric string IDs (4+ digits) for answer choices. They must
+// differ within an item, or the scoring condition would name two choices.
+function generateAnswerIds(count) {
+  const ids = [];
+  while (ids.length < count) {
+    let id = Math.floor(Math.random() * 9000) + 1000;
+    while (ids.includes(String(id))) id += 1;
+    ids.push(String(id));
+  }
+  return ids;
+}
+
 function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
   // Every option the question has (two to eight).
-  const options = getOptionKeys(q).map((key) => buildOptionMattext(q, key, imageMap));
-
-  // Canvas uses numeric string IDs (4+ digits) for answer choices.
-  const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
-  const answerIds = options.map(() => generateNumericId());
+  const keys = getOptionKeys(q);
+  const options = keys.map((key) => buildOptionMattext(q, key, imageMap));
+  const answerIds = generateAnswerIds(options.length);
 
   const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
 
@@ -1160,6 +1178,36 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
                   ${options[i]}
                 </material>
               </response_label>`
+    )
+    .join('');
+
+  // Per-option feedback, written the way Canvas exports answer comments: a
+  // condition that only shows the comment when that choice is picked, ahead of
+  // the scoring condition, and the comment itself as an <itemfeedback>.
+  const feedback = keys
+    .map((key, i) => ({ id: answerIds[i], text: getOptionFeedback(q, key).trim() }))
+    .filter((entry) => entry.text);
+  const feedbackConditions = feedback
+    .map(
+      ({ id }) => `
+          <respcondition continue="Yes">
+            <conditionvar>
+              <varequal respident="${responseId}">${id}</varequal>
+            </conditionvar>
+            <displayfeedback feedbacktype="Response" linkrefid="${id}_fb"/>
+          </respcondition>`
+    )
+    .join('');
+  const feedbackBlocks = feedback
+    .map(
+      ({ id, text }) => `
+        <itemfeedback ident="${id}_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/plain">${escapeXml(text)}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>`
     )
     .join('');
 
@@ -1183,14 +1231,14 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
         <resprocessing>
           <outcomes>
             <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
-          </outcomes>
+          </outcomes>${feedbackConditions}
           <respcondition continue="No">
             <conditionvar>
               <varequal respident="${responseId}">${correctAnswerId}</varequal>
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
-        </resprocessing>
+        </resprocessing>${feedbackBlocks}
       </item>`;
 }
 
@@ -1300,6 +1348,7 @@ module.exports = {
   createCSVExport,
   createQTIExport,
   createQTIItem,
+  createAssessmentMeta,
   buildObjectivesSummary,
   normalizeQuizMeta,
 };
