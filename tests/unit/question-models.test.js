@@ -2,6 +2,7 @@ const { QUESTION_TYPES } = require('../../src/constants/app-constants');
 const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
 const FillInTheBlankQuestion = require('../../src/models/questions/FillInTheBlankQuestion');
 const MultipleChoiceQuestion = require('../../src/models/questions/MultipleChoiceQuestion');
+const MultipleAnswerQuestion = require('../../src/models/questions/MultipleAnswerQuestion');
 const OpenEndedQuestion = require('../../src/models/questions/OpenEndedQuestion');
 const Question = require('../../src/models/questions/Question');
 const QuestionFactory = require('../../src/models/questions/QuestionFactory');
@@ -91,6 +92,9 @@ describe('question model normalization', () => {
   it('maps supported question types to their model classes', () => {
     expect(QuestionFactory.getModel(QUESTION_TYPES.MULTIPLE_CHOICE)).toBe(
       MultipleChoiceQuestion
+    );
+    expect(QuestionFactory.getModel(QUESTION_TYPES.MULTIPLE_ANSWER)).toBe(
+      MultipleAnswerQuestion
     );
     expect(QuestionFactory.getModel(QUESTION_TYPES.FILL_IN_THE_BLANK)).toBe(
       FillInTheBlankQuestion
@@ -199,6 +203,106 @@ describe('question model normalization', () => {
     ).toThrow('correctAnswer must be one of A, B');
   });
 
+  // Select all that apply: one correct option up to all but one, each
+  // incorrect option explained, stored with its correct letters as a list.
+  describe('multiple answer', () => {
+    const option = (text, feedback) => ({ text, feedback });
+    const generated = (correctAnswers, overrides = {}) => ({
+      scratchwork: 'Judged each option on its own.',
+      question: '  Which of these are noble gases?  ',
+      options: {
+        A: option(' Neon ', ''),
+        B: option('Nitrogen', 'Nitrogen is in group 15.'),
+        C: option('Argon', ''),
+        D: option('Chlorine', 'Chlorine is a halogen.'),
+      },
+      correctAnswers,
+      explanation: 'Group 18.',
+      ...overrides,
+    });
+
+    it('asks for the options and a list of correct letters', () => {
+      const schema = MultipleAnswerQuestion.getJsonSchema({ mcOptionCount: 5 });
+      expect(schema.required).toEqual([
+        'scratchwork',
+        'question',
+        'options',
+        'correctAnswers',
+        'explanation',
+      ]);
+      expect(schema.properties.options.required).toEqual(['A', 'B', 'C', 'D', 'E']);
+      expect(schema.properties.correctAnswers).toEqual({
+        type: 'array',
+        items: { type: 'string', enum: ['A', 'B', 'C', 'D', 'E'] },
+      });
+      expect(MultipleAnswerQuestion.getPromptInstruction({ mcOptionCount: 5 })).toContain(
+        'between one and 4 options correct'
+      );
+      expect(MultipleAnswerQuestion.getPromptInstruction({ mcOptionCount: 2 })).toContain(
+        'Make exactly one option correct.'
+      );
+      expect(MultipleAnswerQuestion.getRetrySuffix(2, new Error('every option'))).toContain(
+        'every option'
+      );
+    });
+
+    it('normalizes to the stored shape, correct letters in order', () => {
+      expect(MultipleAnswerQuestion.validateAndNormalize(generated(['c', 'A']))).toEqual({
+        type: QUESTION_TYPES.MULTIPLE_ANSWER,
+        questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+        question: 'Which of these are noble gases?',
+        options: {
+          A: { text: 'Neon', feedback: '' },
+          B: { text: 'Nitrogen', feedback: 'Nitrogen is in group 15.' },
+          C: { text: 'Argon', feedback: '' },
+          D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+        },
+        correctAnswer: ['A', 'C'],
+        explanation: 'Group 18.',
+      });
+      // One correct option is allowed.
+      expect(MultipleAnswerQuestion.validateAndNormalize(generated(['A'], {
+        options: {
+          A: option('Neon', ''),
+          B: option('Nitrogen', 'Group 15.'),
+          C: option('Oxygen', 'Group 16.'),
+          D: option('Chlorine', 'Group 17.'),
+        },
+      })).correctAnswer).toEqual(['A']);
+    });
+
+    it.each([
+      ['no correct option', [], 'at least one correct option'],
+      ['every option correct', ['A', 'B', 'C', 'D'], 'at least one option must be incorrect'],
+      ['a letter it has no option for', ['A', 'E'], 'must list only A, B, C, D'],
+    ])('rejects %s', (_label, correctAnswers, message) => {
+      expect(() => MultipleAnswerQuestion.validateAndNormalize(generated(correctAnswers))).toThrow(message);
+    });
+
+    it('needs feedback on every incorrect option and distinct options', () => {
+      // C is correct; B is not and says nothing about why.
+      expect(() =>
+        MultipleAnswerQuestion.validateAndNormalize(
+          generated(['A', 'C'], {
+            options: {
+              A: option('Neon', ''),
+              B: option('Nitrogen', ''),
+              C: option('Argon', ''),
+              D: option('Chlorine', 'Halogen.'),
+            },
+          })
+        )
+      ).toThrow('Incorrect option(s) B are missing feedback');
+      expect(() =>
+        MultipleAnswerQuestion.validateAndNormalize(
+          generated(['A'], {
+            options: { A: option('Neon', ''), B: option(' neon ', 'Same.') },
+          })
+        )
+      ).toThrow('identical or near-identical text');
+    });
+  });
+
   it('normalizes fill-in-the-blank fallback fields', () => {
     const normalized = FillInTheBlankQuestion.validateAndNormalize({
       topicTitle: 'Important answer???',
@@ -235,7 +339,12 @@ describe('question model normalization', () => {
   // nearly all of them: formulas inconsistent with their own stem, answers that
   // round to zero at the stated precision, ranges no chemist would write.
   it('makes every generated type reason before it commits', () => {
-    for (const model of [MultipleChoiceQuestion, FillInTheBlankQuestion, CalculationQuestion]) {
+    for (const model of [
+      MultipleChoiceQuestion,
+      MultipleAnswerQuestion,
+      FillInTheBlankQuestion,
+      CalculationQuestion,
+    ]) {
       const schema = model.getJsonSchema();
       expect(schema.required[0]).toBe('scratchwork');
       // First in `properties` too: constrained decoding emits fields in order,

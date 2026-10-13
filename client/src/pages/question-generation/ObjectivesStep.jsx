@@ -757,16 +757,16 @@ export default function ObjectivesStep({
           reject the step. */}
       {objectiveCount > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          {/* Options per multiple-choice question for this run (issue #144).
-              Always offered: an objective saved before type breakdowns
-              existed names no types here yet still generates multiple
-              choice through the course's Bloom preferences. */}
+          {/* Options per multiple-choice or multiple-answer question for this
+              run (issue #144). Always offered: an objective saved before type
+              breakdowns existed names no types here yet still generates
+              multiple choice through the course's Bloom preferences. */}
           <label className="flex items-center gap-2 text-sm text-ink">
-            <span>Answer options per multiple-choice question</span>
+            <span>Answer options per multiple-choice or multiple-answer question</span>
             <select
               value={mcOptionCount}
               onChange={(event) => setMcOptionCount(Number(event.target.value))}
-              aria-label="Answer options per multiple-choice question"
+              aria-label="Answer options per multiple-choice or multiple-answer question"
               className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:border-primary focus:outline-none"
             >
               {MC_OPTION_COUNT_CHOICES.map((n) => (

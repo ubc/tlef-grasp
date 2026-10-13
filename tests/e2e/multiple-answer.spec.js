@@ -9,7 +9,8 @@ const { escapeRegExp, selectSeededCourse, startQuizFromList } = require('./helpe
 // wrong check names the wrong options ticked and says a correct one was
 // missed, never which; the hints come back after a reload; only the exact set
 // is right, and only the first check is graded. The instructor's review shows
-// what was ticked, and an instructor writes one in the Add Question wizard.
+// what was ticked; an instructor writes one in the Add Question wizard, has
+// the AI draft one there, and generates one on the Question Generation page.
 // Opt-in (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 const { MA_QUESTION } = SEED;
@@ -33,14 +34,29 @@ const nextCheckBody = (page) =>
     )
     .then((response) => response.json());
 
-async function withQuestions(fn) {
+async function withCollection(name, fn) {
   const client = new MongoClient(process.env.MONGODB_URI, { connectTimeoutMS: 8000 });
   await client.connect();
   try {
-    return await fn(client.db(process.env.MONGODB_DB_NAME || undefined).collection('grasp_question'));
+    return await fn(client.db(process.env.MONGODB_DB_NAME || undefined).collection(name));
   } finally {
     await client.close();
   }
+}
+const withQuestions = (fn) => withCollection('grasp_question', fn);
+
+// Open the add-question wizard on the type step.
+async function openWizard(page) {
+  await selectSeededCourse(page, { role: 'instructor' });
+  await page.goto('/question-bank');
+  await page.getByRole('button', { name: 'Add New Question' }).click();
+  await page.getByRole('button', { name: 'Create a Question' }).click();
+  await page.getByRole('button', { name: /Multiple Answer/ }).click();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByLabel('Meta Learning Objective').selectOption({ label: SEED.OBJECTIVE_NAME });
+  await page.getByLabel('Granular Learning Objective').selectOption({ label: SEED.GRANULAR_NAME });
+  await page.getByLabel("Bloom's Taxonomy Level").selectOption('Remember');
+  await page.getByRole('button', { name: 'Next' }).click();
 }
 
 test.describe('Multiple-answer questions', () => {
@@ -160,21 +176,8 @@ test.describe('Multiple-answer questions', () => {
     const title = `Which of these are noble gases? ${Date.now()}`;
     const context = await browser.newContext({ storageState: BIO_PROF2_AUTH_FILE });
     const page = await context.newPage();
-    await selectSeededCourse(page, { role: 'instructor' });
-    await page.goto('/question-bank');
-
-    await page.getByRole('button', { name: 'Add New Question' }).click();
-    await page.getByRole('button', { name: 'Create a Question' }).click();
-    await page.getByRole('button', { name: /Multiple Answer/ }).click();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByLabel('Meta Learning Objective').selectOption({ label: SEED.OBJECTIVE_NAME });
-    await page.getByLabel('Granular Learning Objective').selectOption({ label: SEED.GRANULAR_NAME });
-    await page.getByLabel("Bloom's Taxonomy Level").selectOption('Remember');
-    await page.getByRole('button', { name: 'Next' }).click();
-
-    // AI can't draft this type yet, so the question is written by hand.
-    await expect(page.getByRole('button', { name: /Generate with AI/ })).toBeDisabled();
-    await expect(page.getByText("AI can't draft multiple-answer questions yet.")).toBeVisible();
+    await openWizard(page);
+    await page.getByRole('button', { name: /Provide my own/ }).click();
     await page.getByRole('button', { name: 'Next' }).click();
 
     await page.getByLabel('Question title').fill(title);
@@ -216,5 +219,100 @@ test.describe('Multiple-answer questions', () => {
     expect(edited.correctAnswer).toEqual(['A', 'B']);
     expect(Object.keys(edited.options)).toEqual(['A', 'B', 'C']);
     await context.close();
+  });
+
+  test('an instructor has the AI draft one in the wizard and saves it', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: BIO_PROF2_AUTH_FILE });
+    const page = await context.newPage();
+    await openWizard(page);
+
+    await page.getByRole('button', { name: /Generate with AI/ }).click();
+    await page.getByLabel('Answer options').selectOption('5');
+    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+
+    // The stubbed draft: five options, two of them marked correct.
+    await expect(page.getByText('AI-drafted', { exact: false })).toBeVisible();
+    const ticks = page.getByRole('checkbox', { name: /^Mark option [A-H] as a correct answer$/ });
+    await expect(ticks).toHaveCount(5);
+    const ticked = [];
+    for (const letter of ['A', 'B', 'C', 'D', 'E']) {
+      if (await page.getByLabel(`Mark option ${letter} as a correct answer`).isChecked()) ticked.push(letter);
+    }
+    expect(ticked).toHaveLength(2);
+
+    const title = await page.getByLabel('Question title').inputValue();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Save Question' }).click();
+    await expect(page.getByText('Question added successfully')).toBeVisible();
+
+    const saved = await withQuestions((questions) => questions.findOne({ title }));
+    expect(saved).toMatchObject({ questionType: 'multiple-answer', correctAnswer: ticked });
+    expect(Object.keys(saved.options)).toEqual(['A', 'B', 'C', 'D', 'E']);
+    await context.close();
+  });
+
+  test('an instructor generates one on the Question Generation page and changes its correct options', async ({
+    browser,
+  }) => {
+    // Changing an objective's question types saves the objective, so the
+    // seeded objectives are put back as they were afterwards.
+    const course = await withCollection('grasp_course', (courses) => courses.findOne({ courseCode: SEED.COURSE_CODE }));
+    const objectivesBefore = await withCollection('grasp_objective', (objectives) =>
+      objectives.find({ courseId: course._id }).toArray()
+    );
+    const context = await browser.newContext({ storageState: BIO_PROF2_AUTH_FILE });
+    const page = await context.newPage();
+    try {
+      await selectSeededCourse(page, { role: 'instructor' });
+      await page.goto('/question-generation');
+      await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
+      await page.getByRole('checkbox', { name: SEED.OBJECTIVE_NAME, exact: true }).check();
+      await page.getByRole('button', { name: 'Add 1 objective' }).click();
+
+      // The seeded objective asks for one multiple-choice question at
+      // Understand and one at Apply; Understand's becomes multiple answer.
+      await page.getByRole('button', { name: /^Understand/ }).click();
+      await page.getByRole('button', { name: 'Increase Multiple answer count for Understand' }).click();
+      await page.getByRole('button', { name: 'Decrease Multiple choice count for Understand' }).click();
+
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(page.getByRole('heading', { name: 'Generate Questions' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add to Quiz' })).toBeEnabled({ timeout: 60_000 });
+
+      // The multiple-answer card: its chip, and a checkbox per option in edit mode.
+      const card = page
+        .locator('div.rounded-xl.border-surface-border')
+        .filter({ has: page.getByText('Multiple answer', { exact: true }) });
+      await expect(card).toHaveCount(1);
+      await card.getByRole('button', { name: 'Edit' }).click();
+      const box = (letter) => card.getByLabel(`Mark option ${letter} as a correct answer`);
+      const checkedLetters = async () => {
+        const letters = [];
+        for (const letter of ['A', 'B', 'C', 'D']) {
+          if (await box(letter).isChecked()) letters.push(letter);
+        }
+        return letters;
+      };
+      const before = await checkedLetters();
+      expect(before).toHaveLength(2);
+
+      // Tick a third correct option and save; it stays ticked.
+      const added = ['A', 'B', 'C', 'D'].find((letter) => !before.includes(letter));
+      await box(added).check();
+      await card.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText('Question updated successfully')).toBeVisible();
+      await card.getByRole('button', { name: 'Edit' }).click();
+      expect(await checkedLetters()).toEqual([...before, added].sort());
+      await card.getByRole('button', { name: 'Cancel' }).click();
+    } finally {
+      await context.close();
+      await withCollection('grasp_objective', async (objectives) => {
+        const keep = new Set(objectivesBefore.map((objective) => String(objective._id)));
+        await objectives.deleteMany({ courseId: course._id, _id: { $nin: objectivesBefore.map((o) => o._id) } });
+        for (const objective of objectivesBefore) {
+          if (keep.has(String(objective._id))) await objectives.replaceOne({ _id: objective._id }, objective);
+        }
+      });
+    }
   });
 });

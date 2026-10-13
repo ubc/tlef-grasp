@@ -100,10 +100,11 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     (g) => getObjectId(g) === granularObjectiveId
   );
   // AI generation retrieves context from the objective's linked materials.
-  const hasMaterials = (selectedObjective?.materialIds?.length || 0) > 0;
-  // AI generation doesn't write multiple-answer questions yet.
-  const aiWritesType = questionType !== QUESTION_TYPES.MULTIPLE_ANSWER;
-  const aiAvailable = hasMaterials && aiWritesType;
+  const aiAvailable = (selectedObjective?.materialIds?.length || 0) > 0;
+  // Multiple choice and multiple answer: the AI drafts a chosen number of options.
+  const hasOptions =
+    questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+    questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
 
   // Any change to the inputs that feed generation invalidates a prior AI draft.
   const resetGeneratedDraft = () => {
@@ -141,9 +142,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     if (step === 3) {
       if (source === "ai" && !aiAvailable) {
         showToast(
-          aiWritesType
-            ? "This objective has no linked materials — choose manual entry or link materials first"
-            : "AI can't draft multiple-answer questions yet — provide the question yourself",
+          "This objective has no linked materials — choose manual entry or link materials first",
           "error"
         );
         return false;
@@ -525,8 +524,6 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
               onClick={() => {
                 setQuestionType(card.type);
                 resetGeneratedDraft();
-                // AI doesn't draft this type yet, so it can only be written by hand.
-                if (card.type === QUESTION_TYPES.MULTIPLE_ANSWER) setSource("manual");
               }}
               className={`flex flex-col items-center gap-1.5 rounded-xl border-2 p-5 text-center transition-colors ${
                 questionType === card.type
@@ -679,13 +676,13 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
             <p className={`${hintClass} flex items-start gap-1.5`}>
               <i className="fas fa-info-circle mt-0.5 text-warning" />
               <span>
-                {aiWritesType
-                  ? "AI generation is unavailable because this learning objective has no linked course materials. Link materials to the objective, or provide the question yourself."
-                  : "AI can't draft multiple-answer questions yet. Provide the question yourself."}
+                AI generation is unavailable because this learning objective has no
+                linked course materials. Link materials to the objective, or provide
+                the question yourself.
               </span>
             </p>
           )}
-          {source === "ai" && questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
+          {source === "ai" && hasOptions && (
             <div>
               <label htmlFor="wiz-ai-option-count" className={labelClass}>
                 Answer options

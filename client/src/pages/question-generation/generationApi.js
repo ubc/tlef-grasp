@@ -1,7 +1,12 @@
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { runPool } from "../../lib/async-pool";
-import { normalizeMcOptionCount, optionKeysOf, optionRowsOf } from "../../lib/mcOptions";
+import {
+  answerKeysOf,
+  normalizeMcOptionCount,
+  optionKeysOf,
+  optionRowsOf,
+} from "../../lib/mcOptions";
 import {
   EMPTY_TOLERANCE_FORM,
   resolveTolerance,
@@ -352,6 +357,7 @@ export function convertQuestionsToGroups(questions) {
       const isFib = qType === QUESTION_TYPES.FILL_IN_THE_BLANK;
       const isCalc = qType === QUESTION_TYPES.CALCULATION;
       const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
+      const isMultipleAnswer = qType === QUESTION_TYPES.MULTIPLE_ANSWER;
 
       const common = {
         id: question.id,
@@ -428,6 +434,18 @@ export function convertQuestionsToGroups(questions) {
           openEndedGradingCriteria: String(
             question.openEndedGradingCriteria || ""
           ).trim(),
+        };
+      } else if (isMultipleAnswer) {
+        // The prompt is the title; a stem repeating it is never shown twice,
+        // and students are told to select all that apply.
+        card = {
+          ...common,
+          title: question.text,
+          stem: question.text,
+          questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+          options: normalizeOptions(question.options),
+          correctAnswer: answerKeysOf(question.correctAnswer),
+          acceptableAnswers: [],
         };
       } else {
         card = {
@@ -588,6 +606,7 @@ export function cardToWizardForm(card) {
       { id: "D", text: "", feedback: "" },
     ],
     correctAnswer: "A",
+    correctAnswers: [],
     fibCorrect: "",
     fibAcceptable: "",
     calcFormula: "",
@@ -603,6 +622,10 @@ export function cardToWizardForm(card) {
     form.options = optionRowsOf(opts);
     form.correctAnswer =
       card.correctAnswer && opts[card.correctAnswer] ? card.correctAnswer : "A";
+  } else if (qt === QUESTION_TYPES.MULTIPLE_ANSWER) {
+    const opts = card.options || {};
+    form.options = optionRowsOf(opts);
+    form.correctAnswers = answerKeysOf(card.correctAnswer).filter((key) => opts[key]);
   } else if (qt === QUESTION_TYPES.FILL_IN_THE_BLANK) {
     form.fibCorrect = card.correctAnswer || card.acceptableAnswers?.[0] || "";
     const rest = (card.acceptableAnswers || []).filter(

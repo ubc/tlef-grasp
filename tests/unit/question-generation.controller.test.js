@@ -636,3 +636,128 @@ describe('generateQuestionsWithRagHandler retry turns', () => {
     expect(retryMessages.at(-1).content).toContain('exactly one blank');
   });
 });
+
+describe('generateQuestionsWithRagHandler multiple answer', () => {
+  const MultipleChoiceQuestion = require('../../src/models/questions/MultipleChoiceQuestion');
+  const FillInTheBlankQuestion = require('../../src/models/questions/FillInTheBlankQuestion');
+  const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
+  const OpenEndedQuestion = require('../../src/models/questions/OpenEndedQuestion');
+
+  const callArgs = (i) => mockGenerateStructured.mock.calls[i][0];
+  const opening = (i) => callArgs(i).messages[0].content;
+  const reviewPrompt = (i) => callArgs(i).prompt;
+
+  // Select all that apply: A (Neon) and C (Argon) are correct.
+  const makeMultipleAnswer = (question, correctAnswers = ['A', 'C']) => ({
+    scratchwork: 'Judged each option on its own.',
+    question,
+    options: {
+      A: { text: 'Neon', feedback: '' },
+      B: { text: 'Nitrogen', feedback: 'Nitrogen is in group 15.' },
+      C: { text: 'Argon', feedback: '' },
+      D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+    },
+    correctAnswers,
+    explanation: 'Neon and argon are in group 18.',
+  });
+
+  const multipleAnswerRequest = () => ({
+    body: { ...buildRequest().body, questionType: 'multiple-answer' },
+  });
+
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetExistingQuestionTexts.mockReset();
+    mockGetExistingQuestionTexts.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('leaves a batch that does not ask for it exactly as before', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('What is ATP?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    // The four types' rules, in their order, and nothing else.
+    const fourTypes = [
+      ['multiple-choice', MultipleChoiceQuestion],
+      ['fill-in-the-blank', FillInTheBlankQuestion],
+      ['calculation', CalculationQuestion],
+      ['open-ended', OpenEndedQuestion],
+    ]
+      .map(([type, model]) => `--- Instructions for question type "${type}" ---\n${model.getPromptInstruction({})}`)
+      .join('\n\n');
+    expect(opening(0)).toContain(fourTypes);
+    expect(opening(0)).not.toContain('multiple-answer');
+    expect(reviewPrompt(1)).not.toContain('MULTIPLE ANSWER');
+  });
+
+  it('asks for it with its rules and schema, and names it on the turn', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMultipleAnswer('Which are noble gases?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+
+    await generateQuestionsWithRagHandler(multipleAnswerRequest(), buildResponse());
+
+    expect(opening(0)).toContain('--- Instructions for question type "multiple-answer" ---');
+    expect(opening(0)).toContain('Never make every option');
+    expect(callArgs(0).schema.properties.correctAnswers.items.enum).toEqual(['A', 'B', 'C', 'D']);
+    expect(callArgs(0).messages.at(-1).content).toContain('MULTIPLE-ANSWER');
+  });
+
+  it('moves each correct letter with its option when it shuffles them', async () => {
+    // Math.random() of 0 turns A B C D into B C D A.
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMultipleAnswer('Which are noble gases?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+    const res = buildResponse();
+
+    await generateQuestionsWithRagHandler(multipleAnswerRequest(), res);
+
+    const [question] = res.json.mock.calls[0][0].questions;
+    expect(question.questionType).toBe('multiple-answer');
+    expect(Object.fromEntries(Object.entries(question.options).map(([k, o]) => [k, o.text]))).toEqual({
+      A: 'Nitrogen',
+      B: 'Argon',
+      C: 'Chlorine',
+      D: 'Neon',
+    });
+    // Neon and Argon, wherever they landed.
+    expect(question.correctAnswer).toEqual(['B', 'D']);
+  });
+
+  it('reviews it against every correct letter, with the multiple-answer checks', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMultipleAnswer('Which are noble gases?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+
+    await generateQuestionsWithRagHandler(multipleAnswerRequest(), buildResponse());
+
+    const prompt = reviewPrompt(1);
+    expect(prompt).toContain('MULTIPLE ANSWER (questionType "multiple-answer")');
+    expect(prompt).toMatch(/"correctAnswers": \[\s*"[A-D]",\s*"[A-D]"\s*\]/);
+  });
+
+  it('retries a response that marks every option correct', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({
+        content: JSON.stringify(makeMultipleAnswer('Which are gases?', ['A', 'B', 'C', 'D'])),
+        usage: {},
+      })
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMultipleAnswer('Which are noble gases?')), usage: {} })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+    const res = buildResponse();
+
+    await generateQuestionsWithRagHandler(multipleAnswerRequest(), res);
+
+    expect(callArgs(1).messages.at(-1).content).toContain('at least one option must be incorrect');
+    const [question] = res.json.mock.calls[0][0].questions;
+    expect(question.correctAnswer).toHaveLength(2);
+  });
+});
