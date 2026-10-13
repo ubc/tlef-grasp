@@ -131,6 +131,24 @@ describe('graspFormulaToCanvas', () => {
     else expect(result).toEqual({ formula: canvas });
   });
 
+  // expr-eval reads 6.022e23 as one number; Canvas has no e-notation (in a
+  // Canvas formula, "2e3" is not a number), so it is written as a power of ten.
+  test.each([
+    ['6.022e23*n', ['n'], '(6.022*10^(23))*n'],
+    ['1.5E-3 + x', ['x'], '(1.5*10^(-3))+x'],
+    ['x*2e+3', ['x'], 'x*(2*10^(3))'],
+    ['2E*x', ['x'], '2*e*x'],
+  ])('writes e-notation %s as a power of ten', (grasp, variables, canvas) => {
+    expect(graspFormulaToCanvas(grasp, variables)).toEqual({ formula: canvas });
+    const values = Object.fromEntries(variables.map((name) => [name, 3]));
+    const back = canvasFormulaToGrasp(canvas, variables).formula;
+    expect(evaluate(back, values)).toBeCloseTo(evaluate(grasp.replace(/^2E/, '2*E'), values), 9);
+  });
+
+  test('the Canvas direction still refuses e-notation', () => {
+    expect(canvasFormulaToGrasp('2e3*x', ['x'])).toEqual({ error: 'uses "e3", which isn\'t one of the question\'s variables' });
+  });
+
   test('round-trips the real export formulas', () => {
     const real = [
       ['-1.0*log(x,10)', ['x'], '-1.0*log(x)'],

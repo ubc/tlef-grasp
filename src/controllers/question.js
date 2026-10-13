@@ -24,6 +24,7 @@ const {
 const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
 const { withoutImportFields } = require('../utils/import-provenance');
 const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
+const { toCanvasCalculation } = require('../utils/canvas-calculation-export');
 const databaseService = require('../services/database');
 
 // --- Objective enrichment for export ----------------------------------------
@@ -191,14 +192,54 @@ function csvField(value) {
   return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
 }
 
-// Calculation questions have no QTI export: they were cut from the Canvas
-// export (issue #46) because their parameterized model needs verification
-// against a live Canvas import before we ship it. CSV and JSON still include
-// them as data.
-function filterQTIExportableQuestions(questions) {
-  return questions.filter(
-    (q) => normalizeQuestionType(q) !== QUESTION_TYPES.CALCULATION
-  );
+// What a Canvas (QTI) export contains (#63): every question, each calculation
+// question with its Canvas content worked out once (its value sets are drawn
+// at random), and the calculation questions Canvas can't represent, left out
+// with the reason.
+function prepareQTIQuestions(questions) {
+  const items = [];
+  const leftOut = [];
+  questions.forEach((question, index) => {
+    if (normalizeQuestionType(question) !== QUESTION_TYPES.CALCULATION) {
+      items.push({ question, calculation: null });
+      return;
+    }
+    let calculation;
+    try {
+      calculation = toCanvasCalculation(question);
+    } catch (error) {
+      calculation = { skip: `GRASP couldn't read this question: ${error.message}` };
+    }
+    if (calculation.skip) leftOut.push({ index, reason: calculation.skip });
+    else items.push({ question, calculation });
+  });
+  return { items, leftOut };
+}
+
+const H5P_LEFT_OUT_REASON = 'H5P has no question type for calculations with variables.';
+
+// The questions an export left out, for the export dialog: their positions in
+// the request's question list (the client has the questions) and the reasons.
+// Sent as a response header beside the file, so it is kept to a couple of
+// kilobytes, well inside proxy header limits; `count` is always the full number.
+const LEFT_OUT_HEADER = 'X-Export-Left-Out';
+const LEFT_OUT_HEADER_MAX_LENGTH = 2000;
+
+function leftOutSummary(leftOut) {
+  const summary = { count: leftOut.length, questions: [] };
+  for (const { index, reason } of leftOut) {
+    summary.questions.push({ index, reason: String(reason).slice(0, 300) });
+    if (encodeURIComponent(JSON.stringify(summary)).length > LEFT_OUT_HEADER_MAX_LENGTH) {
+      summary.questions.pop();
+      break;
+    }
+  }
+  return summary;
+}
+
+function setLeftOutHeader(res, leftOut) {
+  if (leftOut.length === 0) return;
+  res.setHeader(LEFT_OUT_HEADER, encodeURIComponent(JSON.stringify(leftOutSummary(leftOut))));
 }
 
 // Get questions for a course
@@ -539,23 +580,29 @@ const exportQuestionsHandler = async (req, res) => {
         break;
       case 'h5p': {
         const h5pQuestions = filterH5PExportableQuestions(questions);
+        const leftOut = questions.flatMap((question, index) =>
+          (h5pQuestions.includes(question) ? [] : [{ index, reason: H5P_LEFT_OUT_REASON }]));
         if (h5pQuestions.length === 0) {
           return res.status(400).json({
-            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use CSV or JSON instead."
+            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use Canvas (QTI), CSV or JSON instead.",
+            leftOut: leftOutSummary(leftOut),
           });
         }
+        setLeftOutHeader(res, leftOut);
         return await createH5PZipExport(res, course, h5pQuestions, quizName);
       }
       case 'qti':
       default: {
         // Canvas requires QTI in ZIP format
-        const qtiQuestions = filterQTIExportableQuestions(questions);
-        if (qtiQuestions.length === 0) {
+        const { items, leftOut } = prepareQTIQuestions(questions);
+        if (items.length === 0) {
           return res.status(400).json({
-            error: "This quiz only contains calculation questions, which are not yet supported in Canvas (QTI) export. Use CSV or JSON instead."
+            error: "None of these questions can be exported to Canvas (QTI). Use CSV or JSON instead.",
+            leftOut: leftOutSummary(leftOut),
           });
         }
-        return await createQTIZipExport(res, course, qtiQuestions, quizName, quizDescription);
+        setLeftOutHeader(res, leftOut);
+        return await createQTIZipExport(res, course, items, quizName, quizDescription);
       }
     }
 
@@ -806,7 +853,8 @@ async function createH5PZipExport(res, course, questions, quizName) {
 /**
  * Create QTI export as ZIP file (Canvas requires ZIP format with specific structure)
  */
-async function createQTIZipExport(res, course, questions, quizName, quizDescription) {
+async function createQTIZipExport(res, course, items, quizName, quizDescription) {
+  const questions = items.map((item) => item.question);
   const timestamp = Date.now();
   const filename = `questions-${course}-${timestamp}.zip`;
 
@@ -841,7 +889,7 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
   const title = quizName || course || 'Quiz';
 
   // Generate QTI XML (Canvas format)
-  const qtiXml = createQTIExport(title, questions, assessmentId, imageMap);
+  const qtiXml = createQTIExport(title, questions, assessmentId, imageMap, items);
 
   // Create manifest (Canvas Common Cartridge format)
   const { manifest, metaId } = createIMSManifest(course, assessmentId, timestamp, imageFiles);
@@ -1044,8 +1092,9 @@ function buildHtmlWithImages(text, imageRefs, imageMap) {
   return escapeXml(html);
 }
 
-function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map()) {
-  const questions = filterQTIExportableQuestions(allQuestions);
+// `items` is prepareQTIQuestions(questions).items, passed in when the caller has
+// already prepared them (and reported what was left out).
+function createQTIExport(course, questions, assessmentId, imageMap = new Map(), items = prepareQTIQuestions(questions).items) {
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 
@@ -1060,8 +1109,8 @@ function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map(
     </qtimetadata>
     <section ident="root_section">`;
 
-  questions.forEach((q, index) => {
-    qti += createQTIItem(q, index, imageMap);
+  items.forEach(({ question, calculation }, index) => {
+    qti += createQTIItem(question, index, imageMap, calculation);
   });
 
   qti += `
@@ -1072,9 +1121,17 @@ function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map(
   return qti;
 }
 
-// Dispatch a single question to the appropriate Canvas QTI item builder.
-function createQTIItem(q, index, imageMap) {
+// Dispatch a single question to the appropriate Canvas QTI item builder. A
+// calculation question's Canvas content is worked out here unless the caller
+// already did (prepareQTIQuestions); one Canvas can't represent writes nothing.
+function createQTIItem(q, index, imageMap, calculation) {
   const type = normalizeQuestionType(q);
+  if (type === QUESTION_TYPES.CALCULATION) {
+    const canvas = calculation || toCanvasCalculation(q);
+    if (canvas.skip) return '';
+    const html = buildHtmlWithImages(canvas.stem.trim() ? canvas.stem : `Question ${index + 1}`, stemImagesOf(q), imageMap);
+    return canvas.type === 'numerical_question' ? buildNumericalItem(canvas, html) : buildCalculatedItem(canvas, html);
+  }
   let questionText = getQuestionText(q);
   if (!questionText.trim()) {
     questionText = `Question ${index + 1}`;
@@ -1088,10 +1145,6 @@ function createQTIItem(q, index, imageMap) {
       return buildShortAnswerItem(q, questionHtml);
     case QUESTION_TYPES.OPEN_ENDED:
       return buildEssayItem(q, questionHtml);
-    case QUESTION_TYPES.CALCULATION:
-      // No QTI representation shipped; filtered out upstream. Guard against
-      // direct calls so a calc question can never masquerade as another type.
-      return '';
     case QUESTION_TYPES.MULTIPLE_CHOICE:
     default:
       return buildMultipleChoiceItem(q, index, questionHtml, imageMap);
@@ -1234,6 +1287,147 @@ ${conditions}
       </item>`;
 }
 
+// Numeric ids for a Canvas item's answers (value sets, a numerical answer),
+// distinct within the item.
+function generateNumericIds(count) {
+  const first = Math.floor(Math.random() * 9000) + 1000;
+  return Array.from({ length: count }, (_, i) => String(first + i));
+}
+
+// Calculation question with variables -> Canvas formula question, from
+// toCanvasCalculation. Canvas scores it from <itemproc_extension>, not from
+// the <other/> conditions, which only mirror Canvas's own export.
+function buildCalculatedItem(calculation, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const setIds = generateNumericIds(calculation.valueSets.length);
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${setIds.join(',')}</fieldentry>
+            </qtimetadatafield>`;
+  const variables = calculation.variables
+    .map(
+      (variable) => `
+              <var name="${escapeXml(variable.name)}" scale="${variable.scale}">
+                <min>${escapeXml(variable.min)}</min>
+                <max>${escapeXml(variable.max)}</max>
+              </var>`
+    )
+    .join('');
+  const valueSets = calculation.valueSets
+    .map((set, i) => {
+      const values = Object.entries(set.values)
+        .map(([name, value]) => `
+                <var name="${escapeXml(name)}">${escapeXml(value)}</var>`)
+        .join('');
+      return `
+              <var_set ident="${setIds[i]}">${values}
+                <answer>${escapeXml(set.answer)}</answer>
+              </var_set>`;
+    })
+    .join('');
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('calculated_question', assessmentQuestionId, extraFields)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition title="correct">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">100</setvar>
+          </respcondition>
+          <respcondition title="incorrect">
+            <conditionvar>
+              <not>
+                <other/>
+              </not>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">0</setvar>
+          </respcondition>
+        </resprocessing>
+        <itemproc_extension>
+          <calculated>
+            <answer_tolerance>${escapeXml(calculation.tolerance)}</answer_tolerance>
+            <formulas decimal_places="${calculation.decimalPlaces}">
+              <formula>${escapeXml(calculation.formula)}</formula>
+            </formulas>
+            <vars>${variables}
+            </vars>
+            <var_sets>${valueSets}
+            </var_sets>
+          </calculated>
+        </itemproc_extension>
+      </item>`;
+}
+
+// Calculation question with a fixed answer -> Canvas numerical question, from
+// toCanvasCalculation: an exact answer with a margin (Canvas's <or> of the
+// value and its bounds), or for a range tolerance just the bounds.
+function buildNumericalItem(calculation, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const [answerId] = generateNumericIds(1);
+  const { exact, min, max } = calculation.answer;
+
+  const test = exact === undefined
+    ? `
+              <vargte respident="response1">${escapeXml(min)}</vargte>
+              <varlte respident="response1">${escapeXml(max)}</varlte>`
+    : `
+              <or>
+                <varequal respident="response1">${escapeXml(exact)}</varequal>
+                <and>
+                  <vargte respident="response1">${escapeXml(min)}</vargte>
+                  <varlte respident="response1">${escapeXml(max)}</varlte>
+                </and>
+              </or>`;
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${answerId}</fieldentry>
+            </qtimetadatafield>`;
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('numerical_question', assessmentQuestionId, extraFields)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>${test}
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+}
+
 // Open-ended -> Canvas "essay" question (manually graded). Sample answer and
 // grading criteria are attached as general feedback so instructors keep them.
 function buildEssayItem(q, questionHtml) {
@@ -1302,4 +1496,6 @@ module.exports = {
   createQTIItem,
   buildObjectivesSummary,
   normalizeQuizMeta,
+  prepareQTIQuestions,
+  leftOutSummary,
 };

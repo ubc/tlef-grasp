@@ -61,7 +61,10 @@ class FormulaError extends Error {}
 // so precedence is whatever the target engine does with the same characters;
 // the two dialects agree on + - * / ^ and parentheses.
 
-function tokenize(formula) {
+// `exponents` reads e-notation ("6.022e23", "1.5E-3") as one number, as
+// expr-eval does. Only GRASP formulas are read that way: in Canvas, "2e3" is
+// not a number.
+function tokenize(formula, { exponents = false } = {}) {
   const tokens = [];
   const text = String(formula);
   let i = 0;
@@ -76,6 +79,12 @@ function tokenize(formula) {
       while (j < text.length && /[0-9.]/.test(text[j])) j += 1;
       const value = text.slice(i, j);
       if (!NUMBER.test(value)) throw new FormulaError(`"${value}" is not a number`);
+      const exponent = exponents ? text.slice(j).match(/^[eE]([+-]?\d+)/) : null;
+      if (exponent) {
+        tokens.push({ type: 'number', value, exponent: String(Number(exponent[1])) });
+        i = j + exponent[0].length;
+        continue;
+      }
       tokens.push({ type: 'number', value });
       i = j;
       continue;
@@ -134,8 +143,8 @@ function readArgs(tokens, state) {
   return args;
 }
 
-function parse(formula) {
-  const tokens = tokenize(formula);
+function parse(formula, options) {
+  const tokens = tokenize(formula, options);
   const state = { i: 0 };
   const nodes = readSequence(tokens, state);
   if (state.i < tokens.length) throw new FormulaError('a ")" with no "(" before it');
@@ -248,7 +257,7 @@ function canvasFormulaToGrasp(formula, variableNames = []) {
 /**
  * Translate a GRASP calculation formula to Canvas's dialect, for export.
  * Returns an error naming what Canvas cannot do (hyperbolic functions, roundTo,
- * trunc, sign, cbrt, %, ...).
+ * trunc, sign, cbrt, %, ...). E-notation numbers are written as powers of ten.
  *
  * @param {string} formula  a stored GRASP formula (already canonical)
  * @param {string[]} variableNames
@@ -259,6 +268,8 @@ function graspFormulaToCanvas(formula, variableNames = []) {
   const emitNode = (node) => {
     switch (node.type) {
       case 'number':
+        // 6.022e23 -> (6.022*10^(23)): Canvas has no e-notation.
+        return node.exponent === undefined ? node.value : `(${node.value}*10^(${node.exponent}))`;
       case 'op':
         return node.value;
       case 'ident':
@@ -309,7 +320,7 @@ function graspFormulaToCanvas(formula, variableNames = []) {
     throw new FormulaError(`uses ${name}(), which Canvas doesn't support`);
   };
   try {
-    return { formula: emit(parse(formula), emitNode) };
+    return { formula: emit(parse(formula, { exponents: true }), emitNode) };
   } catch (error) {
     if (error instanceof FormulaError) return { error: error.message };
     throw error;

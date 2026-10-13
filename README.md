@@ -278,6 +278,32 @@ with variables:
   question's decimal places) as well as from the exact value, so a correctly
   rounded answer at the edge of the margin is accepted as it is in Canvas.
 
+#### Canvas quiz export
+
+**Export → Canvas (QTI)** on a quiz writes a Canvas Classic Quizzes `.zip`
+(QTI 1.2) to import in Canvas under Settings → Import Course Content → "QTI
+.zip file". Calculation questions (issue #63) go out as Canvas formula
+questions, or as numerical questions when they have no variables
+(`src/utils/canvas-calculation-export.js`):
+
+- `{{x}}` becomes `[x]`, a variable the text doesn't mention gets the same
+  "Given:" line students see in GRASP, and the formula is translated with the
+  same module as the import, the other way round (e-notation such as `6.022e23`
+  is written `(6.022*10^(23))`).
+- Canvas serves each student one of a fixed list of value sets stored with the
+  question, so the export draws 50 with GRASP's own sampling and evaluator.
+  The translated formula is read back as the import would and must give the
+  same answer at every set.
+- A percent or absolute tolerance is kept. With none, GRASP accepts anything
+  that rounds to the shown answer, so the export writes half a unit of the last
+  shown digit; for answers GRASP shows as a × 10^n, that is a percent. When a
+  question's value sets mix the two kinds of answer, only the larger group is
+  kept.
+- A question Canvas can't represent (a function Canvas formulas lack, such as
+  `sinh` or `roundTo`, or a variable name Canvas can't use) is left out, and the
+  export dialog lists it with the reason. H5P exports list calculation
+  questions the same way, as H5P has no type for them.
+
 #### Optional Moodle connection
 
 Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for

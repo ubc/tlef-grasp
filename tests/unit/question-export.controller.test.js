@@ -4,6 +4,8 @@ const {
   createQTIItem,
   buildObjectivesSummary,
   normalizeQuizMeta,
+  prepareQTIQuestions,
+  leftOutSummary,
 } = require('../../src/controllers/question');
 const { QUESTION_TYPES } = require('../../src/constants/app-constants');
 
@@ -283,11 +285,37 @@ describe('createQTIItem', () => {
     expect(xml).toContain('Grading criteria');
   });
 
-  // Calculation questions have no QTI representation (cut from Canvas export,
-  // issue #46); the dispatcher must emit nothing rather than misrepresent them.
-  test('calculation produces no QTI item', () => {
+  // Issue #63: a calculation question with variables is a Canvas formula question.
+  test('calculation with variables produces a calculated_question', () => {
     const xml = createQTIItem(calcQuestion, 0);
-    expect(xml).toBe('');
+    expect(xml).toContain('<fieldentry>calculated_question</fieldentry>');
+    expect(xml).toContain('Compute the kinetic energy of a [m] kg object at [v] m/s.');
+    expect(xml).toContain('<answer_tolerance>0.005</answer_tolerance>');
+    expect(xml).toContain('<formulas decimal_places="2">');
+    expect(xml).toContain('<formula>0.5*m*v^2</formula>');
+    expect(xml).toMatch(/<var name="m" scale="0">\s*<min>1<\/min>\s*<max>5<\/max>\s*<\/var>/);
+    const sets = [...xml.matchAll(/<var_set ident="(\d+)">\s*<var name="m">(\d+)<\/var>\s*<var name="v">(\d+)<\/var>\s*<answer>([\d.]+)<\/answer>/g)];
+    expect(sets).toHaveLength(50);
+    for (const [, , m, v, answer] of sets) expect(Number(answer)).toBe(0.5 * m * v * v);
+    // Every value set is one of the item's answers.
+    const ids = xml.match(/<fieldlabel>original_answer_ids<\/fieldlabel>\s*<fieldentry>([\d,]+)</)[1];
+    expect(ids).toBe(sets.map(([, id]) => id).join(','));
+  });
+
+  test('calculation with a fixed answer produces a numerical_question', () => {
+    const xml = createQTIItem({ ...calcQuestion, stem: 'What is 1/3?', calculationFormula: '1/3', calculationVariables: [] }, 0);
+    expect(xml).toContain('<fieldentry>numerical_question</fieldentry>');
+    expect(xml).toMatch(
+      /<or>\s*<varequal respident="response1">0\.33<\/varequal>\s*<and>\s*<vargte respident="response1">0\.325<\/vargte>\s*<varlte respident="response1">0\.335<\/varlte>\s*<\/and>\s*<\/or>/
+    );
+
+    const range = createQTIItem({ ...calcQuestion, stem: 'Between?', calculationFormula: '11', calculationVariables: [], calculationTolerance: { mode: 'range', min: 10, max: 12 } }, 0);
+    expect(range).toMatch(/<conditionvar>\s*<vargte respident="response1">10<\/vargte>\s*<varlte respident="response1">12<\/varlte>\s*<\/conditionvar>/);
+    expect(range).not.toContain('<varequal');
+  });
+
+  test('a calculation question Canvas cannot represent produces nothing', () => {
+    expect(createQTIItem({ ...calcQuestion, calculationFormula: 'sinh(m) * v' }, 0)).toBe('');
   });
 
   // Issue #144: a question may have two to eight options.
@@ -324,23 +352,62 @@ describe('createQTIItem', () => {
 });
 
 describe('createQTIExport', () => {
-  test('emits one <item> per supported question across mixed types', () => {
+  test('emits one <item> per question across mixed types', () => {
     const xml = createQTIExport('Mixed Quiz', [
       mcQuestion,
       fibQuestion,
       openQuestion,
       calcQuestion,
     ]);
-    expect((xml.match(/<item /g) || []).length).toBe(3);
+    expect((xml.match(/<item /g) || []).length).toBe(4);
     expect(xml).toContain('multiple_choice_question');
     expect(xml).toContain('short_answer_question');
     expect(xml).toContain('essay_question');
+    expect(xml).toContain('calculated_question');
     expect(xml).toContain('</questestinterop>');
   });
 
-  test('excludes calculation questions (no Canvas export for them)', () => {
-    const xml = createQTIExport('Mixed Quiz', [mcQuestion, calcQuestion]);
+  test('leaves out a calculation question Canvas cannot represent', () => {
+    const xml = createQTIExport('Mixed Quiz', [mcQuestion, { ...calcQuestion, calculationFormula: 'sinh(m) * v' }]);
     expect((xml.match(/<item /g) || []).length).toBe(1);
     expect(xml).not.toContain('calculated_question');
+  });
+});
+
+describe('prepareQTIQuestions', () => {
+  test('keeps the order, works out each calculation once, and lists what is left out by position', () => {
+    const unsupported = { ...calcQuestion, calculationFormula: 'sinh(m) * v' };
+    const { items, leftOut } = prepareQTIQuestions([mcQuestion, unsupported, calcQuestion, fibQuestion]);
+
+    expect(items.map((item) => item.question)).toEqual([mcQuestion, calcQuestion, fibQuestion]);
+    expect(items[0].calculation).toBeNull();
+    expect(items[1].calculation).toMatchObject({ type: 'calculated_question', formula: '0.5*m*v^2' });
+    expect(leftOut).toEqual([{ index: 1, reason: "The formula uses sinh(), which Canvas doesn't support." }]);
+
+    // The prepared value sets are the ones written.
+    const xml = createQTIExport('Quiz', items.map((item) => item.question), 'g1', new Map(), items);
+    const first = items[1].calculation.valueSets[0];
+    expect(xml).toContain(`<var name="m">${first.values.m}</var>`);
+  });
+
+  test('a question that cannot be read is left out, not a failed export', () => {
+    const broken = { ...calcQuestion, calculationVariables: [{ name: 'm', min: 5, max: 1, integerOnly: true }], stem: 'Twice {{m}}?', calculationFormula: '2*m' };
+    const { items, leftOut } = prepareQTIQuestions([broken]);
+    expect(items).toEqual([]);
+    expect(leftOut).toEqual([{ index: 0, reason: expect.stringMatching(/^GRASP can't draw values for this question: /) }]);
+  });
+});
+
+describe('leftOutSummary', () => {
+  test('lists positions and reasons, and stays small however many are left out', () => {
+    expect(leftOutSummary([{ index: 2, reason: 'Because.' }])).toEqual({ count: 1, questions: [{ index: 2, reason: 'Because.' }] });
+
+    const many = Array.from({ length: 200 }, (_, index) => ({ index, reason: `Reason ${index} ${'é'.repeat(40)}` }));
+    const summary = leftOutSummary(many);
+    expect(summary.count).toBe(200);
+    expect(summary.questions.length).toBeGreaterThan(0);
+    expect(summary.questions.length).toBeLessThan(200);
+    expect(summary.questions[0]).toEqual(many[0]);
+    expect(encodeURIComponent(JSON.stringify(summary)).length).toBeLessThanOrEqual(2000);
   });
 });
