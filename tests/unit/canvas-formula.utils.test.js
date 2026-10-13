@@ -4,10 +4,10 @@
  * The forward direction is what the Canvas quiz import uses; each rule is
  * also checked numerically through expr-eval, since a translation that parses
  * but means something else (log base 10 read as natural log) is the failure
- * this module exists to prevent. The reverse direction is for the QTI export,
- * and is checked with evaluateCanvasFormula, which follows Canvas's own
- * calculator (Classic Quizzes calcCmd.js; every case below was also run
- * through calcCmd.js from a local Canvas, with the same results).
+ * this module exists to prevent. Both directions are checked against
+ * evaluateCanvasFormula, which follows Canvas's own calculator (Classic
+ * Quizzes calcCmd.js; every case below was also run through calcCmd.js from a
+ * local Canvas, with the same results).
  */
 
 const { Parser } = require('expr-eval');
@@ -41,7 +41,7 @@ describe('canvasFormulaToGrasp', () => {
     ['pi*r^2 + e()', ['r'], 'PI*r^2+E'],
     ['pi() * fact(n)', ['n'], 'PI*fac(n)'],
     ['deg_to_rad(x) + rad_to_deg(y)', ['x', 'y'], '((x)*PI/180)+((y)*180/PI)'],
-    ['round(x, 2) + round(y) + abs(x) + ceil(y) + floor(x) + sqrt(y)', ['x', 'y'], 'roundTo(x, 2)+round(y)+abs(x)+ceil(y)+floor(x)+sqrt(y)'],
+    ['round(x, 2) + round(y) + abs(x) + ceil(y) + floor(x) + sqrt(y)', ['x', 'y'], 'round(x)+round(y)+abs(x)+ceil(y)+floor(x)+sqrt(y)'],
     ['max(x, y, 2) - min(x, y)', ['x', 'y'], 'max(x, y, 2)-min(x, y)'],
     ['sin(x)+cos(x)+tan(x)+asin(y)+acos(y)+atan(y)', ['x', 'y'], 'sin(x)+cos(x)+tan(x)+asin(y)+acos(y)+atan(y)'],
     // Canvas reads two operands in a row as a product.
@@ -68,9 +68,9 @@ describe('canvasFormulaToGrasp', () => {
     ['fact(x)', { x: 5 }, 120],
     ['deg_to_rad(x)', { x: 180 }, Math.PI],
     ['rad_to_deg(x)', { x: Math.PI / 2 }, 90],
-    ['round(x, 2)', { x: 2.345 }, 2.35],
+    // Canvas's round() ignores a second argument.
+    ['round(x, 2)', { x: 2.345 }, 2],
     ['10^-5 * x', { x: 2 }, 2e-5],
-    ['-x^2', { x: 3 }, -9],
     ['5x', { x: 3 }, 15],
     ['100*(y+x)/(2*x)', { x: 60, y: -1 }, 49.166666666666664],
   ])('%s evaluates as Canvas does', (canvas, values, expected) => {
@@ -90,6 +90,9 @@ describe('canvasFormulaToGrasp', () => {
     ['log()', ['x'], 'log() takes 1 or 2 arguments, not 0'],
     ['log(x, 2, 3)', ['x'], 'log() takes 1 or 2 arguments, not 3'],
     ['sqrt(x, 2)', ['x'], 'sqrt() takes 1 argument, not 2'],
+    // Canvas works out round's second argument before ignoring it.
+    ['round(x, k)', ['x'], 'uses "k", which isn\'t one of the question\'s variables'],
+    ['round(x, 2, 3)', ['x'], 'round() takes 1 argument, not 3'],
     ['max()', ['x'], 'max() needs at least one argument'],
     ['pi(2)', ['x'], 'pi() takes 0 arguments, not 1'],
     ['(x, 2)', ['x'], 'a comma outside a function call'],
@@ -98,6 +101,9 @@ describe('canvasFormulaToGrasp', () => {
     ['sqrt(x,)', ['x'], 'an empty function argument'],
     ['x % 2', ['x'], 'the character "%" isn\'t allowed in a formula'],
     ['x = 2', ['x'], 'the character "=" isn\'t allowed in a formula'],
+    ['x+', ['x'], 'an operator with nothing after it'],
+    ['2^', ['x'], 'an operator with nothing after it'],
+    ['*x', ['x'], 'a "*" with nothing before it'],
     ['1.2.3*x', ['x'], '"1.2.3" is not a number'],
     ['', ['x'], 'the formula is empty'],
     ['   ', ['x'], 'the formula is empty'],
@@ -109,6 +115,78 @@ describe('canvasFormulaToGrasp', () => {
     for (const name of UNSUPPORTED_CANVAS_FUNCTIONS) {
       expect(canvasFormulaToGrasp(`${name}(x)`, ['x'])).toEqual({ error: `uses ${name}(), which GRASP doesn't support` });
     }
+  });
+});
+
+describe("canvasFormulaToGrasp: a minus and ^ as Canvas's calculator reads them", () => {
+  // Canvas negates only the number or name after "-", ahead of ^, and works
+  // each level left to right; expr-eval reads -x^2 as -(x^2) and 2^3^2 as
+  // 2^(3^2). The GRASP formula must give what Canvas's calculator gives.
+  const values = { x: 1.3, y: 0.4, a: 2, b: 7, c: 1.5, p: 4 };
+  const names = Object.keys(values);
+  test.each([
+    ['-x^2', '(-x)^2'],
+    ['-2^2', '(-2)^2'],
+    ['2^3^2', '(2^3)^2'],
+    ['x^-2', 'x^-2'],
+    ['a/b*c', 'a/b*c'],
+    ['a-b-c', 'a-b-c'],
+    ['-x*y', '-x*y'],
+    ['e^(-x^2/2)', 'E^((-x)^2/2)'],
+    ['10^-p', '10^-p'],
+    ['x^-y^2', '(x^-y)^2'],
+    ['a*-b^2', 'a*(-b)^2'],
+    ['a--b^2', 'a-(-b)^2'],
+    ['a/(b*c)', 'a/(b*c)'],
+    ['a^(b^c)', 'a^(b^c)'],
+  ])('%s is written %s, which expr-eval works out as Canvas does', (canvas, grasp) => {
+    expect(canvasFormulaToGrasp(canvas, names)).toEqual({ formula: grasp });
+    expect(evaluate(grasp, values)).toBeCloseTo(evaluateCanvasFormula(canvas, values), 12);
+  });
+
+  test('the real export formulas work out as Canvas does', () => {
+    const real = [
+      '-1.0*log(x,10)',
+      '14+log(sqrt((x/y)*1000*1.8*10^-5))',
+      '14 + log(5.55*10^-10*(y*s/(x*r-y*s)))',
+      '-457.22+((8.314/1000)*(a+273.15)*(ln(z*z/(y*x*x))))',
+      'e^((x*1000/8.314)*(1/298-1/z)+ln(y))',
+      '100*(1/(1+e^(-1000*x/(8.314*298))))',
+      '(5/2)*x*8.314*(z-y)',
+      '-x-y',
+      'w*0.08206*(z-x)/y',
+    ];
+    const chem = { a: 25, r: 0.3, s: 0.2, w: 1.7, x: 0.5, y: 0.15, z: 310 };
+    for (const canvas of real) {
+      const { formula } = canvasFormulaToGrasp(canvas, Object.keys(chem));
+      expect(evaluate(formula, chem) / evaluateCanvasFormula(canvas, chem)).toBeCloseTo(1, 12);
+    }
+  });
+
+  // Canvas's calculator can't read these, so it recorded no answers from
+  // them; the usual reading stands, and the import's recorded-answer check
+  // catches a question whose answers came from somewhere else.
+  test.each([
+    ['-(a+b)', '-(a+b)', -9],
+    ['-log(x)', '-log10(x)', -Math.log10(1.3)],
+    ['-(a+b)^2', '-(a+b)^2', -81],
+    ['--x', '--x', 1.3],
+    ['2x^2', '2*x^2', 3.38],
+  ])('%s, an error in Canvas, keeps its usual reading: %s', (canvas, grasp, value) => {
+    expect(() => evaluateCanvasFormula(canvas, values)).toThrow(FormulaError);
+    expect(canvasFormulaToGrasp(canvas, names)).toEqual({ formula: grasp });
+    expect(evaluate(grasp, values)).toBeCloseTo(value, 12);
+  });
+
+  test('reads an earlier line\'s name as Canvas does, so a minus before it negates its value', () => {
+    // Canvas works out k = 2*x and stores the value: -k^2 is then (-2x)^2.
+    const negated = canvasFormulaToGrasp('-k^2', ['x'], { definitions: [['k', '2*x']] });
+    expect(negated).toEqual({ formula: '(-(2*x))^2' });
+    expect(evaluate(negated.formula, { x: 3 })).toBe(36);
+    expect(canvasFormulaToGrasp('m*k', ['x'], { definitions: [['k', '2*x'], ['m', 'k + 1']] })).toEqual({ formula: '((2*x)+1)*(2*x)' });
+    // A line sees only the lines above it: x = x*2 redefines the variable.
+    expect(canvasFormulaToGrasp('x+1', ['x'], { definitions: [['x', 'x*2']] })).toEqual({ formula: '(x*2)+1' });
+    expect(canvasFormulaToGrasp('k', ['x'], { definitions: [['k', 'j'], ['j', 'x']] })).toEqual({ error: 'uses "j", which isn\'t one of the question\'s variables' });
   });
 });
 
