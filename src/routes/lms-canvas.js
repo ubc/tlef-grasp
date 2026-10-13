@@ -1,7 +1,9 @@
 const express = require('express');
 const { createCanvasIntegration } = require('../lms/canvas');
 const { createCanvasController } = require('../controllers/lms-canvas');
+const { createCanvasAssignmentController } = require('../controllers/lms-canvas-assignments');
 const { requireOwnedSection } = require('../middleware/lms-section-access');
+const { requireCourseMaterialsAccess } = require('../middleware/course-materials-access');
 const { requireActiveCourse } = require('../middleware/course-archive');
 const { resolveCanvasCapabilities } = require('../lms/canvas-scopes');
 
@@ -41,9 +43,12 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
   // lms/canvas-scopes.js); createCanvasIntegration resolves it from the env.
   const capabilities = integration.capabilities || resolveCanvasCapabilities([]);
   const controller = createCanvasController(canvas, { capabilities });
+  const assignmentController = createCanvasAssignmentController(canvas);
   const requireCanvasAuth = canvas.requireAuth(config);
   const requireLink = requireCanvasCapability(capabilities, 'link');
   const requireRosterSync = requireCanvasCapability(capabilities, 'rosterSync');
+  const requireFiles = requireCanvasCapability(capabilities, 'files');
+  const requireAssignments = requireCanvasCapability(capabilities, 'assignments');
 
   // Canvas sends OAuth denials back as `?error=...` without an authorization
   // code. Handle that before the toolkit's callback route so users return to
@@ -94,6 +99,64 @@ function createCanvasRouter(integration = createCanvasIntegration()) {
     requireCanvasAuth,
     controller.syncSectionStudents
   );
+
+  // Importing Canvas course files into Course Materials (issue #141). Open to
+  // whoever may upload materials to the course; the controller narrows the
+  // Canvas courses to the ones their own linked sections point to.
+  const materialImportBase = '/courses/:courseId/materials/canvas-courses';
+  router.get(
+    materialImportBase,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.listMaterialImportCourses
+  );
+  router.get(
+    `${materialImportBase}/:canvasCourseId/files`,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.listMaterialImportFiles
+  );
+  router.post(
+    `${materialImportBase}/:canvasCourseId/files/:canvasFileId/import`,
+    requireCourseMaterialsAccess,
+    requireFiles,
+    requireCanvasAuth,
+    controller.importMaterialFile
+  );
+
+  // Canvas assignments for scheduled quizzes (issue #125). The controller
+  // limits every call to the sections the caller owns, as scheduling does.
+  const quizAssignmentsBase = '/courses/:courseId/quizzes/:quizId/assignments';
+  router.get(
+    quizAssignmentsBase,
+    requireAssignments,
+    requireCanvasAuth,
+    assignmentController.listQuizAssignments
+  );
+  router.post(
+    quizAssignmentsBase,
+    express.json(),
+    requireAssignments,
+    requireCanvasAuth,
+    assignmentController.ensureQuizAssignments
+  );
+  router.put(
+    `${quizAssignmentsBase}/declined`,
+    express.json(),
+    requireAssignments,
+    requireCanvasAuth,
+    assignmentController.declineQuizAssignments
+  );
+  router.get(
+    '/courses/:courseId/sections/:sectionId/quiz-assignments',
+    requireOwnedSection,
+    requireAssignments,
+    requireCanvasAuth,
+    assignmentController.listSectionQuizAssignments
+  );
+
   // The package deliberately avoids exposing provider details. Send OAuth
   // failures back to Settings with a generic marker rather than rendering an
   // internal error or token-exchange response in the browser.

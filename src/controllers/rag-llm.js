@@ -21,6 +21,7 @@ const { isRetryableLLMError } = require('../utils/llm-limiter');
 const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType, normalizeQuestionTypes } = require('../utils/question-type-selection');
+const { normalizeMcOptionCount, optionKeysOf } = require('../utils/mc-options');
 const settingsService = require('../services/settings');
 const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
@@ -349,6 +350,10 @@ const searchRagHandler = async (req, res) => {
 const generateQuestionsWithRagHandler = async (req, res) => {
   try {
     const { courseId, courseName, learningObjectiveId, learningObjectiveText, granularLearningObjectiveId, granularLearningObjectiveText, bloomLevels, materialIds, count, questionType: requestedQuestionType, questionTypes } = req.body;
+    // How many options each multiple-choice question gets (issue #144). A
+    // generation setting rather than a course setting, so one run can match a
+    // course's Canvas quizzes without changing anything stored.
+    const mcOptionCount = normalizeMcOptionCount(req.body.mcOptionCount);
 
     console.log("=== RAG + LLM GENERATION REQUEST ===");
     console.log("Course ID:", courseId);
@@ -548,7 +553,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
       // at the model corrupted.
       const allTypeInstructions = Object.values(QUESTION_TYPES)
-        .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction()}`)
+        .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction({ mcOptionCount })}`)
         .join("\n\n");
 
       const buildSharedPrefix = () => {
@@ -637,7 +642,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             // question type.
             const response = await generationLimiter.run(() => generateStructured({
               messages,
-              schema: model.getJsonSchema(),
+              schema: model.getJsonSchema({ mcOptionCount }),
               operation: 'question-generate',
               effort: effortForStage(settings, 'question-generate'),
             }));
@@ -1199,7 +1204,7 @@ function scrambleMultipleChoiceOptions(questionData) {
   if (!questionData.options || !questionData.correctAnswer || !questionData.options[questionData.correctAnswer]) {
     return;
   }
-  const optionKeys = ['A', 'B', 'C', 'D'].filter(k => questionData.options[k] !== undefined);
+  const optionKeys = optionKeysOf(questionData.options);
   const optionValues = optionKeys.map(k => questionData.options[k]);
 
   for (let j = optionValues.length - 1; j > 0; j--) {
@@ -1232,6 +1237,9 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, eff
   const questionType = questionData.questionType || questionData.type;
   const model = QuestionFactory.getModel(questionType);
   const questionExcerpt = firstWords(getGeneratedQuestionText(questionData), 12);
+  // A fix keeps the option count the question was generated with; the
+  // conversation it branches from already asked for that many.
+  const schema = model.getJsonSchema({ mcOptionCount: optionKeysOf(questionData.options).length || undefined });
 
   let lastError = null;
   let totalPromptTokens = 0;
@@ -1250,7 +1258,7 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, eff
     const messages = [...questionContext, ...localHistory, { role: "user", content: turnPrompt }];
     let responseContent = null;
     try {
-      const response = await generationLimiter.run(() => generateStructured({ messages, schema: model.getJsonSchema(), operation: 'question-fix', effort }));
+      const response = await generationLimiter.run(() => generateStructured({ messages, schema, operation: 'question-fix', effort }));
       totalPromptTokens += response.usage?.promptTokens || 0;
       totalCompletionTokens += response.usage?.completionTokens || 0;
       responseContent = response.content || "";

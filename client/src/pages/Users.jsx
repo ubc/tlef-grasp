@@ -28,7 +28,7 @@ import {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function UserNameCell({ legalName, displayName, isCurrentUser, note }) {
+function UserNameCell({ name, displayName, legalNameMissing, isCurrentUser, note }) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100">
@@ -36,7 +36,7 @@ function UserNameCell({ legalName, displayName, isCurrentUser, note }) {
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-ink">{legalName}</span>
+          <span className="font-medium text-ink">{name}</span>
           {isCurrentUser && (
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
               <i className="fas fa-user-circle" /> You
@@ -45,6 +45,9 @@ function UserNameCell({ legalName, displayName, isCurrentUser, note }) {
         </div>
         {displayName && (
           <span className="block text-xs text-muted">Display name: {displayName}</span>
+        )}
+        {legalNameMissing && (
+          <span className="block text-xs text-muted">No legal name on file</span>
         )}
         {note && (
           <span className="block text-xs text-muted">
@@ -256,11 +259,7 @@ export default function Users() {
                     const userId = String(
                       user.userId || user._id || user.user?._id || ""
                     );
-                    const { legalName, distinctDisplayName } = getUserNames(user);
-                    const targetName =
-                      legalName === UNKNOWN_USER_NAME && distinctDisplayName
-                        ? distinctDisplayName
-                        : legalName;
+                    const { name, legalName, distinctDisplayName } = getUserNames(user);
                     // Prefer the course-scoped role resolved by the server
                     // (distinguishes TAs); fall back to global affiliations.
                     const role = getCourseRole(user);
@@ -284,8 +283,9 @@ export default function Users() {
                       <tr key={userId} className="hover:bg-gray-50">
                         <td className={tableCellClass}>
                           <UserNameCell
-                            legalName={legalName}
+                            name={name}
                             displayName={distinctDisplayName}
+                            legalNameMissing={!legalName && name !== UNKNOWN_USER_NAME}
                             isCurrentUser={isCurrentUser}
                             note={provenance}
                           />
@@ -322,7 +322,7 @@ export default function Users() {
                                   onClick={() =>
                                     setRoleChangeTarget({
                                       userId,
-                                      displayName: targetName,
+                                      displayName: name,
                                       action: "promote",
                                       baseRole: role,
                                     })
@@ -339,7 +339,7 @@ export default function Users() {
                                   onClick={() =>
                                     setPermissionsTarget({
                                       userId,
-                                      displayName: targetName,
+                                      displayName: name,
                                       taPermissions: user.taPermissions,
                                     })
                                   }
@@ -356,7 +356,7 @@ export default function Users() {
                                   onClick={() =>
                                     setRoleChangeTarget({
                                       userId,
-                                      displayName: targetName,
+                                      displayName: name,
                                       action: "demote",
                                       baseRole,
                                     })
@@ -371,7 +371,7 @@ export default function Users() {
                                   type="button"
                                   title="Remove from course"
                                   onClick={() =>
-                                    setRemoveTarget({ userId, displayName: targetName })
+                                    setRemoveTarget({ userId, displayName: name })
                                   }
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-danger/85"
                                 >

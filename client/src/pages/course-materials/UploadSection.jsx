@@ -23,15 +23,26 @@ const METHOD_TILES = [
   },
 ];
 
+// Offered only to an instructor who can use it (see canvasImportAvailable):
+// Canvas connected, file scopes enabled, and a section of theirs linked.
+const CANVAS_TILE = {
+  type: "canvas",
+  icon: "fa-graduation-cap",
+  label: "From Canvas",
+  hint: "Pick files from your Canvas course",
+};
+
 const SUPPORTED_FORMATS = Object.values(MATERIAL_UPLOAD_TYPES);
 
 // Panopto stays hidden until there is an integration to connect this flow to.
 
-// Two-step upload modal: pick a method (file upload or pasted text), then the
-// file step exposes the drag-and-drop zone for every supported format.
+// Two-step upload modal: pick a method (file upload, pasted text, or Canvas
+// when available), then the file step exposes the drag-and-drop zone for every
+// supported format.
 export default function UploadSection({
   open,
   uploading,
+  canvasAvailable = false,
   onClose,
   onFiles,
   onAddContent,
@@ -40,6 +51,8 @@ export default function UploadSection({
   const [dragOver, setDragOver] = useState(false);
   // "choose" shows the method tiles; "file" shows the drop zone.
   const [step, setStep] = useState("choose");
+
+  const tiles = canvasAvailable ? [...METHOD_TILES, CANVAS_TILE] : METHOD_TILES;
 
   const handleFiles = (files) => {
     if (!files || files.length === 0) return;
@@ -63,8 +76,12 @@ export default function UploadSection({
       }
     >
       {step === "choose" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {METHOD_TILES.map((tile) => (
+        <div
+          className={`grid grid-cols-1 gap-4 ${
+            tiles.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+          }`}
+        >
+          {tiles.map((tile) => (
             <button
               key={tile.type}
               type="button"
@@ -75,7 +92,7 @@ export default function UploadSection({
             >
               <i className={`fas ${tile.icon} text-3xl text-primary`} />
               <span className="font-medium text-ink">{tile.label}</span>
-              <span className="text-sm text-muted">{tile.hint}</span>
+              <span className="text-center text-sm text-muted">{tile.hint}</span>
             </button>
           ))}
         </div>

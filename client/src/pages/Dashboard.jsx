@@ -6,6 +6,7 @@ import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { useTaAccess } from "../hooks/useTaAccess";
 import { useCourseQuizQuestionFlags } from "../hooks/useQuizQuestionFlags";
 import { useCourseMaterials } from "../hooks/useMaterials";
+import { isCanvasImportMaterial } from "../lib/materials";
 import { useCourseObjectives } from "../hooks/useObjectives";
 import { useQuestions } from "../hooks/useQuestions";
 import { useCourseQuizzes, useQuizCalendar } from "../hooks/useQuizzes";
@@ -124,7 +125,7 @@ export default function Dashboard() {
   // Steps a TA's permission map withholds are dropped; the whole course-path
   // section disappears when none remain (e.g. a grader-only TA).
   const courseSteps = [
-    { title: "Upload", description: "Add notes, slides, files, or links.", to: "/course-materials", icon: "fa-upload", taPermission: "courseMaterials", complete: materials.length > 0 },
+    { title: "Upload", description: "Add notes, slides, files, or links.", to: "/course-materials", icon: "fa-upload", taPermission: "courseMaterials", complete: materials.some((material) => !isCanvasImportMaterial(material)) },
     { title: "Create objectives", description: "Generate them from relevant material or add your own.", to: "/question-generation", icon: "fa-bullseye", taPermission: "questionGeneration", complete: objectives.length > 0 },
     { title: "Generate questions", description: "Choose objectives and review the AI draft.", to: "/question-generation", icon: "fa-wand-magic-sparkles", taPermission: "questionGeneration", complete: questions.length > 0 },
     { title: "Review", description: "Edit and approve questions in your bank.", to: "/question-bank", icon: "fa-clipboard-check", taPermission: "questionBank", complete: questions.length > 0 && questions.every((question) => String(question.status || "").toLowerCase() === "approved") },

@@ -2,11 +2,15 @@ const { ObjectId } = require("mongodb");
 const databaseService = require("./database");
 const quizScheduleService = require("./quiz-schedule");
 const { BLOOM_LEVELS } = require("../constants/app-constants");
+const { QUIZ_SOURCE_KEYS, pickImportSource } = require("../utils/import-provenance");
+
+const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 
 /**
  * Create a new quiz
  * @param {string} courseId - The ID of the course
- * @param {Object} quizData - { name, description, deliveryFormat }
+ * @param {Object} quizData - { name, description, deliveryFormat }, plus for a
+ *   Canvas import (#140) `source` ({ kind, quizIdent }) and `createdAt` (a Date)
  * @returns {Promise<Object>} The created quiz object
  */
 const createQuiz = async (courseId, quizData) => {
@@ -26,9 +30,13 @@ const createQuiz = async (courseId, quizData) => {
                 ? Number(quizData.timeLimitMinutes)
                 : 60,
             // Availability is configured per section in grasp_quiz_section_schedule.
-            createdAt: new Date(),
+            // An import sets createdAt so its quizzes sort in Canvas due order
+            // (unscheduled quizzes are ordered by createdAt).
+            createdAt: isValidDate(quizData.createdAt) ? new Date(quizData.createdAt.getTime()) : new Date(),
             updatedAt: new Date()
         };
+        const source = pickImportSource(quizData.source, QUIZ_SOURCE_KEYS);
+        if (source) newQuiz.source = source;
         
         const result = await collection.insertOne(newQuiz);
         return { ...newQuiz, _id: result.insertedId };
@@ -172,6 +180,9 @@ const deleteQuiz = async (quizId) => {
         await db.collection("grasp_quiz_score").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_section_schedule").deleteMany({ quizId: qid });
         await db.collection("grasp_quiz_question_flag").deleteMany({ quizId: qid });
+        // GRASP's record of the quiz's LMS assignments only; the assignments
+        // themselves stay in the LMS (issue #125).
+        await db.collection("grasp_quiz_lms_assignment").deleteMany({ quizId: qid });
 
         const result = await collection.deleteOne({ _id: qid });
         
@@ -781,7 +792,6 @@ const getPhase3Questions = async (quizId, userId) => {
  */
 const getQuizQuestionsForStudent = async (quizId, userId) => {
     try {
-        const db = await databaseService.connect();
         const quiz = await getQuizById(quizId);
 
         if (!quiz) throw new Error("Quiz not found");
@@ -820,36 +830,45 @@ const getQuizQuestionsForStudent = async (quizId, userId) => {
             }
         });
 
-        const performanceCollection = db.collection("grasp_student_performance");
-        const masteryRecords = await performanceCollection.find({ 
-            userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
-            courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
-        }).toArray();
-
-        finalSelection.forEach(q => {
-            const currentLoId = q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString();
-            
-            if (!currentLoId) {
-                q.userLevel = "No Prior History";
-                return;
-            }
-            
-            const mastery = masteryRecords.find(m => 
-                m.learningObjectiveId?.toString() === currentLoId || m.granularObjectiveId?.toString() === currentLoId
-            );
-
-            if (!mastery) {
-                q.userLevel = "No Prior History";
-            } else {
-                q.userLevel = mastery.needsRemediation ? "⚠️ Needs Remediation" : "✅ Mastery: " + (mastery.highestBloomPassed || "Remember");
-            }
-        });
-
-        return finalSelection;
+        return await annotateUserLevels(quiz, userId, finalSelection);
     } catch (error) {
         console.error("Error in getQuizQuestionsForStudent:", error);
         throw error;
     }
+};
+
+/**
+ * Labels each question with the student's standing on its objective
+ * (`userLevel`), from their mastery records in the quiz's course. Shared by a
+ * fresh spaced-3phase pick and one read back from the student's quiz session.
+ */
+const annotateUserLevels = async (quiz, userId, questions) => {
+    const db = await databaseService.connect();
+    const masteryRecords = await db.collection("grasp_student_performance").find({
+        userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
+        courseId: quiz.courseId ? (ObjectId.isValid(quiz.courseId) ? new ObjectId(quiz.courseId) : quiz.courseId) : null
+    }).toArray();
+
+    questions.forEach(q => {
+        const currentLoId = q.learningObjectiveId?.toString() || q.granularObjectiveId?.toString();
+
+        if (!currentLoId) {
+            q.userLevel = "No Prior History";
+            return;
+        }
+
+        const mastery = masteryRecords.find(m =>
+            m.learningObjectiveId?.toString() === currentLoId || m.granularObjectiveId?.toString() === currentLoId
+        );
+
+        if (!mastery) {
+            q.userLevel = "No Prior History";
+        } else {
+            q.userLevel = mastery.needsRemediation ? "⚠️ Needs Remediation" : "✅ Mastery: " + (mastery.highestBloomPassed || "Remember");
+        }
+    });
+
+    return questions;
 };
 
 /**
@@ -1322,9 +1341,12 @@ const getQuizScores = async (quizId) => {
                 totalQuestions: scoreRecord ? scoreRecord.totalQuestions : null,
                 timeSpent: scoreRecord ? scoreRecord.timeSpent : null,
                 completedAt: scoreRecord ? scoreRecord.completedAt : null,
-                // Instructor grading view: show the student's authoritative legal
-                // name, not their editable display name.
-                studentName: student.legalName || student.puid || 'Unknown Student',
+                // Instructor grading view: the student's authoritative legal
+                // name, not their editable display name. A student the Canvas
+                // roster sync created has none until their first sign-in, so
+                // fall back to the name Canvas gave them (issue #165).
+                studentName: student.legalName || student.displayName || student.email
+                    || student.puid || 'Unknown Student',
                 studentEmail: student.email || '-',
                 sections: Array.isArray(student.sections) ? student.sections : [],
                 disputedCount: disputedByUserId.get(userStrId) || 0
@@ -1467,6 +1489,8 @@ module.exports = {
     addExistingQuestionsToQuiz,
     getQuizQuestions,
     getQuizQuestionsForStudent,
+    annotateUserLevels,
+    getCourseQuizzesInStudentOrder,
     getApprovedQuestionCountsForQuizzes,
     saveStudentPerformance,
     saveQuizScore,

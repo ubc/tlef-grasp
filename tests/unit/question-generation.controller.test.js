@@ -454,6 +454,42 @@ describe('generateQuestionsWithRagHandler batch conversation', () => {
     expect(mockGenerateStructured).toHaveBeenCalledTimes(3);
   });
 
+  it('asks for the requested number of options in the prompt and the schema (issue #144)', async () => {
+    mockGenerateStructured
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          ...makeMcq('What is ATP?'),
+          options: {
+            A: { text: 'Option A', feedback: '' },
+            B: { text: 'Option B', feedback: 'Not B.' },
+            C: { text: 'Option C', feedback: 'Not C.' },
+            D: { text: 'Option D', feedback: 'Not D.' },
+            E: { text: 'Option E', feedback: 'Not E.' },
+          },
+        }),
+        usage: {},
+      })
+      .mockResolvedValueOnce(makeReviewResponse([cleanRating('0')]));
+    const req = buildRequest();
+    req.body.mcOptionCount = 5;
+    const res = buildResponse();
+
+    await generateQuestionsWithRagHandler(req, res);
+
+    expect(opening(0)).toContain('Generate 5 answer options (A-E)');
+    expect(callArgs(0).schema.properties.options.required).toEqual(['A', 'B', 'C', 'D', 'E']);
+    const [question] = res.json.mock.calls[0][0].questions;
+    expect(Object.keys(question.options)).toEqual(['A', 'B', 'C', 'D', 'E']);
+  });
+
+  it('keeps four options when the request names no count', async () => {
+    queueBatch();
+
+    await generateQuestionsWithRagHandler(buildMixedTypeRequest(), buildResponse());
+
+    expect(callArgs(0).schema.properties.options.required).toEqual(['A', 'B', 'C', 'D']);
+  });
+
   it('carries every type\'s rules in the opening message', async () => {
     queueBatch();
 

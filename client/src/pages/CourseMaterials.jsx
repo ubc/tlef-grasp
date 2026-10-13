@@ -10,6 +10,15 @@ import {
   useDeleteMaterial,
   useGenerateOutline,
 } from "../hooks/useMaterials";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import {
+  useCanvasImportCourses,
+  useImportCanvasFiles,
+} from "../hooks/useCanvasMaterialImport";
+import {
+  canvasImportAvailable,
+  describeCanvasImportResult,
+} from "../lib/canvasMaterialImport";
 import {
   filterSupportedDocuments,
   getUploadValidationMessage,
@@ -19,6 +28,7 @@ import { LoadingState, EmptyState } from "../components/ui/states";
 import UploadSection from "./course-materials/UploadSection";
 import MaterialCard from "./course-materials/MaterialCard";
 import OutlineModal from "./course-materials/OutlineModal";
+import CanvasImportModal from "./course-materials/CanvasImportModal";
 import {
   MaterialFormModal,
   DeleteMaterialModal,
@@ -69,11 +79,19 @@ export default function CourseMaterials() {
 
   const [showUpload, setShowUpload] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
-  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete', material? }
+  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete' | 'outline' | 'canvas-import', material? }
   const [modal, setModal] = useState(null);
   const autoShownRef = useRef(false);
 
   const { materials, isPending, isSuccess } = useCourseMaterials(courseId);
+
+  // "From Canvas" (issue #141) is offered only when this instructor can use
+  // it; otherwise upload and pasted text are the only ways in, as before.
+  const canvas = useCanvasStatus();
+  const canvasCourses = useCanvasImportCourses(courseId, {
+    enabled: canvas.connected && canvas.capabilities.files,
+  });
+  const canvasAvailable = canvasImportAvailable(canvas, canvasCourses.courses);
 
   // Show the upload section by default when the course has no materials yet
   useEffect(() => {
@@ -101,6 +119,18 @@ export default function CourseMaterials() {
       }
       setShowUpload(false);
     },
+  });
+
+  // Stays open when a file failed, so the reason is visible next to it and
+  // the instructor can retry.
+  const canvasImportMutation = useImportCanvasFiles(courseId, {
+    onSuccess: (result) => {
+      const { message, type } = describeCanvasImportResult(result);
+      showToast(message, type);
+      if (result.errors.length === 0) setModal(null);
+    },
+    onError: (error) =>
+      showToast(error.message || "Error importing from Canvas. Please try again.", "error"),
   });
 
   const addTextMutation = useAddTextMaterial(selectedCourse, {
@@ -256,10 +286,15 @@ export default function CourseMaterials() {
         <UploadSection
           open={showUpload}
           uploading={uploadMutation.isPending}
+          canvasAvailable={canvasAvailable}
           onClose={() => setShowUpload(false)}
           onFiles={handleFiles}
           onAddContent={(contentType) => {
             setShowUpload(false);
+            if (contentType === "canvas") {
+              setModal({ kind: "canvas-import" });
+              return;
+            }
             // "url" → "link-add" is currently unreachable: the URL tile is
             // disabled in UploadSection for privacy reasons. Existing link
             // materials keep their edit/refetch flows.
@@ -309,7 +344,7 @@ export default function CourseMaterials() {
         </div>
       )}
 
-      {modal && modal.kind !== "delete" && modal.kind !== "outline" && (
+      {modal && !["delete", "outline", "canvas-import"].includes(modal.kind) && (
         <MaterialFormModal
           kind={modal.kind}
           material={modal.material}
@@ -331,6 +366,18 @@ export default function CourseMaterials() {
             setModal(null);
             deleteMutation.mutate(modal.material);
           }}
+        />
+      )}
+
+      {modal?.kind === "canvas-import" && (
+        <CanvasImportModal
+          courseId={courseId}
+          courses={canvasCourses.courses}
+          importing={canvasImportMutation.isPending}
+          onClose={() => setModal(null)}
+          onImport={(canvasCourseId, files, onProgress) =>
+            canvasImportMutation.mutate({ canvasCourseId, files, onProgress })
+          }
         />
       )}
 

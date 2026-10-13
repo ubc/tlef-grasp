@@ -1,91 +1,15 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
-const quizScheduleService = require('../services/quiz-schedule');
-const { hasStaffAccessInCourse } = require('../utils/course-access');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, optionTextOf } = require('../utils/mc-options');
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
-
-// A student who started a quiz inside its window keeps access to their
-// in-progress attempt after the window closes: recorded answers exist (answers
-// are only recordable while the quiz is open) but no final score has been
-// saved yet. Lets them resume/submit so started-in-time progress is never lost.
-const hasUnsubmittedAttempt = async (userId, quizId) => {
-  const db = await databaseService.connect();
-  const userIdObj = ObjectId.isValid(userId) ? new ObjectId(userId) : userId;
-  const quizIdObj = ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId;
-  const existingScore = await db
-    .collection("grasp_quiz_score")
-    .findOne({ userId: userIdObj, quizId: quizIdObj });
-  if (existingScore) return false;
-  const attempt = await db
-    .collection("grasp_student_attempt")
-    .findOne({ userId: userIdObj, quizId: quizIdObj });
-  if (attempt) return true;
-
-  // A timed session can expire before the student submits an answer. Keep it
-  // reachable long enough for the client to perform its automatic zero-score
-  // submission instead of silently abandoning that started attempt.
-  const session = await quizSessionService.getSession(userId, quizId);
-  return Boolean(session && !session.submittedAt);
-};
-
-// Resolve whether a student may access a quiz right now, based on the
-// release/expire window of the section(s) they belong to. Students with no
-// section assignment, or whose section has no schedule for this quiz, are
-// blocked. A quiz is open if ANY of the student's scheduled sections is open.
-const resolveStudentQuizAccess = async (quiz, user) => {
-  if (!quiz) return { success: false, status: 404, message: "Quiz not found" };
-  if (!quiz.published) return { success: false, status: 403, message: "This quiz is not available. Only published quizzes can be accessed." };
-
-  // Instructors aren't enrolled in a section. Promoted TAs only receive this
-  // preview bypass in their TA course; elsewhere they follow student windows.
-  if (await hasStaffAccessInCourse(user, quiz.courseId)) {
-    return { success: true, scheduledExpiresAt: null };
-  }
-
-  const userId = user._id || user.id;
-  const studentSectionIds = await quizScheduleService.getStudentSectionObjectIds(userId, quiz.courseId);
-  if (studentSectionIds.length === 0) {
-    return {
-      success: false,
-      status: 403,
-      message: "This quiz is not available for your section. If you believe this is a mistake, contact your instructor.",
-    };
-  }
-
-  const rows = await quizScheduleService.getSchedulesForQuiz(quiz._id.toString());
-  const window = quizScheduleService.resolveWindow(rows, studentSectionIds, new Date());
-
-  if (window.accessibleNow) {
-    return { success: true, scheduledExpiresAt: window.expireDate || null };
-  }
-
-  if (window.reason === "not-yet") {
-    return {
-      success: false,
-      status: 403,
-      message: `This quiz is not yet available. It will be released on ${new Date(window.releaseDate).toLocaleString()}.`,
-    };
-  }
-  if (window.reason === "expired") {
-    // Grace path: the student started during the window but the quiz expired
-    // before they finished — let them resume and submit their attempt (#37).
-    if (await hasUnsubmittedAttempt(userId, quiz._id.toString())) {
-      return {
-        success: true,
-        expiredGrace: true,
-        scheduledExpiresAt: window.expireDate || null,
-      };
-    }
-    return { success: false, status: 403, message: "This quiz has expired and is no longer available." };
-  }
-  return { success: false, status: 403, message: "This quiz has not been scheduled for your section yet." };
-};
+const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
+const studentQuizDelivery = require('../services/student-quiz-delivery');
 
 const getStudentCoursesHandler = async (req, res) => {
   try {
@@ -192,7 +116,9 @@ const getQuizQuestionsHandler = async (req, res) => {
     const session = await quizSessionService.getOrCreateSession(userId, quiz, {
       scheduledExpiresAt: accessibility.scheduledExpiresAt,
     });
-    const questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+    // A spaced-3phase graded attempt keeps its pick on the session, so a
+    // reload serves the same questions (issue #168).
+    const questions = await studentQuizDelivery.getStudentQuestions(quiz, userId);
 
     if (questions && questions.length > 0) {
       try {
@@ -266,15 +192,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           vars
         );
         const formula = (q.calculationFormula || "").trim();
-        const answerDec =
-          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
-            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
-            : 2;
-        const tolerancePercent =
-          q.calculationAnswerTolerancePercent != null &&
-          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
-            ? Number(q.calculationAnswerTolerancePercent)
-            : null;
+        const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
         const built = CalculationQuestion.buildStudentCalculationInstance({
           template,
@@ -291,6 +209,8 @@ const getQuizQuestionsHandler = async (req, res) => {
             stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
             calculationToken: built.token,
             answerDecimalPlaces: built.answerDecimalPlaces,
+            // The rule the student is graded by, minus a range's bounds.
+            calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
             calculationAnswerTolerancePercent: tolerancePercent,
             options: {},
             learningObjectiveId: q.learningObjectiveId,
@@ -320,27 +240,19 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      const optionText = (raw) =>
-        (raw && typeof raw === "object" ? raw.text ?? "" : raw ?? "").toString();
-
-      let optionsObj = {};
-      if (q.options && typeof q.options === 'object') {
-        if (!Array.isArray(q.options)) {
-          optionsObj = {
-            A: optionText(q.options.A),
-            B: optionText(q.options.B),
-            C: optionText(q.options.C),
-            D: optionText(q.options.D)
-          };
-        } else {
-          optionsObj = {
-            A: optionText(q.options[0]),
-            B: optionText(q.options[1]),
-            C: optionText(q.options[2]),
-            D: optionText(q.options[3])
-          };
-        }
-      }
+      // Only the option text goes to the student; feedback and the answer stay
+      // on the server. Whatever letters the question has (two to eight). An
+      // option with an image (issue #146) is sent as { text, image } with just
+      // the file id and the alt text: the stored filename could name the answer.
+      const optionsObj = {};
+      optionKeysOf(q.options).forEach((key) => {
+        const raw = optionAt(q.options, key);
+        const text = optionTextOf(raw);
+        const image = raw && typeof raw === 'object' ? raw.image : null;
+        optionsObj[key] = image?.fileId
+          ? { text, image: { fileId: String(image.fileId), caption: image.caption || '' } }
+          : text;
+      });
 
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
@@ -379,7 +291,6 @@ const getQuizQuestionsHandler = async (req, res) => {
       alreadyCompleted = !!existingScore;
       if (!existingScore) {
         const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
-        const optionKeys = ['A', 'B', 'C', 'D'];
         attempts.forEach(attempt => {
           // A resumed wrong multiple-choice or calculation answer must not
           // reveal the correct one (issue #128): the student keeps retrying
@@ -406,7 +317,7 @@ const getQuizQuestionsHandler = async (req, res) => {
             studentGradeReview: attempt.studentGradeReview || null,
           };
           if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
-            entry.selectedIndex = optionKeys.indexOf(attempt.selectedAnswer);
+            entry.selectedIndex = MC_OPTION_KEYS.indexOf(attempt.selectedAnswer);
           }
           previousAnswers[attempt.questionId.toString()] = entry;
         });
@@ -471,13 +382,26 @@ const submitQuizHandler = async (req, res) => {
     const gradedAttempts = attempts.filter(a => a.isCorrect !== null);
     // The denominator is the number of questions the student was served, not
     // just the ones they answered — a timed-out student who answered 6 of 10
-    // scores out of 10. Sessions created before the count was recorded fall
-    // back to the graded-attempt count.
-    const servedCount = Number(session?.questionCount);
-    const totalQuestions = Number.isInteger(servedCount) && servedCount > 0
-      ? Math.max(servedCount, gradedAttempts.length)
-      : gradedAttempts.length;
-    const correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    // scores out of 10. A spaced-3phase attempt that kept its pick (issue
+    // #168) is scored on exactly that pick: its questions still served, plus
+    // any the student answered that have since been removed. Older sessions
+    // use the count recorded at the first load, and sessions from before that
+    // the graded-attempt count.
+    const scored = await studentQuizDelivery.scoredQuestionIds(quiz, userId, session, attempts);
+    let totalQuestions;
+    let correctAnswers;
+    if (scored) {
+      totalQuestions = scored.size;
+      correctAnswers = gradedAttempts.filter(
+        a => a.isCorrect === true && scored.has(String(a.questionId))
+      ).length;
+    } else {
+      const servedCount = Number(session?.questionCount);
+      totalQuestions = Number.isInteger(servedCount) && servedCount > 0
+        ? Math.max(servedCount, gradedAttempts.length)
+        : gradedAttempts.length;
+      correctAnswers = gradedAttempts.filter(a => a.isCorrect === true).length;
+    }
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : null;
 
     // Achievements are decoration: a failure awarding them must not cost the

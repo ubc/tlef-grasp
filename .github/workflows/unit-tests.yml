@@ -41,6 +41,11 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:unit:coverage
 
+      # tests/client/** has its own jest config (ESM, jsdom), so test:unit does
+      # not pick it up.
+      - name: Run client unit tests
+        run: npm run test:client
+
       - name: Upload unit coverage
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

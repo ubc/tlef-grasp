@@ -2,9 +2,22 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
+import {
+  MC_MAX_OPTIONS,
+  MC_MIN_OPTIONS,
+  addOptionRow,
+  optionRowsToObject,
+  removeOptionRow,
+} from "../../lib/mcOptions";
 import QuestionImage from "../../components/QuestionImage";
 import QuestionImageField from "../../components/QuestionImageField";
+import { discardImageFile } from "../../lib/questionImages";
+import { OPTION_IMAGE_CAPTION_PLACEHOLDER } from "../../components/McOptionEditor";
 import { useToast } from "../../components/ui/Toast";
+
+// Draft options (keyed by letter) as ordered rows for the row helpers.
+const draftRowsOf = (options) =>
+  Object.entries(options || {}).map(([id, opt]) => ({ id, ...opt }));
 
 const fieldLabel = "mb-1 block text-xs font-semibold text-muted";
 const fieldInput =
@@ -72,8 +85,12 @@ export default function QuestionCard({
   let reviewFlag = question.reviewFlag;
   let reviewIssue = question.reviewIssue;
   if (!reviewFlag && isMcq && question.options) {
-    const texts = Object.values(question.options).map((o) =>
-      (typeof o === "string" ? o : o.text || "").trim().toLowerCase()
+    // Options with the same text but different images are distinct (#146).
+    const texts = Object.values(question.options).map(
+      (o) =>
+        `${(typeof o === "string" ? o : o.text || "").trim().toLowerCase()}@${
+          (typeof o === "object" && o?.image?.fileId) || ""
+        }`
     );
     if (texts.some((t, i) => texts.indexOf(t) !== i)) {
       reviewFlag = true;
@@ -81,6 +98,33 @@ export default function QuestionCard({
         "Two or more answer options are identical. Each option must present a distinct choice.";
     }
   }
+
+  // Option rows of the draft while editing (two to eight, issue #144). The
+  // draft keeps options keyed by letter; add and remove go through the shared
+  // row helpers so re-lettering and the correct answer behave as in the forms.
+  const draftOptionRows = draftRowsOf(draft?.options);
+  const addDraftOption = () =>
+    setDraft((prev) => ({
+      ...prev,
+      options: optionRowsToObject(addOptionRow(draftRowsOf(prev.options))),
+    }));
+  const setDraftOption = (id, patch) =>
+    setDraft((prev) => ({
+      ...prev,
+      options: { ...prev.options, [id]: { ...prev.options[id], ...patch } },
+    }));
+  const removeDraftOption = (id) => {
+    discardImageFile(draft?.options?.[id]?.image?.fileId);
+    setDraft((prev) => {
+      const rows = draftRowsOf(prev.options);
+      const { rows: next, correctAnswer } = removeOptionRow(
+        rows,
+        rows.findIndex((row) => row.id === id),
+        prev.correctAnswer
+      );
+      return { ...prev, options: optionRowsToObject(next), correctAnswer };
+    });
+  };
 
   const startEdit = () => {
     setDraft({
@@ -107,6 +151,7 @@ export default function QuestionCard({
               {
                 text: opt.text || "",
                 feedback: opt.feedback || "",
+                ...(opt.image?.fileId ? { image: opt.image } : {}),
               },
             ])
           )
@@ -157,8 +202,9 @@ export default function QuestionCard({
       } catch {
         vars = question.calculationVariables;
       }
-      if (!Array.isArray(vars) || vars.length === 0) {
-        return showToast("At least one variable is required (JSON array)", "error");
+      // An empty array is allowed: the formula is then the fixed answer.
+      if (!Array.isArray(vars)) {
+        return showToast("Variables must be a JSON array (use [] for a fixed answer)", "error");
       }
       for (let i = 0; i < vars.length; i++) {
         const v = vars[i];
@@ -197,6 +243,7 @@ export default function QuestionCard({
             id: key,
             text: opt.text.trim(),
             feedback: opt.feedback.trim(),
+            ...(opt.image?.fileId ? { image: opt.image } : {}),
           },
         ])
       );
@@ -249,7 +296,7 @@ export default function QuestionCard({
             <RichText
               text={escapeHtml(question.title)}
               as="h5"
-              className="mb-2 font-semibold text-ink"
+              className="mb-2 whitespace-pre-line font-semibold text-ink"
             />
           )}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -379,7 +426,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Question stem">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Correct answer">
@@ -443,7 +490,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Template">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Formula">
@@ -464,7 +511,7 @@ export default function QuestionCard({
                   ))}
                 </ul>
               ) : (
-                "—"
+                "None — every student gets the same question and the formula is the answer"
               )}
             </FibBlock>
             <FibBlock label="Answer decimal places">
@@ -513,7 +560,7 @@ export default function QuestionCard({
         ) : (
           <div className="space-y-3">
             <FibBlock label="Prompt">
-              <RichText text={escapeHtml(question.stem || "")} />
+              <RichText text={escapeHtml(question.stem || "")} className="whitespace-pre-line" />
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Sample answer">
@@ -546,7 +593,7 @@ export default function QuestionCard({
             <div className="mb-3">
               <RichText
                 text={escapeHtml(question.stem)}
-                className="text-sm text-ink"
+                className="whitespace-pre-line text-sm text-ink"
               />
               <div className="flex flex-wrap gap-2">
                 {stemImages.map((img) => (
@@ -556,7 +603,7 @@ export default function QuestionCard({
             </div>
           )}
           <div className="space-y-2">
-            {Object.values(question.options || {}).map((option) => {
+            {(isEditing ? draftOptionRows : Object.values(question.options || {})).map((option) => {
               const isCorrect = isEditing
                 ? option.id === draft.correctAnswer
                 : option.id === question.correctAnswer;
@@ -595,48 +642,51 @@ export default function QuestionCard({
                       <input
                         type="text"
                         value={draft.options[option.id]?.text || ""}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            options: {
-                              ...prev.options,
-                              [option.id]: {
-                                ...prev.options[option.id],
-                                text: event.target.value,
-                              },
-                            },
-                          }))
-                        }
+                        onChange={(event) => setDraftOption(option.id, { text: event.target.value })}
                         className={fieldInput}
                       />
                     ) : (
-                      <RichText
-                        text={`${option.id}. ${escapeHtml(option.text)}`}
-                        className="min-w-0 flex-1 text-sm text-ink"
-                      />
+                      <div className="min-w-0 flex-1">
+                        <RichText
+                          text={`${option.id}. ${escapeHtml(option.text)}`}
+                          className="whitespace-pre-line text-sm text-ink"
+                        />
+                        <QuestionImage image={option.image} showCaption={false} />
+                      </div>
+                    )}
+                    {isEditing && (
+                      <button
+                        type="button"
+                        aria-label={`Remove option ${option.id}`}
+                        disabled={draftOptionRows.length <= MC_MIN_OPTIONS}
+                        onClick={() => removeDraftOption(option.id)}
+                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <i className="fas fa-times text-xs" aria-hidden="true" />
+                      </button>
                     )}
                   </div>
                   {isEditing ? (
-                    <div className="mt-1 ml-7 flex items-center gap-2">
-                      <span className="text-xs text-muted">Feedback:</span>
-                      <input
-                        type="text"
-                        value={draft.options[option.id]?.feedback || ""}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            options: {
-                              ...prev.options,
-                              [option.id]: {
-                                ...prev.options[option.id],
-                                feedback: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className={`${fieldInput} text-xs italic`}
-                      />
-                    </div>
+                    <>
+                      <div className="mt-1 ml-7 flex items-center gap-2">
+                        <span className="text-xs text-muted">Feedback:</span>
+                        <input
+                          type="text"
+                          value={draft.options[option.id]?.feedback || ""}
+                          onChange={(event) => setDraftOption(option.id, { feedback: event.target.value })}
+                          className={`${fieldInput} text-xs italic`}
+                        />
+                      </div>
+                      <div className="mt-1 ml-7">
+                        <QuestionImageField
+                          single
+                          label={`Option ${option.id}`}
+                          value={draft.options[option.id]?.image ? [draft.options[option.id].image] : []}
+                          onChange={(images) => setDraftOption(option.id, { image: images[0] || null })}
+                          captionPlaceholder={OPTION_IMAGE_CAPTION_PLACEHOLDER}
+                        />
+                      </div>
+                    </>
                   ) : (
                     !isCorrect &&
                     option.feedback && (
@@ -649,6 +699,20 @@ export default function QuestionCard({
                 </div>
               );
             })}
+            {isEditing && (
+              <button
+                type="button"
+                disabled={draftOptionRows.length >= MC_MAX_OPTIONS}
+                onClick={addDraftOption}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40"
+              >
+                <i className="fas fa-plus" aria-hidden="true" />
+                Add option
+                <span className="font-normal text-muted">
+                  ({draftOptionRows.length} of {MC_MAX_OPTIONS})
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}

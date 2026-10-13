@@ -5,6 +5,8 @@ import { escapeHtml } from "../../lib/format";
 import Modal from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { scoreClasses } from "./ScoreBadge";
+import { optionImageOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import QuestionImage from "../../components/QuestionImage";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
@@ -232,13 +234,10 @@ function TextAttempt({ attempt, canOverride, grading, onGrade }) {
 function McqAttempt({ attempt }) {
   return (
     <div className="space-y-2">
-      {["A", "B", "C", "D"].map((key) => {
-        const optionRaw = attempt.options?.[key];
-        const optionText =
-          typeof optionRaw === "object" && optionRaw !== null
-            ? optionRaw.text || ""
-            : optionRaw || "";
-        if (!optionText) return null;
+      {optionKeysOf(attempt.options).map((key) => {
+        const optionText = optionTextOf(attempt.options[key]);
+        const image = optionImageOf(attempt.options[key]);
+        if (!optionText && !image) return null;
 
         let stateClass = "border-gray-200";
         if (key === attempt.correctAnswer) {
@@ -255,10 +254,12 @@ function McqAttempt({ attempt }) {
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page text-xs font-bold text-ink">
               {key}
             </span>
-            <RichText
-              text={escapeHtml(optionText)}
-              className="min-w-0 flex-1 text-sm text-ink"
-            />
+            <div className="min-w-0 flex-1">
+              {optionText && (
+                <RichText text={escapeHtml(optionText)} className="whitespace-pre-line text-sm text-ink" />
+              )}
+              <QuestionImage image={image} showCaption={false} />
+            </div>
           </div>
         );
       })}
@@ -372,7 +373,7 @@ export default function StudentReviewModal({ review, onClose }) {
 
                   <RichText
                     text={escapeHtml(attempt.questionText)}
-                    className="mb-3 font-medium text-ink"
+                    className="mb-3 whitespace-pre-line font-medium text-ink"
                   />
 
                   {isOpenEnded ? (

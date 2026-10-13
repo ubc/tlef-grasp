@@ -118,12 +118,13 @@ describe('Canvas LMS section routes', () => {
     expect(response.body.capabilities).toEqual({
       link: true,
       rosterSync: true,
+      files: true,
       assignments: true,
     });
   });
 
   it('reports the capabilities the configured scopes enable', async () => {
-    const capabilities = { link: true, rosterSync: false, assignments: false };
+    const capabilities = { link: true, rosterSync: false, files: false, assignments: false };
     const response = await request(buildApp(createIntegration({ capabilities })))
       .get('/api/lms/canvas/status');
 

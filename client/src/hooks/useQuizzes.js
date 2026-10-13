@@ -150,6 +150,24 @@ export function useUpdateQuizSchedules(courseId, quizId, options) {
   });
 }
 
+// Shift several quizzes' schedules by one offset. Pass `dryRun: true` in the
+// body for the preview; only a real apply invalidates cached schedules.
+export function useShiftQuizSchedules(courseId, options) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.post(`/api/quiz/course/${courseId}/schedules/shift`, body),
+    ...options,
+    onSuccess: (data, body, ...rest) => {
+      if (!body.dryRun) {
+        queryClient.invalidateQueries({ queryKey: ["quiz-schedules"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.quizzesWithQuestions(courseId) });
+        queryClient.invalidateQueries({ queryKey: ["quiz-calendar", courseId] });
+      }
+      options?.onSuccess?.(data, body, ...rest);
+    },
+  });
+}
+
 // Per-student scores for one quiz (instructor view).
 export function useQuizScores(quizId) {
   const query = useQuery({

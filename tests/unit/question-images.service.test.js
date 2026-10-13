@@ -97,22 +97,61 @@ describe("question service image handling", () => {
       ]);
     });
 
-    it("strips legacy per-option images — images live on the stem only", async () => {
+    it("keeps one sanitized image per option and drops malformed ones (#146)", async () => {
       const { questionCollection } = mockCollections();
+      const optionImageId = new ObjectId().toString();
 
       await questionService.saveQuestion(new ObjectId().toString(), {
         title: "MCQ",
         stem: "Stem",
         options: {
-          A: { text: "4", image: { fileId: new ObjectId().toString() } },
-          B: { text: "5", feedback: "Close" },
+          A: { text: "", image: imageRef(optionImageId, { caption: "y".repeat(400), extra: "x" }) },
+          B: { text: "5", feedback: "Close", image: { fileId: "not-an-object-id" } },
+          C: { text: "6", image: "garbage" },
         },
         correctAnswer: "A",
       });
 
       const inserted = questionCollection.insertOne.mock.calls[0][0];
-      expect(inserted.options.A).toEqual({ text: "4" });
+      expect(inserted.options.A).toEqual({
+        text: "",
+        image: {
+          fileId: optionImageId,
+          filename: "diagram.png",
+          mimeType: "image/png",
+          size: 1234,
+          caption: "y".repeat(300),
+        },
+      });
       expect(inserted.options.B).toEqual({ text: "5", feedback: "Close" });
+      expect(inserted.options.C).toEqual({ text: "6" });
+    });
+
+    it("refuses an import that differs from an existing question only in its option images", async () => {
+      const { questionCollection } = mockCollections();
+      const imageA = new ObjectId().toString();
+      const imageB = new ObjectId().toString();
+      const existing = {
+        title: "Which structure?",
+        stem: "Pick one",
+        questionType: "multiple-choice",
+        options: { A: { text: "", image: imageRef(imageA) }, B: { text: "", image: imageRef(imageB) } },
+        correctAnswer: "A",
+      };
+      questionCollection.find = jest.fn(() => ({ toArray: () => Promise.resolve([existing]) }));
+
+      // Same images: a duplicate.
+      await expect(
+        questionService.saveQuestion(new ObjectId().toString(), { ...existing }, { dedupe: true })
+      ).rejects.toMatchObject({ code: "DUPLICATE_QUESTION" });
+
+      // Different images behind the same (empty) texts: a new question.
+      await questionService.saveQuestion(
+        new ObjectId().toString(),
+        { ...existing, options: { A: existing.options.B, B: existing.options.A } },
+        { dedupe: true }
+      );
+      expect(questionCollection.insertOne).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -137,22 +176,63 @@ describe("question service image handling", () => {
       expect(deleteImages).toHaveBeenCalledWith([removedId]);
     });
 
-    it("cleans up legacy option images when the options are rewritten", async () => {
+    it("keeps an option image through an options rewrite", async () => {
       const { questionCollection } = mockCollections();
       const optionImageId = new ObjectId().toString();
       const questionId = new ObjectId();
       questionCollection.findOne.mockResolvedValue({
         _id: questionId,
-        options: { A: { text: "4", image: { fileId: optionImageId } } },
+        options: { A: { text: "4", image: imageRef(optionImageId) } },
       });
 
       await questionService.updateQuestion(questionId.toString(), {
-        options: { A: { text: "4", image: { fileId: optionImageId } } },
+        options: { A: { text: "4 m/s", image: imageRef(optionImageId) } },
       });
 
       const [, { $set: update }] = questionCollection.updateOne.mock.calls[0];
-      expect(update.options.A).toEqual({ text: "4" });
-      expect(deleteImages).toHaveBeenCalledWith([optionImageId]);
+      expect(update.options.A).toEqual({ text: "4 m/s", image: imageRef(optionImageId) });
+      expect(deleteImages).not.toHaveBeenCalled();
+    });
+
+    it("deletes an option image that was replaced or removed", async () => {
+      const { questionCollection } = mockCollections();
+      const replacedId = new ObjectId().toString();
+      const replacementId = new ObjectId().toString();
+      const removedId = new ObjectId().toString();
+      const questionId = new ObjectId();
+      questionCollection.findOne.mockResolvedValue({
+        _id: questionId,
+        options: {
+          A: { text: "4", image: imageRef(replacedId) },
+          B: { text: "5", image: imageRef(removedId) },
+        },
+      });
+
+      await questionService.updateQuestion(questionId.toString(), {
+        options: { A: { text: "4", image: imageRef(replacementId) }, B: { text: "5" } },
+      });
+
+      expect(deleteImages).toHaveBeenCalledWith([replacedId, removedId]);
+    });
+
+    it("deletes the image of an option that was removed altogether", async () => {
+      const { questionCollection } = mockCollections();
+      const removedId = new ObjectId().toString();
+      const questionId = new ObjectId();
+      questionCollection.findOne.mockResolvedValue({
+        _id: questionId,
+        options: {
+          A: { text: "4" },
+          B: { text: "5" },
+          C: { text: "", image: imageRef(removedId) },
+        },
+      });
+
+      await questionService.updateQuestion(questionId.toString(), {
+        options: { A: { text: "4" }, B: { text: "5" } },
+      });
+
+      expect(deleteImages).toHaveBeenCalledWith([removedId]);
     });
 
     it("does not fetch the doc or delete images when the update never touches them", async () => {

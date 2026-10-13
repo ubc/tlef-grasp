@@ -331,10 +331,11 @@ test.describe('Instructor seeded course management (authenticated)', () => {
       await dialog.getByRole('button', { name: 'Save', exact: true }).click();
       const sent = (await savePut).postDataJSON();
       expect(sent.schedules).toHaveLength(2);
-      expect(sent.schedules.map((row) => row.releaseDate)).toEqual([
-        '2020-01-01T00:00',
-        '2020-01-01T00:00',
-      ]);
+      // The wall-clock time typed, as the instant it means in the browser's
+      // zone (the test runs in the same zone), so the server stores the same
+      // moment whatever timezone it runs in.
+      const typedRelease = new Date('2020-01-01T00:00').toISOString();
+      expect(sent.schedules.map((row) => row.releaseDate)).toEqual([typedRelease, typedRelease]);
 
       await expect(dialog).toBeHidden();
       await expect(quizCard.getByRole('button', { name: /101\s+Active/ })).toBeVisible();

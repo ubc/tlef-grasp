@@ -34,7 +34,21 @@ export const BLOOM_LEVELS = [
 
 // Mirrors MAX_MATERIALS_PER_OBJECTIVE in src/constants/app-constants.js.
 // The server rejects writes above this; the UI stops the instructor first.
+// Multiple-choice option letters. Mirrors MC_OPTION_KEYS and friends in
+// src/constants/app-constants.js: a question carries two to eight options
+// lettered from A, and AI generation makes four unless asked otherwise
+// (issue #144).
+export const MC_OPTION_KEYS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+export const MC_MIN_OPTIONS = 2;
+export const MC_MAX_OPTIONS = MC_OPTION_KEYS.length;
+export const MC_DEFAULT_OPTION_COUNT = 4;
+
 export const MAX_MATERIALS_PER_OBJECTIVE = 3;
+
+// Mirrors CANVAS_IMPORT_MATERIAL.fileType in src/constants/app-constants.js:
+// the course's empty "From Canvas" material, which the learning objectives of
+// a Canvas quiz import link to (issue #165).
+export const CANVAS_IMPORT_MATERIAL_TYPE = "canvas-import";
 
 // Mirrors MAX_QUESTIONS_PER_OBJECTIVE in src/constants/app-constants.js — see
 // there for why this is the only cap. It bounds one GRANULAR objective's total.

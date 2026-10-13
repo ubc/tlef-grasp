@@ -8,13 +8,18 @@ import {
 } from "../hooks/useQuizzes";
 import { useMyCourseSections } from "../hooks/useSections";
 import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { downloadQuizExport } from "../lib/exports";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
+import { useCanvasStatus } from "../hooks/useCanvasIntegration";
+import { useQuizCanvasAssignments } from "../hooks/useCanvasAssignments";
+import { canvasAssignmentsEnabled } from "../lib/canvasAssignments";
 import { LoadingState, EmptyState } from "../components/ui/states";
 import QuizCard from "./quizzes/QuizCard";
 import CreateQuizWizard from "./quizzes/CreateQuizWizard";
 import ExportQuizModal from "./quizzes/ExportQuizModal";
+import ShiftDeadlinesModal from "./quizzes/ShiftDeadlinesModal";
 
 const TABS = [
   { id: "manage-quizzes", label: "Manage Quizzes" },
@@ -29,6 +34,8 @@ export default function Quizzes() {
 
   const { can } = useCoInstructorAccess();
   const canCreate = can("createQuiz");
+  // The shift endpoint is faculty-only.
+  const { isFaculty: canShift } = useCurrentUser();
   // Co-instructors can always schedule existing quizzes (Manage tab); creating
   // is a separate, owner-granted permission.
   const tabs = canCreate ? TABS : TABS.filter((tab) => tab.id !== "create-quiz");
@@ -36,12 +43,34 @@ export default function Quizzes() {
   const [activeTab, setActiveTab] = useState("manage-quizzes");
   const [exportQuiz, setExportQuiz] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [shiftOpen, setShiftOpen] = useState(false);
 
   const { quizzes, isPending } = useQuizzesWithQuestions(courseId);
   // Scheduling is limited to the sections this instructor owns (owner included),
   // so the schedule picker only offers their own sections.
   const { sections } = useMyCourseSections(courseId);
   const targetQuizId = searchParams.get("quiz");
+
+  // Canvas assignments for scheduled quizzes (issue #125). Deleting a quiz
+  // never deletes them, so the confirmation says they will stay behind.
+  const canvas = useCanvasStatus();
+  const deleteTargetAssignments = useQuizCanvasAssignments(courseId, deleteTarget, {
+    enabled: canvasAssignmentsEnabled(canvas) && !!deleteTarget,
+  });
+  const deleteTargetCanvasCount = deleteTargetAssignments.sections.filter(
+    (section) => section.assignment?.status === "created"
+  ).length;
+
+  // Filter against the live list so deleted or other-course quizzes never count.
+  const selectedQuizzes = quizzes.filter((q) => selectedIds.has(q.id));
+  const toggleSelect = (quizId) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(quizId)) next.delete(quizId);
+      else next.add(quizId);
+      return next;
+    });
 
   useEffect(() => {
     if (isPending || !targetQuizId) return;
@@ -104,6 +133,37 @@ export default function Quizzes() {
             message="There are no quizzes created for this course yet."
           />
         ) : (
+          <>
+          {canShift && (
+            <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-sm">
+              <span className="text-sm font-medium text-ink">
+                {selectedQuizzes.length} of {quizzes.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedIds(
+                    selectedQuizzes.length === quizzes.length
+                      ? new Set()
+                      : new Set(quizzes.map((q) => q.id))
+                  )
+                }
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {selectedQuizzes.length === quizzes.length ? "Clear selection" : "Select all"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShiftOpen(true)}
+                disabled={selectedQuizzes.length === 0 || sections.length === 0}
+                title={sections.length === 0 ? "You have no sections in this course" : undefined}
+                className="ml-auto rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <i className="fas fa-calendar-plus mr-1.5" />
+                Shift deadlines
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
             {quizzes.map((quiz) => (
               <div
@@ -115,6 +175,9 @@ export default function Quizzes() {
                   quiz={quiz}
                   courseId={courseId}
                   sections={sections}
+                  canvas={canvas}
+                  selected={selectedIds.has(quiz.id)}
+                  onToggleSelect={canShift ? toggleSelect : undefined}
                   onUpdate={(quizId, updates, successMessage) =>
                     updateMutation.mutate({ quizId, updates, successMessage })
                   }
@@ -127,6 +190,7 @@ export default function Quizzes() {
               </div>
             ))}
           </div>
+          </>
         )
       ) : (
         <CreateQuizWizard
@@ -141,12 +205,32 @@ export default function Quizzes() {
         onExport={handleExport}
       />
 
+      <ShiftDeadlinesModal
+        open={shiftOpen}
+        courseId={courseId}
+        quizzes={selectedQuizzes}
+        sections={sections}
+        onClose={() => setShiftOpen(false)}
+        onApplied={() => {
+          setShiftOpen(false);
+          setSelectedIds(new Set());
+        }}
+      />
+
       <ConfirmModal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteMutation.mutate(deleteTarget)}
         title="Delete Quiz"
-        message="Are you sure you want to delete this quiz? This action cannot be undone."
+        message={
+          deleteTargetCanvasCount > 0
+            ? `Are you sure you want to delete this quiz? This action cannot be undone. ${
+                deleteTargetCanvasCount === 1
+                  ? "The Canvas assignment created for it will stay in Canvas; delete it there if you no longer want it."
+                  : `The ${deleteTargetCanvasCount} Canvas assignments created for it will stay in Canvas; delete them there if you no longer want them.`
+              }`
+            : "Are you sure you want to delete this quiz? This action cannot be undone."
+        }
         danger
       />
     </div>

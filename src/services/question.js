@@ -1,7 +1,13 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
+const { MC_OPTION_KEYS } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { deleteImages, collectQuestionImageIds } = require('./image');
+const {
+    QUESTION_SOURCE_KEYS,
+    pickImportSource,
+    pickImportWarnings,
+} = require('../utils/import-provenance');
 const { ObjectId } = require('mongodb');
 
 const MAX_IMAGE_CAPTION_LENGTH = 300;
@@ -41,19 +47,21 @@ const sanitizeImageRefArray = (value) => {
 };
 
 /**
- * Strip any per-option `image` field — images are only attached to the
- * question stem now, not to individual options. Legacy option images are
- * dropped on the next save.
+ * Keep only the lettered option keys the app can show (A to H, issue #144).
+ * An option may carry one image (issue #146), validated like a stem image;
+ * a malformed one is dropped rather than stored.
  */
 const sanitizeOptions = (options) => {
     if (!options || typeof options !== "object" || Array.isArray(options)) return options;
 
     const sanitized = {};
     for (const key of Object.keys(options)) {
+        if (!MC_OPTION_KEYS.includes(key)) continue;
         const option = options[key];
         if (option && typeof option === "object" && !Array.isArray(option)) {
             const { image, ...rest } = option;
-            sanitized[key] = rest;
+            const imageRef = sanitizeImageRef(image);
+            sanitized[key] = imageRef ? { ...rest, image: imageRef } : rest;
         } else {
             sanitized[key] = option;
         }
@@ -66,8 +74,8 @@ const normalizeText = (value) => String(value ?? "").replace(/\s+/g, " ").trim()
 
 // A stable signature of a question's answer content, so two questions that only
 // differ in whitespace/casing still count as the same. Multiple-choice compares
-// the option texts (keyed A–D) and the correct letter; the other types compare
-// their acceptable/correct answers.
+// the option texts and images (keyed by letter) and the correct letter; the
+// other types compare their acceptable/correct answers.
 const answerSignature = (q) => {
     const type = String(q.questionType || q.type || "").toLowerCase();
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
@@ -77,7 +85,8 @@ const answerSignature = (q) => {
             .map((key) => {
                 const opt = options[key];
                 const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
-                return `${key}:${normalizeText(text)}`;
+                const imageId = (opt && opt.image && opt.image.fileId) || "";
+                return `${key}:${normalizeText(text)}@${imageId}`;
             })
             .join("|");
         return `mc:${opts}#${normalizeText(q.correctAnswer)}`;
@@ -160,29 +169,18 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             questionData.type ||
             QUESTION_TYPES.MULTIPLE_CHOICE;
 
-        if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
-            CalculationQuestion.validateFormulaAgainstVariableSpecs(
-                typeof questionData.calculationFormula === "string"
-                    ? questionData.calculationFormula
-                    : "",
-                Array.isArray(questionData.calculationVariables)
-                    ? questionData.calculationVariables
-                    : []
-            );
-        }
-
-        // Save the full question data including granularObjectiveId
-        const answerDecRaw = questionData.calculationAnswerDecimals;
-        const calculationAnswerDecimals =
-            answerDecRaw !== undefined && answerDecRaw !== null && answerDecRaw !== ""
-                ? Math.max(0, Math.min(12, parseInt(answerDecRaw, 10) || 2))
-                : 2;
-
-        const tolRaw = questionData.calculationAnswerTolerancePercent;
+        const calculationAnswerDecimals = CalculationQuestion.normalizeAnswerDecimals(
+            questionData.calculationAnswerDecimals
+        );
+        // The tolerance object is authoritative; the legacy percent number is
+        // still accepted from older clients and kept in sync for older readers.
+        const calculationTolerance = CalculationQuestion.normalizeTolerance(
+            questionData.calculationTolerance !== undefined
+                ? questionData.calculationTolerance
+                : questionData.calculationAnswerTolerancePercent
+        );
         const calculationAnswerTolerancePercent =
-            tolRaw !== undefined && tolRaw !== null && tolRaw !== ""
-                ? Math.max(0, Math.min(100, parseFloat(tolRaw) || 0))
-                : null;
+            CalculationQuestion.legacyPercentOf(calculationTolerance);
 
         const calcVarsForStore = Array.isArray(questionData.calculationVariables)
             ? questionData.calculationVariables
@@ -191,6 +189,15 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             typeof questionData.calculationFormula === "string"
                 ? questionData.calculationFormula
                 : "";
+
+        if (String(questionType).toLowerCase() === QUESTION_TYPES.CALCULATION) {
+            CalculationQuestion.validateCalculationDefinition({
+                formula: calcFormulaRaw,
+                variableSpecs: calcVarsForStore,
+                stem: questionData.stem || questionData.title || "",
+                tolerance: calculationTolerance,
+            });
+        }
 
         const qtLower = String(questionType).toLowerCase();
 
@@ -210,7 +217,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             }
         }
 
-        const question = await collection.insertOne({
+        const doc = {
             title: questionData.title,
             stem: questionData.stem,
             stemImages: sanitizeImageRefArray(questionData.stemImages ?? questionData.stemImage),
@@ -237,6 +244,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                     : calcFormulaRaw,
             calculationVariables: calcVarsForStore,
             calculationAnswerDecimals,
+            calculationTolerance,
             calculationAnswerTolerancePercent,
             bloom: questionData.bloom,
             courseId: courseIdObj,
@@ -249,7 +257,16 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 ? String(questionData.flagReason || "").trim()
                 : "",
             createdAt: new Date(),
-        });
+        };
+
+        // Canvas import provenance and lossy-conversion notes (#140). Written
+        // only when given, so other questions keep their exact shape.
+        const source = pickImportSource(questionData.source, QUESTION_SOURCE_KEYS);
+        if (source) doc.source = source;
+        const importWarnings = pickImportWarnings(questionData.importWarnings);
+        if (importWarnings) doc.importWarnings = importWarnings;
+
+        const question = await collection.insertOne(doc);
         
         console.log("Question saved with ID:", question.insertedId);
         return question;
@@ -459,16 +476,21 @@ const updateQuestion = async (questionId, updateData) => {
                 : [];
         }
         if (updateData.calculationAnswerDecimals !== undefined) {
-            const d = parseInt(updateData.calculationAnswerDecimals, 10);
-            update.calculationAnswerDecimals = Math.max(0, Math.min(12, Number.isFinite(d) ? d : 2));
+            update.calculationAnswerDecimals = CalculationQuestion.normalizeAnswerDecimals(
+                updateData.calculationAnswerDecimals
+            );
         }
-        if (updateData.calculationAnswerTolerancePercent !== undefined) {
-            const t = parseFloat(updateData.calculationAnswerTolerancePercent);
-            update.calculationAnswerTolerancePercent = (updateData.calculationAnswerTolerancePercent === null ||
-                updateData.calculationAnswerTolerancePercent === "" ||
-                !Number.isFinite(t))
-                ? null
-                : Math.max(0, Math.min(100, t));
+        if (
+            updateData.calculationTolerance !== undefined ||
+            updateData.calculationAnswerTolerancePercent !== undefined
+        ) {
+            const tolerance = CalculationQuestion.normalizeTolerance(
+                updateData.calculationTolerance !== undefined
+                    ? updateData.calculationTolerance
+                    : updateData.calculationAnswerTolerancePercent
+            );
+            update.calculationTolerance = tolerance;
+            update.calculationAnswerTolerancePercent = CalculationQuestion.legacyPercentOf(tolerance);
         }
         if (updateData.openEndedSampleAnswer !== undefined) {
             update.openEndedSampleAnswer =
@@ -526,9 +548,13 @@ const updateQuestion = async (questionId, updateData) => {
             }
         }
 
+        // The stem matters too: a fixed-answer question must not gain a
+        // {{placeholder}} it cannot fill.
         const touchesCalculation =
             update.calculationFormula !== undefined ||
             update.calculationVariables !== undefined ||
+            update.calculationTolerance !== undefined ||
+            update.stem !== undefined ||
             update.questionType !== undefined;
         const touchesImages =
             update.stemImages !== undefined || update.options !== undefined;
@@ -552,10 +578,12 @@ const updateQuestion = async (questionId, updateData) => {
                     const mergedVars = Array.isArray(merged.calculationVariables)
                         ? merged.calculationVariables
                         : [];
-                    CalculationQuestion.validateFormulaAgainstVariableSpecs(
-                        mergedFormula,
-                        mergedVars
-                    );
+                    CalculationQuestion.validateCalculationDefinition({
+                        formula: mergedFormula,
+                        variableSpecs: mergedVars,
+                        stem: merged.stem || merged.title || "",
+                        tolerance: CalculationQuestion.resolveTolerance(merged),
+                    });
                     update.calculationFormula =
                         CalculationQuestion.prepareCalculationFormula(
                             mergedFormula,

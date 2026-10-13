@@ -1,6 +1,7 @@
 // RAG Service - Singleton pattern
 // Handles all RAG initialization and provides helper functions
 const { getObjectiveWithMaterials } = require('./objective');
+const { isCanvasImportMaterial } = require('./material');
 const { getLLMProvider, getEmbeddingModel, getQdrantVectorSize } = require('../utils/llm-provider');
 const {
   retrieveChunksPerMaterial,
@@ -227,9 +228,12 @@ class RAGService {
       throw new Error(`Objective with ID ${objectiveId} not found`);
     }
 
-    const sourceIds = objective.materials.map((material) => material.sourceId);
+    // The "From Canvas" placeholder (issue #165) has nothing to search.
+    const sourceIds = objective.materials
+      .filter((material) => !isCanvasImportMaterial(material))
+      .map((material) => material.sourceId);
     if (sourceIds.length === 0) {
-      console.log("⚠️ Objective has no attached materials");
+      console.log("⚠️ Objective has no attached materials with content");
       return '';
     }
 

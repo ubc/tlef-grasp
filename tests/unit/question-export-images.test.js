@@ -180,6 +180,68 @@ describe("QTI export with question images", () => {
     expect(assessmentXml).toContain("Which organelle is shown?");
   });
 
+  describe("option images (#146)", () => {
+    const OPTION_FILE_ID = new ObjectId().toString();
+    const optionImage = (overrides = {}) => ({
+      fileId: OPTION_FILE_ID,
+      filename: "benzene.png",
+      mimeType: "image/png",
+      size: IMAGE_BYTES.length,
+      caption: "Benzene ring",
+      ...overrides,
+    });
+    const withOptionImages = () =>
+      mcqQuestion({
+        options: {
+          A: { text: "", image: optionImage() },
+          B: { text: "Cyclohexane", image: optionImage({ fileId: FILE_ID, filename: "c6.png", caption: "" }) },
+          C: { text: "Toluene" },
+        },
+      });
+    // The <response_label> for one answer, by its position.
+    const answerBlocks = (xml) => xml.match(/<response_label[\s\S]*?<\/response_label>/g);
+
+    it("bundles option images and writes them into the answer html", async () => {
+      const { manifest, assessmentXml, imageEntries } = await exportQti([withOptionImages()]);
+      const optionPath = `web_resources/grasp/${OPTION_FILE_ID}-benzene.png`;
+
+      expect(imageEntries.map((e) => e.name)).toEqual(
+        expect.arrayContaining([optionPath, `web_resources/grasp/${FILE_ID}-c6.png`])
+      );
+      expect(manifest).toContain(`type="webcontent" href="${optionPath}"`);
+
+      const [a, b, c] = answerBlocks(assessmentXml);
+      // Image-only: just the image, its caption as alt text and not as a
+      // visible line (it could name the answer).
+      expect(a).toContain('texttype="text/html"');
+      expect(a).toContain(`$IMS-CC-FILEBASE$/grasp/${OPTION_FILE_ID}-benzene.png`);
+      expect(a).toContain("alt=&quot;Benzene ring&quot;");
+      expect(a).not.toContain("&lt;em&gt;");
+      // Text and image.
+      expect(b).toContain("Cyclohexane");
+      expect(b).toContain(`$IMS-CC-FILEBASE$/grasp/${FILE_ID}-c6.png`);
+      // Text only, as before.
+      expect(c).toContain('<mattext texttype="text/plain">Toluene</mattext>');
+    });
+
+    it("exports an image-only option as its caption when the image is missing from storage", async () => {
+      downloadImageBuffer.mockResolvedValue(null);
+
+      const { assessmentXml } = await exportQti([withOptionImages()]);
+      const [a] = answerBlocks(assessmentXml);
+
+      expect(a).toContain('<mattext texttype="text/plain">Benzene ring</mattext>');
+    });
+
+    it("downloads an image once when a stem and an option share it", async () => {
+      await exportQti([
+        withImage({ options: { A: { text: "", image: optionImage({ fileId: FILE_ID }) }, B: "Ribosome" } }),
+      ]);
+
+      expect(downloadImageBuffer).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("exports questions without images exactly as before", async () => {
     const { response, manifest, assessmentXml, imageEntries } = await exportQti([mcqQuestion()]);
 

@@ -56,6 +56,24 @@ const calcQuestion = {
 };
 
 describe('createCSVExport', () => {
+  test('adds option columns beyond D only when a question needs them (issue #144)', () => {
+    const four = createCSVExport({ courseName: 'Bio' }, [mcQuestion]);
+    expect(four.split('\n')[0]).toContain('"Option D","Correct Answer"');
+    expect(four.split('\n')[0]).not.toContain('Option E');
+
+    const five = {
+      ...mcQuestion,
+      options: { ...mcQuestion.options, E: { text: 'Argon', feedback: 'wrong' } },
+      correctAnswer: 'E',
+    };
+    const csv = createCSVExport({ courseName: 'Bio' }, [five, fibQuestion]);
+    const [header, mcRow, fibRow] = csv.split('\n');
+    expect(header).toContain('"Option D","Option E","Correct Answer"');
+    expect(mcRow).toContain('"Hydrogen","Argon","Argon"');
+    // The other types leave every option column blank, including the fifth.
+    expect(fibRow).toContain('"The _________ is the powerhouse of the cell.","","","","","","mitochondrion"');
+  });
+
   test('emits a header row with all shared columns', () => {
     const csv = createCSVExport('COURSE', []);
     const header = csv.split('\n')[0];
@@ -106,6 +124,19 @@ describe('createCSVExport', () => {
     expect(row).toContain('Which gas do plants absorb?');
     expect(row).toContain('Carbon dioxide');
     expect(row).toContain(QUESTION_TYPES.MULTIPLE_CHOICE);
+  });
+
+  test('an image-only option shows its caption in the CSV (issue #146)', () => {
+    const withImage = {
+      ...mcQuestion,
+      options: {
+        ...mcQuestion.options,
+        B: { text: '', image: { fileId: '665f1a0000000000000000aa', caption: 'CO2 structure' } },
+      },
+    };
+    const row = createCSVExport('COURSE', [withImage]).trim().split('\n')[1];
+    // Once as option B, once as the correct answer.
+    expect(row.match(/"CO2 structure"/g)).toHaveLength(2);
   });
 
   test('fill-in-the-blank row lists acceptable answers', () => {
@@ -257,6 +288,28 @@ describe('createQTIItem', () => {
   test('calculation produces no QTI item', () => {
     const xml = createQTIItem(calcQuestion, 0);
     expect(xml).toBe('');
+  });
+
+  // Issue #144: a question may have two to eight options.
+  test('multiple choice exports every option it has', () => {
+    const five = {
+      ...mcQuestion,
+      options: { ...mcQuestion.options, E: { text: 'Argon', feedback: 'wrong' } },
+      correctAnswer: 'E',
+    };
+    const xml = createQTIItem(five, 0);
+    expect((xml.match(/<response_label /g) || []).length).toBe(5);
+    expect(xml).toContain('Argon');
+    const ids = xml.match(/<fieldentry>([\d,]+)<\/fieldentry>/)[1].split(',');
+    expect(ids).toHaveLength(5);
+    expect(xml).toContain(`<varequal respident="response1">${ids[4]}</varequal>`);
+
+    const two = {
+      ...mcQuestion,
+      options: { A: { text: 'True', feedback: '' }, B: { text: 'False', feedback: 'wrong' } },
+      correctAnswer: 'A',
+    };
+    expect((createQTIItem(two, 0).match(/<response_label /g) || []).length).toBe(2);
   });
 
   test('legacy rows with no questionType default to multiple choice', () => {

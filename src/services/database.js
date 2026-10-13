@@ -112,6 +112,17 @@ class DatabaseService {
       // course access (issue #115). Always read newest-first per course.
       await this.db.collection("grasp_course_access_log").createIndex({ courseId: 1, createdAt: -1 });
       await this.db.collection("grasp_material").createIndex({ sourceId: 1 }, { unique: true });
+      // One material per LMS file per course: importing the same Canvas file
+      // twice (a double submit, two instructors at once) must not create a
+      // second copy. Uploads and pasted text carry no `lms` and are not indexed.
+      await this.db.collection("grasp_material").createIndex(
+        { courseId: 1, "lms.provider": 1, "lms.instance": 1, "lms.externalFileId": 1 },
+        {
+          name: "course_lms_file_unique",
+          unique: true,
+          partialFilterExpression: { "lms.externalFileId": { $exists: true } },
+        }
+      );
       await this.db.collection("grasp_objective").createIndex({ parent: 1 });
       await this.db.collection("grasp_objective_material").createIndex({ objectiveId: 1, materialId: 1 }, { unique: true });
       await this.db.collection("grasp_objective_material").createIndex({ objectiveId: 1 });
@@ -200,11 +211,52 @@ class DatabaseService {
       // --- Per-Section Quiz Scheduling ---
       await this.db.collection("grasp_quiz_section_schedule").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });
       await this.db.collection("grasp_quiz_section_schedule").createIndex({ courseSectionId: 1 });
+      // One LMS assignment per quiz per section (issue #125). The unique index
+      // is what makes claiming a row before creating in Canvas safe: two
+      // simultaneous requests cannot both create an assignment.
+      await this.db.collection("grasp_quiz_lms_assignment").createIndex({ quizId: 1, courseSectionId: 1 }, { unique: true });
+      await this.db.collection("grasp_quiz_lms_assignment").createIndex({ courseSectionId: 1 });
 
       // --- Course Section Tracking ---
       await this.db.collection("grasp_course_section").createIndex({ courseId: 1, sectionId: 1 }, { unique: true });
       await this.db.collection("grasp_user_course_section").createIndex({ userId: 1, courseId: 1, sectionId: 1 }, { unique: true });
       await this.db.collection("grasp_user_course_section").createIndex({ courseId: 1, sectionId: 1 });
+
+      // --- Canvas import provenance (#140) ---
+      // Re-importing an export finds what it created before by Canvas ident,
+      // per course. Only imported rows carry `source`, so the indexes are
+      // partial and leave every other document out.
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_question"),
+        { courseId: 1, "source.itemIdent": 1 },
+        {
+          name: "course_source_item",
+          partialFilterExpression: { "source.itemIdent": { $exists: true } },
+        }
+      );
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_objective"),
+        { courseId: 1, "source.slotIdent": 1 },
+        {
+          name: "course_source_slot",
+          partialFilterExpression: { "source.slotIdent": { $exists: true } },
+        }
+      );
+      await this.createOrReplaceIndex(
+        this.db.collection("grasp_quiz"),
+        { courseId: 1, "source.quizIdent": 1 },
+        {
+          name: "course_source_quiz",
+          partialFilterExpression: { "source.quizIdent": { $exists: true } },
+        }
+      );
+      // One commit per Canvas quiz per course at a time: the importer inserts a
+      // lock keyed by both. MongoDB removes a lock once its expiresAt passes,
+      // so a worker that dies mid-import does not block that quiz for good.
+      await this.db.collection("grasp_canvas_import_lock").createIndex(
+        { expiresAt: 1 },
+        { expireAfterSeconds: 0 }
+      );
 
       // --- SAML request-ID cache ---
       await this.createSamlRequestIndexes(this.db);

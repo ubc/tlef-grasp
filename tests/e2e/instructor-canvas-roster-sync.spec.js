@@ -94,11 +94,13 @@ test.describe('Canvas roster sync from My Sections (fake Canvas)', () => {
   test('the server gates Canvas features on the recommended scopes', async () => {
     const response = await instructor.request.get('/api/lms/canvas/status');
     expect(response.status()).toBe(200);
-    // Linking and roster sync are in the recommended scopes; creating Canvas
-    // assignments (item 4) needs scopes UBC's key does not have yet.
+    // Linking and roster sync are in the recommended scopes; importing course
+    // files (#141) and creating Canvas assignments (item 4) need scopes UBC's
+    // key does not have yet.
     expect((await response.json()).capabilities).toEqual({
       link: true,
       rosterSync: true,
+      files: false,
       assignments: false,
     });
   });
@@ -204,6 +206,17 @@ test.describe('Canvas roster sync from My Sections (fake Canvas)', () => {
     await student.goto('/quiz');
     await expect(student.getByRole('heading', { name: 'No Quizzes Available' })).toBeVisible();
     await expect(student.getByRole('heading', { name: SEED.CANVAS_QUIZ_NAME })).toHaveCount(0);
+  });
+
+  test('the student the sync added is listed under their Canvas name (issue #165)', async () => {
+    // They have never signed in, so GRASP has no legal name for them yet.
+    await instructor.goto('/users');
+    const row = instructor
+      .getByRole('row')
+      .filter({ hasText: FAKE_CANVAS.NEVER_SIGNED_IN_NAME });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByText('No legal name on file', { exact: true })).toBeVisible();
+    await expect(row.getByText('Unknown User')).toHaveCount(0);
   });
 
   test('a later sync restores the student once Canvas lists them again', async () => {

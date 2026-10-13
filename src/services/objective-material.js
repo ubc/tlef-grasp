@@ -70,6 +70,52 @@ const createObjectiveMaterialRelations = async (objectiveId, materialSourceIds) 
 };
 
 /**
+ * Link a learning objective to one material (by its _id) unless it already is.
+ * Safe to repeat: the (objectiveId, materialId) pair is unique.
+ * @param {string|ObjectId} objectiveId
+ * @param {ObjectId} materialId - The material's _id
+ */
+const linkObjectiveToMaterial = async (objectiveId, materialId) => {
+  const db = await databaseService.connect();
+  const objectiveIdObj = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
+  try {
+    await db.collection('grasp_objective_material').updateOne(
+      { objectiveId: objectiveIdObj, materialId },
+      { $setOnInsert: { createdAt: new Date() } },
+      { upsert: true }
+    );
+  } catch (error) {
+    // The same link written at the same moment by someone else.
+    if (error?.code !== 11000) throw error;
+  }
+};
+
+/**
+ * Which of these objectives have at least one material. Deleting a material
+ * leaves its link rows behind, so only links to materials that still exist
+ * count, as on the objective cards.
+ * @param {Array<ObjectId>} objectiveIds
+ * @returns {Promise<Set<string>>} The ids (as strings) of those with a material
+ */
+const objectivesWithMaterials = async (objectiveIds) => {
+  if (!objectiveIds || objectiveIds.length === 0) return new Set();
+  const db = await databaseService.connect();
+  const links = await db.collection('grasp_objective_material')
+    .find({ objectiveId: { $in: objectiveIds } }, { projection: { objectiveId: 1, materialId: 1 } })
+    .toArray();
+  if (links.length === 0) return new Set();
+  const materials = await db.collection('grasp_material')
+    .find({ _id: { $in: links.map((link) => link.materialId) } }, { projection: { _id: 1 } })
+    .toArray();
+  const existing = new Set(materials.map((material) => String(material._id)));
+  return new Set(
+    links
+      .filter((link) => existing.has(String(link.materialId)))
+      .map((link) => String(link.objectiveId))
+  );
+};
+
+/**
  * Get all materials for a learning objective
  * @param {string|ObjectId} objectiveId - The learning objective ID (can be ObjectId or string)
  */
@@ -234,6 +280,8 @@ const updateObjectiveMaterialRelations = async (objectiveId, materialSourceIds) 
 
 module.exports = {
   createObjectiveMaterialRelations,
+  linkObjectiveToMaterial,
+  objectivesWithMaterials,
   getMaterialsForObjective,
   getObjectivesForMaterial,
   removeObjectiveMaterialRelation,

@@ -167,18 +167,21 @@ describe("describeAccessEvent for LMS roster sync", () => {
 
 describe("canvasCapabilities", () => {
   it("treats a status without capabilities (older server, disconnected) as everything on", () => {
-    const all = { link: true, rosterSync: true, assignments: true };
+    const all = { link: true, rosterSync: true, files: true, assignments: true };
     expect(canvasCapabilities(undefined)).toEqual(all);
     expect(canvasCapabilities({ configured: true, connected: false })).toEqual(all);
   });
 
   it("turns off only what the server reports as off", () => {
     expect(
-      canvasCapabilities({ capabilities: { link: true, rosterSync: false, assignments: false } })
-    ).toEqual({ link: true, rosterSync: false, assignments: false });
+      canvasCapabilities({
+        capabilities: { link: true, rosterSync: false, files: false, assignments: false },
+      })
+    ).toEqual({ link: true, rosterSync: false, files: false, assignments: false });
     expect(canvasCapabilities({ capabilities: { rosterSync: false } })).toEqual({
       link: true,
       rosterSync: false,
+      files: true,
       assignments: true,
     });
   });

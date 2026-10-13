@@ -9,10 +9,12 @@ adaptive, and elaborative practice — all behind UBC Single Sign-On.
 
 - **AI question generation** — Upload lecture material (text, PDF, DOCX, URLs) and
   generate evidence-based questions grounded in your content via a
-  retrieval-augmented (RAG) pipeline.
-- **Multiple question types** — Multiple choice, fill-in-the-blank, calculation,
-  and open-ended questions, with support for math (KaTeX) and chemistry
-  (SMILES) rendering.
+  retrieval-augmented (RAG) pipeline. Multiple-choice questions are drafted
+  with four options unless the generation step asks for another count (two to
+  eight).
+- **Multiple question types** — Multiple choice (two to eight answer options),
+  fill-in-the-blank, calculation, and open-ended questions, with support for
+  math (KaTeX) and chemistry (SMILES) rendering.
 - **Question review & banking** — Review, edit, flag, and organize generated
   questions in a per-course question bank before they reach students.
 - **Quizzes & scoring** — Build quizzes from the bank, publish them to students,
@@ -89,8 +91,9 @@ cp .env.example .env
 
 Set `CANVAS_DOMAIN`, `CANVAS_CLIENT_ID`, `CANVAS_CLIENT_SECRET`, and
 `CANVAS_REDIRECT_URI` (see `.env.example`) to enable the Canvas controls in
-instructor Settings and My Sections. If any of them is absent, Canvas is hidden
-and every section keeps syncing students from the UBC Academic API.
+instructor Settings, My Sections, and Course Materials. If any of them is
+absent, Canvas is hidden, every section keeps syncing students from the UBC
+Academic API, and materials are added by upload or pasted text only.
 
 Each instructor connects their own Canvas account (OAuth, per GRASP user) and
 links a GRASP section to one Canvas section. GRASP calls these Canvas API
@@ -103,6 +106,14 @@ parameters (a scoped developer key strips them):
   `state[]=active,invited`) — the roster read by **Sync from Canvas**; Canvas
   embeds each enrollment's user, with `integration_id` when the token may read
   SIS data
+- `GET /api/v1/courses/:course_id/files` (`content_types[]` = PDF, DOCX, PPTX,
+  plain text) — the files offered by **From Canvas** in Course Materials
+- `GET /api/v1/courses/:course_id/files/:id` — one file's name, type and size,
+  read inside the course before anything is downloaded
+- `GET /api/v1/files/:id/public_url` — a signed, time-limited link the file is
+  downloaded through. The file's own URL (`/files/:id/download`) is not an
+  `/api/v1` path, so no scope can cover it and an Enforce Scopes key is refused
+  there
 
 ##### Canvas scopes (`CANVAS_SCOPES`)
 
@@ -132,16 +143,26 @@ CANVAS_SCOPES="url:GET|/api/v1/courses url:GET|/api/v1/courses/:course_id/sectio
 |---|---|
 | Link a section (`link`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/sections` |
 | Sync from Canvas (`rosterSync`) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/enrollments` |
-| Canvas assignments (`assignments`, issue #113 item 4, not built yet) | `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
+| Import course files (`files`, issue #141) | `url:GET\|/api/v1/courses` plus the three below |
+| Canvas assignments for scheduled quizzes (`assignments`, issue #125) | `url:GET\|/api/v1/courses`, `url:GET\|/api/v1/courses/:course_id/assignments` plus the four below |
 
-To enable Canvas assignments, add these four scopes to the developer key and
-then to `CANVAS_SCOPES`:
+To enable Canvas assignments for scheduled quizzes, add these four scopes to
+the developer key and then to `CANVAS_SCOPES`:
 
 ```
 url:POST|/api/v1/courses/:course_id/assignments
 url:GET|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
 url:PUT|/api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id
 url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/overrides
+```
+
+To enable importing course files, add these three scopes to the developer key
+and then to `CANVAS_SCOPES`:
+
+```
+url:GET|/api/v1/courses/:course_id/files
+url:GET|/api/v1/courses/:course_id/files/:id
+url:GET|/api/v1/files/:id/public_url
 ```
 
 Changing `CANVAS_SCOPES` requires instructors to **reconnect Canvas**: an
@@ -172,6 +193,90 @@ Moodle-linked sections keep the Academic API sync. It works like this:
   that would drop more than half the section.
 - Adds, restores, and drops are recorded in the course's access history with
   the syncing instructor as the actor.
+
+**From Canvas** (Course Materials → Upload Materials) imports course files
+straight from Canvas, as an alternative to uploading them. It works like this:
+
+- The option appears only for an instructor who can use it: Canvas is
+  connected, the deployment's scopes include files, and they own at least one
+  section linked to Canvas. Upload and pasted text are unchanged.
+- GRASP links sections, not courses, so the instructor picks from the Canvas
+  courses their own linked sections point to. Files are read with that
+  instructor's own Canvas token, after re-checking that they still teach the
+  Canvas course. Adding materials needs the same course permissions as upload.
+- The picker lists the course's PDF, DOCX, PPTX and TXT files, newest first,
+  across all Canvas folders. Files over 50 MB (the upload limit) are shown but
+  cannot be picked.
+- Each imported file goes through the same parsing, indexing and outline step
+  as an uploaded one (`src/services/material-ingest.js`) and is titled with its
+  Canvas file name.
+- Each material remembers the Canvas file it came from (`lms` on the
+  `grasp_material` document), and a unique index allows one material per
+  Canvas file per course: importing the same file again creates no second
+  copy. Replacing a file in Canvas gives it a new file id, so the new version
+  is offered as a new file (flagged as replacing one imported earlier) and
+  importing it adds a second material; the earlier one is left untouched.
+
+**Canvas assignments for scheduled quizzes** (issue #125) give each scheduled
+quiz a gradebook column in Canvas, for the grade export of #113 item 5. It
+works like this:
+
+- When a quiz is scheduled on a Canvas-linked section, GRASP asks whether to
+  create the assignment; when a section with scheduled quizzes is linked, it
+  asks for those quizzes. Scheduling an unlinked section does nothing in
+  Canvas. "Don't create" is remembered; the section's schedule chip on the quiz
+  offers "Canvas" (create) later.
+- The assignment is plain: `submission_types: ["none"]`, 100 points, published
+  (Canvas's grade import only matches published assignments), visible only to
+  the linked Canvas section through a section override whose `due_at` is the
+  section's close time in GRASP. It is named `<quiz> — <section> (GRASP)` and
+  its description tells students to take the quiz in GRASP, with a link.
+- Rescheduling moves the Canvas due date automatically. If Canvas cannot be
+  reached, the GRASP schedule is still saved, the chip shows the failure and
+  offers a retry. Unscheduling, deleting a quiz or recycling a section never
+  deletes anything in Canvas; deleting a quiz says so.
+- One assignment per quiz per GRASP section: `grasp_quiz_lms_assignment` holds
+  the mapping (unique on quiz + section), a row is claimed before Canvas is
+  called, and a create first looks for an assignment that already carries the
+  name. Both instructors must own the section; the write uses the clicking
+  instructor's own Canvas token after re-checking they teach the Canvas course.
+- Schedule times are sent from the browser as instants (with the zone the
+  instructor typed them in), so the stored window and the Canvas due date are
+  the same moment whatever timezone the server runs in.
+
+#### Canvas quiz import
+
+**Import Questions** (Question Bank) also accepts a Canvas Classic Quizzes
+export (`.zip`, QTI 1.2; issue #140). It needs no Canvas connection. GRASP
+previews the file, the instructor picks the Canvas quizzes to bring in, and each
+one becomes an unpublished GRASP quiz with one objective per Canvas question or
+question group. Multiple choice and true/false, numerical (as fixed-answer
+calculation questions), fill-in-the-blank, short answer and formula questions
+are imported; multiple-answer, matching, multiple-dropdown, essay and
+file-upload questions, question-bank groups and New Quizzes exports are
+reported as skipped, each with its reason.
+
+A Canvas **formula question** (issue #130) becomes a GRASP calculation question
+with variables:
+
+- `[x]` in the question text becomes `{{x}}` for the declared variables only
+  (chemistry stems write concentrations as `[A]`). Each variable keeps its
+  range and decimal places (0 decimals → whole numbers); the answer keeps its
+  decimal places and its tolerance (`0.05` → absolute, `3%` → percent).
+- The formula is translated from Canvas's dialect (`src/utils/canvas-formula.js`):
+  Canvas's `log(x)` is base 10 and GRASP's is natural, so it becomes `log10(x)`;
+  `log(x, b)` → `(ln(x)/ln(b))`; `e`, `pi` → `E`, `PI`; `fact` → `fac`;
+  `deg_to_rad`/`rad_to_deg` are written out; several formula lines
+  (`k = 2*x` …) are combined into one. A formula using a Canvas list or
+  random function (`mean`, `sum`, `rand`, `if`, …) is skipped, naming it.
+- As a check, the translated formula is evaluated at up to 20 of Canvas's own
+  precomputed value sets and compared with the answers Canvas recorded. A
+  mismatch saves the question as a Draft with a warning that shows both numbers.
+- Canvas's precomputed value sets are not stored: GRASP samples fresh values
+  for every attempt, as it does for its own calculation questions. An absolute
+  tolerance is measured from the answer as the student sees it (rounded to the
+  question's decimal places) as well as from the exact value, so a correctly
+  rounded answer at the edge of the margin is accepted as it is in Canvas.
 
 #### Optional Moodle connection
 

@@ -3,6 +3,11 @@ const objectiveMaterialService = require('./objective-material');
 const questionService = require('./question');
 const { ObjectId } = require('mongodb');
 const { normalizeQuestionTypes } = require('../utils/question-type-selection');
+const { OBJECTIVE_SOURCE_KEYS, pickImportSource } = require('../utils/import-provenance');
+
+// Same comparison rule as the client's import matcher, so "already in this
+// course" means the same thing on both sides.
+const normalizeObjectiveText = (value) => String(value ?? '').trim().toLowerCase();
 
 /**
  * Get all parent learning objectives (parent = 0) for a specific course
@@ -125,7 +130,8 @@ const getGranularObjectives = async (parentId, courseId = null) => {
 
 /**
  * Create a new learning objective with granular objectives
- * @param {Object} objectiveData - { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> }
+ * @param {Object} objectiveData - { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> },
+ *   plus `source` ({ kind, quizIdent, slotIdent }) when a Canvas import (#140) creates it
  */
 const createObjective = async (objectiveData) => {
   try {
@@ -145,6 +151,10 @@ const createObjective = async (objectiveData) => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+    // Re-import finds the parent made for a Canvas group by this; it lives on
+    // the parent only, and documents without it keep their exact shape.
+    const source = pickImportSource(objectiveData.source, OBJECTIVE_SOURCE_KEYS);
+    if (source) parentObjective.source = source;
     
     const parentResult = await collection.insertOne(parentObjective);
     const parentId = parentResult.insertedId;
@@ -409,6 +419,72 @@ const updateObjective = async (objectiveId, updateData) => {
 };
 
 /**
+ * Add granular objectives under an existing parent, leaving its current children
+ * untouched. Insert-only on purpose: updateObjective replaces the whole granular
+ * set, so adding through it means resending the siblings, which clears any field
+ * not resent and deletes any sibling the caller did not know about. Text the
+ * parent already has is skipped, so retrying a half-finished import adds no
+ * second copy.
+ *
+ * @param {string|ObjectId} objectiveId - The parent learning objective ID
+ * @param {Array<{text?: string, name?: string, bloomTaxonomies?: string[], questionTypes?: Array}>} granularObjectives
+ * @returns {Promise<{parent: Object, granular: Array, added: Array}>}
+ */
+const appendGranularObjectives = async (objectiveId, granularObjectives) => {
+  try {
+    const db = await databaseService.connect();
+    const collection = db.collection('grasp_objective');
+
+    const id = ObjectId.isValid(objectiveId) ? new ObjectId(objectiveId) : objectiveId;
+    const parent = await collection.findOne({ _id: id });
+    if (!parent) {
+      throw new Error('Objective not found');
+    }
+
+    let courseIdForGranular = parent.courseId;
+    if (courseIdForGranular && ObjectId.isValid(courseIdForGranular)) {
+      courseIdForGranular = new ObjectId(courseIdForGranular);
+    }
+
+    const existing = await collection.find({ parent: id }).toArray();
+    const takenText = new Set(existing.map((g) => normalizeObjectiveText(g.name)));
+
+    const now = new Date();
+    const toCreate = [];
+    (granularObjectives || []).forEach((granular) => {
+      const name = String(granular?.text || granular?.name || '').trim();
+      const key = normalizeObjectiveText(name);
+      if (!key || takenText.has(key)) return;
+      takenText.add(key);
+      toCreate.push({
+        name,
+        bloomTaxonomies: granular.bloomTaxonomies || [],
+        questionTypes: normalizeQuestionTypes(granular.questionTypes, {
+          allowedBloomLevels: granular.bloomTaxonomies,
+        }),
+        parent: id,
+        courseId: courseIdForGranular,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    let added = [];
+    if (toCreate.length > 0) {
+      const result = await collection.insertMany(toCreate);
+      added = await collection
+        .find({ _id: { $in: Object.values(result.insertedIds) } })
+        .toArray();
+    }
+
+    return { parent, granular: [...existing, ...added], added };
+  } catch (error) {
+    console.error('Error appending granular objectives:', error);
+    throw error;
+  }
+};
+
+/**
  * Summarize the questions that would be affected by deleting a learning
  * objective, so the UI can prompt the instructor before the destructive delete.
  * @param {string|ObjectId} objectiveId - The learning objective ID
@@ -509,6 +585,7 @@ module.exports = {
   getObjectiveById,
   getObjectiveWithMaterials,
   updateObjective,
+  appendGranularObjectives,
   getObjectiveDeletionImpact,
   deleteObjective,
   getObjectiveCourseId,

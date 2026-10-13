@@ -57,6 +57,20 @@ export const queryKeys = {
     sectionId,
     canvasCourseId,
   ],
+  canvasMaterialCourses: (courseId) => ["canvas", "material-courses", courseId],
+  canvasMaterialFiles: (courseId, canvasCourseId) => [
+    "canvas",
+    "material-files",
+    courseId,
+    canvasCourseId,
+  ],
+  canvasQuizAssignments: (courseId, quizId) => ["canvas", "quiz-assignments", courseId, quizId],
+  canvasSectionQuizAssignments: (courseId, sectionId) => [
+    "canvas",
+    "section-quiz-assignments",
+    courseId,
+    sectionId,
+  ],
   moodleStatus: ["moodle", "status"],
   moodleAvailableCourses: (courseId, sectionId) => [
     "moodle",

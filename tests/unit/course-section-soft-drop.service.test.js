@@ -13,6 +13,10 @@ jest.mock('../../src/services/quiz-schedule', () => ({
   removeSchedulesForSection: jest.fn(),
 }));
 
+jest.mock('../../src/services/quiz-lms-assignment', () => ({
+  removeForSection: jest.fn(),
+}));
+
 const { ObjectId } = require('mongodb');
 const databaseService = require('../../src/services/database');
 const {

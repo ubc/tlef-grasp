@@ -34,6 +34,14 @@ router.get('/detailed', objectiveController.getDetailedObjectivesHandler);
 router.get('/:id/granular', objectiveController.getGranularObjectivesHandler);
 
 /**
+ * POST /api/objective/:id/granular
+ * Add granular objectives to a parent, leaving its existing children untouched.
+ * Use this rather than PUT /:id, which replaces the whole granular set.
+ * Body: { granularObjectives: Array<{text: string}> }
+ */
+router.post('/:id/granular', express.json(), objectiveController.appendGranularObjectivesHandler);
+
+/**
  * POST /api/objective
  * Create a new learning objective with granular objectives
  * Body: { name: string, granularObjectives: Array<{text: string}>, materialIds: Array<string> }

@@ -9,6 +9,7 @@ export function canvasCapabilities(statusData) {
   return {
     link: reported.link !== false,
     rosterSync: reported.rosterSync !== false,
+    files: reported.files !== false,
     assignments: reported.assignments !== false,
   };
 }

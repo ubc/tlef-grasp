@@ -7,6 +7,7 @@ jest.mock("../../src/services/image", () => ({
   uploadImage: jest.fn(),
   getImageStream: jest.fn(),
   deleteImage: jest.fn(),
+  isImageInUse: jest.fn(),
   // Used by the archived-course gate to resolve a file's course.
   getImageCourseId: jest.fn(),
 }));
@@ -83,6 +84,7 @@ describe("question image routes", () => {
     // Archived behaviour is covered in course-archive-image.route.test.js.
     getCourseById.mockResolvedValue({ _id: COURSE_ID });
     imageService.getImageCourseId.mockResolvedValue(COURSE_ID);
+    imageService.isImageInUse.mockResolvedValue(false);
   });
 
   describe("POST /api/image/upload", () => {
@@ -237,6 +239,21 @@ describe("question image routes", () => {
       expect(response.body).toEqual({ success: true });
       expect(isUserInCourse).toHaveBeenCalledWith(USER_ID, COURSE_ID);
       expect(imageService.deleteImage).toHaveBeenCalledWith(FILE_ID);
+    });
+
+    it("keeps an image a saved question still uses (the edit may be cancelled)", async () => {
+      imageService.getImageStream.mockResolvedValue({
+        stream: Readable.from([PNG_BUFFER]),
+        file: { metadata: { courseId: COURSE_ID } },
+      });
+      imageService.isImageInUse.mockResolvedValue(true);
+
+      const response = await request(buildApp()).delete(`/api/image/${FILE_ID}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ success: true, kept: true });
+      expect(imageService.isImageInUse).toHaveBeenCalledWith(FILE_ID);
+      expect(imageService.deleteImage).not.toHaveBeenCalled();
     });
 
     it("treats deleting a missing image as success (idempotent)", async () => {

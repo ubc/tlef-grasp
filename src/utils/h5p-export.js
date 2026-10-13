@@ -3,7 +3,8 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const {
   normalizeQuestionType,
   getQuestionText,
-  getOptionText,
+  getOptionKeys,
+  getOptionTextOrImageLabel,
   getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
@@ -179,10 +180,12 @@ function buildQuestionSetContent(title, questions, imageMap) {
 
 function buildMultiChoiceParams(q) {
   const correctIndex = getCorrectAnswerIndex(q);
-  const answers = ['A', 'B', 'C', 'D'].map((key, i) => {
+  const answers = getOptionKeys(q).map((key, i) => {
     const feedback = getOptionFeedback(q, key);
     return {
-      text: `<div>${escapeHtml(getOptionText(q, key) || `Option ${key}`)}</div>`,
+      // H5P answers cannot hold images (issue #146): an image-only option
+      // exports its caption, or "Option B (image)".
+      text: `<div>${escapeHtml(getOptionTextOrImageLabel(q, key) || `Option ${key}`)}</div>`,
       correct: i === correctIndex,
       tipsAndFeedback: {
         tip: '',

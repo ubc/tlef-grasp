@@ -51,6 +51,7 @@ jest.mock('../../src/services/quiz-session', () => ({
   getSession: jest.fn(),
   recordQuestionCount: jest.fn(),
   markSubmitted: jest.fn(),
+  getUnsubmittedQuizIds: jest.requireActual('../../src/services/quiz-session').getUnsubmittedQuizIds,
 }));
 
 const quizService = require('../../src/services/quiz');
@@ -84,10 +85,14 @@ function mockDb({ scoreDoc = null, attemptDocs = [] } = {}) {
   const collections = {
     grasp_quiz_score: {
       findOne: jest.fn().mockResolvedValue(scoreDoc),
+      find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue(scoreDoc ? [scoreDoc] : []) })),
     },
     grasp_student_attempt: {
       findOne: jest.fn().mockResolvedValue(attemptDocs[0] || null),
       find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue(attemptDocs) })),
+    },
+    grasp_quiz_session: {
+      find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue([]) })),
     },
   };
   databaseService.connect.mockResolvedValue({
@@ -110,6 +115,17 @@ function mockExpiredWindow() {
     releaseDate: new Date('2026-01-01T00:00:00Z'),
     expireDate: new Date('2026-01-02T00:00:00Z'),
     reason: 'expired',
+  });
+}
+
+function mockNotYetWindow() {
+  quizScheduleService.getStudentSectionObjectIds.mockResolvedValue([SECTION_ID]);
+  quizScheduleService.getSchedulesForQuiz.mockResolvedValue([]);
+  quizScheduleService.resolveWindow.mockReturnValue({
+    accessibleNow: false,
+    releaseDate: new Date('2099-01-08T00:00:00Z'),
+    expireDate: new Date('2099-01-09T00:00:00Z'),
+    reason: 'not-yet',
   });
 }
 
@@ -334,6 +350,32 @@ describe('student quiz access past the expiry window (#37)', () => {
     });
   });
 
+  describe('quiz shifted later while a student is mid-attempt', () => {
+    it('accepts the submission', async () => {
+      mockNotYetWindow();
+      mockDb({ scoreDoc: null, attemptDocs: [mcqAttempt({ isCorrect: true })] });
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(200);
+      expect(quizService.saveQuizScore).toHaveBeenCalled();
+    });
+
+    it('still blocks a student who had not started', async () => {
+      mockNotYetWindow();
+      mockDb({ scoreDoc: null, attemptDocs: [] });
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/not yet available/i);
+    });
+  });
+
   // Issue #65: a student who runs out of time is scored against every question
   // they were served, not just the ones they managed to answer.
   describe('score denominator (#65)', () => {
@@ -366,6 +408,45 @@ describe('student quiz access past the expiry window (#37)', () => {
       expect(quizService.saveQuizScore).toHaveBeenCalledWith(
         expect.objectContaining({ score: 10, correctAnswers: 1, totalQuestions: 10 })
       );
+    });
+
+    it('scores a spaced attempt that kept its pick on exactly that pick (issue #168)', async () => {
+      mockOpenWindow();
+      const [first, second, third, stray] = [1, 2, 3, 4].map(() => new ObjectId());
+      const attempts = [
+        mcqAttempt({ questionId: first, isCorrect: true }),
+        mcqAttempt({ questionId: second, isCorrect: false, selectedAnswer: 'B' }),
+        // An answer to a question outside the pick never counts.
+        mcqAttempt({ questionId: stray, isCorrect: true }),
+      ];
+      mockDb({ scoreDoc: null, attemptDocs: attempts });
+      const session = {
+        startedAt: new Date(Date.now() - 60000),
+        expiresAt: new Date(Date.now() + 60000),
+        questionCount: 5,
+        servedQuestions: [first, second, third].map((questionId) => ({ questionId, phase: 1 })),
+      };
+      quizSessionService.getSession.mockResolvedValue(session);
+      const delivery = require('../../src/services/student-quiz-delivery');
+      const scored = jest
+        .spyOn(delivery, 'scoredQuestionIds')
+        .mockResolvedValue(new Set([first, second, third].map(String)));
+
+      const res = await request(buildApp())
+        .post(`/student/quizzes/${QUIZ_ID}/submit`)
+        .send({ timeSpent: 60000, sessionId: 's1' });
+
+      expect(res.status).toBe(200);
+      expect(scored).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: new ObjectId(QUIZ_ID) }),
+        USER_ID,
+        session,
+        attempts
+      );
+      expect(quizService.saveQuizScore).toHaveBeenCalledWith(
+        expect.objectContaining({ score: 33, correctAnswers: 1, totalQuestions: 3 })
+      );
+      scored.mockRestore();
     });
 
     it('records the served question count when questions are delivered', async () => {

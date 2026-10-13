@@ -105,6 +105,76 @@ describe('initializeCollections index definitions', () => {
       .toBeLessThan(course.createIndex.mock.invocationCallOrder[0]);
   });
 
+  // Importing the same Canvas file twice must not create a second material
+  // (issue #141). The route checks first, but only an index holds against two
+  // imports running at once.
+  it('allows one material per LMS file per course, and leaves uploads unconstrained', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    const lmsFileCall = collectionFor('grasp_material').createIndex.mock.calls.find(
+      ([keys]) => keys && keys['lms.externalFileId'] === 1
+    );
+
+    expect(lmsFileCall).toBeDefined();
+    const [keys, options] = lmsFileCall;
+    expect(keys).toEqual({
+      courseId: 1,
+      'lms.provider': 1,
+      'lms.instance': 1,
+      'lms.externalFileId': 1,
+    });
+    expect(options.unique).toBe(true);
+    // Uploads and pasted text have no `lms`; without the filter they would all
+    // collide on the same missing key.
+    expect(options.partialFilterExpression).toEqual({ 'lms.externalFileId': { $exists: true } });
+  });
+
+  // One Canvas assignment per quiz per section (issue #125): the claim that
+  // precedes a create relies on this index refusing a second row.
+  it('allows one LMS assignment row per quiz per section', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    const call = collectionFor('grasp_quiz_lms_assignment').createIndex.mock.calls.find(
+      ([keys]) => keys && keys.quizId === 1 && keys.courseSectionId === 1
+    );
+
+    expect(call).toBeDefined();
+    expect(call[1]).toEqual({ unique: true });
+  });
+
+  // Re-importing a Canvas export (#140) finds what it created before by Canvas
+  // ident, per course. Only imported rows carry `source`, so the indexes are
+  // partial and every other document stays out of them.
+  it.each([
+    ['grasp_question', 'source.itemIdent', 'course_source_item'],
+    ['grasp_objective', 'source.slotIdent', 'course_source_slot'],
+    ['grasp_quiz', 'source.quizIdent', 'course_source_quiz'],
+  ])('indexes %s by course and %s for imported rows only', async (collection, field, name) => {
+    const collectionFor = await runInitializeCollections();
+
+    const calls = collectionFor(collection).createIndex.mock.calls.filter(
+      ([keys]) => keys && keys[field] === 1
+    );
+
+    expect(calls).toEqual([
+      [
+        { courseId: 1, [field]: 1 },
+        { name, partialFilterExpression: { [field]: { $exists: true } } },
+      ],
+    ]);
+  });
+
+  // The Canvas importer locks a (course, Canvas quiz) while it commits (#140).
+  // A worker that dies mid-import leaves its lock behind; the TTL index is
+  // what removes it once its own expiresAt passes.
+  it('expires Canvas import locks at their expiresAt', async () => {
+    const collectionFor = await runInitializeCollections();
+
+    expect(collectionFor('grasp_canvas_import_lock').createIndex.mock.calls).toEqual([
+      [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    ]);
+  });
+
   // The suite above mocks createIndex, so MongoDB never parses these specs and
   // an unsupported operator sails through as a green test right up until it
   // throws CannotCreateIndex at boot. partialFilterExpression accepts only a
@@ -133,7 +203,15 @@ describe('initializeCollections index definitions', () => {
     };
 
     const specs = [];
-    for (const name of ['grasp_course', 'grasp_question', 'grasp_user', 'grasp_user_course']) {
+    for (const name of [
+      'grasp_course',
+      'grasp_question',
+      'grasp_objective',
+      'grasp_quiz',
+      'grasp_user',
+      'grasp_user_course',
+      'grasp_material',
+    ]) {
       for (const [, options] of collectionFor(name).createIndex.mock.calls) {
         if (options?.partialFilterExpression) specs.push([name, options.partialFilterExpression]);
       }

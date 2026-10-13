@@ -20,6 +20,8 @@ jest.mock("../../src/utils/course-access", () => ({
 jest.mock("../../src/models/questions/CalculationQuestion", () => ({
   resolveCalculationDisplayTemplate: jest.fn(),
   buildStudentCalculationInstance: jest.fn(),
+  readGradingSettings: jest.fn(() => ({ answerDec: 2, tolerance: null, tolerancePercent: null })),
+  toleranceForStudent: jest.fn(() => null),
 }));
 jest.mock("../../src/services/achievement", () => ({
   awardQuizAchievements: jest.fn(),
@@ -237,11 +239,55 @@ describe("student quiz questions include stem images", () => {
       },
     ]);
 
+    // Only the options the question has are sent (issue #144): a null slot
+    // is not an option, so there is no D.
     expect(questions[0].options).toEqual({
       A: "Nucleus",
       B: "",
       C: "Golgi",
-      D: "",
+    });
+  });
+
+  it("sends every option of a five-option question", async () => {
+    const questions = await getQuestions([
+      {
+        _id: new ObjectId(),
+        title: "Five options",
+        questionType: "multiple-choice",
+        options: {
+          A: { text: "One", feedback: "" },
+          B: { text: "Two", feedback: "" },
+          C: { text: "Three", feedback: "" },
+          D: { text: "Four", feedback: "" },
+          E: { text: "Five", feedback: "" },
+        },
+        correctAnswer: "E",
+      },
+    ]);
+
+    expect(Object.keys(questions[0].options)).toEqual(["A", "B", "C", "D", "E"]);
+    expect(questions[0].options.E).toBe("Five");
+  });
+
+  it("sends an option's image as { text, image } with only the file id and alt text (#146)", async () => {
+    const image = stemImage();
+    const questions = await getQuestions([
+      {
+        _id: new ObjectId(),
+        title: "Which structure is benzene?",
+        questionType: "multiple-choice",
+        options: {
+          A: { text: "", feedback: "Right", image: { ...image, filename: "benzene.png" } },
+          B: { text: "Cyclohexane", feedback: "No" },
+        },
+        correctAnswer: "A",
+      },
+    ]);
+
+    // The stored filename could name the answer, and feedback stays server-side.
+    expect(questions[0].options).toEqual({
+      A: { text: "", image: { fileId: image.fileId, caption: image.caption } },
+      B: "Cyclohexane",
     });
   });
 });

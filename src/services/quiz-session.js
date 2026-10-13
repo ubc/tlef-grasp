@@ -8,11 +8,10 @@ function quizTimeLimitMinutes(quiz) {
   return Number.isInteger(value) && value > 0 ? value : DEFAULT_TIME_LIMIT_MINUTES;
 }
 
+const toId = (id) => (ObjectId.isValid(id) ? new ObjectId(id) : id);
+
 function ids(userId, quizId) {
-  return {
-    userId: ObjectId.isValid(userId) ? new ObjectId(userId) : userId,
-    quizId: ObjectId.isValid(quizId) ? new ObjectId(quizId) : quizId,
-  };
+  return { userId: toId(userId), quizId: toId(quizId) };
 }
 
 // The first start is immutable: refreshing, reopening, or calling this again
@@ -71,12 +70,56 @@ async function recordQuestionCount(userId, quizId, questionCount) {
   );
 }
 
+// Locks in the questions of a spaced-3phase graded attempt (issue #168): set
+// once, at the first load, and read back by every later load, so a reload
+// cannot swap a question for another variant of it. Returns what is stored,
+// which is another load's pick when two raced; null when there is no session.
+async function saveServedQuestions(userId, quizId, served) {
+  const db = await databaseService.connect();
+  const collection = db.collection("grasp_quiz_session");
+  const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
+  await collection.updateOne(
+    { userId: userIdObj, quizId: quizIdObj, servedQuestions: { $exists: false } },
+    {
+      $set: {
+        servedQuestions: served.map(({ questionId, phase }) => ({ questionId: toId(questionId), phase })),
+      },
+    }
+  );
+  const session = await collection.findOne(
+    { userId: userIdObj, quizId: quizIdObj },
+    { projection: { servedQuestions: 1 } }
+  );
+  return session?.servedQuestions || null;
+}
+
 async function markSubmitted(userId, quizId) {
   const db = await databaseService.connect();
   const { userId: userIdObj, quizId: quizIdObj } = ids(userId, quizId);
   await db.collection("grasp_quiz_session").updateOne(
     { userId: userIdObj, quizId: quizIdObj },
     { $set: { submittedAt: new Date() } }
+  );
+}
+
+// Of `quizIds`, those the student started (answers or an unsubmitted session)
+// but has no score for. A session alone counts so a timed-out student with no
+// answers can still auto-submit.
+async function getUnsubmittedQuizIds(userId, quizIds) {
+  if (!quizIds.length) return new Set();
+  const db = await databaseService.connect();
+  const filter = { userId: toId(userId), quizId: { $in: quizIds.map(toId) } };
+  const options = { projection: { quizId: 1 } };
+  const [scores, attempts, sessions] = await Promise.all([
+    db.collection("grasp_quiz_score").find(filter, options).toArray(),
+    db.collection("grasp_student_attempt").find(filter, options).toArray(),
+    db.collection("grasp_quiz_session").find({ ...filter, submittedAt: null }, options).toArray(),
+  ]);
+  const scored = new Set(scores.map((doc) => doc.quizId.toString()));
+  return new Set(
+    [...attempts, ...sessions]
+      .map((doc) => doc.quizId.toString())
+      .filter((quizId) => !scored.has(quizId))
   );
 }
 
@@ -90,6 +133,8 @@ module.exports = {
   getOrCreateSession,
   getSession,
   recordQuestionCount,
+  saveServedQuestions,
   markSubmitted,
+  getUnsubmittedQuizIds,
   isExpired,
 };

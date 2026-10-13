@@ -31,6 +31,15 @@ jest.mock('../../src/services/quiz-session', () => ({
   isExpired: jest.fn(),
 }));
 
+// Who may answer, and which questions (issue #168). The grading tests below
+// run as a student who may open the quiz and was served the question.
+jest.mock('../../src/services/student-quiz-access', () => ({
+  resolveStudentQuizAccess: jest.fn(),
+}));
+jest.mock('../../src/services/student-quiz-delivery', () => ({
+  canAnswerQuestion: jest.fn(),
+}));
+
 jest.mock('../../src/middleware/auth', () => ({
   requireRole: () => (_req, _res, next) => next(),
   requirePageRole: () => (_req, _res, next) => next(),
@@ -56,6 +65,8 @@ const quizService = require('../../src/services/quiz');
 const { getQuestion } = require('../../src/services/question');
 const answerGrading = require('../../src/services/answer-grading');
 const quizSessionService = require('../../src/services/quiz-session');
+const { resolveStudentQuizAccess } = require('../../src/services/student-quiz-access');
+const { canAnswerQuestion } = require('../../src/services/student-quiz-delivery');
 const courseAccess = require('../../src/utils/course-access');
 const sectionService = require('../../src/services/course-section');
 const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
@@ -109,6 +120,22 @@ const mcqQuestion = {
   bloom: 'Remember',
 };
 
+const fiveOptionQuestion = {
+  _id: 'question-5',
+  questionType: 'multiple-choice',
+  question: 'Which of these is a noble gas?',
+  options: {
+    A: { text: 'Oxygen', feedback: 'Oxygen is reactive.' },
+    B: { text: 'Nitrogen', feedback: 'Nitrogen forms N2 but is not noble.' },
+    C: { text: 'Hydrogen', feedback: 'Hydrogen is reactive.' },
+    D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+    E: { text: 'Argon', feedback: 'Correct — group 18.' },
+  },
+  correctAnswer: 'E',
+  learningObjectiveId: 'lo-1',
+  bloom: 'Remember',
+};
+
 describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   let consoleErrorSpy;
 
@@ -128,6 +155,8 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
     quizService.hasCompletedQuiz.mockResolvedValue(false);
     quizSessionService.getSession.mockResolvedValue(null);
     quizSessionService.isExpired.mockReturnValue(false);
+    resolveStudentQuizAccess.mockResolvedValue({ success: true, scheduledExpiresAt: null });
+    canAnswerQuestion.mockResolvedValue(true);
   });
 
   describe('open-ended questions', () => {
@@ -236,6 +265,78 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
 
       expect(res.status).toBe(400);
       expect(answerGrading.gradeOpenEndedAnswer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('who may answer which question (issue #168)', () => {
+    it('refuses someone who cannot open the quiz, before grading anything', async () => {
+      resolveStudentQuizAccess.mockResolvedValue({
+        success: false,
+        status: 403,
+        message: 'This quiz is not available for your section.',
+      });
+      getQuestion.mockResolvedValue(openEndedQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: 'Light and carbon fixation.' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('This quiz is not available for your section.');
+      expect(resolveStudentQuizAccess).toHaveBeenCalledWith(
+        { _id: 'quiz-1', courseId: 'course-1' },
+        { _id: 'user-1' }
+      );
+      expect(getQuestion).not.toHaveBeenCalled();
+      expect(answerGrading.gradeOpenEndedAnswer).not.toHaveBeenCalled();
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('refuses a question the attempt did not serve, and records nothing', async () => {
+      canAnswerQuestion.mockResolvedValue(false);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp()).post(checkUrl).send({ selectedIndex: 0 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('QUESTION_NOT_IN_ATTEMPT');
+      expect(canAnswerQuestion).toHaveBeenCalledWith(
+        { _id: 'quiz-1', courseId: 'course-1' },
+        'user-1',
+        'question-1',
+        { practice: false }
+      );
+      expect(getQuestion).not.toHaveBeenCalled();
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('asks for the practice rules once the graded attempt is done', async () => {
+      quizService.hasCompletedQuiz.mockResolvedValue(true);
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 0, practice: true });
+
+      expect(res.status).toBe(200);
+      expect(canAnswerQuestion).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        'question-1',
+        { practice: true }
+      );
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('refuses an answer that names no quiz the server knows', async () => {
+      quizService.getQuizById.mockResolvedValue(null);
+      resolveStudentQuizAccess.mockResolvedValue({ success: false, status: 404, message: 'Quiz not found' });
+
+      const res = await request(buildApp()).post(checkUrl).send({ selectedIndex: 0 });
+
+      expect(res.status).toBe(404);
+      expect(canAnswerQuestion).not.toHaveBeenCalled();
+      expect(getQuestion).not.toHaveBeenCalled();
     });
   });
 
@@ -362,6 +463,38 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
   });
 
   describe('multiple-choice questions', () => {
+    // Issue #144: a question may have more than four options, and the index
+    // must name one the question actually has.
+    it('grades a fifth option', async () => {
+      getQuestion.mockResolvedValue(fiveOptionQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 4 });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        isCorrect: true,
+        correctAnswer: 'E',
+        correctOptionText: 'Argon',
+      });
+      expect(quizService.saveStudentPerformance).toHaveBeenCalledWith(
+        expect.objectContaining({ selectedAnswer: 'E', correctAnswer: 'E' })
+      );
+    });
+
+    it('rejects an index past the options the question has', async () => {
+      getQuestion.mockResolvedValue(mcqQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ selectedIndex: 4 });
+
+      expect(res.status).toBe(400);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
     it('withholds the correct answer on a wrong selection but still records it', async () => {
       getQuestion.mockResolvedValue(mcqQuestion);
 
@@ -481,6 +614,99 @@ describe('POST /api/quiz/:quizId/question/:questionId/check', () => {
         isCorrect: true,
         correctAnswer: expected,
         correctOptionText: expected,
+      });
+    });
+
+    // Issue #145: text that is not a number is a typo, not a wrong answer.
+    it('asks for a number instead of grading text, and records nothing', async () => {
+      getQuestion.mockResolvedValue(calcQuestion);
+
+      const res = await request(buildApp())
+        .post(checkUrl)
+        .send({ answerText: '4 moles', calculationToken });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ success: false, code: 'NOT_A_NUMBER' });
+      expect(res.body.error).toMatch(/1\.5e3/);
+      expect(quizService.saveStudentPerformance).not.toHaveBeenCalled();
+    });
+
+    it('accepts scientific notation and thousands separators', async () => {
+      getQuestion.mockResolvedValue({
+        ...calcQuestion,
+        stem: 'What is {x} times 500?',
+        calculationFormula: 'x * 500',
+      });
+      for (const answerText of ['1500', '1,500', '1.5e3', '1.5 x 10^3', ' 1500 ']) {
+        const res = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText, calculationToken });
+        expect(res.status).toBe(200);
+        expect(res.body.isCorrect).toBe(true);
+      }
+    });
+
+    describe('fixed-answer questions (no variables)', () => {
+      const fixedQuestion = {
+        _id: 'question-1',
+        questionType: 'calculation',
+        stem: 'How many molecules are in two moles?',
+        calculationFormula: '6.02e23 * 2',
+        calculationVariables: [],
+        calculationAnswerDecimals: 2,
+        calculationTolerance: { mode: 'absolute', value: 1e22 },
+        learningObjectiveId: 'lo-1',
+        bloom: 'Apply',
+      };
+      // Every student shares one instance, so the token carries no values.
+      const fixedToken = CalculationQuestion.signCalculationToken('question-1', {});
+
+      it('grades within an absolute tolerance and shows the answer in scientific notation', async () => {
+        getQuestion.mockResolvedValue(fixedQuestion);
+
+        const right = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1.21e24', calculationToken: fixedToken });
+        expect(right.status).toBe(200);
+        expect(right.body).toMatchObject({ isCorrect: true, correctAnswer: '1.2 × 10^24' });
+
+        const wrong = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1.3 x 10^24', calculationToken: fixedToken });
+        expect(wrong.status).toBe(200);
+        expect(wrong.body).toMatchObject({ isCorrect: false, correctAnswer: null });
+      });
+
+      it('grades a range on its bounds', async () => {
+        getQuestion.mockResolvedValue({
+          ...fixedQuestion,
+          calculationFormula: '7.4',
+          calculationTolerance: { mode: 'range', min: 7, max: 7.8 },
+        });
+
+        const inside = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '7.0', calculationToken: fixedToken });
+        expect(inside.body).toMatchObject({ isCorrect: true, correctAnswer: '7.4' });
+
+        const outside = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '6.9', calculationToken: fixedToken });
+        expect(outside.body).toMatchObject({ isCorrect: false });
+      });
+
+      it('still honours the legacy percent field on older questions', async () => {
+        getQuestion.mockResolvedValue({
+          ...fixedQuestion,
+          calculationFormula: '1500',
+          calculationTolerance: undefined,
+          calculationAnswerTolerancePercent: 2,
+        });
+
+        const res = await request(buildApp())
+          .post(checkUrl)
+          .send({ answerText: '1529', calculationToken: fixedToken });
+        expect(res.body).toMatchObject({ isCorrect: true, correctAnswer: '1500' });
       });
     });
   });

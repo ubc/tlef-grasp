@@ -7,12 +7,16 @@ const answerGradingService = require("../services/answer-grading");
 const questionFlagService = require("../services/quiz-question-flag");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey } = require("../utils/mc-options");
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 const quizSessionService = require('../services/quiz-session');
+const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
+const studentQuizDelivery = require('../services/student-quiz-delivery');
+const { withoutImportFields, withoutQuizImportFields } = require('../utils/import-provenance');
 
 function isBooleanIfPresent(value) {
   return value === undefined || typeof value === "boolean";
@@ -157,9 +161,10 @@ const getQuizzesByCourseHandler = async (req, res) => {
       return res.status(403).json({ success: false, error: "You are not a member of this course" });
     }
     const allQuizzes = await quizService.getQuizzesByCourse(courseId);
+    // Canvas import provenance (#140) is for instructors only.
     const quizzes = await hasStaffAccessInCourse(req.user, courseId)
       ? allQuizzes
-      : allQuizzes.filter((quiz) => quiz.published === true);
+      : allQuizzes.filter((quiz) => quiz.published === true).map(withoutQuizImportFields);
     res.json({ success: true, quizzes });
   } catch (error) {
     console.error("Error fetching quizzes:", error);
@@ -187,7 +192,8 @@ const getQuizzesByCourseWithQuestionsHandler = async (req, res) => {
 };
 
 /**
- * Student quiz overview: published, currently-open quizzes with this
+ * Student quiz overview: published, currently-open quizzes (plus closed ones
+ * with an attempt the student can still finish, marked `resumeOnly`) with this
  * student's personalized question counts (no question content or answers).
  */
 const getStudentQuizOverviewHandler = async (req, res) => {
@@ -218,6 +224,7 @@ const getStudentQuizOverviewHandler = async (req, res) => {
       );
 
       active = [];
+      const closed = [];
       for (const quiz of published) {
         const window = quizScheduleService.resolveWindow(
           schedulesByQuiz.get(quiz._id.toString()) || [],
@@ -226,6 +233,19 @@ const getStudentQuizOverviewHandler = async (req, res) => {
         );
         if (window.accessibleNow) {
           active.push({ ...quiz, releaseDate: window.releaseDate, expireDate: window.expireDate });
+        } else if (window.reason === "not-yet" || window.reason === "expired") {
+          closed.push({ quiz, window });
+        }
+      }
+
+      // Closed quizzes the student can still finish (see resolveStudentQuizAccess).
+      const unsubmitted = await quizSessionService.getUnsubmittedQuizIds(
+        userId,
+        closed.map(({ quiz }) => quiz._id.toString())
+      );
+      for (const { quiz, window } of closed) {
+        if (unsubmitted.has(quiz._id.toString())) {
+          active.push({ ...quiz, releaseDate: window.releaseDate, expireDate: window.expireDate, resumeOnly: true });
         }
       }
     }
@@ -251,23 +271,19 @@ const getStudentQuizOverviewHandler = async (req, res) => {
             phase3Count: 0,
           };
         }
-        let questions = [];
+        // The kept pick of a started attempt (issue #168), else a preview.
+        let counts = { questionCount: 0, phase1Count: 0, phase2Count: 0, phase3Count: 0 };
         try {
-          questions = await quizService.getQuizQuestionsForStudent(quiz._id.toString(), userId);
+          counts = await studentQuizDelivery.getStudentQuestionCounts(quiz, userId);
         } catch (err) {
           console.error(`Error selecting questions for quiz ${quiz._id}:`, err);
         }
-        return {
-          ...quiz,
-          questionCount: questions.length,
-          phase1Count: questions.filter((q) => q.phase === 1).length,
-          phase2Count: questions.filter((q) => q.phase === 2).length,
-          phase3Count: questions.filter((q) => q.phase === 3).length,
-        };
+        return { ...quiz, ...counts };
       })
     );
 
-    res.json({ success: true, quizzes: overview });
+    // A student view, so Canvas import provenance (#140) stays out of it.
+    res.json({ success: true, quizzes: overview.map(withoutQuizImportFields) });
   } catch (error) {
     console.error("Error building student quiz overview:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -366,7 +382,9 @@ const getQuizByIdHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: "Quiz not found" });
     }
     
-    res.json({ success: true, quiz });
+    // Only the student quiz page reads this, so import provenance (#140) is
+    // left out for everyone rather than looking up staff access.
+    res.json({ success: true, quiz: withoutQuizImportFields(quiz) });
   } catch (error) {
     console.error("Error fetching quiz:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -445,7 +463,12 @@ const createQuizHandler = async (req, res) => {
     if (newQuestions && Array.isArray(newQuestions)) {
       for (const questionData of newQuestions) {
         try {
-          const questionResult = await questionService.saveQuestion(courseId, questionData, { dedupe: true });
+          // Canvas provenance (#140) is written only by the Canvas importer.
+          const questionResult = await questionService.saveQuestion(
+            courseId,
+            withoutImportFields(questionData),
+            { dedupe: true }
+          );
           finalQuestionIds.push(questionResult.insertedId.toString());
         } catch (error) {
           if (error.code === "DUPLICATE_QUESTION") {
@@ -587,8 +610,9 @@ const addQuizQuestionsHandler = async (req, res) => {
     
     for (const questionData of questions) {
       try {
-        // Save the question
-        const questionResult = await questionService.saveQuestion(courseId, questionData);
+        // Save the question. Canvas provenance (#140) is written only by the
+        // Canvas importer, never taken from a client payload.
+        const questionResult = await questionService.saveQuestion(courseId, withoutImportFields(questionData));
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
         console.error("Error saving question:", error);
@@ -703,9 +727,18 @@ const getQuizQuestionsHandler = async (req, res) => {
     let questions;
 
     if (withholdAnswers) {
-        // Students quiz view: use personalized selection logic (approved only)
+        // Students quiz view: the same rules and questions as the student quiz
+        // page (issue #168), so this route serves neither a quiz the student
+        // cannot open yet nor a fresh pick of a graded attempt.
         const userId = req.user ? (req.user._id || req.user.id) : null;
-        questions = await quizService.getQuizQuestionsForStudent(quizId, userId);
+        const access = await resolveStudentQuizAccess(quiz, req.user);
+        if (!access.success) {
+          return res.status(access.status).json({ success: false, error: access.message });
+        }
+        await quizSessionService.getOrCreateSession(userId, quiz, {
+          scheduledExpiresAt: access.scheduledExpiresAt,
+        });
+        questions = await studentQuizDelivery.getStudentQuestions(quiz, userId);
     } else {
         // Bank full questions view: return all questions for instructors
         questions = await quizService.getQuizQuestions(quizId, false);
@@ -768,15 +801,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           vars
         );
         const formula = (q.calculationFormula || "").trim();
-        const answerDec =
-          q.calculationAnswerDecimals !== undefined && q.calculationAnswerDecimals !== null
-            ? Math.max(0, Math.min(12, parseInt(q.calculationAnswerDecimals, 10) || 2))
-            : 2;
-        const tolerancePercent =
-          q.calculationAnswerTolerancePercent != null &&
-          Number.isFinite(Number(q.calculationAnswerTolerancePercent))
-            ? Number(q.calculationAnswerTolerancePercent)
-            : null;
+        const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
 
         if (withholdAnswers) {
@@ -795,6 +820,8 @@ const getQuizQuestionsHandler = async (req, res) => {
               stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
               calculationToken: built.token,
               answerDecimalPlaces: built.answerDecimalPlaces,
+              // The rule the student is graded by, minus a range's bounds.
+              calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
               calculationAnswerTolerancePercent: tolerancePercent,
               options: {},
               learningObjectiveId: q.learningObjectiveId,
@@ -833,31 +860,27 @@ const getQuizQuestionsHandler = async (req, res) => {
           calculationFormula: formula,
           calculationVariables: vars,
           calculationAnswerDecimals: answerDec,
+          calculationTolerance: tolerance,
         };
       }
 
-      let optionsObj = {};
-      if (q.options && typeof q.options === 'object') {
-        if (!Array.isArray(q.options)) {
-          optionsObj = {
-            A: { ...(q.options.A || { text: "" }), index: 0 },
-            B: { ...(q.options.B || { text: "" }), index: 1 },
-            C: { ...(q.options.C || { text: "" }), index: 2 },
-            D: { ...(q.options.D || { text: "" }), index: 3 }
-          };
-        } else {
-          optionsObj = {
-            A: { ...(q.options[0] || { text: "" }), index: 0 },
-            B: { ...(q.options[1] || { text: "" }), index: 1 },
-            C: { ...(q.options[2] || { text: "" }), index: 2 },
-            D: { ...(q.options[3] || { text: "" }), index: 3 }
-          };
-        }
-      }
+      // Every option the question has, two to eight, each carrying its
+      // position so the client can send it back as selectedIndex.
+      const optionsObj = {};
+      optionKeysOf(q.options).forEach((key) => {
+        const raw = optionAt(q.options, key);
+        const option = raw && typeof raw === "object" ? { ...raw } : { text: raw ?? "" };
+        optionsObj[key] = { ...option, index: MC_OPTION_KEYS.indexOf(key) };
+      });
       if (withholdAnswers) {
-        ['A', 'B', 'C', 'D'].forEach(key => {
-          if (optionsObj[key] && typeof optionsObj[key] === 'object') {
-            delete optionsObj[key].feedback;
+        Object.values(optionsObj).forEach((option) => {
+          delete option.feedback;
+          // An option image's filename could name the answer; keep only what
+          // the student view needs.
+          if (option.image?.fileId) {
+            option.image = { fileId: String(option.image.fileId), caption: option.image.caption || "" };
+          } else {
+            delete option.image;
           }
         });
       }
@@ -868,7 +891,7 @@ const getQuizQuestionsHandler = async (req, res) => {
         question: questionText || "Question text not available",
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         options: optionsObj,
-        correctAnswer: (q.correctAnswer || "A").toString().toUpperCase()
+        correctAnswer: correctAnswerKey(q.correctAnswer)
       };
 
       const finalQuestion = formattedQuestion;
@@ -880,7 +903,13 @@ const getQuizQuestionsHandler = async (req, res) => {
       return finalQuestion;
     });
 
-    res.json({ success: true, questions: transformedQuestions });
+    // Canvas import provenance and conversion warnings (#140) are for
+    // instructors. The branches above spread the whole document, so drop them
+    // here for every type.
+    res.json({
+      success: true,
+      questions: withholdAnswers ? transformedQuestions.map(withoutImportFields) : transformedQuestions,
+    });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -928,6 +957,26 @@ const checkQuestionAnswerHandler = async (req, res) => {
       }
     }
 
+    // Only someone who may open the quiz can answer in it, and only questions
+    // their attempt serves (issue #168). Before this, any signed-in user could
+    // grade any question and record the answer under any quiz, where it
+    // counted towards the score.
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Sign in to answer questions." });
+    }
+    const quiz = await quizService.getQuizById(quizId);
+    const access = await resolveStudentQuizAccess(quiz, req.user);
+    if (!access.success) {
+      return res.status(access.status).json({ success: false, error: access.message });
+    }
+    if (!(await studentQuizDelivery.canAnswerQuestion(quiz, userId, questionId, { practice }))) {
+      return res.status(403).json({
+        success: false,
+        code: "QUESTION_NOT_IN_ATTEMPT",
+        error: "This question is not part of your quiz. Reload the quiz and try again.",
+      });
+    }
+
     const { getQuestion } = require('../services/question');
     const question = await getQuestion(questionId);
     
@@ -969,17 +1018,7 @@ const checkQuestionAnswerHandler = async (req, res) => {
         });
       }
       const formula = (question.calculationFormula || "").trim();
-      const vars = question.calculationVariables;
-      const answerDec =
-        question.calculationAnswerDecimals !== undefined &&
-        question.calculationAnswerDecimals !== null
-          ? Math.max(0, Math.min(12, parseInt(question.calculationAnswerDecimals, 10) || 2))
-          : 2;
-      const tolerancePercent =
-        question.calculationAnswerTolerancePercent != null &&
-        Number.isFinite(Number(question.calculationAnswerTolerancePercent))
-          ? Number(question.calculationAnswerTolerancePercent)
-          : null;
+      const { answerDec, tolerance } = CalculationQuestion.readGradingSettings(question);
       let expected;
       try {
         expected = CalculationQuestion.evaluateCalculationFormula(formula, verified.values);
@@ -999,8 +1038,18 @@ const checkQuestionAnswerHandler = async (req, res) => {
           error: clientError ? msg : "Could not grade this calculation question",
         });
       }
+      // Something that is not a number is a typo, not an answer: tell the
+      // student instead of recording a wrong attempt (issue #145).
       const studentNum = CalculationQuestion.parseStudentNumericAnswer(answerText);
-      const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerancePercent);
+      if (!Number.isFinite(studentNum)) {
+        return res.status(400).json({
+          success: false,
+          code: "NOT_A_NUMBER",
+          error:
+            "Please enter a number such as 1500, 1.5e3 or 1.5 x 10^3, without units or other text.",
+        });
+      }
+      const isCorrect = CalculationQuestion.numericAnswersMatch(studentNum, expected, answerDec, tolerance);
       const displayCorrect = CalculationQuestion.formatAnswerForDisplay(expected, answerDec);
       if (userId && quizId && !practice) {
         // Awaited: if the attempt can't be persisted, fail the request so the
@@ -1048,9 +1097,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       // ungraded (isCorrect: null) for manual grading in the review modal.
       let grading = null;
       try {
-        const quiz = await quizService.getQuizById(quizId);
         grading = await answerGradingService.gradeOpenEndedAnswer({
-          courseId: quiz ? quiz.courseId : null,
+          courseId: quiz.courseId,
           question: String(question.question || question.stem || ""),
           studentAnswer: String(answerText).trim(),
           sampleAnswer: sample,
@@ -1131,9 +1179,8 @@ const checkQuestionAnswerHandler = async (req, res) => {
       let aiGraded = false;
       if (!isCorrect && given && normalizedAcceptable.length > 0) {
         try {
-          const quiz = await quizService.getQuizById(quizId);
           const rescue = await answerGradingService.gradeFillInTheBlankAnswer({
-            courseId: quiz ? quiz.courseId : null,
+            courseId: quiz.courseId,
             question: String(question.question || question.stem || ""),
             studentAnswer: String(answerText).trim(),
             correctAnswer: canonical,
@@ -1177,28 +1224,24 @@ const checkQuestionAnswerHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: "selectedIndex is required" });
     }
 
-    const optionKeys = ['A', 'B', 'C', 'D'];
-    const selectedKey = optionKeys[selectedIndex];
+    // The index must name an option this question actually has: E on a
+    // four-option question is as invalid as index 9.
+    const selectedKey = MC_OPTION_KEYS[selectedIndex];
+    const selectedOptionObj = selectedKey ? optionAt(question.options, selectedKey) : undefined;
 
-    if (!selectedKey) {
+    if (!selectedKey || selectedOptionObj === undefined || selectedOptionObj === null) {
         return res.status(400).json({ success: false, error: "Invalid selectedIndex provided" });
     }
 
-    let correctAnswerLetter = question.correctAnswer || 'A';
-    if (typeof correctAnswerLetter === 'number') {
-      correctAnswerLetter = optionKeys[correctAnswerLetter] || 'A';
-    } else if (typeof correctAnswerLetter === 'string') {
-      correctAnswerLetter = correctAnswerLetter.toUpperCase();
-    }
-    
+    const correctAnswerLetter = correctAnswerKey(question.correctAnswer);
+
     const isCorrect = selectedKey === correctAnswerLetter;
 
-    const selectedOptionObj = question.options[selectedKey];
-    const feedback = typeof selectedOptionObj === 'object' && selectedOptionObj !== null 
+    const feedback = typeof selectedOptionObj === 'object'
       ? (selectedOptionObj.feedback || "")
       : "";
 
-    const correctOptionObj = question.options[correctAnswerLetter];
+    const correctOptionObj = optionAt(question.options, correctAnswerLetter);
     const correctOptionText = typeof correctOptionObj === 'object' && correctOptionObj !== null 
       ? (correctOptionObj.text || "")
       : (correctOptionObj || "");
@@ -1483,7 +1526,109 @@ const updateQuizSchedulesHandler = async (req, res) => {
   }
 };
 
+const MAX_SHIFT_DAYS = 730;
+
+// An integer, or a string of plain digits: Number() alone would also accept
+// true, [5] and "0x10".
+function parseShiftAmount(amount) {
+  if (typeof amount === "number") return amount;
+  if (typeof amount === "string" && /^-?\d+$/.test(amount)) return Number(amount);
+  return NaN;
+}
+
+const isValidDate = (value) => !Number.isNaN(new Date(value).getTime());
+
+// Null if malformed.
+function parseExpectedRows(expected) {
+  if (!Array.isArray(expected)) return null;
+  const rows = expected.map((row) =>
+    row &&
+    typeof row.quizId === "string" &&
+    typeof row.courseSectionId === "string" &&
+    isValidDate(row.oldReleaseDate) &&
+    isValidDate(row.oldExpireDate)
+      ? {
+          quizId: row.quizId,
+          courseSectionId: row.courseSectionId,
+          oldReleaseDate: new Date(row.oldReleaseDate),
+          oldExpireDate: new Date(row.oldExpireDate),
+        }
+      : null
+  );
+  return rows.includes(null) ? null : rows;
+}
+
+/**
+ * Shift every schedule row of several quizzes by one offset (term rollover,
+ * slipped week). `unit: "days"` moves by wall-clock days in `timeZone`;
+ * `unit: "hours"` moves by absolute time. With `dryRun` it only returns the
+ * old → new preview; an apply must send the previewed rows as `expected`
+ * (see shiftSchedules). Only the caller's own sections are moved.
+ */
+const shiftQuizSchedulesHandler = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { quizIds, amount, unit, timeZone = "UTC", dryRun = false } = req.body || {};
+
+    const n = parseShiftAmount(amount);
+    if (!Array.isArray(quizIds) || quizIds.length === 0) {
+      return res.status(400).json({ success: false, error: "quizIds must be a non-empty array" });
+    }
+    if (typeof dryRun !== "boolean") {
+      return res.status(400).json({ success: false, error: "dryRun must be a boolean" });
+    }
+    const expected = dryRun ? undefined : parseExpectedRows(req.body.expected);
+    if (expected === null) {
+      return res.status(400).json({
+        success: false,
+        error: "expected must list the previewed rows (quizId, courseSectionId, oldReleaseDate, oldExpireDate)",
+      });
+    }
+    if (!Number.isInteger(n) || n === 0 || !["days", "hours"].includes(unit)) {
+      return res.status(400).json({ success: false, error: "amount must be a non-zero integer and unit 'days' or 'hours'" });
+    }
+    if (Math.abs(unit === "days" ? n : n / 24) > MAX_SHIFT_DAYS) {
+      return res.status(400).json({ success: false, error: `Shifts are limited to ${MAX_SHIFT_DAYS} days` });
+    }
+    if (!quizScheduleService.isValidTimeZone(timeZone)) {
+      return res.status(400).json({ success: false, error: "Unknown timeZone" });
+    }
+
+    const userId = req.user._id || req.user.id;
+    if (!await isFaculty(req.user) && !await isUserInCourse(userId, courseId)) {
+      return res.status(403).json({ success: false, error: "You are not a member of this course" });
+    }
+
+    const courseQuizIds = new Set(
+      (await quizService.getQuizzesByCourse(courseId)).map((q) => q._id.toString())
+    );
+    if (quizIds.some((id) => !courseQuizIds.has(String(id)))) {
+      return res.status(404).json({ success: false, error: "One or more quizzes were not found in this course" });
+    }
+
+    // Same scoping as updateQuizSchedulesHandler: only sections the caller owns.
+    const ownedSections = await sectionService.getSectionsOwnedByUser(courseId, userId);
+    const offset = unit === "days" ? { days: n } : { minutes: n * 60 };
+    const plan = await quizScheduleService.shiftSchedules(quizIds.map(String), offset, {
+      restrictToSectionIds: ownedSections.map((s) => s._id.toString()),
+      timeZone,
+      dryRun,
+      ...(dryRun ? {} : { expected }),
+    });
+
+    res.json({
+      success: true,
+      applied: !dryRun,
+      rows: plan.map(({ _id, ...row }) => row),
+    });
+  } catch (error) {
+    console.error("Error shifting quiz schedules:", error);
+    res.status(error.status || 500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
+  shiftQuizSchedulesHandler,
   getQuizzesByCourseHandler,
   getQuizzesByCourseWithQuestionsHandler,
   getStudentQuizOverviewHandler,

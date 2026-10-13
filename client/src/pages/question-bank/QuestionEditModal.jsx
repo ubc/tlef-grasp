@@ -5,6 +5,21 @@ import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
+import McOptionEditor from "../../components/McOptionEditor";
+import AutoHeightTextarea from "../../components/AutoHeightTextarea";
+import CalculationToleranceFields from "../../components/CalculationToleranceFields";
+import {
+  optionRowsOf,
+  optionRowsToObject,
+  optionRowsError,
+  MC_OPTION_KEYS,
+} from "../../lib/mcOptions";
+import {
+  toleranceToForm,
+  toleranceFromForm,
+  tolerancePayload,
+  stemPlaceholderNames,
+} from "../../lib/calculationTolerance";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none read-only:cursor-not-allowed read-only:bg-gray-100";
@@ -42,7 +57,6 @@ function buildFormState(question) {
   }
 
   if (qType === QUESTION_TYPES.CALCULATION) {
-    const rawTol = parseFloat(question.calculationAnswerTolerancePercent);
     const dec =
       question.calculationAnswerDecimals !== undefined &&
       question.calculationAnswerDecimals !== null
@@ -62,9 +76,7 @@ function buildFormState(question) {
         2
       ),
       calculationAnswerDecimals: Number.isFinite(dec) ? String(dec) : "2",
-      calculationAnswerTolerancePercent: Number.isFinite(rawTol)
-        ? String(Math.max(0, Math.min(100, rawTol)))
-        : "",
+      ...toleranceToForm(question),
     };
   }
 
@@ -79,27 +91,17 @@ function buildFormState(question) {
     };
   }
 
-  const optionKeys = ["A", "B", "C", "D"];
-  const options = optionKeys.map((key) => {
-    const opt = question.options?.[key];
-    if (typeof opt === "string") return { id: key, text: opt, feedback: "" };
-    if (opt && typeof opt === "object") {
-      return {
-        id: opt.id || key,
-        text: opt.text || String(opt),
-        feedback: String(opt.feedback || ""),
-      };
-    }
-    return { id: key, text: String(opt || ""), feedback: "" };
-  });
+  // Rows for whatever options the question has (two to eight, issue #144).
+  const options = optionRowsOf(question.options);
   let correct = question.correctAnswer;
   if (typeof correct === "number") {
-    correct = optionKeys[correct] || "A";
+    correct = MC_OPTION_KEYS[correct] || "A";
   } else if (typeof correct === "string") {
     correct = correct.toUpperCase();
   } else {
     correct = "A";
   }
+  if (!options.some((option) => option.id === correct)) correct = options[0].id;
   return {
     questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
     title: question.title || question.stem || "",
@@ -107,7 +109,6 @@ function buildFormState(question) {
     stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
     options,
     correctAnswer: correct,
-    originalOptions: question.options || {},
   };
 }
 
@@ -154,8 +155,19 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       } catch {
         return showToast("Variables must be valid JSON", "error");
       }
-      if (!Array.isArray(variables) || variables.length === 0) {
-        return showToast("Add at least one variable in the JSON array", "error");
+      // [] is a fixed-answer question: the formula is a constant and the
+      // template must not ask for values nobody fills in.
+      if (!Array.isArray(variables)) {
+        return showToast("Variables must be a JSON array (use [] for a fixed answer)", "error");
+      }
+      if (variables.length === 0) {
+        const stray = stemPlaceholderNames(stem);
+        if (stray.length > 0) {
+          return showToast(
+            `The template uses {{${stray[0]}}} but has no variables — add the variable or remove the braces`,
+            "error"
+          );
+        }
       }
       for (const v of variables) {
         if (!v || typeof v.name !== "string" || !v.name.trim()) {
@@ -170,8 +182,8 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       let dec = parseInt(form.calculationAnswerDecimals, 10);
       if (!Number.isFinite(dec)) dec = 2;
       dec = Math.max(0, Math.min(12, dec));
-      let tolPct = parseFloat(form.calculationAnswerTolerancePercent);
-      tolPct = Number.isFinite(tolPct) ? Math.max(0, Math.min(100, tolPct)) : null;
+      const toleranceCheck = toleranceFromForm(form, variables.length);
+      if (toleranceCheck.error) return showToast(toleranceCheck.error, "error");
 
       updateData = {
         title,
@@ -181,7 +193,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
         calculationFormula: formula,
         calculationVariables: variables,
         calculationAnswerDecimals: dec,
-        calculationAnswerTolerancePercent: tolPct,
+        ...tolerancePayload(toleranceCheck.tolerance),
         options: {},
         acceptableAnswers: [],
       };
@@ -241,31 +253,18 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       if (!title && !stem) {
         return showToast("Question title or stem is required", "error");
       }
-      if (form.options.some((opt) => !opt.text.trim())) {
-        return showToast("All options must have text", "error");
+      const optionsError = optionRowsError(form.options);
+      if (optionsError) return showToast(optionsError, "error");
+      if (!form.options.some((opt) => opt.id === form.correctAnswer)) {
+        return showToast("Select which option is the correct answer", "error");
       }
-      const optionsObject = {};
-      form.options.forEach((opt) => {
-        const oldOption = form.originalOptions[opt.id];
-        if (typeof oldOption === "object" && oldOption !== null) {
-          optionsObject[opt.id] = {
-            ...oldOption,
-            text: opt.text.trim(),
-            feedback: opt.feedback.trim(),
-          };
-        } else {
-          optionsObject[opt.id] = { text: opt.text.trim(), feedback: opt.feedback.trim() };
-        }
-        // Options no longer carry images; drop any legacy per-option image.
-        delete optionsObject[opt.id].image;
-      });
       updateData = {
         title: title || stem,
         stem: stem || title,
         stemImages: form.stemImages || [],
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
-        options: optionsObject,
-        correctAnswer: (form.correctAnswer || "A").toUpperCase(),
+        options: optionRowsToObject(form.options),
+        correctAnswer: form.correctAnswer.toUpperCase(),
       };
     }
 
@@ -322,6 +321,20 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
             </div>
           )}
 
+          {question?.status === "Draft" && question.importWarnings?.length > 0 && (
+            <div className="rounded-lg border border-warning/60 bg-warning/10 px-4 py-3 text-sm text-yellow-800">
+              <p className="font-semibold">
+                <i className="fas fa-triangle-exclamation mr-2" aria-hidden="true" />
+                Imported from Canvas. Check before approving:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-6">
+                {question.importWarnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {form.questionType !== QUESTION_TYPES.MULTIPLE_CHOICE && (
             <TypeChip
               type={form.questionType}
@@ -336,18 +349,31 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           )}
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qem-title" className={labelClass}>
               {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
                 ? "Question Title"
                 : "Topic title"}
             </label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={set("title")}
-              readOnly={readOnly}
-              className={inputClass}
-            />
+            {/* The MC title is the prompt students see, which can run to
+                several lines; other types' titles are short topic labels. */}
+            {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? (
+              <AutoHeightTextarea
+                id="qem-title"
+                value={form.title}
+                onChange={set("title")}
+                readOnly={readOnly}
+                className={inputClass}
+              />
+            ) : (
+              <input
+                id="qem-title"
+                type="text"
+                value={form.title}
+                onChange={set("title")}
+                readOnly={readOnly}
+                className={inputClass}
+              />
+            )}
           </div>
 
           <div>
@@ -429,7 +455,12 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 />
               </div>
               <div>
-                <label className={labelClass}>Variables (JSON array)</label>
+                <label className={labelClass}>
+                  Variables (JSON array){" "}
+                  <span className="font-normal text-muted">
+                    — <code>[]</code> for a fixed answer
+                  </span>
+                </label>
                 <textarea
                   rows={8}
                   value={form.calculationVariables}
@@ -451,25 +482,15 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   className={`${inputClass} max-w-32`}
                 />
               </div>
-              <div>
-                <label className={labelClass}>
-                  Answer tolerance %{" "}
-                  <span className="font-normal text-muted">
-                    (optional — leave blank for exact decimal rounding)
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={form.calculationAnswerTolerancePercent}
-                  onChange={set("calculationAnswerTolerancePercent")}
-                  readOnly={readOnly}
-                  placeholder="e.g. 2 for chemistry, 5 for engineering"
-                  className={`${inputClass} max-w-44`}
-                />
-              </div>
+              <CalculationToleranceFields
+                form={form}
+                setForm={setForm}
+                readOnly={readOnly}
+                inputClass={inputClass}
+                labelClass={labelClass}
+                hintClass="mt-1 text-xs text-muted"
+                idPrefix="qem-calc"
+              />
             </>
           )}
 
@@ -507,60 +528,17 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
             <div>
               <label className={labelClass}>Options</label>
-              <div className="space-y-3">
-                {form.options.map((option, index) => (
-                  <div key={option.id} className="flex items-start gap-3">
-                    <label className="flex items-center gap-2 pt-2">
-                      <input
-                        type="radio"
-                        name="question-correct-answer"
-                        checked={form.correctAnswer === option.id}
-                        disabled={readOnly}
-                        onChange={() =>
-                          setForm((prev) => ({ ...prev, correctAnswer: option.id }))
-                        }
-                        className="h-4 w-4 accent-primary"
-                      />
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-page text-sm font-bold text-ink">
-                        {option.id}
-                      </span>
-                    </label>
-                    <div className="flex-1 space-y-1.5">
-                      <input
-                        type="text"
-                        value={option.text}
-                        readOnly={readOnly}
-                        placeholder="Enter option text..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = { ...options[index], text: event.target.value };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={inputClass}
-                      />
-                      <input
-                        type="text"
-                        value={option.feedback}
-                        readOnly={readOnly}
-                        placeholder="Feedback for this option..."
-                        onChange={(event) =>
-                          setForm((prev) => {
-                            const options = [...prev.options];
-                            options[index] = {
-                              ...options[index],
-                              feedback: event.target.value,
-                            };
-                            return { ...prev, options };
-                          })
-                        }
-                        className={`${inputClass} bg-gray-50 italic`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <McOptionEditor
+                options={form.options}
+                correctAnswer={form.correctAnswer}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswer }))
+                }
+                readOnly={readOnly}
+                radioName="question-correct-answer"
+                inputClass={inputClass}
+                courseId={courseId}
+              />
             </div>
           )}
         </div>

@@ -10,12 +10,30 @@ import {
 const getRole = (user) => user.courseRole;
 
 describe("getUserNames", () => {
-  it("keeps the unknown-user fallback while exposing a distinct display name", () => {
-    expect(getUserNames({ displayName: "Student Preferred" })).toEqual({
-      legalName: "Unknown User",
-      displayName: "Student Preferred",
-      distinctDisplayName: "Student Preferred",
+  it("leads with the legal name and shows a different display name under it", () => {
+    expect(getUserNames({ legalName: "Ada Lovelace", displayName: "Ada" })).toEqual({
+      name: "Ada Lovelace",
+      legalName: "Ada Lovelace",
+      displayName: "Ada",
+      distinctDisplayName: "Ada",
     });
+  });
+
+  it("names a Canvas-synced student with no legal name yet by their Canvas name (issue #165)", () => {
+    // The roster sync stores the Canvas name as displayName; the legal name
+    // only arrives at the student's first CWL sign-in.
+    expect(getUserNames({ displayName: "Bio Student", legalName: null })).toEqual({
+      name: "Bio Student",
+      legalName: "",
+      displayName: "Bio Student",
+      distinctDisplayName: "",
+    });
+    expect(getUserNames({ user: { displayName: "Bio Student" } }).name).toBe("Bio Student");
+  });
+
+  it("falls back to Unknown User only when no name is on file at all", () => {
+    expect(getUserNames({ legalName: "  ", email: "x@ubc.ca" }).name).toBe("Unknown User");
+    expect(getUserNames(undefined).name).toBe("Unknown User");
   });
 
   it("does not repeat a display name that is the same as the legal name", () => {
@@ -80,6 +98,23 @@ describe("filterAndSortCourseUsers", () => {
         (user) => user.userId,
       ),
     ).toEqual(["student-z"]);
+  });
+
+  it("sorts and searches a student with no legal name by the name they are shown under", () => {
+    const withCanvasOnly = [
+      ...users,
+      { userId: "student-c", displayName: "Casey Canvasonly", courseRole: "student", sections: [] },
+    ];
+
+    expect(
+      filterAndSortCourseUsers(withCanvasOnly, { getRole }).map((user) => user.userId),
+    ).toEqual(["ta-a", "faculty-b", "student-a", "student-c", "student-z"]);
+    expect(
+      filterAndSortCourseUsers(withCanvasOnly, { search: "canvasonly", getRole }).map(
+        (user) => user.userId,
+      ),
+    ).toEqual(["student-c"]);
+    expect(filterAndSortCourseUsers(withCanvasOnly, { search: "unknown", getRole })).toEqual([]);
   });
 
   it("applies the section filter before sorting", () => {

@@ -125,6 +125,25 @@ describe('updateMaterialHandler content swap', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
+  // A .txt imported from Canvas can be edited like any text material. It is
+  // still that Canvas file afterwards, so importing it again adds no copy.
+  it('keeps the Canvas source of an imported text file through an edit', async () => {
+    const lms = { provider: 'canvas', externalCourseId: '42', externalFileId: '7001' };
+    materialService.getMaterialBySourceId.mockResolvedValue({ ...STORED, lms });
+
+    await updateMaterialHandler(textEditRequest(), makeRes());
+
+    expect(materialService.saveMaterial).toHaveBeenCalledWith(
+      'source-1', 'course-1', expect.objectContaining({ lms })
+    );
+  });
+
+  it('adds no lms field when editing a material that was not imported', async () => {
+    await updateMaterialHandler(textEditRequest(), makeRes());
+
+    expect(materialService.saveMaterial.mock.calls.at(-1)[2]).not.toHaveProperty('lms');
+  });
+
   it('restores the original document when the vector write fails', async () => {
     ragService.addDocumentToRAG.mockRejectedValueOnce(new Error('Qdrant unavailable'));
     const res = makeRes();
