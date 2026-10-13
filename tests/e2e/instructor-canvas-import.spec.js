@@ -9,6 +9,7 @@ const {
   mcItem,
   numericalItem,
   calculatedItem,
+  otherItem,
   metaXml,
 } = require('../fixtures/canvas-qti/items');
 const { buildManifest, buildExportZip } = require('../fixtures/canvas-qti/zip');
@@ -30,7 +31,7 @@ const RING_SRC = '$IMS-CC-FILEBASE$/assessment_questions/ring-diagram.png?canvas
 const RING_PATH = 'assessment_questions/ring-diagram.png';
 const RING_ALT = 'Synthetic ring diagram';
 
-const CALCULATED_SKIP = 'Formula question with variables. These come in a later update (#130).';
+const MATCHING_SKIP = "Matching questions aren't supported in GRASP.";
 const MEDIA_WARNING = 'Question text: Embedded media was removed.';
 
 // Question HTML as Canvas writes it: a <div> with one block per line.
@@ -46,8 +47,9 @@ function png(colour) {
 /**
  * A Canvas export holding two quizzes, laid out as Canvas writes one.
  * Kinetics: group Q01 with two variants (one with a stem image, one with an
- * image-only answer), Q02 with a numerical question, and Q03 with a formula
- * question GRASP skips. Thermo: one question whose embedded video is dropped,
+ * image-only answer), Q02 with a numerical question, Q03 with a formula
+ * question (a base-10 log over one variable, issue #130) and Q04 with a
+ * matching question GRASP skips. Thermo: one question whose embedded video is dropped,
  * so it is saved as Draft. Thermo comes first in the manifest but is due
  * later, so GRASP lists Kinetics first. Quiz idents and question text carry
  * the run's stamp: provenance is per quiz ident, so nothing from another run
@@ -61,6 +63,7 @@ async function buildExport(stamp) {
     plot: `Which synthetic order fits the plot? ${stamp}`,
     ring: `Which synthetic structure is aromatic? ${stamp}`,
     rate: `Synthetic rate constant ${stamp}`,
+    formula: `Synthetic pH ${stamp}`,
     heat: `Which synthetic phase change releases heat? ${stamp}`,
   };
 
@@ -116,7 +119,26 @@ async function buildExport(stamp) {
       groupSection({
         ident: `${kinetics.ident}q03`,
         title: 'Q03',
-        items: [calculatedItem({ ident: 'e2e-formula' })],
+        items: [
+          calculatedItem({
+            ident: 'e2e-formula',
+            title: text.formula,
+            stemHtml: html('<p>What is the synthetic pH of a [x] M acid? Give it to 2 decimal places.</p>'),
+            formula: '-1.0*log(x,10)',
+            variables: [{ name: 'x', min: '0.03', max: '0.9', scale: 3 }],
+            varSets: [
+              { ident: '4700', vars: { x: '0.1' }, answer: '1.0' },
+              { ident: '522', vars: { x: '0.5' }, answer: '0.3' },
+            ],
+            tolerance: '0.05',
+            decimalPlaces: 2,
+          }),
+        ],
+      }),
+      groupSection({
+        ident: `${kinetics.ident}q04`,
+        title: 'Q04',
+        items: [otherItem({ ident: 'e2e-matching', type: 'matching_question' })],
       }),
     ],
   });
@@ -247,17 +269,17 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         await dialog.getByLabel('Export file').setInputFiles(file);
 
         await expect(
-          dialog.getByText('2 quizzes · 4 of 5 questions can be imported · 1 skipped', { exact: true })
+          dialog.getByText('2 quizzes · 5 of 6 questions can be imported · 1 skipped', { exact: true })
         ).toBeVisible();
         const importBoxes = dialog.getByRole('checkbox', { name: /^Import / });
         await expect(importBoxes).toHaveCount(2);
         await expect(importBoxes.nth(0)).toHaveAccessibleName(`Import ${kinetics.title}`);
         await expect(importBoxes.nth(1)).toHaveAccessibleName(`Import ${thermo.title}`);
 
-        await expect(quizRow(kinetics).getByText('4 questions in 3 groups · 3 to import')).toBeVisible();
+        await expect(quizRow(kinetics).getByText('5 questions in 4 groups · 4 to import')).toBeVisible();
         await quizRow(kinetics).getByText('Skipped (1)').click();
-        await expect(quizRow(kinetics).getByText(`${CALCULATED_SKIP} (1)`)).toBeVisible();
-        await expect(quizRow(kinetics).getByText('Q03', { exact: true })).toBeVisible();
+        await expect(quizRow(kinetics).getByText(`${MATCHING_SKIP} (1)`)).toBeVisible();
+        await expect(quizRow(kinetics).getByText('Q04', { exact: true })).toBeVisible();
 
         await expect(quizRow(thermo).getByText('1 question in 1 group · 1 to import')).toBeVisible();
         await quizRow(thermo).getByText('Will be saved as Draft to check (1)').click();
@@ -268,17 +290,17 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         await expect(importBox(thermo)).toBeChecked();
         await expect(createQuizBox(kinetics)).toBeChecked();
         await expect(createQuizBox(thermo)).toBeChecked();
-        await expect(dialog.getByRole('button', { name: 'Import 4 questions' })).toBeEnabled();
+        await expect(dialog.getByRole('button', { name: 'Import 5 questions' })).toBeEnabled();
       });
 
       await test.step('choosing quizzes changes what is imported', async () => {
         const dialog = page.getByRole('dialog', { name: 'Import Questions' });
         await importBox(thermo).uncheck();
-        await expect(dialog.getByRole('button', { name: 'Import 3 questions' })).toBeEnabled();
+        await expect(dialog.getByRole('button', { name: 'Import 4 questions' })).toBeEnabled();
         await expect(createQuizBox(thermo)).toBeDisabled();
 
         await importBox(thermo).check();
-        await expect(dialog.getByRole('button', { name: 'Import 4 questions' })).toBeEnabled();
+        await expect(dialog.getByRole('button', { name: 'Import 5 questions' })).toBeEnabled();
         // Thermo's question comes in without a GRASP quiz.
         await createQuizBox(thermo).uncheck();
         await expect(createQuizBox(kinetics)).toBeChecked();
@@ -286,14 +308,14 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
 
       await test.step('importing reports what was created', async () => {
         const dialog = page.getByRole('dialog', { name: 'Import Questions' });
-        await dialog.getByRole('button', { name: 'Import 4 questions' }).click();
+        await dialog.getByRole('button', { name: 'Import 5 questions' }).click();
 
         await expect(dialog.getByRole('heading', { name: 'Import finished', exact: true })).toBeVisible();
         await expectTotals(dialog, {
-          'Questions imported': 4,
-          Approved: 3,
+          'Questions imported': 5,
+          Approved: 4,
           'Saved as Draft': 1,
-          'Learning objectives created': 3,
+          'Learning objectives created': 4,
           'GRASP quizzes created': 1,
           'GRASP quizzes updated': 0,
           'Already imported': 0,
@@ -306,17 +328,20 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
 
       await test.step('the GRASP quiz holds the Canvas quiz questions, one objective per group', async () => {
         await page.getByLabel('Quiz').selectOption({ label: kinetics.title });
-        for (const questionText of [text.plot, text.ring, text.rate]) {
+        for (const questionText of [text.plot, text.ring, text.rate, text.formula]) {
           await expect(questionRow(questionText)).toHaveCount(1);
         }
         await expect(questionRow(text.heat)).toHaveCount(0);
-        await expect(page.getByRole('cell', { name: 'Approved', exact: true })).toHaveCount(3);
+        await expect(page.getByRole('cell', { name: 'Approved', exact: true })).toHaveCount(4);
         // Both Q01 variants share one objective, so the quiz serves one of them.
         await expect(
           page.getByRole('cell', { name: `${kinetics.title} – Q01`, exact: true })
         ).toHaveCount(2);
         await expect(
           page.getByRole('cell', { name: `${kinetics.title} – Q02`, exact: true })
+        ).toHaveCount(1);
+        await expect(
+          page.getByRole('cell', { name: `${kinetics.title} – Q03`, exact: true })
         ).toHaveCount(1);
       });
 
@@ -356,6 +381,31 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         await expect(dialog).toBeHidden();
       });
 
+      await test.step('a formula question becomes a calculation question with its variable (issue #130)', async () => {
+        // Canvas's log is base 10, so the stored formula says log10; the
+        // variable keeps its range and decimals, the answer its tolerance.
+        const response = await page.request.get(`/api/question?courseId=${course.id}`);
+        expect(response.ok()).toBe(true);
+        const { questions } = await response.json();
+        const imported = questions.find((question) => question.title === text.formula);
+        expect(imported).toMatchObject({
+          questionType: 'calculation',
+          stem: 'What is the synthetic pH of a {{x}} M acid? Give it to 2 decimal places.',
+          calculationFormula: '-1.0*log10(x)',
+          calculationVariables: [{ name: 'x', min: 0.03, max: 0.9, decimals: 3 }],
+          calculationAnswerDecimals: 2,
+          calculationTolerance: { mode: 'absolute', value: 0.05 },
+          status: 'Approved',
+        });
+
+        await questionRow(text.formula).getByRole('button', { name: 'View/Edit' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Edit question' });
+        await expect(dialog.getByLabel('Accepted answers')).toHaveValue('absolute');
+        await expect(dialog.getByLabel('Tolerance amount')).toHaveValue('0.05');
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        await expect(dialog).toBeHidden();
+      });
+
       await test.step('a lossy question is a Draft that says what to check', async () => {
         await page.getByLabel('Quiz').selectOption('all');
         await expect(questionRow(text.heat).getByRole('cell', { name: 'Draft', exact: true })).toBeVisible();
@@ -376,6 +426,7 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         for (const name of [
           `${kinetics.title} – Q01`,
           `${kinetics.title} – Q02`,
+          `${kinetics.title} – Q03`,
           `${thermo.title} – Question 1`,
         ]) {
           await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
@@ -383,9 +434,9 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
           await expect(objectiveCard(name).getByText('From Canvas', { exact: true })).toBeVisible();
           await expect(objectiveCard(name).getByText('No materials linked.')).toHaveCount(0);
         }
-        // Nothing from Q03 was imported, so it has no objective.
+        // Nothing from Q04 was imported, so it has no objective.
         await expect(
-          page.getByRole('heading', { name: `${kinetics.title} – Q03`, exact: true })
+          page.getByRole('heading', { name: `${kinetics.title} – Q04`, exact: true })
         ).toHaveCount(0);
 
         // With a material linked, an imported objective can be renamed.
@@ -434,7 +485,7 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         const dialog = await openImportDialog(page);
         await dialog.getByLabel('Export file').setInputFiles(file);
 
-        const summary = '2 quizzes · 0 of 5 questions can be imported · 1 skipped · 4 already imported';
+        const summary = '2 quizzes · 0 of 6 questions can be imported · 1 skipped · 5 already imported';
         await expect(dialog.getByText(summary, { exact: true })).toBeVisible();
         await expect(
           dialog.getByText('Everything in this export that GRASP can import is already in this course.')
@@ -467,7 +518,7 @@ test.describe('Instructor Canvas quiz import (issue #140)', () => {
         await expect(dialog).toBeHidden();
 
         // Still one copy of every question, and Thermo's is in its new quiz.
-        for (const questionText of [text.plot, text.ring, text.rate, text.heat]) {
+        for (const questionText of [text.plot, text.ring, text.rate, text.formula, text.heat]) {
           await expect(questionRow(questionText)).toHaveCount(1);
         }
         await page.getByLabel('Quiz').selectOption({ label: thermo.title });
