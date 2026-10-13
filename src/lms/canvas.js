@@ -5,6 +5,7 @@ const {
 } = require('@ubc/ubc-genai-toolkit-lms-integration');
 const {
   CANVAS_CAPABILITIES,
+  missingConnectScopes,
   parseCanvasScopes,
   resolveCanvasCapabilities,
 } = require('./canvas-scopes');
@@ -44,6 +45,14 @@ function createCanvasIntegration() {
   }
 
   const scopes = canvasScopesFromEnv();
+  const missingConnect = missingConnectScopes(scopes);
+  if (missingConnect.length > 0) {
+    console.warn(
+      `[canvas] CANVAS_SCOPES lacks ${missingConnect.join(', ')}: GRASP cannot confirm whose ` +
+      'Canvas account an instructor authorizes, so it will refuse every new Canvas connection. ' +
+      'Add it to the developer key and to CANVAS_SCOPES.'
+    );
+  }
 
   const tokenStore = createMongoTokenStore(() => databaseService.connect(), {
     collectionName: 'grasp_lms_canvas_tokens',

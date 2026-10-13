@@ -11,6 +11,23 @@ import { useToast } from "../ui/Toast";
 const secondaryBtnClass =
   "inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-60";
 
+// Why a connection attempt came back unfinished: the `canvas` query parameter
+// the server's OAuth callback redirects to (controllers/lms-canvas-connect.js).
+const CANVAS_RETURN_ERRORS = new Map([
+  [
+    "error",
+    "Canvas could not complete the connection. Please try again or confirm that the configured callback URI matches the Canvas Developer Key.",
+  ],
+  [
+    "account-mismatch",
+    "That Canvas account belongs to someone else, so GRASP did not connect it. Sign out of Canvas, sign back in with your own CWL, then connect again.",
+  ],
+  [
+    "identity-unavailable",
+    "GRASP could not confirm that this Canvas account is yours, so it did not connect it. Please try again; if this keeps happening, the GRASP Canvas developer key may be missing a permission.",
+  ],
+]);
+
 export function CanvasConnectionPanel({ status, returnState }) {
   const showToast = useToast();
   const disconnectMutation = useDisconnectCanvas({
@@ -25,8 +42,8 @@ export function CanvasConnectionPanel({ status, returnState }) {
       description="Connect your own UBC Canvas account. GRASP stores this connection per instructor and never shares your Canvas credentials with another user. After connecting, link each section you manage from My Sections."
       connected={status.connected}
     >
-      {returnState === "error" ? (
-        <ErrorBox message="Canvas could not complete the connection. Please try again or confirm that the configured callback URI matches the Canvas Developer Key." />
+      {CANVAS_RETURN_ERRORS.has(returnState) ? (
+        <ErrorBox message={CANVAS_RETURN_ERRORS.get(returnState)} />
       ) : null}
 
       {status.isError ? (

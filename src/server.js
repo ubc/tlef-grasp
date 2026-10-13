@@ -49,6 +49,7 @@ const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
 const { samlErrorHandler } = require('./middleware/samlErrorHandler');
+const { createCrossOriginProtection } = require('./middleware/cross-origin');
 
 const authRoutes = require('./routes/auth');
 const questionRoutes = require("./routes/question");
@@ -115,17 +116,30 @@ app.use(
     },
   })
 );
+// CSRF: refuse a POST, PUT, PATCH or DELETE that another site's page sends
+// with the user's session cookie, before any body is parsed. The UBC IdP
+// posts SAML messages to these two endpoints from its own origin;
+// passport-saml checks their signatures.
+app.use(
+  createCrossOriginProtection({
+    exemptPaths: ['/Shibboleth.sso/SAML2/POST', '/auth/saml/callback'],
+  })
+);
 // Default body limit is deliberately small: parsing a huge JSON body blocks
 // the event loop for every request in flight. Material routes carry full
 // parsed document text, so they are excluded here and mount their own
 // express.json({ limit: "50mb" }) parser in routes/material.js — the global
 // parser must not touch them or its 1mb cap would reject the body first.
+//
+// There is deliberately no global urlencoded parser: the client sends JSON
+// or multipart, and only the SAML endpoints below take form posts, so they
+// parse their own. With one, every JSON route would also accept a plain
+// HTML form posted from another site.
 const defaultJsonParser = express.json({ limit: '1mb' });
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/material')) return next();
   return defaultJsonParser(req, res, next);
 });
-app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
@@ -142,11 +156,14 @@ const clientIndexPath = path.join(clientDistPath, "index.html");
 app.use(express.static(clientDistPath));
 
 // Authentication routes (no /api prefix as they serve HTML too)
-// Shibboleth SP endpoint - traditional Shibboleth callback path
+// Shibboleth SP endpoint - traditional Shibboleth callback path.
+// The IdP form-posts SAML messages here and to /auth/saml/callback. They are
+// signed and may be encrypted, so they get the same 1mb limit as JSON bodies.
+const samlFormParser = express.urlencoded({ limit: '1mb', extended: true });
 app.post(
   '/Shibboleth.sso/SAML2/POST',
   express.json(),
-  express.urlencoded({ extended: true }),
+  samlFormParser,
   passport.authenticate('ubcshib', { failureRedirect: '/auth/login' }),
   (req, res) => {
     res.redirect('/onboarding');
@@ -154,7 +171,7 @@ app.post(
   samlErrorHandler
 );
 
-app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);
+app.use('/auth', express.json(), samlFormParser, authRoutes);
 
 // Page routes are handled client-side by the React SPA (see fallback below).
 // Role-based access is enforced on the API routes and mirrored by client guards.

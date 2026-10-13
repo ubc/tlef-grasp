@@ -51,6 +51,21 @@ const ACCESS_LOG_DEFAULT_LIMIT = 100;
 const requesterIdOf = (req) => req.user._id || req.user.id;
 
 /**
+ * What a user list may show about a person. A grasp_user document also holds
+ * fields no other user may see, such as the Canvas identities in lmsAccounts
+ * (SIS user id, login id), so lists send this instead of the document.
+ */
+function toUserSummary(user) {
+  return {
+    _id: user._id,
+    email: user.email,
+    displayName: user.displayName,
+    legalName: user.legalName,
+    affiliation: user.affiliation,
+  };
+}
+
+/**
  * The role a user holds in a course with no TA designation: what they fall
  * back to when a TA role is removed, and what a plain "add" grants.
  * @returns {'staff'|'student'}
@@ -376,7 +391,11 @@ const getCourseUsersHandler = async (req, res) => {
 
     const users = [];
     for (const courseUser of courseUsers) {
-      const userDoc = courseUser.user || courseUser;
+      // The full user document is only for the role checks below. Rows carry
+      // the fields getCourseUsers projects, never the document itself, so a
+      // TA cannot read another member's Canvas identities (lmsAccounts).
+      const { user, ...member } = courseUser;
+      const userDoc = user || courseUser;
       const userIsFaculty = await isFaculty(userDoc);
       const courseRole = resolveCourseRole(userDoc, courseUser, userIsFaculty);
 
@@ -385,7 +404,7 @@ const getCourseUsersHandler = async (req, res) => {
       // map so the Users page can prefill the permissions editor, plus the
       // role they revert to if the designation is removed.
       if (courseRole !== "student") {
-        const row = { ...courseUser, courseRole };
+        const row = { ...member, courseRole };
         if (courseRole === "ta") {
           row.taPermissions = getEffectiveTaPermissions(courseUser.taPermissions);
           row.baseRole = baseCourseRole(userDoc);
@@ -400,7 +419,7 @@ const getCourseUsersHandler = async (req, res) => {
       // added by one co-instructor would be invisible — and unrevokable — to
       // the others.
       if (courseUser.source === MEMBERSHIP_SOURCES.MANUAL) {
-        users.push({ ...courseUser, courseRole });
+        users.push({ ...member, courseRole });
         continue;
       }
 
@@ -409,7 +428,7 @@ const getCourseUsersHandler = async (req, res) => {
         ownedSectionIds.has(id)
       );
       if (studentOwnedSections.length > 0) {
-        users.push({ ...courseUser, sections: studentOwnedSections, courseRole });
+        users.push({ ...member, sections: studentOwnedSections, courseRole });
       }
     }
 
@@ -452,7 +471,7 @@ const getStaffUsersNotInCourseHandler = async (req, res) => {
 
     res.json({
       success: true,
-      users: staffUsers,
+      users: staffUsers.map(toUserSummary),
     });
   } catch (error) {
     console.error("Error fetching staff users not in course:", error);
@@ -487,7 +506,7 @@ const getStudentsNotInCourseHandler = async (req, res) => {
 
     res.json({
       success: true,
-      users: students,
+      users: students.map(toUserSummary),
     });
   } catch (error) {
     console.error("Error fetching students not in course:", error);
@@ -526,8 +545,8 @@ const getAllUsersNotInCourseHandler = async (req, res) => {
 
     // Combine and add role info
     const allUsers = [
-      ...staffUsers.map(u => ({ ...u, role: 'staff' })),
-      ...studentUsers.map(u => ({ ...u, role: 'student' }))
+      ...staffUsers.map(u => ({ ...toUserSummary(u), role: 'staff' })),
+      ...studentUsers.map(u => ({ ...toUserSummary(u), role: 'student' }))
     ];
 
     // Sort alphabetically by displayName
@@ -585,11 +604,7 @@ const searchUsersNotInCourseHandler = async (req, res) => {
     for (const user of matches) {
       if (await isFaculty(user)) continue;
       users.push({
-        _id: user._id,
-        email: user.email,
-        displayName: user.displayName,
-        legalName: user.legalName,
-        affiliation: user.affiliation,
+        ...toUserSummary(user),
         role: baseCourseRole(user),
         courseCount: user.courseCount || 0,
       });

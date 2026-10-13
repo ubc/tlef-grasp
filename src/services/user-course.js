@@ -272,7 +272,11 @@ const getCourseUsers = async (courseId) => {
                             $match: {
                                 $expr: { $eq: ["$_id", "$$userIdToMatch"] }
                             }
-                        }
+                        },
+                        // No caller needs a member's Canvas identities (SIS
+                        // user id, login id), and the Users page must never
+                        // show them, so they do not leave the database here.
+                        { $project: { lmsAccounts: 0 } }
                     ],
                     as: "user"
                 }
