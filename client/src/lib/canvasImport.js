@@ -284,6 +284,16 @@ export function draftsToCheckLabel(result) {
   return flagged > 0 ? `Drafts to check (${flagged})` : "";
 }
 
+// What the result says when it imported multiple-answer questions, or "".
+export function partialCreditNote(totals) {
+  const imported = count(totals?.partialCredit);
+  if (imported === 0) return "";
+  const which = imported === 1 ? "1 multiple-answer question" : `${imported} multiple-answer questions`;
+  return `${which}: Canvas gave partial credit; GRASP marks ${
+    imported === 1 ? "it" : "them"
+  } right only when exactly the correct options are ticked.`;
+}
+
 // "Importing quiz 3 of 11: A03 Kinetics"
 export function describeImportProgress({ index, total, title }) {
   return `Importing quiz ${index} of ${total}: ${title}`;
@@ -307,6 +317,8 @@ export function mergeCommitReports(reports, errors = []) {
     imageFailures: 0,
     failures: 0,
     failedQuizzes: listOf(errors).length,
+    // Multiple-answer questions imported: Canvas gave them partial credit.
+    partialCredit: 0,
   };
   const allSkipped = [];
   const quizzes = listOf(reports).map((report) => {
@@ -335,6 +347,7 @@ export function mergeCommitReports(reports, errors = []) {
     totals.skipped += quiz.skipped.length;
     totals.imageFailures += quiz.imageFailures;
     totals.failures += quiz.failures.length;
+    totals.partialCredit += tally(report?.partialCredit);
     if (quiz.quiz?.created) totals.quizzesCreated += 1;
     else if (quiz.quiz) totals.quizzesUpdated += 1;
     allSkipped.push(...quiz.skipped);

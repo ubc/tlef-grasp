@@ -4,8 +4,9 @@
  * back as the same questions: multiple choice with 2 to 8 options (shuffled
  * once, the correct answer following its option) and their feedback, text that
  * looks like markup, option and stem images as
- * references into the zip, and fill-in-the-blank (exported as a Canvas short
- * answer) with its accepted answers.
+ * references into the zip, multiple answer with every correct option,
+ * and fill-in-the-blank (exported as a Canvas short answer) with its accepted
+ * answers.
  *
  * The QTI comes from the real export code (createQTIExport); the manifest and
  * zip come from the Canvas fixture builders, laid out the way the export's
@@ -161,6 +162,33 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
     });
     // The shuffle really ran, so the correct-answer check above means something.
     expect(reordered).toBeGreaterThan(0);
+  });
+
+  test('multiple answer comes back with the same options, every correct one and their feedback', async () => {
+    const original = {
+      questionType: 'multiple-answer',
+      title: 'Which of these synthetic gases are noble?',
+      stem: 'Which of these synthetic gases are noble?',
+      options: {
+        A: { text: 'Neon', feedback: '' },
+        B: { text: 'Nitrogen', feedback: 'Nitrogen is in group 15.' },
+        C: { text: 'Argon', feedback: '' },
+        D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+        E: { text: 'Xenon', feedback: '' },
+      },
+      correctAnswer: ['A', 'C', 'E'],
+    };
+    const { quiz, drafts } = await exportThenImport([original]);
+    const [draft] = drafts;
+
+    expect(quiz.skipped).toEqual([]);
+    expect(draft.payload.questionType).toBe('multiple-answer');
+    expect(draft.payload.title).toBe(original.title);
+    const correctTexts = draft.payload.correctAnswer.map((key) => draft.payload.options[key].text);
+    expect(correctTexts.sort()).toEqual(['Argon', 'Neon', 'Xenon']);
+    const byText = Object.fromEntries(Object.values(draft.payload.options).map((option) => [option.text, option.feedback]));
+    expect(byText).toEqual(Object.fromEntries(Object.values(original.options).map((option) => [option.text, option.feedback])));
+    expect(draft.warnings).toEqual([]);
   });
 
   test('text that looks like markup, paragraphs and option feedback come back as written', async () => {

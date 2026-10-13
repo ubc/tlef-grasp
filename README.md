@@ -13,6 +13,7 @@ adaptive, and elaborative practice — all behind UBC Single Sign-On.
   with four options unless the generation step asks for another count (two to
   eight).
 - **Multiple question types** — Multiple choice (two to eight answer options),
+  multiple answer ("select all that apply", graded all-or-nothing),
   fill-in-the-blank, calculation, and open-ended questions, with support for
   math (KaTeX) and chemistry (SMILES) rendering.
 - **Question review & banking** — Review, edit, flag, and organize generated
@@ -261,11 +262,14 @@ works like this:
 export (`.zip`, QTI 1.2; issue #140). It needs no Canvas connection. GRASP
 previews the file, the instructor picks the Canvas quizzes to bring in, and each
 one becomes an unpublished GRASP quiz with one objective per Canvas question or
-question group. Multiple choice and true/false, numerical (as fixed-answer
-calculation questions), fill-in-the-blank, short answer and formula questions
-are imported; multiple-answer, matching, multiple-dropdown, essay and
+question group. Multiple choice and true/false, multiple answers, numerical
+(as fixed-answer calculation questions), fill-in-the-blank, short answer and
+formula questions are imported; matching, multiple-dropdown, essay and
 file-upload questions, question-bank groups and New Quizzes exports are
-reported as skipped, each with its reason.
+reported as skipped, each with its reason. Canvas Classic always gives partial
+credit on multiple answers, while GRASP marks them right only when exactly the
+correct options are ticked; the review and the result say so for each quiz
+that has them.
 
 A Canvas **formula question** (issue #130) becomes a GRASP calculation question
 with variables:
@@ -324,6 +328,11 @@ questions, or as numerical questions when they have no variables
   such as `fac` of a decimal, or a variable name Canvas can't use) is left out,
   and the export dialog lists it with the reason. H5P exports list calculation
   questions the same way, as H5P has no type for them.
+
+A multiple-answer question goes out as a Canvas Multiple Answers question, in
+the shape Canvas exports its own. Canvas grades those with partial credit while
+GRASP grades the exact set, and the export dialog says so for a quiz that has
+one.
 
 #### Optional Moodle connection
 

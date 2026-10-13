@@ -45,7 +45,6 @@ const SKIP_REASONS = Object.freeze({
   NEW_QUIZZES: "New Quizzes exports aren't supported yet (#147).",
   QUESTION_BANK:
     "This group draws questions from a question bank, which a quiz export doesn't include. Import the bank's questions separately when that's supported.",
-  MULTIPLE_ANSWERS: "Multiple-answer questions aren't supported in GRASP yet.",
   MULTIPLE_DROPDOWNS: "Multiple-dropdown questions aren't supported in GRASP.",
   MATCHING: "Matching questions aren't supported in GRASP.",
   ESSAY: "Essay questions aren't imported yet: GRASP needs a sample answer and grading criteria for them.",
@@ -66,7 +65,6 @@ const SKIP_REASONS = Object.freeze({
 });
 
 const UNSUPPORTED_TYPE_REASONS = {
-  [CANVAS_QUESTION_TYPES.MULTIPLE_ANSWERS]: SKIP_REASONS.MULTIPLE_ANSWERS,
   [CANVAS_QUESTION_TYPES.MULTIPLE_DROPDOWNS]: SKIP_REASONS.MULTIPLE_DROPDOWNS,
   [CANVAS_QUESTION_TYPES.MATCHING]: SKIP_REASONS.MATCHING,
   [CANVAS_QUESTION_TYPES.ESSAY]: SKIP_REASONS.ESSAY,
@@ -540,16 +538,22 @@ function optionOrder(item, quiz, texts) {
   return seededOrder(texts.length, item.ident);
 }
 
-function mapChoiceItem(item, slot, quiz) {
+// Multiple choice and true/false, and with `multiple`, multiple answers: the
+// same options, with one correct answer or a list of them.
+function mapChoiceItem(item, slot, quiz, { multiple = false } = {}) {
   const { choices } = item;
+  const typeName = multiple ? 'multiple answer' : 'multiple choice';
   if (choices.length < MC_MIN_OPTIONS || choices.length > MC_MAX_OPTIONS) {
-    return { skip: `GRASP multiple choice needs ${MC_MIN_OPTIONS} to ${MC_MAX_OPTIONS} answer options; this one has ${choices.length}.` };
+    return { skip: `GRASP ${typeName} needs ${MC_MIN_OPTIONS} to ${MC_MAX_OPTIONS} answer options; this one has ${choices.length}.` };
   }
   if (new Set(choices.map((choice) => choice.ident)).size !== choices.length) {
     return { skip: SKIP_REASONS.DUPLICATE_CHOICE_IDS };
   }
   const correctCount = item.correctChoiceIdents.length;
-  if (correctCount !== 1) {
+  if (multiple && correctCount === 0) {
+    return { skip: 'Canvas marks no answer as correct; GRASP multiple answer needs at least one.' };
+  }
+  if (!multiple && correctCount !== 1) {
     return {
       skip: correctCount === 0
         ? 'Canvas marks no answer as correct; GRASP multiple choice needs exactly one.'
@@ -578,11 +582,15 @@ function mapChoiceItem(item, slot, quiz) {
   const payloadOptions = {};
   const optionImages = {};
   let correctAnswer = null;
+  const correctAnswers = [];
   order.forEach((index, position) => {
     const option = options[index];
     const letter = MC_OPTION_KEYS[position];
-    const isCorrect = option.ident === item.correctChoiceIdents[0];
-    if (isCorrect) correctAnswer = letter;
+    const isCorrect = multiple
+      ? item.correctChoiceIdents.includes(option.ident)
+      : option.ident === item.correctChoiceIdents[0];
+    if (isCorrect && multiple) correctAnswers.push(letter);
+    else if (isCorrect) correctAnswer = letter;
     const feedback = joinConvertedFields([
       convertFeedback(item.choiceFeedbackHtml[option.ident], feedbackWarnings),
       isCorrect ? whenCorrect : whenIncorrect,
@@ -619,16 +627,28 @@ function mapChoiceItem(item, slot, quiz) {
   pushUnique(warnings, feedbackWarnings);
   pushUnique(warnings, item.rawWarnings);
 
-  return {
-    draft: {
-      payload: {
+  // A multiple-answer question's stem repeats its prompt, so students see the
+  // prompt once and are told to select all that apply by the quiz itself.
+  const payload = multiple
+    ? {
+        questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+        title: stem.text,
+        stem: stem.text,
+        bloom: BLOOM,
+        options: payloadOptions,
+        correctAnswer: correctAnswers,
+      }
+    : {
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         title: stem.text,
         stem: MC_STEM,
         bloom: BLOOM,
         options: payloadOptions,
         correctAnswer,
-      },
+      };
+  return {
+    draft: {
+      payload,
       stemImages: stem.images,
       optionImages,
       warnings,
@@ -957,6 +977,8 @@ function mapItem(item, slot, quiz) {
     case CANVAS_QUESTION_TYPES.MULTIPLE_CHOICE:
     case CANVAS_QUESTION_TYPES.TRUE_FALSE:
       return mapChoiceItem(item, slot, quiz);
+    case CANVAS_QUESTION_TYPES.MULTIPLE_ANSWERS:
+      return mapChoiceItem(item, slot, quiz, { multiple: true });
     case CANVAS_QUESTION_TYPES.NUMERICAL:
       return mapNumericalItem(item, slot);
     case CANVAS_QUESTION_TYPES.CALCULATED:
@@ -1029,7 +1051,10 @@ function mapSlot(parsedSlot, position, quiz, slotNames) {
     ? [parsedSlot.pointsPerItem]
     : items.filter((item) => imported.has(item.ident)).map((item) => item.pointsPossible);
   const unscored = imported.size > 0 && points.every((value) => value === 0);
-  return { slot, label, unscored };
+  const partialCredit = slot.questions.some(
+    (question) => question.payload.questionType === QUESTION_TYPES.MULTIPLE_ANSWER
+  );
+  return { slot, label, unscored, partialCredit };
 }
 
 // "Q01, Q02 and Q03"
@@ -1070,6 +1095,16 @@ function mapQuiz(parsed, position, used) {
     notes.push(unscored.length === 1
       ? `Canvas gives no points for ${unscored[0]}; in GRASP its questions count like any other.`
       : `Canvas gives no points for ${listLabels(unscored)}; in GRASP their questions count like any other.`);
+  }
+  // Canvas Classic always gives partial credit on multiple answers (its
+  // editor has no other setting); GRASP grades the exact set.
+  const partialCredit = mapped.filter((entry) => entry.partialCredit).map((entry) => entry.label);
+  if (partialCredit.length) {
+    notes.push(
+      `Canvas gives partial credit on the multiple-answer questions in ${
+        partialCredit.length === 1 ? partialCredit[0] : listLabels(partialCredit)
+      }; GRASP marks them right only when exactly the correct options are ticked.`
+    );
   }
   slots.forEach((slot) => notes.push(...slot.notes));
 

@@ -204,23 +204,15 @@ function csvField(value) {
   return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
 }
 
-const QTI_MULTIPLE_ANSWER_LEFT_OUT_REASON =
-  "GRASP can't export multiple-answer questions to Canvas yet.";
-
 // What a Canvas (QTI) export contains (#63): every question, each calculation
 // question with its Canvas content worked out once (its value sets are drawn
 // at random), and the calculation questions Canvas can't represent, left out
-// with the reason. Multiple-answer questions are left out too, for now.
+// with the reason.
 function prepareQTIQuestions(questions) {
   const items = [];
   const leftOut = [];
   questions.forEach((question, index) => {
-    const type = normalizeQuestionType(question);
-    if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
-      leftOut.push({ index, reason: QTI_MULTIPLE_ANSWER_LEFT_OUT_REASON });
-      return;
-    }
-    if (type !== QUESTION_TYPES.CALCULATION) {
+    if (normalizeQuestionType(question) !== QUESTION_TYPES.CALCULATION) {
       items.push({ question, calculation: null });
       return;
     }
@@ -793,7 +785,10 @@ function collectExportImageRefs(questions, { includeOptionImages = false } = {})
   };
   for (const q of questions) {
     stemImagesOf(q).forEach(add);
-    if (includeOptionImages && normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
+    const type = normalizeQuestionType(q);
+    const hasOptions =
+      type === QUESTION_TYPES.MULTIPLE_CHOICE || type === QUESTION_TYPES.MULTIPLE_ANSWER;
+    if (includeOptionImages && hasOptions) {
       getOptionKeys(q).forEach((key) => add(getOptionImage(q, key)));
     }
   }
@@ -1191,6 +1186,8 @@ function createQTIItem(q, index, imageMap, calculation) {
       return buildShortAnswerItem(q, questionHtml);
     case QUESTION_TYPES.OPEN_ENDED:
       return buildEssayItem(q, questionHtml);
+    case QUESTION_TYPES.MULTIPLE_ANSWER:
+      return buildMultipleAnswersItem(q, index, questionHtml, imageMap);
     case QUESTION_TYPES.MULTIPLE_CHOICE:
     default:
       return buildMultipleChoiceItem(q, index, questionHtml, imageMap);
@@ -1250,12 +1247,47 @@ function generateAnswerIds(count) {
 }
 
 function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
+  return buildChoiceItem(q, index, questionHtml, imageMap, {
+    qtiType: 'multiple_choice_question',
+    cardinality: 'Single',
+    scoringCondition: (responseId, answerIds) => `
+              <varequal respident="${responseId}">${answerIds[getCorrectAnswerIndex(q)]}</varequal>`,
+  });
+}
+
+// Canvas's own Multiple Answers shape (lib/cc/qti/qti_items.rb in Canvas): one
+// scoring condition that needs every correct choice and none of the others.
+// Canvas grades the question with partial credit; GRASP grades the exact set.
+function buildMultipleAnswersItem(q, index, questionHtml, imageMap) {
+  const correctKeys = getCorrectAnswerKeys(q);
+  return buildChoiceItem(q, index, questionHtml, imageMap, {
+    qtiType: 'multiple_answers_question',
+    cardinality: 'Multiple',
+    scoringCondition: (responseId, answerIds, keys) => `
+              <and>${keys
+                .map((key, i) =>
+                  correctKeys.includes(key)
+                    ? `
+                <varequal respident="${responseId}">${answerIds[i]}</varequal>`
+                    : `
+                <not>
+                  <varequal respident="${responseId}">${answerIds[i]}</varequal>
+                </not>`
+                )
+                .join('')}
+              </and>`,
+  });
+}
+
+// An item whose answer is picked from the question's options (two to eight):
+// `cardinality` says whether one or several can be picked, and
+// `scoringCondition(responseId, answerIds, keys)` is the condition that earns
+// the full score.
+function buildChoiceItem(q, index, questionHtml, imageMap, { qtiType, cardinality, scoringCondition }) {
   // Every option the question has (two to eight).
   const keys = getOptionKeys(q);
   const options = keys.map((key) => buildOptionMattext(q, key, imageMap));
   const answerIds = generateAnswerIds(options.length);
-
-  const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
 
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
@@ -1309,12 +1341,12 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
             </qtimetadatafield>`;
 
   return `
-      <item ident="${questionId}" title="Question">${qtiItemMetadata('multiple_choice_question', assessmentQuestionId, extraFields)}
+      <item ident="${questionId}" title="Question">${qtiItemMetadata(qtiType, assessmentQuestionId, extraFields)}
         <presentation>
           <material>
             <mattext texttype="text/html">${questionHtml}</mattext>
           </material>
-          <response_lid ident="${responseId}" rcardinality="Single">
+          <response_lid ident="${responseId}" rcardinality="${cardinality}">
             <render_choice>${choices}
             </render_choice>
           </response_lid>
@@ -1324,8 +1356,7 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
             <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
           </outcomes>${feedbackConditions}
           <respcondition continue="No">
-            <conditionvar>
-              <varequal respident="${responseId}">${correctAnswerId}</varequal>
+            <conditionvar>${scoringCondition(responseId, answerIds, keys)}
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
