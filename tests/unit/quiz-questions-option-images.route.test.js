@@ -121,3 +121,62 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     expect(quizSessionService.getOrCreateSession).not.toHaveBeenCalled();
   });
 });
+
+// Multiple answer: the same lettered options, with a list of correct letters
+// that only staff may see.
+describe('GET /api/quiz/:quizId/questions multiple-answer', () => {
+  const maQuestion = {
+    _id: 'question-2',
+    questionType: 'multiple-answer',
+    title: 'Which of these are aromatic?',
+    stem: 'Which of these are aromatic?',
+    options: {
+      A: { text: '', feedback: 'Benzene is aromatic.', image: IMAGE },
+      B: { text: 'Cyclohexane', feedback: 'Cyclohexane has no pi system.' },
+      C: { text: 'Pyridine', feedback: '' },
+    },
+    correctAnswer: ['C', 'A'],
+  };
+
+  beforeEach(() => {
+    quizService.getQuizById.mockResolvedValue({ _id: 'quiz-1', courseId: 'course-1' });
+    quizService.getQuizQuestions.mockResolvedValue([maQuestion]);
+    quizService.getQuizQuestionsForStudent.mockResolvedValue([maQuestion]);
+    resolveStudentQuizAccess.mockResolvedValue({ success: true, scheduledExpiresAt: null });
+    quizSessionService.getOrCreateSession.mockResolvedValue({});
+  });
+
+  it('gives staff the type and the correct letters in order', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(true);
+
+    const res = await request(buildApp()).get('/api/quiz/quiz-1/questions');
+
+    expect(res.status).toBe(200);
+    const [sent] = res.body.questions;
+    expect(sent.questionType).toBe('multiple-answer');
+    expect(sent.correctAnswer).toEqual(['A', 'C']);
+    expect(sent.options.B).toEqual({
+      text: 'Cyclohexane',
+      feedback: 'Cyclohexane has no pi system.',
+      index: 1,
+    });
+  });
+
+  it('withholds the correct letters, the feedback and the filename from a student', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(false);
+
+    const res = await request(buildApp()).get('/api/quiz/quiz-1/questions?approvedOnly=true');
+
+    expect(res.status).toBe(200);
+    const [sent] = res.body.questions;
+    expect(sent.questionType).toBe('multiple-answer');
+    expect(sent.correctAnswer).toBeUndefined();
+    expect(sent.options).toEqual({
+      A: { text: '', image: { fileId: IMAGE.fileId, caption: IMAGE.caption }, index: 0 },
+      B: { text: 'Cyclohexane', index: 1 },
+      C: { text: 'Pyridine', index: 2 },
+    });
+    // A stem that only repeats the title isn't shown twice.
+    expect(sent.stem).toBe('');
+  });
+});

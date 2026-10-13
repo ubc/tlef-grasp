@@ -118,6 +118,30 @@ const AI_SEED_QUESTIONS = [
   },
 ];
 
+// --- Multiple-answer quiz ------------------------------------------------------
+// A quiz of its own in the seeded BIOC 302 course holding one "select all that
+// apply" question. The multiple-answer spec seeds it before it runs and
+// removes it afterwards, so no other spec sees an extra quiz or question.
+const MA_QUIZ_NAME = 'BIOC 302 Multiple Answer Quiz (seeded)';
+const MA_QUESTION = {
+  seedKey: 'e2e-bioc302-ma1',
+  title: 'Which of these raise the apparent Km of an enzyme?',
+  options: {
+    A: { text: 'A competitive inhibitor', feedback: '' },
+    B: {
+      text: 'A noncompetitive inhibitor',
+      feedback: 'A noncompetitive inhibitor lowers Vmax and leaves Km unchanged.',
+    },
+    C: {
+      text: 'A higher substrate concentration',
+      feedback: 'Km is a property of the enzyme; adding substrate does not change it.',
+    },
+    D: { text: 'A mixed inhibitor that binds the free enzyme more tightly', feedback: '' },
+  },
+  correctAnswer: ['A', 'D'],
+  bloom: 'Understand',
+};
+
 // --- Canvas roster sync (issue #113) ----------------------------------------
 // A second bio_prof2 course whose section 101 is linked to the fake Canvas
 // section (tests/e2e/stubs/fake-canvas.js). It is a separate course so syncs
@@ -615,6 +639,124 @@ async function resetSeededAiQuizAttemptState(puid = BIO_STUDENT_PUID) {
   }
 }
 
+// The collections that hold a student's run of a quiz.
+const ATTEMPT_COLLECTIONS = [
+  'grasp_student_attempt',
+  'grasp_student_performance',
+  'grasp_quiz_score',
+  'grasp_achievement',
+  'grasp_quiz_session',
+];
+
+/**
+ * Seed the multiple-answer quiz in the BIOC 302 course: one approved
+ * multiple-answer question, published and open to section 101, with no
+ * attempts. Idempotent. Prereq: seedStudentJourneyCourse() has run.
+ */
+async function seedMultipleAnswerQuiz() {
+  return withSeedDb(async (db) => {
+    const now = new Date();
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    const section = course
+      ? await db.collection('grasp_course_section').findOne({ courseId: course._id, sectionId: SECTION_ID })
+      : null;
+    const granular = course
+      ? await db.collection('grasp_objective').findOne({ courseId: course._id, name: GRANULAR_NAME })
+      : null;
+    if (!course || !section || !granular) {
+      throw new Error('seedMultipleAnswerQuiz: the seeded BIOC 302 course is missing — saml.setup.js must run first');
+    }
+    const courseId = course._id;
+
+    await db.collection('grasp_question').updateOne(
+      { courseId, seedKey: MA_QUESTION.seedKey },
+      {
+        $set: {
+          title: MA_QUESTION.title,
+          stem: MA_QUESTION.title,
+          options: MA_QUESTION.options,
+          correctAnswer: MA_QUESTION.correctAnswer,
+          questionType: 'multiple-answer',
+          bloom: MA_QUESTION.bloom,
+          granularObjectiveId: granular._id,
+          learningObjectiveId: granular.parent,
+          status: 'Approved',
+          flagStatus: false,
+          createdBy: 'e2e-seed',
+          updatedAt: now,
+        },
+        $setOnInsert: { courseId, seedKey: MA_QUESTION.seedKey, createdAt: now },
+      },
+      { upsert: true }
+    );
+    const question = await db.collection('grasp_question').findOne({ courseId, seedKey: MA_QUESTION.seedKey });
+
+    await db.collection('grasp_quiz').updateOne(
+      { courseId, name: MA_QUIZ_NAME },
+      {
+        $set: {
+          published: true,
+          deliveryFormat: 'all-approved',
+          disablePreviousNavigation: false,
+          description: 'Seeded quiz for the multiple-answer E2E flow.',
+          updatedAt: now,
+        },
+        $setOnInsert: { courseId, name: MA_QUIZ_NAME, createdAt: now },
+      },
+      { upsert: true }
+    );
+    const quiz = await db.collection('grasp_quiz').findOne({ courseId, name: MA_QUIZ_NAME });
+    await db.collection('grasp_quiz_question').updateOne(
+      { quizId: quiz._id, questionId: question._id },
+      { $setOnInsert: { quizId: quiz._id, questionId: question._id, createdAt: now } },
+      { upsert: true }
+    );
+    await db.collection('grasp_quiz_section_schedule').updateOne(
+      { quizId: quiz._id, courseSectionId: section._id },
+      {
+        $set: {
+          releaseDate: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          expireDate: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
+          updatedAt: now,
+        },
+        $setOnInsert: { quizId: quiz._id, courseSectionId: section._id, createdAt: now },
+      },
+      { upsert: true }
+    );
+    for (const coll of ATTEMPT_COLLECTIONS) {
+      await db.collection(coll).deleteMany({ quizId: quiz._id });
+    }
+    return { quizId: quiz._id.toString(), questionId: question._id.toString() };
+  });
+}
+
+/**
+ * Remove the multiple-answer quiz, its question and every run of it, plus any
+ * multiple-answer question a spec added to the course through the UI.
+ */
+async function removeMultipleAnswerQuiz() {
+  await withSeedDb(async (db) => {
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    if (!course) return;
+    const quiz = await db.collection('grasp_quiz').findOne({ courseId: course._id, name: MA_QUIZ_NAME });
+    if (quiz) {
+      for (const coll of [...ATTEMPT_COLLECTIONS, 'grasp_quiz_question', 'grasp_quiz_section_schedule']) {
+        await db.collection(coll).deleteMany({ quizId: quiz._id });
+      }
+      await db.collection('grasp_quiz').deleteOne({ _id: quiz._id });
+    }
+    const questions = await db
+      .collection('grasp_question')
+      .find({ courseId: course._id, questionType: 'multiple-answer' }, { projection: { _id: 1 } })
+      .toArray();
+    const ids = questions.map((q) => q._id);
+    if (ids.length > 0) {
+      await db.collection('grasp_quiz_question').deleteMany({ questionId: { $in: ids } });
+      await db.collection('grasp_question').deleteMany({ _id: { $in: ids } });
+    }
+  });
+}
+
 /**
  * Seed (or reset) the Canvas roster sync course. Idempotent, and a full reset:
  * every call puts the course back to "linked, never synced", so a Canvas spec
@@ -844,6 +986,8 @@ module.exports = {
   resetSeededQuizAttemptState,
   resetSeededAiQuizAttemptState,
   getGuestPersonaUser,
+  seedMultipleAnswerQuiz,
+  removeMultipleAnswerQuiz,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,
@@ -875,6 +1019,9 @@ module.exports = {
     // Markers the E2E LLM stub keys on for a deterministic passing verdict.
     AI_PASS_MARKER: '[[e2e-pass]]',
     AI_EQUIVALENT_MARKER: '[[e2e-equivalent]]',
+    // Multiple-answer quiz, seeded and removed by its own spec.
+    MA_QUIZ_NAME,
+    MA_QUESTION,
     // Canvas roster sync course (issue #113), linked to the fake Canvas.
     CANVAS_COURSE_CODE,
     CANVAS_COURSE_NAME,

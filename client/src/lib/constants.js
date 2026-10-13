@@ -3,6 +3,9 @@
 
 export const QUESTION_TYPES = {
   MULTIPLE_CHOICE: "multiple-choice",
+  // "Select all that apply": multiple-choice options, one or more correct,
+  // graded all-or-nothing on the exact set.
+  MULTIPLE_ANSWER: "multiple-answer",
   FILL_IN_THE_BLANK: "fill-in-the-blank",
   CALCULATION: "calculation",
   OPEN_ENDED: "open-ended",

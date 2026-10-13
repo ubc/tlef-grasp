@@ -4,6 +4,7 @@ import {
   canRetry,
   latestResult,
   recordCheck,
+  answerSetKey,
 } from '../../client/src/pages/student-quiz/answerState.js';
 
 // Issue #128: the first answer is graded. A wrong multiple-choice or
@@ -129,5 +130,46 @@ describe('isSolved / canRetry / latestResult', () => {
     expect(isSolved(undefined)).toBe(false);
     expect(canRetry(undefined)).toBe(false);
     expect(latestResult(undefined)).toBeNull();
+  });
+});
+
+// Multiple answer: a wrong check names the wrong options ticked (wrongTicks);
+// they stay marked across retries, and a set already checked can't be checked
+// again.
+const ma = (selectedKeys, isCorrect, wrongTicks = []) => ({
+  questionType: 'multiple-answer',
+  selectedKeys,
+  selectedAnswer: selectedKeys,
+  wrongTicks,
+  missedCorrect: !isCorrect,
+  isCorrect,
+});
+
+describe('recordCheck for multiple answer', () => {
+  it('collects the wrong options and the sets checked', () => {
+    let entry = recordCheck(undefined, ma(['A', 'B'], false, ['B']));
+    expect(entry).toMatchObject({ isCorrect: false, retry: null, wrongKeys: ['B'] });
+    expect(entry.triedSets).toEqual(['A,B']);
+
+    entry = recordCheck(entry, ma(['A', 'D'], false, ['D']));
+    expect(entry.wrongKeys).toEqual(['B', 'D']);
+    expect(entry.triedSets).toEqual(['A,B', 'A,D']);
+    // The graded first check is untouched.
+    expect(entry.selectedKeys).toEqual(['A', 'B']);
+    expect(canRetry(entry)).toBe(true);
+  });
+
+  it('ends with the set the student found', () => {
+    let entry = recordCheck(undefined, ma(['A'], false));
+    entry = recordCheck(entry, ma(['A', 'C'], true));
+
+    expect(isSolved(entry)).toBe(true);
+    expect(canRetry(entry)).toBe(false);
+    expect(latestResult(entry).selectedKeys).toEqual(['A', 'C']);
+    expect(entry.triedSets).toEqual(['A']);
+  });
+
+  it('keys a set the same whatever the order', () => {
+    expect(answerSetKey(['C', 'A'])).toBe(answerSetKey(['A', 'C']));
   });
 });

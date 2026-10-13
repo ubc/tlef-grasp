@@ -1,4 +1,10 @@
-import { MC_MAX_OPTIONS, MC_MIN_OPTIONS, addOptionRow, removeOptionRow } from "../lib/mcOptions";
+import {
+  MC_MAX_OPTIONS,
+  MC_MIN_OPTIONS,
+  addOptionRow,
+  removeOptionRow,
+  toggleAnswerKey,
+} from "../lib/mcOptions";
 import QuestionImageField from "./QuestionImageField";
 import AutoHeightTextarea from "./AutoHeightTextarea";
 import { discardImageFile } from "../lib/questionImages";
@@ -12,12 +18,15 @@ export const OPTION_IMAGE_CAPTION_PLACEHOLDER = "Alt text for screen readers (no
 // the add-question wizard and the edit modal, which keep the rows in
 // `form.options` and the answer in `form.correctAnswer`. Text and feedback are
 // one-line textareas that grow, not inputs: an input strips line breaks, and
-// options imported from Canvas can span paragraphs (issue #140).
+// options imported from Canvas can span paragraphs (issue #140). With
+// `multiple` (a multiple-answer question) each row has a checkbox instead and
+// `correctAnswer` is the list of correct letters.
 export default function McOptionEditor({
   options,
   correctAnswer,
   onChange,
   readOnly = false,
+  multiple = false,
   radioName = "mc-correct-answer",
   inputClass = "",
   feedbackPlaceholder = "Feedback for this option...",
@@ -36,15 +45,28 @@ export default function McOptionEditor({
       {options.map((option, index) => (
         <div key={option.id} className="flex items-start gap-3">
           <label className="flex items-center gap-2 pt-2">
-            <input
-              type="radio"
-              name={radioName}
-              aria-label={`Mark option ${option.id} as the correct answer`}
-              checked={correctAnswer === option.id}
-              disabled={readOnly}
-              onChange={() => onChange({ options, correctAnswer: option.id })}
-              className="h-4 w-4 accent-primary"
-            />
+            {multiple ? (
+              <input
+                type="checkbox"
+                aria-label={`Mark option ${option.id} as a correct answer`}
+                checked={correctAnswer.includes(option.id)}
+                disabled={readOnly}
+                onChange={() =>
+                  onChange({ options, correctAnswer: toggleAnswerKey(correctAnswer, option.id) })
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            ) : (
+              <input
+                type="radio"
+                name={radioName}
+                aria-label={`Mark option ${option.id} as the correct answer`}
+                checked={correctAnswer === option.id}
+                disabled={readOnly}
+                onChange={() => onChange({ options, correctAnswer: option.id })}
+                className="h-4 w-4 accent-primary"
+              />
+            )}
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-page text-sm font-bold text-ink">
               {option.id}
             </span>

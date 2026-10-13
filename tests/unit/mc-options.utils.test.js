@@ -5,6 +5,11 @@ const {
   optionTextOf,
   correctAnswerKey,
   normalizeMcOptionCount,
+  optionFeedbackOf,
+  stemBesideTitle,
+  answerKeysOf,
+  multipleAnswerError,
+  gradeMultipleAnswer,
 } = require('../../src/utils/mc-options');
 
 // Multiple-choice questions carry two to eight options (issue #144); these
@@ -76,5 +81,111 @@ describe('normalizeMcOptionCount', () => {
     expect(normalizeMcOptionCount(1)).toBe(4);
     expect(normalizeMcOptionCount(9)).toBe(4);
     expect(normalizeMcOptionCount(0)).toBe(4);
+  });
+});
+
+describe('optionFeedbackOf', () => {
+  test('reads and trims an option object\'s feedback', () => {
+    expect(optionFeedbackOf({ text: 'a', feedback: '  Close.  ' })).toBe('Close.');
+  });
+
+  test('is empty for a bare string or a missing option', () => {
+    expect(optionFeedbackOf('a')).toBe('');
+    expect(optionFeedbackOf(undefined)).toBe('');
+    expect(optionFeedbackOf({ text: 'a' })).toBe('');
+  });
+});
+
+describe('stemBesideTitle', () => {
+  test('is the stem when it adds something to the title', () => {
+    expect(stemBesideTitle({ title: 'Noble gases', stem: 'Which are noble gases?' }))
+      .toBe('Which are noble gases?');
+  });
+
+  test('is empty when the stem repeats the title or the title is missing', () => {
+    expect(stemBesideTitle({ title: 'Which?', stem: ' Which? ' })).toBe('');
+    // Without a title the stem is already the prompt.
+    expect(stemBesideTitle({ title: '', stem: 'Which?' })).toBe('');
+    expect(stemBesideTitle({ title: 'Which?' })).toBe('');
+  });
+});
+
+// Multiple answer: the correct letters are a list, and a check is right only
+// when the student ticks exactly that set.
+describe('answerKeysOf', () => {
+  test('orders the letters A to H and drops repeats', () => {
+    expect(answerKeysOf(['C', 'a', 'C'])).toEqual(['A', 'C']);
+  });
+
+  test('reads a lone letter, a comma-separated string and positions', () => {
+    expect(answerKeysOf('b')).toEqual(['B']);
+    expect(answerKeysOf('A, C')).toEqual(['A', 'C']);
+    expect(answerKeysOf([2, 0])).toEqual(['A', 'C']);
+    expect(answerKeysOf(1)).toEqual(['B']);
+  });
+
+  test('names nothing for anything else', () => {
+    expect(answerKeysOf(undefined)).toEqual([]);
+    expect(answerKeysOf(null)).toEqual([]);
+    expect(answerKeysOf({ A: true })).toEqual([]);
+    expect(answerKeysOf(['Z', '', 9, 1.5])).toEqual([]);
+  });
+});
+
+describe('multipleAnswerError', () => {
+  const options = { A: 'Neon', B: 'Nitrogen', C: 'Argon' };
+
+  test('accepts one or more correct options the question has', () => {
+    expect(multipleAnswerError(options, ['A'])).toBe('');
+    expect(multipleAnswerError(options, ['A', 'C'])).toBe('');
+    expect(multipleAnswerError(options, ['A', 'B', 'C'])).toBe('');
+  });
+
+  test('needs at least one correct option', () => {
+    expect(multipleAnswerError(options, [])).toMatch(/at least one option as correct/);
+    expect(multipleAnswerError(options, undefined)).toMatch(/at least one option as correct/);
+  });
+
+  test('refuses a correct letter the question has no option for', () => {
+    expect(multipleAnswerError(options, ['A', 'D'])).toMatch(/Option D is marked correct/);
+  });
+
+  test('needs at least two options', () => {
+    expect(multipleAnswerError({ A: 'Neon' }, ['A'])).toMatch(/at least 2 options/);
+  });
+});
+
+describe('gradeMultipleAnswer', () => {
+  test('is right only for the exact set, in any order', () => {
+    expect(gradeMultipleAnswer(['A', 'C'], ['C', 'A'])).toEqual({
+      isCorrect: true,
+      correctKeys: ['A', 'C'],
+      selectedKeys: ['A', 'C'],
+      wrongKeys: [],
+      missedCorrect: false,
+    });
+  });
+
+  test('names the wrong options ticked and says when a correct one was missed', () => {
+    expect(gradeMultipleAnswer(['A', 'C'], ['A', 'B'])).toMatchObject({
+      isCorrect: false,
+      wrongKeys: ['B'],
+      missedCorrect: true,
+    });
+    expect(gradeMultipleAnswer(['A', 'C'], ['A'])).toMatchObject({
+      isCorrect: false,
+      wrongKeys: [],
+      missedCorrect: true,
+    });
+    expect(gradeMultipleAnswer(['A', 'C'], ['A', 'B', 'C'])).toMatchObject({
+      isCorrect: false,
+      wrongKeys: ['B'],
+      missedCorrect: false,
+    });
+  });
+
+  test('is never right when nothing is marked correct', () => {
+    expect(gradeMultipleAnswer([], []).isCorrect).toBe(false);
+    expect(gradeMultipleAnswer(undefined, ['A']).isCorrect).toBe(false);
   });
 });

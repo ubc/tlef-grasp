@@ -1,6 +1,6 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const { MC_OPTION_KEYS } = require('../utils/mc-options');
+const { MC_OPTION_KEYS, answerKeysOf, multipleAnswerError } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { deleteImages, collectQuestionImageIds } = require('./image');
 const {
@@ -69,27 +69,51 @@ const sanitizeOptions = (options) => {
     return sanitized;
 };
 
+/**
+ * A multiple-answer question's correct letters as stored: a list in A to H
+ * order. Throws (code INVALID_QUESTION) when the question could not be graded,
+ * with no option marked correct or one naming an option it doesn't have; saved,
+ * it would be a question nobody can answer right.
+ */
+const multipleAnswerCorrectKeys = (options, correctAnswer) => {
+    const problem = multipleAnswerError(options, correctAnswer);
+    if (problem) {
+        const error = new Error(problem);
+        error.code = "INVALID_QUESTION";
+        throw error;
+    }
+    return answerKeysOf(correctAnswer);
+};
+
 // Normalize free text for duplicate comparison: collapse whitespace, trim, lowercase.
 const normalizeText = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
+// The option texts and images, keyed by letter, for a duplicate comparison.
+const optionsSignature = (options) => {
+    const opts = options && typeof options === "object" ? options : {};
+    return Object.keys(opts)
+        .sort()
+        .map((key) => {
+            const opt = opts[key];
+            const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
+            const imageId = (opt && opt.image && opt.image.fileId) || "";
+            return `${key}:${normalizeText(text)}@${imageId}`;
+        })
+        .join("|");
+};
+
 // A stable signature of a question's answer content, so two questions that only
-// differ in whitespace/casing still count as the same. Multiple-choice compares
-// the option texts and images (keyed by letter) and the correct letter; the
-// other types compare their acceptable/correct answers.
+// differ in whitespace/casing still count as the same. Multiple-choice and
+// multiple-answer compare the option texts and images (keyed by letter) and
+// the correct letter or letters; the other types compare their
+// acceptable/correct answers.
 const answerSignature = (q) => {
     const type = String(q.questionType || q.type || "").toLowerCase();
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
-        const options = q.options && typeof q.options === "object" ? q.options : {};
-        const opts = Object.keys(options)
-            .sort()
-            .map((key) => {
-                const opt = options[key];
-                const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
-                const imageId = (opt && opt.image && opt.image.fileId) || "";
-                return `${key}:${normalizeText(text)}@${imageId}`;
-            })
-            .join("|");
-        return `mc:${opts}#${normalizeText(q.correctAnswer)}`;
+        return `mc:${optionsSignature(q.options)}#${normalizeText(q.correctAnswer)}`;
+    }
+    if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
+        return `ma:${optionsSignature(q.options)}#${answerKeysOf(q.correctAnswer).join(",")}`;
     }
     if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         const accept = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
@@ -201,6 +225,12 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
 
         const qtLower = String(questionType).toLowerCase();
 
+        const options = sanitizeOptions(questionData.options);
+        const correctAnswer =
+            qtLower === QUESTION_TYPES.MULTIPLE_ANSWER
+                ? multipleAnswerCorrectKeys(options, questionData.correctAnswer)
+                : questionData.correctAnswer;
+
         // On import, refuse to create a question that already exists in the course
         // (same text + options/answers + granular objective link).
         if (dedupe) {
@@ -208,7 +238,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 db,
                 courseIdObj,
                 granularObjectiveIdObj,
-                { ...questionData, questionType }
+                { ...questionData, questionType, correctAnswer }
             );
             if (duplicate) {
                 const error = new Error("A matching question already exists in this course.");
@@ -221,8 +251,8 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             title: questionData.title,
             stem: questionData.stem,
             stemImages: sanitizeImageRefArray(questionData.stemImages ?? questionData.stemImage),
-            options: sanitizeOptions(questionData.options),
-            correctAnswer: questionData.correctAnswer,
+            options,
+            correctAnswer,
             questionType,
             acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
                 ? questionData.acceptableAnswers
@@ -386,12 +416,12 @@ const getQuestionTextsByGranularObjective = async (courseId, granularObjectiveId
             const questionType = String(
                 question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE
             ).toLowerCase();
-            const preferred = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? question.title
-                : question.stem;
-            const fallback = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? question.stem
-                : question.title;
+            // Multiple choice and multiple answer keep their prompt in the title.
+            const titleFirst =
+                questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+                questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
+            const preferred = titleFirst ? question.title : question.stem;
+            const fallback = titleFirst ? question.stem : question.title;
             return String(preferred || fallback || "").trim();
         })
         .filter(Boolean);
@@ -558,11 +588,25 @@ const updateQuestion = async (questionId, updateData) => {
             update.questionType !== undefined;
         const touchesImages =
             update.stemImages !== undefined || update.options !== undefined;
+        const touchesAnswer =
+            update.options !== undefined ||
+            update.correctAnswer !== undefined ||
+            update.questionType !== undefined;
 
-        // Fetch the existing doc once when either validation path needs it.
-        const existing = (touchesCalculation || touchesImages)
+        // Fetch the existing doc once when any validation path needs it.
+        const existing = (touchesCalculation || touchesImages || touchesAnswer)
             ? await collection.findOne({ _id: id })
             : null;
+
+        // A multiple-answer question must still name at least one option it
+        // has as correct after this update, whichever of its fields it changes.
+        if (touchesAnswer && existing) {
+            const merged = { ...existing, ...update };
+            const qt = String(merged.questionType || merged.type || "").trim().toLowerCase();
+            if (qt === QUESTION_TYPES.MULTIPLE_ANSWER) {
+                update.correctAnswer = multipleAnswerCorrectKeys(merged.options, merged.correctAnswer);
+            }
+        }
 
         if (touchesCalculation) {
             if (existing) {

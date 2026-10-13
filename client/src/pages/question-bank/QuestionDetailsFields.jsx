@@ -93,6 +93,27 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
             </div>
           )}
 
+          {questionType === QUESTION_TYPES.MULTIPLE_ANSWER && (
+            <div>
+              <label className={labelClass}>
+                Options{" "}
+                <span className="font-normal text-muted">
+                  — tick every correct answer
+                </span>
+              </label>
+              <McOptionEditor
+                multiple
+                options={form.options}
+                correctAnswer={form.correctAnswers}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswers: correctAnswer }))
+                }
+                inputClass={inputClass}
+                feedbackPlaceholder="Feedback shown after submission (optional)..."
+              />
+            </div>
+          )}
+
           {questionType === QUESTION_TYPES.FILL_IN_THE_BLANK && (
             <>
               <div>

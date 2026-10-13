@@ -7,7 +7,16 @@ const answerGradingService = require("../services/answer-grading");
 const questionFlagService = require("../services/quiz-question-flag");
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { QUESTION_TYPES } = require("../constants/app-constants");
-const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey } = require("../utils/mc-options");
+const {
+  MC_OPTION_KEYS,
+  optionKeysOf,
+  optionAt,
+  optionFeedbackOf,
+  correctAnswerKey,
+  answerKeysOf,
+  gradeMultipleAnswer,
+  stemBesideTitle,
+} = require("../utils/mc-options");
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -607,6 +616,9 @@ const addQuizQuestionsHandler = async (req, res) => {
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
 
     const savedQuestionIds = [];
+    // Why a question that could never be graded was refused, to tell the
+    // instructor when nothing was saved.
+    let invalidReason = null;
     
     for (const questionData of questions) {
       try {
@@ -615,7 +627,11 @@ const addQuizQuestionsHandler = async (req, res) => {
         const questionResult = await questionService.saveQuestion(courseId, withoutImportFields(questionData));
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
-        console.error("Error saving question:", error);
+        if (error.code === "INVALID_QUESTION") {
+          invalidReason = invalidReason || error.message;
+        } else {
+          console.error("Error saving question:", error);
+        }
         // Continue with other questions even if one fails
       }
     }
@@ -623,7 +639,7 @@ const addQuizQuestionsHandler = async (req, res) => {
     if (savedQuestionIds.length === 0) {
       return res.status(400).json({
         success: false,
-        error: "No questions were saved successfully",
+        error: invalidReason || "No questions were saved successfully",
       });
     }
     
@@ -691,6 +707,9 @@ function resolveQuestionType(q) {
   }
   if (t === QUESTION_TYPES.OPEN_ENDED) {
     return QUESTION_TYPES.OPEN_ENDED;
+  }
+  if (t === QUESTION_TYPES.MULTIPLE_ANSWER) {
+    return QUESTION_TYPES.MULTIPLE_ANSWER;
   }
   return QUESTION_TYPES.MULTIPLE_CHOICE;
 }
@@ -864,8 +883,10 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      // Every option the question has, two to eight, each carrying its
-      // position so the client can send it back as selectedIndex.
+      // Multiple choice and multiple answer: every option the question has, two
+      // to eight, each carrying its position so the client can send it back
+      // (as selectedIndex, or in selectedIndexes for multiple answer).
+      const isMultipleAnswer = questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
       const optionsObj = {};
       optionKeysOf(q.options).forEach((key) => {
         const raw = optionAt(q.options, key);
@@ -889,15 +910,20 @@ const getQuizQuestionsHandler = async (req, res) => {
         ...q,
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
-        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+        questionType,
         options: optionsObj,
-        correctAnswer: correctAnswerKey(q.correctAnswer)
+        correctAnswer: isMultipleAnswer
+          ? answerKeysOf(q.correctAnswer)
+          : correctAnswerKey(q.correctAnswer)
       };
 
       const finalQuestion = formattedQuestion;
 
       if (withholdAnswers) {
         delete finalQuestion.correctAnswer;
+        // The same prompt the student quiz page serves: the stem only when it
+        // adds something to the title.
+        if (isMultipleAnswer) finalQuestion.stem = stemBesideTitle(q);
       }
 
       return finalQuestion;
@@ -919,9 +945,11 @@ const getQuizQuestionsHandler = async (req, res) => {
 /**
  * Check if a selected answer is correct and return the feedback securely.
  *
- * Multiple-choice and calculation answers only get the correct answer back
- * when they are correct (issue #128): a wrong one gets its verdict and
- * feedback, and the student may keep trying until they find it. Fill-in-the-
+ * Multiple-choice, multiple-answer and calculation answers only get the
+ * correct answer back when they are correct (issue #128): a wrong one gets its
+ * verdict and feedback, and the student may keep trying until they find it. A
+ * wrong multiple-answer check also says which ticked options are wrong and
+ * whether a correct one was left unticked, but not which. Fill-in-the-
  * blank and open-ended answers are submitted once and show the answer straight
  * away — retrying typed answers would only invite guessing. Only the first
  * answer is graded — saveStudentPerformance keeps the first attempt and
@@ -1216,6 +1244,57 @@ const checkQuestionAnswerHandler = async (req, res) => {
         aiGraded,
         correctAnswer: isCorrect ? canonical : null,
         correctOptionText: canonical || null,
+      });
+      return;
+    }
+
+    if (questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      // Every index must name an option this question has; a repeat counts once.
+      const { selectedIndexes } = req.body;
+      if (!Array.isArray(selectedIndexes) || selectedIndexes.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "selectedIndexes must list at least one option",
+        });
+      }
+      const optionKeys = optionKeysOf(question.options);
+      const named = selectedIndexes.map((i) => (Number.isInteger(i) ? MC_OPTION_KEYS[i] : undefined));
+      if (named.some((key) => !key || !optionKeys.includes(key))) {
+        return res.status(400).json({ success: false, error: "Invalid selectedIndexes provided" });
+      }
+
+      // All-or-nothing on the exact set.
+      const result = gradeMultipleAnswer(question.correctAnswer, named);
+      // A wrong check shows the feedback of each wrong option ticked; a right
+      // one shows the feedback of the options ticked, as multiple choice shows
+      // the picked option's.
+      const optionFeedback = (result.isCorrect ? result.selectedKeys : result.wrongKeys)
+        .map((key) => ({ key, feedback: optionFeedbackOf(optionAt(question.options, key)) }))
+        .filter((entry) => entry.feedback);
+      const feedback = optionFeedback.map((entry) => `${entry.key}: ${entry.feedback}`).join("\n");
+
+      if (userId && quizId && !practice) {
+        await quizService.saveStudentPerformance({
+          userId: String(userId), quizId: String(quizId), questionId: String(questionId),
+          learningObjectiveId: question.learningObjectiveId,
+          granularObjectiveId: question.granularObjectiveId,
+          bloom: question.bloom,
+          questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+          isCorrect: result.isCorrect,
+          selectedAnswer: result.selectedKeys,
+          correctAnswer: result.correctKeys,
+          feedbackText: feedback,
+        });
+      }
+      res.json({
+        success: true,
+        isCorrect: result.isCorrect,
+        feedback,
+        optionFeedback,
+        wrongKeys: result.wrongKeys,
+        missedCorrect: result.missedCorrect,
+        correctAnswer: result.isCorrect ? result.correctKeys : null,
+        correctOptionText: null,
       });
       return;
     }

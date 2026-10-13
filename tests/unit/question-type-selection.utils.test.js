@@ -1,15 +1,28 @@
 const { resolveGenerationQuestionType } = require('../../src/utils/question-type-selection');
-const { QUESTION_TYPES, DEFAULT_BLOOM_TYPE_PREFERENCES } = require('../../src/constants/app-constants');
+const {
+  QUESTION_TYPES,
+  GENERATED_QUESTION_TYPES,
+  DEFAULT_BLOOM_TYPE_PREFERENCES,
+} = require('../../src/constants/app-constants');
 
 describe('resolveGenerationQuestionType', () => {
   describe('when a valid type is requested (Question Bank wizard pins the type)', () => {
-    it.each(Object.values(QUESTION_TYPES))(
+    it.each(GENERATED_QUESTION_TYPES)(
       'returns the requested type "%s" regardless of Bloom level',
       (requestedType) => {
         const result = resolveGenerationQuestionType({ requestedType, bloomLevel: 'Create' });
         expect(result).toBe(requestedType);
       }
     );
+
+    it('does not pin a type AI generation cannot write', () => {
+      expect(
+        resolveGenerationQuestionType({
+          requestedType: QUESTION_TYPES.MULTIPLE_ANSWER,
+          bloomLevel: 'Remember',
+        })
+      ).toBe(DEFAULT_BLOOM_TYPE_PREFERENCES.Remember[0]);
+    });
 
     it('honours the requested type even when it differs from the Bloom default', () => {
       // Create defaults to open-ended first; requesting calculation must win.

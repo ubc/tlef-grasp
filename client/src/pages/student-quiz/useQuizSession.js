@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { QUESTION_TYPES } from "../../lib/constants";
-import { canRetry, latestResult, recordCheck } from "./answerState";
+import { optionIndexOf } from "../../lib/mcOptions";
+import { answerSetKey, canRetry, latestResult, recordCheck } from "./answerState";
 
 // Where to resume a restored attempt: the first question without recorded
 // feedback, or the last question when everything is already answered.
@@ -98,6 +99,15 @@ export function useQuizSession({ onLoadError } = {}) {
         questionType: prev.questionType,
         // Accept/deny reaction the student already recorded (issue #76).
         studentGradeReview: prev.studentGradeReview || null,
+        // A multiple-answer check comes back with the hints it gave.
+        ...(prev.questionType === QUESTION_TYPES.MULTIPLE_ANSWER
+          ? {
+              selectedKeys: Array.isArray(prev.selectedAnswer) ? prev.selectedAnswer : [],
+              wrongTicks: prev.wrongKeys || [],
+              missedCorrect: !!prev.missedCorrect,
+              optionFeedback: prev.optionFeedback || [],
+            }
+          : {}),
       });
     });
     return { restoredAnswers, restoredFeedback };
@@ -241,6 +251,45 @@ export function useQuizSession({ onLoadError } = {}) {
           feedbackText: result.feedback,
           correctOptionText: result.correctOptionText,
           questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+        }),
+      }));
+      return null;
+    } catch (error) {
+      console.error("Error evaluating answer:", error);
+      return describeCheckFailure(error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Check the options ticked on a multiple-answer question, sent by position.
+  // Same contract as selectMcqAnswer: an error message, or null on success. A
+  // wrong check names the wrong options ticked, which then stay marked, and
+  // says whether a correct one was left unticked.
+  const checkMultipleAnswer = async (questionId, selectedKeys) => {
+    const entry = feedback[questionId];
+    if (submitting || (entry && !canRetry(entry))) return null;
+    if (selectedKeys.length === 0) return "Tick at least one option, then check your answer.";
+    if (entry?.triedSets?.includes(answerSetKey(selectedKeys))) {
+      return "You already checked those options. Change your selection and try again.";
+    }
+    setSubmitting(true);
+    try {
+      const result = await checkAnswer(questionId, {
+        selectedIndexes: selectedKeys.map(optionIndexOf),
+      });
+      setAnswers((prev) => ({ ...prev, [questionId]: selectedKeys }));
+      setFeedback((prev) => ({
+        ...prev,
+        [questionId]: recordCheck(prev[questionId], {
+          isCorrect: result.isCorrect,
+          selectedAnswer: selectedKeys,
+          selectedKeys,
+          wrongTicks: result.wrongKeys || [],
+          missedCorrect: !!result.missedCorrect,
+          optionFeedback: result.optionFeedback || [],
+          correctAnswer: result.correctAnswer,
+          questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
         }),
       }));
       return null;
@@ -504,6 +553,7 @@ export function useQuizSession({ onLoadError } = {}) {
     restartQuiz,
     startPracticeWrong,
     selectMcqAnswer,
+    checkMultipleAnswer,
     submitTextAnswer,
     submitGradeReview,
     finishQuiz,

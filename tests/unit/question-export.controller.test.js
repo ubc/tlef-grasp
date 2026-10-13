@@ -26,6 +26,21 @@ const mcQuestion = {
   bloom: 'Understand',
 };
 
+// Select all that apply: B and D are correct.
+const maQuestion = {
+  questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+  title: 'Which gases are greenhouse gases?',
+  stem: 'Which gases are greenhouse gases?',
+  options: {
+    A: { text: 'Oxygen', feedback: 'wrong' },
+    B: { text: 'Carbon dioxide', feedback: '' },
+    C: { text: 'Nitrogen', feedback: 'wrong' },
+    D: { text: 'Methane', feedback: '' },
+  },
+  correctAnswer: ['B', 'D'],
+  bloom: 'Understand',
+};
+
 const fibQuestion = {
   questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
   title: 'Powerhouse of the cell',
@@ -140,6 +155,18 @@ describe('createCSVExport', () => {
     const row = createCSVExport('COURSE', [withImage]).trim().split('\n')[1];
     // Once as option B, once as the correct answer.
     expect(row.match(/"CO2 structure"/g)).toHaveLength(2);
+  });
+
+  test('multiple-answer row lists its options and every correct one', () => {
+    const fiveOptions = {
+      ...maQuestion,
+      options: { ...maQuestion.options, E: { text: 'Argon', feedback: 'wrong' } },
+    };
+    const [header, row] = createCSVExport('COURSE', [fiveOptions]).trim().split('\n');
+    expect(header).toContain('"Option E","Correct Answer"');
+    expect(row).toContain(
+      '"multiple-answer","Which gases are greenhouse gases?","Oxygen","Carbon dioxide","Nitrogen","Methane","Argon","Carbon dioxide; Methane"'
+    );
   });
 
   test('fill-in-the-blank row lists acceptable answers', () => {
@@ -486,6 +513,14 @@ describe('prepareQTIQuestions', () => {
     const xml = createQTIExport('Quiz', items, 'g1', new Map());
     const first = items[1].calculation.valueSets[0];
     expect(xml).toContain(`<var name="m">${first.values.m}</var>`);
+  });
+
+  test('leaves a multiple-answer question out, by position, with the reason', () => {
+    const { items, leftOut } = prepareQTIQuestions([mcQuestion, maQuestion]);
+    expect(items.map((item) => item.question)).toEqual([mcQuestion]);
+    expect(leftOut).toEqual([
+      { index: 1, reason: "GRASP can't export multiple-answer questions to Canvas yet." },
+    ]);
   });
 
   test('a question that cannot be read is left out, not a failed export', () => {

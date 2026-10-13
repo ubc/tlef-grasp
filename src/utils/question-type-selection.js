@@ -1,11 +1,14 @@
 const {
   QUESTION_TYPES,
+  GENERATED_QUESTION_TYPES,
   DEFAULT_BLOOM_TYPE_PREFERENCES,
   BLOOM_LEVELS,
   MAX_QUESTIONS_PER_OBJECTIVE,
 } = require('../constants/app-constants');
 
-const VALID_TYPES = new Set(Object.values(QUESTION_TYPES));
+// Only types AI generation can write: a breakdown naming any other type would
+// ask for questions nothing can generate.
+const VALID_TYPES = new Set(GENERATED_QUESTION_TYPES);
 
 /**
  * Decide which question type to generate for a given Bloom level.

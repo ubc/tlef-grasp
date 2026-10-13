@@ -329,10 +329,31 @@ const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", 
 
 const QUESTION_TYPES = {
   MULTIPLE_CHOICE: "multiple-choice",
+  // "Select all that apply": the same lettered options as multiple choice, one
+  // or more of them correct, graded all-or-nothing on the exact set.
+  MULTIPLE_ANSWER: "multiple-answer",
   FILL_IN_THE_BLANK: "fill-in-the-blank",
   CALCULATION: "calculation",
   OPEN_ENDED: "open-ended",
 };
+
+// The types AI generation can write.
+const GENERATED_QUESTION_TYPES = [
+  QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.FILL_IN_THE_BLANK,
+  QUESTION_TYPES.CALCULATION,
+  QUESTION_TYPES.OPEN_ENDED,
+];
+
+// The types objective generation may recommend for a learning objective. It
+// never recommends multiple answer: instructors add that type themselves, so
+// the AI's suggested mix stays as it was before the type existed.
+const SUGGESTED_QUESTION_TYPES = [
+  QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.FILL_IN_THE_BLANK,
+  QUESTION_TYPES.CALCULATION,
+  QUESTION_TYPES.OPEN_ENDED,
+];
 
 // Multiple-choice options are stored as an object keyed by letter. A question
 // carries between MC_MIN_OPTIONS and MC_MAX_OPTIONS of them, lettered
@@ -425,6 +446,8 @@ module.exports = {
   MAX_OUTLINE_CHARS,
   BLOOM_LEVELS,
   QUESTION_TYPES,
+  GENERATED_QUESTION_TYPES,
+  SUGGESTED_QUESTION_TYPES,
   MC_OPTION_KEYS,
   MC_MIN_OPTIONS,
   MC_MAX_OPTIONS,
