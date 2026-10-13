@@ -19,8 +19,10 @@
  *   rad_to_deg(x)       ((x)*180/PI)
  *   round(x, n)         roundTo(x, n)
  *   abs ceil floor sqrt sin cos tan asin acos atan max min round   unchanged
- *   + - * / ^ ( )       unchanged
- *   5x, 2(x+1), (a)(b)  5*x, 2*(x+1), (a)*(b)   Canvas reads juxtaposition as a product
+ *   -x^2, -2^2          (-x)^2, (-2)^2    Canvas's "-" belongs to the number or name after it
+ *   2^3^2               (2^3)^2           Canvas works ^ left to right; expr-eval right to left
+ *   + - * / ( )         unchanged
+ *   5x, 2(x+1), (a)(b)  5*x, 2*(x+1), (a)*(b)   read as a product (an error in Canvas's calculator)
  *
  * Canvas's list and random functions (mean, sum, rand, count, if, ...) have no
  * GRASP equivalent: a formula using one is refused, naming the function.
@@ -57,9 +59,10 @@ class FormulaError extends Error {}
 // ---- Tokens and a tiny call tree -------------------------------------------------
 //
 // A formula is read into a flat list of tokens, then into a tree where only
-// function calls and parenthesised groups nest. Operators are not interpreted,
-// so precedence is whatever the target engine does with the same characters;
-// the two dialects agree on + - * / ^ and parentheses.
+// function calls and parenthesised groups nest. The two dialects read a minus
+// and ^ differently, so each direction then reads the operators with its
+// source's rules (canvasTree, toTree) and writes them with the parentheses the
+// target needs.
 
 // `exponents` reads e-notation ("6.022e23", "1.5E-3") as one number, as
 // expr-eval does. Only GRASP formulas are read that way: in Canvas, "2e3" is
@@ -152,19 +155,6 @@ function parse(formula, options) {
   return nodes;
 }
 
-const OPERAND = new Set(['number', 'ident', 'group', 'call']);
-
-// Two operands in a row ("5x", "2(x+1)", "(a)(b)") are a product in Canvas.
-// Written out as "*" so expr-eval reads them the same way.
-function emit(nodes, emitNode) {
-  let text = '';
-  nodes.forEach((node, index) => {
-    if (index > 0 && OPERAND.has(node.type) && OPERAND.has(nodes[index - 1].type)) text += '*';
-    text += emitNode(node);
-  });
-  return text;
-}
-
 function isLiteral(sequence, value) {
   return sequence.length === 1 && sequence[0].type === 'number' && Number(sequence[0].value) === value;
 }
@@ -177,38 +167,150 @@ function checkArity(name, args, allowed) {
 }
 
 // ---- Canvas -> GRASP ---------------------------------------------------------------
+//
+// Canvas's formula calculator (Classic Quizzes, calcCmd.js) reads two things
+// differently from expr-eval, so a Canvas formula is read into a tree with
+// Canvas's rules and written with the parentheses expr-eval needs:
+//   - a "-" before a number or a name belongs to it alone, ahead of ^:
+//     Canvas's -x^2 is (-x)^2 and x^-2 is x^(-2); expr-eval's -x^2 is -(x^2).
+//   - ^, then * /, then + -, each worked out left to right: Canvas's 2^3^2 is
+//     (2^3)^2; expr-eval's is 2^(3^2).
+// Where Canvas's calculator reports an error, the usual reading stands:
+//   - two operands in a row are a product (5x, 2(x+1)), as decided in #170;
+//   - a "-" before "(", a function or another sign negates what follows up to
+//     the next * / + or -, as in ordinary maths: -(a+b) and -log(x) are
+//     negated whole, -(a+b)^2 is -((a+b)^2). Canvas can't work these out, so
+//     no answers it recorded came from them; the import's check against the
+//     recorded answers (checkFormulaAgainstCanvas) leaves such a question a
+//     Draft when they disagree or are missing.
+
+// Writing levels for expr-eval, loosest first: + - < * / < unary - < ^ <
+// atoms (2, x, f(x), (...)). A part goes into a slot without parentheses when
+// its level is at least the slot's.
+const GRASP_ADD = 0;
+const GRASP_MUL = 1;
+const GRASP_NEG = 2;
+const GRASP_POW = 3;
+const GRASP_ATOM = 4;
+
+// The flat nodes of one sequence as an expression tree, with Canvas's rules
+// (above). `defined` maps a name from an earlier formula line to its tree.
+function canvasTree(nodes, defined) {
+  let i = 0;
+  const peek = () => nodes[i];
+  const isOp = (node, ops) => Boolean(node) && node.type === 'op' && ops.includes(node.value);
+  // A "-" that Canvas reads as part of the number or name right after it.
+  const attachedMinus = () => isOp(peek(), '-') && ['number', 'ident'].includes(nodes[i + 1]?.type);
+  const operand = () => {
+    const node = nodes[i];
+    if (!node || node.type === 'op') throw new FormulaError(node ? `a "${node.value}" with nothing before it` : 'an operator with nothing after it');
+    i += 1;
+    if (node.type === 'group') return { type: 'group', inner: canvasTree(node.inner, defined) };
+    if (node.type === 'ident' && defined.has(node.value)) return { type: 'group', inner: defined.get(node.value) };
+    return node;
+  };
+  const factor = () => {
+    if (!attachedMinus()) return operand();
+    i += 1;
+    return { type: 'neg', inner: operand() };
+  };
+  // Any other sign: "+" is dropped, "-" negates the power after it.
+  const signed = () => {
+    if (isOp(peek(), '+')) {
+      i += 1;
+      return signed();
+    }
+    if (isOp(peek(), '-') && !attachedMinus()) {
+      i += 1;
+      return { type: 'neg', inner: signed() };
+    }
+    return power();
+  };
+  const power = () => {
+    let left = factor();
+    while (isOp(peek(), '^')) {
+      i += 1;
+      const right = isOp(peek(), '+-') && !attachedMinus() ? signed() : factor();
+      left = { type: 'binary', op: '^', left, right };
+    }
+    return left;
+  };
+  const product = () => {
+    let left = signed();
+    for (;;) {
+      const next = peek();
+      if (isOp(next, '*/')) {
+        i += 1;
+        left = { type: 'binary', op: next.value, left, right: signed() };
+      } else if (next && next.type !== 'op') {
+        left = { type: 'binary', op: '*', left, right: signed() };
+      } else {
+        return left;
+      }
+    }
+  };
+  const sum = () => {
+    let left = product();
+    while (isOp(peek(), '+-')) {
+      const { value } = nodes[i];
+      i += 1;
+      left = { type: 'binary', op: value, left, right: product() };
+    }
+    return left;
+  };
+  const tree = sum();
+  if (i < nodes.length) throw new FormulaError(`a "${nodes[i].value}" with nothing after it`);
+  return tree;
+}
 
 /**
  * Translate a Canvas formula to a GRASP calculation formula.
  *
  * @param {string} formula  as written in the export (one line)
  * @param {string[]} variableNames  the question's declared variable names
+ * @param {{ definitions?: Array<[string, string]> }} [options]  earlier formula
+ *   lines ("k = 2*x" as ['k', '2*x']), in order; each is put in where its name
+ *   is used, read as Canvas reads a name (k = 2*x, then -k^2, is (-2x)^2)
  * @returns {{ formula: string } | { error: string }}  the error is a sentence
  *   fragment ("uses rand(), which GRASP doesn't support") for a skip reason
  */
-function canvasFormulaToGrasp(formula, variableNames = []) {
+function canvasFormulaToGrasp(formula, variableNames = [], { definitions = [] } = {}) {
   const declared = new Set(variableNames);
-  const emitNode = (node) => {
+  const defined = new Map();
+  const atom = (text) => ({ text, level: GRASP_ATOM });
+  // A part in a slot of the given level, in parentheses when it is looser.
+  const slot = (part, level) => (part.level >= level ? part.text : `(${part.text})`);
+
+  const write = (node) => {
     switch (node.type) {
       case 'number':
-        return node.value;
-      case 'op':
-        return node.value;
+        return atom(node.value);
       case 'ident':
-        if (declared.has(node.value)) return node.value;
-        if (node.value === 'e') return 'E';
-        if (node.value === 'pi') return 'PI';
+        if (declared.has(node.value)) return atom(node.value);
+        if (node.value === 'e') return atom('E');
+        if (node.value === 'pi') return atom('PI');
         throw new FormulaError(`uses "${node.value}", which isn't one of the question's variables`);
       case 'group':
-        return `(${emit(node.inner, emitNode)})`;
+        return atom(`(${write(node.inner).text})`);
       case 'call':
-        return emitCall(node);
+        return atom(writeCall(node));
+      case 'neg':
+        return { text: `-${slot(write(node.inner), GRASP_NEG)}`, level: GRASP_NEG };
+      case 'binary': {
+        const left = write(node.left);
+        const right = write(node.right);
+        // expr-eval works ^ right to left and the rest left to right, so a
+        // same-level part on the other side is bracketed: (a^b)^c, a/(b*c), a-(b+c).
+        if (node.op === '^') return { text: `${slot(left, GRASP_ATOM)}^${slot(right, GRASP_NEG)}`, level: GRASP_POW };
+        if (node.op === '*' || node.op === '/') return { text: `${slot(left, GRASP_MUL)}${node.op}${slot(right, GRASP_NEG)}`, level: GRASP_MUL };
+        return { text: `${slot(left, GRASP_ADD)}${node.op}${slot(right, GRASP_MUL)}`, level: GRASP_ADD };
+      }
       default:
         throw new FormulaError('an unexpected token');
     }
   };
-  const argText = (args) => args.map((arg) => emit(arg, emitNode));
-  const emitCall = ({ name, args }) => {
+  const argText = (args) => args.map((arg) => write(canvasTree(arg, defined)).text);
+  const writeCall = ({ name, args }) => {
     if (declared.has(name)) throw new FormulaError(`uses the variable "${name}" like a function`);
     if (name === 'e' || name === 'pi') {
       checkArity(name, args, [0]);
@@ -245,7 +347,9 @@ function canvasFormulaToGrasp(formula, variableNames = []) {
     throw new FormulaError(`uses ${name}(), which GRASP doesn't support`);
   };
   try {
-    return { formula: emit(parse(formula), emitNode) };
+    // Each line sees only the lines above it, as Canvas works them out in order.
+    for (const [name, expression] of definitions) defined.set(name, canvasTree(parse(expression), defined));
+    return { formula: write(canvasTree(parse(formula), defined)).text };
   } catch (error) {
     if (error instanceof FormulaError) return { error: error.message };
     throw error;

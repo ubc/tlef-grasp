@@ -1293,6 +1293,9 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     ['e as a power', 'e^x', { x: '2.0' }, '7.0', 'E^x'],
     ['a factorial and pi', 'fact(x)*pi()', { x: '3.0' }, '19.0', 'fac(x)*PI'],
     ['implicit multiplication', '5x', { x: '3.0' }, '15.0', '5*x'],
+    // Canvas's "-" belongs to the name after it, and ^ goes left to right.
+    ['a minus before a power', '-x^2', { x: '3.0' }, '9.0', '(-x)^2'],
+    ['a chain of powers', '2^x^2', { x: '3.0' }, '64.0', '(2^x)^2'],
   ])('translates %s and confirms it against the recorded answer', (_, formula, vars, answer, translated) => {
     const draft = calcDraft({ formula, varSets: [{ ident: '1', vars, answer }] });
 
@@ -1311,6 +1314,17 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     expectUsable(draft.payload);
   });
 
+  test("reads an earlier line's name as Canvas does when a minus comes before it", () => {
+    // Canvas stores k = 6, so -k^2 is (-6)^2 = 36, not -36.
+    const draft = calcDraft({
+      formulas: ['k = 2*x', '-k^2'],
+      varSets: [{ ident: '1', vars: { x: '3.0' }, answer: '36.0' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('(-(2*x))^2');
+    expect(draft.warnings).toEqual([]);
+  });
+
   test("saves a Draft with both numbers when GRASP's formula disagrees with Canvas's recorded answers", () => {
     const draft = calcDraft({
       formula: 'x*3',
@@ -1319,6 +1333,21 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
 
     expect(draft.payload.calculationFormula).toBe('x*3');
     expect(draft.warnings).toEqual([MISMATCH]);
+  });
+
+  test("saves a Draft when Canvas's calculator disagrees by less than the recorded rounding", () => {
+    // Canvas's round() ignores a second argument: it recorded round(2.34) = 2,
+    // and GRASP's roundTo(2.34, 1) = 2.3 rounds to that too at 0 decimals.
+    const draft = calcDraft({
+      formula: 'round(x, 1)',
+      variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 2 }],
+      varSets: [{ ident: '1', vars: { x: '2.34' }, answer: '2' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('roundTo(x, 1)');
+    expect(draft.warnings).toEqual([
+      "For Canvas's sample values x = 2.34, GRASP's formula gives 2.3 where Canvas's calculator gives 2. Check the formula.",
+    ]);
   });
 
   test('warns when the formula gives no number for a recorded value set', () => {
@@ -1350,6 +1379,8 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     ['a list function', { formula: 'mean(x, 2)' }, "The formula uses mean(), which GRASP doesn't support."],
     ['an undeclared name', { formula: '2*k' }, 'The formula uses "k", which isn\'t one of the question\'s variables.'],
     ['a variable used like a function', { formula: 'x(2)' }, 'The formula uses the variable "x" like a function.'],
+    ['a dangling operator', { formula: 'x+' }, "GRASP can't read the formula: an operator with nothing after it."],
+    ['a function with too many arguments', { formula: 'sqrt(x, 2)' }, "GRASP can't read the formula: sqrt() takes 1 argument, not 2."],
     ['no formula', { formulas: [''] }, 'The formula question has no formula.'],
     ['formula lines that do not define values', { formulas: ['2*x', 'x'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
     ['an answer line with an equals sign', { formulas: ['k = 2*x', 'y = k'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
@@ -1379,8 +1410,8 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
   });
 
   test('skips, with its reason, a formula GRASP itself would refuse to save', () => {
-    // Parses here but not in expr-eval: a dangling operator.
-    expect(calcSkip({ formula: 'x+' })).toMatch(/^GRASP can't use the formula: /);
+    // Translates, but a question with no variables needs a finite answer.
+    expect(calcSkip({ variables: [], formula: '1/0', varSets: [] })).toMatch(/^GRASP can't use the formula: Formula evaluation produced a non-finite value/);
   });
 
   test('warns once when Canvas feedback is dropped and keeps the Canvas title or the slot name like a numerical question', () => {
