@@ -489,14 +489,18 @@ const createQuizHandler = async (req, res) => {
       }
     }
 
+    // Orphaned questions are left out, so report what was actually inserted.
+    let questionsAdded = 0;
     if (finalQuestionIds.length > 0) {
-      await quizService.addQuestionsToQuiz(quizId, finalQuestionIds);
+      const result = await quizService.addQuestionsToQuiz(quizId, finalQuestionIds);
+      questionsAdded = result?.insertedCount ?? 0;
     }
 
     res.status(201).json({
       success: true,
       quiz,
-      questionsAdded: finalQuestionIds.length,
+      questionsAdded,
+      skippedCount: finalQuestionIds.length - questionsAdded,
       duplicateCount,
     });
   } catch (error) {

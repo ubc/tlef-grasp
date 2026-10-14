@@ -209,12 +209,17 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 ? new ObjectId(questionData.learningObjectiveId)
                 : questionData.learningObjectiveId)
             : null;
+        // An objective deleted before the question was saved: save it orphaned
+        // and Draft, as deleting the objective would have left it.
+        let orphaned = false;
         if (granularObjectiveIdObj) {
             const granularObjective = await db.collection("grasp_objective").findOne(
                 { _id: granularObjectiveIdObj, courseId: courseIdObj },
                 { projection: { parent: 1 } }
             );
-            if (granularObjective?.parent && granularObjective.parent !== 0) {
+            if (!granularObjective) {
+                orphaned = true;
+            } else if (granularObjective.parent && granularObjective.parent !== 0) {
                 learningObjectiveIdObj = granularObjective.parent;
             }
         }
@@ -312,13 +317,17 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             learningObjectiveId: learningObjectiveIdObj,
             granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
-            status: questionData.status || "Draft",
+            status: orphaned ? "Draft" : questionData.status || "Draft",
             flagStatus: questionData.flagStatus || false,
             flagReason: questionData.flagStatus
                 ? String(questionData.flagReason || "").trim()
                 : "",
             createdAt: new Date(),
         };
+        if (orphaned) {
+            doc.orphaned = true;
+            doc.orphanedAt = new Date();
+        }
 
         // Canvas import provenance and lossy-conversion notes (#140). Written
         // only when given, so other questions keep their exact shape.
@@ -328,9 +337,9 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
         if (importWarnings) doc.importWarnings = importWarnings;
 
         const question = await collection.insertOne(doc);
-        
+
         console.log("Question saved with ID:", question.insertedId);
-        return question;
+        return { ...question, orphaned };
     } catch (error) {
         console.error("Error creating question:", error);
         throw error;
@@ -574,18 +583,32 @@ const updateQuestion = async (questionId, updateData) => {
                 : null;
         }
 
-        // Re-attaching a valid learning objective clears the orphaned state and
-        // re-enables approval; refresh the cached parent (meta LO) id too.
+        // Re-attaching clears the orphaned state and refreshes the parent LO id.
+        // The objective must exist in the question's course, so a deleted
+        // one's id cannot un-orphan it.
         const reattaching =
             updateData.granularObjectiveId !== undefined && update.granularObjectiveId != null;
         if (reattaching) {
+            const current = await collection.findOne(
+                { _id: id },
+                { projection: { courseId: 1 } }
+            );
+            const granular = current
+                ? await db.collection("grasp_objective").findOne(
+                    { _id: update.granularObjectiveId, courseId: current.courseId, parent: { $ne: 0 } },
+                    { projection: { parent: 1 } }
+                )
+                : null;
+            if (!granular) {
+                const err = new Error(
+                    "That learning objective does not exist in this question's course."
+                );
+                err.code = "INVALID_OBJECTIVE";
+                throw err;
+            }
             update.orphaned = false;
             update.orphanedAt = null;
-            const granular = await db.collection("grasp_objective").findOne(
-                { _id: update.granularObjectiveId },
-                { projection: { parent: 1 } }
-            );
-            if (granular?.parent && granular.parent !== 0) {
+            if (granular.parent) {
                 update.learningObjectiveId = granular.parent;
             }
         }
@@ -894,6 +917,24 @@ const deleteQuestionsByObjectiveIds = async (granularObjectiveIds) => {
     };
 };
 
+/**
+ * Which of these question ids still exist in the course.
+ * @returns {Promise<string[]>}
+ */
+const findExistingQuestionIds = async (courseId, questionIds) => {
+    const ids = [...new Set((questionIds || []).map(String))]
+        .filter(ObjectId.isValid)
+        .map((id) => new ObjectId(id));
+    if (ids.length === 0) return [];
+    const db = await databaseService.connect();
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    const found = await db.collection("grasp_question")
+        .find({ _id: { $in: ids }, courseId: courseIdObj })
+        .project({ _id: 1 })
+        .toArray();
+    return found.map((question) => String(question._id));
+};
+
 const getQuestionCourseId = async (questionId) => {
     try {
         const db = await databaseService.connect();
@@ -918,6 +959,7 @@ module.exports = {
     deleteQuestion,
     getQuestion,
     getQuestionCourseId,
+    findExistingQuestionIds,
     getLinkedQuestionsSummary,
     orphanQuestionsByObjectiveIds,
     deleteQuestionsByObjectiveIds,

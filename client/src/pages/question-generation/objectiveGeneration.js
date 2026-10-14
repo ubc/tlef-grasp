@@ -78,14 +78,19 @@ export async function generateAndSaveObjectives({
  * full abandoned set in the Question Bank every time it ran.
  *
  * Report failures so callers can keep those records visible and offer a retry.
+ *
+ * questionAction says what happens to the questions attached to each objective
+ * — "keep" orphans them as drafts, "delete" removes them too. It is stated
+ * rather than left to the server's default, which callers took silently.
  */
-export async function deleteObjectives(objectiveIds) {
+export async function deleteObjectives(objectiveIds, questionAction = "keep") {
   const deleted = [];
   const failed = [];
+  const query = questionAction ? `?questionAction=${questionAction}` : "";
   await Promise.all(
     (objectiveIds || []).map(async (objectiveId) => {
       try {
-        const result = await api.delete(`/api/objective/${objectiveId}`);
+        const result = await api.delete(`/api/objective/${objectiveId}${query}`);
         if (!result.success) {
           throw new Error(result.error || "Failed to delete objective");
         }

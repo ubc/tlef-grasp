@@ -3,6 +3,12 @@ const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-i
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, appendGranularObjectives, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
+const { isFaculty } = require('../utils/auth');
+
+// Deleting an objective's questions removes them from the Question Bank for
+// good, and only faculty may delete questions (see deleteQuestionHandler).
+// Staff access and the Question Generation permission are not enough.
+const QUESTION_DELETE_FORBIDDEN = 'Only faculty can delete questions';
 
 const getAllObjectives = async (req, res) => {
   try {
@@ -263,6 +269,9 @@ const updateObjectiveHandler = async (req, res) => {
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (questionAction === 'delete' && !(await isFaculty(req.user))) {
+      return res.status(403).json({ error: QUESTION_DELETE_FORBIDDEN });
+    }
 
     // Name is required if provided
     if (name !== undefined && (!name || !name.trim())) {
@@ -403,6 +412,9 @@ const deleteObjectiveHandler = async (req, res) => {
     }
     if (courseId && !(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (questionAction === 'delete' && !(await isFaculty(req.user))) {
+      return res.status(403).json({ error: QUESTION_DELETE_FORBIDDEN });
+    }
 
     await deleteObjective(objectiveId, questionAction);
 

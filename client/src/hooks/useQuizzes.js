@@ -33,7 +33,7 @@ export function useQuizzesWithQuestions(courseId) {
   return { ...query, quizzes: query.data || [] };
 }
 
-function useInvalidateQuizzes(courseId) {
+export function useInvalidateQuizzes(courseId) {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.quizzes(courseId) });

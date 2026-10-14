@@ -42,6 +42,30 @@ export function itemFromGranular(granular, id) {
   );
 }
 
+/**
+ * The granularObjectives payload for a save of this group.
+ *
+ * Detached items ride along with the items still on the page: the server
+ * treats any granular missing from the payload as a deletion, so a granular
+ * the instructor only removed from their view has to keep being sent (#41).
+ *
+ * Leaving one out is therefore how it gets deleted, which is why the save path
+ * and the delete path share this builder instead of assembling the list twice.
+ */
+export function granularObjectivesPayload(group) {
+  return [...(group?.items || []), ...(group?.detachedItems || [])].map((item) => {
+    // No questionCount: questionTypes carries the total, and a second copy of
+    // the same number could only ever disagree with it.
+    const granularObj = {
+      text: item.text,
+      bloomTaxonomies: item.bloom || [],
+      questionTypes: item.questionTypes || [],
+    };
+    if (item.granularId) granularObj.id = item.granularId;
+    return granularObj;
+  });
+}
+
 const newGroupId = () => Date.now() + Math.random();
 
 /**
