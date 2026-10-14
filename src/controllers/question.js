@@ -453,6 +453,10 @@ const updateQuestionHandler = async (req, res) => {
     if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
       return res.status(409).json({ error: error.message });
     }
+    // The code tells the client to show the duplicate popup.
+    if (error.code === "DUPLICATE_QUESTION") {
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
     if (error.code === "INVALID_QUESTION") {
       return res.status(400).json({ error: error.message });
     }

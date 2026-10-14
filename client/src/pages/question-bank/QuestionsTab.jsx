@@ -8,7 +8,7 @@ import {
 import { useAddExistingQuestionsToQuiz } from "../../hooks/useQuizzes";
 import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useToast } from "../../components/ui/Toast";
-import Modal, { ConfirmModal } from "../../components/ui/Modal";
+import Modal, { AlertModal, ConfirmModal } from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
 import {
@@ -447,6 +447,8 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editTarget, setEditTarget] = useState(null);
   const [reassignTarget, setReassignTarget] = useState(null);
+  // Set when attaching an objective is refused as a duplicate.
+  const [duplicateMessage, setDuplicateMessage] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -466,8 +468,21 @@ export default function QuestionsTab({ courseId, isFaculty }) {
     onSuccess: (data, variables) => {
       if (variables.successMessage) showToast(variables.successMessage, "success");
     },
-    onError: (error, variables) =>
-      showToast(variables.errorMessage || "Failed to update question", "error"),
+    // A duplicate gets a popup. Any other 409 carries a reason the
+    // instructor can act on (an orphan that can't be approved), so show it
+    // over the generic message.
+    onError: (error, variables) => {
+      if (error.body?.code === "DUPLICATE_QUESTION") {
+        setDuplicateMessage(error.message);
+        return;
+      }
+      showToast(
+        (error.status === 409 && error.message) ||
+          variables.errorMessage ||
+          "Failed to update question",
+        "error"
+      );
+    },
   });
 
   const bulkUpdateMutation = useBulkUpdateQuestions(courseId, {
@@ -1080,6 +1095,13 @@ export default function QuestionsTab({ courseId, isFaculty }) {
         onClose={() => setReassignTarget(null)}
         onConfirm={confirmReassign}
         isSubmitting={updateMutation.isPending}
+      />
+
+      <AlertModal
+        open={!!duplicateMessage}
+        onClose={() => setDuplicateMessage(null)}
+        title="Duplicate detected"
+        message={duplicateMessage}
       />
 
       <ConfirmModal

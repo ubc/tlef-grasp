@@ -150,7 +150,7 @@ describe('updateQuestion with a multiple-answer question', () => {
   it('leaves an update that touches neither the options nor the answer alone', async () => {
     const questions = mockDb({ _id: id, ...maQuestion() });
 
-    await questionService.updateQuestion(id, { title: 'Noble gases' });
+    await questionService.updateQuestion(id, { bloom: 'Apply' });
 
     expect(questions.findOne).not.toHaveBeenCalled();
     expect(questions.updateOne.mock.calls[0][1].$set.correctAnswer).toBeUndefined();

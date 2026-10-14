@@ -128,30 +128,61 @@ const answerSignature = (q) => {
     return `oe:${normalizeText(q.openEndedSampleAnswer)}`;
 };
 
+// The file ids of a question's stem images, legacy single image included.
+const stemImageSignature = (q) =>
+    [...(Array.isArray(q.stemImages) ? q.stemImages : []), q.stemImage]
+        .filter((ref) => ref && ref.fileId)
+        .map((ref) => String(ref.fileId))
+        .join(",");
+
 // Find an existing question in the course that is a duplicate of `questionData`:
 // same type, same question text (title + stem), same answer content, and the
-// same granular learning-objective link. Returns the existing doc or null.
-const findDuplicateQuestion = async (db, courseIdObj, granularObjectiveIdObj, questionData) => {
+// same granular learning-objective link. `excludeId` leaves out the question
+// being edited, so it never matches itself; `matchStemImages` also requires
+// the same stem images, for questions told apart only by their picture.
+// Returns the existing doc or null.
+const findDuplicateQuestion = async (
+    db,
+    courseIdObj,
+    granularObjectiveIdObj,
+    questionData,
+    { excludeId = null, matchStemImages = false } = {}
+) => {
     const type = String(questionData.questionType || questionData.type || "").toLowerCase();
     const candidates = await db.collection("grasp_question").find({
         courseId: courseIdObj,
         granularObjectiveId: granularObjectiveIdObj,
         questionType: type,
+        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
     }).toArray();
 
     const title = normalizeText(questionData.title);
     const stem = normalizeText(questionData.stem);
     const signature = answerSignature(questionData);
+    const stemImages = stemImageSignature(questionData);
 
     return (
         candidates.find(
             (c) =>
                 normalizeText(c.title) === title &&
                 normalizeText(c.stem) === stem &&
-                answerSignature(c) === signature
+                answerSignature(c) === signature &&
+                (!matchStemImages || stemImageSignature(c) === stemImages)
         ) || null
     );
 };
+
+// Everything an edit is checked on for duplicates, as one comparable string:
+// findDuplicateQuestion's fields with the stem images and objective link.
+const editIdentity = (q) =>
+    [
+        String(q.questionType || q.type || "").toLowerCase(),
+        normalizeText(q.title),
+        normalizeText(q.stem),
+        answerSignature(q),
+        stemImageSignature(q),
+        String(q.granularObjectiveId ?? ""),
+    ].join("\n");
 
 const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => {
     try {
@@ -592,9 +623,19 @@ const updateQuestion = async (questionId, updateData) => {
             update.options !== undefined ||
             update.correctAnswer !== undefined ||
             update.questionType !== undefined;
+        // Any field editIdentity reads.
+        const touchesIdentity =
+            touchesAnswer ||
+            touchesImages ||
+            update.title !== undefined ||
+            update.stem !== undefined ||
+            update.acceptableAnswers !== undefined ||
+            update.calculationFormula !== undefined ||
+            update.openEndedSampleAnswer !== undefined ||
+            update.granularObjectiveId !== undefined;
 
         // Fetch the existing doc once when any validation path needs it.
-        const existing = (touchesCalculation || touchesImages || touchesAnswer)
+        const existing = (touchesCalculation || touchesIdentity)
             ? await collection.findOne({ _id: id })
             : null;
 
@@ -636,7 +677,36 @@ const updateQuestion = async (questionId, updateData) => {
                 }
             }
         }
-        
+
+        // An edit must not make this question identical to another one under
+        // the same learning objective. Only an edit that changes what it is
+        // compared on is checked, so a pair that already exists can still be
+        // edited in other ways. An orphan is checked once re-attached: until
+        // then its link points at an objective that no longer exists.
+        if (touchesIdentity && existing) {
+            const merged = { ...existing, ...update };
+            if (
+                merged.granularObjectiveId &&
+                !merged.orphaned &&
+                editIdentity(merged) !== editIdentity(existing)
+            ) {
+                const duplicate = await findDuplicateQuestion(
+                    db,
+                    merged.courseId,
+                    merged.granularObjectiveId,
+                    merged,
+                    { excludeId: id, matchStemImages: true }
+                );
+                if (duplicate) {
+                    const error = new Error(
+                        "This learning objective already has an identical question. Edit this question so it differs, then save again."
+                    );
+                    error.code = "DUPLICATE_QUESTION";
+                    throw error;
+                }
+            }
+        }
+
         const result = await collection.updateOne(
             { _id: id },
             { $set: update }
