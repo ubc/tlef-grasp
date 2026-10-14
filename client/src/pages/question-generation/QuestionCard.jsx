@@ -38,7 +38,6 @@ export default function QuestionCard({
   question,
   onChange,
   onDelete,
-  onSaveDraft,
   detailsOpen = false,
 }) {
   const showToast = useToast();
@@ -256,7 +255,6 @@ export default function QuestionCard({
     setIsEditing(false);
     setDraft(null);
     showToast("Question updated successfully", "success");
-    onSaveDraft();
   };
 
   const typeChipLabel = isFib
@@ -727,7 +725,6 @@ export default function QuestionCard({
           <textarea
             value={question.flagReason || ""}
             onChange={(event) => onChange({ flagReason: event.target.value })}
-            onBlur={onSaveDraft}
             rows={2}
             placeholder="Add a note explaining why this question is flagged…"
             className="w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-red-400 focus:outline-none"
@@ -744,7 +741,6 @@ export default function QuestionCard({
               onChange({
                 status: question.status === "Approved" ? "Draft" : "Approved",
               });
-              onSaveDraft();
             }}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
               question.status === "Approved"
@@ -783,7 +779,6 @@ export default function QuestionCard({
                 `Question ${nextFlag ? "Flagged" : "Unflagged"}`,
                 "success"
               );
-              onSaveDraft();
             }}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               question.flagStatus

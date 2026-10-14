@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelectedCourse } from "../stores/appStore";
 import { useCourseMaterials } from "../hooks/useMaterials";
@@ -13,12 +13,9 @@ import QuestionsStep from "./question-generation/QuestionsStep";
 import SaveQuizStep from "./question-generation/SaveQuizStep";
 import { useQuestionDraft } from "./question-generation/useQuestionDraft";
 import { normalizeMcOptionCount } from "../lib/mcOptions";
-import {
-  generateQuestions,
-  convertQuestionsToGroups,
-  buildQuestionPayload,
-} from "./question-generation/generationApi";
+import { generateQuestions, convertQuestionsToGroups } from "./question-generation/generationApi";
 import { attachSavedIds } from "./question-generation/savedQuestionIds";
+import { saveQuestionsToBank, quizSkipNote, orphanedNote } from "./question-generation/bankSave";
 
 const STEP_TITLES = {
   1: "Create Objectives",
@@ -167,12 +164,10 @@ export default function QuestionGeneration() {
   const [quizForm, setQuizForm] = useState(EMPTY_QUIZ_FORM);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  const questionGroupsRef = useRef(questionGroups);
-  questionGroupsRef.current = questionGroups;
-
-  const { draftPrompt, dismissDraftPrompt, saveDraft, clearDraft } =
-    useQuestionDraft(courseId);
-  const persistDraft = () => saveDraft(questionGroupsRef.current);
+  const { draftPrompt, dismissDraftPrompt, clearDraft } = useQuestionDraft(
+    courseId,
+    questionGroups
+  );
 
   const materialsQuery = useCourseMaterials(courseId);
   const hasMaterials =
@@ -183,51 +178,29 @@ export default function QuestionGeneration() {
 
   /* ------------------------------ Mutations ------------------------------ */
 
-  // Save the page's questions to the bank. Questions already there (they
-  // have an _id) are updated with this page's edits rather than saved again;
-  // one whose bank copy has since been deleted (404) is saved as new, like a
-  // question that was never saved. New ids are recorded on the page straight
-  // away, so a later failure cannot make a retry save them twice. Returns the
-  // bank id of every page question, in page order (null where a save failed).
+  // Records what was saved before rethrowing any failure, so a retry cannot
+  // save a question twice.
   const invalidateQuestions = useInvalidateQuestions(courseId);
   const invalidateQuizzes = useInvalidateQuizzes(courseId);
   const saveToBank = async (pageQuestions) => {
-    const deleted = [];
-    await Promise.all(
-      pageQuestions
-        .filter((q) => q._id)
-        .map((q) =>
-          api.put(`/api/question/${q._id}`, buildQuestionPayload(q)).catch((error) => {
-            if (error.status !== 404) throw error;
-            deleted.push(q);
-          })
-        )
-    );
-    const toSave = [...pageQuestions.filter((q) => !q._id), ...deleted];
-    const data = toSave.length
-      ? await api.post("/api/question/save", {
-          courseId,
-          questions: toSave.map(buildQuestionPayload),
-        })
-      : {};
-    const localIds = toSave.map((q) => q.id);
+    const { saved, ids, savedCount, orphanedCount, error } = await saveQuestionsToBank({
+      api,
+      courseId,
+      pageQuestions,
+    });
     // Record the bank ids so Step 2 can offer to delete from the bank.
-    setQuestionGroups((prev) => attachSavedIds(prev, localIds, data.questionIdsByIndex));
-    invalidateQuestions();
-    clearDraft();
-    const newIds = new Map(localIds.map((id, i) => [id, data.questionIdsByIndex?.[i] || null]));
-    return {
-      ids: pageQuestions.map((q) => (newIds.has(q.id) ? newIds.get(q.id) : q._id)),
-      // Updated questions plus the ones the save call actually stored.
-      savedCount: pageQuestions.length - localIds.length + (data.savedCount || 0),
-    };
+    setQuestionGroups((prev) => attachSavedIds(prev, saved));
+    if (saved.size > 0) invalidateQuestions();
+    if (error) throw error;
+    return { ids, savedCount, orphanedCount };
   };
 
   const addToBankMutation = useMutation({
     mutationFn: saveToBank,
-    onSuccess: ({ savedCount: count }) => {
+    onSuccess: ({ savedCount: count, orphanedCount }) => {
       setSuccessMessage(
-        `Successfully saved ${count} question${count !== 1 ? "s" : ""} to the Question Bank!`
+        `Successfully saved ${count} question${count !== 1 ? "s" : ""} to the Question Bank!` +
+          orphanedNote(orphanedCount)
       );
     },
     onError: (error) => {
@@ -242,22 +215,22 @@ export default function QuestionGeneration() {
     mutationFn: async ({ pageQuestions, quiz }) => {
       const questionIds = (await saveToBank(pageQuestions)).ids.filter(Boolean);
       if (quiz.quizId) {
-        const data = await api.post(`/api/quiz/${quiz.quizId}/existing-questions`, {
-          questionIds,
-        });
-        return data.insertedCount;
+        return api.post(`/api/quiz/${quiz.quizId}/existing-questions`, { questionIds });
       }
       const data = await api.post("/api/quiz", { courseId, ...quiz, questionIds });
-      return data.questionsAdded;
+      return { insertedCount: data.questionsAdded, ineligibleCount: data.skippedCount };
     },
-    onSuccess: (count, { quiz }) => {
+    onSuccess: (result, { quiz }) => {
       invalidateQuizzes();
+      const count = result.insertedCount || 0;
       const plural = count !== 1 ? "s" : "";
+      const message = quiz.quizId
+        ? `Successfully added ${count} question${plural} to quiz!`
+        : `Successfully created quiz and added ${count} question${plural}!`;
+      setSuccessMessage(message + quizSkipNote(result));
       if (quiz.quizId) {
-        setSuccessMessage(`Successfully added ${count} question${plural} to quiz!`);
         setQuizForm((prev) => ({ ...prev, selectedQuizId: "" }));
       } else {
-        setSuccessMessage(`Successfully created quiz and added ${count} question${plural}!`);
         setQuizForm((prev) => ({ ...prev, quizName: "", quizDescription: "" }));
       }
     },
@@ -315,8 +288,6 @@ export default function QuestionGeneration() {
       const groups = convertQuestionsToGroups(questions);
 
       setQuestionGroups(groups);
-      questionGroupsRef.current = groups;
-      persistDraft();
     } catch (error) {
       console.error("Failed to generate questions from content:", error);
       setGenerationError(error.message);
@@ -465,7 +436,6 @@ export default function QuestionGeneration() {
             runGeneration();
           }}
           onRetry={runGeneration}
-          onSaveDraft={persistDraft}
           courseId={courseId}
         />
       )}
@@ -497,7 +467,7 @@ export default function QuestionGeneration() {
       >
         <button
           type="button"
-          disabled={step === 1 || generating}
+          disabled={step === 1 || generating || addingToBank || saving}
           onClick={() => setStep(step - 1)}
           className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-40"
         >
@@ -518,6 +488,7 @@ export default function QuestionGeneration() {
           disabled={
             generating ||
             regeneratingObjectives ||
+            addingToBank ||
             saving ||
             (step === 1 && objectiveGroups.length === 0) ||
             (step === 2 &&
@@ -570,12 +541,9 @@ export default function QuestionGeneration() {
         <div className="py-3 text-center">
           <i className="fas fa-history mb-4 text-5xl text-warning" />
           <p className="mb-2 text-ink">
-            You have {draftPrompt?.totalQuestions} question
-            {draftPrompt?.totalQuestions !== 1 ? "s" : ""} from {draftPrompt?.savedAt}{" "}
-            that were not saved to the question bank.
-          </p>
-          <p className="text-sm text-muted">
-            These questions have not been saved to the question bank yet.
+            You have {draftPrompt?.unsavedQuestions} question
+            {draftPrompt?.unsavedQuestions !== 1 ? "s" : ""} from {draftPrompt?.savedAt}{" "}
+            with changes that were not saved to the question bank.
           </p>
         </div>
       </Modal>

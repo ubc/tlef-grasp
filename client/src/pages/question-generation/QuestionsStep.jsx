@@ -13,7 +13,6 @@ export default function QuestionsStep({
   generationError,
   onRegenerateAll,
   onRetry,
-  onSaveDraft,
   courseId,
 }) {
   const showToast = useToast();
@@ -57,7 +56,6 @@ export default function QuestionsStep({
         }))
         .filter((group) => group.los.length > 0)
     );
-    onSaveDraft();
   };
 
   const deleteQuestionMutation = useDeleteQuestion(courseId);
@@ -184,7 +182,6 @@ export default function QuestionsStep({
                           question={question}
                           onChange={(updates) => updateQuestion(question.id, updates)}
                           onDelete={() => deleteQuestion(question)}
-                          onSaveDraft={onSaveDraft}
                           detailsOpen={showDetails}
                         />
                       ))}

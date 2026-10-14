@@ -247,7 +247,7 @@ const addExistingQuestionsToQuiz = async (quizId, courseId, questionIds) => {
         .map((id) => new ObjectId(id));
 
     if (requestedIds.length === 0) {
-        return { insertedCount: 0, skippedCount: 0 };
+        return { insertedCount: 0, skippedCount: 0, alreadyInQuizCount: 0, ineligibleCount: 0 };
     }
 
     const candidateQuestions = await db.collection("grasp_question")
@@ -300,9 +300,12 @@ const addExistingQuestionsToQuiz = async (quizId, courseId, questionIds) => {
         );
     }
 
+    // skippedCount = alreadyInQuizCount + ineligibleCount.
     return {
         insertedCount: questionIdsToInsert.length,
         skippedCount: requestedIds.length - questionIdsToInsert.length,
+        alreadyInQuizCount: eligibleIds.length - questionIdsToInsert.length,
+        ineligibleCount: requestedIds.length - eligibleIds.length,
     };
 };
 

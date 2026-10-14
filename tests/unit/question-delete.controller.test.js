@@ -5,17 +5,18 @@ jest.mock('../../src/services/question', () => ({
   getQuestions: jest.fn(),
   getQuestionCourseId: jest.fn(),
   getQuestion: jest.fn(),
+  findExistingQuestionIds: jest.fn(),
 }));
 jest.mock('../../src/utils/course-access', () => ({
   hasStaffAccessInCourse: jest.fn(),
 }));
 jest.mock('../../src/utils/co-instructor-permissions', () => ({
   assertCoInstructorPermission: jest.fn().mockResolvedValue(true),
-  PERMISSION_KEYS: { QUESTION_BANK: 'questionBank' },
+  PERMISSION_KEYS: { QUESTION_BANK: 'questionBank', QUESTION_GENERATION: 'questionGeneration' },
 }));
 jest.mock('../../src/utils/ta-permissions', () => ({
   assertTaPermission: jest.fn().mockResolvedValue(true),
-  TA_PERMISSION_KEYS: { QUESTION_BANK: 'questionBank' },
+  TA_PERMISSION_KEYS: { QUESTION_BANK: 'questionBank', QUESTION_GENERATION: 'questionGeneration' },
 }));
 jest.mock('../../src/utils/auth', () => ({
   isFaculty: jest.fn().mockResolvedValue(true),
@@ -23,7 +24,12 @@ jest.mock('../../src/utils/auth', () => ({
 
 const questionService = require('../../src/services/question');
 const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
-const { deleteQuestionHandler, updateQuestionHandler } = require('../../src/controllers/question');
+const { assertCoInstructorPermission } = require('../../src/utils/co-instructor-permissions');
+const {
+  deleteQuestionHandler,
+  updateQuestionHandler,
+  existingQuestionsHandler,
+} = require('../../src/controllers/question');
 
 const makeRes = () => {
   const res = {};
@@ -84,5 +90,67 @@ describe('PUT /api/question/:questionId', () => {
     expect(res.status).toHaveBeenCalledWith(404);
     expect(hasStaffAccessInCourse).not.toHaveBeenCalled();
     expect(questionService.updateQuestion).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when the objective being attached is not in the course', async () => {
+    questionService.getQuestionCourseId.mockResolvedValue('course-1');
+    questionService.getQuestion.mockResolvedValue({ status: 'Draft' });
+    hasStaffAccessInCourse.mockResolvedValue(true);
+    questionService.updateQuestion.mockRejectedValue(
+      Object.assign(new Error('bad objective'), { code: 'INVALID_OBJECTIVE' })
+    );
+    const res = makeRes();
+
+    await updateQuestionHandler(
+      { params: { questionId: 'q1' }, user: { id: 'prof' }, body: { granularObjectiveId: 'gone' } },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+});
+
+describe('POST /api/question/existing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns the ids that still exist, checked with the wizard permission', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(true);
+    questionService.findExistingQuestionIds.mockResolvedValue(['q1']);
+    const res = makeRes();
+
+    await existingQuestionsHandler(
+      { user: { id: 'co' }, body: { courseId: 'course-1', questionIds: ['q1', 'q2'] } },
+      res
+    );
+
+    expect(questionService.findExistingQuestionIds).toHaveBeenCalledWith('course-1', ['q1', 'q2']);
+    expect(res.json).toHaveBeenCalledWith({ success: true, existingIds: ['q1'] });
+    expect(assertCoInstructorPermission).toHaveBeenCalledWith(
+      expect.anything(),
+      res,
+      'course-1',
+      'questionGeneration'
+    );
+  });
+
+  it('returns 403 outside the course', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(false);
+    const res = makeRes();
+
+    await existingQuestionsHandler(
+      { user: { id: 'x' }, body: { courseId: 'course-1', questionIds: ['q1'] } },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(questionService.findExistingQuestionIds).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 without a question id list', async () => {
+    const res = makeRes();
+    await existingQuestionsHandler({ user: { id: 'x' }, body: { courseId: 'course-1' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 });

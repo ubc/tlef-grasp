@@ -1,7 +1,7 @@
 const archiver = require('archiver');
 const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('../services/question');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
-const { getQuestionCourseId, getQuestion } = require('../services/question');
+const { getQuestionCourseId, getQuestion, findExistingQuestionIds } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
@@ -300,6 +300,8 @@ const saveQuestionHandler = async (req, res) => {
     // One entry per submitted question, in request order, null where the save
     // failed. savedQuestionIds skips failures, so it cannot be lined up by index.
     const questionIdsByIndex = [];
+    // Saved as orphaned because their objective no longer exists.
+    const orphanedIds = [];
     let duplicateCount = 0;
     for (const questionData of questionsArray) {
       try {
@@ -309,6 +311,7 @@ const saveQuestionHandler = async (req, res) => {
         const savedId = questionResult.insertedId.toString();
         savedQuestionIds.push(savedId);
         questionIdsByIndex.push(savedId);
+        if (questionResult.orphaned) orphanedIds.push(savedId);
       } catch (error) {
         questionIdsByIndex.push(null);
         if (error.code === "DUPLICATE_QUESTION") {
@@ -340,10 +343,38 @@ const saveQuestionHandler = async (req, res) => {
       duplicateCount,
       questionIds: savedQuestionIds,
       questionIdsByIndex,
+      orphanedIds,
     });
   } catch (error) {
     console.error("Error saving question:", error);
     res.status(500).json({ error: "Failed to save question" });
+  }
+};
+
+// Which of the given question ids still exist, so the wizard can re-create
+// deleted ones. Same permissions as saving from the wizard.
+const existingQuestionsHandler = async (req, res) => {
+  try {
+    const { courseId, questionIds } = req.body || {};
+
+    if (!courseId) {
+      return res.status(400).json({ error: "Course ID is required" });
+    }
+    if (!Array.isArray(questionIds)) {
+      return res.status(400).json({ error: "questionIds must be an array" });
+    }
+
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+
+    const existingIds = await findExistingQuestionIds(courseId, questionIds);
+    res.json({ success: true, existingIds });
+  } catch (error) {
+    console.error("Error checking questions:", error);
+    res.status(500).json({ error: "Failed to check questions" });
   }
 };
 
@@ -397,7 +428,10 @@ const updateQuestionHandler = async (req, res) => {
   } catch (error) {
     console.error("Error updating question:", error);
     if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
-      return res.status(409).json({ error: error.message });
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
+    if (error.code === "INVALID_OBJECTIVE") {
+      return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: "Failed to update question" });
   }
@@ -1312,6 +1346,7 @@ module.exports = {
   getQuestionsHandler,
   getQuestionByIdHandler,
   saveQuestionHandler,
+  existingQuestionsHandler,
   updateQuestionHandler,
   updateQuestionStatusHandler,
   deleteQuestionHandler,
