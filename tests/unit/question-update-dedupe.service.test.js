@@ -63,8 +63,8 @@ const matches = (doc, filter) =>
 
 function useBank(questions) {
   const objectives = [
-    { _id: OBJECTIVE, parent: PARENT },
-    { _id: OTHER_OBJECTIVE, parent: PARENT },
+    { _id: OBJECTIVE, courseId: COURSE, parent: PARENT },
+    { _id: OTHER_OBJECTIVE, courseId: COURSE, parent: PARENT },
   ];
   const collections = {
     grasp_question: {
