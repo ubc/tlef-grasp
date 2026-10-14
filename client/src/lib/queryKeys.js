@@ -28,6 +28,8 @@ export const queryKeys = {
   quizStudentAttempts: (quizId, userId) => ["quiz-attempts", quizId, userId],
   myQuizQuestionFlags: (courseId) => ["quiz-question-flags", "mine", courseId],
   courseQuizQuestionFlags: (courseId) => ["quiz-question-flags", "course", courseId],
+  // view: "questions" | "quizzes" | "objectives"
+  analytics: (view, courseId, quizId, sectionId) => ["analytics", view, courseId, quizId, sectionId],
   studentQuizList: (courseId) => ["student-quiz-list", courseId],
   studentQuizResults: (quizId) => ["quiz-results", quizId],
 
