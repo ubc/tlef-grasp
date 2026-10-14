@@ -53,8 +53,8 @@ const getGradeExportOverviewHandler = async (req, res) => {
 };
 
 /**
- * GET /api/quiz/course/:courseId/grade-export/csv?sectionId=&quizIds=a,b
- * The CSV file.
+ * GET /api/quiz/course/:courseId/grade-export/csv?sectionId=&quizIds=a,b[&questionsCorrect=1]
+ * The CSV file; questionsCorrect adds each quiz's "4 of 5" column.
  */
 const downloadGradeCsvHandler = async (req, res) => {
   try {
@@ -69,7 +69,9 @@ const downloadGradeCsvHandler = async (req, res) => {
     }
 
     const { courseId } = req.params;
-    const { csv, quizCount } = await gradeExportService.buildSectionGradeCsv(courseId, section, quizIds);
+    const { csv, quizCount } = await gradeExportService.buildSectionGradeCsv(courseId, section, quizIds, {
+      includeQuestionsCorrect: req.query.questionsCorrect === '1',
+    });
     if (quizCount === 0) {
       return res.status(400).json({
         success: false,

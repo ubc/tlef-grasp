@@ -4,9 +4,19 @@ const {
   AVERAGE_TITLE,
   averageOf,
   buildGradeCsv,
+  questionsCorrectCell,
   quizCell,
   quizColumnTitles,
 } = require('../../src/utils/grade-csv');
+
+// quiz id -> [percent, correct, total]
+const scores = (byQuiz = {}) =>
+  new Map(
+    Object.entries(byQuiz).map(([quizId, [score, correctAnswers, totalQuestions]]) => [
+      quizId,
+      { score, correctAnswers, totalQuestions },
+    ])
+  );
 
 function rowsOf(csv) {
   expect(csv.startsWith('﻿')).toBe(true);
@@ -35,8 +45,8 @@ describe('buildGradeCsv', () => {
       buildGradeCsv({
         quizzes: QUIZZES.slice(0, 1),
         students: [
-          { name: 'Ada Lovelace', canvasUserId: '77', loginId: 'ADA123', puid: 'PUID0001', section: '101', scores: new Map() },
-          { name: 'Alan Turing', puid: 'PUID0002', section: '101', scores: new Map() },
+          { name: 'Ada Lovelace', canvasUserId: '77', loginId: 'ADA123', puid: 'PUID0001', section: '101', scores: scores() },
+          { name: 'Alan Turing', puid: 'PUID0002', section: '101', scores: scores() },
         ],
       })
     );
@@ -49,8 +59,8 @@ describe('buildGradeCsv', () => {
       buildGradeCsv({
         quizzes: QUIZZES,
         students: [
-          { name: 'Taker', puid: 'P1', section: '101', scores: new Map([['q1', 80], ['q2', 95]]) },
-          { name: 'Absent', puid: 'P2', section: '101', scores: {} },
+          { name: 'Taker', puid: 'P1', section: '101', scores: scores({ q1: [80, 4, 5], q2: [95, 19, 20] }) },
+          { name: 'Absent', puid: 'P2', section: '101', scores: scores() },
         ],
       })
     );
@@ -62,7 +72,7 @@ describe('buildGradeCsv', () => {
     const [, , row] = rowsOf(
       buildGradeCsv({
         quizzes: [QUIZZES[1]],
-        students: [{ name: 'New', puid: 'P3', section: '101', scores: new Map() }],
+        students: [{ name: 'New', puid: 'P3', section: '101', scores: scores() }],
       })
     );
     expect(row).toBe('New,,,P3,P3,101,,');
@@ -72,11 +82,60 @@ describe('buildGradeCsv', () => {
     const [header, , row] = rowsOf(
       buildGradeCsv({
         quizzes: [{ id: 'q1', name: 'Acids, "bases"', status: 'closed' }],
-        students: [{ name: '=HYPERLINK("x")', puid: 'P4', section: '101', scores: new Map([['q1', 50]]) }],
+        students: [{ name: '=HYPERLINK("x")', puid: 'P4', section: '101', scores: scores({ q1: [50, 1, 2] }) }],
       })
     );
     expect(header).toContain('"GRASP: Acids, ""bases"""');
     expect(row.startsWith(`"'=HYPERLINK(""x"")",`)).toBe(true);
+  });
+});
+
+describe('buildGradeCsv with questions correct', () => {
+  const rows = () =>
+    rowsOf(
+      buildGradeCsv({
+        quizzes: QUIZZES.slice(0, 2),
+        students: [
+          { name: 'Taker', puid: 'P1', section: '101', scores: scores({ q1: [80, 4, 5] }) },
+          { name: 'Absent', puid: 'P2', section: '101', scores: scores() },
+        ],
+        includeQuestionsCorrect: true,
+      })
+    );
+
+  it('puts a read-only "(correct)" column after each quiz', () => {
+    const [header, points] = rows();
+    expect(header).toBe(
+      'Student,ID,SIS User ID,SIS Login ID,Integration ID,Section,' +
+        'GRASP: Quiz 1,GRASP: Quiz 1 (correct),GRASP: Quiz 2,GRASP: Quiz 2 (correct),GRASP: Average'
+    );
+    expect(points).toBe('Points Possible,,,,,,100,(read only),100,(read only),100');
+  });
+
+  it('writes "4 of 5" for a quiz taken and leaves the rest blank, without changing the average', () => {
+    const [, , taker, absent] = rows();
+    expect(taker).toBe('Taker,,,P1,P1,101,80,4 of 5,,,80');
+    expect(absent).toBe('Absent,,,P2,P2,101,0,,,,0');
+  });
+
+  it('numbers a "(correct)" title another quiz already uses', () => {
+    const [header] = rowsOf(
+      buildGradeCsv({
+        quizzes: [
+          { id: 'a', name: 'Quiz 1 (correct)', status: 'closed' },
+          { id: 'b', name: 'Quiz 1', status: 'closed' },
+        ],
+        students: [],
+        includeQuestionsCorrect: true,
+      })
+    );
+    expect(header.split(',').slice(6)).toEqual([
+      'GRASP: Quiz 1 (correct)',
+      'GRASP: Quiz 1 (correct) (correct)',
+      'GRASP: Quiz 1',
+      'GRASP: Quiz 1 (correct) [2]',
+      'GRASP: Average',
+    ]);
   });
 });
 
@@ -110,12 +169,18 @@ describe('quizColumnTitles', () => {
   });
 });
 
-describe('quizCell and averageOf', () => {
+describe('quizCell, questionsCorrectCell and averageOf', () => {
   it('keeps a recorded score whatever the state, including 0', () => {
-    expect(quizCell(0, 'upcoming')).toBe(0);
-    expect(quizCell(72, 'open')).toBe(72);
+    expect(quizCell({ score: 0 }, 'upcoming')).toBe(0);
+    expect(quizCell({ score: 72 }, 'open')).toBe(72);
     expect(quizCell(undefined, 'closed')).toBe(0);
-    expect(quizCell(null, 'open')).toBeNull();
+    expect(quizCell(undefined, 'open')).toBeNull();
+  });
+
+  it('writes questions correct as "n of m", never as a date-like "n/m"', () => {
+    expect(questionsCorrectCell({ correctAnswers: 0, totalQuestions: 7 })).toBe('0 of 7');
+    expect(questionsCorrectCell({ correctAnswers: NaN, totalQuestions: 7 })).toBe('');
+    expect(questionsCorrectCell(undefined)).toBe('');
   });
 
   it('rounds the mean to two decimals', () => {

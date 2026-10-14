@@ -108,6 +108,28 @@ test.describe('Grade CSV', () => {
       expect(byPuid(SEED.BIO_STUDENT3_PUID).slice(5)).toEqual(['101', '0', '', '0']);
       // Instructors are never rows.
       expect(byPuid(SEED.BIO_PROF2_PUID)).toBeUndefined();
+
+      // Opt-in: a read-only "(correct)" column after each quiz.
+      const questionsCorrect = dialog.getByRole('checkbox', { name: 'Include questions correct' });
+      await expect(questionsCorrect).not.toBeChecked();
+      await questionsCorrect.check();
+      const [second] = await Promise.all([
+        page.waitForEvent('download'),
+        dialog.getByRole('button', { name: 'Download CSV' }).click(),
+      ]);
+      const [header2, points2, ...students2] = parseCsv(
+        fs.readFileSync(await second.path(), 'utf8').slice(1)
+      );
+      expect(header2.slice(6)).toEqual([
+        `GRASP: ${SEED.GRADE_CSV_CLOSED_QUIZ_NAME}`,
+        `GRASP: ${SEED.GRADE_CSV_CLOSED_QUIZ_NAME} (correct)`,
+        `GRASP: ${SEED.GRADE_CSV_UPCOMING_QUIZ_NAME}`,
+        `GRASP: ${SEED.GRADE_CSV_UPCOMING_QUIZ_NAME} (correct)`,
+        'GRASP: Average',
+      ]);
+      expect(points2.slice(6)).toEqual(['100', '(read only)', '100', '(read only)', '100']);
+      const bruno = students2.find((row) => row[4] === SEED.BIO_STUDENT_PUID);
+      expect(bruno.slice(6)).toEqual([score, '4 of 5', '', '', score]);
     });
   });
 

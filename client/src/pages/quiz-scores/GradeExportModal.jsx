@@ -37,6 +37,7 @@ export default function GradeExportModal({ open, courseId, sections, initialSect
   const listId = useId();
   const [sectionId, setSectionId] = useState(initialSectionId || "");
   const [selected, setSelected] = useState(() => new Set());
+  const [questionsCorrect, setQuestionsCorrect] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
@@ -75,6 +76,7 @@ export default function GradeExportModal({ open, courseId, sections, initialSect
         sectionId,
         // In the dialog's (release) order, which is also the column order.
         quizIds: quizzes.filter((quiz) => selected.has(quiz.id)).map((quiz) => quiz.id),
+        questionsCorrect,
       });
     } catch (err) {
       setError(err.message || "Export failed");
@@ -196,6 +198,26 @@ export default function GradeExportModal({ open, courseId, sections, initialSect
           </div>
         )}
       </fieldset>
+
+      <div className="mt-4 flex items-start gap-2 text-sm">
+        <input
+          id={`${listId}-questions-correct`}
+          type="checkbox"
+          checked={questionsCorrect}
+          onChange={(event) => setQuestionsCorrect(event.target.checked)}
+          aria-describedby={`${listId}-questions-correct-note`}
+          className="mt-0.5 h-4 w-4 accent-primary"
+        />
+        <div>
+          <label htmlFor={`${listId}-questions-correct`} className="cursor-pointer font-medium text-ink">
+            Include questions correct
+          </label>
+          <span id={`${listId}-questions-correct-note`} className="block text-xs text-muted">
+            Adds a column after each quiz, such as "4 of 5". Leave this off for a file you'll
+            upload to Canvas: Canvas can add these as extra gradebook columns.
+          </span>
+        </div>
+      </div>
 
       {awaitingReview > 0 && (
         <p role="status" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">

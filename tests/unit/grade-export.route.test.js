@@ -115,7 +115,18 @@ describe('GET grade-export/csv', () => {
     );
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.text).toBe('﻿Student,ID\r\n');
-    expect(gradeExportService.buildSectionGradeCsv).toHaveBeenCalledWith(COURSE_ID, SECTION, ['q1', 'q2']);
+    expect(gradeExportService.buildSectionGradeCsv).toHaveBeenCalledWith(COURSE_ID, SECTION, ['q1', 'q2'], {
+      includeQuestionsCorrect: false,
+    });
+  });
+
+  it('adds the questions-correct columns only when asked', async () => {
+    await request(buildApp(FACULTY))
+      .get(`${BASE}/csv?sectionId=SEC-101&quizIds=q1&questionsCorrect=1`)
+      .expect(200);
+    expect(gradeExportService.buildSectionGradeCsv).toHaveBeenCalledWith(COURSE_ID, SECTION, ['q1'], {
+      includeQuestionsCorrect: true,
+    });
   });
 
   it('needs at least one quiz', async () => {

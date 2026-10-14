@@ -99,10 +99,12 @@ export async function downloadQuestionsExport({ courseId, questionIds, format })
   window.URL.revokeObjectURL(url);
 }
 
-// One section's grades as a CSV for Canvas's gradebook import (#126). The
-// server names the file; a refused export throws with the server's message.
-export async function downloadGradeCsv({ courseId, sectionId, quizIds }) {
+// One section's grades as a CSV for Canvas's gradebook import (#126), with
+// each quiz's "4 of 5" column when questionsCorrect is set. The server names
+// the file; a refused export throws with the server's message.
+export async function downloadGradeCsv({ courseId, sectionId, quizIds, questionsCorrect = false }) {
   const params = new URLSearchParams({ sectionId, quizIds: quizIds.join(",") });
+  if (questionsCorrect) params.set("questionsCorrect", "1");
   const response = await fetch(`/api/quiz/course/${courseId}/grade-export/csv?${params}`);
   if (!response.ok) {
     const body = await response.json().catch(() => null);

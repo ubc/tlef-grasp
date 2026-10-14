@@ -354,6 +354,12 @@ who doesn't own the course gets only their own sections, as on Quiz Scores.
 - Students are matched in Canvas by `ID` (the Canvas user id, filled in when a
   Canvas roster sync stored one), then `SIS Login ID` (the Canvas login when
   known, else the PUID), then by name. `Integration ID` carries the PUID.
+- **Include questions correct** (off by default) adds a `(correct)` column
+  after each quiz, such as `4 of 5`: questions right out of the questions that
+  student was served, which can differ between students on a spaced quiz. The
+  columns are marked read only in the Points Possible row, which makes Canvas
+  skip them only when every student matches, so the dialog says to leave the
+  option off for a file going to Canvas.
 - The dialog warns when students have disputed AI grades that haven't been
   settled, since the file uses the current grades.
 

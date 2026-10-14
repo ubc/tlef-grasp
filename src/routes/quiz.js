@@ -56,7 +56,7 @@ router.get("/course/:courseId/calendar", quizController.getQuizCalendarHandler);
 
 /**
  * GET /api/quiz/course/:courseId/grade-export?sectionId=
- * GET /api/quiz/course/:courseId/grade-export/csv?sectionId=&quizIds=a,b
+ * GET /api/quiz/course/:courseId/grade-export/csv?sectionId=&quizIds=a,b[&questionsCorrect=1]
  * One section's grades as a CSV for Canvas's gradebook import (#126).
  * Instructors and app administrators only, not TAs.
  */

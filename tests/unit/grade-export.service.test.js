@@ -89,8 +89,8 @@ function seed(overrides = {}) {
       { userId: TA, courseRole: 'ta' },
     ],
     grasp_quiz_score: [
-      { userId: STUDENT, quizId: QUIZ_OPEN, score: 90 },
-      { userId: TA_WITH_SCORE, quizId: QUIZ_CLOSED, score: 60 },
+      { userId: STUDENT, quizId: QUIZ_OPEN, score: 90, correctAnswers: 9, totalQuestions: 10 },
+      { userId: TA_WITH_SCORE, quizId: QUIZ_CLOSED, score: 60, correctAnswers: 3, totalQuestions: 5 },
     ],
     'grasp_student_attempt:aggregate': [{ _id: QUIZ_CLOSED, count: 2 }],
     ...overrides,
@@ -174,7 +174,7 @@ describe('buildSectionGradeCsv', () => {
       COURSE_ID,
       SECTION,
       [QUIZ_OPEN.toString(), QUIZ_CLOSED.toString(), id().toString()],
-      NOW
+      { now: NOW }
     );
     expect(quizCount).toBe(2);
     expect(studentCount).toBe(2);
@@ -185,6 +185,21 @@ describe('buildSectionGradeCsv', () => {
     expect(lines.slice(2)).toEqual([
       'Amy Worklearn,,,PUID0002,PUID0002,101,60,,60',
       'Zoe Student,77,,PUID0001,PUID0001,101,0,90,45',
+    ]);
+  });
+
+  it('adds questions correct from the recorded score when asked', async () => {
+    seed();
+    const { csv } = await buildSectionGradeCsv(
+      COURSE_ID,
+      SECTION,
+      [QUIZ_CLOSED.toString(), QUIZ_OPEN.toString()],
+      { now: NOW, includeQuestionsCorrect: true }
+    );
+    const lines = csv.slice(1).trim().split('\r\n');
+    expect(lines.slice(2)).toEqual([
+      'Amy Worklearn,,,PUID0002,PUID0002,101,60,3 of 5,,,60',
+      'Zoe Student,77,,PUID0001,PUID0001,101,0,,90,9 of 10,45',
     ]);
   });
 });

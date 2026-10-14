@@ -79,8 +79,9 @@ async function getSectionQuizzes(courseId, section, now = new Date()) {
 }
 
 /**
- * Recorded percents of the given students on the given quizzes.
- * @returns {Promise<Map<string, Map<string, number>>>} userId -> quizId -> score
+ * Recorded scores of the given students on the given quizzes.
+ * @returns {Promise<Map<string, Map<string, {score: number, correctAnswers: number,
+ *   totalQuestions: number}>>>} userId -> quizId -> score
  */
 async function getScores(quizIds, userIds) {
   const byUser = new Map();
@@ -89,12 +90,16 @@ async function getScores(quizIds, userIds) {
   const rows = await db
     .collection('grasp_quiz_score')
     .find({ quizId: { $in: eitherForm(quizIds) }, userId: { $in: eitherForm(userIds) } })
-    .project({ quizId: 1, userId: 1, score: 1 })
+    .project({ quizId: 1, userId: 1, score: 1, correctAnswers: 1, totalQuestions: 1 })
     .toArray();
   for (const row of rows) {
     const userId = String(row.userId);
     if (!byUser.has(userId)) byUser.set(userId, new Map());
-    byUser.get(userId).set(String(row.quizId), Number(row.score));
+    byUser.get(userId).set(String(row.quizId), {
+      score: Number(row.score),
+      correctAnswers: Number(row.correctAnswers),
+      totalQuestions: Number(row.totalQuestions),
+    });
   }
   return byUser;
 }
@@ -215,9 +220,17 @@ async function getSectionGradeOverview(courseId, section, now = new Date()) {
 /**
  * The CSV for the chosen quizzes of a section. Ids that aren't published
  * quizzes scheduled on the section are ignored.
+ * @param {Object} [options]
+ * @param {boolean} [options.includeQuestionsCorrect] - Add each quiz's "4 of 5" column
+ * @param {Date} [options.now]
  * @returns {Promise<{csv: string, quizCount: number, studentCount: number}>}
  */
-async function buildSectionGradeCsv(courseId, section, quizIds, now = new Date()) {
+async function buildSectionGradeCsv(
+  courseId,
+  section,
+  quizIds,
+  { includeQuestionsCorrect = false, now = new Date() } = {}
+) {
   const wanted = new Set(quizIds.map(String));
   const quizzes = (await getSectionQuizzes(courseId, section, now)).filter((quiz) =>
     wanted.has(quiz.id)
@@ -231,6 +244,7 @@ async function buildSectionGradeCsv(courseId, section, quizIds, now = new Date()
   const csv = buildGradeCsv({
     quizzes,
     students: students.map((student) => ({ ...student, section: sectionLabel })),
+    includeQuestionsCorrect,
   });
   return { csv, quizCount: quizzes.length, studentCount: students.length };
 }
