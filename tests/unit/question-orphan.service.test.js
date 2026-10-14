@@ -188,16 +188,13 @@ describe('updateQuestion orphan rules', () => {
     expect(questionCollection.updateOne).not.toHaveBeenCalled();
   });
 
-  it('clears the orphaned state when a new objective is attached', async () => {
-    const questionId = new ObjectId();
-    const granularId = new ObjectId();
-    const parentId = new ObjectId();
+  function mockReattach({ question, objective }) {
     const questionCollection = {
-      findOne: jest.fn(),
+      findOne: jest.fn().mockResolvedValue(question),
       updateOne: jest.fn().mockResolvedValue({ acknowledged: true, modifiedCount: 1 }),
     };
     const objectiveCollection = {
-      findOne: jest.fn().mockResolvedValue({ parent: parentId }),
+      findOne: jest.fn().mockResolvedValue(objective),
     };
     databaseService.connect.mockResolvedValue({
       collection: jest.fn((name) => {
@@ -206,15 +203,63 @@ describe('updateQuestion orphan rules', () => {
         throw new Error(`Unexpected collection: ${name}`);
       }),
     });
+    return { questionCollection, objectiveCollection };
+  }
+
+  it('clears the orphaned state when a new objective is attached', async () => {
+    const questionId = new ObjectId();
+    const granularId = new ObjectId();
+    const parentId = new ObjectId();
+    const courseId = new ObjectId();
+    const { questionCollection, objectiveCollection } = mockReattach({
+      question: { courseId },
+      objective: { parent: parentId },
+    });
 
     await questionService.updateQuestion(questionId.toString(), {
       granularObjectiveId: granularId.toString(),
     });
 
+    // The objective is looked up in the question's own course.
+    expect(objectiveCollection.findOne).toHaveBeenCalledWith(
+      { _id: granularId, courseId, parent: { $ne: 0 } },
+      expect.anything()
+    );
     expect(questionCollection.updateOne).toHaveBeenCalledWith(
       { _id: questionId },
       { $set: expect.objectContaining({ orphaned: false, orphanedAt: null, learningObjectiveId: parentId }) }
     );
+  });
+
+  // The wizard used to re-send a deleted objective's id, un-orphaning the question.
+  it('rejects a granular objective that no longer exists in the course', async () => {
+    const { questionCollection } = mockReattach({
+      question: { courseId: new ObjectId() },
+      objective: null,
+    });
+
+    await expect(
+      questionService.updateQuestion(new ObjectId().toString(), {
+        granularObjectiveId: new ObjectId().toString(),
+        status: 'Approved',
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_OBJECTIVE' });
+    expect(questionCollection.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects re-attaching when the question itself is gone', async () => {
+    const { questionCollection, objectiveCollection } = mockReattach({
+      question: null,
+      objective: { parent: new ObjectId() },
+    });
+
+    await expect(
+      questionService.updateQuestion(new ObjectId().toString(), {
+        granularObjectiveId: new ObjectId().toString(),
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_OBJECTIVE' });
+    expect(objectiveCollection.findOne).not.toHaveBeenCalled();
+    expect(questionCollection.updateOne).not.toHaveBeenCalled();
   });
 });
 
@@ -351,5 +396,32 @@ describe('addQuestionsToQuiz orphan guard', () => {
     const inserted = quizQuestionCollection.insertMany.mock.calls[0][0];
     expect(inserted).toHaveLength(1);
     expect(String(inserted[0].questionId)).toBe(okId.toString());
+  });
+});
+
+describe('findExistingQuestionIds', () => {
+  it('returns the ids still in the course, ignoring invalid ones', async () => {
+    const courseId = new ObjectId();
+    const kept = new ObjectId();
+    const gone = new ObjectId();
+    const cursor = { project: jest.fn(), toArray: jest.fn().mockResolvedValue([{ _id: kept }]) };
+    cursor.project.mockReturnValue(cursor);
+    const questionCollection = { find: jest.fn().mockReturnValue(cursor) };
+    databaseService.connect.mockResolvedValue({ collection: jest.fn(() => questionCollection) });
+
+    const result = await questionService.findExistingQuestionIds(courseId.toString(), [
+      kept.toString(),
+      gone.toString(),
+      'not-an-id',
+    ]);
+
+    expect(questionCollection.find).toHaveBeenCalledWith({ _id: { $in: [kept, gone] }, courseId });
+    expect(result).toEqual([kept.toString()]);
+  });
+
+  it('does not touch the database for an empty list', async () => {
+    databaseService.connect.mockClear();
+    expect(await questionService.findExistingQuestionIds('c', [])).toEqual([]);
+    expect(databaseService.connect).not.toHaveBeenCalled();
   });
 });

@@ -293,21 +293,33 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
       .check();
     await page.getByRole('button', { name: 'Add 1 objective' }).click();
 
-    // Delete the first granular row; the click also fires the objective save
-    // (PUT), so wait for that round-trip before re-reading the DB.
+    // Delete the first granular row. The trash button now asks which delete
+    // was meant, and the page-only option is the pre-selected default; that
+    // confirmation fires the objective save (PUT), so wait for the round-trip
+    // before re-reading the DB.
     const deleteButtons = page.getByRole('button', {
-      name: 'Delete granular objective from page',
+      name: 'Delete granular objective',
     });
     await expect(deleteButtons).toHaveCount(granularCount);
     const rowsBefore = await deleteButtons.count();
     expect(rowsBefore).toBe(granularCount); // keep ≥1 granular for the next steps
+    await deleteButtons.first().click();
+
+    const scopeDialog = page.getByRole('dialog', {
+      name: 'Delete Granular Objective?',
+    });
+    await expect(scopeDialog).toBeVisible();
+    await expect(
+      scopeDialog.getByRole('radio', { name: /Remove from this page/ })
+    ).toBeChecked();
     const [saveResponse] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().includes('/api/objective/') && r.request().method() === 'PUT'
       ),
-      deleteButtons.first().click(),
+      scopeDialog.getByRole('button', { name: 'Remove from this page' }).click(),
     ]);
     expect(saveResponse.ok()).toBe(true);
+    await expect(scopeDialog).toBeHidden();
 
     // Gone from the page…
     await expect(deleteButtons).toHaveCount(rowsBefore - 1);

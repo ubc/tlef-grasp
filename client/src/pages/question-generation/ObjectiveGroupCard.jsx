@@ -46,8 +46,8 @@ function GranularItemRow({
         />
         <button
           type="button"
-          title="Delete granular objective from page"
-          aria-label="Delete granular objective from page"
+          title="Delete granular objective"
+          aria-label="Delete granular objective"
           onClick={onDelete}
           className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-danger/10 hover:text-danger"
         >
@@ -185,7 +185,7 @@ export default function ObjectiveGroupCard({
       <div className="flex items-center gap-2 border-b border-gray-100 p-4">
         <button
           type="button"
-          title="Delete learning objective from page"
+          title="Delete learning objective"
           aria-label={`Delete ${group.title}`}
           onClick={onRequestDelete}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger/10 hover:text-danger"

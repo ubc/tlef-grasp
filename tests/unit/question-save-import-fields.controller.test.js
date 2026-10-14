@@ -97,6 +97,8 @@ describe('POST /api/question/save ignores client-sent provenance', () => {
       savedCount: 1,
       duplicateCount: 0,
       questionIds: [insertedId.toString()],
+      questionIdsByIndex: [insertedId.toString()],
+      orphanedIds: [],
     });
 
     expect(collection).toHaveBeenCalledWith('grasp_question');
@@ -126,5 +128,40 @@ describe('POST /api/question/save ignores client-sent provenance', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({ error: 'User is not in course' });
     expect(questions.insertOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/question/save with a deleted objective', () => {
+  const withObjective = () => ({
+    ...forgedQuestion(),
+    status: 'Approved',
+    granularObjectiveId: new ObjectId().toString(),
+  });
+
+  it('saves the question orphaned and Draft, and reports it', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(true);
+    const { questions, insertedId } = mockDb();
+    const res = makeRes();
+
+    await saveQuestionHandler({ user: USER, body: { courseId: COURSE_ID, questions: [withObjective()] } }, res);
+
+    const doc = questions.insertOne.mock.calls[0][0];
+    expect(doc).toMatchObject({ orphaned: true, status: 'Draft' });
+    expect(doc.orphanedAt).toBeInstanceOf(Date);
+    expect(res.json.mock.calls[0][0].orphanedIds).toEqual([insertedId.toString()]);
+  });
+
+  it('keeps the requested status when the objective exists', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(true);
+    const { questions } = mockDb();
+    questions.findOne.mockResolvedValue({ parent: new ObjectId() });
+    const res = makeRes();
+
+    await saveQuestionHandler({ user: USER, body: { courseId: COURSE_ID, questions: [withObjective()] } }, res);
+
+    const doc = questions.insertOne.mock.calls[0][0];
+    expect(doc.status).toBe('Approved');
+    expect(doc).not.toHaveProperty('orphaned');
+    expect(res.json.mock.calls[0][0].orphanedIds).toEqual([]);
   });
 });

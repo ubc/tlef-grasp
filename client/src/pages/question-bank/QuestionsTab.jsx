@@ -997,9 +997,9 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                         {question.orphaned ? (
                           <span
                             title="The learning objective this question was generated from has been deleted. This question can no longer be added to quizzes."
-                            className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
+                            className="inline-block whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
                           >
-                            <i className="fas fa-unlink text-[10px]" /> Objective deleted
+                            Objective deleted
                           </span>
                         ) : (
                           question.glo
