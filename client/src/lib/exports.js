@@ -98,3 +98,26 @@ export async function downloadQuestionsExport({ courseId, questionIds, format })
   link.remove();
   window.URL.revokeObjectURL(url);
 }
+
+// One section's grades as a CSV for Canvas's gradebook import (#126). The
+// server names the file; a refused export throws with the server's message.
+export async function downloadGradeCsv({ courseId, sectionId, quizIds }) {
+  const params = new URLSearchParams({ sectionId, quizIds: quizIds.join(",") });
+  const response = await fetch(`/api/quiz/course/${courseId}/grade-export/csv?${params}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || "Export failed");
+  }
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || `grasp-grades-${Date.now()}.csv`;
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
