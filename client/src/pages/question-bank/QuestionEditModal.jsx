@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { normalizeQuestionTypeKey, QUESTION_TYPE_CHIP_CLASSES } from "../../lib/utils";
 import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
-import Modal from "../../components/ui/Modal";
+import Modal, { AlertModal } from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
@@ -132,6 +132,9 @@ function buildFormState(question) {
 export default function QuestionEditModal({ questionId, canEdit, courseId, onClose }) {
   const showToast = useToast();
   const [form, setForm] = useState(null);
+  // Set when the server refuses the edit as a duplicate; shown in a popup
+  // over the form so the instructor can change the question and try again.
+  const [duplicateMessage, setDuplicateMessage] = useState(null);
 
   const { question, isPending: loading, error } = useQuestionDetail(questionId);
   const loadError = error?.message || null;
@@ -146,6 +149,10 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       onClose();
     },
     onError: (err) => {
+      if (err.body?.code === "DUPLICATE_QUESTION") {
+        setDuplicateMessage(err.message);
+        return;
+      }
       console.error("Error saving question:", err);
       showToast(err.message || "Failed to save question", "error");
     },
@@ -336,6 +343,14 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
               {saving ? "Saving..." : "Save Changes"}
             </button>
           )}
+          {/* Portaled to the page body, so it opens over this dialog. */}
+          <AlertModal
+            open={!!duplicateMessage}
+            onClose={() => setDuplicateMessage(null)}
+            title="Duplicate detected"
+            message={duplicateMessage}
+            closeLabel="Back to editing"
+          />
         </>
       }
     >

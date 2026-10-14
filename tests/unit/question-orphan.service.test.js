@@ -191,6 +191,8 @@ describe('updateQuestion orphan rules', () => {
   function mockReattach({ question, objective }) {
     const questionCollection = {
       findOne: jest.fn().mockResolvedValue(question),
+      // The duplicate check lists the objective's other questions; none here.
+      find: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue([]) })),
       updateOne: jest.fn().mockResolvedValue({ acknowledged: true, modifiedCount: 1 }),
     };
     const objectiveCollection = {
