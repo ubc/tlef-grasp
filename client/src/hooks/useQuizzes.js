@@ -182,6 +182,24 @@ export function useQuizScores(quizId) {
   };
 }
 
+// One section's quizzes for the grade CSV dialog (#126): state per quiz and
+// how many disputed AI grades each still has. Instructors and admins only.
+export function useGradeExportOverview(courseId, sectionId, { enabled = true } = {}) {
+  const query = useQuery({
+    queryKey: queryKeys.gradeExport(courseId, sectionId),
+    queryFn: () =>
+      api.get(
+        `/api/quiz/course/${courseId}/grade-export?sectionId=${encodeURIComponent(sectionId)}`
+      ),
+    enabled: !!courseId && !!sectionId && enabled,
+  });
+  return {
+    ...query,
+    quizzes: query.data?.quizzes || [],
+    studentCount: query.data?.studentCount ?? 0,
+  };
+}
+
 // One student's recorded answers for a quiz (instructor review modal).
 export function useQuizStudentAttempts(quizId, userId) {
   const query = useQuery({
