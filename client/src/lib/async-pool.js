@@ -4,7 +4,7 @@
 // requests have no reason to wait for each other. This runs a fixed number at
 // a time and — critically — reports results in INPUT order, so the questions a
 // run produces are ordered by the objectives the instructor chose rather than
-// by which request happened to finish first.
+// by which request happened to finish
 //
 // It also reacts to provider rate limiting rather than charging through it:
 // on a rate-limited rejection it pauses and halves its concurrency, because the
