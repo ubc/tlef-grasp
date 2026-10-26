@@ -58,16 +58,14 @@ describe('normalizeQuestionTypes', () => {
 
     it('trims the entry that crosses the cap rather than dropping it', () => {
       const result = normalizeQuestionTypes([
-        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
+        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, MAX_QUESTIONS_PER_OBJECTIVE - 2),
         pair('Analyze', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
         pair('Evaluate', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
-        pair('Create', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
-        pair('Remember', QUESTION_TYPES.FILL_IN_THE_BLANK, 5),
       ]);
 
       expect(total(result)).toBe(MAX_QUESTIONS_PER_OBJECTIVE);
-      expect(result).toHaveLength(4);
-      expect(result[3].count).toBe(5);
+      expect(result).toHaveLength(2);
+      expect(result[1].count).toBe(2);
     });
 
     it('parses string counts the way a JSON request body delivers them', () => {
@@ -132,11 +130,11 @@ describe('normalizeQuestionTypes', () => {
 
     it('sums duplicates without inventing a per-pair ceiling', () => {
       const result = normalizeQuestionTypes([
-        pair('Apply', QUESTION_TYPES.CALCULATION, 4),
-        pair('Apply', QUESTION_TYPES.CALCULATION, 4),
+        pair('Apply', QUESTION_TYPES.CALCULATION, MAX_QUESTIONS_PER_OBJECTIVE - 2),
+        pair('Apply', QUESTION_TYPES.CALCULATION, 2),
       ]);
 
-      expect(result).toEqual([pair('Apply', QUESTION_TYPES.CALCULATION, 8)]);
+      expect(result).toEqual([pair('Apply', QUESTION_TYPES.CALCULATION, MAX_QUESTIONS_PER_OBJECTIVE)]);
     });
 
     it('keeps first-seen order', () => {
@@ -153,14 +151,14 @@ describe('normalizeQuestionTypes', () => {
     // Merging must not consume budget a later distinct pair still needs.
     it('merges a repeat and still admits a later distinct pair', () => {
       const result = normalizeQuestionTypes([
-        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
-        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 5),
-        pair('Analyze', QUESTION_TYPES.OPEN_ENDED, 2),
+        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 2),
+        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 2),
+        pair('Analyze', QUESTION_TYPES.OPEN_ENDED, MAX_QUESTIONS_PER_OBJECTIVE - 4),
       ]);
 
       expect(result).toEqual([
-        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 10),
-        pair('Analyze', QUESTION_TYPES.OPEN_ENDED, 2),
+        pair('Apply', QUESTION_TYPES.MULTIPLE_CHOICE, 4),
+        pair('Analyze', QUESTION_TYPES.OPEN_ENDED, MAX_QUESTIONS_PER_OBJECTIVE - 4),
       ]);
     });
   });
