@@ -101,7 +101,13 @@ function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Whether the server under test encrypts fields. The runner does not load
+// .env, so the key is only in its env when exported (CI does); the server
+// then inherits the same one, since dotenv never overrides a set variable.
+const FIELD_ENCRYPTION_ON = Boolean(process.env.GRASP_DATA_ENCRYPTION_KEY?.trim());
+
 module.exports = {
+  FIELD_ENCRYPTION_ON,
   selectSeededCourse,
   selectCourseByName,
   answerSeededQuizCorrectly,

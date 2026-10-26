@@ -1,5 +1,4 @@
 const { test, expect } = require('@playwright/test');
-const { randomBytes } = require('node:crypto');
 const { MongoClient } = require('mongodb');
 
 // Field-level encryption against a real MongoDB (src/services/encryption.config.cjs):
@@ -8,21 +7,24 @@ const { MongoClient } = require('mongodb');
 // field was encrypted stays readable. No browser and no server: this drives
 // GRASP's own modules from the runner process.
 //
-// The runner does not load .env. CI exports a per-run key; elsewhere a
-// throwaway one is enough, because every row this spec writes is deleted
-// again and the server never reads them.
-process.env.GRASP_DATA_ENCRYPTION_KEY ||= randomBytes(32).toString('base64');
+// It runs only when the runner has the server's key (CI exports one per run;
+// see FIELD_ENCRYPTION_ON). Without a key, encryption is off by design, and
+// writing here with a key of its own would mark the test database as
+// encrypted for a server that cannot read it.
+//
 // The server builds the indexes; two processes doing it at once would race.
 process.env.GRASP_SKIP_INDEX_INIT = '1';
 
 const databaseService = require('../../src/services/database');
 const { createLmsTokenStore } = require('../../src/lms/token-store');
+const { FIELD_ENCRYPTION_ON } = require('./helpers');
 
 const DB_NAME = process.env.MONGODB_DB_NAME || 'grasp_db';
 const CANVAS_TOKENS = 'grasp_lms_canvas_tokens';
 
 test.describe('Field-level encryption at rest', () => {
   test.skip(!process.env.MONGODB_URI, 'needs MONGODB_URI');
+  test.skip(!FIELD_ENCRYPTION_ON, 'needs GRASP_DATA_ENCRYPTION_KEY in the runner env (the server\'s key)');
 
   let rawClient;
   let rawTokens;
@@ -64,6 +66,12 @@ test.describe('Field-level encryption at rest', () => {
     expect(stored).not.toContain('e2e-refresh-token-value');
 
     await expect(store.get(userKey)).resolves.toEqual(tokens);
+
+    // The database now says it holds encrypted data, so a server started on
+    // it without the key refuses to run.
+    const marker = await rawClient.db(DB_NAME).collection('grasp_field_encryption')
+      .findOne({ _id: 'field-encryption' });
+    expect(marker.enabledAt).toBeInstanceOf(Date);
   });
 
   test('a token refresh with no canvasUserId on file still saves', async () => {

@@ -316,9 +316,10 @@ app.use((err, req, res, next) => {
   res.status(tooLarge ? 413 : 500).send(tooLarge ? '413: Payload Too Large' : '500: Internal Server Error');
 });
 
-// The database connects lazily, so without this a missing or malformed
-// field-encryption key would surface only as a 500 on every request.
-databaseService.assertEncryptionKeys().catch((error) => {
+// The database connects lazily, so without this a malformed field-encryption
+// key would surface only as a 500 on every request. A missing key is allowed:
+// encryption is then off (logged).
+databaseService.checkEncryptionKey().catch((error) => {
   console.error(`❌ Field-encryption key check failed (${error.code || error.name}): ${error.message}`);
   process.exit(1);
 });
