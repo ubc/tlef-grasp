@@ -88,6 +88,31 @@ Copy the template and fill in your values:
 cp .env.example .env
 ```
 
+#### Field-level encryption key
+
+GRASP encrypts the fields listed in `src/services/encryption.config.cjs`
+before they reach MongoDB, using `@ubc/genai-toolkit-encryption`. It will not
+start without `GRASP_DATA_ENCRYPTION_KEY`; generate one for your `.env` with:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+Every environment has its own key. Data written under a key can only be read
+with that key, so a database copied from another environment needs that
+environment's key.
+
+Data stored before a field was encrypted stays readable (`GRASP_ENCRYPTION_ROLLOUT`
+defaults to `mixed`) until it is migrated with the toolkit's CLI, which reads
+`.env` the same way the server does:
+
+```bash
+npm run encryption -- plan --config src/services/encryption.config.cjs --all-configured
+```
+
+Follow the toolkit's `docs/migration-runbook.md` (in
+`node_modules/@ubc/genai-toolkit-encryption/`) for `migrate` and `verify`.
+
 #### Optional Canvas connection
 
 Set `CANVAS_DOMAIN`, `CANVAS_CLIENT_ID`, `CANVAS_CLIENT_SECRET`, and

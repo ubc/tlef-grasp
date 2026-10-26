@@ -208,6 +208,13 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      # A throwaway key for this run only; the real ones live on the servers.
+      - name: Generate a field-encryption key for this run
+        run: |
+          key=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
+          echo "::add-mask::$key"
+          echo "GRASP_DATA_ENCRYPTION_KEY=$key" >> "$GITHUB_ENV"
+
       # Playwright boots GRASP itself (npm run build && npm run start:test) and
       # global-setup logs in through the IdP before the specs run.
       - name: Run E2E tests

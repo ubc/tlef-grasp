@@ -1,8 +1,15 @@
-const { MongoClient } = require("mongodb");
+const { MongoClient, GridFSBucket } = require("mongodb");
+const {
+  assertKeysAvailable,
+  createEncryptedDb,
+  validateEncryptionConfig,
+} = require("@ubc/genai-toolkit-encryption");
+const encryptionConfig = require("./encryption.config.cjs");
 
 class DatabaseService {
   constructor() {
     this.client = null;
+    this.rawDb = null;
     this.db = null;
     this.isConnected = false;
     this.connectionUri = null;
@@ -29,7 +36,11 @@ class DatabaseService {
       console.log("Attempting to connect to MongoDB...");
       this.client = new MongoClient(mongodbUri, connectionOptions);
       await this.client.connect();
-      this.db = this.client.db(dbName);
+      this.rawDb = this.client.db(dbName);
+      // The fields in encryption.config.cjs are encrypted on write and
+      // decrypted on read; every other collection comes back as an ordinary
+      // driver collection.
+      this.db = await createEncryptedDb(this.rawDb, encryptionConfig);
       this.isConnected = true;
       this.connectionUri = mongodbUri;
       
@@ -54,6 +65,7 @@ class DatabaseService {
         }
         this.client = null;
       }
+      this.rawDb = null;
       this.isConnected = false;
       throw error;
     }
@@ -302,6 +314,25 @@ class DatabaseService {
       this.isConnected = false;
       console.log("✅ Disconnected from MongoDB");
     }
+  }
+
+  /**
+   * Resolves the field-encryption key without touching MongoDB, so a server
+   * missing GRASP_DATA_ENCRYPTION_KEY (or holding a malformed one) can refuse
+   * to start instead of failing every request.
+   */
+  async assertEncryptionKeys() {
+    await assertKeysAvailable(validateEncryptionConfig(encryptionConfig));
+  }
+
+  /**
+   * GridFS needs a real driver Db, which the encrypted wrapper is not. The
+   * images bucket holds no encrypted fields; never use this for a collection
+   * listed in encryption.config.cjs.
+   */
+  async gridFSBucket(bucketName) {
+    await this.connect();
+    return new GridFSBucket(this.rawDb, { bucketName });
   }
 
   getCollection(name) {

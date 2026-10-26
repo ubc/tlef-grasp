@@ -25,7 +25,8 @@
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",
     "usage": "node scripts/llm-usage-report.js",
-    "usage:clear": "node scripts/llm-usage-clear.js"
+    "usage:clear": "node scripts/llm-usage-clear.js",
+    "encryption": "node -r dotenv/config node_modules/@ubc/genai-toolkit-encryption/bin/ubc-genai-encryption.js"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +34,7 @@
   "type": "commonjs",
   "dependencies": {
     "@llamaindex/liteparse": "^1.5.3",
+    "@ubc/genai-toolkit-encryption": "0.1.1",
     "@ubc/ubc-genai-toolkit-course-list-sync": "^0.1.4",
     "@ubc/ubc-genai-toolkit-lms-integration": "1.4.0",
     "archiver": "^7.0.1",

@@ -188,6 +188,10 @@ student spec never depends on the instructor spec having run. `saml.setup.js` ca
   in the Playwright setup-project Node process, which does **not** load `.env` (only the
   server does, via `dotenv`). Locally: `set -a && . ./.env && set +a` (or export them)
   before running the SAML suite. CI sets them as job env already.
+- **The server needs `GRASP_DATA_ENCRYPTION_KEY`** (field-level encryption,
+  `src/services/encryption.config.cjs`) and exits at boot without it. Locally it
+  comes from `.env`; CI generates a throwaway key per run. `field-encryption.spec.js`
+  reads the raw documents to check that configured fields are stored encrypted.
 - **A published quiz is invisible to a student without BOTH:** (1) a
   `grasp_quiz_section_schedule` row with `releaseDate < now < expireDate` for a section,
   and (2) the student in `grasp_user_course_section` for that same section. Publishing
