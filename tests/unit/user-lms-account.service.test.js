@@ -44,6 +44,7 @@ describe('upsertUserLmsAccount', () => {
     provider: 'canvas',
     instance: INSTANCE,
     externalUserId: '9001',
+    loginId: 'ann@student.ubc.ca',
     updatedAt: UPDATED,
   };
 
@@ -92,7 +93,7 @@ describe('upsertUserLmsAccount', () => {
     );
   });
 
-  it('stores only the LMS identity, not the SIS id, login id or names the roster carried', async () => {
+  it('stores the identity and login id, not the SIS id or names the roster carried', async () => {
     await upsertUserLmsAccount(USER_ID, account());
 
     const [, update] = users.updateOne.mock.calls[0];
@@ -100,8 +101,16 @@ describe('upsertUserLmsAccount', () => {
       provider: 'canvas',
       instance: INSTANCE,
       externalUserId: '9001',
+      loginId: 'ann@student.ubc.ca',
       updatedAt: UPDATED,
     });
+  });
+
+  it('leaves the login id out when Canvas returned none', async () => {
+    await upsertUserLmsAccount(USER_ID, account({ loginId: '' }));
+
+    const [, update] = users.updateOne.mock.calls[0];
+    expect(update.$set['lmsAccounts.$']).not.toHaveProperty('loginId');
   });
 
   it('refuses an account without provider or instance and writes nothing', async () => {

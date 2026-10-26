@@ -69,10 +69,10 @@ class DatabaseService {
         "lmsAccounts.instance": 1,
         "lmsAccounts.externalUserId": 1,
       });
-      // Roster syncs used to copy the LMS's SIS id, login id and names into
-      // each entry. Nothing reads them, so they are no longer stored, and
-      // entries written before that lose them here.
-      const droppedLmsAccountFields = ["sisUserId", "loginId", "name", "sortableName"];
+      // Roster syncs used to copy the LMS's SIS id and names into each entry.
+      // Nothing reads them, so they are no longer stored, and entries written
+      // before that lose them here. The login id stays (grade CSV).
+      const droppedLmsAccountFields = ["sisUserId", "name", "sortableName"];
       await this.db.collection("grasp_user").updateMany(
         { $or: droppedLmsAccountFields.map((field) => ({ [`lmsAccounts.${field}`]: { $exists: true } })) },
         { $unset: Object.fromEntries(droppedLmsAccountFields.map((field) => [`lmsAccounts.$[].${field}`, ""])) }

@@ -385,6 +385,7 @@ async function syncSectionRoster({
           provider,
           instance,
           externalUserId: String(entry.row.externalUserId),
+          loginId: entry.row.loginId,
           updatedAt: now,
         });
       } catch (error) {
