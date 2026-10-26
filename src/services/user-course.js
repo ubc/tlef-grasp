@@ -102,7 +102,7 @@ const getUserCourses = async (userId) => {
                 { userId: String(userId) }
             ]
         }).toArray();
-        console.log('[getUserCourses] Simple query results:', JSON.stringify(simpleQuery, null, 2));
+        console.log(`[getUserCourses] Simple query found ${simpleQuery.length} memberships`);
         
         // Use aggregation with $lookup to join with courses collection
         const userCourses = await collection.aggregate([
@@ -615,7 +615,7 @@ const getStudentCourses = async (userId) => {
     try {
         console.log('[getStudentCourses] Looking up courses for userId:', userId);
         const userCourses = await getUserCourses(userId);
-        console.log('[getStudentCourses] Raw userCourses result:', JSON.stringify(userCourses, null, 2));
+        console.log(`[getStudentCourses] ${userCourses.length} memberships`);
         
         // Transform to expected format: { id, name, ... }
         // nickname and the derived academic period ride along so a student's
@@ -631,7 +631,7 @@ const getStudentCourses = async (userId) => {
             academicPeriodName: uc.academicPeriodName || '',
         })).filter(course => course.id); // Filter out courses without valid ID
         
-        console.log('[getStudentCourses] Transformed courses:', JSON.stringify(transformed, null, 2));
+        console.log(`[getStudentCourses] ${transformed.length} courses`);
         return transformed;
     } catch (error) {
         console.error("[getStudentCourses] Error:", error);

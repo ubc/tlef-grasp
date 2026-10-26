@@ -352,7 +352,7 @@ const getCourseUsersHandler = async (req, res) => {
     const userId = req.user._id || req.user.id;
 
     if (!userId) {
-      console.error("User not authenticated - req.user:", req.user);
+      console.error("User not authenticated: the session user has no id");
       return res.status(401).json({ 
         success: false,
         error: "User not authenticated" 

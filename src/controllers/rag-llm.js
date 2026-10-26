@@ -1027,7 +1027,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
       operation: 'objective-generate',
       effort: effortForStage(settings, 'objective-generate'),
     });
-    console.log("Full Prompt: ", fullPrompt);
+    console.log(`Objective prompt: ${fullPrompt.length} characters`);
 
     console.log("✅ LLM service response received");
 
@@ -1035,7 +1035,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
       throw new Error("Empty response from LLM");
     }
 
-    console.log("Response content:", responseContent.substring(0, 1000));
+    console.log(`Response content: ${responseContent.length} characters`);
 
     // Try to parse JSON response
     try {
