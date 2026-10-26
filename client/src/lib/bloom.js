@@ -1,6 +1,6 @@
 // Bloom's Taxonomy presentation data shared by the instructor settings table
 // and the student dashboard guide. The level names themselves come from
-// BLOOM_LEVELS in ./constants.js, which mirrors the server.
+// BLOOM_LEVELS in ./constants.js, which mirrors the serv
 
 export const BLOOM_BADGE_COLORS = {
   Remember: "bg-blue-100 text-blue-700",
