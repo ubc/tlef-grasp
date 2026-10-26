@@ -141,6 +141,14 @@ app.use((req, res, next) => {
   if (req.path.startsWith('/api/material')) return next();
   return defaultJsonParser(req, res, next);
 });
+// Serve the built React client (client/dist). In development the client is
+// served by Vite on port 5173 with /api and /auth proxied to this server.
+// Ahead of the session: client files are public, and Passport loads the
+// signed-in user from the database on every request it sees.
+const clientDistPath = path.join(__dirname, "../client/dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
+app.use(express.static(clientDistPath));
+
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
@@ -149,12 +157,6 @@ app.use(passport.session());
 // LLM-backed answer-check route in routes/quiz.js.
 app.use('/api', apiLimiter);
 app.use(dbMiddleware);
-
-// Serve the built React client (client/dist). In development the client is
-// served by Vite on port 5173 with /api and /auth proxied to this server.
-const clientDistPath = path.join(__dirname, "../client/dist");
-const clientIndexPath = path.join(clientDistPath, "index.html");
-app.use(express.static(clientDistPath));
 
 // Authentication routes (no /api prefix as they serve HTML too)
 // Shibboleth SP endpoint - traditional Shibboleth callback path.
