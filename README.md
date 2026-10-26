@@ -90,9 +90,11 @@ cp .env.example .env
 
 #### Field-level encryption key
 
-GRASP encrypts the fields listed in `src/services/encryption.config.cjs`
-before they reach MongoDB, using `@ubc/genai-toolkit-encryption`. It will not
-start without `GRASP_DATA_ENCRYPTION_KEY`; generate one for your `.env` with:
+With `GRASP_DATA_ENCRYPTION_KEY` set, GRASP encrypts the fields listed in
+`src/services/encryption.config.cjs` before they reach MongoDB, using
+`@ubc/genai-toolkit-encryption`. Without it, encryption is off: those fields
+are stored as plaintext and the server logs a warning at boot. Generate a key
+with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
@@ -100,7 +102,9 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 
 Every environment has its own key. Data written under a key can only be read
 with that key, so a database copied from another environment needs that
-environment's key.
+environment's key. Turning encryption on is one-way per database: the first
+start with a key records it in `grasp_field_encryption`, and from then on
+GRASP refuses to run on that database without the key.
 
 Data stored before a field was encrypted stays readable (`GRASP_ENCRYPTION_ROLLOUT`
 defaults to `mixed`) until it is migrated with the toolkit's CLI, which reads
