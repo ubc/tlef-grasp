@@ -113,6 +113,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      # No GRASP_DATA_ENCRYPTION_KEY here on purpose: this run covers a
+      # deployment with field encryption off (production until it gets a key),
+      # while the e2e workflow runs with it on.
       - name: Run accessibility tests
         run: npm run test:a11y
 

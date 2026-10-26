@@ -1,8 +1,29 @@
-const { MongoClient } = require("mongodb");
+const { MongoClient, GridFSBucket } = require("mongodb");
+const {
+  assertKeysAvailable,
+  createEncryptedDb,
+  validateEncryptionConfig,
+} = require("@ubc/genai-toolkit-encryption");
+const encryptionConfig = require("./encryption.config.cjs");
+
+// The variable encryption.config.cjs reads the data key from. Field
+// encryption is on exactly when it is set.
+const ENCRYPTION_KEY_ENV = "GRASP_DATA_ENCRYPTION_KEY";
+// Written the first time a database is used with the key on. A server
+// started on that database without the key refuses to run, rather than
+// reading ciphertext as data and writing plaintext next to it.
+const ENCRYPTION_MARKER_COLLECTION = "grasp_field_encryption";
+const ENCRYPTION_MARKER_ID = "field-encryption";
+
+function isEncryptionKeySet(env = process.env) {
+  const key = env[ENCRYPTION_KEY_ENV];
+  return typeof key === "string" && key.trim() !== "";
+}
 
 class DatabaseService {
   constructor() {
     this.client = null;
+    this.rawDb = null;
     this.db = null;
     this.isConnected = false;
     this.connectionUri = null;
@@ -29,7 +50,8 @@ class DatabaseService {
       console.log("Attempting to connect to MongoDB...");
       this.client = new MongoClient(mongodbUri, connectionOptions);
       await this.client.connect();
-      this.db = this.client.db(dbName);
+      this.rawDb = this.client.db(dbName);
+      this.db = await this.wrapForEncryption(this.rawDb);
       this.isConnected = true;
       this.connectionUri = mongodbUri;
       
@@ -54,6 +76,7 @@ class DatabaseService {
         }
         this.client = null;
       }
+      this.rawDb = null;
       this.isConnected = false;
       throw error;
     }
@@ -302,6 +325,70 @@ class DatabaseService {
       this.isConnected = false;
       console.log("✅ Disconnected from MongoDB");
     }
+  }
+
+  /**
+   * The Db the app uses. With GRASP_DATA_ENCRYPTION_KEY set, the fields in
+   * encryption.config.cjs are encrypted on write and decrypted on read, and
+   * every other collection comes back as an ordinary driver collection.
+   * Without it, the plain driver Db, unless this database has already been
+   * used with the key.
+   */
+  async wrapForEncryption(rawDb) {
+    const markers = rawDb.collection(ENCRYPTION_MARKER_COLLECTION);
+    if (!isEncryptionKeySet()) {
+      const marker = await markers.findOne({ _id: ENCRYPTION_MARKER_ID });
+      if (marker) {
+        const since = marker.enabledAt instanceof Date ? ` since ${marker.enabledAt.toISOString()}` : "";
+        throw new Error(
+          `${ENCRYPTION_KEY_ENV} is not set, but this database has held field-encrypted data${since}. ` +
+          "Set the key it was encrypted with."
+        );
+      }
+      return rawDb;
+    }
+
+    const protectedDb = await createEncryptedDb(rawDb, encryptionConfig);
+    try {
+      await markers.updateOne(
+        { _id: ENCRYPTION_MARKER_ID },
+        { $setOnInsert: { enabledAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (error) {
+      // Another worker recorded it first.
+      if (error?.code !== 11000) throw error;
+    }
+    return protectedDb;
+  }
+
+  /**
+   * Checked at boot, without touching MongoDB. No key: field encryption is
+   * off, which is logged. A malformed key throws, so the server can refuse to
+   * start instead of failing every request on the lazy connection.
+   *
+   * @returns {Promise<boolean>} whether field encryption is on
+   */
+  async checkEncryptionKey() {
+    if (!isEncryptionKeySet()) {
+      console.warn(
+        `⚠️ ${ENCRYPTION_KEY_ENV} is not set: field-level encryption is off, ` +
+        "and the fields in encryption.config.cjs are stored as plaintext."
+      );
+      return false;
+    }
+    await assertKeysAvailable(validateEncryptionConfig(encryptionConfig));
+    return true;
+  }
+
+  /**
+   * GridFS needs a real driver Db, which the encrypted wrapper is not. The
+   * images bucket holds no encrypted fields; never use this for a collection
+   * listed in encryption.config.cjs.
+   */
+  async gridFSBucket(bucketName) {
+    await this.connect();
+    return new GridFSBucket(this.rawDb, { bucketName });
   }
 
   getCollection(name) {

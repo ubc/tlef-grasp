@@ -48,6 +48,7 @@ const helmet = require("helmet");
 const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
+const databaseService = require('./services/database');
 const { samlErrorHandler } = require('./middleware/samlErrorHandler');
 const { createCrossOriginProtection } = require('./middleware/cross-origin');
 
@@ -313,6 +314,14 @@ app.use((err, req, res, next) => {
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
   res.status(tooLarge ? 413 : 500).send(tooLarge ? '413: Payload Too Large' : '500: Internal Server Error');
+});
+
+// The database connects lazily, so without this a malformed field-encryption
+// key would surface only as a 500 on every request. A missing key is allowed:
+// encryption is then off (logged).
+databaseService.checkEncryptionKey().catch((error) => {
+  console.error(`❌ Field-encryption key check failed (${error.code || error.name}): ${error.message}`);
+  process.exit(1);
 });
 
 app.listen(port, async () => {

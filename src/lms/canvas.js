@@ -1,8 +1,5 @@
-const databaseService = require('../services/database');
-const {
-  canvas,
-  createMongoTokenStore,
-} = require('@ubc/ubc-genai-toolkit-lms-integration');
+const { canvas } = require('@ubc/ubc-genai-toolkit-lms-integration');
+const { createLmsTokenStore } = require('./token-store');
 const {
   CANVAS_CAPABILITIES,
   missingConnectScopes,
@@ -54,9 +51,7 @@ function createCanvasIntegration() {
     );
   }
 
-  const tokenStore = createMongoTokenStore(() => databaseService.connect(), {
-    collectionName: 'grasp_lms_canvas_tokens',
-  });
+  const tokenStore = createLmsTokenStore('grasp_lms_canvas_tokens');
 
   const config = canvas.loadConfigFromEnv({
     tokenStore,
