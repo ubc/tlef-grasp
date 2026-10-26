@@ -166,7 +166,7 @@ const getCourseMaterials = async (courseId) => {
         const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
 
         const materials = await collection.find({ courseId: courseIdObj }).toArray();
-        console.log("Found materials:", materials);
+        console.log(`Found ${materials.length} materials for course ${courseId}`);
         return materials;
     }
     catch (error) {

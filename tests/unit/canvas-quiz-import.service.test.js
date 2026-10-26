@@ -1196,8 +1196,6 @@ describe('commitCanvasQuiz', () => {
     expect(JSON.stringify(fake.docs('grasp_quiz'))).not.toMatch(leaks);
     expect(JSON.stringify(uploadImage.mock.calls.map(([, options]) => options))).not.toMatch(leaks);
     expect(consoleOutput.join('\n')).not.toMatch(leaks);
-    // saveQuestion logged each payload, so the check above saw them.
-    expect(consoleOutput.filter((line) => line.startsWith('"Saving question:"'))).toHaveLength(4);
   });
 });
 

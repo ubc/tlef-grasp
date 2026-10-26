@@ -186,7 +186,6 @@ const editIdentity = (q) =>
 
 const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => {
     try {
-        console.log("Saving question:", questionData);
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
         
