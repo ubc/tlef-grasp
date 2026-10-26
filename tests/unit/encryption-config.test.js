@@ -65,6 +65,16 @@ describe('field-encryption config', () => {
     expect(collections.grasp_lms_moodle_tokens.fields).toEqual({ tokens: { encrypt: true } });
   });
 
+  it('encrypts what a student writes and the AI\'s judgement of it', () => {
+    const { collections } = loadConfig();
+    expect(collections.grasp_student_attempt.fields).toEqual({
+      selectedAnswer: { encrypt: true },
+      feedbackText: { encrypt: true },
+      aiCriteria: { encrypt: true },
+    });
+    expect(collections.grasp_quiz_question_flag.fields).toEqual({ comment: { encrypt: true } });
+  });
+
   it('starts in mixed mode so data stored before the migration stays readable', () => {
     const config = loadConfig();
     expect(config.readPolicy).toBe('mixed');

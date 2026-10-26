@@ -42,6 +42,18 @@ module.exports = defineEncryptionConfig({
     // LMS OAuth / web-service tokens, written by the LMS toolkit's token store.
     grasp_lms_canvas_tokens: { fields: { tokens: { encrypt: true } } },
     grasp_lms_moodle_tokens: { fields: { tokens: { encrypt: true } } },
+
+    // A student's own answer and the AI's judgement of it. The copies of the
+    // question's answer key on each attempt stay plaintext, like the questions.
+    grasp_student_attempt: {
+      fields: {
+        selectedAnswer: { encrypt: true },
+        feedbackText: { encrypt: true },
+        aiCriteria: { encrypt: true },
+      },
+    },
+    // What a student wrote when flagging a question.
+    grasp_quiz_question_flag: { fields: { comment: { encrypt: true } } },
   },
 
   // Used only by the migration CLI.
