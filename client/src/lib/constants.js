@@ -57,4 +57,4 @@ export const CANVAS_IMPORT_MATERIAL_TYPE = "canvas-import";
 // there for why this is the only cap. It bounds one GRANULAR objective's total.
 // The server clamps to it; the steppers disable at it so the instructor sees the
 // limit rather than having it silently applied.
-export const MAX_QUESTIONS_PER_OBJECTIVE = 20;
+export const MAX_QUESTIONS_PER_OBJECTIVE = 6;

@@ -429,10 +429,10 @@ const CANVAS_IMPORT_MATERIAL = Object.freeze({
  * than cost — an instructor wanting all of it as one type at one level is asking
  * for no more work than spreading it around. Measured over 929 existing granular
  * objectives, 97% use exactly two questions, the 99th percentile is three, and the
- * most any has ever used is seven, so this leaves generous room while still ruling
- * out the pathological case.
+ * most any has ever used is seven, so six covers all but that one outlier while
+ * keeping a single objective's sequential generation short.
  */
-const MAX_QUESTIONS_PER_OBJECTIVE = 20;
+const MAX_QUESTIONS_PER_OBJECTIVE = 6;
 
 module.exports = {
   QUESTION_GENERATION_PROMPT,
