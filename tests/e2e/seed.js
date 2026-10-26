@@ -958,6 +958,25 @@ async function seedCanvasSyncCourse() {
 }
 
 /**
+ * A student's grasp_student_attempt and grasp_quiz_question_flag rows as
+ * MongoDB stores them, read past the app's decryption, so specs can check
+ * which fields are encrypted at rest.
+ */
+async function getRawStudentRecords(puid = BIO_STUDENT_PUID) {
+  return withSeedDb(async (db) => {
+    const user = await getUserByPuid(db, puid);
+    if (!user) {
+      throw new Error(`getRawStudentRecords: no grasp_user with PUID ${puid} — saml.setup.js must run first`);
+    }
+    const [attempts, flags] = await Promise.all([
+      db.collection('grasp_student_attempt').find({ userId: user._id }).toArray(),
+      db.collection('grasp_quiz_question_flag').find({ studentId: user._id }).toArray(),
+    ]);
+    return { attempts, flags };
+  });
+}
+
+/**
  * A persona's grasp_user fields as instructor views show them. Names come from
  * the IdP and academic-API fake at login, so specs read them rather than
  * hardcode them.
@@ -983,6 +1002,7 @@ module.exports = {
   seedStudentJourneyCourse,
   seedCanvasSyncCourse,
   getPersonaUser,
+  getRawStudentRecords,
   resetSeededQuizAttemptState,
   resetSeededAiQuizAttemptState,
   getGuestPersonaUser,
