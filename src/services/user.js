@@ -127,15 +127,14 @@ async function backfillUserEmail(puid, email) {
  * (provider, instance, externalUserId) is first pulled from any other user
  * holding it (logged, since it means the identity moved).
  *
+ * Only the identity is stored. The roster's SIS id, login id and names are
+ * used to match students during a sync and are not kept afterwards.
+ *
  * @param {string|ObjectId} userId
  * @param {Object} account
  * @param {string} account.provider - e.g. 'canvas'
  * @param {string} account.instance - Normalized LMS origin (src/lms/instance.js)
  * @param {string} account.externalUserId - The LMS's own user id
- * @param {string} [account.sisUserId]
- * @param {string} [account.loginId]
- * @param {string} [account.name]
- * @param {string} [account.sortableName]
  * @param {Date} [account.updatedAt]
  */
 async function upsertUserLmsAccount(userId, account) {
@@ -162,9 +161,6 @@ async function upsertUserLmsAccount(userId, account) {
         }
 
         const entry = { provider, instance, externalUserId, updatedAt: account.updatedAt || new Date() };
-        for (const field of ['sisUserId', 'loginId', 'name', 'sortableName']) {
-            if (typeof account[field] === 'string' && account[field]) entry[field] = account[field];
-        }
 
         const updated = await collection.updateOne(
             { _id: uid, lmsAccounts: { $elemMatch: { provider, instance } } },

@@ -44,10 +44,6 @@ describe('upsertUserLmsAccount', () => {
     provider: 'canvas',
     instance: INSTANCE,
     externalUserId: '9001',
-    sisUserId: 'SIS1',
-    loginId: 'ann@student.ubc.ca',
-    name: 'Ann Student',
-    sortableName: 'Student, Ann',
     updatedAt: UPDATED,
   };
 
@@ -96,15 +92,14 @@ describe('upsertUserLmsAccount', () => {
     );
   });
 
-  it('stores only the optional fields Canvas actually returned', async () => {
-    await upsertUserLmsAccount(USER_ID, account({ sisUserId: undefined, loginId: '', sortableName: null }));
+  it('stores only the LMS identity, not the SIS id, login id or names the roster carried', async () => {
+    await upsertUserLmsAccount(USER_ID, account());
 
     const [, update] = users.updateOne.mock.calls[0];
     expect(update.$set['lmsAccounts.$']).toEqual({
       provider: 'canvas',
       instance: INSTANCE,
       externalUserId: '9001',
-      name: 'Ann Student',
       updatedAt: UPDATED,
     });
   });

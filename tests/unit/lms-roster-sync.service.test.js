@@ -370,10 +370,6 @@ describe('syncSectionRoster: adds, placeholders, restores, keeps', () => {
         provider: 'canvas',
         instance: INSTANCE,
         externalUserId: row.externalUserId,
-        sisUserId: row.sisUserId,
-        loginId: row.loginId,
-        name: row.name,
-        sortableName: row.sortableName,
         updatedAt: NOW,
       });
     }
