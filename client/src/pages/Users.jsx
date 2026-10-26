@@ -141,7 +141,7 @@ export default function Users() {
   const promoteMutation = usePromoteToTa(courseId, {
     onSuccess: () =>
       showToast(
-        "User promoted to TA. The change applies on their next login.",
+        "User promoted to TA. The change applies right away.",
         "success"
       ),
     onError: (error) =>
@@ -151,7 +151,7 @@ export default function Users() {
   const demoteMutation = useDemoteToStudent(courseId, {
     onSuccess: (data) =>
       showToast(
-        data?.message || "TA demoted to student. The change applies on their next login.",
+        data?.message || "TA demoted to student. The change applies right away.",
         "success"
       ),
     onError: (error) => showToast(error.message || "Failed to demote TA", "error"),
@@ -447,11 +447,11 @@ export default function Users() {
         message={
           roleChangeTarget?.action === "promote"
             ? roleChangeTarget?.baseRole === "staff"
-              ? `Make ${roleChangeTarget?.displayName || "this user"} a TA for this course? They keep their staff role and can be limited with TA permissions; the change applies on their next login.`
-              : `Promote ${roleChangeTarget?.displayName || "this user"} to TA for this course? They keep their student role and gain TA access on their next login.`
+              ? `Make ${roleChangeTarget?.displayName || "this user"} a TA for this course? They keep their staff role and can be limited with TA permissions; the change applies right away.`
+              : `Promote ${roleChangeTarget?.displayName || "this user"} to TA for this course? They keep their student role and gain TA access right away.`
             : roleChangeTarget?.baseRole === "staff"
-              ? `Remove the TA role from ${roleChangeTarget?.displayName || "this user"}? They remain course staff; the change applies on their next login.`
-              : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed on their next login.`
+              ? `Remove the TA role from ${roleChangeTarget?.displayName || "this user"}? They remain course staff; the change applies right away.`
+              : `Demote ${roleChangeTarget?.displayName || "this user"} back to student? Their TA access for this course is removed right away.`
         }
         confirmLabel="Confirm"
       />

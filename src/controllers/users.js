@@ -159,7 +159,7 @@ async function assertCanManageCourseRoles(req, res, courseId, targetUserId) {
  * POST /api/users/course/:courseId/promote
  * Designate a course member as TA: the membership gains courseRole 'ta' and
  * the user gains the staff affiliation (keeping student) unless SAML already
- * gave them one. Takes effect on the member's next login. Instructors cannot
+ * gave them one. Takes effect on the member's next request. Instructors cannot
  * be made TAs — they already outrank one, and touching their affiliations
  * could not be undone safely. Anyone else may hold the role, including staff
  * whose Workday affiliation is not a reliable signal of TA work.
@@ -203,7 +203,7 @@ const promoteUserToTaHandler = async (req, res) => {
 
     res.json({
       success: true,
-      message: "User promoted to TA. The change applies on their next login.",
+      message: "User promoted to TA. The change applies right away.",
     });
   } catch (error) {
     console.error("Error promoting user to TA:", error);
@@ -248,8 +248,8 @@ const demoteTaToStudentHandler = async (req, res) => {
       success: true,
       message:
         revertedTo === 'staff'
-          ? "TA role removed. They remain course staff; the change applies on their next login."
-          : "TA demoted to student. The change applies on their next login.",
+          ? "TA role removed. They remain course staff; the change applies right away."
+          : "TA demoted to student. The change applies right away.",
       role: revertedTo,
     });
   } catch (error) {
@@ -262,8 +262,8 @@ const demoteTaToStudentHandler = async (req, res) => {
  * PUT /api/users/course/:courseId/ta-permissions
  * Replace a TA's per-course permission map. Instructor-only (same guard as
  * promotion/demotion); the target must currently be a TA in this course.
- * Takes effect immediately — permissions are read from the membership on
- * every request, not snapshotted into the session.
+ * Takes effect immediately: permissions are read from the membership on
+ * every request.
  */
 const updateTaPermissionsHandler = async (req, res) => {
   try {
@@ -704,7 +704,7 @@ const addUserToCourseHandler = async (req, res) => {
     res.json({
       success: true,
       message: asTa
-        ? "User added to the course as a TA. TA access applies on their next login."
+        ? "User added to the course as a TA. TA access applies right away."
         : "User added to course successfully",
       role: grantedRole,
     });
