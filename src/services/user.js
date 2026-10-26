@@ -127,15 +127,16 @@ async function backfillUserEmail(puid, email) {
  * (provider, instance, externalUserId) is first pulled from any other user
  * holding it (logged, since it means the identity moved).
  *
+ * Stored: the identity, and the LMS login id, which the Canvas grade CSV
+ * (issue #126) sends as "SIS Login ID". The roster's SIS id and names are not
+ * kept; matching uses the roster's integration_id, read fresh on every sync.
+ *
  * @param {string|ObjectId} userId
  * @param {Object} account
  * @param {string} account.provider - e.g. 'canvas'
  * @param {string} account.instance - Normalized LMS origin (src/lms/instance.js)
  * @param {string} account.externalUserId - The LMS's own user id
- * @param {string} [account.sisUserId]
  * @param {string} [account.loginId]
- * @param {string} [account.name]
- * @param {string} [account.sortableName]
  * @param {Date} [account.updatedAt]
  */
 async function upsertUserLmsAccount(userId, account) {
@@ -162,9 +163,7 @@ async function upsertUserLmsAccount(userId, account) {
         }
 
         const entry = { provider, instance, externalUserId, updatedAt: account.updatedAt || new Date() };
-        for (const field of ['sisUserId', 'loginId', 'name', 'sortableName']) {
-            if (typeof account[field] === 'string' && account[field]) entry[field] = account[field];
-        }
+        if (typeof account.loginId === 'string' && account.loginId) entry.loginId = account.loginId;
 
         const updated = await collection.updateOne(
             { _id: uid, lmsAccounts: { $elemMatch: { provider, instance } } },
