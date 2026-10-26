@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require("./auth");
 const { SEED, getRawStudentRecords } = require("./seed");
-const { selectSeededCourse, startQuizFromList } = require("./helpers");
+const { FIELD_ENCRYPTION_ON, selectSeededCourse, startQuizFromList } = require("./helpers");
 
 const IDP_ENABLED = process.env.E2E_SAML === "1";
 
@@ -31,9 +31,11 @@ test.describe("Quiz question flags", () => {
       await expect(studentPage.getByText("pending", { exact: true })).toBeVisible();
 
       // The comment is stored encrypted (src/services/encryption.config.cjs).
-      const { flags } = await getRawStudentRecords();
-      expect(flags.some((flag) => flag.comment?.__ubc_enc === 1)).toBe(true);
-      expect(JSON.stringify(flags)).not.toContain(reportComment);
+      if (FIELD_ENCRYPTION_ON) {
+        const { flags } = await getRawStudentRecords();
+        expect(flags.some((flag) => flag.comment?.__ubc_enc === 1)).toBe(true);
+        expect(JSON.stringify(flags)).not.toContain(reportComment);
+      }
     } finally {
       await studentContext.close();
     }
