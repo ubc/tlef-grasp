@@ -1,5 +1,6 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
+const { getUsersByIds } = require('./user');
 
 // How a membership came to exist. Only 'manual' memberships are granted by an
 // instructor by hand (issue #115); the rest are produced by GRASP itself.
@@ -229,7 +230,7 @@ const getUserCourses = async (userId) => {
 
 
 /**
- * Get course users with full user details using MongoDB $lookup (JOIN)
+ * Get course users with full user details
  * @param {string|ObjectId} courseId - Course ID
  * @returns {Promise<Array>} Array of user-course documents with populated user details
  */
@@ -241,8 +242,9 @@ const getCourseUsers = async (courseId) => {
         // Convert courseId to ObjectId if it's a string
         const courseIdObj = typeof courseId === 'string' ? new ObjectId(courseId) : courseId;
         
-        // Use aggregation with $lookup to join with users collection
-        const courseUsers = await collection.aggregate([
+        // Memberships with their sections. The users are attached below, in
+        // the app (see getUsersByIds).
+        const memberships = await collection.aggregate([
             // Match user courses for this course
             // Handle both ObjectId and string courseId
             {
@@ -253,36 +255,6 @@ const getCourseUsers = async (courseId) => {
                     ]
                 }
             },
-            // Join with users collection
-            {
-                $lookup: {
-                    from: "grasp_user",
-                    let: { 
-                        // Convert userId to ObjectId if it's a string
-                        userIdToMatch: {
-                            $cond: {
-                                if: { $eq: [{ $type: "$userId" }, "string"] },
-                                then: { $toObjectId: "$userId" },
-                                else: "$userId"
-                            }
-                        }
-                    },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: { $eq: ["$_id", "$$userIdToMatch"] }
-                            }
-                        },
-                        // No caller needs a member's Canvas identities (SIS
-                        // user id, login id), and the Users page must never
-                        // show them, so they do not leave the database here.
-                        { $project: { lmsAccounts: 0 } }
-                    ],
-                    as: "user"
-                }
-            },
-            // Unwind the user array (since $lookup returns an array)
-            { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
             // Join with user_course_section collection to get user's sections in this course
             {
                 $lookup: {
@@ -322,47 +294,50 @@ const getCourseUsers = async (courseId) => {
                     as: "userSections"
                 }
             },
-            // Resolve the instructor who granted a manual membership (absent
-            // for roster-synced, invite-code, and owner memberships).
-            {
-                $lookup: {
-                    from: "grasp_user",
-                    let: { addedById: "$addedBy" },
-                    pipeline: [
-                        { $match: { $expr: { $eq: ["$_id", "$$addedById"] } } },
-                        { $project: { _id: 1, displayName: 1, legalName: 1, email: 1 } }
-                    ],
-                    as: "addedByUser"
-                }
-            },
-            // Reshape the output to include user fields at top level
-            {
-                $project: {
-                    _id: 1,
-                    userId: 1,
-                    courseId: 1,
-                    courseRole: 1,
-                    taPermissions: 1,
-                    // Membership provenance (issue #115): how and when this
-                    // person got in, and who let them in if it was by hand.
-                    source: 1,
-                    joinedAt: "$createdAt",
-                    addedBy: { $first: "$addedByUser" },
-                    courseRoleChangedAt: 1,
-                    // Include all user fields at top level for easier access
-                    puid: "$user.puid",
-                    displayName: "$user.displayName",
-                    legalName: "$user.legalName",
-                    email: "$user.email",
-                    affiliation: "$user.affiliation",
-                    registeredAt: "$user.registeredAt",
-                    updatedAt: "$user.updatedAt",
-                    sections: "$userSections.sectionId",
-                    // Keep full user object if needed
-                    user: 1
-                }
-            }
         ]).toArray();
+
+        // No caller needs a member's Canvas identities (login id), and the
+        // Users page must never show them, so they are not read here.
+        const usersById = await getUsersByIds(
+            memberships.flatMap((membership) => [membership.userId, membership.addedBy]),
+            { lmsAccounts: 0 }
+        );
+
+        const courseUsers = memberships.map((membership) => {
+            const user = usersById.get(String(membership.userId));
+            // The instructor who granted a manual membership (absent for
+            // roster-synced, invite-code, and owner memberships).
+            const grantor = membership.addedBy ? usersById.get(String(membership.addedBy)) : null;
+            return {
+                _id: membership._id,
+                userId: membership.userId,
+                courseId: membership.courseId,
+                courseRole: membership.courseRole,
+                taPermissions: membership.taPermissions,
+                // Membership provenance (issue #115): how and when this
+                // person got in, and who let them in if it was by hand.
+                source: membership.source,
+                joinedAt: membership.createdAt,
+                addedBy: grantor ? {
+                    _id: grantor._id,
+                    displayName: grantor.displayName,
+                    legalName: grantor.legalName,
+                    email: grantor.email,
+                } : undefined,
+                courseRoleChangedAt: membership.courseRoleChangedAt,
+                // Include all user fields at top level for easier access
+                puid: user?.puid,
+                displayName: user?.displayName,
+                legalName: user?.legalName,
+                email: user?.email,
+                affiliation: user?.affiliation,
+                registeredAt: user?.registeredAt,
+                updatedAt: user?.updatedAt,
+                sections: membership.userSections.map((section) => section.sectionId),
+                // Keep full user object if needed
+                user,
+            };
+        });
         
         return courseUsers;
     } catch (error) {

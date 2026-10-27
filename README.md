@@ -100,7 +100,13 @@ with:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-Every environment has its own key. Data written under a key can only be read
+PUIDs are encrypted too, and found through a blind index keyed by a second
+secret, `GRASP_BLIND_INDEX_KEY` (generated the same way, never the data key).
+It is required whenever `GRASP_DATA_ENCRYPTION_KEY` is set. Before migrating
+`grasp_user`, build its unique PUID index once with the toolkit's
+`ensure-indexes` command; until then the server warns at every boot.
+
+Every environment has its own keys. Data written under a key can only be read
 with that key, so a database copied from another environment needs that
 environment's key. Turning encryption on is one-way per database: the first
 start with a key records it in `grasp_field_encryption`, and from then on

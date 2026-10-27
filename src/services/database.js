@@ -84,7 +84,13 @@ class DatabaseService {
 
   async initializeCollections() {
     try {
-      await this.db.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
+      // On the raw handle: the encryption wrapper refuses an index on an
+      // encrypted field. It keeps PUIDs unique while encryption is off and
+      // among rows stored before it was turned on. With encryption on, the
+      // unique blind index on puid__bidx does that job; the toolkit's
+      // ensure-indexes command creates it, never the app.
+      await this.rawDb.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
+      if (this.db !== this.rawDb) await this.warnIfPuidBlindIndexMissing();
       // LMS accounts synced from a roster (one per provider + instance). Not
       // unique: the sync service moves an identity between users itself.
       await this.db.collection("grasp_user").createIndex({
@@ -387,6 +393,21 @@ class DatabaseService {
     }
     await assertKeysAvailable(validateEncryptionConfig(encryptionConfig));
     return true;
+  }
+
+  /**
+   * With encryption on, one row per PUID rests on the unique index the
+   * toolkit's ensure-indexes command builds on puid__bidx. Until an operator
+   * has run it, say so at every boot.
+   */
+  async warnIfPuidBlindIndexMissing() {
+    const indexes = await this.rawDb.collection("grasp_user").indexes();
+    if (!indexes.some((index) => index.key && "puid__bidx" in index.key)) {
+      console.warn(
+        "⚠️ grasp_user has no index on puid__bidx: run the encryption CLI's ensure-indexes " +
+        "so a PUID cannot be stored twice."
+      );
+    }
   }
 
   /**

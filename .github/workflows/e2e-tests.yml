@@ -208,12 +208,14 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # A throwaway key for this run only; the real ones live on the servers.
-      - name: Generate a field-encryption key for this run
+      # Throwaway keys for this run only; the real ones live on the servers.
+      - name: Generate field-encryption keys for this run
         run: |
-          key=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
-          echo "::add-mask::$key"
-          echo "GRASP_DATA_ENCRYPTION_KEY=$key" >> "$GITHUB_ENV"
+          for name in GRASP_DATA_ENCRYPTION_KEY GRASP_BLIND_INDEX_KEY; do
+            key=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
+            echo "::add-mask::$key"
+            echo "$name=$key" >> "$GITHUB_ENV"
+          done
 
       # Playwright boots GRASP itself (npm run build && npm run start:test) and
       # global-setup logs in through the IdP before the specs run.

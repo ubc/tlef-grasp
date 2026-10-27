@@ -11,6 +11,7 @@ const { createEncryptedDb } = require('@ubc/genai-toolkit-encryption');
 const databaseService = require('../../src/services/database');
 
 const KEY_ENV = 'GRASP_DATA_ENCRYPTION_KEY';
+const BLIND_KEY_ENV = 'GRASP_BLIND_INDEX_KEY';
 
 function fakeRawDb({ marker = null, upsertError = null } = {}) {
   const markers = {
@@ -24,6 +25,7 @@ function fakeRawDb({ marker = null, upsertError = null } = {}) {
 
 describe('field encryption on/off', () => {
   const previousKey = process.env[KEY_ENV];
+  const previousBlindKey = process.env[BLIND_KEY_ENV];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,6 +35,8 @@ describe('field encryption on/off', () => {
   afterEach(() => {
     if (previousKey === undefined) delete process.env[KEY_ENV];
     else process.env[KEY_ENV] = previousKey;
+    if (previousBlindKey === undefined) delete process.env[BLIND_KEY_ENV];
+    else process.env[BLIND_KEY_ENV] = previousBlindKey;
   });
 
   describe('without the key', () => {
@@ -82,6 +86,7 @@ describe('field encryption on/off', () => {
   describe('with the key', () => {
     beforeEach(() => {
       process.env[KEY_ENV] = randomBytes(32).toString('base64');
+      process.env[BLIND_KEY_ENV] = randomBytes(32).toString('base64');
     });
 
     it('wraps the Db and records that this database now holds encrypted data', async () => {
@@ -124,6 +129,16 @@ describe('field encryption on/off', () => {
       });
 
       await expect(freshService.checkEncryptionKey()).rejects.toThrow();
+    });
+
+    it('refuses to boot without the blind-index key that PUID lookups need', async () => {
+      delete process.env[BLIND_KEY_ENV];
+      let freshService;
+      jest.isolateModules(() => {
+        freshService = require('../../src/services/database');
+      });
+
+      await expect(freshService.checkEncryptionKey()).rejects.toThrow(/GRASP_BLIND_INDEX_KEY/);
     });
   });
 });
