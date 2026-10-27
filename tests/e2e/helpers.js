@@ -1,5 +1,5 @@
 const { expect } = require('@playwright/test');
-const { SEED, resetSeededQuizAttemptState } = require('./seed');
+const { SEED, resetSeededQuizAttemptState, FIELD_ENCRYPTION_ON } = require('./seed');
 
 const COURSE_KEY = 'grasp-selected-course';
 const ROLE_KEY = 'grasp-current-role';
@@ -101,10 +101,6 @@ function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Whether the server under test encrypts fields. The runner does not load
-// .env, so the key is only in its env when exported (CI does); the server
-// then inherits the same one, since dotenv never overrides a set variable.
-const FIELD_ENCRYPTION_ON = Boolean(process.env.GRASP_DATA_ENCRYPTION_KEY?.trim());
 
 module.exports = {
   FIELD_ENCRYPTION_ON,

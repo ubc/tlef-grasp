@@ -29,26 +29,33 @@ describe('field-encryption config', () => {
   });
 
   describe('key lookup (what the server checks at boot)', () => {
-    const previousKey = process.env.GRASP_DATA_ENCRYPTION_KEY;
+    const KEY_ENVS = ['GRASP_DATA_ENCRYPTION_KEY', 'GRASP_BLIND_INDEX_KEY'];
+    const previous = Object.fromEntries(KEY_ENVS.map((name) => [name, process.env[name]]));
+    const key = (bytes = 32) => randomBytes(bytes).toString('base64');
+    beforeEach(() => {
+      process.env.GRASP_DATA_ENCRYPTION_KEY = key();
+      process.env.GRASP_BLIND_INDEX_KEY = key();
+    });
     afterEach(() => {
-      if (previousKey === undefined) delete process.env.GRASP_DATA_ENCRYPTION_KEY;
-      else process.env.GRASP_DATA_ENCRYPTION_KEY = previousKey;
+      for (const name of KEY_ENVS) {
+        if (previous[name] === undefined) delete process.env[name];
+        else process.env[name] = previous[name];
+      }
     });
 
-    it('names the variable when the key is missing', async () => {
-      delete process.env.GRASP_DATA_ENCRYPTION_KEY;
+    it.each(KEY_ENVS)('names %s when it is missing', async (name) => {
+      delete process.env[name];
       const compiled = validateEncryptionConfig(loadConfig());
-      await expect(assertKeysAvailable(compiled)).rejects.toThrow(/GRASP_DATA_ENCRYPTION_KEY/);
+      await expect(assertKeysAvailable(compiled)).rejects.toThrow(new RegExp(name));
     });
 
-    it('rejects a key that is not 32 bytes', async () => {
-      process.env.GRASP_DATA_ENCRYPTION_KEY = randomBytes(16).toString('base64');
+    it.each(KEY_ENVS)('rejects a %s that is not 32 bytes', async (name) => {
+      process.env[name] = key(16);
       const compiled = validateEncryptionConfig(loadConfig());
       await expect(assertKeysAvailable(compiled)).rejects.toThrow();
     });
 
-    it('accepts a 32-byte base64 key', async () => {
-      process.env.GRASP_DATA_ENCRYPTION_KEY = randomBytes(32).toString('base64');
+    it('accepts two 32-byte base64 keys', async () => {
       const compiled = validateEncryptionConfig(loadConfig());
       await expect(assertKeysAvailable(compiled)).resolves.toBeUndefined();
     });
@@ -73,6 +80,20 @@ describe('field-encryption config', () => {
       aiCriteria: { encrypt: true },
     });
     expect(collections.grasp_quiz_question_flag.fields).toEqual({ comment: { encrypt: true } });
+  });
+
+  it('encrypts who a user is, keeping PUID lookups and their uniqueness', () => {
+    const { collections } = loadConfig();
+    expect(collections.grasp_user.fields).toEqual({
+      puid: {
+        encrypt: true,
+        blindIndex: { field: 'puid__bidx', keyId: 'lookup-2026-10', normalize: 'exact', unique: true },
+      },
+      email: { encrypt: true },
+      displayName: { encrypt: true },
+      legalName: { encrypt: true },
+      'lmsAccounts.$[].loginId': { encrypt: true },
+    });
   });
 
   it('starts in mixed mode so data stored before the migration stays readable', () => {

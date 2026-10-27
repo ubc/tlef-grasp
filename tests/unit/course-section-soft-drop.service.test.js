@@ -43,11 +43,12 @@ const EARLIER = new Date('2026-08-01T10:00:00.000Z');
 const isId = (value) => value && typeof value.toHexString === 'function';
 const same = (a, b) => (isId(a) || isId(b) ? String(a) === String(b) : a === b);
 
-// Equality plus Mongo's `field: null` (matches a missing field too) — the
-// only operators these service calls send.
+// Equality, `$in`, and Mongo's `field: null` (matches a missing field too) —
+// the only operators these service calls send.
 function matches(doc, filter) {
   return Object.entries(filter).every(([key, value]) => {
     if (value === null) return doc[key] === undefined || doc[key] === null;
+    if (value && Array.isArray(value.$in)) return value.$in.some((candidate) => same(doc[key], candidate));
     return same(doc[key], value);
   });
 }
@@ -96,8 +97,9 @@ function fakeCollection(docs) {
 }
 
 let db;
-function setupDb({ rows = [], memberships = [], sections = [] } = {}) {
+function setupDb({ rows = [], memberships = [], sections = [], users = [] } = {}) {
   db = {
+    grasp_user: fakeCollection(users),
     grasp_user_course_section: fakeCollection(rows),
     grasp_user_course: fakeCollection(memberships),
     grasp_course: fakeCollection([{ _id: COURSE, owner: OWNER }]),
@@ -134,11 +136,26 @@ describe('readers ignore soft-dropped rows', () => {
   it('getSectionStudents lists only the active students of the section', async () => {
     setupDb({
       rows: [row(oid(1), '101'), dropped(oid(2), '101'), row(oid(3), '102')],
+      users: [
+        { _id: oid(1), puid: 'PUID1', legalName: 'Ann Active', email: 'ann@student.ubc.ca' },
+        { _id: oid(2), puid: 'PUID2', legalName: 'Dee Dropped' },
+      ],
     });
 
     const students = await getSectionStudents(String(COURSE), '101');
 
-    expect(students.map((s) => String(s.userId))).toEqual([String(oid(1))]);
+    expect(students).toEqual([{
+      userId: oid(1),
+      sectionId: '101',
+      puid: 'PUID1',
+      legalName: 'Ann Active',
+      email: 'ann@student.ubc.ca',
+    }]);
+    // Names come from grasp_user itself, where field encryption applies.
+    expect(db.grasp_user.find).toHaveBeenCalledWith(
+      { _id: { $in: [oid(1)] } },
+      { projection: { puid: 1, displayName: 1, legalName: 1, email: 1 } }
+    );
   });
 
   it('countActiveUserCourseSections counts active rows only', async () => {
@@ -157,6 +174,45 @@ describe('readers ignore soft-dropped rows', () => {
     const sectionLookup = pipeline.find((stage) => stage.$lookup?.from === 'grasp_user_course_section');
     const [{ $match }] = sectionLookup.$lookup.pipeline;
     expect($match.droppedAt).toBeNull();
+  });
+
+  it('getCourseUsers attaches members and grantors from grasp_user, never with a $lookup', async () => {
+    const member = { _id: oid(1), puid: 'PUID1', legalName: 'Ann Active', email: 'ann@student.ubc.ca', affiliation: ['student'] };
+    const grantor = { _id: OWNER, displayName: 'Prof Owner', legalName: 'Owner, Prof', email: 'owner@ubc.ca', affiliation: ['faculty'] };
+    setupDb({ users: [member, grantor] });
+    const joined = new Date('2026-09-02T10:00:00.000Z');
+    db.grasp_user_course.aggregate = jest.fn(() => ({
+      toArray: async () => [
+        { _id: 'm1', userId: String(oid(1)), courseId: COURSE, source: 'manual', addedBy: OWNER, createdAt: joined, userSections: [{ sectionId: '101' }] },
+        { _id: 'm2', userId: oid(9), courseId: COURSE, userSections: [] },
+      ],
+    }));
+
+    const rows = await getCourseUsers(String(COURSE));
+
+    const pipeline = db.grasp_user_course.aggregate.mock.calls[0][0];
+    expect(pipeline.some((stage) => stage.$lookup?.from === 'grasp_user')).toBe(false);
+    // A member's Canvas identities are not even read.
+    expect(db.grasp_user.find).toHaveBeenCalledWith(
+      { _id: { $in: [oid(1), OWNER, oid(9)] } },
+      { projection: { lmsAccounts: 0 } }
+    );
+    expect(rows[0]).toEqual({
+      _id: 'm1',
+      userId: String(oid(1)),
+      courseId: COURSE,
+      source: 'manual',
+      joinedAt: joined,
+      addedBy: { _id: OWNER, displayName: 'Prof Owner', legalName: 'Owner, Prof', email: 'owner@ubc.ca' },
+      puid: 'PUID1',
+      legalName: 'Ann Active',
+      email: 'ann@student.ubc.ca',
+      affiliation: ['student'],
+      sections: ['101'],
+      user: member,
+    });
+    // A membership whose user is gone keeps its row, without user fields.
+    expect(rows[1]).toEqual({ _id: 'm2', userId: oid(9), courseId: COURSE, sections: [] });
   });
 });
 

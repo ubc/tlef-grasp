@@ -10,13 +10,12 @@ async function createOrUpdateUser(userData) {
         const db = await databaseService.connect();
 
         const collection = db.collection("grasp_user");
-        // Fields refreshed from the identity source on every upsert.
-        const set = {
-            puid: userData.puid,
-            email: userData.email,
-            affiliation: userData.affiliation,
-            updatedAt: new Date(),
-        };
+        // Fields refreshed from the identity source on every upsert. One the
+        // caller does not supply is left as stored (a roster-sync placeholder
+        // has no email yet): field encryption refuses undefined values.
+        const set = { puid: userData.puid, updatedAt: new Date() };
+        if (userData.email !== undefined) set.email = userData.email;
+        if (userData.affiliation !== undefined) set.affiliation = userData.affiliation;
         // legalName is the authoritative CWL/IAM name shown to instructors.
         // Refresh it whenever the caller supplies one.
         if (userData.legalName !== undefined) {
@@ -96,8 +95,8 @@ function updateUserLegalName(puid, legalName) {
 /**
  * Fill in a user's email from SAML when none is stored — a roster-sync
  * placeholder is created before the student ever signs in, so it may have no
- * email. Never overwrites an email that is already set: the filter only
- * matches a missing, null, or empty one.
+ * email. Never overwrites an email that is already set: only a missing, null,
+ * or empty one is replaced.
  * @param {string} puid - CWL PUID
  * @param {string} email - The email SAML released at sign-in
  * @returns {Promise<boolean>} Whether an email was written
@@ -108,8 +107,15 @@ async function backfillUserEmail(puid, email) {
         const value = typeof email === 'string' ? email.trim() : '';
         if (!value) return false;
         const db = await databaseService.connect();
-        const result = await db.collection("grasp_user").updateOne(
-            { puid, $or: [{ email: { $exists: false } }, { email: null }, { email: '' }] },
+        const collection = db.collection("grasp_user");
+        // An encrypted email cannot be filtered on, so it is checked here. The
+        // write only lands if updatedAt is unchanged since this read; every
+        // write that sets an email refreshes it, so an email set in between
+        // (a profile edit) is never overwritten.
+        const user = await collection.findOne({ puid }, { projection: { _id: 1, email: 1, updatedAt: 1 } });
+        if (!user || user.email) return false;
+        const result = await collection.updateOne(
+            { _id: user._id, updatedAt: user.updatedAt ?? null },
             { $set: { email: value, updatedAt: new Date() } }
         );
         return result.modifiedCount === 1;
@@ -119,12 +125,46 @@ async function backfillUserEmail(puid, email) {
     }
 }
 
+// How many times a lmsAccounts rewrite re-reads after losing a race.
+const LMS_ACCOUNTS_WRITE_ATTEMPTS = 5;
+
+/**
+ * Rewrite one user's lmsAccounts with what `change` makes of the stored list.
+ * Entries hold an encrypted login id, and MongoDB cannot match or update
+ * inside an array of encrypted values ($elemMatch, $pull, `lmsAccounts.$`),
+ * so the list is read, changed here, and written back whole. The plaintext
+ * lmsAccountsVersion counter turns that into a compare-and-set: a write that
+ * raced another one is retried on a fresh read.
+ * @param {Collection} collection - grasp_user
+ * @param {*} userId - The user's _id as stored
+ * @param {(accounts: Array) => Array|null} change - The new list, or null for no change
+ * @returns {Promise<boolean>} Whether the list was written
+ */
+async function rewriteLmsAccounts(collection, userId, change) {
+    for (let attempt = 0; attempt < LMS_ACCOUNTS_WRITE_ATTEMPTS; attempt += 1) {
+        const user = await collection.findOne(
+            { _id: userId },
+            { projection: { lmsAccounts: 1, lmsAccountsVersion: 1 } }
+        );
+        if (!user) return false;
+        const accounts = change(Array.isArray(user.lmsAccounts) ? user.lmsAccounts : []);
+        if (!accounts) return false;
+        const version = user.lmsAccountsVersion;
+        const result = await collection.updateOne(
+            { _id: userId, lmsAccountsVersion: version === undefined ? { $exists: false } : version },
+            { $set: { lmsAccounts: accounts }, $inc: { lmsAccountsVersion: 1 } }
+        );
+        if (result.matchedCount === 1) return true;
+    }
+    throw new Error("lmsAccounts kept changing while being rewritten");
+}
+
 /**
  * Record which LMS account belongs to a GRASP user: one entry per
  * (provider, instance) in `lmsAccounts`, updated in place or appended.
  *
  * One LMS identity maps to one GRASP user, so the same
- * (provider, instance, externalUserId) is first pulled from any other user
+ * (provider, instance, externalUserId) is first removed from any other user
  * holding it (logged, since it means the identity moved).
  *
  * Stored: the identity, and the LMS login id, which the Canvas grade CSV
@@ -150,32 +190,45 @@ async function upsertUserLmsAccount(userId, account) {
         const collection = db.collection("grasp_user");
         const uid = userId && ObjectId.isValid(String(userId)) ? new ObjectId(String(userId)) : userId;
 
-        const identity = { provider, instance, externalUserId };
-        const pulled = await collection.updateMany(
-            { _id: { $ne: uid }, lmsAccounts: { $elemMatch: identity } },
-            { $pull: { lmsAccounts: identity } }
-        );
-        if (pulled.modifiedCount > 0) {
+        const isThisInstance = (entry) => entry?.provider === provider && entry?.instance === instance;
+        const isThisIdentity = (entry) => isThisInstance(entry) && String(entry.externalUserId) === externalUserId;
+
+        // The dotted paths may match fields of different entries, so each
+        // holder's list is checked again before anything is removed.
+        const holders = await collection
+            .find(
+                {
+                    _id: { $ne: uid },
+                    "lmsAccounts.provider": provider,
+                    "lmsAccounts.instance": instance,
+                    "lmsAccounts.externalUserId": externalUserId,
+                },
+                { projection: { _id: 1 } }
+            )
+            .toArray();
+        let movedFrom = 0;
+        for (const holder of holders) {
+            const removed = await rewriteLmsAccounts(collection, holder._id, (accounts) => {
+                const kept = accounts.filter((entry) => !isThisIdentity(entry));
+                return kept.length === accounts.length ? null : kept;
+            });
+            if (removed) movedFrom += 1;
+        }
+        if (movedFrom > 0) {
             console.warn(
                 `[lmsAccounts] ${provider} user ${externalUserId} on ${instance} moved to GRASP user ${String(uid)}; ` +
-                `removed from ${pulled.modifiedCount} other user(s)`
+                `removed from ${movedFrom} other user(s)`
             );
         }
 
         const entry = { provider, instance, externalUserId, updatedAt: account.updatedAt || new Date() };
         if (typeof account.loginId === 'string' && account.loginId) entry.loginId = account.loginId;
 
-        const updated = await collection.updateOne(
-            { _id: uid, lmsAccounts: { $elemMatch: { provider, instance } } },
-            { $set: { 'lmsAccounts.$': entry } }
-        );
-        if (updated.matchedCount === 0) {
-            // Guarded so two concurrent syncs cannot both append an entry.
-            await collection.updateOne(
-                { _id: uid, lmsAccounts: { $not: { $elemMatch: { provider, instance } } } },
-                { $push: { lmsAccounts: entry } }
-            );
-        }
+        await rewriteLmsAccounts(collection, uid, (accounts) => {
+            const index = accounts.findIndex(isThisInstance);
+            if (index === -1) return [...accounts, entry];
+            return accounts.map((existing, position) => (position === index ? entry : existing));
+        });
     } catch (error) {
         console.error("Error saving user LMS account:", error);
         throw error;
@@ -197,6 +250,30 @@ async function getUserById(userId) {
         console.error("Error getting user by ID:", error);
         throw error;
     }
+}
+
+/**
+ * Users by id, keyed by string id, for the lists that show members, section
+ * students or access-log rows by name. Those lists attach users here rather
+ * than with a $lookup from grasp_user: a $lookup runs outside field
+ * encryption and would return names and emails as their stored ciphertext.
+ * @param {Array<string|ObjectId>} userIds - Either stored id shape; blanks and repeats are ignored
+ * @param {Object} [projection] - Fields to read; the whole document when omitted
+ * @returns {Promise<Map<string, Object>>}
+ */
+async function getUsersByIds(userIds, projection) {
+    const ids = new Map();
+    for (const id of userIds || []) {
+        if (id === null || id === undefined || id === '') continue;
+        const key = String(id);
+        if (!ids.has(key)) ids.set(key, ObjectId.isValid(key) ? new ObjectId(key) : id);
+    }
+    if (ids.size === 0) return new Map();
+    const db = await databaseService.connect();
+    const users = await db.collection("grasp_user")
+        .find({ _id: { $in: [...ids.values()] } }, projection ? { projection } : {})
+        .toArray();
+    return new Map(users.map((user) => [String(user._id), user]));
 }
 
 /**
@@ -451,8 +528,17 @@ async function getStudentsNotInCourse(courseId) {
 // name, not for browsing the user base.
 const SEARCH_RESULT_LIMIT = 10;
 
-function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Search results are ordered as MongoDB ordered them before these fields were
+// encrypted: by legal name, then display name, then email, a missing value first.
+const SEARCH_SORT_FIELDS = ['legalName', 'displayName', 'email'];
+
+function compareBySearchOrder(a, b) {
+    for (const field of SEARCH_SORT_FIELDS) {
+        const left = typeof a[field] === 'string' ? a[field] : '';
+        const right = typeof b[field] === 'string' ? b[field] : '';
+        if (left !== right) return left < right ? -1 : 1;
+    }
+    return 0;
 }
 
 /**
@@ -496,20 +582,19 @@ async function countMembershipsByUser(db, userIds) {
  */
 async function searchUsersNotInCourse(courseId, query, { limit = SEARCH_RESULT_LIMIT } = {}) {
     try {
-        const trimmed = String(query || '').trim();
-        if (!trimmed) return [];
+        const needle = String(query || '').trim().toLowerCase();
+        if (!needle) return [];
 
         const db = await databaseService.connect();
         const userCollection = db.collection("grasp_user");
         const userIdsInCourse = await getUserIdsInCourse(db, courseId);
-        const pattern = new RegExp(escapeRegExp(trimmed), 'i');
 
-        const matches = await userCollection
+        // Names and email are encrypted at rest, so MongoDB can neither match
+        // nor sort them: every account outside the course is read, and the
+        // case-insensitive substring match happens here.
+        const outsiders = await userCollection
             .find(
-                {
-                    _id: { $nin: userIdsInCourse.flatMap(idForms) },
-                    $or: [{ email: pattern }, { displayName: pattern }, { legalName: pattern }],
-                },
+                { _id: { $nin: userIdsInCourse.flatMap(idForms) } },
                 {
                     projection: {
                         _id: 1,
@@ -522,12 +607,17 @@ async function searchUsersNotInCourse(courseId, query, { limit = SEARCH_RESULT_L
                     },
                 }
             )
-            .sort({ legalName: 1, displayName: 1, email: 1 })
-            .limit(Math.max(1, Math.min(Number(limit) || SEARCH_RESULT_LIMIT, 50)))
             .toArray();
+        const matches = outsiders.filter((user) =>
+            [user.email, user.displayName, user.legalName].some(
+                (value) => typeof value === 'string' && value.toLowerCase().includes(needle)
+            )
+        );
 
         // Second line of defence for ids stored in a shape $nin did not catch.
-        const candidates = filterUsersNotInCourse(matches, userIdsInCourse);
+        const candidates = filterUsersNotInCourse(matches, userIdsInCourse)
+            .sort(compareBySearchOrder)
+            .slice(0, Math.max(1, Math.min(Number(limit) || SEARCH_RESULT_LIMIT, 50)));
         const courseCounts = await countMembershipsByUser(db, candidates.map((u) => u._id));
         return candidates.map((user) => ({
             ...user,
@@ -543,6 +633,7 @@ module.exports = {
     createOrUpdateUser,
     getUserByPuid,
     getUserById,
+    getUsersByIds,
     updateUserLegalName,
     updateUserNames,
     backfillUserEmail,

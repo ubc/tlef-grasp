@@ -31,7 +31,8 @@ module.exports = defineEncryptionConfig({
   keyProvider: new EnvironmentKeyProvider({
     activeEncryptionKey: { id: 'data-2026-10', env: 'GRASP_DATA_ENCRYPTION_KEY' },
     decryptionKeys: [],
-    blindIndexKeys: [],
+    // Keys the PUID digests below. Its own secret, never the data key.
+    blindIndexKeys: [{ id: 'lookup-2026-10', env: 'GRASP_BLIND_INDEX_KEY' }],
   }),
 
   readPolicy: rollout,
@@ -54,6 +55,25 @@ module.exports = defineEncryptionConfig({
     },
     // What a student wrote when flagging a question.
     grasp_quiz_question_flag: { fields: { comment: { encrypt: true } } },
+
+    // Who a user is. Users are found by PUID (SAML login, roster syncs), so it
+    // also gets a blind index: equality and $in lookups keep working, and the
+    // index's uniqueness keeps one row per PUID. Names and email are only read,
+    // never queried; the add-people search matches them in the app. The LMS
+    // login id is the PUID again for UBC Canvas users, which is why lmsAccounts
+    // entries are rewritten whole (services/user.js) instead of in place.
+    grasp_user: {
+      fields: {
+        puid: {
+          encrypt: true,
+          blindIndex: { field: 'puid__bidx', keyId: 'lookup-2026-10', normalize: 'exact', unique: true },
+        },
+        email: { encrypt: true },
+        displayName: { encrypt: true },
+        legalName: { encrypt: true },
+        'lmsAccounts.$[].loginId': { encrypt: true },
+      },
+    },
   },
 
   // Used only by the migration CLI.

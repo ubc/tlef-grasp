@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { MongoClient } = require('mongodb');
+const { usersCollection } = require('./seed');
 
 // What the session store holds after real SAML logins (saml.setup.js signs in
 // every persona first): the user's id and the SAML logout fields, never a
@@ -15,7 +16,10 @@ async function readStore() {
     const db = client.db(process.env.MONGODB_DB_NAME || 'grasp_db');
     const [sessions, users] = await Promise.all([
       db.collection('grasp_session').find({}).toArray(),
-      db.collection('grasp_user').find({}, { projection: { puid: 1, email: 1, legalName: 1 } }).toArray(),
+      // As the app reads them: compared as plaintext, whether or not the
+      // server stores them encrypted.
+      usersCollection(db).then((collection) =>
+        collection.find({}, { projection: { puid: 1, email: 1, legalName: 1 } }).toArray()),
     ]);
     return {
       sessions: sessions.map((doc) => (typeof doc.session === 'string' ? JSON.parse(doc.session) : doc.session)),

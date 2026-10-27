@@ -15,7 +15,14 @@
 // local IdP and the FakeAcademicAPI seed share.
 
 const { MongoClient, ObjectId } = require('mongodb');
+const { createEncryptedDb } = require('@ubc/genai-toolkit-encryption');
+const encryptionConfig = require('../../src/services/encryption.config.cjs');
 const { FAKE_CANVAS } = require('./stubs/fake-canvas-fixtures');
+
+// Whether the server under test encrypts fields. The runner does not load
+// .env, so the key is only in its env when exported (CI does); the server
+// then inherits the same one, since dotenv never overrides a set variable.
+const FIELD_ENCRYPTION_ON = Boolean(process.env.GRASP_DATA_ENCRYPTION_KEY?.trim());
 
 // PUIDs from docker-simple-saml authsources.php (== FakeAcademicAPI seed).
 const BIO_PROF2_PUID = '45678901';
@@ -157,8 +164,18 @@ const CANVAS_QUIZ_NAME = 'Canvas Section Quiz (seeded)';
 // Far enough ahead that the toolkit never tries to refresh the seeded token.
 const CANVAS_TOKEN_EXPIRES_AT = Date.UTC(2099, 0, 1);
 
+// grasp_user as the app reads it. With the key on, the server stores PUIDs,
+// names and emails encrypted, and a PUID is only found through the same
+// wrapper (its blind index); everything else the seed touches stays raw.
+const encryptedDbs = new WeakMap();
+async function usersCollection(db) {
+  if (!FIELD_ENCRYPTION_ON) return db.collection('grasp_user');
+  if (!encryptedDbs.has(db)) encryptedDbs.set(db, createEncryptedDb(db, encryptionConfig));
+  return (await encryptedDbs.get(db)).collection('grasp_user');
+}
+
 async function getUserByPuid(db, puid) {
-  return db.collection('grasp_user').findOne({ puid });
+  return (await usersCollection(db)).findOne({ puid });
 }
 
 async function withSeedDb(fn) {
@@ -857,8 +874,7 @@ async function seedCanvasSyncCourse() {
       .findOne({ courseId, sectionId: CANVAS_LINKED_SECTION_ID });
 
     // --- Placeholders a previous sync created for fake-Canvas-only PUIDs ---
-    const placeholders = await db
-      .collection('grasp_user')
+    const placeholders = await (await usersCollection(db))
       .find({ puid: { $in: [FAKE_CANVAS.NEVER_SIGNED_IN_PUID, FAKE_CANVAS.CONCLUDED_PUID] } })
       .toArray();
     const placeholderIds = placeholders.map((user) => user._id);
@@ -999,6 +1015,9 @@ async function getPersonaUser(puid) {
 }
 
 module.exports = {
+  FIELD_ENCRYPTION_ON,
+  usersCollection,
+  getUserByPuid,
   seedStudentJourneyCourse,
   seedCanvasSyncCourse,
   getPersonaUser,
