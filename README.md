@@ -369,6 +369,35 @@ the shape Canvas exports its own. Canvas grades those with partial credit while
 GRASP grades the exact set, and the export dialog says so for a quiz that has
 one.
 
+#### Grade CSV for Canvas
+
+**Download grades (CSV)** on Quiz Scores (issue #126) writes one section's
+grades in the layout Canvas's gradebook import reads (Grades → Import). It
+makes no Canvas API calls and needs no Canvas connection. Only instructors and
+app administrators see it; the API refuses TAs and students, and an instructor
+who doesn't own the course gets only their own sections, as on Quiz Scores.
+
+- The instructor ticks which of the section's published, scheduled quizzes go
+  in, or all of them. Each becomes a `GRASP: <quiz name>` column with the
+  student's percent, followed by `GRASP: Average`, the mean of the counted
+  quizzes. The prefix stops a column from writing into a Canvas assignment
+  that happens to share the quiz's name, and later uploads update the same
+  columns.
+- A quiz the student never took is 0 once it has closed for the section, and
+  blank while it is open or not yet released; blanks don't count towards the
+  average.
+- Students are matched in Canvas by `ID` (the Canvas user id, filled in when a
+  Canvas roster sync stored one), then `SIS Login ID` (the Canvas login when
+  known, else the PUID), then by name. `Integration ID` carries the PUID.
+- **Include questions correct** (off by default) adds a `(correct)` column
+  after each quiz, such as `4 of 5`: questions right out of the questions that
+  student was served, which can differ between students on a spaced quiz. The
+  columns are marked read only in the Points Possible row, which makes Canvas
+  skip them only when every student matches, so the dialog says to leave the
+  option off for a file going to Canvas.
+- The dialog warns when students have disputed AI grades that haven't been
+  settled, since the file uses the current grades.
+
 #### Optional Moodle connection
 
 Set `MOODLE_DOMAIN` to enable the Moodle controls in instructor Settings (for

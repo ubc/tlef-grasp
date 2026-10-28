@@ -130,6 +130,11 @@ const AI_SEED_QUESTIONS = [
 // apply" question. The multiple-answer spec seeds it before it runs and
 // removes it afterwards, so no other spec sees an extra quiz or question.
 const MA_QUIZ_NAME = 'BIOC 302 Multiple Answer Quiz (seeded)';
+// Grade CSV (#126): one quiz that closed last week, where bio_student scored
+// 80 and bio_student3 never sat it, and one that opens next week.
+const GRADE_CSV_CLOSED_QUIZ_NAME = 'BIOC 302 Grade CSV closed quiz (seeded)';
+const GRADE_CSV_UPCOMING_QUIZ_NAME = 'BIOC 302 Grade CSV upcoming quiz (seeded)';
+const GRADE_CSV_SCORE = 80;
 const MA_QUESTION = {
   seedKey: 'e2e-bioc302-ma1',
   title: 'Which of these raise the apparent Km of an enzyme?',
@@ -775,6 +780,88 @@ async function removeMultipleAnswerQuiz() {
 }
 
 /**
+ * Seed the two grade CSV quizzes in the BIOC 302 course, both published and
+ * scheduled on section 101 with no questions: a closed one with bio_student's
+ * score of GRADE_CSV_SCORE (bio_student3 has none), and an upcoming one.
+ * Idempotent; returns the course id. Prereq: seedStudentJourneyCourse() has run.
+ */
+async function seedGradeCsvQuizzes() {
+  return withSeedDb(async (db) => {
+    const now = new Date();
+    const day = 24 * 60 * 60 * 1000;
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    const section = course
+      ? await db.collection('grasp_course_section').findOne({ courseId: course._id, sectionId: SECTION_ID })
+      : null;
+    const student = await getUserByPuid(db, BIO_STUDENT_PUID);
+    if (!course || !section || !student) {
+      throw new Error('seedGradeCsvQuizzes: the seeded BIOC 302 course is missing — saml.setup.js must run first');
+    }
+    const courseId = course._id;
+
+    const quizIds = {};
+    for (const [name, releaseDate, expireDate] of [
+      [GRADE_CSV_CLOSED_QUIZ_NAME, new Date(now.getTime() - 14 * day), new Date(now.getTime() - 7 * day)],
+      [GRADE_CSV_UPCOMING_QUIZ_NAME, new Date(now.getTime() + 7 * day), new Date(now.getTime() + 14 * day)],
+    ]) {
+      await db.collection('grasp_quiz').updateOne(
+        { courseId, name },
+        {
+          $set: { published: true, deliveryFormat: 'all-approved', disablePreviousNavigation: false, updatedAt: now },
+          $setOnInsert: { courseId, name, createdAt: now },
+        },
+        { upsert: true }
+      );
+      const quiz = await db.collection('grasp_quiz').findOne({ courseId, name });
+      await db.collection('grasp_quiz_section_schedule').updateOne(
+        { quizId: quiz._id, courseSectionId: section._id },
+        {
+          $set: { releaseDate, expireDate, updatedAt: now },
+          $setOnInsert: { quizId: quiz._id, courseSectionId: section._id, createdAt: now },
+        },
+        { upsert: true }
+      );
+      for (const coll of ATTEMPT_COLLECTIONS) {
+        await db.collection(coll).deleteMany({ quizId: quiz._id });
+      }
+      quizIds[name] = quiz._id;
+    }
+
+    await db.collection('grasp_quiz_score').insertOne({
+      userId: student._id,
+      quizId: quizIds[GRADE_CSV_CLOSED_QUIZ_NAME],
+      courseId,
+      score: GRADE_CSV_SCORE,
+      correctAnswers: 4,
+      totalQuestions: 5,
+      timeSpent: 60000,
+      completedAt: new Date(now.getTime() - 10 * day),
+      createdAt: now,
+    });
+    return { courseId: courseId.toString() };
+  });
+}
+
+/** Remove the grade CSV quizzes and their schedules and scores. */
+async function removeGradeCsvQuizzes() {
+  await withSeedDb(async (db) => {
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    if (!course) return;
+    const quizzes = await db
+      .collection('grasp_quiz')
+      .find({ courseId: course._id, name: { $in: [GRADE_CSV_CLOSED_QUIZ_NAME, GRADE_CSV_UPCOMING_QUIZ_NAME] } })
+      .project({ _id: 1 })
+      .toArray();
+    const ids = quizzes.map((quiz) => quiz._id);
+    if (ids.length === 0) return;
+    for (const coll of [...ATTEMPT_COLLECTIONS, 'grasp_quiz_question', 'grasp_quiz_section_schedule']) {
+      await db.collection(coll).deleteMany({ quizId: { $in: ids } });
+    }
+    await db.collection('grasp_quiz').deleteMany({ _id: { $in: ids } });
+  });
+}
+
+/**
  * Seed (or reset) the Canvas roster sync course. Idempotent, and a full reset:
  * every call puts the course back to "linked, never synced", so a Canvas spec
  * can call it in beforeAll regardless of what an earlier run or suite did.
@@ -1027,6 +1114,8 @@ module.exports = {
   getGuestPersonaUser,
   seedMultipleAnswerQuiz,
   removeMultipleAnswerQuiz,
+  seedGradeCsvQuizzes,
+  removeGradeCsvQuizzes,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,
@@ -1040,6 +1129,9 @@ module.exports = {
     BIO_STUDENT_PUID,
     BIO_STUDENT3_PUID,
     STUDENT_PUID,
+    GRADE_CSV_CLOSED_QUIZ_NAME,
+    GRADE_CSV_UPCOMING_QUIZ_NAME,
+    GRADE_CSV_SCORE,
     QUESTION_COUNT: SEED_QUESTIONS.length,
     AI_QUESTION_COUNT: AI_SEED_QUESTIONS.length,
     // Seeded question titles in insertion order, for question-bank assertions.
