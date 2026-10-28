@@ -7,6 +7,7 @@ const databaseService = require('../../src/services/database');
 const quizScheduleService = require('../../src/services/quiz-schedule');
 const {
   buildSectionGradeCsv,
+  countGradesAwaitingReview,
   getSectionGradeOverview,
   getSectionQuizzes,
   getSectionStudents,
@@ -33,22 +34,30 @@ const SECTION = {
 
 // A tiny in-memory stand-in for the collections the service reads. Each
 // collection returns its fixed rows and records the query it was given.
+// Aggregating an encrypted collection fails, as it does through the
+// encryption toolkit when a key is set.
+const ENCRYPTED = new Set(['grasp_student_attempt', 'grasp_user']);
 function fakeDb(rowsByCollection) {
   const queries = {};
-  const cursor = (rows) => ({
-    project: () => cursor(rows),
+  const projections = {};
+  const cursor = (name, rows) => ({
+    project: (projection) => {
+      projections[name] = projection;
+      return cursor(name, rows);
+    },
     toArray: async () => rows,
   });
   return {
     queries,
+    projections,
     collection: (name) => ({
       find: (query) => {
         queries[name] = query;
-        return cursor(rowsByCollection[name] || []);
+        return cursor(name, rowsByCollection[name] || []);
       },
-      aggregate: (pipeline) => {
-        queries[name] = pipeline;
-        return cursor(rowsByCollection[`${name}:aggregate`] || []);
+      aggregate: () => {
+        if (ENCRYPTED.has(name)) throw new Error(`${name} is encrypted: aggregation is not supported`);
+        throw new Error(`no aggregate rows faked for ${name}`);
       },
     }),
   };
@@ -92,7 +101,8 @@ function seed(overrides = {}) {
       { userId: STUDENT, quizId: QUIZ_OPEN, score: 90, correctAnswers: 9, totalQuestions: 10 },
       { userId: TA_WITH_SCORE, quizId: QUIZ_CLOSED, score: 60, correctAnswers: 3, totalQuestions: 5 },
     ],
-    'grasp_student_attempt:aggregate': [{ _id: QUIZ_CLOSED, count: 2 }],
+    // Two disputed grades on Quiz 1, stored with either form of the quiz id.
+    grasp_student_attempt: [{ quizId: QUIZ_CLOSED }, { quizId: QUIZ_CLOSED.toString() }],
     ...overrides,
   });
   databaseService.connect.mockResolvedValue(db);
@@ -155,6 +165,46 @@ describe('getSectionStudents', () => {
     seed();
     const [, zoe] = await getSectionStudents(COURSE_ID, SECTION, [QUIZ_CLOSED.toString()]);
     expect(zoe).toEqual(expect.objectContaining({ puid: 'PUID0001', canvasUserId: '77', loginId: 'PUID0001' }));
+  });
+});
+
+describe('countGradesAwaitingReview', () => {
+  it('counts unsettled disputed first-attempt grades per quiz without aggregating', async () => {
+    const db = seed({
+      grasp_student_attempt: [
+        { quizId: QUIZ_CLOSED },
+        { quizId: QUIZ_OPEN.toString() },
+        { quizId: QUIZ_CLOSED.toString() },
+        { quizId: QUIZ_CLOSED },
+      ],
+    });
+    const counts = await countGradesAwaitingReview(
+      [QUIZ_CLOSED.toString(), QUIZ_OPEN.toString()],
+      [STUDENT.toString()]
+    );
+
+    expect(counts).toEqual(
+      new Map([
+        [QUIZ_CLOSED.toString(), 3],
+        [QUIZ_OPEN.toString(), 1],
+      ])
+    );
+    expect(db.queries.grasp_student_attempt).toEqual({
+      quizId: { $in: [QUIZ_CLOSED.toString(), QUIZ_CLOSED, QUIZ_OPEN.toString(), QUIZ_OPEN] },
+      userId: { $in: [STUDENT.toString(), STUDENT] },
+      studentGradeReview: 'deny',
+      gradedAt: { $exists: false },
+      isFirstAttempt: { $ne: false },
+    });
+    // Only the quiz id is read back, not the encrypted answer or feedback.
+    expect(db.projections.grasp_student_attempt).toEqual({ quizId: 1 });
+  });
+
+  it('is empty without touching the database when there are no quizzes or students', async () => {
+    seed();
+    expect(await countGradesAwaitingReview([], [STUDENT.toString()])).toEqual(new Map());
+    expect(await countGradesAwaitingReview([QUIZ_CLOSED.toString()], [])).toEqual(new Map());
+    expect(databaseService.connect).not.toHaveBeenCalled();
   });
 });
 
