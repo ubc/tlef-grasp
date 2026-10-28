@@ -21,6 +21,7 @@ const QuestionBank = lazy(() => import("./pages/QuestionBank"));
 const Quizzes = lazy(() => import("./pages/Quizzes"));
 const QuizScores = lazy(() => import("./pages/QuizScores"));
 const QuestionFlags = lazy(() => import("./pages/QuestionFlags"));
+const Analytics = lazy(() => import("./pages/Analytics"));
 const MySections = lazy(() => import("./pages/MySections"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -73,6 +74,9 @@ export default function App() {
                 </Route>
                 <Route element={<RequireTaPermission permission="questionFlags" />}>
                   <Route path="/question-flags" element={<QuestionFlags />} />
+                </Route>
+                <Route element={<RequireRole min="faculty" />}>
+                  <Route path="/analytics" element={<Analytics />} />
                 </Route>
                 <Route path="/my-sections" element={<MySections />} />
                 <Route element={<RequireTaPermission permission="quizzes" />}>
