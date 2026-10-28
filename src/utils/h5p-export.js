@@ -52,6 +52,24 @@ function asHtmlParagraph(text) {
   return `<p>${escapeHtml(String(text || '').trim())}</p>`;
 }
 
+// Multi-line text as HTML that keeps its line breaks: a blank line starts a new
+// paragraph and a single line break becomes a <br>.
+function asHtmlLines(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.split('\n').map((line) => escapeHtml(line.trim())).join('<br>')}</p>`)
+    .join('');
+}
+
+// "Label: text" for exported feedback. Text of several lines, such as numbered
+// grading criteria, starts on the line after the label.
+function labelText(label, text) {
+  return `${label}:${text.includes('\n') ? '\n' : ' '}${text}`;
+}
+
 function isType(q, type) {
   return normalizeQuestionType(q) === type;
 }
@@ -263,18 +281,16 @@ function buildBlanksParams(q) {
 
 // Open-ended -> H5P.Essay. The sample answer becomes the model solution
 // (revealed only after the student answers) with the grading criteria as its
-// introduction. No auto-scoring keywords are generated — instructors can add
-// them in the H5P editor after import.
+// introduction, both keeping their line breaks. No auto-scoring keywords are
+// generated — instructors can add them in the H5P editor after import.
 function buildEssayParams(q) {
   const criteria = String(q.openEndedGradingCriteria || '').trim();
   return {
     taskDescription: asHtmlParagraph(getQuestionText(q)),
     placeholderText: 'Type your answer here…',
     solution: {
-      introduction: criteria
-        ? `<p>${escapeHtml(`Grading criteria: ${criteria}`)}</p>`
-        : '',
-      sample: asHtmlParagraph(q.openEndedSampleAnswer || ''),
+      introduction: criteria ? asHtmlLines(labelText('Grading criteria', criteria)) : '',
+      sample: asHtmlLines(q.openEndedSampleAnswer || '') || '<p></p>',
     },
     keywords: [],
     behaviour: {
@@ -286,6 +302,7 @@ function buildEssayParams(q) {
 
 module.exports = {
   H5P_LIBRARIES,
+  labelText,
   filterH5PExportableQuestions,
   buildH5PPackage,
 };
