@@ -78,14 +78,14 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
     return ids;
   }
 
-  // Only one card is in edit mode at a time; its title is the header's input.
+  // Only one card is in edit mode at a time; its title is the header's field.
   async function editTitle(page, index, title) {
     await page.getByRole('button', { name: 'Edit' }).nth(index).click();
     const editingCard = page
       .locator('div.rounded-xl')
       .filter({ has: page.getByRole('button', { name: 'Save', exact: true }) })
       .last();
-    await editingCard.locator('input[type="text"]').first().fill(title);
+    await editingCard.getByLabel(/^(Question|Topic) title$/).fill(title);
     await editingCard.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Question updated successfully')).toBeVisible();
   }
