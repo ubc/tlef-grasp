@@ -181,6 +181,29 @@ describe('per-type params', () => {
     expect(params.solution.introduction).toContain('selection pressure');
     expect(params.keywords).toEqual([]);
   });
+
+  test('open-ended (Essay) keeps line breaks, so numbered criteria stay one per line', () => {
+    const { content } = buildH5PPackage('Q', [
+      {
+        ...openQuestion,
+        openEndedSampleAnswer: 'Variation exists.\nSome traits help survival.',
+        openEndedGradingCriteria: '1. Names variation.\n2. Explains a < b selection.',
+      },
+    ]);
+    const { solution } = content.questions[0].params;
+    expect(solution.introduction).toBe(
+      '<p>Grading criteria:<br>1. Names variation.<br>2. Explains a &lt; b selection.</p>'
+    );
+    expect(solution.sample).toBe('<p>Variation exists.<br>Some traits help survival.</p>');
+  });
+
+  test('open-ended (Essay) keeps one-line criteria on the label line', () => {
+    const { solution } = buildH5PPackage('Q', [openQuestion]).content.questions[0].params;
+    expect(solution.introduction).toBe(
+      '<p>Grading criteria: Mentions variation, selection pressure, and heritability.</p>'
+    );
+    expect(solution.sample).toBe('<p>Organisms with advantageous traits survive and reproduce.</p>');
+  });
 });
 
 describe('H5P markup safety', () => {

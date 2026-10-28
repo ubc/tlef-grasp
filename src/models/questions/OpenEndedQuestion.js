@@ -33,6 +33,7 @@ class OpenEndedQuestion extends Question {
 4. "openEndedSampleAnswer": a strong example response shown to students after submission (not used for auto-grading).
 5. "openEndedGradingCriteria": clear, specific criteria or a short rubric students can use to self-assess.
    It must name the specific concepts or skills being assessed, not just say "complete and accurate".
+   Write it as a numbered list with one criterion per line ("1. ...", a line break, "2. ..."), not as one paragraph.
 
 SELF-CHECK BEFORE RETURNING:
 - Re-read your question prompt. Does your openEndedSampleAnswer satisfy EVERY constraint you stated in the prompt? If not, fix the sample answer or the prompt — they must be consistent.
