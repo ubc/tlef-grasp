@@ -106,28 +106,31 @@ async function getScores(quizIds, userIds) {
 
 /**
  * AI grades the students disputed that no instructor has settled yet, per quiz
- * (the "Needs review" flag on Quiz Scores, issue #76).
+ * (the "Needs review" flag on Quiz Scores, issue #76). Counted here, not with
+ * $group: grasp_student_attempt is encrypted, and the encryption toolkit
+ * rejects aggregation stages it cannot check.
  * @returns {Promise<Map<string, number>>} quizId -> count
  */
 async function countGradesAwaitingReview(quizIds, userIds) {
-  if (quizIds.length === 0 || userIds.length === 0) return new Map();
+  const counts = new Map();
+  if (quizIds.length === 0 || userIds.length === 0) return counts;
   const db = await databaseService.connect();
-  const rows = await db
+  const disputes = await db
     .collection('grasp_student_attempt')
-    .aggregate([
-      {
-        $match: {
-          quizId: { $in: eitherForm(quizIds) },
-          userId: { $in: eitherForm(userIds) },
-          studentGradeReview: 'deny',
-          gradedAt: { $exists: false },
-          isFirstAttempt: { $ne: false },
-        },
-      },
-      { $group: { _id: '$quizId', count: { $sum: 1 } } },
-    ])
+    .find({
+      quizId: { $in: eitherForm(quizIds) },
+      userId: { $in: eitherForm(userIds) },
+      studentGradeReview: 'deny',
+      gradedAt: { $exists: false },
+      isFirstAttempt: { $ne: false },
+    })
+    .project({ quizId: 1 })
     .toArray();
-  return new Map(rows.map((row) => [String(row._id), row.count]));
+  for (const { quizId } of disputes) {
+    const key = String(quizId);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
 }
 
 /**
@@ -251,6 +254,7 @@ async function buildSectionGradeCsv(
 
 module.exports = {
   buildSectionGradeCsv,
+  countGradesAwaitingReview,
   getSectionGradeOverview,
   getSectionQuizzes,
   getSectionStudents,
