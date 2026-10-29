@@ -63,7 +63,7 @@ tlef-grasp/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22
 - npm
 - A running **MongoDB** instance
 - A running **Qdrant** instance (for the question-generation vector store)

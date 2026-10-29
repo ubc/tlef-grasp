@@ -32,6 +32,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@llamaindex/liteparse": "^1.5.3",
     "@ubc/genai-toolkit-encryption": "0.1.1",

@@ -145,7 +145,7 @@ Own workflow, `.github/workflows/unit-tests.yml`, separate from E2E and a11y (mo
 BIOCBOT's `unit.yml`). Independently runnable (`workflow_dispatch`), triggers on
 `push` (all branches) and `pull_request` → `main`.
 
-- `ubuntu-latest`, Node 20, `timeout-minutes: 10`. **No services, no browsers.**
+- `ubuntu-latest`, Node 22, `timeout-minutes: 10`. **No services, no browsers.**
 - Use `npm install`, not `npm ci` — `package-lock.json` is git-ignored in this repo
   (same as BIOCBOT). If a lockfile is committed later, switch to `npm ci` and enable
   `cache: npm` on setup-node.
