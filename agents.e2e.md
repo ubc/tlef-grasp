@@ -379,7 +379,7 @@ E2E gets its **own workflow**, `.github/workflows/e2e-tests.yml`, separate from 
 and a11y (model: BIOCBOT's `playwright.yml`). It must be independently runnable
 (`workflow_dispatch`) and must not gate local development.
 
-- Runner: `ubuntu-latest`, Node 20, `timeout-minutes: 30`.
+- Runner: `ubuntu-latest`, Node from `.nvmrc` (22.23.4), `timeout-minutes: 30`.
 - Services: `mongo:7` (with healthcheck). **Qdrant/Ollama are not needed** — LLM/RAG is
   swapped for in-process stubs by `start-server-with-stubs.js` (see above).
 - **FakeAcademicAPI in CI**: the instructor journey creates a course from a real UBC
