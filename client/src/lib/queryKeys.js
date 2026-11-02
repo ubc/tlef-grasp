@@ -25,6 +25,7 @@ export const queryKeys = {
   quizSchedules: (quizId) => ["quiz-schedules", quizId],
   quizCalendar: (courseId, from, to) => ["quiz-calendar", courseId, from, to],
   quizScores: (quizId) => ["quiz-scores", quizId],
+  gradeExport: (courseId, sectionId) => ["grade-export", courseId, sectionId],
   quizStudentAttempts: (quizId, userId) => ["quiz-attempts", quizId, userId],
   myQuizQuestionFlags: (courseId) => ["quiz-question-flags", "mine", courseId],
   courseQuizQuestionFlags: (courseId) => ["quiz-question-flags", "course", courseId],

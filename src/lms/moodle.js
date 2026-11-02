@@ -1,8 +1,5 @@
-const databaseService = require('../services/database');
-const {
-  moodle,
-  createMongoTokenStore,
-} = require('@ubc/ubc-genai-toolkit-lms-integration');
+const { moodle } = require('@ubc/ubc-genai-toolkit-lms-integration');
+const { createLmsTokenStore } = require('./token-store');
 
 const REQUIRED_MOODLE_ENV_VARS = ['MOODLE_DOMAIN'];
 const MOODLE_AUTH_BASE_PATH = '/api/lms/moodle/auth';
@@ -18,9 +15,7 @@ function createMoodleIntegration() {
     return { configured: false, moodle, config: null };
   }
 
-  const tokenStore = createMongoTokenStore(() => databaseService.connect(), {
-    collectionName: 'grasp_lms_moodle_tokens',
-  });
+  const tokenStore = createLmsTokenStore('grasp_lms_moodle_tokens');
 
   const config = moodle.loadConfigFromEnv({
     tokenStore,

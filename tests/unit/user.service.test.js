@@ -59,6 +59,15 @@ describe('user service name fields', () => {
       expect(update.$setOnInsert.displayName).toBe('Preferred Only');
     });
 
+    it('leaves out fields the caller did not supply (field encryption refuses undefined)', async () => {
+      // A roster-sync placeholder: no email, and nothing to say about it.
+      await createOrUpdateUser({ puid: 'PUID-3', displayName: 'Canvas Name' });
+
+      const [, update] = userCollection.updateOne.mock.calls[0];
+      expect(Object.keys(update.$set).sort()).toEqual(['puid', 'updatedAt']);
+      expect(Object.values(update.$setOnInsert)).not.toContain(undefined);
+    });
+
     it('requires a puid', async () => {
       await expect(createOrUpdateUser({ displayName: 'No Puid' }))
         .rejects.toThrow('Puid is required');

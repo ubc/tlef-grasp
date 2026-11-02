@@ -25,7 +25,7 @@ const {
 } = require('../utils/question-export-helpers');
 const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
 const { withoutImportFields } = require('../utils/import-provenance');
-const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
+const { filterH5PExportableQuestions, buildH5PPackage, labelText } = require('../utils/h5p-export');
 const { toCanvasCalculation } = require('../utils/canvas-calculation-export');
 const databaseService = require('../services/database');
 
@@ -181,21 +181,27 @@ function escapeXml(text) {
 
 // GRASP question text is plain text: the app escapes it before showing it, so
 // "x<y" or "<b>" is something the student reads, not markup. As Canvas HTML,
-// it is escaped once more, and a blank line starts a new paragraph.
-function plainTextToHtml(text) {
+// it is escaped once more, and a blank line starts a new paragraph. With
+// lineBreaks, a single line break inside a paragraph becomes a <br> as well.
+function plainTextToHtml(text, { lineBreaks = false } = {}) {
   return String(text ?? '')
     .replace(/\r\n?/g, '\n')
     .split(/\n[ \t]*\n/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
-    .map((paragraph) => `<p>${escapeXml(paragraph)}</p>`)
+    .map((paragraph) =>
+      lineBreaks
+        ? paragraph.split('\n').map((line) => escapeXml(line.trim())).join('<br>')
+        : escapeXml(paragraph)
+    )
+    .map((paragraph) => `<p>${paragraph}</p>`)
     .join('');
 }
 
 // Plain text as the escaped HTML a QTI <mattext texttype="text/html"> holds,
 // wrapped in a div like Canvas's own export.
-function escapeHtmlForQTI(text) {
-  const html = plainTextToHtml(text);
+function escapeHtmlForQTI(text, options) {
+  const html = plainTextToHtml(text, options);
   return html ? escapeXml(`<div>${html}</div>`) : '';
 }
 
@@ -1604,7 +1610,8 @@ function buildNumericalItem(calculation, questionHtml) {
 }
 
 // Open-ended -> Canvas "essay" question (manually graded). Sample answer and
-// grading criteria are attached as general feedback so instructors keep them.
+// grading criteria are attached as general feedback so instructors keep them,
+// line breaks included, so numbered criteria stay one per line.
 function buildEssayItem(q, questionHtml) {
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
@@ -1613,8 +1620,8 @@ function buildEssayItem(q, questionHtml) {
   const sample = String(q.openEndedSampleAnswer || '').trim();
   const criteria = String(q.openEndedGradingCriteria || '').trim();
   const feedbackParts = [];
-  if (sample) feedbackParts.push(`Sample answer: ${sample}`);
-  if (criteria) feedbackParts.push(`Grading criteria: ${criteria}`);
+  if (sample) feedbackParts.push(labelText('Sample answer', sample));
+  if (criteria) feedbackParts.push(labelText('Grading criteria', criteria));
   const hasFeedback = feedbackParts.length > 0;
 
   const feedbackDisplay = hasFeedback
@@ -1626,7 +1633,7 @@ function buildEssayItem(q, questionHtml) {
         <itemfeedback ident="general_fb">
           <flow_mat>
             <material>
-              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'))}</mattext>
+              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'), { lineBreaks: true })}</mattext>
             </material>
           </flow_mat>
         </itemfeedback>`

@@ -7,7 +7,7 @@ const {
   prepareAuthenticatedCourse,
   prepareSeededInstructorCourse,
 } = require('./authenticated-helper');
-const { SEED, seedCanvasSyncCourse } = require('../e2e/seed');
+const { SEED, seedCanvasSyncCourse, seedGradeCsvQuizzes, removeGradeCsvQuizzes } = require('../e2e/seed');
 const { selectCourseByName } = require('../e2e/helpers');
 const { resetFakeCanvas, fakeCanvasSkipReason } = require('../e2e/fake-canvas-client');
 
@@ -193,6 +193,35 @@ test.describe('Accessibility: delete scope choice in question generation', () =>
     await expectNoA11yViolations(page, { include: '[role="dialog"]' });
 
     // Escape closes without deleting, and focus returns to the card's trash.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+});
+
+// The grade CSV dialog on Quiz Scores (#126), with the seeded closed and
+// upcoming quizzes listed. Nothing is downloaded.
+test.describe('Accessibility: grade CSV dialog', () => {
+  test.skip(!IDP_ENABLED, 'Requires the SAML IdP — run with E2E_SAML=1');
+  test.use({ storageState: BIO_PROF2_AUTH_FILE });
+
+  test.afterAll(async () => {
+    await removeGradeCsvQuizzes();
+  });
+
+  test('grade CSV dialog has no blocking axe violations and handles focus', async ({ page }) => {
+    await prepareSeededInstructorCourse(page);
+    await seedGradeCsvQuizzes();
+    await page.goto('/quiz-scores');
+
+    const trigger = page.getByRole('button', { name: 'Download grades (CSV)' });
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: 'Download grades (CSV)' });
+    await expect(dialog.getByRole('checkbox', { name: SEED.GRADE_CSV_CLOSED_QUIZ_NAME, exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
+
+    await expectNoA11yViolations(page, { include: '[role="dialog"]' });
+
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();

@@ -432,6 +432,23 @@ describe('QTI text is exported as text', () => {
     );
   });
 
+  test('essay feedback keeps line breaks, so numbered criteria stay one per line', () => {
+    const xml = createQTIItem(
+      {
+        ...openQuestion,
+        openEndedSampleAnswer: 'Variation exists.\nSome traits help survival.',
+        openEndedGradingCriteria: '1. Names variation.\r\n2. Explains a < b selection.\n\n3. Mentions heritability.',
+      },
+      0
+    );
+    const feedback = htmlOf(xml.match(/<itemfeedback ident="general_fb">[\s\S]*?<mattext texttype="text\/html">([^<]*)<\/mattext>/)[1]);
+    expect(feedback).toBe(
+      '<div><p>Sample answer:<br>Variation exists.<br>Some traits help survival.</p>' +
+        '<p>Grading criteria:<br>1. Names variation.<br>2. Explains a &lt; b selection.</p>' +
+        '<p>3. Mentions heritability.</p></div>'
+    );
+  });
+
   test('the quiz description is escaped the same way', () => {
     const meta = createAssessmentMeta('Quiz', 'Covers x<y & <i>z</i>', 'g1', 'g2', 3);
     expect(htmlOf(meta.match(/<description>([^<]*)<\/description>/)[1])).toBe('<div><p>Covers x&lt;y &amp; &lt;i&gt;z&lt;/i&gt;</p></div>');

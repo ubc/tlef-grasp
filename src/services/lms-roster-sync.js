@@ -385,10 +385,7 @@ async function syncSectionRoster({
           provider,
           instance,
           externalUserId: String(entry.row.externalUserId),
-          sisUserId: entry.row.sisUserId,
           loginId: entry.row.loginId,
-          name: entry.row.name,
-          sortableName: entry.row.sortableName,
           updatedAt: now,
         });
       } catch (error) {

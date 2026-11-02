@@ -165,7 +165,7 @@ export default function AddPeoplePanel({ courseId }) {
         title={pendingAdd?.role === "ta" ? "Add as TA" : "Add to Course"}
         message={
           pendingAdd?.role === "ta"
-            ? `Add ${pendingAdd?.name || "this user"} to this course as a TA? They gain TA access on their next login. This is recorded under your name and can be revoked from the roster.`
+            ? `Add ${pendingAdd?.name || "this user"} to this course as a TA? They gain TA access right away. This is recorded under your name and can be revoked from the roster.`
             : `Add ${pendingAdd?.name || "this user"} to this course as a ${pendingAdd?.roleLabel || "member"}? This is recorded under your name and can be revoked from the roster.`
         }
         confirmLabel={pendingAdd?.role === "ta" ? "Add as TA" : "Add"}

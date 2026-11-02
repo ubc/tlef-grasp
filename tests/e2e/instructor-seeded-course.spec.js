@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { MongoClient } = require('mongodb');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
-const { SEED } = require('./seed');
+const { SEED, getUserByPuid } = require('./seed');
 const { getQuizCard, selectSeededCourse, completeSeededQuiz } = require('./helpers');
 
 const IDP_ENABLED = process.env.E2E_SAML === '1';
@@ -54,7 +54,7 @@ async function withSeededDb(fn) {
 // returns the quiz's existing schedule rows so they can be put back afterwards.
 async function addSecondSection() {
   return withSeededDb(async (db, { course, quiz }) => {
-    const prof = await db.collection('grasp_user').findOne({ puid: SEED.BIO_PROF2_PUID });
+    const prof = await getUserByPuid(db, SEED.BIO_PROF2_PUID);
     await db.collection('grasp_course_section').updateOne(
       { courseId: course._id, sectionId: SECOND_SECTION_ID },
       {

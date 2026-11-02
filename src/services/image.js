@@ -1,14 +1,11 @@
-const { ObjectId, GridFSBucket } = require("mongodb");
+const { ObjectId } = require("mongodb");
 const { Readable } = require("stream");
 const databaseService = require("./database");
 const { MC_OPTION_KEYS } = require("../utils/mc-options");
 
 const BUCKET_NAME = "grasp_question_images";
 
-const getBucket = async () => {
-    const db = await databaseService.connect();
-    return new GridFSBucket(db, { bucketName: BUCKET_NAME });
-};
+const getBucket = () => databaseService.gridFSBucket(BUCKET_NAME);
 
 const toObjectId = (fileId) => {
     if (fileId instanceof ObjectId) return fileId;

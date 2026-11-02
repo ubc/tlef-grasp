@@ -1,5 +1,5 @@
 const { expect } = require('@playwright/test');
-const { SEED, resetSeededQuizAttemptState } = require('./seed');
+const { SEED, resetSeededQuizAttemptState, FIELD_ENCRYPTION_ON } = require('./seed');
 
 const COURSE_KEY = 'grasp-selected-course';
 const ROLE_KEY = 'grasp-current-role';
@@ -101,7 +101,9 @@ function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+
 module.exports = {
+  FIELD_ENCRYPTION_ON,
   selectSeededCourse,
   selectCourseByName,
   answerSeededQuizCorrectly,

@@ -63,7 +63,7 @@ tlef-grasp/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22
 - npm
 - A running **MongoDB** instance
 - A running **Qdrant** instance (for the question-generation vector store)
@@ -87,6 +87,41 @@ Copy the template and fill in your values:
 ```bash
 cp .env.example .env
 ```
+
+#### Field-level encryption key
+
+With `GRASP_DATA_ENCRYPTION_KEY` set, GRASP encrypts the fields listed in
+`src/services/encryption.config.cjs` before they reach MongoDB, using
+`@ubc/genai-toolkit-encryption`. Without it, encryption is off: those fields
+are stored as plaintext and the server logs a warning at boot. Generate a key
+with:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+PUIDs are encrypted too, and found through a blind index keyed by a second
+secret, `GRASP_BLIND_INDEX_KEY` (generated the same way, never the data key).
+It is required whenever `GRASP_DATA_ENCRYPTION_KEY` is set. Before migrating
+`grasp_user`, build its unique PUID index once with the toolkit's
+`ensure-indexes` command; until then the server warns at every boot.
+
+Every environment has its own keys. Data written under a key can only be read
+with that key, so a database copied from another environment needs that
+environment's key. Turning encryption on is one-way per database: the first
+start with a key records it in `grasp_field_encryption`, and from then on
+GRASP refuses to run on that database without the key.
+
+Data stored before a field was encrypted stays readable (`GRASP_ENCRYPTION_ROLLOUT`
+defaults to `mixed`) until it is migrated with the toolkit's CLI, which reads
+`.env` the same way the server does:
+
+```bash
+npm run encryption -- plan --config src/services/encryption.config.cjs --all-configured
+```
+
+Follow the toolkit's `docs/migration-runbook.md` (in
+`node_modules/@ubc/genai-toolkit-encryption/`) for `migrate` and `verify`.
 
 #### Optional Canvas connection
 
@@ -333,6 +368,35 @@ A multiple-answer question goes out as a Canvas Multiple Answers question, in
 the shape Canvas exports its own. Canvas grades those with partial credit while
 GRASP grades the exact set, and the export dialog says so for a quiz that has
 one.
+
+#### Grade CSV for Canvas
+
+**Download grades (CSV)** on Quiz Scores (issue #126) writes one section's
+grades in the layout Canvas's gradebook import reads (Grades → Import). It
+makes no Canvas API calls and needs no Canvas connection. Only instructors and
+app administrators see it; the API refuses TAs and students, and an instructor
+who doesn't own the course gets only their own sections, as on Quiz Scores.
+
+- The instructor ticks which of the section's published, scheduled quizzes go
+  in, or all of them. Each becomes a `GRASP: <quiz name>` column with the
+  student's percent, followed by `GRASP: Average`, the mean of the counted
+  quizzes. The prefix stops a column from writing into a Canvas assignment
+  that happens to share the quiz's name, and later uploads update the same
+  columns.
+- A quiz the student never took is 0 once it has closed for the section, and
+  blank while it is open or not yet released; blanks don't count towards the
+  average.
+- Students are matched in Canvas by `ID` (the Canvas user id, filled in when a
+  Canvas roster sync stored one), then `SIS Login ID` (the Canvas login when
+  known, else the PUID), then by name. `Integration ID` carries the PUID.
+- **Include questions correct** (off by default) adds a `(correct)` column
+  after each quiz, such as `4 of 5`: questions right out of the questions that
+  student was served, which can differ between students on a spaced quiz. The
+  columns are marked read only in the Points Possible row, which makes Canvas
+  skip them only when every student matches, so the dialog says to leave the
+  option off for a file going to Canvas.
+- The dialog warns when students have disputed AI grades that haven't been
+  settled, since the file uses the current grades.
 
 #### Optional Moodle connection
 

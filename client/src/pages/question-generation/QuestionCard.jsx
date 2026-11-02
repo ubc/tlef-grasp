@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
+import AutoHeightTextarea from "../../components/AutoHeightTextarea";
 import {
   MC_MAX_OPTIONS,
   MC_MIN_OPTIONS,
@@ -298,14 +299,22 @@ export default function QuestionCard({
       {/* Header */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {isEditing ? (
-            <input
-              type="text"
+          {/* A choice question's title is the prompt students see, which can
+              run to several lines; other types' titles are short topic labels. */}
+          {isEditing && isMcq ? (
+            <AutoHeightTextarea
+              aria-label="Question title"
               value={draft.title}
               onChange={setField("title")}
-              placeholder={
-                isMcq ? undefined : "Topic title (short; do not reveal the answer)"
-              }
+              className={`${fieldInput} mb-2 font-semibold`}
+            />
+          ) : isEditing ? (
+            <input
+              type="text"
+              aria-label="Topic title"
+              value={draft.title}
+              onChange={setField("title")}
+              placeholder="Topic title (short; do not reveal the answer)"
               className={`${fieldInput} mb-2 font-semibold`}
             />
           ) : (
@@ -406,7 +415,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question stem</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={5}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -461,7 +470,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question template</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -541,7 +550,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question prompt</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={5}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -554,7 +563,7 @@ export default function QuestionCard({
               <label className={fieldLabel}>
                 Sample answer <span className="font-normal">(shown after submit)</span>
               </label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.openEndedSampleAnswer}
                 onChange={setField("openEndedSampleAnswer")}
@@ -564,11 +573,11 @@ export default function QuestionCard({
             </div>
             <div>
               <label className={fieldLabel}>Grading criteria</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.openEndedGradingCriteria}
                 onChange={setField("openEndedGradingCriteria")}
-                placeholder="Rubric or bullet criteria"
+                placeholder="Numbered, one criterion per line"
                 className={fieldInput}
               />
             </div>
@@ -580,10 +589,16 @@ export default function QuestionCard({
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Sample answer">
-              <RichText text={escapeHtml(question.openEndedSampleAnswer || "")} />
+              <RichText
+                text={escapeHtml(question.openEndedSampleAnswer || "")}
+                className="whitespace-pre-line"
+              />
             </FibBlock>
             <FibBlock label="Grading criteria">
-              <RichText text={escapeHtml(question.openEndedGradingCriteria || "")} />
+              <RichText
+                text={escapeHtml(question.openEndedGradingCriteria || "")}
+                className="whitespace-pre-line"
+              />
             </FibBlock>
           </div>
         ))}
@@ -592,8 +607,9 @@ export default function QuestionCard({
         <div>
           {isEditing ? (
             <div className="mb-3 space-y-2">
-              <textarea
+              <AutoHeightTextarea
                 rows={2}
+                aria-label="Question stem"
                 value={draft.stem}
                 onChange={setField("stem")}
                 className={fieldInput}

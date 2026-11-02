@@ -1,11 +1,12 @@
 const { test, expect } = require('@playwright/test');
 const { selectSeededCourse } = require('./helpers');
 const { SEED } = require('./seed');
+const { BIO_STUDENT3_AUTH_FILE } = require('./auth');
 
 // Per-TA permissions (branch ta_access): the instructor promotes a seeded
 // student to TA on the Users page, restricts them with the Grader preset in
-// the permissions modal, and the TA's next login only unlocks the granted
-// pages — nav, dashboard widgets, route guards, and the API all agree.
+// the permissions modal, and the TA then sees only the granted pages — nav,
+// dashboard widgets, route guards, and the API all agree.
 // Opt-in (E2E_SAML=1). The suite runs serially and demotes the TA again in
 // afterAll so the shared seed state is restored for other specs.
 const IDP_ENABLED = process.env.E2E_SAML === '1';
@@ -114,13 +115,12 @@ test.describe.serial('TA permissions (seeded course)', () => {
   test('the grader TA only gets the granted pages, and the API enforces it', async ({
     browser,
   }) => {
-    // Fresh login: promotion applies on the TA's next login (the session
-    // snapshots affiliations), so the pre-saved storage state cannot be used.
-    const context = await browser.newContext({ baseURL: BASE_URL });
+    // The TA's session was saved by saml.setup.js, before the promotion: the
+    // new access applies without signing in again, because req.user is loaded
+    // on every request rather than kept in the session.
+    const context = await browser.newContext({ baseURL: BASE_URL, storageState: BIO_STUDENT3_AUTH_FILE });
     const page = await context.newPage();
     try {
-      await login(page, TA_USERNAME, TA_PASSWORD);
-
       await selectSeededCourse(page, { role: 'instructor' });
       await page.goto('/dashboard');
 
@@ -181,8 +181,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
     await permissions.getByRole('button', { name: 'Save Permissions' }).click();
     await expect(page.getByText('TA permissions updated')).toBeVisible();
 
-    // Fresh login for the same reason as the test above: the session snapshots
-    // the TA's access at sign-in.
+    // A fresh context for the TA, as in the test above.
     const context = await browser.newContext({ baseURL: BASE_URL });
     const taPage = await context.newPage();
     try {

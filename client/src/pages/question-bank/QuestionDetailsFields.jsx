@@ -3,6 +3,7 @@ import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
 import CalculationToleranceFields from "../../components/CalculationToleranceFields";
+import AutoHeightTextarea from "../../components/AutoHeightTextarea";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
@@ -39,7 +40,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                 ? "Question template"
                 : "Question stem"}
             </label>
-            <textarea
+            <AutoHeightTextarea
               id="qdf-stem"
               rows={4}
               value={form.stem}
@@ -348,7 +349,7 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                   Sample answer{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   id="qdf-open-sample"
                   rows={5}
                   value={form.openSample}
@@ -362,12 +363,12 @@ export default function QuestionDetailsFields({ questionType, form, setForm }) {
                   Grading criteria{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   id="qdf-open-criteria"
                   rows={5}
                   value={form.openCriteria}
                   onChange={set("openCriteria")}
-                  placeholder="What instructors look for; bullet points or a short rubric"
+                  placeholder="What instructors look for, numbered, one criterion per line"
                   className={inputClass}
                 />
               </div>

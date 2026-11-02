@@ -188,6 +188,17 @@ student spec never depends on the instructor spec having run. `saml.setup.js` ca
   in the Playwright setup-project Node process, which does **not** load `.env` (only the
   server does, via `dotenv`). Locally: `set -a && . ./.env && set +a` (or export them)
   before running the SAML suite. CI sets them as job env already.
+- **Field-level encryption is on only when `GRASP_DATA_ENCRYPTION_KEY` is set**
+  (`src/services/encryption.config.cjs`), and then `GRASP_BLIND_INDEX_KEY` must be
+  set too. The e2e workflow generates throwaway keys per run; the a11y workflow
+  runs without them, like a deployment that has not turned encryption on. The
+  raw-document checks (`field-encryption.spec.js` and those using
+  `FIELD_ENCRYPTION_ON` from `helpers.js`) run only when the runner's env has the
+  keys, which the server then inherits. With them on, `grasp_user` PUIDs, names and
+  emails are encrypted, so seed code reads users through `usersCollection(db)` /
+  `getUserByPuid(db, puid)` from `seed.js`, never a raw `db.collection('grasp_user')`.
+  A database once used with a key refuses a server without it, so don't point a
+  keyless run at it.
 - **A published quiz is invisible to a student without BOTH:** (1) a
   `grasp_quiz_section_schedule` row with `releaseDate < now < expireDate` for a section,
   and (2) the student in `grasp_user_course_section` for that same section. Publishing
@@ -368,7 +379,7 @@ E2E gets its **own workflow**, `.github/workflows/e2e-tests.yml`, separate from 
 and a11y (model: BIOCBOT's `playwright.yml`). It must be independently runnable
 (`workflow_dispatch`) and must not gate local development.
 
-- Runner: `ubuntu-latest`, Node 20, `timeout-minutes: 30`.
+- Runner: `ubuntu-latest`, Node 22, `timeout-minutes: 30`.
 - Services: `mongo:7` (with healthcheck). **Qdrant/Ollama are not needed** — LLM/RAG is
   swapped for in-process stubs by `start-server-with-stubs.js` (see above).
 - **FakeAcademicAPI in CI**: the instructor journey creates a course from a real UBC

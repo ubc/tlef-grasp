@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { Parser } = require("expr-eval");
+const { Parser } = require("expr-eval-fork");
 
 const _EXPR_PARSER = new Parser();
 
@@ -506,7 +506,7 @@ function evaluateCalculationFormula(formula, values) {
         `Formula references "${name}" but it is missing from this attempt's values. Reload the quiz or ask your instructor to align the formula with calculationVariables.`
       );
     }
-    if (/is not a function/i.test(msg)) {
+    if (/is not (a|an allowed) function/i.test(msg)) {
       throw new Error(
         "Formula used implicit multiplication (e.g. 0.28(x+1) without *). The engine expects 0.28*(x+1). Save the question again to normalize the formula, or ask your instructor to add explicit * between a number and '('."
       );

@@ -10,7 +10,7 @@
  * local Canvas, with the same results).
  */
 
-const { Parser } = require('expr-eval');
+const { Parser } = require('expr-eval-fork');
 const {
   canvasFormulaToGrasp,
   graspFormulaToCanvas,

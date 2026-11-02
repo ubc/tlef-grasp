@@ -74,6 +74,9 @@ describe('question model normalization', () => {
     expect(OpenEndedQuestion.getPromptInstruction()).toContain(
       'openEndedSampleAnswer'
     );
+    expect(OpenEndedQuestion.getPromptInstruction()).toContain(
+      'numbered list with one criterion per line'
+    );
     expect(OpenEndedQuestion.getRetrySuffix(1, new Error('weak rubric'))).toContain(
       'weak rubric'
     );

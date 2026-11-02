@@ -11,9 +11,9 @@
  * Staff-level access is course-scoped: a promoted TA only acts as staff in
  * courses where their membership says 'ta'. In every other course they are a
  * regular student. Genuine SAML staff keep staff access in any course they
- * belong to, as before. Role changes are written to the database immediately
- * but sessions snapshot the affiliation at login, so a promotion or demotion
- * takes effect on the affected user's next login.
+ * belong to, as before. Role changes are written to the database and apply on
+ * the affected user's next request: the session holds only the user's id, and
+ * req.user is loaded fresh each time (middleware/session-user.js).
  */
 
 const { isFaculty, isStaff, parseAffiliations } = require('./auth');

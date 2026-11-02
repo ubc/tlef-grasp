@@ -1,14 +1,11 @@
 const { Readable, Writable } = require("stream");
 
-jest.mock("mongodb", () => {
-  const actual = jest.requireActual("mongodb");
-  return { ...actual, GridFSBucket: jest.fn() };
-});
 jest.mock("../../src/services/database", () => ({
   connect: jest.fn(),
+  gridFSBucket: jest.fn(),
 }));
 
-const { ObjectId, GridFSBucket } = require("mongodb");
+const { ObjectId } = require("mongodb");
 const databaseService = require("../../src/services/database");
 const imageService = require("../../src/services/image");
 
@@ -32,8 +29,7 @@ function mockBucket(overrides = {}) {
     delete: jest.fn(),
     ...overrides,
   };
-  GridFSBucket.mockImplementation(() => bucket);
-  databaseService.connect.mockResolvedValue({});
+  databaseService.gridFSBucket.mockResolvedValue(bucket);
   return bucket;
 }
 

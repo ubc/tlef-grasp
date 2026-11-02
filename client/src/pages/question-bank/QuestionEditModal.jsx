@@ -436,7 +436,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   ? "Question prompt"
                   : "Question Stem"}
             </label>
-            <textarea
+            <AutoHeightTextarea
               id="qem-stem"
               rows={form.questionType === QUESTION_TYPES.OPEN_ENDED ? 6 : 4}
               value={form.stem}
@@ -554,7 +554,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   Sample answer{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   rows={6}
                   value={form.openEndedSampleAnswer}
                   onChange={set("openEndedSampleAnswer")}
@@ -567,7 +567,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   Grading criteria{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   rows={6}
                   value={form.openEndedGradingCriteria}
                   onChange={set("openEndedGradingCriteria")}

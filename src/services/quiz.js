@@ -1314,21 +1314,24 @@ const getQuizScores = async (quizId) => {
 
         // 3b. Count AI grades each student denied and no instructor has yet
         // finalized (issue #76). Surfaced per-row so instructors can spot which
-        // students flagged a grade for review.
-        const disputes = await db.collection("grasp_student_attempt").aggregate([
+        // students flagged a grade for review. Counted here, not with $group:
+        // grasp_student_attempt is encrypted, and the encryption toolkit
+        // rejects aggregation stages it cannot check.
+        const disputes = await db.collection("grasp_student_attempt").find(
             {
-                $match: {
-                    quizId: quizIdObj,
-                    studentGradeReview: "deny",
-                    gradedAt: { $exists: false },
-                    isFirstAttempt: { $ne: false },
-                },
+                quizId: quizIdObj,
+                studentGradeReview: "deny",
+                gradedAt: { $exists: false },
+                isFirstAttempt: { $ne: false },
             },
-            { $group: { _id: "$userId", count: { $sum: 1 } } },
-        ]).toArray();
-        const disputedByUserId = new Map(
-            disputes.map((d) => [d._id.toString(), d.count])
-        );
+            { projection: { userId: 1 } }
+        ).toArray();
+        const disputedByUserId = new Map();
+        for (const { userId } of disputes) {
+            if (!userId) continue;
+            const key = userId.toString();
+            disputedByUserId.set(key, (disputedByUserId.get(key) || 0) + 1);
+        }
 
         // 4. Map students to their scores
         const scoresByUserId = new Map(scores.map(s => [s.userId.toString(), s]));
