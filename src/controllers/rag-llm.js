@@ -481,7 +481,19 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       );
     }
 
-    //console.log("RAG Context:", ragContext);
+    // Questions must come from what the course teaches. With nothing retrieved —
+    // no material attached, every attached one deleted, or only the empty "From
+    // Canvas" placeholder a quiz import links to — the model would write from
+    // general knowledge instead, so refuse with a reason the instructor can act
+    // on. The question generation page does not offer such objectives; this
+    // covers requests that reach here anyway.
+    if (!ragContext || !ragContext.trim()) {
+      return res.status(409).json({
+        success: false,
+        code: 'NO_COURSE_MATERIAL',
+        error: 'This learning objective has no course material to generate questions from. Attach a course material to it, then try again.',
+      });
+    }
 
     // Use LLM service for generation
     console.log("=== USING LLM SERVICE FOR GENERATION ===");

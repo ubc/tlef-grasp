@@ -254,6 +254,21 @@ const removeAllRelationsForObjective = async (objectiveId) => {
 };
 
 /**
+ * Remove every learning objective's link to one material. Called when the
+ * material is deleted: a link left behind makes the objective look linked while
+ * its materials resolve to nothing.
+ * @param {string|ObjectId} materialId - The material _id
+ * @returns {Promise<number>} how many links were removed
+ */
+const removeAllRelationsForMaterial = async (materialId) => {
+  const db = await databaseService.connect();
+  const collection = db.collection('grasp_objective_material');
+  const materialIdObj = ObjectId.isValid(materialId) ? new ObjectId(materialId) : materialId;
+  const result = await collection.deleteMany({ materialId: materialIdObj });
+  return result.deletedCount;
+};
+
+/**
  * Update relationships for a learning objective (replace existing with new ones)
  * @param {string|ObjectId} objectiveId - The learning objective ID (can be ObjectId or string)
  * @param {Array<string>} materialSourceIds - Array of material sourceIds (will be converted to material _id)
@@ -286,6 +301,7 @@ module.exports = {
   getObjectivesForMaterial,
   removeObjectiveMaterialRelation,
   removeAllRelationsForObjective,
+  removeAllRelationsForMaterial,
   updateObjectiveMaterialRelations,
   assertWithinMaterialCap,
   MaterialCapExceededError,

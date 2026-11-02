@@ -1,4 +1,5 @@
-const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, restoreMaterialDocument, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
+const { saveMaterial, getCourseMaterials, getMaterialCourseId, deleteMaterial, replaceMaterial, getMaterialBySourceId, clearMaterialOutline } = require('../services/material');
+const { removeAllRelationsForMaterial } = require('../services/objective-material');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { getCourseById } = require('../services/course');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
@@ -33,20 +34,17 @@ const ragMetadataForExisting = (existingMaterial, courseName) => {
 
 /**
  * Swap a material's stored text and its vector chunks together, putting the
- * original back if any step fails.
+ * original chunks back if any step fails.
  *
- * Editing or refetching a material is a delete-then-reinsert, because
- * saveMaterial inserts and the sourceId is uniquely indexed. That made the
- * sequence destructive: the Mongo row was deleted, then addDocumentToRAG ran,
- * and if it threw — Qdrant restarting, the embedding provider rate-limiting, a
- * network blip — the request 500'd with the row already gone and never
- * re-inserted. The extracted text exists nowhere else, so the material, its
- * outline, and every objective link pointing at it were lost for good, on a
- * transient error, while the instructor was only fixing a typo.
+ * The Mongo row is rewritten in place and last, so it is never absent: the
+ * extracted text exists nowhere else, and it used to be deleted and reinserted
+ * around the vector write, which lost the material for good whenever that write
+ * threw. Rewriting in place also keeps the row's _id, which every learning
+ * objective link points at; a reinsert gave it a new one and cut the material
+ * off from its objectives.
  *
- * Vector chunks are derived data and can always be rebuilt from the text, so the
- * Mongo document is what must survive. It is restored first and unconditionally;
- * the chunk restore is best-effort on top.
+ * Vector chunks are derived data and can always be rebuilt from the text, so
+ * putting the original ones back is best-effort.
  *
  * @returns {Promise<void>} resolves once the new content is in place; rejects
  *   with the original failure after the rollback has been attempted.
@@ -60,7 +58,7 @@ const replaceMaterialContent = async ({
     materialFields,
 }) => {
     const { sourceId } = existingMaterial;
-    let documentRemoved = false;
+    let chunksReplaced = false;
 
     try {
         try {
@@ -70,33 +68,18 @@ const replaceMaterialContent = async ({
             // Tolerated: the add below writes this sourceId's chunks afresh.
             console.error("Error deleting from vector database:", ragError);
         }
-
-        await deleteMaterial(sourceId);
-        documentRemoved = true;
-        console.log("✅ Deleted from MongoDB");
+        chunksReplaced = true;
 
         await ragService.addDocumentToRAG(ragContent, ragMetadata, courseId);
         console.log("✅ Re-saved to vector database");
 
-        await saveMaterial(sourceId, courseId, materialFields);
-        documentRemoved = false;
-        console.log("✅ Re-saved to MongoDB");
+        await replaceMaterial(existingMaterial, materialFields);
+        console.log("✅ Updated in MongoDB");
     } catch (error) {
-        if (documentRemoved) {
+        if (chunksReplaced) {
+            // The stored text is still the original; make the chunks match it.
             try {
-                await restoreMaterialDocument(existingMaterial);
-                console.warn(`↩️ Restored material ${sourceId} after a failed update`);
-            } catch (restoreError) {
-                // The one case where text is genuinely at risk. Log the content
-                // length so the size of the loss is at least recoverable from logs.
-                console.error(
-                    `❌ Could not restore material ${sourceId} after a failed update ` +
-                    `(${(existingMaterial.fileContent || '').length} chars of extracted text):`,
-                    restoreError
-                );
-            }
-
-            try {
+                await ragService.deleteDocumentFromRAG(sourceId, courseId);
                 await ragService.addDocumentToRAG(
                     existingMaterial.fileContent || '',
                     ragMetadataForExisting(existingMaterial, courseName),
@@ -104,10 +87,10 @@ const replaceMaterialContent = async ({
                 );
                 console.warn(`↩️ Restored vector chunks for ${sourceId}`);
             } catch (ragRestoreError) {
-                // Non-fatal: the text is back in Mongo, so re-saving the material
-                // rebuilds these. Retrieval is degraded until then.
+                // Non-fatal: the text is intact in Mongo, so re-saving the
+                // material rebuilds these. Retrieval is degraded until then.
                 console.error(
-                    `⚠️ Material ${sourceId} was restored but its vector chunks were not; ` +
+                    `⚠️ Material ${sourceId} kept its text but its vector chunks were not restored; ` +
                     `re-save the material to rebuild them:`,
                     ragRestoreError
                 );
@@ -157,8 +140,8 @@ const saveMaterialHandler = async (req, res) => {
 const deleteMaterialHandler = async (req, res) => {
     try {
         const { sourceId } = req.params;
-        const userId = req.user.id;
-        const courseId = await getMaterialCourseId(sourceId);
+        const material = await getMaterialBySourceId(sourceId);
+        const courseId = material?.courseId;
 
         if (!courseId) {
             return res.status(404).json({ error: "Course current material attached to not found" });
@@ -178,6 +161,17 @@ const deleteMaterialHandler = async (req, res) => {
         }
 
         await deleteMaterial(sourceId);
+
+        // After the row, never before: links removed from a material that then
+        // failed to delete would leave it in the course attached to nothing. A
+        // link left behind here is caught later — question generation refuses
+        // an objective with no material — so the delete still succeeds.
+        try {
+            await removeAllRelationsForMaterial(material._id);
+        } catch (linkError) {
+            console.error(`Error removing objective links for deleted material ${sourceId}:`, linkError);
+        }
+
         res.json({ success: true, message: "Material deleted successfully" });
     } catch (error) {
         console.error("Error deleting material:", error);

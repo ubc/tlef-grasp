@@ -215,6 +215,8 @@ export async function generateQuestions(course, objectiveGroups, onProgress, opt
         objectiveText: granular.text || learningObjective.title || "",
         granularId: granular.granularId,
         reason: result.reason?.message || String(result.reason),
+        // The server's machine-readable reason, e.g. NO_COURSE_MATERIAL.
+        code: result.reason?.body?.code,
         rateLimited: result.reason?.status === 429 || result.reason?.rateLimited === true,
         // Carried through so the sweep can honour the provider's requested
         // wait before firing its first retry (see below) — collect()'s other

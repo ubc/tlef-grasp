@@ -269,6 +269,7 @@ export default function QuestionGeneration() {
 
       if (failures?.length > 0) {
         const rateLimited = failures.filter((failure) => failure.rateLimited).length;
+        const noMaterial = failures.filter((failure) => failure.code === "NO_COURSE_MATERIAL").length;
         // Name the failed objectives so the instructor knows what to
         // regenerate, but cap the list so a large failure set doesn't
         // produce an unreadable toast.
@@ -280,6 +281,9 @@ export default function QuestionGeneration() {
           `${failures.length} objective${failures.length === 1 ? "" : "s"} could not be generated` +
             (nameList ? `: ${nameList}` : "") +
             (rateLimited > 0 ? " (the AI provider was rate limiting)" : "") +
+            (noMaterial > 0
+              ? ` (${noMaterial === 1 ? "one has" : `${noMaterial} have`} no course material attached — attach material to ${noMaterial === 1 ? "it" : "them"} first)`
+              : "") +
             ". The rest are ready below.",
           "warning"
         );
