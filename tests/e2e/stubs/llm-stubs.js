@@ -259,12 +259,17 @@ function createRagServiceStub(getObjectiveWithMaterials) {
       documents.delete(sourceId);
     },
 
+    // Seeded materials (tests/e2e/seed.js) are written straight to Mongo, so
+    // this in-memory store never saw them; where the real service would find
+    // their chunks in Qdrant, use the stored text. The "From Canvas"
+    // placeholder is skipped, as services/rag.js skips it.
     getLearningObjectiveRagContent: async (objectiveId) => {
       const objective = await getObjectiveWithMaterials(objectiveId);
       if (!objective) throw new Error(`Objective with ID ${objectiveId} not found`);
-      const sourceIds = objective.materials.map((material) => material.sourceId);
-      return chunksFor({ filter: { must: [{ key: 'sourceId', match: { any: sourceIds } }] } })
-        .map((chunk) => chunk.content)
+      return objective.materials
+        .filter((material) => material.fileType !== 'canvas-import')
+        .map((material) => documents.get(material.sourceId)?.content || material.fileContent || '')
+        .filter(Boolean)
         .join('\n\n');
     },
 

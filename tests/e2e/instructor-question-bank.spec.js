@@ -382,7 +382,13 @@ test.describe('Deleting objectives from question generation (seeded course)', ()
   async function throwawayObjective(page, courseId, label) {
     const name = `[[e2e-delete]] ${label} ${Date.now()}`;
     const response = await page.request.post('/api/objective', {
-      data: { name, courseId, granularObjectives: [{ text: `${name} granular` }] },
+      data: {
+        name,
+        courseId,
+        granularObjectives: [{ text: `${name} granular` }],
+        // Question generation only lists objectives that have course material.
+        materialIds: [SEED.MATERIAL_SOURCE_ID],
+      },
     });
     expect(response.ok(), `objective created (HTTP ${response.status()})`).toBe(true);
     const body = await response.json();
