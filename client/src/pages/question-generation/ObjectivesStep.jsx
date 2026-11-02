@@ -78,7 +78,12 @@ export default function ObjectivesStep({
   const objectiveGroupsRef = useRef(objectiveGroups);
   objectiveGroupsRef.current = objectiveGroups;
 
-  const { objectives: dbObjectives } = useCourseObjectives(course?.id);
+  const { objectives: courseObjectives } = useCourseObjectives(course?.id);
+  // Questions must come from the course material, so an objective without any —
+  // none attached, all deleted, or only the "From Canvas" placeholder of a quiz
+  // import — is not offered here at all.
+  const dbObjectives = courseObjectives.filter((objective) => objective.hasCourseMaterial);
+  const withoutMaterialCount = courseObjectives.length - dbObjectives.length;
   const { materials: courseMaterials } = useCourseMaterials(course?.id);
 
   // Both hooks refresh the objective lists and the Question Bank on success.
@@ -796,6 +801,13 @@ export default function ObjectivesStep({
                   })
                 )}
               </ul>
+              {withoutMaterialCount > 0 && (
+                <p className="border-t border-gray-100 px-3 py-2 text-xs text-muted">
+                  {withoutMaterialCount === 1
+                    ? "1 learning objective is not listed because it has no course material. Attach material to it in the Question Bank to generate questions from it."
+                    : `${withoutMaterialCount} learning objectives are not listed because they have no course material. Attach material to them in the Question Bank to generate questions from them.`}
+                </p>
+              )}
               <div className="flex items-center justify-end gap-2 border-t border-gray-100 p-2">
                 <button
                   type="button"

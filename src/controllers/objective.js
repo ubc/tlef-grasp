@@ -4,6 +4,7 @@ const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissi
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, appendGranularObjectives, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
 const { isFaculty } = require('../utils/auth');
+const { isCanvasImportMaterial } = require('../services/material');
 
 // Deleting an objective's questions removes them from the Question Bank for
 // good, and only faculty may delete questions (see deleteQuestionHandler).
@@ -27,20 +28,24 @@ const getAllObjectives = async (req, res) => {
 
     const objectives = await getParentObjectives(courseId);
     
-    // Populate materialIds for each objective
+    // Populate materialIds for each objective. hasCourseMaterial says whether
+    // questions can be generated from it: the "From Canvas" placeholder a quiz
+    // import links to has no content, so it does not count.
     const populatedObjectives = await Promise.all(objectives.map(async (obj) => {
       try {
         const materials = await getMaterialsForObjective(obj._id);
         const materialIds = materials.map(m => m.sourceId || m._id.toString());
         return {
           ...obj,
-          materialIds
+          materialIds,
+          hasCourseMaterial: materials.some((m) => !isCanvasImportMaterial(m)),
         };
       } catch (err) {
         console.error(`Error populating materials for objective ${obj._id}:`, err);
         return {
           ...obj,
-          materialIds: []
+          materialIds: [],
+          hasCourseMaterial: false,
         };
       }
     }));
