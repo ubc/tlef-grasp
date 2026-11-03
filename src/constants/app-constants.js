@@ -8,7 +8,7 @@ Course: {courseName}
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 
-BACKGROUND COURSE MATERIAL:
+COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
 
@@ -31,6 +31,8 @@ SELF-CHECK BEFORE RETURNING (required):
 
 TOPIC: Does your question stem directly test the concept named in the Granular Learning Objective above?
 If the question is about a different subject, rewrite it before returning.
+
+GROUNDING: Every concept, principle, procedure, rule, or fact a student needs to answer your question must be taught in the course material above — not just related to it, and not merely something an expert in the field would know. New examples, scenarios, substances, or numbers are fine when they apply a concept the material teaches. Data you give in the question itself (such as a constant the student is told) does not need to be in the material. If answering needs anything the material does not teach, rewrite the question around what it does teach.
 
 BLOOM: Apply the stricter definitions below before accepting your Bloom label:
 - Apply = execute a procedure on a specific scenario, not name what the procedure does
@@ -233,6 +235,19 @@ You MUST fill in the reasoning field for every question — work through the che
 const QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE = `
 
 MULTIPLE ANSWER (questionType "multiple-answer"): students must select every correct option and no other, and correctAnswers lists every correct option. Re-derive each option on its own: every listed option must be correct, every unlisted option must be incorrect, and at least one option must be incorrect. Flag an option that depends on another ("both A and B", "all of the above"), and any option whose truth is ambiguous.`;
+
+// Appended to QUESTION_REVIEW_PROMPT when the course material the questions
+// were generated from is available, so review can check what the material
+// actually teaches. Without it, review can only judge correctness against
+// general knowledge, and a question built on a concept the course never taught
+// passes as long as it is accurate.
+const QUESTION_REVIEW_MATERIAL_NOTE = `
+
+COURSE MATERIAL THESE QUESTIONS WERE GENERATED FROM:
+{ragContext}
+--- END OF MATERIAL ---
+
+MATERIAL COVERAGE (every question): list the concepts, principles, procedures, rules, or facts a student must know to answer the question correctly — not general background a university student is assumed to have, such as arithmetic, basic algebra, or chemical formula notation. For each, check that the material above teaches it: explains, states, defines, or demonstrates it. A question that applies a taught concept to a new example, scenario, substance, or numbers IS covered; data given in the question itself does not need to be in the material. Flag the question if any required concept is not taught, and name the concept that is missing.`;
 
 const QUESTION_FIX_PROMPT = `An independent quality reviewer examined the {questionType} question you generated above (beginning: "{questionExcerpt}") and flagged it:
 
@@ -438,6 +453,7 @@ module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
   QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE,
+  QUESTION_REVIEW_MATERIAL_NOTE,
   QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,

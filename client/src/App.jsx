@@ -6,6 +6,7 @@ import {
   RequireRole,
   RequirePermission,
   RequireTaPermission,
+  RequireAppAdministrator,
 } from "./components/guards";
 import AppLayout from "./components/layout/AppLayout";
 import Landing from "./pages/Landing";
@@ -24,6 +25,7 @@ const QuestionFlags = lazy(() => import("./pages/QuestionFlags"));
 const MySections = lazy(() => import("./pages/MySections"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Administration = lazy(() => import("./pages/Administration"));
 const Profile = lazy(() => import("./pages/Profile"));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
 const StudentQuiz = lazy(() => import("./pages/StudentQuiz"));
@@ -51,6 +53,11 @@ export default function App() {
 
         <Route element={<RequireAuth />}>
           <Route path="/onboarding" element={<Onboarding />} />
+          {/* App-wide, like onboarding: it acts on every course, so it sits
+              outside the course shell and needs no selected course. */}
+          <Route element={<RequireAppAdministrator />}>
+            <Route path="/administration" element={<Administration />} />
+          </Route>
 
           {/* Student dashboard works without a course (shows a no-course state) */}
           <Route element={<AppLayout />}>

@@ -1,4 +1,4 @@
-const { getUserRole, hasMinimumRole, ROLES } = require("../utils/auth");
+const { getUserRole, hasMinimumRole, isAppAdministrator, ROLES } = require("../utils/auth");
 
 /**
  * Custom middleware for API routes - returns JSON instead of redirecting
@@ -42,6 +42,28 @@ function requireRole(minRole) {
 }
 
 /**
+ * Middleware to require an application administrator (PUID in APP_ADMINISTRATOR)
+ */
+async function requireAppAdministrator(req, res, next) {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({
+            success: false,
+            error: 'Authentication required',
+            authenticated: false
+        });
+    }
+
+    if (!(await isAppAdministrator(req.user))) {
+        return res.status(403).json({
+            success: false,
+            error: 'Access denied. Application administrators only.'
+        });
+    }
+
+    next();
+}
+
+/**
  * Page-level role check middleware for HTML pages
  * Redirects to appropriate page based on role
  */
@@ -68,5 +90,6 @@ function requirePageRole(minRole) {
 module.exports = {
     ensureAuthenticatedAPI,
     requireRole,
+    requireAppAdministrator,
     requirePageRole
 };

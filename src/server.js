@@ -66,12 +66,13 @@ const achievementRoutes = require("./routes/achievement");
 const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
 const profileRoutes = require("./routes/profile");
+const adminRoutes = require("./routes/admin");
 const { createCanvasRouter } = require('./routes/lms-canvas');
 const { createMoodleRouter } = require('./routes/lms-moodle');
 const lmsRoutes = require('./routes/lms');
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
-const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
+const { ensureAuthenticatedAPI, requireRole, requireAppAdministrator } = require('./middleware/auth');
 const { apiLimiter } = require('./middleware/rate-limit');
 
 const app = express();
@@ -207,6 +208,9 @@ app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), 
 // Course user roster - staff and TAs may read; mutating handlers enforce
 // faculty-only access themselves. Promoted TA access is checked per course.
 app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRoutes);
+
+// App-wide administration - APP_ADMINISTRATOR only (acts on every course)
+app.use("/api/admin", ensureAuthenticatedAPI, requireAppAdministrator, express.json(), adminRoutes);
 
 // UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
 app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);

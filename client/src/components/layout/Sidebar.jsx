@@ -192,7 +192,7 @@ function CourseSelector() {
 
 export default function Sidebar({ open = false, onClose }) {
   const closeButtonRef = useRef(null);
-  const { isStudent } = useCurrentUser();
+  const { isStudent, user } = useCurrentUser();
   const { hasStaffAccess, role: courseRole } = useCourseAccess();
   const { can } = useCoInstructorAccess();
   const { canTa } = useTaAccess();
@@ -279,6 +279,17 @@ export default function Sidebar({ open = false, onClose }) {
               title="Settings"
             >
               <i className="fas fa-cog text-lg text-white/90" />
+            </Link>
+          )}
+          {/* App-wide, not part of this course: it leaves the course shell. */}
+          {user?.isAppAdministrator && (
+            <Link
+              to="/administration"
+              className="relative flex h-[45px] w-[45px] items-center justify-center rounded-full bg-white/10 transition-all hover:-translate-y-0.5 hover:bg-white/20"
+              aria-label="Administration"
+              title="Administration"
+            >
+              <i className="fas fa-tools text-lg text-white/90" />
             </Link>
           )}
         </div>

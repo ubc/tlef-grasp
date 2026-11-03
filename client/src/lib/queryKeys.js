@@ -42,6 +42,7 @@ export const queryKeys = {
 
   courseSettings: (courseId) => ["course-settings", courseId],
   settingsDefaults: ["course-settings-defaults"],
+  adminPromptOverrides: ["admin-prompt-overrides"],
   enrollmentCode: (courseId) => ["enrollment-code", courseId],
 
   canvasStatus: ["canvas", "status"],

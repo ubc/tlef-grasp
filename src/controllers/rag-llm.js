@@ -30,7 +30,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -791,7 +791,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         learningObjectiveText,
         granularLearningObjectiveText,
         effortForStage(settings, 'question-review'),
-        settings?.autoFixEnabled !== false
+        settings?.autoFixEnabled !== false,
+        ragContext
       );
       questionsData = reviewFixResult.questionsData;
       const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
@@ -1144,7 +1145,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, courseName, effort = null) {
+async function rateQuestions(questions, courseName, effort = null, ragContext = null) {
   const formattedQuestions = questions.map(q => {
     // Determine the question stem based on type (MC and multiple answer keep
     // it in the title, the others in the stem)
@@ -1189,7 +1190,10 @@ async function rateQuestions(questions, courseName, effort = null) {
   const prompt = QUESTION_REVIEW_PROMPT
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2))
-    + (hasMultipleAnswer ? QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE : '');
+    + (hasMultipleAnswer ? QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE : '')
+    // Review checks coverage only when it is handed the material the questions
+    // came from; the standalone review route has none to give it.
+    + (ragContext && ragContext.trim() ? QUESTION_REVIEW_MATERIAL_NOTE.replace('{ragContext}', () => ragContext) : '');
 
   // Schema-constrained decoding guarantees the { ratings: [...] } shape.
   const { content: responseContent, usage } = await generationLimiter.run(() => generateStructured({
@@ -1382,7 +1386,8 @@ async function reviewAndFixQuestions(
   learningObjectiveText,
   granularLearningObjectiveText,
   effort = null,
-  autoFix = true
+  autoFix = true,
+  ragContext = null
 ) {
   // Each fix call replays its question's whole context — the opening message,
   // retrieved material and all — so this is the most expensive knob in the loop.
@@ -1417,7 +1422,7 @@ async function reviewAndFixQuestions(
 
   let ratings;
   try {
-    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort);
+    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort, ragContext);
     ratings = initialReview.ratings;
     reviewPromptTokens += initialReview.usage.promptTokens;
     reviewCompletionTokens += initialReview.usage.completionTokens;
@@ -1488,7 +1493,7 @@ async function reviewAndFixQuestions(
     if (patched.length > 0) {
       let reReviewRatings = [];
       try {
-        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort);
+        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort, ragContext);
         reReviewRatings = reReview.ratings;
         reviewPromptTokens += reReview.usage.promptTokens;
         reviewCompletionTokens += reReview.usage.completionTokens;
