@@ -105,7 +105,8 @@ You must output a JSON object representing a parameterized question. The server 
 1. **Count**: Use at most 3 variables (fewer is better).
 2. **Declaration**: Only declare variables in \`calculationVariables\` that are actually used. Unused or extra declared variables will cause immediate failure.
 3. **Stem Delimiters**: Every declared variable must appear in the stem wrapped in double curly braces (e.g., \`{{x}}\`). Even if you write variables in LaTeX or text (like \`s(t) = 3t\` or \`time t\`), you must still include the parameterized placeholder (e.g., \`at time t = {{t}}\` or \`when t is {{t}}\`) in the stem, so the random values can be substituted.
-4. **Formula format**: \`calculationFormula\` must be ONE pure ASCII arithmetic expression (no LaTeX, no Unicode math symbols like ∫, ∑, π, or ℯ, no = sign). It must use only: \`+\`, \`-\`, \`*\`, \`/\`, \`^\`, \`(\`, \`)\`, digits, variable names, constants \`PI\` and \`E\`, and functions \`sin\`, \`cos\`, \`tan\`, \`sqrt\`, \`log\`, \`exp\`.
+4. **Formula format**: \`calculationFormula\` must be ONE pure ASCII arithmetic expression (no LaTeX, no Unicode math symbols like ∫, ∑, π, or ℯ, no = sign). It must use only: \`+\`, \`-\`, \`*\`, \`/\`, \`^\`, \`(\`, \`)\`, digits, variable names, constants \`PI\` and \`E\`, and functions \`sin\`, \`cos\`, \`tan\`, \`sqrt\`, \`ln\`, \`log10\`, \`exp\`.
+   - **Logarithms**: \`ln(x)\` is the natural logarithm. A base-10 logarithm — pH, pOH, pKa, decibels, orders of magnitude — must be written \`log10(x)\`. Never write a bare \`log(x)\`: the engine evaluates it as the natural logarithm, so \`-log(c)\` for a pH gives an answer about 2.3 times too large.
 5. **Formula alignment**: Every variable declared in \`calculationVariables\` must be used in the formula. Conversely, every variable in the formula must be declared in \`calculationVariables\`.
 6. **No Expressions in Braces**: The stem placeholders must be simple variables (e.g., \`{{x}}\`). Never put expressions inside braces (e.g., \`{{n^2}}\` or \`{{2a}}\` are invalid).
 7. **Numeric Value Request**: The stem must ask for a specific numeric value. Never ask yes/no or convergence/divergence questions.
@@ -160,7 +161,7 @@ Worked example of the MECHANICS only (derive your own formula, stem, and variabl
             if (/square brackets|TBRACKET|\[|\]/i.test(msg)) {
                 calcExtra +=
                     "\nThe formula used square brackets [ ], which are invalid. Use parentheses ( ) for grouping. " +
-                    "If you meant a concentration or other quantity (e.g. [H+]), declare it as a single-letter variable (e.g. \"c\") and use {{c}} in the stem and \"c\" in the formula — example: pH from concentration → formula \"-log(c)/log(10)\" with variable c.";
+                    "If you meant a concentration or other quantity (e.g. [H+]), declare it as a single-letter variable (e.g. \"c\") and use {{c}} in the stem and \"c\" in the formula — example: pH from concentration → formula \"-log10(c)\" with variable c.";
             }
             if (/stem must reference each variable|calculationFormula must reference every declared variable/i.test(msg)) {
                 const missingMatch = msg.match(/Missing(?:\s+from\s+\w+)?:\s*([^\s.]+)/i);

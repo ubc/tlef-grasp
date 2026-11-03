@@ -1,15 +1,21 @@
 // Questions must test concepts the course material teaches, not just concepts
 // related to it. Review is the independent check on that, so it is handed the
-// same material generation retrieved — the initial review and the re-review of
-// a fixed question alike. The standalone review route has no material, and its
-// prompt is unchanged.
+// material — the initial review and the re-review of a fixed question alike.
+// It gets the whole of each linked material when that fits, because against
+// the retrieved excerpts alone a concept taught on a page the search missed
+// looks untaught. The standalone review route has no material, and its prompt
+// is unchanged.
 
 const mockGenerateStructured = jest.fn();
+const mockGetObjectiveWithMaterials = jest.fn();
 
 jest.mock('../../src/services/rag', () => ({
   getLearningObjectiveRagContent: jest.fn().mockResolvedValue('Eyes are flushed for 15 minutes at the eyewash.'),
 }));
 jest.mock('../../src/services/llm', () => ({ isReady: jest.fn(() => true) }));
+jest.mock('../../src/services/objective', () => ({
+  getObjectiveWithMaterials: (...args) => mockGetObjectiveWithMaterials(...args),
+}));
 jest.mock('../../src/services/question', () => ({
   getQuestionTextsByGranularObjective: jest.fn().mockResolvedValue([]),
 }));
@@ -80,7 +86,11 @@ const reviewPrompts = () =>
     .map((call) => call[0].prompt);
 
 describe('question review checks material coverage', () => {
-  beforeEach(() => mockGenerateStructured.mockReset());
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    // No stored material text: review falls back to the retrieved excerpts.
+    mockGetObjectiveWithMaterials.mockReset().mockResolvedValue({ materials: [] });
+  });
 
   it('gives the initial review and the re-review the retrieved material', async () => {
     mockGenerateStructured
@@ -124,5 +134,59 @@ describe('question review checks material coverage', () => {
 
     const [prompt] = reviewPrompts();
     expect(prompt).not.toContain('MATERIAL COVERAGE');
+  });
+
+  it('gives review the whole linked material, not just the retrieved excerpts', async () => {
+    const wholeText = `${MATERIAL}\nPage 9: report the exposure to the course instructor afterwards.`;
+    mockGetObjectiveWithMaterials.mockResolvedValue({
+      materials: [
+        { sourceId: 's1', documentTitle: 'Lab safety', fileType: 'application/pdf', fileContent: wholeText },
+        { sourceId: 'c-from-canvas', fileType: 'canvas-import', fileContent: '' },
+      ],
+    });
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('Who is told after an eyewash?')), usage: {} })
+      .mockResolvedValueOnce(rating(false));
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    const [prompt] = reviewPrompts();
+    expect(prompt).toContain('### Lab safety');
+    expect(prompt).toContain('Page 9: report the exposure');
+  });
+
+  it('falls back to the excerpts when the material is too long to send whole', async () => {
+    mockGetObjectiveWithMaterials.mockResolvedValue({
+      materials: [{ sourceId: 's1', documentTitle: 'Textbook', fileType: 'application/pdf', fileContent: 'x'.repeat(60001) }],
+    });
+    mockGenerateStructured
+      .mockResolvedValueOnce({ content: JSON.stringify(makeMcq('How long are eyes flushed?')), usage: {} })
+      .mockResolvedValueOnce(rating(false));
+
+    await generateQuestionsWithRagHandler(buildRequest(), buildResponse());
+
+    const [prompt] = reviewPrompts();
+    expect(prompt).not.toContain('### Textbook');
+    expect(prompt).toContain(MATERIAL);
+  });
+});
+
+describe('question review of calculation formulas', () => {
+  beforeEach(() => mockGenerateStructured.mockReset());
+
+  const reviewOne = async (question) => {
+    mockGenerateStructured.mockResolvedValueOnce(rating(false));
+    await reviewQuestionsHandler({ body: { questions: [{ id: '0', ...question }] } }, buildResponse());
+    return reviewPrompts()[0];
+  };
+
+  it('tells review the engine reads log as the natural logarithm', async () => {
+    const prompt = await reviewOne({ questionType: 'calculation', stem: 'Find the pH for {{c}} M.', calculationFormula: '-log(c)' });
+    expect(prompt).toContain('log(x) and ln(x) are both the natural logarithm');
+  });
+
+  it('leaves the note out when no question is a calculation', async () => {
+    const prompt = await reviewOne({ questionType: 'multiple-choice', title: 'How long are eyes flushed?' });
+    expect(prompt).not.toContain('natural logarithm');
   });
 });

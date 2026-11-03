@@ -8,7 +8,8 @@ const databaseService = require('../services/database');
 const { ObjectId } = require('mongodb');
 
 // Import services
-const { getMaterialCourseId, getMaterialBySourceId } = require('../services/material');
+const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial } = require('../services/material');
+const { getObjectiveWithMaterials } = require('../services/objective');
 const outlineService = require('../services/material-outline');
 const { renderOutlineBlock } = require('../utils/outline-text');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -30,7 +31,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_CALCULATION_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -40,6 +41,35 @@ const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_
  * past its default, which is worth surfacing rather than silently trimming.
  */
 const OBJECTIVE_CONTEXT_WARN_CHARS = 300000;
+
+/**
+ * Largest combined material text review is given whole (about 15k tokens).
+ * Longer materials fall back to the excerpts retrieved for generation.
+ */
+const REVIEW_MATERIAL_MAX_CHARS = parseInt(process.env.REVIEW_MATERIAL_MAX_CHARS) || 60000;
+
+// The material review checks coverage against: the whole of each linked
+// material, not the excerpts retrieved for generation. Against excerpts, a
+// concept taught on a page the search did not return looks untaught, and the
+// fix that follows writes the very rule being assessed into the stem.
+async function getReviewMaterial(learningObjectiveId, materialIds, ragContext) {
+  try {
+    let materials = [];
+    if (learningObjectiveId) {
+      materials = (await getObjectiveWithMaterials(learningObjectiveId))?.materials || [];
+    } else if (materialIds && materialIds.length > 0) {
+      materials = (await Promise.all(materialIds.map((id) => getMaterialBySourceId(id)))).filter(Boolean);
+    }
+    const text = materials
+      .filter((material) => !isCanvasImportMaterial(material) && material.fileContent && material.fileContent.trim())
+      .map((material) => `### ${material.documentTitle || 'Untitled'}\n${material.fileContent}`)
+      .join('\n\n');
+    if (text && text.length <= REVIEW_MATERIAL_MAX_CHARS) return text;
+  } catch (error) {
+    console.warn('Could not load the full material for review; using the retrieved excerpts:', error.message);
+  }
+  return ragContext;
+}
 
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
@@ -792,7 +822,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         granularLearningObjectiveText,
         effortForStage(settings, 'question-review'),
         settings?.autoFixEnabled !== false,
-        ragContext
+        await getReviewMaterial(learningObjectiveId, materialIds, ragContext)
       );
       questionsData = reviewFixResult.questionsData;
       const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
@@ -1187,10 +1217,12 @@ async function rateQuestions(questions, courseName, effort = null, ragContext = 
   // The multiple-answer checks join only a review that has such a question,
   // so every other review gets the prompt it did before the type existed.
   const hasMultipleAnswer = formattedQuestions.some((q) => q.questionType === 'multiple-answer');
+  const hasCalculation = formattedQuestions.some((q) => q.questionType === 'calculation');
   const prompt = QUESTION_REVIEW_PROMPT
     .replace('{courseName}', courseName || 'N/A')
     .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2))
     + (hasMultipleAnswer ? QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE : '')
+    + (hasCalculation ? QUESTION_REVIEW_CALCULATION_NOTE : '')
     // Review checks coverage only when it is handed the material the questions
     // came from; the standalone review route has none to give it.
     + (ragContext && ragContext.trim() ? QUESTION_REVIEW_MATERIAL_NOTE.replace('{ragContext}', () => ragContext) : '');

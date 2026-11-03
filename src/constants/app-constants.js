@@ -236,6 +236,13 @@ const QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE = `
 
 MULTIPLE ANSWER (questionType "multiple-answer"): students must select every correct option and no other, and correctAnswers lists every correct option. Re-derive each option on its own: every listed option must be correct, every unlisted option must be incorrect, and at least one option must be incorrect. Flag an option that depends on another ("both A and B", "all of the above"), and any option whose truth is ambiguous.`;
 
+// Appended to QUESTION_REVIEW_PROMPT only when the questions under review
+// include a calculation one. A reviewer reading "-log(c)" assumes base 10, as a
+// person would; the engine does not, so the answer key it computes is wrong.
+const QUESTION_REVIEW_CALCULATION_NOTE = `
+
+CALCULATION (questionType "calculation"): the server computes the answer key by evaluating formula with an engine in which log(x) and ln(x) are both the natural logarithm and log10(x) is the base-10 logarithm. Evaluate formula exactly as that engine would at one sample of the variable values, and compare the result with what the stem asks for. Flag a formula that uses log or ln where the quantity needs a base-10 logarithm (pH, pOH, pKa, decibels, orders of magnitude).`;
+
 // Appended to QUESTION_REVIEW_PROMPT when the course material the questions
 // were generated from is available, so review can check what the material
 // actually teaches. Without it, review can only judge correctness against
@@ -453,6 +460,7 @@ module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
   QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE,
+  QUESTION_REVIEW_CALCULATION_NOTE,
   QUESTION_REVIEW_MATERIAL_NOTE,
   QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
