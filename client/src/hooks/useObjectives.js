@@ -14,6 +14,14 @@ export function useCourseObjectives(courseId, { enabled = true } = {}) {
   return { ...query, objectives: query.data?.objectives || [] };
 }
 
+const toDetailedObjectives = (objectives) =>
+  objectives.map((objective) => ({
+    id: getObjectId(objective),
+    name: objective.name,
+    granular: objective.granularObjectives || [],
+    materialIds: objective.materialSourceIds || [],
+  }));
+
 // Objectives with granular sub-objectives and linked material ids,
 // loaded in a single request via the batched /detailed endpoint.
 export function useDetailedObjectives(courseId, { enabled = true } = {}) {
@@ -22,17 +30,22 @@ export function useDetailedObjectives(courseId, { enabled = true } = {}) {
     queryFn: async () => {
       const data = await api.get(`/api/objective/detailed?courseId=${courseId}`);
       if (!data.success || !data.objectives) return [];
-      return data.objectives.map((objective) => ({
-        id: getObjectId(objective),
-        name: objective.name,
-        granular: objective.granularObjectives || [],
-        materialIds: objective.materialSourceIds || [],
-      }));
+      return toDetailedObjectives(data.objectives);
     },
     enabled: !!courseId && enabled,
   });
 
   return { ...query, objectives: query.data || [] };
+}
+
+// The same list read once, fresh. Unlike the hook it throws on a failed
+// request, so a failure never reads as "the course has no objectives".
+export async function fetchDetailedObjectives(courseId) {
+  const data = await api.get(`/api/objective/detailed?courseId=${courseId}`);
+  if (!data.success || !data.objectives) {
+    throw new Error(data.error || "Could not load the course's learning objectives");
+  }
+  return toDetailedObjectives(data.objectives);
 }
 
 // How many questions (and which quizzes) would be affected by deleting a
