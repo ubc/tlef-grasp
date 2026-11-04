@@ -1,4 +1,5 @@
 import DeliveryFormatToggle from "../../components/DeliveryFormatToggle";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 
 const TABS = [
   { id: "create", label: "Create New Quiz" },
@@ -40,30 +41,24 @@ export default function SaveQuizStep({
 
       {tab === "select" ? (
         <div>
-          <label htmlFor="quiz-select-dropdown" className="mb-2 block font-medium text-ink">
+          <p id="quiz-select-label" className="mb-2 block font-medium text-ink">
             Choose a quiz:
-          </label>
-          <select
-            id="quiz-select-dropdown"
+          </p>
+          <SearchableSelect
+            labelId="quiz-select-label"
+            size="lg"
             value={form.selectedQuizId}
-            onChange={(event) => set("selectedQuizId")(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-3 focus:border-primary focus:outline-none"
-          >
-            {quizzesPending ? (
-              <option value="">Loading quizzes...</option>
-            ) : quizzes.length === 0 ? (
-              <option value="">No quizzes available</option>
-            ) : (
-              <>
-                <option value="">Select a quiz...</option>
-                {quizzes.map((quiz) => (
-                  <option key={quiz._id} value={quiz._id}>
-                    {quiz.name}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
+            onChange={set("selectedQuizId")}
+            options={quizzes.map((quiz) => ({ value: quiz._id, label: quiz.name }))}
+            placeholder={
+              quizzesPending
+                ? "Loading quizzes..."
+                : quizzes.length === 0
+                  ? "No quizzes available"
+                  : "Select a quiz..."
+            }
+            searchPlaceholder="Search quizzes..."
+          />
           {quizzesLoaded && quizzes.length === 0 && (
             <p className="mt-4 text-sm text-muted">
               No quizzes found. Create a new quiz instead.

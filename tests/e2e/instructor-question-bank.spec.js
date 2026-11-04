@@ -313,10 +313,17 @@ test.describe('Instructor question bank (seeded course)', () => {
       const importButton = dialog.getByRole('button', { name: /Import 2 questions/ });
       await expect(importButton).toBeDisabled();
 
+      // Escape closes the objective list without closing the dialog under it.
+      const picker = dialog.getByRole('button', { name: 'Learning objective for question 2' });
+      await picker.click();
+      await expect(page.getByRole('listbox')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('listbox')).toBeHidden();
+      await expect(dialog).toBeVisible();
+
       // Assign the seeded objective to the unmatched question; import unlocks.
-      await dialog
-        .getByLabel('Learning objective for question 2')
-        .selectOption({ label: SEED.GRANULAR_NAME });
+      await picker.click();
+      await page.getByRole('option', { name: SEED.GRANULAR_NAME }).click();
       await expect(importButton).toBeEnabled();
 
       await importButton.click();
