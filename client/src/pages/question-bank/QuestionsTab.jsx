@@ -35,7 +35,7 @@ const STATUS_PILL_CLASSES = {
 
 const SORT_COLUMNS = [
   { key: "title", label: "Question Title" },
-  { key: "glo", label: "Associated GLO" },
+  { key: "mlo", label: "Meta LO" },
   { key: "bloom", label: "Bloom's Level", nowrap: true },
   { key: "questionType", label: "Question Type", nowrap: true },
   { key: "status", label: "Status", nowrap: true },
@@ -225,7 +225,7 @@ function AddExistingQuestionsModal({
       .filter((question) => {
         if (question.orphaned || !question.hasGranularObjective) return false;
         if (!term) return true;
-        return [question.title, question.stem, question.glo, question.bloom]
+        return [question.title, question.stem, question.mlo, question.bloom]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(term));
       })
@@ -319,7 +319,7 @@ function AddExistingQuestionsModal({
                     className="block whitespace-pre-line text-sm font-medium text-ink"
                   />
                   <span className="mt-1 block text-xs text-muted">
-                    {question.glo || "Learning objective unavailable"}
+                    {question.mlo || "Learning objective unavailable"}
                     {question.bloom ? ` · ${question.bloom}` : ""}
                   </span>
                 </span>
@@ -686,7 +686,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
         return (
           (q.title && q.title.toLowerCase().includes(term)) ||
           (q.stem && q.stem.toLowerCase().includes(term)) ||
-          (q.glo && q.glo.toLowerCase().includes(term)) ||
+          (q.mlo && q.mlo.toLowerCase().includes(term)) ||
           (q.calculationFormula &&
             String(q.calculationFormula).toLowerCase().includes(term)) ||
           typeLabel.includes(term)
@@ -1017,7 +1017,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                             Objective deleted
                           </span>
                         ) : (
-                          question.glo
+                          question.mlo
                         )}
                       </td>
                       <td className="border-b border-gray-100 px-4 py-3 whitespace-nowrap">

@@ -58,7 +58,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     await expect(page.getByRole('cell', { name: 'Approved' })).toHaveCount(
       SEED.QUESTION_COUNT
     );
-    // The "Associated GLO" column shows the PARENT objective name, which the
+    // The "Meta LO" column shows the PARENT objective name, which the
     // backend derives from each question's granularObjectiveId
     // (getQuestionsByCourseId maps granular → parent), not the granular text.
     await expect(
