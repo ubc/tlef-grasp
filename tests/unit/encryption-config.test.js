@@ -70,6 +70,7 @@ describe('field-encryption config', () => {
     const { collections } = loadConfig();
     expect(collections.grasp_lms_canvas_tokens.fields).toEqual({ tokens: { encrypt: true } });
     expect(collections.grasp_lms_moodle_tokens.fields).toEqual({ tokens: { encrypt: true } });
+    expect(collections.grasp_panopto_tokens.fields).toEqual({ tokens: { encrypt: true } });
   });
 
   it('encrypts what a student writes and the AI\'s judgement of it', () => {
