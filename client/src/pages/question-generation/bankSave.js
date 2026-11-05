@@ -7,8 +7,9 @@ import { buildQuestionPayload } from "./generationApi";
 // made in the Question Bank meanwhile (an approval, an orphaned state) are
 // not overwritten.
 
-// Never sent in an update: re-sending the objective would re-attach a
-// deleted one.
+// Never sent in an update. The one exception is a granular objective re-picked
+// since the last save: the server re-attaches the question to it and takes
+// the meta objective from it.
 const CREATE_ONLY_FIELDS = ["granularObjectiveId", "learningObjectiveId", "by"];
 
 export const questionSnapshot = (question) => JSON.stringify(buildQuestionPayload(question));
@@ -27,14 +28,20 @@ export const countUnsavedQuestions = (questionGroups) =>
 // edit cannot undo an approval made in the Question Bank.
 export function buildUpdatePayload(question) {
   const payload = buildQuestionPayload(question);
-  for (const field of CREATE_ONLY_FIELDS) delete payload[field];
-  let savedStatus;
+  let saved;
   try {
-    savedStatus = JSON.parse(question.bankSnapshot).status;
+    saved = JSON.parse(question.bankSnapshot) || {};
   } catch {
-    savedStatus = undefined;
+    saved = {};
   }
-  if (payload.status === savedStatus || !question.bankSnapshot) delete payload.status;
+  const repicked =
+    !!question.bankSnapshot &&
+    !!payload.granularObjectiveId &&
+    payload.granularObjectiveId !== saved.granularObjectiveId;
+  for (const field of CREATE_ONLY_FIELDS) {
+    if (!(field === "granularObjectiveId" && repicked)) delete payload[field];
+  }
+  if (payload.status === saved.status || !question.bankSnapshot) delete payload.status;
   return payload;
 }
 

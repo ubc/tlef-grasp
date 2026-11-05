@@ -68,7 +68,7 @@ describe('hasUnsavedEdits', () => {
 });
 
 describe('buildUpdatePayload', () => {
-  it('never sends the objective, so a deleted objective cannot be re-attached', () => {
+  it('leaves out an objective unchanged since the last save, so a deleted one is not re-sent', () => {
     const payload = buildUpdatePayload({ ...saved('q1'), stem: 'Edited' });
     expect(payload).not.toHaveProperty('granularObjectiveId');
     expect(payload).not.toHaveProperty('learningObjectiveId');
@@ -76,14 +76,26 @@ describe('buildUpdatePayload', () => {
     expect(payload.stem).toBe('Edited');
   });
 
+  it('sends a re-picked objective so the bank question is re-attached to it', () => {
+    const payload = buildUpdatePayload({
+      ...saved('q1'),
+      granularObjectiveId: 'g-2',
+      learningObjectiveId: 'lo-2',
+    });
+    expect(payload.granularObjectiveId).toBe('g-2');
+    // The server takes the meta objective from the granular one.
+    expect(payload).not.toHaveProperty('learningObjectiveId');
+  });
+
   it('leaves status out unless it was toggled since the last save', () => {
     expect(buildUpdatePayload({ ...saved('q1'), stem: 'Edited' })).not.toHaveProperty('status');
     expect(buildUpdatePayload({ ...saved('q1'), status: 'Approved' }).status).toBe('Approved');
   });
 
-  it('leaves status out when there is no snapshot to compare against', () => {
+  it('leaves status and objective out when there is no snapshot to compare against', () => {
     const payload = buildUpdatePayload(question('q1', { _id: 'db-q1', status: 'Approved' }));
     expect(payload).not.toHaveProperty('status');
+    expect(payload).not.toHaveProperty('granularObjectiveId');
   });
 });
 

@@ -53,7 +53,7 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
 
   // Generates two questions (one per Bloom level) for the objective with the
   // LLM stub, then adds them to the bank. Returns their bank ids.
-  async function generateAndAddToBank(page, objective, { approveFirst = false } = {}) {
+  async function generateAndAddToBank(page, objective) {
     await page.goto('/question-generation');
     await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
     await page.getByRole('checkbox', { name: objective.name, exact: true }).check();
@@ -65,13 +65,6 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
     await expect(page.getByRole('button', { name: 'Add to Quiz' })).toBeEnabled({
       timeout: 60_000,
     });
-
-    if (approveFirst) {
-      const toggles = page.getByRole('button', { name: 'Draft on save' });
-      const count = await toggles.count();
-      for (let i = 0; i < count; i++) await toggles.first().click();
-      await expect(toggles).toHaveCount(0);
-    }
 
     const ids = await addToBank(page);
     expect(ids).toHaveLength(2);
@@ -114,6 +107,14 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
     return (await response.json()).question;
   }
 
+  async function seededGranularId(page, courseId) {
+    const response = await page.request.get(`/api/objective/detailed?courseId=${courseId}`);
+    const granular = ((await response.json()).objectives || [])
+      .flatMap((o) => o.granularObjectives || [])
+      .find((g) => (g.name || g.text) === SEED.GRANULAR_NAME);
+    return String(granular?._id);
+  }
+
   async function expectOrphanedDraft(page, ids) {
     for (const id of ids) {
       const q = await bankQuestion(page, id);
@@ -143,17 +144,16 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
     await page.request.delete(`/api/objective/${objective.id}?questionAction=delete`);
   }
 
-  test('questions orphaned by an objective delete stay orphaned and Draft on "Save to Quiz"', async ({
+  test('"Save to Quiz" asks for a new objective when the questions\' objective was deleted', async ({
     page,
   }) => {
     const course = await selectSeededCourse(page, { role: 'instructor' });
-    const objective = await throwawayObjective(page, course.id, 'orphan');
-    const quizName = `[[e2e-resave]] orphan quiz ${Date.now()}`;
+    const objective = await throwawayObjective(page, course.id, 'reselect');
+    const quizName = `[[e2e-resave]] reselect quiz ${Date.now()}`;
     let ids = [];
 
     try {
-      ids = await generateAndAddToBank(page, objective, { approveFirst: true });
-      expect((await bankQuestion(page, ids[0])).status).toBe('Approved');
+      ids = await generateAndAddToBank(page, objective);
 
       // Meanwhile: delete the objective, keeping its questions.
       const deleted = await page.request.delete(
@@ -162,20 +162,32 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
       expect(deleted.ok()).toBe(true);
       await expectOrphanedDraft(page, ids);
 
-      // Nothing was edited, so nothing is re-sent; the quiz skips them.
-      const puts = recordQuestionPuts(page);
-      const success = await saveToNewQuiz(page, quizName);
-      expect(puts).toEqual([]);
-      await expect(success.getByText(/added 0 questions/)).toBeVisible();
-      await expect(success.getByText('2 questions were skipped')).toBeVisible();
-      await expectOrphanedDraft(page, ids);
+      await page.getByRole('button', { name: 'Add to Quiz' }).click();
+      await page.getByPlaceholder('Enter quiz name...').fill(quizName);
+      await page.getByRole('button', { name: 'Save to Quiz' }).click();
 
-      // Back to step 2 and "Add to Question Bank" again: still nothing sent.
-      await page.keyboard.press('Escape');
-      await page.getByRole('button', { name: 'Back' }).click();
-      expect(await addToBank(page)).toEqual([]);
-      expect(puts).toEqual([]);
-      await expectOrphanedDraft(page, ids);
+      // Nothing saves until each question has a new objective.
+      const prompt = page.getByRole('dialog', { name: 'Choose New Learning Objectives' });
+      await expect(prompt).toBeVisible();
+      const confirm = prompt.getByRole('button', { name: 'Save with New Objectives' });
+      await expect(confirm).toBeDisabled();
+      for (const index of [1, 2]) {
+        await prompt
+          .getByRole('button', { name: `New learning objective for question ${index}` })
+          .click();
+        await page.getByRole('option', { name: SEED.GRANULAR_NAME, exact: true }).click();
+      }
+      await confirm.click();
+
+      const success = page.getByRole('dialog', { name: 'Questions Saved Successfully!' });
+      await expect(success.getByText(/added 2 questions/)).toBeVisible();
+      expect((await quizQuestionIds(page, course.id, quizName)).sort()).toEqual([...ids].sort());
+      const granularId = await seededGranularId(page, course.id);
+      for (const id of ids) {
+        const q = await bankQuestion(page, id);
+        expect(q.orphaned, `${id} is re-attached`).toBeFalsy();
+        expect(String(q.granularObjectiveId)).toBe(granularId);
+      }
     } finally {
       await cleanUp(page, { objective, ids, quizName });
     }
