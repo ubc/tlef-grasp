@@ -92,6 +92,21 @@ describe('buildUpdatePayload', () => {
     expect(buildUpdatePayload({ ...saved('q1'), status: 'Approved' }).status).toBe('Approved');
   });
 
+  it('sends the approval the page shows when the objective is re-picked', () => {
+    const payload = buildUpdatePayload({
+      ...saved('q1', { status: 'Approved' }),
+      granularObjectiveId: 'g-2',
+    });
+    expect(payload.granularObjectiveId).toBe('g-2');
+    expect(payload.status).toBe('Approved');
+  });
+
+  it('leaves status out of a re-pick when the page shows Draft, so a bank approval stands', () => {
+    const payload = buildUpdatePayload({ ...saved('q1'), granularObjectiveId: 'g-2' });
+    expect(payload.granularObjectiveId).toBe('g-2');
+    expect(payload).not.toHaveProperty('status');
+  });
+
   it('leaves status and objective out when there is no snapshot to compare against', () => {
     const payload = buildUpdatePayload(question('q1', { _id: 'db-q1', status: 'Approved' }));
     expect(payload).not.toHaveProperty('status');

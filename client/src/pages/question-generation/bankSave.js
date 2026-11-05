@@ -25,7 +25,9 @@ export const countUnsavedQuestions = (questionGroups) =>
     .filter((q) => !q._id || hasUnsavedEdits(q)).length;
 
 // Status is sent only if it was toggled since the last save, so an unrelated
-// edit cannot undo an approval made in the Question Bank.
+// edit cannot undo an approval made in the Question Bank. The exception is a
+// re-picked objective: deleting the old one made the bank copy Draft, so an
+// approval the page still shows has to be sent again.
 export function buildUpdatePayload(question) {
   const payload = buildQuestionPayload(question);
   let saved;
@@ -41,7 +43,10 @@ export function buildUpdatePayload(question) {
   for (const field of CREATE_ONLY_FIELDS) {
     if (!(field === "granularObjectiveId" && repicked)) delete payload[field];
   }
-  if (payload.status === saved.status || !question.bankSnapshot) delete payload.status;
+  const restoresApproval = repicked && payload.status === "Approved";
+  if (!restoresApproval && (payload.status === saved.status || !question.bankSnapshot)) {
+    delete payload.status;
+  }
   return payload;
 }
 

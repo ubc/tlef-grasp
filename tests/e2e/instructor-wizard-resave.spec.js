@@ -53,7 +53,7 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
 
   // Generates two questions (one per Bloom level) for the objective with the
   // LLM stub, then adds them to the bank. Returns their bank ids.
-  async function generateAndAddToBank(page, objective) {
+  async function generateAndAddToBank(page, objective, { approveFirst = false } = {}) {
     await page.goto('/question-generation');
     await page.getByRole('button', { name: 'Add Existing Learning Objectives' }).click();
     await page.getByRole('checkbox', { name: objective.name, exact: true }).check();
@@ -65,6 +65,13 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
     await expect(page.getByRole('button', { name: 'Add to Quiz' })).toBeEnabled({
       timeout: 60_000,
     });
+
+    if (approveFirst) {
+      const toggles = page.getByRole('button', { name: 'Draft on save' });
+      const count = await toggles.count();
+      for (let i = 0; i < count; i++) await toggles.first().click();
+      await expect(toggles).toHaveCount(0);
+    }
 
     const ids = await addToBank(page);
     expect(ids).toHaveLength(2);
@@ -187,6 +194,49 @@ test.describe('Re-saving wizard questions (seeded course)', () => {
         const q = await bankQuestion(page, id);
         expect(q.orphaned, `${id} is re-attached`).toBeFalsy();
         expect(String(q.granularObjectiveId)).toBe(granularId);
+        expect(q.status, `${id} stays Draft, as the page shows`).toBe('Draft');
+      }
+    } finally {
+      await cleanUp(page, { objective, ids, quizName });
+    }
+  });
+
+  test('a re-picked question keeps the approval the page shows', async ({ page }) => {
+    const course = await selectSeededCourse(page, { role: 'instructor' });
+    const objective = await throwawayObjective(page, course.id, 'reapprove');
+    const quizName = `[[e2e-resave]] reapprove quiz ${Date.now()}`;
+    let ids = [];
+
+    try {
+      ids = await generateAndAddToBank(page, objective, { approveFirst: true });
+      expect((await bankQuestion(page, ids[0])).status).toBe('Approved');
+
+      // Meanwhile: delete the objective, keeping its questions. They go Draft.
+      const deleted = await page.request.delete(
+        `/api/objective/${objective.id}?questionAction=keep`
+      );
+      expect(deleted.ok()).toBe(true);
+      await expectOrphanedDraft(page, ids);
+
+      await page.getByRole('button', { name: 'Add to Quiz' }).click();
+      await page.getByPlaceholder('Enter quiz name...').fill(quizName);
+      await page.getByRole('button', { name: 'Save to Quiz' }).click();
+
+      const prompt = page.getByRole('dialog', { name: 'Choose New Learning Objectives' });
+      for (const index of [1, 2]) {
+        await prompt
+          .getByRole('button', { name: `New learning objective for question ${index}` })
+          .click();
+        await page.getByRole('option', { name: SEED.GRANULAR_NAME, exact: true }).click();
+      }
+      await prompt.getByRole('button', { name: 'Save with New Objectives' }).click();
+
+      const success = page.getByRole('dialog', { name: 'Questions Saved Successfully!' });
+      await expect(success.getByText(/added 2 questions/)).toBeVisible();
+      for (const id of ids) {
+        const q = await bankQuestion(page, id);
+        expect(q.orphaned, `${id} is re-attached`).toBeFalsy();
+        expect(q.status, `${id} is Approved, as the page shows`).toBe('Approved');
       }
     } finally {
       await cleanUp(page, { objective, ids, quizName });
