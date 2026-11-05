@@ -23,6 +23,7 @@ const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType, normalizeQuestionTypes } = require('../utils/question-type-selection');
 const { normalizeMcOptionCount, optionKeysOf, answerKeysOf } = require('../utils/mc-options');
+const { shuffledValues } = require('../utils/question-toolkit');
 const settingsService = require('../services/settings');
 const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
@@ -1272,12 +1273,7 @@ function scrambleMultipleChoiceOptions(questionData) {
     return;
   }
   const optionKeys = optionKeysOf(questionData.options);
-  const optionValues = optionKeys.map(k => questionData.options[k]);
-
-  for (let j = optionValues.length - 1; j > 0; j--) {
-    const k = Math.floor(Math.random() * (j + 1));
-    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
-  }
+  const optionValues = shuffledValues(optionKeys.map((k) => questionData.options[k]));
 
   const originalCorrectValue = questionData.options[questionData.correctAnswer];
   let newCorrectKey = questionData.correctAnswer;
@@ -1305,12 +1301,8 @@ function scrambleMultipleAnswerOptions(questionData) {
   const correctLetters = questionData.correctAnswers.map((letter) => String(letter ?? '').trim().toUpperCase());
   if (correctLetters.some((letter) => !optionKeys.includes(letter))) return;
 
-  const optionValues = optionKeys.map((k) => questionData.options[k]);
+  const optionValues = shuffledValues(optionKeys.map((k) => questionData.options[k]));
   const correctValues = new Set(correctLetters.map((letter) => questionData.options[letter]));
-  for (let j = optionValues.length - 1; j > 0; j--) {
-    const k = Math.floor(Math.random() * (j + 1));
-    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
-  }
   optionKeys.forEach((key, j) => {
     questionData.options[key] = optionValues[j];
   });
