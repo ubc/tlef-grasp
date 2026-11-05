@@ -22,6 +22,7 @@ const { convertCanvasHtml, convertCanvasPlainText } = require('./canvas-qti-html
 const { canvasFormulaToGrasp, canvasPlaceholdersToGrasp, evaluateCanvasFormula, FormulaError } = require('./canvas-formula');
 const { CANVAS_QUESTION_TYPES, PARSE_WARNINGS } = require('./canvas-qti-parse');
 const { MC_OPTION_KEYS, MC_MIN_OPTIONS, MC_MAX_OPTIONS } = require('./mc-options');
+const { seededOrder } = require('./question-toolkit');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 
@@ -207,40 +208,6 @@ function normalizeCanvasDate(value) {
   if (!text) return null;
   const ms = Date.parse(ISO_WITHOUT_ZONE.test(text) ? `${text}Z` : text);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
-}
-
-// ---- Seeded shuffle -------------------------------------------------------------
-
-// 32-bit FNV-1a over the UTF-8 bytes.
-function fnv1a32(text) {
-  let hash = 0x811c9dc5;
-  for (const byte of Buffer.from(String(text), 'utf8')) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash;
-}
-
-function mulberry32(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Fisher-Yates over the indexes 0..n-1.
-function seededOrder(n, seedText) {
-  const random = mulberry32(fnv1a32(seedText));
-  const order = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  return order;
 }
 
 // ---- Decimal arithmetic for numerical answers ----------------------------------

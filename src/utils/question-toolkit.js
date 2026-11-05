@@ -1,4 +1,10 @@
-const { checkChoice, choiceRules } = require('@ubc/genai-toolkit-questions');
+const {
+  checkChoice,
+  choiceRules,
+  fnv1a32Utf8,
+  mulberry32,
+  shuffledOrder,
+} = require('@ubc/genai-toolkit-questions');
 const { MC_MIN_OPTIONS } = require('../constants/app-constants');
 const { optionKeysOf } = require('./mc-options');
 
@@ -82,9 +88,22 @@ function checkMultipleAnswerAnswers(keys, options, correctAnswer) {
   );
 }
 
+// The values in shuffled order. Reads Math.random on every call, so a test's spy
+// sees every draw.
+function shuffledValues(values) {
+  return shuffledOrder(values.length, Math.random).map((index) => values[index]);
+}
+
+// The indexes 0..n-1 in an order fixed by seedText, the same on every import.
+function seededOrder(n, seedText) {
+  return shuffledOrder(n, mulberry32(fnv1a32Utf8(seedText)));
+}
+
 module.exports = {
   checkGeneratedMultipleChoiceOptions,
   checkGeneratedMultipleAnswerOptions,
   checkMultipleChoiceAnswer,
   checkMultipleAnswerAnswers,
+  shuffledValues,
+  seededOrder,
 };
