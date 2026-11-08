@@ -64,7 +64,7 @@ export default function Analytics() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-8">
+    <div className="mx-auto max-w-screen-2xl p-4 md:p-8">
       <h1 className="mb-1 text-2xl font-bold text-ink">Analytics</h1>
 
       <div className="mb-5 flex flex-wrap items-center gap-4">

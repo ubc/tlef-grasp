@@ -5,9 +5,24 @@ import RichText from "../../components/RichText";
 import Pagination from "../../components/ui/Pagination";
 import { EmptyState, LoadingState } from "../../components/ui/states";
 import { CorrectBar, LoadError, StatCard } from "./shared";
-import { cellClass, comparePValue, headClass, lowDataNote, percent, thresholdRule } from "./format";
+import {
+  cellClass,
+  compareDiscrimination,
+  comparePValue,
+  formatStat,
+  headClass,
+  lowDataNote,
+  percent,
+  thresholdRule,
+} from "./format";
+import { FlagBadge, ItemAnalysisExplainer, LowNNote, StatWithBand } from "./itemAnalysis";
 
 const ITEMS_PER_PAGE = 15;
+
+// The question table has nine columns; tighter padding lets it fit beside
+// the sidebar on a laptop screen without scrolling sideways.
+const tableHeadClass = headClass.replace("px-4", "px-3");
+const tableCellClass = cellClass.replace("px-4", "px-3");
 
 const DIFFICULTY = {
   easy: { label: "Easy", className: "bg-success/10 text-success" },
@@ -23,7 +38,50 @@ const SORTS = {
   },
   hardest: { label: "Hardest first", compare: (a, b) => comparePValue(a, b) },
   responses: { label: "Most responses", compare: (a, b) => b.responses - a.responses },
+  discrimination: {
+    label: "Least discriminating",
+    compare: (a, b) => compareDiscrimination(a.itemAnalysis, b.itemAnalysis),
+  },
 };
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+// The question's discrimination in each quiz it appeared in.
+function PerQuizBreakdown({ itemAnalysis }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+        Discrimination in each quiz
+      </p>
+      <table className="w-full max-w-2xl text-sm">
+        <thead>
+          <tr className="text-left text-xs text-muted">
+            <th scope="col" className="py-1 pr-4 font-medium">Quiz</th>
+            <th scope="col" className="py-1 pr-4 font-medium">Students</th>
+            <th scope="col" className="py-1 pr-4 font-medium">Discrimination index (D)</th>
+            <th scope="col" className="py-1 pr-4 font-medium">
+              Point-biserial (r<sub>pb</sub>)
+            </th>
+            <th scope="col" className="py-1 font-medium">Item verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {itemAnalysis.perQuiz.map((entry) => (
+            <tr key={entry.quizId} className={entry.enoughData ? "" : "text-muted"}>
+              <td className="py-1 pr-4">{entry.quizName || "Quiz"}</td>
+              <td className="py-1 pr-4 tabular-nums">{entry.students}</td>
+              <td className="py-1 pr-4 tabular-nums">{formatStat(entry.discrimination)}</td>
+              <td className="py-1 pr-4 tabular-nums">{formatStat(entry.pointBiserial)}</td>
+              <td className="py-1">
+                {entry.enoughData ? <FlagBadge flag={entry.flag} /> : "Too few students"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function DifficultyBadge({ difficulty }) {
   const { label, className } = DIFFICULTY[difficulty] || DIFFICULTY.insufficient;
@@ -85,7 +143,7 @@ export default function QuestionsTab({ courseId, quizId, sectionId }) {
   if (isPending) return <LoadingState label="Loading question analytics..." />;
   if (isError || !analytics) return <LoadError />;
 
-  const { summary, mostMissed, cohortSize } = analytics;
+  const { summary, mostMissed, cohortSize, itemAnalysis: itemLimits } = analytics;
   if (summary.totalQuestions === 0) {
     return (
       <EmptyState
@@ -98,6 +156,8 @@ export default function QuestionsTab({ courseId, quizId, sectionId }) {
 
   const byId = new Map(questions.map((question) => [question.questionId, question]));
   const missedQuestions = mostMissed.map((id) => byId.get(id)).filter(Boolean).slice(0, 5);
+  const itemSummary = summary.itemAnalysis;
+  const checkQuestions = (itemSummary?.checkItems || []).map((id) => byId.get(id)).filter(Boolean);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / ITEMS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -127,6 +187,52 @@ export default function QuestionsTab({ courseId, quizId, sectionId }) {
           hint={`${summary.bands.hard} hard · ${summary.bands.moderate} moderate · ${summary.bands.easy} easy`}
         />
       </div>
+
+      <section aria-labelledby="item-quality-heading" className="rounded-2xl bg-white p-6 shadow-sm">
+        <h2 id="item-quality-heading" className="text-lg font-semibold text-ink">
+          Item quality
+        </h2>
+        {itemSummary?.analyzedQuestions ? (
+          <p className="mt-1 text-sm text-muted">
+            {plural(itemSummary.analyzedQuestions, "question")} analysed:{" "}
+            {itemSummary.flags.good} good · {itemSummary.flags.fair} acceptable ·{" "}
+            {itemSummary.flags.review} to review ·{" "}
+            {itemSummary.flags["too-easy"]} too easy · {itemSummary.flags["too-hard"]} too hard ·{" "}
+            {itemSummary.flags.miskeyed} possibly miskeyed
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-muted">
+            Discrimination appears once {itemLimits?.minStudents ?? 3} students have answered a
+            question in the same quiz.
+          </p>
+        )}
+        {checkQuestions.length > 0 && (
+          <div className="mt-4 rounded-xl border border-danger/30 bg-danger/5 p-4">
+            <h3 className="text-sm font-semibold text-danger">
+              <i className="fas fa-triangle-exclamation mr-1.5" aria-hidden="true" />
+              Check these items
+            </h3>
+            <p className="mt-1 text-xs text-muted">
+              Stronger students missed these more often than weaker ones. This usually means a wrong
+              answer key or an ambiguous question.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {checkQuestions.map((question) => (
+                <li key={question.questionId} className="flex items-start gap-3 text-sm">
+                  <RichText text={question.text} className="min-w-0 flex-1 line-clamp-2 text-ink" />
+                  <span className="shrink-0 whitespace-nowrap tabular-nums text-danger">
+                    r<sub>pb</sub> {formatStat(question.itemAnalysis.pointBiserial)} · D{" "}
+                    {formatStat(question.itemAnalysis.discrimination)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="mt-4">
+          <ItemAnalysisExplainer limits={itemLimits} />
+        </div>
+      </section>
 
       <section aria-labelledby="most-missed-heading" className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 id="most-missed-heading" className="mb-4 text-lg font-semibold text-ink">
@@ -185,22 +291,30 @@ export default function QuestionsTab({ courseId, quizId, sectionId }) {
             <caption className="sr-only">Class performance on each question</caption>
             <thead>
               <tr>
-                <th scope="col" className={headClass}>Question</th>
-                <th scope="col" className={headClass}>Type</th>
-                <th scope="col" className={headClass}>Responses</th>
-                <th scope="col" className={headClass}>Correct</th>
-                <th scope="col" className={headClass}>Missed</th>
-                <th scope="col" className={headClass}>Difficulty</th>
+                <th scope="col" className={tableHeadClass}>Question</th>
+                <th scope="col" className={tableHeadClass}>Type</th>
+                <th scope="col" className={tableHeadClass}>Responses</th>
+                <th scope="col" className={tableHeadClass}>Correct</th>
+                <th scope="col" className={tableHeadClass}>Missed</th>
+                <th scope="col" className={tableHeadClass}>Difficulty</th>
+                <th scope="col" className={tableHeadClass}>Discrimination index (D)</th>
+                <th scope="col" className={tableHeadClass}>
+                  Point-biserial (r<sub>pb</sub>)
+                </th>
+                <th scope="col" className={tableHeadClass}>Item verdict</th>
               </tr>
             </thead>
             <tbody>
               {pageData.map((question) => {
                 const isOpen = expanded === question.questionId;
-                const canExpand = !!question.options?.length;
+                const items = question.itemAnalysis;
+                const hasOptions = !!question.options?.length;
+                const hasPerQuiz = !!items?.perQuiz?.length;
+                const canExpand = hasOptions || hasPerQuiz;
                 return (
                   <Fragment key={question.questionId}>
                     <tr className={question.enoughData ? "" : "text-muted"}>
-                      <td className={`${cellClass} max-w-md`}>
+                      <td className={`${tableCellClass} min-w-56 max-w-md`}>
                         <div id={`question-text-${question.questionId}`}>
                           <RichText text={question.text} className="line-clamp-2" />
                         </div>
@@ -218,31 +332,59 @@ export default function QuestionsTab({ courseId, quizId, sectionId }) {
                             aria-describedby={`question-text-${question.questionId}`}
                             className="mt-1 text-xs font-medium text-primary hover:underline"
                           >
-                            {isOpen ? "Hide answer breakdown" : "Show answer breakdown"}
+                            {isOpen ? "Hide details" : "Show details"}
                           </button>
                         )}
                       </td>
-                      <td className={`${cellClass} whitespace-nowrap`}>
+                      <td className={tableCellClass}>
                         {formatQuestionTypeLabel(question.questionType)}
                       </td>
-                      <td className={`${cellClass} tabular-nums`}>
+                      <td className={`${tableCellClass} tabular-nums`}>
                         {question.responses}
                         {question.pending > 0 && (
                           <span className="block text-xs text-muted">+{question.pending} pending</span>
                         )}
                       </td>
-                      <td className={cellClass}>
-                        <CorrectBar pValue={question.pValue} />
+                      <td className={tableCellClass}>
+                        <CorrectBar pValue={question.pValue} barClassName="w-14" />
                       </td>
-                      <td className={`${cellClass} tabular-nums`}>{question.incorrect ?? "—"}</td>
-                      <td className={cellClass}>
+                      <td className={`${tableCellClass} tabular-nums`}>{question.incorrect ?? "—"}</td>
+                      <td className={tableCellClass}>
                         <DifficultyBadge difficulty={question.difficulty} />
+                      </td>
+                      <td className={tableCellClass}>
+                        <StatWithBand
+                          value={items?.enoughData ? items.discrimination : null}
+                          band={items?.discriminationBand}
+                          stacked
+                        />
+                      </td>
+                      <td className={tableCellClass}>
+                        <StatWithBand
+                          value={items?.enoughData ? items.pointBiserial : null}
+                          band={items?.pointBiserialBand}
+                          stacked
+                        />
+                        {items?.enoughData && items.quizzesRated > 1 && (
+                          <span className="mt-0.5 block text-xs text-muted">
+                            from {items.quizzesRated} quizzes
+                          </span>
+                        )}
+                      </td>
+                      <td className={tableCellClass}>
+                        <FlagBadge flag={items?.enoughData ? items.flag : null} />
+                        {items?.lowN && (
+                          <LowNNote students={items.students} lowNBelow={itemLimits?.lowNBelow ?? 20} />
+                        )}
                       </td>
                     </tr>
                     {isOpen && (
                       <tr id={`question-breakdown-${question.questionId}`}>
-                        <td colSpan={6} className="border-b border-gray-100 bg-gray-50 px-6 py-4">
-                          <OptionBreakdown question={question} />
+                        <td colSpan={9} className="border-b border-gray-100 bg-gray-50 px-6 py-4">
+                          <div className="space-y-5">
+                            {hasOptions && <OptionBreakdown question={question} />}
+                            {hasPerQuiz && <PerQuizBreakdown itemAnalysis={items} />}
+                          </div>
                         </td>
                       </tr>
                     )}

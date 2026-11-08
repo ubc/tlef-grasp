@@ -26,3 +26,34 @@ export function lowDataNote({ responses, students }, emptyText) {
 // The rating rule, for the explanations under each table.
 export const thresholdRule = ({ minResponses, minStudents }) =>
   `at least ${minResponses} graded responses from at least ${minStudents} different students`;
+
+// Item analysis (discrimination, point-biserial, KR-20).
+
+export const formatStat = (value) =>
+  value === null || value === undefined ? "—" : value.toFixed(2);
+
+// Worst first, for sorting item tables.
+export const FLAG_ORDER = ["miskeyed", "review", "too-hard", "too-easy", "fair", "good"];
+
+export const compareFlag = (a, b) => {
+  const rank = (flag) => (flag ? FLAG_ORDER.indexOf(flag) : FLAG_ORDER.length);
+  return rank(a) - rank(b);
+};
+
+// Lowest discrimination first (point-biserial, else D); unrated rows last.
+export function compareDiscrimination(a, b) {
+  const value = (stats) => (stats?.enoughData ? stats.pointBiserial ?? stats.discrimination : null);
+  const va = value(a);
+  const vb = value(b);
+  if (va === null && vb === null) return 0;
+  if (va === null) return 1;
+  if (vb === null) return -1;
+  return va - vb;
+}
+
+export const RELIABILITY_REASONS = {
+  "too-few-students": "Too few students have graded answers in this quiz.",
+  "different-questions":
+    "Students answered different questions (spaced delivery), so fewer than two questions were answered by everyone.",
+  "no-variance": "Every student got the same score on the shared questions.",
+};

@@ -49,6 +49,32 @@ const valueOrWithheld = (value, shown) => (shown ? value : NOT_ENOUGH_DATA);
 
 const DIFFICULTY_LABELS = { easy: "Easy", moderate: "Moderate", hard: "Hard", insufficient: NOT_ENOUGH_DATA };
 
+const ITEM_FLAG_LABELS = {
+    good: "Good item",
+    fair: "Acceptable",
+    review: "Review",
+    "too-easy": "Too easy to discriminate",
+    "too-hard": "Too hard to discriminate",
+    miskeyed: "Possibly miskeyed",
+};
+
+const RELIABILITY_REASONS = {
+    "too-few-students": "too few students",
+    "different-questions": "students answered different questions",
+    "no-variance": "every student scored the same",
+};
+
+// Item-analysis columns of a question row: shared by both CSV views.
+function itemAnalysisCells(stats) {
+    if (!stats?.enoughData) return [NOT_ENOUGH_DATA, NOT_ENOUGH_DATA, stats?.students ?? 0, ""];
+    return [
+        stats.discrimination ?? "",
+        stats.pointBiserial ?? "",
+        stats.students,
+        ITEM_FLAG_LABELS[stats.flag] || "",
+    ];
+}
+
 function questionsCsv(data) {
     const optionKeys = [...new Set(
         data.questions.flatMap((question) => (question.options || []).map((option) => option.key))
@@ -57,6 +83,7 @@ function questionsCsv(data) {
     const header = [
         "Question", "Type", "Bloom level", "Graded responses", "Students", "Awaiting grading",
         "Correct (%)", "Difficulty", "Correct responses", "Missed",
+        "Discrimination index (D)", "Point-biserial (r_pb)", "Students in item analysis", "Item verdict",
         ...(optionKeys.length ? ["Correct option", ...optionKeys.map((key) => `Chose ${key}`)] : []),
     ];
 
@@ -85,11 +112,21 @@ function questionsCsv(data) {
             DIFFICULTY_LABELS[question.difficulty] || question.difficulty,
             valueOrWithheld(question.correct, shown),
             valueOrWithheld(question.incorrect, shown),
+            ...itemAnalysisCells(question.itemAnalysis),
             ...optionCells,
         ];
     });
 
     return toCsv(header, rows);
+}
+
+function reliabilityCells(reliability) {
+    if (!reliability) return [NOT_ENOUGH_DATA, "", "", ""];
+    if (reliability.kr20 === null) {
+        const reason = RELIABILITY_REASONS[reliability.reason];
+        return [reason ? `${NOT_ENOUGH_DATA}: ${reason}` : NOT_ENOUGH_DATA, "", reliability.items, reliability.students];
+    }
+    return [reliability.kr20, reliability.sem, reliability.items, reliability.students];
 }
 
 function quizzesCsv(data) {
@@ -100,6 +137,7 @@ function quizzesCsv(data) {
         "Quiz", "Assigned", "Submitted", "Completion (%)", "Average score (%)", "Median score (%)",
         "Average time (minutes)", ...binLabels.map((label) => `Scored ${label}%`),
         "Submissions awaiting grading",
+        "Reliability (KR-20)", "SEM (% points)", "KR-20 questions", "KR-20 students",
     ];
 
     const rows = data.quizzes.map((quiz) => {
@@ -115,6 +153,7 @@ function quizzesCsv(data) {
             valueOrWithheld(quiz.averageTimeSpent ? round1(quiz.averageTimeSpent / 60000) : "", shown),
             ...binLabels.map((_, i) => valueOrWithheld(quiz.distribution?.[i]?.count, shown)),
             quiz.pendingSubmissions,
+            ...reliabilityCells(quiz.reliability),
         ];
     });
 

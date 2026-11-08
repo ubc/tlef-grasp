@@ -59,6 +59,7 @@ describe("questionsCsv", () => {
         {
           ...base, text: "<b>Pick</b> one", responses: 6, enoughData: true, correct: 4, incorrect: 2,
           pValue: 2 / 3, difficulty: "moderate",
+          itemAnalysis: { enoughData: true, students: 6, discrimination: 0.5, pointBiserial: 0.42, flag: "good" },
           options: [
             { key: "A", count: 4, isCorrect: true },
             { key: "B", count: 2, isCorrect: false },
@@ -69,9 +70,10 @@ describe("questionsCsv", () => {
     const [header, row] = rowsOf(csv);
     expect(header).toBe(
       "Question,Type,Bloom level,Graded responses,Students,Awaiting grading,Correct (%),Difficulty," +
-      "Correct responses,Missed,Correct option,Chose A,Chose B"
+      "Correct responses,Missed,Discrimination index (D),Point-biserial (r_pb),Students in item analysis," +
+      "Item verdict,Correct option,Chose A,Chose B"
     );
-    expect(row).toBe("Pick one,multiple-choice,Apply,6,6,0,66.7,Moderate,4,2,A,4,2");
+    expect(row).toBe("Pick one,multiple-choice,Apply,6,6,0,66.7,Moderate,4,2,0.5,0.42,6,Good item,A,4,2");
   });
 
   it("marks withheld figures instead of leaving out the row", () => {
@@ -89,8 +91,19 @@ describe("questionsCsv", () => {
     });
     expect(rowsOf(csv)[2]).toBe(
       `Too few,multiple-choice,Apply,2,2,0,${NOT_ENOUGH_DATA},${NOT_ENOUGH_DATA},` +
-      `${NOT_ENOUGH_DATA},${NOT_ENOUGH_DATA},,${NOT_ENOUGH_DATA}`
+      `${NOT_ENOUGH_DATA},${NOT_ENOUGH_DATA},${NOT_ENOUGH_DATA},${NOT_ENOUGH_DATA},0,,,${NOT_ENOUGH_DATA}`
     );
+  });
+
+  it("labels a possibly miskeyed question", () => {
+    const csv = questionsCsv({
+      questions: [{
+        ...base, text: "Odd one", responses: 6, enoughData: true, correct: 3, incorrect: 3, pValue: 0.5,
+        difficulty: "moderate", options: null, questionType: "true-false",
+        itemAnalysis: { enoughData: true, students: 6, discrimination: -0.5, pointBiserial: -0.3, flag: "miskeyed" },
+      }],
+    });
+    expect(rowsOf(csv)[1]).toContain(",-0.5,-0.3,6,Possibly miskeyed");
   });
 });
 
@@ -103,16 +116,20 @@ describe("quizzesCsv", () => {
         {
           name: "=Quiz 1", assigned: 6, submitted: 5, completionRate: 5 / 6, enoughData: true,
           meanScore: 95, medianScore: 94.5, averageTimeSpent: 630000, distribution, pendingSubmissions: 1,
+          reliability: { kr20: 0.81, sem: 6.2, items: 10, students: 5, reason: null },
         },
         {
           name: "Quiz 2", assigned: 6, submitted: 2, completionRate: 2 / 6, enoughData: false,
           meanScore: null, medianScore: null, averageTimeSpent: null, distribution: null, pendingSubmissions: 0,
+          reliability: { kr20: null, sem: null, items: 1, students: 4, reason: "different-questions" },
         },
       ],
     });
     const [header, first, second] = rowsOf(csv);
     expect(header).toContain("Scored 90-100%");
-    expect(first).toBe("'=Quiz 1,6,5,83.3,95,94.5,10.5,0,0,0,0,0,0,0,0,0,5,1");
+    expect(header).toContain("Reliability (KR-20),SEM (% points),KR-20 questions,KR-20 students");
+    expect(first).toBe("'=Quiz 1,6,5,83.3,95,94.5,10.5,0,0,0,0,0,0,0,0,0,5,1,0.81,6.2,10,5");
+    expect(second).toContain(`${NOT_ENOUGH_DATA}: students answered different questions,,1,4`);
     expect(second.split(",").slice(0, 7)).toEqual([
       "Quiz 2", "6", "2", "33.3", NOT_ENOUGH_DATA, NOT_ENOUGH_DATA, NOT_ENOUGH_DATA,
     ]);

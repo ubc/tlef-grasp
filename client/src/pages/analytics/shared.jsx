@@ -14,11 +14,11 @@ export function StatCard({ label, value, hint }) {
 
 // Share-correct bar. The number is always printed beside it, so the bar is
 // decoration and the figure stays readable without colour.
-export function CorrectBar({ pValue }) {
+export function CorrectBar({ pValue, barClassName = "w-24" }) {
   if (pValue === null) return <span className="text-muted">—</span>;
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+      <div className={`h-2 ${barClassName} overflow-hidden rounded-full bg-gray-100`} aria-hidden="true">
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.round(pValue * 100)}%` }} />
       </div>
       <span className="tabular-nums">{percent(pValue)}</span>

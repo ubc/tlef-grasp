@@ -13,6 +13,7 @@ const {
   difficultyBand,
   getCohortStudentIds,
 } = require("../../src/services/analytics");
+const { analyzeItems } = require("../../src/services/item-analysis");
 const { getCourseUsers } = require("../../src/services/user-course");
 const { getSectionsForViewer } = require("../../src/services/course-section");
 const { isFaculty } = require("../../src/utils/auth");
@@ -174,6 +175,38 @@ describe("summarizeQuestionStats", () => {
   });
 });
 
+describe("summarizeQuestionStats item analysis", () => {
+  // Four questions in one quiz; q3 is answered right only by the weakest
+  // students, so it reads as possibly miskeyed.
+  const scores = [
+    [1, 1, 1, 0],
+    [1, 1, 1, 0],
+    [1, 1, 0, 0],
+    [0, 0, 0, 1],
+    [0, 0, 0, 1],
+  ];
+  const attempts = scores.flatMap((row, i) =>
+    row.map((score, j) => ({ userId: `u${i}`, quizId: "quiz-1", questionId: `q${j}`, isCorrect: score === 1 }))
+  );
+  const questions = ["q0", "q1", "q2", "q3"].map((id) => mcQuestion(id, { questionType: "true-false" }));
+
+  it("attaches each question's discrimination figures and lists items to check", () => {
+    const { byQuestion } = analyzeItems(attempts);
+    const { questions: rows, summary } = summarizeQuestionStats(attempts, questions, undefined, byQuestion);
+
+    expect(rows[0].itemAnalysis).toMatchObject({ enoughData: true, students: 5, pointBiserialBand: "good" });
+    expect(rows[3].itemAnalysis.flag).toBe("miskeyed");
+    expect(summary.itemAnalysis).toMatchObject({ analyzedQuestions: 4, checkItems: ["q3"] });
+    expect(summary.itemAnalysis.flags.miskeyed).toBe(1);
+  });
+
+  it("leaves item analysis empty when none is given", () => {
+    const { questions: rows, summary } = summarizeQuestionStats(attempts, questions);
+    expect(rows[0].itemAnalysis).toBeNull();
+    expect(summary.itemAnalysis).toMatchObject({ analyzedQuestions: 0, checkItems: [] });
+  });
+});
+
 describe("difficultyBand", () => {
   it.each([
     [0.9, "easy"],
@@ -278,6 +311,27 @@ describe("summarizeQuizStats", () => {
       distribution: null,
     });
     expect(summary.meanScore).toBeNull();
+  });
+
+  it("adds each quiz's reliability and item table", () => {
+    const attempts = [[1, 1, 1], [1, 1, 0], [1, 0, 0], [0, 0, 0]].flatMap((row, i) =>
+      row.map((value, j) => ({ userId: `u${i}`, quizId: "q1", questionId: `item${j}`, isCorrect: value === 1 }))
+    );
+    const { quizzes } = summarizeQuizStats({
+      quizzes: [{ _id: "q1", name: "Quiz 1" }, { _id: "q2", name: "Quiz 2" }],
+      students,
+      scheduledSections: new Map(),
+      scores: [],
+      pendingUsers: new Map(),
+      itemAnalysis: analyzeItems(attempts).byQuiz,
+      questions: new Map([["item0", { text: "First", questionType: "true-false" }]]),
+    });
+
+    expect(quizzes[0].reliability).toMatchObject({ items: 3, students: 4, reason: null });
+    expect(quizzes[0].reliability.kr20).toBeCloseTo(0.75, 3);
+    expect(quizzes[0].items).toHaveLength(3);
+    expect(quizzes[0].items[0]).toMatchObject({ questionId: "item0", text: "First", enoughData: true });
+    expect(quizzes[1]).toMatchObject({ reliability: null, items: [] });
   });
 
   it("never exposes who submitted", () => {

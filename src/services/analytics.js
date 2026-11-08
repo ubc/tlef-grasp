@@ -22,6 +22,7 @@ const { getSectionsForViewer } = require("./course-section");
 const { resolveCourseRole } = require("../utils/course-access");
 const { isFaculty } = require("../utils/auth");
 const { optionKeysOf, optionAt, optionTextOf, correctAnswerKey } = require("../utils/mc-options");
+const { analyzeItems, MIN_STUDENTS_ITEM_ANALYSIS, LOW_N_BELOW } = require("./item-analysis");
 
 // Fewest graded responses, and fewest different students giving them, that a
 // figure may be computed from. MIN_STUDENTS is set to 3 for now and is meant
@@ -30,6 +31,12 @@ const MIN_RESPONSES = 5;
 const MIN_STUDENTS = 3;
 
 const DEFAULT_THRESHOLDS = { minResponses: MIN_RESPONSES, minStudents: MIN_STUDENTS };
+
+// Item analysis (discrimination, reliability) has its own, lower minimum for
+// the pilot, and marks figures from fewer than lowNBelow students.
+const ITEM_ANALYSIS_LIMITS = {
+    itemAnalysis: { minStudents: MIN_STUDENTS_ITEM_ANALYSIS, lowNBelow: LOW_N_BELOW },
+};
 
 const meetsThresholds = (responses, students, { minResponses, minStudents }) =>
     responses >= minResponses && students >= minStudents;
@@ -57,9 +64,11 @@ function difficultyBand(pValue) {
  * @param {Array} questions - grasp_question docs for every question in scope
  *   (questions with no responses still appear, with zero counts)
  * @param {Object} [thresholds] - { minResponses, minStudents }
+ * @param {Map<string, Object>} [itemStats] - questionId -> discrimination
+ *   figures, from item-analysis analyzeItems().byQuestion
  * @returns {{ questions: Array, mostMissed: Array, summary: Object }}
  */
-function summarizeQuestionStats(attempts, questions, thresholds = DEFAULT_THRESHOLDS) {
+function summarizeQuestionStats(attempts, questions, thresholds = DEFAULT_THRESHOLDS, itemStats = new Map()) {
     const newTally = () => ({ correct: 0, incorrect: 0, pending: 0, selections: new Map(), students: new Set() });
     const tallies = new Map();
     const tallyFor = (questionId) => {
@@ -122,6 +131,7 @@ function summarizeQuestionStats(attempts, questions, thresholds = DEFAULT_THRESH
             pValue,
             difficulty: difficultyBand(pValue),
             options,
+            itemAnalysis: itemStats.get(String(question._id)) || null,
         };
     });
 
@@ -130,6 +140,20 @@ function summarizeQuestionStats(attempts, questions, thresholds = DEFAULT_THRESH
         .filter((row) => row.incorrect > 0)
         .sort((a, b) => b.incorrect - a.incorrect || a.pValue - b.pValue)
         .slice(0, MOST_MISSED_LIMIT)
+        .map((row) => row.questionId);
+
+    // Items the item analysis rates, by their verdict; "miskeyed" ones
+    // (stronger students missed them more often) are listed for review.
+    const analyzed = rows.filter((row) => row.itemAnalysis?.enoughData);
+    const flagCounts = { good: 0, fair: 0, review: 0, "too-easy": 0, "too-hard": 0, miskeyed: 0 };
+    for (const row of analyzed) {
+        if (row.itemAnalysis.flag) flagCounts[row.itemAnalysis.flag] += 1;
+    }
+    const checkItems = analyzed
+        .filter((row) => row.itemAnalysis.flag === "miskeyed")
+        .sort((a, b) =>
+            (a.itemAnalysis.pointBiserial ?? a.itemAnalysis.discrimination ?? 0)
+            - (b.itemAnalysis.pointBiserial ?? b.itemAnalysis.discrimination ?? 0))
         .map((row) => row.questionId);
 
     const summary = {
@@ -145,6 +169,11 @@ function summarizeQuestionStats(attempts, questions, thresholds = DEFAULT_THRESH
             moderate: rated.filter((row) => row.difficulty === "moderate").length,
             hard: rated.filter((row) => row.difficulty === "hard").length,
             insufficient: rows.length - rated.length,
+        },
+        itemAnalysis: {
+            analyzedQuestions: analyzed.length,
+            flags: flagCounts,
+            checkItems,
         },
     };
 
@@ -212,18 +241,16 @@ async function getCohortStudentIds(courseId, user, options) {
 async function getQuestionAnalytics(courseId, { quizId = null, studentIds }) {
     const db = await databaseService.connect();
 
-    let quizIds;
-    if (quizId) {
-        quizIds = [toId(quizId)];
-    } else {
-        const quizzes = await db.collection("grasp_quiz")
-            .find({ courseId: toId(courseId) }, { projection: { _id: 1 } })
-            .toArray();
-        quizIds = quizzes.map((quiz) => quiz._id);
-    }
+    const quizzes = await db.collection("grasp_quiz")
+        .find(
+            quizId ? { _id: toId(quizId) } : { courseId: toId(courseId) },
+            { projection: { _id: 1, name: 1 } }
+        )
+        .toArray();
+    const quizIds = quizzes.map((quiz) => quiz._id);
 
     if (quizIds.length === 0 || studentIds.length === 0) {
-        return { ...summarizeQuestionStats([], []), ...DEFAULT_THRESHOLDS };
+        return { ...summarizeQuestionStats([], []), ...DEFAULT_THRESHOLDS, ...ITEM_ANALYSIS_LIMITS };
     }
 
     const [attempts, links] = await Promise.all([
@@ -234,7 +261,7 @@ async function getQuestionAnalytics(courseId, { quizId = null, studentIds }) {
                     userId: { $in: studentIds.map(toId) },
                     isFirstAttempt: { $ne: false },
                 },
-                { projection: { userId: 1, questionId: 1, isCorrect: 1, selectedAnswer: 1 } }
+                { projection: { userId: 1, quizId: 1, questionId: 1, isCorrect: 1, selectedAnswer: 1 } }
             )
             .toArray(),
         db.collection("grasp_quiz_question")
@@ -261,7 +288,16 @@ async function getQuestionAnalytics(courseId, { quizId = null, studentIds }) {
             .toArray()
         : [];
 
-    return { ...summarizeQuestionStats(attempts, questions), ...DEFAULT_THRESHOLDS };
+    // Discrimination is computed within each quiz (the "test" students are
+    // ranked on) and pooled across the quizzes a question appeared in.
+    const quizNames = new Map(quizzes.map((quiz) => [String(quiz._id), quiz.name || "Untitled quiz"]));
+    const { byQuestion } = analyzeItems(attempts, quizNames);
+
+    return {
+        ...summarizeQuestionStats(attempts, questions, DEFAULT_THRESHOLDS, byQuestion),
+        ...DEFAULT_THRESHOLDS,
+        ...ITEM_ANALYSIS_LIMITS,
+    };
 }
 
 const SCORE_BIN_LABELS = ["0–9", "10–19", "20–29", "30–39", "40–49", "50–59", "60–69", "70–79", "80–89", "90–100"];
@@ -289,9 +325,13 @@ const average = (values) => (values.length ? values.reduce((sum, value) => sum +
  * @param {Array} input.scores - grasp_quiz_score rows of cohort students
  * @param {Map<string, Set<string>>} input.pendingUsers - quizId -> userIds
  *   with answers awaiting grading
+ * @param {Map<string, Object>} [input.itemAnalysis] - quizId -> { items,
+ *   reliability }, from item-analysis analyzeItems().byQuiz
+ * @param {Map<string, Object>} [input.questions] - questionId -> { text,
+ *   questionType }, to label each quiz's item table
  */
 function summarizeQuizStats(
-    { quizzes, students, scheduledSections, scores, pendingUsers },
+    { quizzes, students, scheduledSections, scores, pendingUsers, itemAnalysis = new Map(), questions = new Map() },
     thresholds = DEFAULT_THRESHOLDS
 ) {
     const scoresByQuiz = new Map();
@@ -339,6 +379,7 @@ function summarizeQuizStats(
         for (const id of submittedIds) submittingStudents.add(id);
 
         const pending = pendingUsers.get(quizKey);
+        const analysis = itemAnalysis.get(quizKey);
         return {
             quizId: quizKey,
             name: quiz.name || "Untitled quiz",
@@ -354,6 +395,15 @@ function summarizeQuizStats(
             pendingSubmissions: pending
                 ? quizScores.filter((score) => pending.has(String(score.userId))).length
                 : 0,
+            reliability: analysis ? analysis.reliability : null,
+            items: analysis
+                ? [...analysis.items].map(([questionId, stats]) => ({
+                    questionId,
+                    text: questions.get(questionId)?.text || "",
+                    questionType: questions.get(questionId)?.questionType || null,
+                    ...stats,
+                }))
+                : [],
         };
     });
 
@@ -393,7 +443,7 @@ async function getQuizAnalytics(courseId, { quizId = null, students }) {
     const quizIds = quizzes.map((quiz) => quiz._id);
     const studentIds = students.map((student) => toId(student.userId));
 
-    const [courseSections, schedules, scores, pending] = quizIds.length
+    const [courseSections, schedules, scores, pending, attempts] = quizIds.length
         ? await Promise.all([
             db.collection("grasp_course_section")
                 .find({ courseId: courseIdObj }, { projection: { sectionId: 1 } })
@@ -424,8 +474,21 @@ async function getQuizAnalytics(courseId, { quizId = null, students }) {
                     ])
                     .toArray()
                 : [],
+            studentIds.length
+                ? db.collection("grasp_student_attempt")
+                    .find(
+                        {
+                            quizId: { $in: quizIds },
+                            userId: { $in: studentIds },
+                            isCorrect: { $in: [true, false] },
+                            isFirstAttempt: { $ne: false },
+                        },
+                        { projection: { userId: 1, quizId: 1, questionId: 1, isCorrect: 1 } }
+                    )
+                    .toArray()
+                : [],
         ])
-        : [[], [], [], []];
+        : [[], [], [], [], []];
 
     // Schedules point at the section document; cohort students carry the
     // section's sectionId string.
@@ -445,9 +508,27 @@ async function getQuizAnalytics(courseId, { quizId = null, students }) {
         pendingUsers.get(key).add(String(_id.userId));
     }
 
+    const { byQuiz } = analyzeItems(attempts);
+    const questionIds = new Map(attempts.map((attempt) => [String(attempt.questionId), attempt.questionId]));
+    const questionDocs = questionIds.size
+        ? await db.collection("grasp_question")
+            .find(
+                { _id: { $in: [...questionIds.values()] } },
+                { projection: { title: 1, stem: 1, questionType: 1, type: 1 } }
+            )
+            .toArray()
+        : [];
+    const questions = new Map(questionDocs.map((question) => [String(question._id), {
+        text: question.title || question.stem || "",
+        questionType: question.questionType || question.type || "multiple-choice",
+    }]));
+
     return {
-        ...summarizeQuizStats({ quizzes, students, scheduledSections, scores, pendingUsers }),
+        ...summarizeQuizStats({
+            quizzes, students, scheduledSections, scores, pendingUsers, itemAnalysis: byQuiz, questions,
+        }),
         ...DEFAULT_THRESHOLDS,
+        ...ITEM_ANALYSIS_LIMITS,
     };
 }
 
