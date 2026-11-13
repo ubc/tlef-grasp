@@ -358,6 +358,14 @@ function createPanoptoRouter(integration = createPanoptoIntegration()) {
           if (error.code === 'too-large') {
             return res.status(400).json({ success: false, code: 'too-large', error: TOO_LARGE_ERROR });
           }
+          // The video was found, but its caption page answered with an error
+          // or a redirect: most likely it has no captions (yet). The status is
+          // logged to learn what Panopto really sends.
+          if (error.code === 'caption-download') {
+            console.warn(`[panopto] ${error.message}; reporting no captions for session ${sessionId}`);
+            return res.status(400).json({ success: false, code: 'no-captions', error: NO_CAPTIONS_ERROR });
+          }
+          // The video itself could not be read.
           if (error.status === 403 || error.status === 404) {
             console.warn(`[panopto] ${error.message}`);
             return res.status(404).json({ success: false, code: 'not-found', error: NOT_FOUND_ERROR });

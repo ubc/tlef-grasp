@@ -307,9 +307,13 @@ async function fetchCaptions(config, accessToken, captionUrl) {
     redirect: 'manual',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
+  // What Panopto does for a video without captions is unknown beyond an empty
+  // 200, so any other answer from the caption page is reported as its own
+  // code, which the import treats as "no captions" (routes/panopto.js).
   if (response.status !== 200) {
     throw new PanoptoError(`Panopto returned ${response.status} for a caption download`, {
       status: response.status,
+      code: 'caption-download',
     });
   }
   const declared = Number(response.headers.get('content-length'));

@@ -608,7 +608,7 @@ describe('Panopto routes', () => {
       expect(ingestMaterialFile).not.toHaveBeenCalled();
     });
 
-    it('refuses a caption download that redirects instead of following it', async () => {
+    it('treats a caption download that redirects as no captions, without following it', async () => {
       const { app } = connectedSetup();
       mockPanopto({
         captions: null,
@@ -618,9 +618,34 @@ describe('Panopto routes', () => {
 
       const res = await request(app).post(`${IMPORT_BASE}/sessions/${SESSION_ID}/import`);
 
-      expect(res.status).toBe(502);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('no-captions');
       expect(global.fetch).toHaveBeenCalledTimes(3);
       expect(ingestMaterialFile).not.toHaveBeenCalled();
+    });
+
+    it('treats a caption file Panopto cannot find as no captions, not a missing video', async () => {
+      const { app } = connectedSetup();
+      mockPanopto({ captions: 'Not Found', captionStatus: 404 });
+
+      const res = await request(app).post(`${IMPORT_BASE}/sessions/${SESSION_ID}/import`);
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'no-captions', error: expect.stringContaining('no captions') });
+      expect(ingestMaterialFile).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed Panopto sign-in for the download as a Panopto failure, not missing captions', async () => {
+      const { app } = connectedSetup();
+      global.fetch
+        .mockResolvedValueOnce(jsonResponse({ Name: 'Lecture 1', Urls: { CaptionDownloadUrl: CAPTION_URL } }))
+        .mockResolvedValueOnce(jsonResponse({}, 500));
+
+      const res = await request(app).post(`${IMPORT_BASE}/sessions/${SESSION_ID}/import`);
+
+      expect(res.status).toBe(502);
+      expect(res.body.code).toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
     it('refuses a caption file over the size limit', async () => {
