@@ -245,8 +245,9 @@ app.use(
   createMoodleRouter()
 );
 
-// Panopto sign-in and read-only API calls. Returns 404 for every endpoint when
-// any required PANOPTO_* variable is absent.
+// Panopto sign-in, and importing a video's captions into Course Materials.
+// Returns 404 for every endpoint when any required PANOPTO_* variable is
+// absent, which lets the client hide Panopto completely.
 app.use(
   "/api/panopto",
   ensureAuthenticatedAPI,

@@ -73,6 +73,14 @@ export const queryKeys = {
     courseId,
     sectionId,
   ],
+  panoptoStatus: ["panopto", "status"],
+  panoptoFolders: ["panopto", "folders"],
+  panoptoFolderSessions: (courseId, folderId) => [
+    "panopto",
+    "folder-sessions",
+    courseId,
+    folderId,
+  ],
   moodleStatus: ["moodle", "status"],
   moodleAvailableCourses: (courseId, sectionId) => [
     "moodle",

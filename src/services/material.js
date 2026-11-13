@@ -36,8 +36,12 @@ const saveMaterial = async (sourceId, courseId, materialData) => {
  * externalUpdatedAt, importedAt }`, which is how an import recognises a file it
  * has already brought in.
  *
+ * A Panopto import (routes/panopto.js) uses the same fields: the video's folder
+ * is its externalCourseId and the video its externalFileId. It leaves
+ * externalCourseId out of the query, since a video can move between folders.
+ *
  * @param {string|ObjectId} courseId - The GRASP course
- * @param {{ provider: string, instance: string|null, externalCourseId: string, externalFileId?: string }} source
+ * @param {{ provider: string, instance: string|null, externalCourseId?: string, externalFileId?: string }} source
  * @returns {Promise<Array<{ sourceId: string, documentTitle: string|null, lms: Object }>>}
  */
 const findLmsImportedMaterials = async (courseId, { provider, instance, externalCourseId, externalFileId }) => {
@@ -50,8 +54,8 @@ const findLmsImportedMaterials = async (courseId, { provider, instance, external
             courseId: courseIdObj,
             'lms.provider': provider,
             'lms.instance': instance,
-            'lms.externalCourseId': String(externalCourseId),
         };
+        if (externalCourseId !== undefined) query['lms.externalCourseId'] = String(externalCourseId);
         if (externalFileId !== undefined) query['lms.externalFileId'] = String(externalFileId);
 
         return await collection

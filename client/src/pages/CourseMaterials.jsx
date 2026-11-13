@@ -19,6 +19,8 @@ import {
   canvasImportAvailable,
   describeCanvasImportResult,
 } from "../lib/canvasMaterialImport";
+import { usePanoptoStatus, useImportPanoptoSessions } from "../hooks/usePanopto";
+import { describePanoptoImportResult } from "../lib/panoptoImport";
 import {
   filterSupportedDocuments,
   getUploadValidationMessage,
@@ -29,6 +31,7 @@ import UploadSection from "./course-materials/UploadSection";
 import MaterialCard from "./course-materials/MaterialCard";
 import OutlineModal from "./course-materials/OutlineModal";
 import CanvasImportModal from "./course-materials/CanvasImportModal";
+import PanoptoImportModal from "./course-materials/PanoptoImportModal";
 import {
   MaterialFormModal,
   DeleteMaterialModal,
@@ -79,9 +82,14 @@ export default function CourseMaterials() {
 
   const [showUpload, setShowUpload] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
-  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete' | 'outline' | 'canvas-import', material? }
-  const [modal, setModal] = useState(null);
-  const autoShownRef = useRef(false);
+  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete' | 'outline' | 'canvas-import' | 'panopto-import', material? }
+  // Back from connecting Panopto (?panopto=import): reopen its picker.
+  const [modal, setModal] = useState(() =>
+    new URLSearchParams(window.location.search).get("panopto") === "import"
+      ? { kind: "panopto-import" }
+      : null
+  );
+  const autoShownRef = useRef(modal !== null);
 
   const { materials, isPending, isSuccess } = useCourseMaterials(courseId);
 
@@ -92,6 +100,18 @@ export default function CourseMaterials() {
     enabled: canvas.connected && canvas.capabilities.files,
   });
   const canvasAvailable = canvasImportAvailable(canvas, canvasCourses.courses);
+
+  // "From Panopto" is offered wherever Panopto is configured; its picker asks
+  // an instructor who has not connected yet to connect first.
+  const panopto = usePanoptoStatus();
+
+  // Drop ?panopto=import so a reload does not reopen the picker.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("panopto")) return;
+    url.searchParams.delete("panopto");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   // Show the upload section by default when the course has no materials yet
   useEffect(() => {
@@ -131,6 +151,17 @@ export default function CourseMaterials() {
     },
     onError: (error) =>
       showToast(error.message || "Error importing from Canvas. Please try again.", "error"),
+  });
+
+  // Like the Canvas import: stays open when a video failed.
+  const panoptoImportMutation = useImportPanoptoSessions(courseId, {
+    onSuccess: (result) => {
+      const { message, type } = describePanoptoImportResult(result);
+      showToast(message, type);
+      if (result.errors.length === 0) setModal(null);
+    },
+    onError: (error) =>
+      showToast(error.message || "Error importing from Panopto. Please try again.", "error"),
   });
 
   const addTextMutation = useAddTextMaterial(selectedCourse, {
@@ -287,12 +318,13 @@ export default function CourseMaterials() {
           open={showUpload}
           uploading={uploadMutation.isPending}
           canvasAvailable={canvasAvailable}
+          panoptoAvailable={panopto.configured}
           onClose={() => setShowUpload(false)}
           onFiles={handleFiles}
           onAddContent={(contentType) => {
             setShowUpload(false);
-            if (contentType === "canvas") {
-              setModal({ kind: "canvas-import" });
+            if (contentType === "canvas" || contentType === "panopto") {
+              setModal({ kind: `${contentType}-import` });
               return;
             }
             // "url" → "link-add" is currently unreachable: the URL tile is
@@ -344,7 +376,7 @@ export default function CourseMaterials() {
         </div>
       )}
 
-      {modal && !["delete", "outline", "canvas-import"].includes(modal.kind) && (
+      {modal && !["delete", "outline", "canvas-import", "panopto-import"].includes(modal.kind) && (
         <MaterialFormModal
           kind={modal.kind}
           material={modal.material}
@@ -377,6 +409,18 @@ export default function CourseMaterials() {
           onClose={() => setModal(null)}
           onImport={(canvasCourseId, files, onProgress) =>
             canvasImportMutation.mutate({ canvasCourseId, files, onProgress })
+          }
+        />
+      )}
+
+      {modal?.kind === "panopto-import" && courseId && (
+        <PanoptoImportModal
+          courseId={courseId}
+          status={panopto}
+          importing={panoptoImportMutation.isPending}
+          onClose={() => setModal(null)}
+          onImport={(sessions, onProgress) =>
+            panoptoImportMutation.mutate({ sessions, onProgress })
           }
         />
       )}
