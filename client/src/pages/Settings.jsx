@@ -12,11 +12,13 @@ import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { ArchiveCourseButton } from "../components/course/CourseArchiveActions";
 import { useCanvasStatus } from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
+import { usePanoptoStatus } from "../hooks/usePanopto";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import {
   CanvasConnectionPanel,
   MoodleConnectionPanel,
+  PanoptoConnectionPanel,
 } from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
 import { PROMPT_FIELDS } from "../lib/prompts";
@@ -89,9 +91,16 @@ export default function Settings() {
   const selectedCourse = useSelectedCourse();
   const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
   const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
+  const panoptoReturnState = new URLSearchParams(window.location.search).get("panopto");
 
   const [activeTab, setActiveTab] = useState(
-    canvasReturnState ? "canvas" : openMoodleSettings ? "moodle" : "general"
+    canvasReturnState
+      ? "canvas"
+      : openMoodleSettings
+        ? "moodle"
+        : panoptoReturnState
+          ? "panopto"
+          : "general"
   );
   const [prompts, setPrompts] = useState(() => buildPromptState());
   // Co-instructor permission toggles (owner only). Default every feature to
@@ -114,6 +123,8 @@ export default function Settings() {
   const moodleStatus = useMoodleStatus();
   const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
   const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
+  const panoptoStatus = usePanoptoStatus();
+  const showPanoptoIntegration = panoptoStatus.configured || panoptoStatus.isError;
 
   useEffect(() => {
     if (!canvasStatus.isPending && !showCanvasIntegration && activeTab === "canvas") {
@@ -126,6 +137,12 @@ export default function Settings() {
       setActiveTab("general");
     }
   }, [activeTab, moodleStatus.isPending, showMoodleIntegration]);
+
+  useEffect(() => {
+    if (!panoptoStatus.isPending && !showPanoptoIntegration && activeTab === "panopto") {
+      setActiveTab("general");
+    }
+  }, [activeTab, panoptoStatus.isPending, showPanoptoIntegration]);
 
   // Hydrate the form when settings arrive
   useEffect(() => {
@@ -206,6 +223,9 @@ export default function Settings() {
     ...(showMoodleIntegration
       ? [{ id: "moodle", icon: "fa-graduation-cap", label: "Moodle LMS" }]
       : []),
+    ...(showPanoptoIntegration
+      ? [{ id: "panopto", icon: "fa-video", label: "Panopto" }]
+      : []),
     // Owner-only: control what co-instructors can access in this course.
     ...(isOwner
       ? [
@@ -250,7 +270,7 @@ export default function Settings() {
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
-        {!["canvas", "moodle"].includes(activeTab) && (
+        {!["canvas", "moodle", "panopto"].includes(activeTab) && (
           <button
             type="button"
             onClick={handleSave}
@@ -588,6 +608,13 @@ export default function Settings() {
 
       {activeTab === "moodle" && showMoodleIntegration && (
         <MoodleConnectionPanel status={moodleStatus} />
+      )}
+
+      {activeTab === "panopto" && showPanoptoIntegration && (
+        <PanoptoConnectionPanel
+          status={panoptoStatus}
+          returnState={panoptoReturnState}
+        />
       )}
 
       <ConfirmModal

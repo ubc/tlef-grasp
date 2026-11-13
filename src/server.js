@@ -69,6 +69,7 @@ const profileRoutes = require("./routes/profile");
 const adminRoutes = require("./routes/admin");
 const { createCanvasRouter } = require('./routes/lms-canvas');
 const { createMoodleRouter } = require('./routes/lms-moodle');
+const { createPanoptoRouter } = require('./routes/panopto');
 const lmsRoutes = require('./routes/lms');
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
@@ -242,6 +243,16 @@ app.use(
   ensureAuthenticatedAPI,
   requireRole(ROLES.STAFF),
   createMoodleRouter()
+);
+
+// Panopto sign-in, and importing a video's captions into Course Materials.
+// Returns 404 for every endpoint when any required PANOPTO_* variable is
+// absent, which lets the client hide Panopto completely.
+app.use(
+  "/api/panopto",
+  ensureAuthenticatedAPI,
+  requireRole(ROLES.STAFF),
+  createPanoptoRouter()
 );
 
 // Current user endpoint - all authenticated users

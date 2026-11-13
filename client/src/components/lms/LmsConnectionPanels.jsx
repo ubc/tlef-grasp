@@ -6,6 +6,8 @@ import {
   useConnectMoodle,
   useDisconnectMoodle,
 } from "../../hooks/useMoodleIntegration";
+import { useDisconnectPanopto } from "../../hooks/usePanopto";
+import { PANOPTO_RETURN_ERRORS, panoptoConnectUrl } from "../../lib/panoptoImport";
 import { useToast } from "../ui/Toast";
 
 const secondaryBtnClass =
@@ -79,6 +81,68 @@ export function CanvasConnectionPanel({ status, returnState }) {
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
           >
             <i className="fas fa-link" /> Connect Canvas
+          </a>
+        </div>
+      )}
+    </ConnectionShell>
+  );
+}
+
+export function PanoptoConnectionPanel({ status, returnState }) {
+  const showToast = useToast();
+  const disconnectMutation = useDisconnectPanopto({
+    onSuccess: () => showToast("Panopto disconnected", "success"),
+    onError: (error) =>
+      showToast(error.message || "Failed to disconnect Panopto", "error"),
+  });
+
+  return (
+    <ConnectionShell
+      title="Panopto connection"
+      description="Connect your own UBC Panopto account to import a video's captions into Course Materials. GRASP sees only the videos Panopto lets you see, and stores this connection for you alone."
+      connected={status.connected}
+    >
+      {PANOPTO_RETURN_ERRORS.has(returnState) ? (
+        <ErrorBox message={PANOPTO_RETURN_ERRORS.get(returnState)} />
+      ) : null}
+
+      {status.isError ? (
+        <ErrorBox
+          message={status.error?.message || "Panopto connection status is unavailable."}
+        />
+      ) : status.isPending ? (
+        <LoadingLine label="Checking Panopto connection…" />
+      ) : status.connected ? (
+        <div className="mt-5 space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {status.host ? (
+              <span className="text-sm text-muted">Connected to {status.host}</span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => disconnectMutation.mutate()}
+              disabled={disconnectMutation.isPending}
+              className={`${secondaryBtnClass} border-danger/40 text-danger hover:bg-danger/5`}
+            >
+              {disconnectMutation.isPending ? (
+                <><i className="fas fa-spinner fa-spin" /> Disconnecting…</>
+              ) : (
+                <><i className="fas fa-unlink" /> Disconnect Panopto</>
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-muted">
+            Disconnecting signs GRASP out of your Panopto account. Captions you
+            already imported stay in Course Materials.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <a
+            href={panoptoConnectUrl("/settings?panopto=connected")}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-dark"
+          >
+            <i className="fas fa-link" /> Connect Panopto
           </a>
         </div>
       )}
