@@ -192,6 +192,7 @@ module.exports = {
   isStaff,
   isStudent,
   isAppAdministrator,
+  isAdministrator,
   getUserRole,
   hasMinimumRole,
   parseAffiliations,

@@ -8,7 +8,7 @@ const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
 const { createOrUpdateUser, getUserByPuid, updateUserNames, backfillUserEmail } = require('../services/user');
-const { getUserRole, ROLES } = require('../utils/auth');
+const { getUserRole, isAdministrator, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
 const { samlRequestCache } = require('../services/samlRequestCache');
 const { serializeSessionUser, deserializeSessionUser } = require('./session-user');
@@ -81,10 +81,13 @@ const strategy = new Strategy(
 			return done(new Error('PUID is required'));
 		}
 
-		// Check if user has a valid affiliation (faculty, staff, student, or affiliate)
+		// Check if user has a valid affiliation (faculty, staff, student, or
+		// affiliate). App administrators (APP_ADMINISTRATOR) are exempt: an
+		// admin's CWL account may carry no affiliation at all, and
+		// getUserRole already grants them faculty regardless of it.
 		const hasValidAffiliation = VALID_AFFILIATIONS.some(aff => affiliations.includes(aff));
-		
-		if (!hasValidAffiliation) {
+
+		if (!hasValidAffiliation && !isAdministrator(ubcEduCwlPuid)) {
 			return done(new Error('Access denied. This application is only available to UBC faculty, staff, and students.'));
 		}
 
