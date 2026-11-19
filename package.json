@@ -38,6 +38,7 @@
   "dependencies": {
     "@llamaindex/liteparse": "^1.5.3",
     "@ubc/genai-toolkit-encryption": "0.1.1",
+    "@ubc/genai-toolkit-questions": "0.1.0-rc.2",
     "@ubc/ubc-genai-toolkit-course-list-sync": "^0.1.4",
     "@ubc/ubc-genai-toolkit-lms-integration": "1.4.0",
     "archiver": "^7.0.1",

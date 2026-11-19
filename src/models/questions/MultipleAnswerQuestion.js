@@ -6,6 +6,10 @@ const {
     normalizeMcOptionCount,
     answerKeysOf,
 } = require('../../utils/mc-options');
+const {
+    checkGeneratedMultipleAnswerOptions,
+    checkMultipleAnswerAnswers,
+} = require('../../utils/question-toolkit');
 
 // A "select all that apply" question: the same lettered options as multiple
 // choice, one or more of them correct. Students are graded all-or-nothing on
@@ -94,10 +98,7 @@ class MultipleAnswerQuestion extends Question {
     // the correct letters in correctAnswer, as every multiple-answer question
     // does.
     static validateAndNormalize(data) {
-        const { keys, options } = MultipleChoiceQuestion.normalizeOptions(
-            data.options,
-            "multiple-answer"
-        );
+        const { keys, options } = checkGeneratedMultipleAnswerOptions(data.options);
 
         const listed = Array.isArray(data.correctAnswers) ? data.correctAnswers : [];
         const unknown = listed.filter(
@@ -107,21 +108,7 @@ class MultipleAnswerQuestion extends Question {
             throw new Error(`correctAnswers must list only ${keys.join(", ")} (got ${unknown.join(", ")}).`);
         }
         const correctAnswer = answerKeysOf(listed);
-        if (correctAnswer.length === 0) {
-            throw new Error("correctAnswers must list at least one correct option.");
-        }
-        if (correctAnswer.length === keys.length) {
-            throw new Error("Every option is marked correct; at least one option must be incorrect.");
-        }
-
-        const missingFeedback = keys.filter(
-            (k) => !correctAnswer.includes(k) && !options[k].feedback
-        );
-        if (missingFeedback.length > 0) {
-            throw new Error(
-                `Incorrect option(s) ${missingFeedback.join(", ")} are missing feedback explaining the misconception.`
-            );
-        }
+        checkMultipleAnswerAnswers(keys, options, correctAnswer);
 
         return {
             type: QUESTION_TYPES.MULTIPLE_ANSWER,

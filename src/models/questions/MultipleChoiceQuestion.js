@@ -1,11 +1,10 @@
 const Question = require('./Question');
 const { QUESTION_TYPES } = require('../../constants/app-constants');
+const { MC_OPTION_KEYS, normalizeMcOptionCount } = require('../../utils/mc-options');
 const {
-    MC_OPTION_KEYS,
-    MC_MIN_OPTIONS,
-    normalizeMcOptionCount,
-    optionKeysOf,
-} = require('../../utils/mc-options');
+    checkGeneratedMultipleChoiceOptions,
+    checkMultipleChoiceAnswer,
+} = require('../../utils/question-toolkit');
 
 const MULTIPLE_CHOICE_OPTION = {
     type: "object",
@@ -103,52 +102,15 @@ class MultipleChoiceQuestion extends Question {
         return `${extra}For multiple-choice, make sure every option is genuinely distinct (no two describe the same concept), that you give exactly the number of options asked for, and that the correct option is the only correct one.`;
     }
 
-    // The generated options, trimmed, once their semantics check out: at
-    // least MC_MIN_OPTIONS, lettered consecutively from A, no two alike.
-    // Multiple answer checks its options the same way.
-    static normalizeOptions(rawOptions, typeLabel = "multiple-choice") {
-        const trimOption = (opt) => ({
-            text: String(opt?.text || "").trim(),
-            feedback: String(opt?.feedback || "").trim(),
-        });
-
-        const keys = optionKeysOf(rawOptions);
-        if (keys.length < MC_MIN_OPTIONS) {
-            throw new Error(`A ${typeLabel} question needs at least ${MC_MIN_OPTIONS} answer options.`);
-        }
-        const expectedKeys = MC_OPTION_KEYS.slice(0, keys.length);
-        if (keys.some((key, i) => key !== expectedKeys[i])) {
-            throw new Error(`Answer options must be lettered consecutively from A (got ${keys.join(", ")}).`);
-        }
-
-        const options = Object.fromEntries(keys.map((key) => [key, trimOption(rawOptions[key])]));
-
-        const optionTexts = keys.map((k) => options[k].text.toLowerCase());
-        if (new Set(optionTexts).size < keys.length) {
-            throw new Error("Two or more answer options have identical or near-identical text.");
-        }
-        return { keys, options };
-    }
-
     // Shape (options keyed by letter, each {text, feedback}; correctAnswer one of
     // the letters) is guaranteed by the JSON schema. We only check semantics the
     // schema can't express (consecutive lettering, distinct options) and
     // normalize the result.
     static validateAndNormalize(data) {
-        const { keys, options } = MultipleChoiceQuestion.normalizeOptions(data.options);
+        const { keys, options } = checkGeneratedMultipleChoiceOptions(data.options);
 
         const correctAnswer = String(data.correctAnswer || "").trim().toUpperCase();
-        if (!keys.includes(correctAnswer)) {
-            throw new Error(`correctAnswer must be one of ${keys.join(", ")}.`);
-        }
-        const missingFeedback = keys.filter(
-            (k) => k !== correctAnswer && !options[k].feedback
-        );
-        if (missingFeedback.length > 0) {
-            throw new Error(
-                `Incorrect option(s) ${missingFeedback.join(", ")} are missing feedback explaining the misconception.`
-            );
-        }
+        checkMultipleChoiceAnswer(keys, options, correctAnswer);
 
         return {
             type: QUESTION_TYPES.MULTIPLE_CHOICE,
