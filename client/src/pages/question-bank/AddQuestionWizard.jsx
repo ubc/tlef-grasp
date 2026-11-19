@@ -39,6 +39,7 @@ const STEP_TITLES = {
 
 const QUESTION_TYPE_CARDS = [
   { type: QUESTION_TYPES.MULTIPLE_CHOICE, icon: "fa-list-ul", name: "Multiple Choice", desc: "2 to 8 options, one correct answer" },
+  { type: QUESTION_TYPES.MULTIPLE_ANSWER, icon: "fa-list-check", name: "Multiple Answer", desc: "2 to 8 options, one or more correct" },
   { type: QUESTION_TYPES.FILL_IN_THE_BLANK, icon: "fa-pencil-alt", name: "Fill-in-the-Blank", desc: "Sentence with a blank to complete" },
   { type: QUESTION_TYPES.CALCULATION, icon: "fa-calculator", name: "Calculation", desc: "Numeric answer, with or without randomised variables" },
   { type: QUESTION_TYPES.OPEN_ENDED, icon: "fa-paragraph", name: "Open-Ended", desc: "Free-text with sample answer & rubric" },
@@ -54,6 +55,8 @@ const EMPTY_FORM = {
   stemImages: [],
   options: DEFAULT_OPTIONS,
   correctAnswer: "A",
+  // A multiple-answer question's correct letters.
+  correctAnswers: [],
   fibCorrect: "",
   fibAcceptable: "",
   calcFormula: "",
@@ -98,6 +101,10 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
   );
   // AI generation retrieves context from the objective's linked materials.
   const aiAvailable = (selectedObjective?.materialIds?.length || 0) > 0;
+  // Multiple choice and multiple answer: the AI drafts a chosen number of options.
+  const hasOptions =
+    questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+    questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
 
   // Any change to the inputs that feed generation invalidates a prior AI draft.
   const resetGeneratedDraft = () => {
@@ -168,6 +175,16 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
         }
         if (!form.options.some((o) => o.id === form.correctAnswer)) {
           showToast("Select which option is the correct answer", "error");
+          return false;
+        }
+      } else if (questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+        const optionsError = optionRowsError(form.options);
+        if (optionsError) {
+          showToast(optionsError, "error");
+          return false;
+        }
+        if (!form.options.some((o) => form.correctAnswers.includes(o.id))) {
+          showToast("Tick at least one correct option", "error");
           return false;
         }
       } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
@@ -313,6 +330,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
     if (questionType === QUESTION_TYPES.MULTIPLE_CHOICE) {
       payload.options = optionRowsToObject(form.options);
       payload.correctAnswer = form.correctAnswer;
+    } else if (questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      payload.options = optionRowsToObject(form.options);
+      payload.correctAnswer = form.correctAnswers;
     } else if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = form.fibAcceptable
         .split("\n")
@@ -662,7 +682,7 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
               </span>
             </p>
           )}
-          {source === "ai" && questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
+          {source === "ai" && hasOptions && (
             <div>
               <label htmlFor="wiz-ai-option-count" className={labelClass}>
                 Answer options

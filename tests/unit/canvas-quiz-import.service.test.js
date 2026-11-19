@@ -548,6 +548,29 @@ describe('previewCanvasImport', () => {
 // ---- commitCanvasQuiz ------------------------------------------------------------
 
 describe('commitCanvasQuiz', () => {
+  it('saves a multiple-answers question Approved with its correct letters, and counts it', async () => {
+    const buffer = await exportZip([{
+      ident: ALPHA,
+      title: 'Alpha Quiz',
+      meta: { shuffleAnswers: false },
+      slots: [items.mcItem({ ident: 'gitemma1', type: 'multiple_answers_question', correct: ['1001', '1003'] })],
+    }]);
+
+    const report = await commit(buffer);
+
+    expect(report).toMatchObject({
+      created: { questions: 1, approved: 1, drafts: 0 },
+      partialCredit: 1,
+      drafts: [],
+    });
+    expect(questionBy('gitemma1')).toMatchObject({
+      questionType: 'multiple-answer',
+      status: 'Approved',
+      correctAnswer: ['A', 'C'],
+    });
+    expect(questionBy('gitemma1')).not.toHaveProperty('importWarnings');
+  });
+
   it('creates one objective per slot, saves every variant on it and builds an unpublished spaced quiz', async () => {
     const buffer = await exportZip([alphaQuiz(), betaQuiz()], BUNDLED);
 
@@ -558,6 +581,7 @@ describe('commitCanvasQuiz', () => {
       quizIdent: ALPHA,
       title: 'Alpha Quiz',
       created: { questions: 4, approved: 4, drafts: 0, objectives: 3 },
+      partialCredit: 0,
       alreadyImported: 0,
       skipped: [{ slotName: 'Alpha Quiz – Question 4', itemTitle: 'Question', canvasType: 'matching_question', reason: MATCHING_REASON }],
       drafts: [],
@@ -1172,8 +1196,6 @@ describe('commitCanvasQuiz', () => {
     expect(JSON.stringify(fake.docs('grasp_quiz'))).not.toMatch(leaks);
     expect(JSON.stringify(uploadImage.mock.calls.map(([, options]) => options))).not.toMatch(leaks);
     expect(consoleOutput.join('\n')).not.toMatch(leaks);
-    // saveQuestion logged each payload, so the check above saw them.
-    expect(consoleOutput.filter((line) => line.startsWith('"Saving question:"'))).toHaveLength(4);
   });
 });
 

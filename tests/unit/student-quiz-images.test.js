@@ -290,4 +290,61 @@ describe("student quiz questions include stem images", () => {
       B: "Cyclohexane",
     });
   });
+
+  it("sends a multiple-answer question's options without its correct ones", async () => {
+    const image = stemImage();
+    const id = new ObjectId();
+    const questions = await getQuestions([
+      {
+        _id: id,
+        title: "Which of these are noble gases?",
+        stem: "Which of these are noble gases?",
+        questionType: "multiple-answer",
+        options: {
+          A: { text: "Neon", feedback: "" },
+          B: { text: "Nitrogen", feedback: "Group 15." },
+          C: { text: "", feedback: "Group 18.", image: { ...image, filename: "argon.png" } },
+        },
+        correctAnswer: ["A", "C"],
+        acceptableAnswers: [],
+        learningObjectiveId: "lo-1",
+        bloom: "Remember",
+      },
+    ]);
+
+    // No correct letters, no feedback, no filename; a stem that only repeats
+    // the title is not sent to be shown twice.
+    expect(questions[0]).toEqual({
+      id: id.toString(),
+      question: "Which of these are noble gases?",
+      questionType: "multiple-answer",
+      stem: "",
+      stemImages: [],
+      options: {
+        A: "Neon",
+        B: "Nitrogen",
+        C: { text: "", image: { fileId: image.fileId, caption: image.caption } },
+      },
+      learningObjectiveId: "lo-1",
+      bloom: "Remember",
+    });
+  });
+
+  it("shows a multiple-answer stem that adds to the title", async () => {
+    const questions = await getQuestions([
+      {
+        _id: new ObjectId(),
+        title: "Noble gases",
+        stem: "Which of these elements are noble gases?",
+        questionType: "multiple-answer",
+        options: { A: "Neon", B: "Nitrogen" },
+        correctAnswer: ["A"],
+      },
+    ]);
+
+    expect(questions[0]).toMatchObject({
+      question: "Noble gases",
+      stem: "Which of these elements are noble gases?",
+    });
+  });
 });

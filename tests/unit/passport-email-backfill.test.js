@@ -64,9 +64,13 @@ describe('SAML login email backfill', () => {
     userService.backfillUserEmail.mockResolvedValue(true);
   });
 
+  // The verify callback as the strategy holds it (passport-ubcshib wraps ours
+  // to add the mapped `attributes`). passport-saml 3 stored it as `_verify`;
+  // @node-saml/passport-saml, which passport-ubcshib 0.1.7 wraps, names it
+  // `_signonVerify` beside the logout verify.
   function login(samlProfile = profile()) {
     return new Promise((resolve) => {
-      strategy._verify(samlProfile, (error, user) => resolve({ error, user }));
+      strategy._signonVerify(samlProfile, (error, user) => resolve({ error, user }));
     });
   }
 

@@ -1,9 +1,17 @@
 import { getMaterialTypeMeta, isCanvasImportMaterial } from "../../lib/materials";
 import { formatFileSize } from "../../lib/format";
 
+// A video's captions, imported from Panopto as text (routes/panopto.js).
+const PANOPTO_CAPTIONS_META = {
+  icon: "fa-video",
+  label: "Panopto captions",
+  badgeClasses: "bg-purple-100 text-purple-600",
+};
+
 export default function MaterialCard({ material, onEdit, onRefetch, onDelete, onViewOutline }) {
   const fileType = (material.fileType || "").toLowerCase();
-  const meta = getMaterialTypeMeta(fileType);
+  const fromPanopto = material.lms?.provider === "panopto";
+  const meta = fromPanopto ? PANOPTO_CAPTIONS_META : getMaterialTypeMeta(fileType);
   // The empty "From Canvas" material (issue #165): nothing to edit or outline.
   const isPlaceholder = isCanvasImportMaterial(material);
   const isText = fileType.includes("text");
@@ -46,7 +54,9 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete, on
               ? "Created by a Canvas quiz import"
               : material.lms?.provider === "canvas"
                 ? "Imported from Canvas"
-                : "Uploaded"}{" "}
+                : fromPanopto
+                  ? "Imported from Panopto"
+                  : "Uploaded"}{" "}
             on {new Date(material.createdAt).toLocaleDateString()}
           </p>
         </div>

@@ -15,6 +15,7 @@ import {
   Timer,
   TextAnswerInput,
   McqOptions,
+  MaOptions,
   FeedbackPanel,
   CompletionScreen,
 } from "./student-quiz/QuizTakingParts";
@@ -129,6 +130,11 @@ export default function StudentQuiz() {
       rawKey,
       questionId
     );
+    if (errorMessage) showToast(errorMessage, "error");
+  };
+
+  const checkMultipleAnswer = async (questionId, selectedKeys) => {
+    const errorMessage = await session.checkMultipleAnswer(questionId, selectedKeys);
     if (errorMessage) showToast(errorMessage, "error");
   };
 
@@ -321,6 +327,14 @@ export default function StudentQuiz() {
             onSubmit={(value) => submitTextAnswer(question, value)}
             placeholder="Write your answer, then click Submit"
             multiline
+          />
+        ) : question.questionType === QUESTION_TYPES.MULTIPLE_ANSWER ? (
+          <MaOptions
+            key={questionId}
+            question={question}
+            feedback={feedback}
+            submitting={submitting}
+            onCheck={checkMultipleAnswer}
           />
         ) : (
           <McqOptions

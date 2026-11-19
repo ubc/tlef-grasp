@@ -76,4 +76,19 @@ describe('LMS provenance on materials', () => {
       'lms.externalFileId': '7001',
     }));
   });
+
+  it('looks across every folder for a Panopto video, which can move between them', async () => {
+    await findLmsImportedMaterials(COURSE_ID, {
+      provider: 'panopto',
+      instance: 'ubc.ca.panopto.com',
+      externalFileId: '11111111-2222-3333-4444-555555555555',
+    });
+
+    expect(collection.find.mock.calls[0][0]).toEqual({
+      courseId: new ObjectId(COURSE_ID),
+      'lms.provider': 'panopto',
+      'lms.instance': 'ubc.ca.panopto.com',
+      'lms.externalFileId': '11111111-2222-3333-4444-555555555555',
+    });
+  });
 });

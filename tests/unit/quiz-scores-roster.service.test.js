@@ -41,9 +41,11 @@ let quizCollection;
 let scoreCollection;
 let attemptCollection;
 let scoreRows;
+let deniedAttemptRows;
 
 beforeEach(() => {
   scoreRows = [];
+  deniedAttemptRows = [];
   quizCollection = {
     findOne: jest.fn().mockResolvedValue({ _id: QUIZ_ID, courseId: 'course-1' }),
   };
@@ -51,7 +53,7 @@ beforeEach(() => {
     find: jest.fn(() => ({ toArray: () => Promise.resolve(scoreRows) })),
   };
   attemptCollection = {
-    aggregate: jest.fn(() => ({ toArray: () => Promise.resolve([]) })),
+    find: jest.fn(() => ({ toArray: () => Promise.resolve(deniedAttemptRows) })),
   };
   databaseService.connect.mockResolvedValue({
     collection: jest.fn((name) => {
@@ -141,5 +143,38 @@ describe('getQuizScores roster', () => {
     ]);
 
     expect(await namesOn()).toEqual(['Plain Student']);
+  });
+});
+
+describe('getQuizScores disputed grades', () => {
+  it('counts each student\'s denied, not yet finalized AI grades', async () => {
+    getCourseUsers.mockResolvedValue([
+      member('u-one', { affiliation: ['student'], name: 'Student One' }),
+      member('u-two', { affiliation: ['student'], name: 'Student Two' }),
+      member('u-three', { affiliation: ['student'], name: 'Student Three' }),
+    ]);
+    deniedAttemptRows = [{ userId: 'u-one' }, { userId: 'u-two' }, { userId: 'u-one' }];
+
+    const rows = await quizService.getQuizScores(QUIZ_ID);
+
+    expect(Object.fromEntries(rows.map((r) => [r.studentName, r.disputedCount]))).toEqual({
+      'Student One': 2,
+      'Student Two': 1,
+      'Student Three': 0,
+    });
+  });
+
+  it('finds them without an aggregation, which encrypted attempts do not allow', async () => {
+    getCourseUsers.mockResolvedValue([]);
+
+    await quizService.getQuizScores(QUIZ_ID);
+
+    const [filter, options] = attemptCollection.find.mock.calls[0];
+    expect(filter).toMatchObject({
+      studentGradeReview: 'deny',
+      gradedAt: { $exists: false },
+      isFirstAttempt: { $ne: false },
+    });
+    expect(options).toEqual({ projection: { userId: 1 } });
   });
 });

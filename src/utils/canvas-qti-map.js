@@ -19,7 +19,7 @@
 
 const cheerio = require('cheerio');
 const { convertCanvasHtml, convertCanvasPlainText } = require('./canvas-qti-html');
-const { canvasFormulaToGrasp, canvasPlaceholdersToGrasp } = require('./canvas-formula');
+const { canvasFormulaToGrasp, canvasPlaceholdersToGrasp, evaluateCanvasFormula, FormulaError } = require('./canvas-formula');
 const { CANVAS_QUESTION_TYPES, PARSE_WARNINGS } = require('./canvas-qti-parse');
 const { MC_OPTION_KEYS, MC_MIN_OPTIONS, MC_MAX_OPTIONS } = require('./mc-options');
 const { QUESTION_TYPES } = require('../constants/app-constants');
@@ -45,7 +45,6 @@ const SKIP_REASONS = Object.freeze({
   NEW_QUIZZES: "New Quizzes exports aren't supported yet (#147).",
   QUESTION_BANK:
     "This group draws questions from a question bank, which a quiz export doesn't include. Import the bank's questions separately when that's supported.",
-  MULTIPLE_ANSWERS: "Multiple-answer questions aren't supported in GRASP yet.",
   MULTIPLE_DROPDOWNS: "Multiple-dropdown questions aren't supported in GRASP.",
   MATCHING: "Matching questions aren't supported in GRASP.",
   ESSAY: "Essay questions aren't imported yet: GRASP needs a sample answer and grading criteria for them.",
@@ -66,7 +65,6 @@ const SKIP_REASONS = Object.freeze({
 });
 
 const UNSUPPORTED_TYPE_REASONS = {
-  [CANVAS_QUESTION_TYPES.MULTIPLE_ANSWERS]: SKIP_REASONS.MULTIPLE_ANSWERS,
   [CANVAS_QUESTION_TYPES.MULTIPLE_DROPDOWNS]: SKIP_REASONS.MULTIPLE_DROPDOWNS,
   [CANVAS_QUESTION_TYPES.MATCHING]: SKIP_REASONS.MATCHING,
   [CANVAS_QUESTION_TYPES.ESSAY]: SKIP_REASONS.ESSAY,
@@ -540,16 +538,22 @@ function optionOrder(item, quiz, texts) {
   return seededOrder(texts.length, item.ident);
 }
 
-function mapChoiceItem(item, slot, quiz) {
+// Multiple choice and true/false, and with `multiple`, multiple answers: the
+// same options, with one correct answer or a list of them.
+function mapChoiceItem(item, slot, quiz, { multiple = false } = {}) {
   const { choices } = item;
+  const typeName = multiple ? 'multiple answer' : 'multiple choice';
   if (choices.length < MC_MIN_OPTIONS || choices.length > MC_MAX_OPTIONS) {
-    return { skip: `GRASP multiple choice needs ${MC_MIN_OPTIONS} to ${MC_MAX_OPTIONS} answer options; this one has ${choices.length}.` };
+    return { skip: `GRASP ${typeName} needs ${MC_MIN_OPTIONS} to ${MC_MAX_OPTIONS} answer options; this one has ${choices.length}.` };
   }
   if (new Set(choices.map((choice) => choice.ident)).size !== choices.length) {
     return { skip: SKIP_REASONS.DUPLICATE_CHOICE_IDS };
   }
   const correctCount = item.correctChoiceIdents.length;
-  if (correctCount !== 1) {
+  if (multiple && correctCount === 0) {
+    return { skip: 'Canvas marks no answer as correct; GRASP multiple answer needs at least one.' };
+  }
+  if (!multiple && correctCount !== 1) {
     return {
       skip: correctCount === 0
         ? 'Canvas marks no answer as correct; GRASP multiple choice needs exactly one.'
@@ -578,11 +582,15 @@ function mapChoiceItem(item, slot, quiz) {
   const payloadOptions = {};
   const optionImages = {};
   let correctAnswer = null;
+  const correctAnswers = [];
   order.forEach((index, position) => {
     const option = options[index];
     const letter = MC_OPTION_KEYS[position];
-    const isCorrect = option.ident === item.correctChoiceIdents[0];
-    if (isCorrect) correctAnswer = letter;
+    const isCorrect = multiple
+      ? item.correctChoiceIdents.includes(option.ident)
+      : option.ident === item.correctChoiceIdents[0];
+    if (isCorrect && multiple) correctAnswers.push(letter);
+    else if (isCorrect) correctAnswer = letter;
     const feedback = joinConvertedFields([
       convertFeedback(item.choiceFeedbackHtml[option.ident], feedbackWarnings),
       isCorrect ? whenCorrect : whenIncorrect,
@@ -619,16 +627,28 @@ function mapChoiceItem(item, slot, quiz) {
   pushUnique(warnings, feedbackWarnings);
   pushUnique(warnings, item.rawWarnings);
 
-  return {
-    draft: {
-      payload: {
+  // A multiple-answer question's stem repeats its prompt, so students see the
+  // prompt once and are told to select all that apply by the quiz itself.
+  const payload = multiple
+    ? {
+        questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+        title: stem.text,
+        stem: stem.text,
+        bloom: BLOOM,
+        options: payloadOptions,
+        correctAnswer: correctAnswers,
+      }
+    : {
         questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
         title: stem.text,
         stem: MC_STEM,
         bloom: BLOOM,
         options: payloadOptions,
         correctAnswer,
-      },
+      };
+  return {
+    draft: {
+      payload,
       stemImages: stem.images,
       optionImages,
       warnings,
@@ -682,8 +702,8 @@ function mapNumericalItem(item, slot) {
 // mapped, and anything the mapping cannot represent exactly is a skip with a
 // named reason, never a plausible wrong answer key. As a last guard, the
 // translated formula is evaluated at Canvas's own precomputed value sets and
-// compared with the answers Canvas recorded; a mismatch makes the question a
-// Draft with a warning that shows both numbers.
+// compared with the answers Canvas recorded and with Canvas's calculator; a
+// mismatch makes the question a Draft with a warning that shows both numbers.
 
 // Canvas variables -> GRASP variable specs, or a skip. scale is the number of
 // decimals Canvas samples the variable to; 0 means whole numbers.
@@ -717,30 +737,21 @@ function mapCalculatedVariables(variables) {
   return { specs };
 }
 
-// Identifiers in `expression` that name an earlier line's value, replaced by
-// that line's (parenthesised) expression. A name followed by "(" is a function.
-function substituteDefined(expression, defined) {
-  if (defined.size === 0) return expression;
-  return expression.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (name, offset, text) => {
-    if (/^\s*\(/.test(text.slice(offset + name.length))) return name;
-    return defined.has(name) ? defined.get(name) : name;
-  });
-}
-
 // Canvas lets a formula question define values on earlier lines ("k = 2*x")
-// and the answer on the last. GRASP has one formula, so the earlier lines are
-// substituted into the last.
-function inlineFormulaLines(lines) {
-  if (lines.length === 1) return { formula: lines[0] };
-  const defined = new Map();
+// and the answer on the last. GRASP has one formula, so canvasFormulaToGrasp
+// puts the earlier lines into the last; this splits them into
+// [name, expression] definitions.
+function splitFormulaLines(lines) {
+  if (lines.length === 1) return { formula: lines[0], definitions: [] };
+  const definitions = [];
   for (const line of lines.slice(0, -1)) {
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^=]+?)\s*$/);
     if (!match) return { skip: SKIP_REASONS.FORMULA_LINES };
-    defined.set(match[1], `(${substituteDefined(match[2], defined)})`);
+    definitions.push([match[1], match[2]]);
   }
-  const last = lines[lines.length - 1];
-  if (last.includes('=')) return { skip: SKIP_REASONS.FORMULA_LINES };
-  return { formula: substituteDefined(last, defined) };
+  const formula = lines[lines.length - 1];
+  if (formula.includes('=')) return { skip: SKIP_REASONS.FORMULA_LINES };
+  return { formula, definitions };
 }
 
 // "1.0" -> absolute 1.0; "3%" -> percent 3; none -> exact (absolute 0, like
@@ -759,10 +770,26 @@ function sampleValuesText(names, set) {
   return names.map((name) => `${name} = ${set.values[name]}`).join(', ');
 }
 
+// The Canvas formula worked out by the rules of Canvas's calculator
+// (evaluateCanvasFormula), each earlier line first, as Canvas does. Null where
+// that calculator reports an error ("5x", "-(a+b)"): no recorded answer came
+// from such a formula, so only the recorded answers count.
+function canvasCalculatorValue({ formula, definitions }, values) {
+  const known = { ...values };
+  try {
+    for (const [name, expression] of definitions) known[name] = evaluateCanvasFormula(expression, known);
+    return evaluateCanvasFormula(formula, known);
+  } catch (error) {
+    if (error instanceof FormulaError) return null;
+    throw error;
+  }
+}
+
 // The translated formula evaluated at Canvas's precomputed value sets against
-// the answers Canvas recorded (rounded to its decimal places). Returns a draft
-// warning, or null when every checked set agrees.
-function checkFormulaAgainstCanvas(formula, specs, calculated, decimalPlaces) {
+// the answers Canvas recorded (rounded to its decimal places), then against
+// Canvas's calculator rules at full precision, since a difference can hide in
+// the rounding. Returns a draft warning, or null when every checked set agrees.
+function checkFormulaAgainstCanvas(formula, canvasLines, specs, calculated, decimalPlaces) {
   const names = specs.map((spec) => spec.name);
   let checked = 0;
   for (const set of calculated.varSets.slice(0, SELF_CHECK_VALUE_SETS)) {
@@ -786,6 +813,11 @@ function checkFormulaAgainstCanvas(formula, specs, calculated, decimalPlaces) {
       const shown = CalculationQuestion.formatAnswerForDisplay(actual, Math.min(MAX_ANSWER_DECIMALS, decimalPlaces + 2));
       return `For Canvas's sample values ${sampleValuesText(names, set)}, GRASP's formula gives ${shown} where Canvas recorded ${set.answer}. Check the formula.`;
     }
+    const calculator = canvasCalculatorValue(canvasLines, values);
+    if (Number.isFinite(calculator) && Math.abs(actual - calculator) > 1e-9 * Math.max(1, Math.abs(calculator))) {
+      const show = (value) => CalculationQuestion.formatAnswerForDisplay(value, MAX_ANSWER_DECIMALS);
+      return `For Canvas's sample values ${sampleValuesText(names, set)}, GRASP's formula gives ${show(actual)} where Canvas's calculator gives ${show(calculator)}. Check the formula.`;
+    }
   }
   return checked === 0 ? DRAFT_WARNINGS.NO_VALUE_SETS : null;
 }
@@ -799,10 +831,12 @@ function mapCalculatedItem(item, slot) {
   if (variables.skip) return variables;
   const names = variables.specs.map((spec) => spec.name);
 
-  const lines = inlineFormulaLines(calculated.formulas);
+  const lines = splitFormulaLines(calculated.formulas);
   if (lines.skip) return lines;
-  const translated = canvasFormulaToGrasp(lines.formula, names);
-  if (translated.error) return { skip: `The formula ${translated.error}.` };
+  const translated = canvasFormulaToGrasp(lines.formula, names, { definitions: lines.definitions });
+  if (translated.error) {
+    return { skip: translated.error.startsWith('uses ') ? `The formula ${translated.error}.` : `GRASP can't read the formula: ${translated.error}.` };
+  }
 
   const tolerance = mapCalculatedTolerance(calculated.tolerance);
   if (tolerance.skip) return tolerance;
@@ -835,7 +869,7 @@ function mapCalculatedItem(item, slot) {
   }
 
   const warnings = [...stem.warnings];
-  const mismatch = checkFormulaAgainstCanvas(translated.formula, variables.specs, calculated, decimalPlaces);
+  const mismatch = checkFormulaAgainstCanvas(translated.formula, lines, variables.specs, calculated, decimalPlaces);
   if (mismatch) warnings.push(mismatch);
 
   return {
@@ -943,6 +977,8 @@ function mapItem(item, slot, quiz) {
     case CANVAS_QUESTION_TYPES.MULTIPLE_CHOICE:
     case CANVAS_QUESTION_TYPES.TRUE_FALSE:
       return mapChoiceItem(item, slot, quiz);
+    case CANVAS_QUESTION_TYPES.MULTIPLE_ANSWERS:
+      return mapChoiceItem(item, slot, quiz, { multiple: true });
     case CANVAS_QUESTION_TYPES.NUMERICAL:
       return mapNumericalItem(item, slot);
     case CANVAS_QUESTION_TYPES.CALCULATED:
@@ -1015,7 +1051,10 @@ function mapSlot(parsedSlot, position, quiz, slotNames) {
     ? [parsedSlot.pointsPerItem]
     : items.filter((item) => imported.has(item.ident)).map((item) => item.pointsPossible);
   const unscored = imported.size > 0 && points.every((value) => value === 0);
-  return { slot, label, unscored };
+  const partialCredit = slot.questions.some(
+    (question) => question.payload.questionType === QUESTION_TYPES.MULTIPLE_ANSWER
+  );
+  return { slot, label, unscored, partialCredit };
 }
 
 // "Q01, Q02 and Q03"
@@ -1056,6 +1095,16 @@ function mapQuiz(parsed, position, used) {
     notes.push(unscored.length === 1
       ? `Canvas gives no points for ${unscored[0]}; in GRASP its questions count like any other.`
       : `Canvas gives no points for ${listLabels(unscored)}; in GRASP their questions count like any other.`);
+  }
+  // Canvas Classic always gives partial credit on multiple answers (its
+  // editor has no other setting); GRASP grades the exact set.
+  const partialCredit = mapped.filter((entry) => entry.partialCredit).map((entry) => entry.label);
+  if (partialCredit.length) {
+    notes.push(
+      `Canvas gives partial credit on the multiple-answer questions in ${
+        partialCredit.length === 1 ? partialCredit[0] : listLabels(partialCredit)
+      }; GRASP marks them right only when exactly the correct options are ticked.`
+    );
   }
   slots.forEach((slot) => notes.push(...slot.notes));
 

@@ -8,7 +8,7 @@
 // All object schemas set additionalProperties:false and list every property in
 // `required`, which is also what OpenAI strict structured outputs demands.
 
-const { BLOOM_LEVELS, QUESTION_TYPES } = require("./app-constants");
+const { BLOOM_LEVELS, SUGGESTED_QUESTION_TYPES } = require("./app-constants");
 
 // Learning objectives: a relevance verdict plus { objectives: [ { name,
 // granularObjectives: [ { text, bloomTaxonomies, questionTypes } ] } ] }. The
@@ -51,7 +51,7 @@ const OBJECTIVES_SCHEMA = {
                     additionalProperties: false,
                     properties: {
                       bloomLevel: { type: "string", enum: BLOOM_LEVELS },
-                      questionType: { type: "string", enum: Object.values(QUESTION_TYPES) },
+                      questionType: { type: "string", enum: SUGGESTED_QUESTION_TYPES },
                       count: { type: "integer", minimum: 1, maximum: 5 },
                     },
                     required: ["bloomLevel", "questionType", "count"],

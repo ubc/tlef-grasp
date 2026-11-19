@@ -7,6 +7,7 @@ jest.mock('../../src/services/material', () => ({
   getCourseMaterials: jest.fn(),
   getMaterialCourseId: jest.fn().mockResolvedValue('course-1'),
   deleteMaterial: jest.fn(),
+  replaceMaterial: jest.fn().mockResolvedValue(undefined),
   getMaterialBySourceId: jest.fn().mockResolvedValue({
     sourceId: 'source-1',
     courseId: 'course-1',

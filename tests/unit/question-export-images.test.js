@@ -47,6 +47,10 @@ jest.mock("../../src/utils/co-instructor-permissions", () => ({
   assertCoInstructorPermission: jest.fn(),
   PERMISSION_KEYS: { QUESTION_BANK: "questionBank" },
 }));
+// Exports are staff-only; these tests are about images.
+jest.mock("../../src/utils/course-access", () => ({
+  hasStaffAccessInCourse: jest.fn().mockResolvedValue(true),
+}));
 jest.mock("../../src/services/image", () => ({
   downloadImageBuffer: jest.fn(),
 }));

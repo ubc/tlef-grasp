@@ -41,6 +41,8 @@ function createIntegration({ connected = true, capabilities } = {}) {
   authRouter.get('/login', (_req, res) =>
     res.redirect('https://canvas.example.test/oauth')
   );
+  // GRASP answers the callback itself; reaching the toolkit's would be a bug.
+  authRouter.get('/callback', (_req, res) => res.status(418).send('toolkit callback'));
   authRouter.post('/logout', (_req, res) => res.status(204).end());
 
   const canvas = {
@@ -179,6 +181,35 @@ describe('Canvas LMS section routes', () => {
     const response = await request(buildApp(createIntegration()))
       .get('/api/lms/canvas/auth/callback')
       .query({ error: 'unauthorized_client' });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('/settings?canvas=error');
+  });
+
+  it('answers the OAuth callback with GRASP\'s own handler, never the toolkit\'s', async () => {
+    const response = await request(buildApp(createIntegration()))
+      .get('/api/lms/canvas/auth/callback')
+      .query({ code: 'auth-code', state: 'no-session-state' });
+
+    expect(response.status).toBe(400);
+    expect(response.text).toBe('Invalid or expired Canvas OAuth state.');
+  });
+
+  it('returns a failed token exchange to the Settings connection UI', async () => {
+    const integration = createIntegration();
+    integration.canvas.exchangeCodeForTokens = jest.fn()
+      .mockRejectedValue(new FakeCanvasOAuthError('Canvas token exchange failed with status 400'));
+    const app = express();
+    app.use((req, _res, next) => {
+      req.user = { _id: '507f1f77bcf86cd799439011', puid: 'PUID-1' };
+      req.session = { canvasOAuthState: 'state-1' };
+      next();
+    });
+    app.use('/api/lms/canvas', createCanvasRouter(integration));
+
+    const response = await request(app)
+      .get('/api/lms/canvas/auth/callback')
+      .query({ code: 'auth-code', state: 'state-1' });
 
     expect(response.status).toBe(302);
     expect(response.headers.location).toBe('/settings?canvas=error');

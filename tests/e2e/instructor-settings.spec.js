@@ -173,6 +173,31 @@ test.describe('Instructor course settings (seeded course)', () => {
     ).toBeVisible();
   });
 
+  test('explains a Canvas connection refused for being someone else\'s account', async ({
+    page,
+  }) => {
+    // Where the OAuth callback sends the browser when the authorized Canvas
+    // account's integration_id is not this user's PUID, or cannot be read.
+    // Nothing was stored, so Canvas still reports this user as not connected.
+    await page.route('**/api/lms/canvas/status', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, connected: false }),
+      })
+    );
+    await selectSeededCourse(page, { role: 'instructor' });
+
+    for (const [result, message] of [
+      ['account-mismatch', /That Canvas account belongs to someone else/],
+      ['identity-unavailable', /could not confirm that this Canvas account is yours/],
+    ]) {
+      await page.goto(`/settings?canvas=${result}`);
+      await expect(page.getByText(message)).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Connect Canvas' })).toBeVisible();
+    }
+  });
+
   test('hides Moodle settings when the deployment is not configured', async ({
     page,
   }) => {

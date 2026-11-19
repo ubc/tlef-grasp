@@ -112,6 +112,27 @@ describe('per-type params', () => {
     expect(params.behaviour.type).toBe('single');
   });
 
+  test('multiple-answer marks every correct option and scores the question all-or-nothing', () => {
+    const multipleAnswer = {
+      questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+      title: 'Which gases are greenhouse gases?',
+      stem: 'Which gases are greenhouse gases?',
+      options: {
+        A: { text: 'Oxygen', feedback: 'Oxygen is not a greenhouse gas.' },
+        B: { text: 'Carbon dioxide', feedback: '' },
+        C: { text: 'Methane', feedback: '' },
+      },
+      correctAnswer: ['B', 'C'],
+    };
+    const { content: c } = buildH5PPackage('Quiz', [multipleAnswer]);
+    const sub = c.questions[0];
+    expect(sub.library).toBe(content.questions[0].library);
+    expect(sub.params.question).toContain('Which gases are greenhouse gases?');
+    expect(sub.params.answers.map((a) => a.correct)).toEqual([false, true, true]);
+    expect(sub.params.answers[0].tipsAndFeedback.chosenFeedback).toContain('not a greenhouse gas');
+    expect(sub.params.behaviour).toMatchObject({ type: 'multi', singlePoint: true });
+  });
+
   test('multiple-choice keeps a fifth option (issue #144)', () => {
     const five = {
       ...mcQuestion,
@@ -159,6 +180,29 @@ describe('per-type params', () => {
     expect(params.solution.introduction).toContain('Grading criteria');
     expect(params.solution.introduction).toContain('selection pressure');
     expect(params.keywords).toEqual([]);
+  });
+
+  test('open-ended (Essay) keeps line breaks, so numbered criteria stay one per line', () => {
+    const { content } = buildH5PPackage('Q', [
+      {
+        ...openQuestion,
+        openEndedSampleAnswer: 'Variation exists.\nSome traits help survival.',
+        openEndedGradingCriteria: '1. Names variation.\n2. Explains a < b selection.',
+      },
+    ]);
+    const { solution } = content.questions[0].params;
+    expect(solution.introduction).toBe(
+      '<p>Grading criteria:<br>1. Names variation.<br>2. Explains a &lt; b selection.</p>'
+    );
+    expect(solution.sample).toBe('<p>Variation exists.<br>Some traits help survival.</p>');
+  });
+
+  test('open-ended (Essay) keeps one-line criteria on the label line', () => {
+    const { solution } = buildH5PPackage('Q', [openQuestion]).content.questions[0].params;
+    expect(solution.introduction).toBe(
+      '<p>Grading criteria: Mentions variation, selection pressure, and heritability.</p>'
+    );
+    expect(solution.sample).toBe('<p>Organisms with advantageous traits survive and reproduce.</p>');
   });
 });
 

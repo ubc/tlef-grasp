@@ -5,11 +5,12 @@ import { escapeHtml } from "../../lib/format";
 import Modal from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { scoreClasses } from "./ScoreBadge";
-import { optionImageOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import { answerKeysOf, optionImageOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
 import QuestionImage from "../../components/QuestionImage";
 
 const TYPE_LABELS = {
   [QUESTION_TYPES.MULTIPLE_CHOICE]: "Multiple Choice",
+  [QUESTION_TYPES.MULTIPLE_ANSWER]: "Multiple Answer",
   [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill in the Blank",
   [QUESTION_TYPES.CALCULATION]: "Calculation",
   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
@@ -267,6 +268,55 @@ function McqAttempt({ attempt }) {
   );
 }
 
+// A multiple-answer attempt: every option, marked with whether it is correct
+// and whether the student ticked it, in words as well as colour.
+function MaAttempt({ attempt }) {
+  const correct = answerKeysOf(attempt.correctAnswer);
+  const ticked = answerKeysOf(attempt.selectedAnswer);
+  return (
+    <div className="space-y-2">
+      {optionKeysOf(attempt.options).map((key) => {
+        const optionText = optionTextOf(attempt.options[key]);
+        const image = optionImageOf(attempt.options[key]);
+        if (!optionText && !image) return null;
+
+        const isCorrectOption = correct.includes(key);
+        const isTicked = ticked.includes(key);
+        let stateClass = "border-gray-200";
+        let note = "";
+        if (isCorrectOption && isTicked) {
+          stateClass = "border-success bg-success/5";
+          note = "Correct, ticked";
+        } else if (isCorrectOption) {
+          stateClass = "border-success border-dashed";
+          note = "Correct, not ticked";
+        } else if (isTicked) {
+          stateClass = "border-danger bg-danger/5";
+          note = "Wrong, ticked";
+        }
+
+        return (
+          <div
+            key={key}
+            className={`flex items-start gap-3 rounded-lg border p-3 ${stateClass}`}
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-page text-xs font-bold text-ink">
+              {key}
+            </span>
+            <div className="min-w-0 flex-1">
+              {optionText && (
+                <RichText text={escapeHtml(optionText)} className="whitespace-pre-line text-sm text-ink" />
+              )}
+              <QuestionImage image={image} showCaption={false} />
+            </div>
+            {note && <span className="shrink-0 text-xs font-medium text-muted">{note}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function StudentReviewModal({ review, onClose }) {
   const { attempts, isPending, isError } = useQuizStudentAttempts(
     review.quizId,
@@ -391,6 +441,8 @@ export default function StudentReviewModal({ review, onClose }) {
                       grading={isGrading}
                       onGrade={onGrade}
                     />
+                  ) : attempt.questionType === QUESTION_TYPES.MULTIPLE_ANSWER ? (
+                    <MaAttempt attempt={attempt} />
                   ) : (
                     <McqAttempt attempt={attempt} />
                   )}

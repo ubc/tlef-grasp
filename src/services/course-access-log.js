@@ -12,6 +12,7 @@
 
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
+const { getUsersByIds } = require('./user');
 
 const COLLECTION = 'grasp_course_access_log';
 
@@ -87,28 +88,12 @@ async function recordCourseAccessEvent({ courseId, targetUserId, actorUserId, ac
 async function getCourseAccessLog(courseId, { limit = 100 } = {}) {
   try {
     const db = await databaseService.connect();
-    const userLookup = (localField, as) => ({
-      $lookup: {
-        from: 'grasp_user',
-        let: { lookupId: `$${localField}` },
-        pipeline: [
-          { $match: { $expr: { $eq: ['$_id', '$$lookupId'] } } },
-          { $project: { _id: 1, displayName: 1, legalName: 1, email: 1 } },
-        ],
-        as,
-      },
-    });
-
-    return db
+    const events = await db
       .collection(COLLECTION)
-      .aggregate([
-        { $match: { courseId: toObjectId(courseId) } },
-        { $sort: { createdAt: -1 } },
-        { $limit: Math.max(1, Math.min(Number(limit) || 100, 500)) },
-        userLookup('actorUserId', 'actor'),
-        userLookup('targetUserId', 'target'),
+      .find(
+        { courseId: toObjectId(courseId) },
         {
-          $project: {
+          projection: {
             _id: 1,
             action: 1,
             role: 1,
@@ -116,12 +101,22 @@ async function getCourseAccessLog(courseId, { limit = 100 } = {}) {
             createdAt: 1,
             actorUserId: 1,
             targetUserId: 1,
-            actor: { $first: '$actor' },
-            target: { $first: '$target' },
           },
-        },
-      ])
+        }
+      )
+      .sort({ createdAt: -1 })
+      .limit(Math.max(1, Math.min(Number(limit) || 100, 500)))
       .toArray();
+
+    const usersById = await getUsersByIds(
+      events.flatMap((event) => [event.actorUserId, event.targetUserId]),
+      { _id: 1, displayName: 1, legalName: 1, email: 1 }
+    );
+    return events.map((event) => ({
+      ...event,
+      actor: usersById.get(String(event.actorUserId)),
+      target: usersById.get(String(event.targetUserId)),
+    }));
   } catch (error) {
     console.error('Error reading course access log:', error);
     throw error;

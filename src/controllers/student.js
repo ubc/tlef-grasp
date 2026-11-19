@@ -5,7 +5,15 @@ const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const { MC_OPTION_KEYS, optionKeysOf, optionAt, optionTextOf } = require('../utils/mc-options');
+const {
+  MC_OPTION_KEYS,
+  optionKeysOf,
+  optionAt,
+  optionTextOf,
+  optionFeedbackOf,
+  gradeMultipleAnswer,
+  stemBesideTitle,
+} = require('../utils/mc-options');
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
 const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
@@ -90,7 +98,12 @@ const startQuizHandler = async (req, res) => {
 
 function resolveQuestionType(q) {
   const t = String(q.questionType || q.type || "").trim().toLowerCase();
-  const known = [QUESTION_TYPES.FILL_IN_THE_BLANK, QUESTION_TYPES.CALCULATION, QUESTION_TYPES.OPEN_ENDED];
+  const known = [
+    QUESTION_TYPES.FILL_IN_THE_BLANK,
+    QUESTION_TYPES.CALCULATION,
+    QUESTION_TYPES.OPEN_ENDED,
+    QUESTION_TYPES.MULTIPLE_ANSWER,
+  ];
   return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
 }
 
@@ -240,10 +253,11 @@ const getQuizQuestionsHandler = async (req, res) => {
         };
       }
 
-      // Only the option text goes to the student; feedback and the answer stay
-      // on the server. Whatever letters the question has (two to eight). An
-      // option with an image (issue #146) is sent as { text, image } with just
-      // the file id and the alt text: the stored filename could name the answer.
+      // Multiple choice and multiple answer. Only the option text goes to the
+      // student; feedback and the answer stay on the server. Whatever letters
+      // the question has (two to eight). An option with an image (issue #146)
+      // is sent as { text, image } with just the file id and the alt text: the
+      // stored filename could name the answer.
       const optionsObj = {};
       optionKeysOf(q.options).forEach((key) => {
         const raw = optionAt(q.options, key);
@@ -257,7 +271,10 @@ const getQuizQuestionsHandler = async (req, res) => {
       return {
         id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
         question: questionText || "Question text not available",
-        questionType: QUESTION_TYPES.MULTIPLE_CHOICE,
+        questionType,
+        // A multiple-answer question's stem is shown under its prompt when it
+        // adds something (an instructor may write the question there).
+        ...(questionType === QUESTION_TYPES.MULTIPLE_ANSWER ? { stem: stemBesideTitle(q) } : {}),
         stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
         options: optionsObj,
         learningObjectiveId: q.learningObjectiveId,
@@ -291,6 +308,7 @@ const getQuizQuestionsHandler = async (req, res) => {
       alreadyCompleted = !!existingScore;
       if (!existingScore) {
         const attempts = await db.collection("grasp_student_attempt").find({ userId: userIdObj, quizId: quizIdObj }).toArray();
+        const questionsById = new Map(questions.map((q) => [String(q._id), q]));
         attempts.forEach(attempt => {
           // A resumed wrong multiple-choice or calculation answer must not
           // reveal the correct one (issue #128): the student keeps retrying
@@ -318,6 +336,19 @@ const getQuizQuestionsHandler = async (req, res) => {
           };
           if (attempt.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && attempt.selectedAnswer) {
             entry.selectedIndex = MC_OPTION_KEYS.indexOf(attempt.selectedAnswer);
+          }
+          // A multiple-answer check comes back with what the student was told
+          // then: the wrong options they ticked, with their feedback, and
+          // whether they left a correct one unticked.
+          if (attempt.questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+            const graded = gradeMultipleAnswer(attempt.correctAnswer, attempt.selectedAnswer);
+            const question = questionsById.get(String(attempt.questionId));
+            entry.selectedAnswer = graded.selectedKeys;
+            entry.wrongKeys = graded.wrongKeys;
+            entry.missedCorrect = graded.missedCorrect;
+            entry.optionFeedback = (attempt.isCorrect === true ? graded.selectedKeys : graded.wrongKeys)
+              .map((key) => ({ key, feedback: optionFeedbackOf(optionAt(question?.options, key)) }))
+              .filter((item) => item.feedback);
           }
           previousAnswers[attempt.questionId.toString()] = entry;
         });

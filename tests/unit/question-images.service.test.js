@@ -239,7 +239,7 @@ describe("question service image handling", () => {
       const { questionCollection } = mockCollections();
 
       await questionService.updateQuestion(new ObjectId().toString(), {
-        title: "Renamed only",
+        bloom: "Apply",
       });
 
       expect(questionCollection.findOne).not.toHaveBeenCalled();

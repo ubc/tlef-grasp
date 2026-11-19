@@ -7,6 +7,7 @@ const {
   getOptionTextOrImageLabel,
   getOptionFeedback,
   getCorrectAnswerIndex,
+  getCorrectAnswerKeys,
   getAcceptableAnswers,
   stemImagesOf,
 } = require('./question-export-helpers');
@@ -49,6 +50,24 @@ function escapeHtml(text) {
 
 function asHtmlParagraph(text) {
   return `<p>${escapeHtml(String(text || '').trim())}</p>`;
+}
+
+// Multi-line text as HTML that keeps its line breaks: a blank line starts a new
+// paragraph and a single line break becomes a <br>.
+function asHtmlLines(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.split('\n').map((line) => escapeHtml(line.trim())).join('<br>')}</p>`)
+    .join('');
+}
+
+// "Label: text" for exported feedback. Text of several lines, such as numbered
+// grading criteria, starts on the line after the label.
+function labelText(label, text) {
+  return `${label}:${text.includes('\n') ? '\n' : ' '}${text}`;
 }
 
 function isType(q, type) {
@@ -168,6 +187,9 @@ function buildQuestionSetContent(title, questions, imageMap) {
       if (isType(q, QUESTION_TYPES.OPEN_ENDED)) {
         return subContent(H5P_LIBRARIES.essay, withMedia(buildEssayParams(q)), getQuestionText(q), 'Essay');
       }
+      if (isType(q, QUESTION_TYPES.MULTIPLE_ANSWER)) {
+        return subContent(H5P_LIBRARIES.multiChoice, withMedia(buildMultipleAnswerParams(q)), getQuestionText(q), 'Multiple Choice');
+      }
       return subContent(H5P_LIBRARIES.multiChoice, withMedia(buildMultiChoiceParams(q)), getQuestionText(q), 'Multiple Choice');
     }),
     endGame: {
@@ -180,13 +202,27 @@ function buildQuestionSetContent(title, questions, imageMap) {
 
 function buildMultiChoiceParams(q) {
   const correctIndex = getCorrectAnswerIndex(q);
+  // Exactly one correct option in GRASP MC questions.
+  return choiceParams(q, (key, i) => i === correctIndex, 'single');
+}
+
+// A multiple-answer question is an H5P MultiChoice with several correct
+// answers; singlePoint scores it all-or-nothing, as GRASP grades it.
+function buildMultipleAnswerParams(q) {
+  const correctKeys = getCorrectAnswerKeys(q);
+  return choiceParams(q, (key) => correctKeys.includes(key), 'multi');
+}
+
+// H5P.MultiChoice params for the lettered-option types: `isCorrect(key, i)`
+// marks the correct answers, and `type` is H5P's single- or multi-answer mode.
+function choiceParams(q, isCorrect, type) {
   const answers = getOptionKeys(q).map((key, i) => {
     const feedback = getOptionFeedback(q, key);
     return {
       // H5P answers cannot hold images (issue #146): an image-only option
       // exports its caption, or "Option B (image)".
       text: `<div>${escapeHtml(getOptionTextOrImageLabel(q, key) || `Option ${key}`)}</div>`,
-      correct: i === correctIndex,
+      correct: isCorrect(key, i),
       tipsAndFeedback: {
         tip: '',
         chosenFeedback: escapeHtml(feedback),
@@ -201,8 +237,7 @@ function buildMultiChoiceParams(q) {
     behaviour: {
       enableRetry: true,
       enableSolutionsButton: true,
-      // Exactly one correct option in GRASP MC questions.
-      type: 'single',
+      type,
       singlePoint: true,
       randomAnswers: true,
     },
@@ -246,18 +281,16 @@ function buildBlanksParams(q) {
 
 // Open-ended -> H5P.Essay. The sample answer becomes the model solution
 // (revealed only after the student answers) with the grading criteria as its
-// introduction. No auto-scoring keywords are generated — instructors can add
-// them in the H5P editor after import.
+// introduction, both keeping their line breaks. No auto-scoring keywords are
+// generated — instructors can add them in the H5P editor after import.
 function buildEssayParams(q) {
   const criteria = String(q.openEndedGradingCriteria || '').trim();
   return {
     taskDescription: asHtmlParagraph(getQuestionText(q)),
     placeholderText: 'Type your answer here…',
     solution: {
-      introduction: criteria
-        ? `<p>${escapeHtml(`Grading criteria: ${criteria}`)}</p>`
-        : '',
-      sample: asHtmlParagraph(q.openEndedSampleAnswer || ''),
+      introduction: criteria ? asHtmlLines(labelText('Grading criteria', criteria)) : '',
+      sample: asHtmlLines(q.openEndedSampleAnswer || '') || '<p></p>',
     },
     keywords: [],
     behaviour: {
@@ -269,6 +302,7 @@ function buildEssayParams(q) {
 
 module.exports = {
   H5P_LIBRARIES,
+  labelText,
   filterH5PExportableQuestions,
   buildH5PPackage,
 };

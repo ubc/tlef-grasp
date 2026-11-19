@@ -20,15 +20,33 @@ const TARGET_ID = '507f1f77bcf86cd799439012';
 const ACTOR_ID = '507f1f77bcf86cd799439013';
 
 let collection;
+let cursor;
+let users;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  cursor = {
+    sort: jest.fn(() => cursor),
+    limit: jest.fn(() => cursor),
+    toArray: jest.fn().mockResolvedValue([
+      { _id: 'event-1', actorUserId: new ObjectId(ACTOR_ID), targetUserId: new ObjectId(TARGET_ID) },
+    ]),
+  };
   collection = {
     insertOne: jest.fn().mockResolvedValue({ insertedId: 'event-1' }),
-    aggregate: jest.fn(() => ({ toArray: () => Promise.resolve([{ _id: 'event-1' }]) })),
+    find: jest.fn(() => cursor),
+  };
+  users = {
+    find: jest.fn(() => ({
+      toArray: () => Promise.resolve([
+        { _id: new ObjectId(ACTOR_ID), displayName: 'Prof Actor' },
+        { _id: new ObjectId(TARGET_ID), legalName: 'Target Student', email: 't@student.ubc.ca' },
+      ]),
+    })),
   };
   databaseService.connect.mockResolvedValue({
     collection: jest.fn((name) => {
+      if (name === 'grasp_user') return users;
       expect(name).toBe(COURSE_ACCESS_LOG_COLLECTION);
       return collection;
     }),
@@ -135,24 +153,36 @@ describe('getCourseAccessLog', () => {
   it('reads the course events newest first, resolving actor and target names', async () => {
     const events = await getCourseAccessLog(COURSE_ID, { limit: 20 });
 
-    expect(events).toEqual([{ _id: 'event-1' }]);
-    const [pipeline] = collection.aggregate.mock.calls[0];
-    expect(pipeline[0]).toEqual({ $match: { courseId: new ObjectId(COURSE_ID) } });
-    expect(pipeline[1]).toEqual({ $sort: { createdAt: -1 } });
-    expect(pipeline[2]).toEqual({ $limit: 20 });
-    const lookups = pipeline.filter((stage) => stage.$lookup);
-    expect(lookups.map((stage) => stage.$lookup.as)).toEqual(['actor', 'target']);
-    expect(lookups.every((stage) => stage.$lookup.from === 'grasp_user')).toBe(true);
+    expect(events).toEqual([{
+      _id: 'event-1',
+      actorUserId: new ObjectId(ACTOR_ID),
+      targetUserId: new ObjectId(TARGET_ID),
+      actor: { _id: new ObjectId(ACTOR_ID), displayName: 'Prof Actor' },
+      target: { _id: new ObjectId(TARGET_ID), legalName: 'Target Student', email: 't@student.ubc.ca' },
+    }]);
+    expect(collection.find).toHaveBeenCalledWith({ courseId: new ObjectId(COURSE_ID) }, expect.anything());
+    expect(cursor.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(cursor.limit).toHaveBeenCalledWith(20);
+  });
+
+  it('reads the names from grasp_user itself, where field encryption applies, not with a $lookup', async () => {
+    await getCourseAccessLog(COURSE_ID);
+
+    expect(collection.aggregate).toBeUndefined();
+    expect(users.find).toHaveBeenCalledWith(
+      { _id: { $in: [new ObjectId(ACTOR_ID), new ObjectId(TARGET_ID)] } },
+      { projection: { _id: 1, displayName: 1, legalName: 1, email: 1 } }
+    );
   });
 
   it('clamps the limit to a sane range', async () => {
     await getCourseAccessLog(COURSE_ID, { limit: 5000 });
-    expect(collection.aggregate.mock.calls[0][0][2]).toEqual({ $limit: 500 });
+    expect(cursor.limit).toHaveBeenLastCalledWith(500);
 
     await getCourseAccessLog(COURSE_ID, { limit: 0 });
-    expect(collection.aggregate.mock.calls[1][0][2]).toEqual({ $limit: 100 });
+    expect(cursor.limit).toHaveBeenLastCalledWith(100);
 
     await getCourseAccessLog(COURSE_ID);
-    expect(collection.aggregate.mock.calls[2][0][2]).toEqual({ $limit: 100 });
+    expect(cursor.limit).toHaveBeenLastCalledWith(100);
   });
 });

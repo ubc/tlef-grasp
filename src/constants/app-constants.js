@@ -8,7 +8,7 @@ Course: {courseName}
 Learning Objective: {learningObjectiveText}
 Granular Learning Objective: {granularLearningObjectiveText}
 
-BACKGROUND COURSE MATERIAL:
+COURSE MATERIAL:
 {ragContext}
 --- END OF MATERIAL ---
 
@@ -31,6 +31,8 @@ SELF-CHECK BEFORE RETURNING (required):
 
 TOPIC: Does your question stem directly test the concept named in the Granular Learning Objective above?
 If the question is about a different subject, rewrite it before returning.
+
+GROUNDING: Every concept, principle, procedure, rule, or fact a student needs to answer your question must be taught in the course material above — not just related to it, and not merely something an expert in the field would know. New examples, scenarios, substances, or numbers are fine when they apply a concept the material teaches. Data you give in the question itself (such as a constant the student is told) does not need to be in the material. If answering needs anything the material does not teach, rewrite the question around what it does teach.
 
 BLOOM: Apply the stricter definitions below before accepting your Bloom label:
 - Apply = execute a procedure on a specific scenario, not name what the procedure does
@@ -228,6 +230,32 @@ CRITICAL: Provide exactly one rating in the "ratings" array for EVERY question l
 
 You MUST fill in the reasoning field for every question — work through the checks in plain text before deciding. This is required.`;
 
+// Appended to QUESTION_REVIEW_PROMPT only when the questions under review
+// include a multiple-answer one.
+const QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE = `
+
+MULTIPLE ANSWER (questionType "multiple-answer"): students must select every correct option and no other, and correctAnswers lists every correct option. Re-derive each option on its own: every listed option must be correct, every unlisted option must be incorrect, and at least one option must be incorrect. Flag an option that depends on another ("both A and B", "all of the above"), and any option whose truth is ambiguous.`;
+
+// Appended to QUESTION_REVIEW_PROMPT only when the questions under review
+// include a calculation one. A reviewer reading "-log(c)" assumes base 10, as a
+// person would; the engine does not, so the answer key it computes is wrong.
+const QUESTION_REVIEW_CALCULATION_NOTE = `
+
+CALCULATION (questionType "calculation"): the server computes the answer key by evaluating formula with an engine in which log(x) and ln(x) are both the natural logarithm and log10(x) is the base-10 logarithm. Evaluate formula exactly as that engine would at one sample of the variable values, and compare the result with what the stem asks for. Flag a formula that uses log or ln where the quantity needs a base-10 logarithm (pH, pOH, pKa, decibels, orders of magnitude).`;
+
+// Appended to QUESTION_REVIEW_PROMPT when the course material the questions
+// were generated from is available, so review can check what the material
+// actually teaches. Without it, review can only judge correctness against
+// general knowledge, and a question built on a concept the course never taught
+// passes as long as it is accurate.
+const QUESTION_REVIEW_MATERIAL_NOTE = `
+
+COURSE MATERIAL THESE QUESTIONS WERE GENERATED FROM:
+{ragContext}
+--- END OF MATERIAL ---
+
+MATERIAL COVERAGE (every question): list the concepts, principles, procedures, rules, or facts a student must know to answer the question correctly — not general background a university student is assumed to have, such as arithmetic, basic algebra, or chemical formula notation. For each, check that the material above teaches it: explains, states, defines, or demonstrates it. A question that applies a taught concept to a new example, scenario, substance, or numbers IS covered; data given in the question itself does not need to be in the material. Flag the question if any required concept is not taught, and name the concept that is missing.`;
+
 const QUESTION_FIX_PROMPT = `An independent quality reviewer examined the {questionType} question you generated above (beginning: "{questionExcerpt}") and flagged it:
 
 REVIEWER'S ISSUE: {issue}
@@ -329,10 +357,32 @@ const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", 
 
 const QUESTION_TYPES = {
   MULTIPLE_CHOICE: "multiple-choice",
+  // "Select all that apply": the same lettered options as multiple choice, one
+  // or more of them correct, graded all-or-nothing on the exact set.
+  MULTIPLE_ANSWER: "multiple-answer",
   FILL_IN_THE_BLANK: "fill-in-the-blank",
   CALCULATION: "calculation",
   OPEN_ENDED: "open-ended",
 };
+
+// The types AI generation can write.
+const GENERATED_QUESTION_TYPES = [
+  QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.MULTIPLE_ANSWER,
+  QUESTION_TYPES.FILL_IN_THE_BLANK,
+  QUESTION_TYPES.CALCULATION,
+  QUESTION_TYPES.OPEN_ENDED,
+];
+
+// The types objective generation may recommend for a learning objective. It
+// never recommends multiple answer: instructors add that type themselves, so
+// the AI's suggested mix stays as it was before the type existed.
+const SUGGESTED_QUESTION_TYPES = [
+  QUESTION_TYPES.MULTIPLE_CHOICE,
+  QUESTION_TYPES.FILL_IN_THE_BLANK,
+  QUESTION_TYPES.CALCULATION,
+  QUESTION_TYPES.OPEN_ENDED,
+];
 
 // Multiple-choice options are stored as an object keyed by letter. A question
 // carries between MC_MIN_OPTIONS and MC_MAX_OPTIONS of them, lettered
@@ -401,14 +451,17 @@ const CANVAS_IMPORT_MATERIAL = Object.freeze({
  * than cost — an instructor wanting all of it as one type at one level is asking
  * for no more work than spreading it around. Measured over 929 existing granular
  * objectives, 97% use exactly two questions, the 99th percentile is three, and the
- * most any has ever used is seven, so this leaves generous room while still ruling
- * out the pathological case.
+ * most any has ever used is seven, so six covers all but that one outlier while
+ * keeping a single objective's sequential generation short.
  */
-const MAX_QUESTIONS_PER_OBJECTIVE = 20;
+const MAX_QUESTIONS_PER_OBJECTIVE = 6;
 
 module.exports = {
   QUESTION_GENERATION_PROMPT,
   QUESTION_REVIEW_PROMPT,
+  QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE,
+  QUESTION_REVIEW_CALCULATION_NOTE,
+  QUESTION_REVIEW_MATERIAL_NOTE,
   QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,
@@ -425,6 +478,8 @@ module.exports = {
   MAX_OUTLINE_CHARS,
   BLOOM_LEVELS,
   QUESTION_TYPES,
+  GENERATED_QUESTION_TYPES,
+  SUGGESTED_QUESTION_TYPES,
   MC_OPTION_KEYS,
   MC_MIN_OPTIONS,
   MC_MAX_OPTIONS,

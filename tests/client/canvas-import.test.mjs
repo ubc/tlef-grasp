@@ -21,6 +21,7 @@ import {
   isCanvasExportFile,
   linkableCount,
   mergeCommitReports,
+  partialCreditNote,
   predictedDraftsLabel,
   quizCanBeImported,
   quizHasWork,
@@ -468,7 +469,7 @@ describe("slotLabel", () => {
 });
 
 const FORMULA = "Formula question with variables. These come in a later update (#130).";
-const MULTI = "Multiple-answer questions aren't supported in GRASP yet.";
+const MULTI = "Multiple-dropdown questions aren't supported in GRASP.";
 const MATCHING = "Matching questions aren't supported in GRASP.";
 const skip = (slotName, reason) => ({ slotName, itemTitle: "Question", canvasType: "x", reason });
 
@@ -545,6 +546,7 @@ describe("mergeCommitReports", () => {
       drafts: [],
       failures: [{ slotName: "Thermo 2 – Q04", title: "Rate", reason: "Save failed" }],
       imageFailures: 2,
+      partialCredit: 2,
       quiz: { id: "q2", name: "Thermo 2", created: false },
     });
     const third = report({ quizIdent: "g3", title: "Thermo 3", skipped: [], drafts: [], quiz: null });
@@ -564,6 +566,7 @@ describe("mergeCommitReports", () => {
       imageFailures: 2,
       failures: 1,
       failedQuizzes: 1,
+      partialCredit: 2,
     });
     expect(merged.quizzes.map((q) => [q.quizIdent, q.title, q.created.questions])).toEqual([
       ["g1", "Thermo 1", 4],
@@ -596,6 +599,7 @@ describe("mergeCommitReports", () => {
       imageFailures: 2,
       failures: 0,
       failedQuizzes: 0,
+      partialCredit: 0,
     });
     expect(merged.quizzes[0]).toEqual({
       quizIdent: "g1",
@@ -609,6 +613,22 @@ describe("mergeCommitReports", () => {
       quiz: null,
     });
     expect(merged.errors).toEqual([]);
+  });
+});
+
+describe("partialCreditNote", () => {
+  it("says how many multiple-answer questions GRASP grades all-or-nothing", () => {
+    expect(partialCreditNote({ partialCredit: 1 })).toBe(
+      "1 multiple-answer question: Canvas gave partial credit; GRASP marks it right only when exactly the correct options are ticked."
+    );
+    expect(partialCreditNote({ partialCredit: 3 })).toBe(
+      "3 multiple-answer questions: Canvas gave partial credit; GRASP marks them right only when exactly the correct options are ticked."
+    );
+  });
+
+  it("is empty when the import had none", () => {
+    expect(partialCreditNote({ partialCredit: 0 })).toBe("");
+    expect(partialCreditNote({})).toBe("");
   });
 });
 

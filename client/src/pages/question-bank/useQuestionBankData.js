@@ -18,7 +18,7 @@ export function useQuestionBankData(courseId) {
           stem: question.stem || question.title || "",
           objectiveId,
           hasGranularObjective: Boolean(question.granularObjectiveId),
-          glo: objectiveId || "",
+          mlo: objectiveId || "",
           bloom: question.bloom || question.bloomLevel || "Understand",
           questionType: normalizeQuestionTypeKey(question.questionType || question.type),
           calculationFormula: question.calculationFormula,
@@ -50,7 +50,7 @@ export function useQuestionBankData(courseId) {
       }
       questions.forEach((question) => {
         if (question.objectiveId && objectivesMap.has(question.objectiveId)) {
-          question.glo = objectivesMap.get(question.objectiveId);
+          question.mlo = objectivesMap.get(question.objectiveId);
         }
       });
 

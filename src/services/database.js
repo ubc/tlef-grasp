@@ -1,8 +1,29 @@
-const { MongoClient } = require("mongodb");
+const { MongoClient, GridFSBucket } = require("mongodb");
+const {
+  assertKeysAvailable,
+  createEncryptedDb,
+  validateEncryptionConfig,
+} = require("@ubc/genai-toolkit-encryption");
+const encryptionConfig = require("./encryption.config.cjs");
+
+// The variable encryption.config.cjs reads the data key from. Field
+// encryption is on exactly when it is set.
+const ENCRYPTION_KEY_ENV = "GRASP_DATA_ENCRYPTION_KEY";
+// Written the first time a database is used with the key on. A server
+// started on that database without the key refuses to run, rather than
+// reading ciphertext as data and writing plaintext next to it.
+const ENCRYPTION_MARKER_COLLECTION = "grasp_field_encryption";
+const ENCRYPTION_MARKER_ID = "field-encryption";
+
+function isEncryptionKeySet(env = process.env) {
+  const key = env[ENCRYPTION_KEY_ENV];
+  return typeof key === "string" && key.trim() !== "";
+}
 
 class DatabaseService {
   constructor() {
     this.client = null;
+    this.rawDb = null;
     this.db = null;
     this.isConnected = false;
     this.connectionUri = null;
@@ -29,7 +50,8 @@ class DatabaseService {
       console.log("Attempting to connect to MongoDB...");
       this.client = new MongoClient(mongodbUri, connectionOptions);
       await this.client.connect();
-      this.db = this.client.db(dbName);
+      this.rawDb = this.client.db(dbName);
+      this.db = await this.wrapForEncryption(this.rawDb);
       this.isConnected = true;
       this.connectionUri = mongodbUri;
       
@@ -54,6 +76,7 @@ class DatabaseService {
         }
         this.client = null;
       }
+      this.rawDb = null;
       this.isConnected = false;
       throw error;
     }
@@ -61,7 +84,13 @@ class DatabaseService {
 
   async initializeCollections() {
     try {
-      await this.db.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
+      // On the raw handle: the encryption wrapper refuses an index on an
+      // encrypted field. It keeps PUIDs unique while encryption is off and
+      // among rows stored before it was turned on. With encryption on, the
+      // unique blind index on puid__bidx does that job; the toolkit's
+      // ensure-indexes command creates it, never the app.
+      await this.rawDb.collection("grasp_user").createIndex({ puid: 1 }, { unique: true });
+      if (this.db !== this.rawDb) await this.warnIfPuidBlindIndexMissing();
       // LMS accounts synced from a roster (one per provider + instance). Not
       // unique: the sync service moves an identity between users itself.
       await this.db.collection("grasp_user").createIndex({
@@ -69,6 +98,14 @@ class DatabaseService {
         "lmsAccounts.instance": 1,
         "lmsAccounts.externalUserId": 1,
       });
+      // Roster syncs used to copy the LMS's SIS id and names into each entry.
+      // Nothing reads them, so they are no longer stored, and entries written
+      // before that lose them here. The login id stays (grade CSV).
+      const droppedLmsAccountFields = ["sisUserId", "name", "sortableName"];
+      await this.db.collection("grasp_user").updateMany(
+        { $or: droppedLmsAccountFields.map((field) => ({ [`lmsAccounts.${field}`]: { $exists: true } })) },
+        { $unset: Object.fromEntries(droppedLmsAccountFields.map((field) => [`lmsAccounts.$[].${field}`, ""])) }
+      );
       // Course codes are unique among LIVE courses only. Archiving releases a
       // course's code so next term's shell can reuse it — a plain unique index
       // would defeat that with a duplicate-key error at insert, no matter what
@@ -302,6 +339,85 @@ class DatabaseService {
       this.isConnected = false;
       console.log("✅ Disconnected from MongoDB");
     }
+  }
+
+  /**
+   * The Db the app uses. With GRASP_DATA_ENCRYPTION_KEY set, the fields in
+   * encryption.config.cjs are encrypted on write and decrypted on read, and
+   * every other collection comes back as an ordinary driver collection.
+   * Without it, the plain driver Db, unless this database has already been
+   * used with the key.
+   */
+  async wrapForEncryption(rawDb) {
+    const markers = rawDb.collection(ENCRYPTION_MARKER_COLLECTION);
+    if (!isEncryptionKeySet()) {
+      const marker = await markers.findOne({ _id: ENCRYPTION_MARKER_ID });
+      if (marker) {
+        const since = marker.enabledAt instanceof Date ? ` since ${marker.enabledAt.toISOString()}` : "";
+        throw new Error(
+          `${ENCRYPTION_KEY_ENV} is not set, but this database has held field-encrypted data${since}. ` +
+          "Set the key it was encrypted with."
+        );
+      }
+      return rawDb;
+    }
+
+    const protectedDb = await createEncryptedDb(rawDb, encryptionConfig);
+    try {
+      await markers.updateOne(
+        { _id: ENCRYPTION_MARKER_ID },
+        { $setOnInsert: { enabledAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (error) {
+      // Another worker recorded it first.
+      if (error?.code !== 11000) throw error;
+    }
+    return protectedDb;
+  }
+
+  /**
+   * Checked at boot, without touching MongoDB. No key: field encryption is
+   * off, which is logged. A malformed key throws, so the server can refuse to
+   * start instead of failing every request on the lazy connection.
+   *
+   * @returns {Promise<boolean>} whether field encryption is on
+   */
+  async checkEncryptionKey() {
+    if (!isEncryptionKeySet()) {
+      console.warn(
+        `⚠️ ${ENCRYPTION_KEY_ENV} is not set: field-level encryption is off, ` +
+        "and the fields in encryption.config.cjs are stored as plaintext."
+      );
+      return false;
+    }
+    await assertKeysAvailable(validateEncryptionConfig(encryptionConfig));
+    return true;
+  }
+
+  /**
+   * With encryption on, one row per PUID rests on the unique index the
+   * toolkit's ensure-indexes command builds on puid__bidx. Until an operator
+   * has run it, say so at every boot.
+   */
+  async warnIfPuidBlindIndexMissing() {
+    const indexes = await this.rawDb.collection("grasp_user").indexes();
+    if (!indexes.some((index) => index.key && "puid__bidx" in index.key)) {
+      console.warn(
+        "⚠️ grasp_user has no index on puid__bidx: run the encryption CLI's ensure-indexes " +
+        "so a PUID cannot be stored twice."
+      );
+    }
+  }
+
+  /**
+   * GridFS needs a real driver Db, which the encrypted wrapper is not. The
+   * images bucket holds no encrypted fields; never use this for a collection
+   * listed in encryption.config.cjs.
+   */
+  async gridFSBucket(bucketName) {
+    await this.connect();
+    return new GridFSBucket(this.rawDb, { bucketName });
   }
 
   getCollection(name) {

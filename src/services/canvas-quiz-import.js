@@ -21,6 +21,7 @@
  */
 
 const { ObjectId } = require("mongodb");
+const { QUESTION_TYPES } = require("../constants/app-constants");
 const databaseService = require("./database");
 const { saveQuestion } = require("./question");
 const { createObjective, appendGranularObjectives } = require("./objective");
@@ -587,6 +588,9 @@ async function importQuiz({ db, plan, quiz, courseId, wantsQuiz, user, canApprov
         quizIdent: quiz.ident,
         title: quiz.title,
         created: { questions: 0, approved: 0, drafts: 0, objectives: 0 },
+        // Multiple-answer questions saved: Canvas gave them partial credit,
+        // GRASP grades the exact set.
+        partialCredit: 0,
         alreadyImported: 0,
         skipped: quiz.skipped.map(publicSkip),
         drafts: [],
@@ -722,6 +726,7 @@ async function saveDraft({ draft, slot, granularId, images, courseId, userId, ca
 
         const questionId = result.insertedId;
         report.created.questions += 1;
+        if (payload.questionType === QUESTION_TYPES.MULTIPLE_ANSWER) report.partialCredit += 1;
         if (status === "Approved") {
             report.created.approved += 1;
         } else {

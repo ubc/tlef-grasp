@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { Parser } = require("expr-eval");
+const { Parser } = require("expr-eval-fork");
 const Question = require('./Question');
 const { QUESTION_TYPES } = require('../../constants/app-constants');
 
@@ -105,7 +105,8 @@ You must output a JSON object representing a parameterized question. The server 
 1. **Count**: Use at most 3 variables (fewer is better).
 2. **Declaration**: Only declare variables in \`calculationVariables\` that are actually used. Unused or extra declared variables will cause immediate failure.
 3. **Stem Delimiters**: Every declared variable must appear in the stem wrapped in double curly braces (e.g., \`{{x}}\`). Even if you write variables in LaTeX or text (like \`s(t) = 3t\` or \`time t\`), you must still include the parameterized placeholder (e.g., \`at time t = {{t}}\` or \`when t is {{t}}\`) in the stem, so the random values can be substituted.
-4. **Formula format**: \`calculationFormula\` must be ONE pure ASCII arithmetic expression (no LaTeX, no Unicode math symbols like ∫, ∑, π, or ℯ, no = sign). It must use only: \`+\`, \`-\`, \`*\`, \`/\`, \`^\`, \`(\`, \`)\`, digits, variable names, constants \`PI\` and \`E\`, and functions \`sin\`, \`cos\`, \`tan\`, \`sqrt\`, \`log\`, \`exp\`.
+4. **Formula format**: \`calculationFormula\` must be ONE pure ASCII arithmetic expression (no LaTeX, no Unicode math symbols like ∫, ∑, π, or ℯ, no = sign). It must use only: \`+\`, \`-\`, \`*\`, \`/\`, \`^\`, \`(\`, \`)\`, digits, variable names, constants \`PI\` and \`E\`, and functions \`sin\`, \`cos\`, \`tan\`, \`sqrt\`, \`ln\`, \`log10\`, \`exp\`.
+   - **Logarithms**: \`ln(x)\` is the natural logarithm. A base-10 logarithm — pH, pOH, pKa, decibels, orders of magnitude — must be written \`log10(x)\`. Never write a bare \`log(x)\`: the engine evaluates it as the natural logarithm, so \`-log(c)\` for a pH gives an answer about 2.3 times too large.
 5. **Formula alignment**: Every variable declared in \`calculationVariables\` must be used in the formula. Conversely, every variable in the formula must be declared in \`calculationVariables\`.
 6. **No Expressions in Braces**: The stem placeholders must be simple variables (e.g., \`{{x}}\`). Never put expressions inside braces (e.g., \`{{n^2}}\` or \`{{2a}}\` are invalid).
 7. **Numeric Value Request**: The stem must ask for a specific numeric value. Never ask yes/no or convergence/divergence questions.
@@ -160,7 +161,7 @@ Worked example of the MECHANICS only (derive your own formula, stem, and variabl
             if (/square brackets|TBRACKET|\[|\]/i.test(msg)) {
                 calcExtra +=
                     "\nThe formula used square brackets [ ], which are invalid. Use parentheses ( ) for grouping. " +
-                    "If you meant a concentration or other quantity (e.g. [H+]), declare it as a single-letter variable (e.g. \"c\") and use {{c}} in the stem and \"c\" in the formula — example: pH from concentration → formula \"-log(c)/log(10)\" with variable c.";
+                    "If you meant a concentration or other quantity (e.g. [H+]), declare it as a single-letter variable (e.g. \"c\") and use {{c}} in the stem and \"c\" in the formula — example: pH from concentration → formula \"-log10(c)\" with variable c.";
             }
             if (/stem must reference each variable|calculationFormula must reference every declared variable/i.test(msg)) {
                 const missingMatch = msg.match(/Missing(?:\s+from\s+\w+)?:\s*([^\s.]+)/i);
@@ -907,6 +908,12 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
     }
 
         static evaluateCalculationFormula(formula, values) {
+      const coerced = CalculationQuestion.coerceFormulaValues(values);
+      return CalculationQuestion.compileCalculationFormula(formula, Object.keys(coerced))(coerced);
+    }
+
+    /** A value set as numbers for formula evaluation; a value that isn't a finite number throws. */
+        static coerceFormulaValues(values) {
       const coerced = {};
       if (values && typeof values === "object") {
         for (const [k, raw] of Object.entries(values)) {
@@ -917,10 +924,20 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
           coerced[k] = n;
         }
       }
-      const allowedFromToken = new Set(Object.keys(coerced));
+      return coerced;
+    }
+
+    /**
+     * evaluateCalculationFormula with the formula parsed once, for evaluating it
+     * at many value sets of the same variables (the Canvas export draws
+     * hundreds). Problems with the formula throw here; problems with a value
+     * set, or a non-finite answer, throw from the returned function.
+     */
+        static compileCalculationFormula(formula, variableNames) {
+      const allowed = new Set(variableNames);
       let f = CalculationQuestion.canonicalizeCalculationSyntax(formula);
       if (!f) throw new Error("calculationFormula is required");
-      f = CalculationQuestion.normalizePiToBuiltin(f, allowedFromToken);
+      f = CalculationQuestion.normalizePiToBuiltin(f, allowed);
       const parser = new Parser();
       let expr;
       try {
@@ -930,39 +947,42 @@ RULES: (1) stem MUST use {{name}} double curly braces for every variable. (2) ca
       }
       const needed = expr.variables();
       const missing = needed.filter(
-        (n) => !(n in coerced) && !EXPR_EVAL_CONST_NAMES.has(n)
+        (n) => !allowed.has(n) && !EXPR_EVAL_CONST_NAMES.has(n)
       );
       if (missing.length > 0) {
         throw new Error(
           `Formula needs variable(s): ${missing.join(", ")}. Reload the quiz to get a fresh version of this question.`
         );
       }
-      let result;
-      try {
-        result = expr.evaluate(coerced);
-      } catch (e) {
-        const msg = String(e?.message || "");
-        if (/undefined variable/i.test(msg)) {
-          const m = msg.match(/undefined variable:\s*(\w+)/i);
-          const name = m ? m[1] : "?";
+      return (values) => {
+        const coerced = CalculationQuestion.coerceFormulaValues(values);
+        let result;
+        try {
+          result = expr.evaluate(coerced);
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (/undefined variable/i.test(msg)) {
+            const m = msg.match(/undefined variable:\s*(\w+)/i);
+            const name = m ? m[1] : "?";
+            throw new Error(
+              `Formula references "${name}" but it is missing from this attempt's values. Reload the quiz or ask your instructor to align the formula with calculationVariables.`
+            );
+          }
+          if (/is not (a|an allowed) function/i.test(msg)) {
+            throw new Error(
+              "Formula used implicit multiplication (e.g. 0.28(x+1) without *). The engine expects 0.28*(x+1). Save the question again to normalize the formula, or ask your instructor to add explicit * between a number and '('."
+            );
+          }
+          throw e;
+        }
+        const num = Number(result);
+        if (!Number.isFinite(num)) {
           throw new Error(
-            `Formula references "${name}" but it is missing from this attempt's values. Reload the quiz or ask your instructor to align the formula with calculationVariables.`
+            "Formula evaluation produced a non-finite value (NaN or Infinity). Common causes: sqrt or log of a negative number, division by zero, or a singularity inside the variable ranges (e.g. 1/(x+1) with x near -1). Narrow min/max for the variables or fix the formula."
           );
         }
-        if (/is not a function/i.test(msg)) {
-          throw new Error(
-            "Formula used implicit multiplication (e.g. 0.28(x+1) without *). The engine expects 0.28*(x+1). Save the question again to normalize the formula, or ask your instructor to add explicit * between a number and '('."
-          );
-        }
-        throw e;
-      }
-      const num = Number(result);
-      if (!Number.isFinite(num)) {
-        throw new Error(
-          "Formula evaluation produced a non-finite value (NaN or Infinity). Common causes: sqrt or log of a negative number, division by zero, or a singularity inside the variable ranges (e.g. 1/(x+1) with x near -1). Narrow min/max for the variables or fix the formula."
-        );
-      }
-      return num;
+        return num;
+      };
     }
 
     /** True when another random draw of variables might succeed (domain / singularity). */

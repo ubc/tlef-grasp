@@ -1,4 +1,6 @@
 import Modal from "../../components/ui/Modal";
+import { QUESTION_TYPES } from "../../lib/constants";
+import { normalizeQuestionTypeKey } from "../../lib/utils";
 
 const FORMATS = [
   { format: "qti", icon: "fa-file-archive", label: "Canvas (QTI)", note: "ZIP format for LMS" },
@@ -7,7 +9,40 @@ const FORMATS = [
   { format: "json", icon: "fa-file-code", label: "JSON", note: "Raw Data" },
 ];
 
-export default function ExportQuizModal({ quiz, onClose, onExport }) {
+// Which questions the last export left out and why: after a download, or
+// instead of one when nothing could be exported.
+function LeftOutNotice({ notice }) {
+  const { leftOut } = notice;
+  const unlisted = leftOut.count - leftOut.questions.length;
+  const heading = notice.downloaded
+    ? `Downloaded. ${leftOut.count === 1 ? "1 question isn't" : `${leftOut.count} questions aren't`} in the file:`
+    : notice.message;
+  return (
+    <div role="status" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <p className="font-semibold">
+        <i className="fas fa-triangle-exclamation mr-1.5" aria-hidden="true" />
+        {heading}
+      </p>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        {leftOut.questions.map((question, i) => (
+          <li key={i}>
+            <span className="font-medium">{question.title}</span>: {question.reason}
+          </li>
+        ))}
+      </ul>
+      {unlisted > 0 && <p className="mt-2">…and {unlisted} more.</p>}
+    </div>
+  );
+}
+
+export default function ExportQuizModal({ quiz, notice, onClose, onExport }) {
+  // Canvas grades multiple answers differently from GRASP; say so before the
+  // instructor exports a quiz that has any.
+  const hasMultipleAnswer = (quiz?.questions || []).some(
+    (question) =>
+      normalizeQuestionTypeKey(question.questionType || question.type) ===
+      QUESTION_TYPES.MULTIPLE_ANSWER
+  );
   return (
     <Modal open={!!quiz} onClose={onClose} title="Export Quiz" wide>
       <h3 className="mb-2 text-xl font-semibold text-ink">{quiz?.name}</h3>
@@ -30,6 +65,14 @@ export default function ExportQuizModal({ quiz, onClose, onExport }) {
           </button>
         ))}
       </div>
+      {hasMultipleAnswer && (
+        <p className="mt-4 text-sm text-muted">
+          <i className="fas fa-circle-info mr-1.5" aria-hidden="true" />
+          Canvas gives partial credit on multiple-answer questions; in GRASP they are
+          right only when exactly the correct options are ticked.
+        </p>
+      )}
+      {notice && <LeftOutNotice notice={notice} />}
     </Modal>
   );
 }

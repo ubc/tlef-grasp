@@ -1,6 +1,6 @@
 const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const { MC_OPTION_KEYS } = require('../utils/mc-options');
+const { MC_OPTION_KEYS, answerKeysOf, multipleAnswerError } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { deleteImages, collectQuestionImageIds } = require('./image');
 const {
@@ -69,27 +69,51 @@ const sanitizeOptions = (options) => {
     return sanitized;
 };
 
+/**
+ * A multiple-answer question's correct letters as stored: a list in A to H
+ * order. Throws (code INVALID_QUESTION) when the question could not be graded,
+ * with no option marked correct or one naming an option it doesn't have; saved,
+ * it would be a question nobody can answer right.
+ */
+const multipleAnswerCorrectKeys = (options, correctAnswer) => {
+    const problem = multipleAnswerError(options, correctAnswer);
+    if (problem) {
+        const error = new Error(problem);
+        error.code = "INVALID_QUESTION";
+        throw error;
+    }
+    return answerKeysOf(correctAnswer);
+};
+
 // Normalize free text for duplicate comparison: collapse whitespace, trim, lowercase.
 const normalizeText = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
+// The option texts and images, keyed by letter, for a duplicate comparison.
+const optionsSignature = (options) => {
+    const opts = options && typeof options === "object" ? options : {};
+    return Object.keys(opts)
+        .sort()
+        .map((key) => {
+            const opt = opts[key];
+            const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
+            const imageId = (opt && opt.image && opt.image.fileId) || "";
+            return `${key}:${normalizeText(text)}@${imageId}`;
+        })
+        .join("|");
+};
+
 // A stable signature of a question's answer content, so two questions that only
-// differ in whitespace/casing still count as the same. Multiple-choice compares
-// the option texts and images (keyed by letter) and the correct letter; the
-// other types compare their acceptable/correct answers.
+// differ in whitespace/casing still count as the same. Multiple-choice and
+// multiple-answer compare the option texts and images (keyed by letter) and
+// the correct letter or letters; the other types compare their
+// acceptable/correct answers.
 const answerSignature = (q) => {
     const type = String(q.questionType || q.type || "").toLowerCase();
     if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
-        const options = q.options && typeof q.options === "object" ? q.options : {};
-        const opts = Object.keys(options)
-            .sort()
-            .map((key) => {
-                const opt = options[key];
-                const text = typeof opt === "string" ? opt : (opt && opt.text) || "";
-                const imageId = (opt && opt.image && opt.image.fileId) || "";
-                return `${key}:${normalizeText(text)}@${imageId}`;
-            })
-            .join("|");
-        return `mc:${opts}#${normalizeText(q.correctAnswer)}`;
+        return `mc:${optionsSignature(q.options)}#${normalizeText(q.correctAnswer)}`;
+    }
+    if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
+        return `ma:${optionsSignature(q.options)}#${answerKeysOf(q.correctAnswer).join(",")}`;
     }
     if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
         const accept = (Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [])
@@ -104,34 +128,64 @@ const answerSignature = (q) => {
     return `oe:${normalizeText(q.openEndedSampleAnswer)}`;
 };
 
+// The file ids of a question's stem images, legacy single image included.
+const stemImageSignature = (q) =>
+    [...(Array.isArray(q.stemImages) ? q.stemImages : []), q.stemImage]
+        .filter((ref) => ref && ref.fileId)
+        .map((ref) => String(ref.fileId))
+        .join(",");
+
 // Find an existing question in the course that is a duplicate of `questionData`:
 // same type, same question text (title + stem), same answer content, and the
-// same granular learning-objective link. Returns the existing doc or null.
-const findDuplicateQuestion = async (db, courseIdObj, granularObjectiveIdObj, questionData) => {
+// same granular learning-objective link. `excludeId` leaves out the question
+// being edited, so it never matches itself; `matchStemImages` also requires
+// the same stem images, for questions told apart only by their picture.
+// Returns the existing doc or null.
+const findDuplicateQuestion = async (
+    db,
+    courseIdObj,
+    granularObjectiveIdObj,
+    questionData,
+    { excludeId = null, matchStemImages = false } = {}
+) => {
     const type = String(questionData.questionType || questionData.type || "").toLowerCase();
     const candidates = await db.collection("grasp_question").find({
         courseId: courseIdObj,
         granularObjectiveId: granularObjectiveIdObj,
         questionType: type,
+        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
     }).toArray();
 
     const title = normalizeText(questionData.title);
     const stem = normalizeText(questionData.stem);
     const signature = answerSignature(questionData);
+    const stemImages = stemImageSignature(questionData);
 
     return (
         candidates.find(
             (c) =>
                 normalizeText(c.title) === title &&
                 normalizeText(c.stem) === stem &&
-                answerSignature(c) === signature
+                answerSignature(c) === signature &&
+                (!matchStemImages || stemImageSignature(c) === stemImages)
         ) || null
     );
 };
 
+// Everything an edit is checked on for duplicates, as one comparable string:
+// findDuplicateQuestion's fields with the stem images and objective link.
+const editIdentity = (q) =>
+    [
+        String(q.questionType || q.type || "").toLowerCase(),
+        normalizeText(q.title),
+        normalizeText(q.stem),
+        answerSignature(q),
+        stemImageSignature(q),
+        String(q.granularObjectiveId ?? ""),
+    ].join("\n");
+
 const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => {
     try {
-        console.log("Saving question:", questionData);
         const db = await databaseService.connect();
         const collection = db.collection("grasp_question");
         
@@ -154,12 +208,17 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 ? new ObjectId(questionData.learningObjectiveId)
                 : questionData.learningObjectiveId)
             : null;
+        // An objective deleted before the question was saved: save it orphaned
+        // and Draft, as deleting the objective would have left it.
+        let orphaned = false;
         if (granularObjectiveIdObj) {
             const granularObjective = await db.collection("grasp_objective").findOne(
                 { _id: granularObjectiveIdObj, courseId: courseIdObj },
                 { projection: { parent: 1 } }
             );
-            if (granularObjective?.parent && granularObjective.parent !== 0) {
+            if (!granularObjective) {
+                orphaned = true;
+            } else if (granularObjective.parent && granularObjective.parent !== 0) {
                 learningObjectiveIdObj = granularObjective.parent;
             }
         }
@@ -201,6 +260,12 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
 
         const qtLower = String(questionType).toLowerCase();
 
+        const options = sanitizeOptions(questionData.options);
+        const correctAnswer =
+            qtLower === QUESTION_TYPES.MULTIPLE_ANSWER
+                ? multipleAnswerCorrectKeys(options, questionData.correctAnswer)
+                : questionData.correctAnswer;
+
         // On import, refuse to create a question that already exists in the course
         // (same text + options/answers + granular objective link).
         if (dedupe) {
@@ -208,7 +273,7 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
                 db,
                 courseIdObj,
                 granularObjectiveIdObj,
-                { ...questionData, questionType }
+                { ...questionData, questionType, correctAnswer }
             );
             if (duplicate) {
                 const error = new Error("A matching question already exists in this course.");
@@ -221,8 +286,8 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             title: questionData.title,
             stem: questionData.stem,
             stemImages: sanitizeImageRefArray(questionData.stemImages ?? questionData.stemImage),
-            options: sanitizeOptions(questionData.options),
-            correctAnswer: questionData.correctAnswer,
+            options,
+            correctAnswer,
             questionType,
             acceptableAnswers: Array.isArray(questionData.acceptableAnswers)
                 ? questionData.acceptableAnswers
@@ -251,13 +316,17 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
             learningObjectiveId: learningObjectiveIdObj,
             granularObjectiveId: granularObjectiveIdObj,
             createdBy: questionData.by,
-            status: questionData.status || "Draft",
+            status: orphaned ? "Draft" : questionData.status || "Draft",
             flagStatus: questionData.flagStatus || false,
             flagReason: questionData.flagStatus
                 ? String(questionData.flagReason || "").trim()
                 : "",
             createdAt: new Date(),
         };
+        if (orphaned) {
+            doc.orphaned = true;
+            doc.orphanedAt = new Date();
+        }
 
         // Canvas import provenance and lossy-conversion notes (#140). Written
         // only when given, so other questions keep their exact shape.
@@ -267,9 +336,9 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
         if (importWarnings) doc.importWarnings = importWarnings;
 
         const question = await collection.insertOne(doc);
-        
+
         console.log("Question saved with ID:", question.insertedId);
-        return question;
+        return { ...question, orphaned };
     } catch (error) {
         console.error("Error creating question:", error);
         throw error;
@@ -386,12 +455,12 @@ const getQuestionTextsByGranularObjective = async (courseId, granularObjectiveId
             const questionType = String(
                 question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE
             ).toLowerCase();
-            const preferred = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? question.title
-                : question.stem;
-            const fallback = questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? question.stem
-                : question.title;
+            // Multiple choice and multiple answer keep their prompt in the title.
+            const titleFirst =
+                questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+                questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
+            const preferred = titleFirst ? question.title : question.stem;
+            const fallback = titleFirst ? question.stem : question.title;
             return String(preferred || fallback || "").trim();
         })
         .filter(Boolean);
@@ -513,18 +582,32 @@ const updateQuestion = async (questionId, updateData) => {
                 : null;
         }
 
-        // Re-attaching a valid learning objective clears the orphaned state and
-        // re-enables approval; refresh the cached parent (meta LO) id too.
+        // Re-attaching clears the orphaned state and refreshes the parent LO id.
+        // The objective must exist in the question's course, so a deleted
+        // one's id cannot un-orphan it.
         const reattaching =
             updateData.granularObjectiveId !== undefined && update.granularObjectiveId != null;
         if (reattaching) {
+            const current = await collection.findOne(
+                { _id: id },
+                { projection: { courseId: 1 } }
+            );
+            const granular = current
+                ? await db.collection("grasp_objective").findOne(
+                    { _id: update.granularObjectiveId, courseId: current.courseId, parent: { $ne: 0 } },
+                    { projection: { parent: 1 } }
+                )
+                : null;
+            if (!granular) {
+                const err = new Error(
+                    "That learning objective does not exist in this question's course."
+                );
+                err.code = "INVALID_OBJECTIVE";
+                throw err;
+            }
             update.orphaned = false;
             update.orphanedAt = null;
-            const granular = await db.collection("grasp_objective").findOne(
-                { _id: update.granularObjectiveId },
-                { projection: { parent: 1 } }
-            );
-            if (granular?.parent && granular.parent !== 0) {
+            if (granular.parent) {
                 update.learningObjectiveId = granular.parent;
             }
         }
@@ -558,11 +641,35 @@ const updateQuestion = async (questionId, updateData) => {
             update.questionType !== undefined;
         const touchesImages =
             update.stemImages !== undefined || update.options !== undefined;
+        const touchesAnswer =
+            update.options !== undefined ||
+            update.correctAnswer !== undefined ||
+            update.questionType !== undefined;
+        // Any field editIdentity reads.
+        const touchesIdentity =
+            touchesAnswer ||
+            touchesImages ||
+            update.title !== undefined ||
+            update.stem !== undefined ||
+            update.acceptableAnswers !== undefined ||
+            update.calculationFormula !== undefined ||
+            update.openEndedSampleAnswer !== undefined ||
+            update.granularObjectiveId !== undefined;
 
-        // Fetch the existing doc once when either validation path needs it.
-        const existing = (touchesCalculation || touchesImages)
+        // Fetch the existing doc once when any validation path needs it.
+        const existing = (touchesCalculation || touchesIdentity)
             ? await collection.findOne({ _id: id })
             : null;
+
+        // A multiple-answer question must still name at least one option it
+        // has as correct after this update, whichever of its fields it changes.
+        if (touchesAnswer && existing) {
+            const merged = { ...existing, ...update };
+            const qt = String(merged.questionType || merged.type || "").trim().toLowerCase();
+            if (qt === QUESTION_TYPES.MULTIPLE_ANSWER) {
+                update.correctAnswer = multipleAnswerCorrectKeys(merged.options, merged.correctAnswer);
+            }
+        }
 
         if (touchesCalculation) {
             if (existing) {
@@ -592,7 +699,36 @@ const updateQuestion = async (questionId, updateData) => {
                 }
             }
         }
-        
+
+        // An edit must not make this question identical to another one under
+        // the same learning objective. Only an edit that changes what it is
+        // compared on is checked, so a pair that already exists can still be
+        // edited in other ways. An orphan is checked once re-attached: until
+        // then its link points at an objective that no longer exists.
+        if (touchesIdentity && existing) {
+            const merged = { ...existing, ...update };
+            if (
+                merged.granularObjectiveId &&
+                !merged.orphaned &&
+                editIdentity(merged) !== editIdentity(existing)
+            ) {
+                const duplicate = await findDuplicateQuestion(
+                    db,
+                    merged.courseId,
+                    merged.granularObjectiveId,
+                    merged,
+                    { excludeId: id, matchStemImages: true }
+                );
+                if (duplicate) {
+                    const error = new Error(
+                        "This learning objective already has an identical question. Edit this question so it differs, then save again."
+                    );
+                    error.code = "DUPLICATE_QUESTION";
+                    throw error;
+                }
+            }
+        }
+
         const result = await collection.updateOne(
             { _id: id },
             { $set: update }
@@ -780,6 +916,24 @@ const deleteQuestionsByObjectiveIds = async (granularObjectiveIds) => {
     };
 };
 
+/**
+ * Which of these question ids still exist in the course.
+ * @returns {Promise<string[]>}
+ */
+const findExistingQuestionIds = async (courseId, questionIds) => {
+    const ids = [...new Set((questionIds || []).map(String))]
+        .filter(ObjectId.isValid)
+        .map((id) => new ObjectId(id));
+    if (ids.length === 0) return [];
+    const db = await databaseService.connect();
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
+    const found = await db.collection("grasp_question")
+        .find({ _id: { $in: ids }, courseId: courseIdObj })
+        .project({ _id: 1 })
+        .toArray();
+    return found.map((question) => String(question._id));
+};
+
 const getQuestionCourseId = async (questionId) => {
     try {
         const db = await databaseService.connect();
@@ -804,6 +958,7 @@ module.exports = {
     deleteQuestion,
     getQuestion,
     getQuestionCourseId,
+    findExistingQuestionIds,
     getLinkedQuestionsSummary,
     orphanQuestionsByObjectiveIds,
     deleteQuestionsByObjectiveIds,

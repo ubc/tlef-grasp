@@ -8,9 +8,10 @@ const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
 const { createOrUpdateUser, getUserByPuid, updateUserNames, backfillUserEmail } = require('../services/user');
-const { getUserRole, ROLES } = require('../utils/auth');
+const { getUserRole, isAdministrator, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
 const { samlRequestCache } = require('../services/samlRequestCache');
+const { serializeSessionUser, deserializeSessionUser } = require('./session-user');
 
 // Valid affiliations that can access the application
 const VALID_AFFILIATIONS = ['faculty', 'staff', 'student', 'affiliate'];
@@ -80,10 +81,13 @@ const strategy = new Strategy(
 			return done(new Error('PUID is required'));
 		}
 
-		// Check if user has a valid affiliation (faculty, staff, student, or affiliate)
+		// Check if user has a valid affiliation (faculty, staff, student, or
+		// affiliate). App administrators (APP_ADMINISTRATOR) are exempt: an
+		// admin's CWL account may carry no affiliation at all, and
+		// getUserRole already grants them faculty regardless of it.
 		const hasValidAffiliation = VALID_AFFILIATIONS.some(aff => affiliations.includes(aff));
-		
-		if (!hasValidAffiliation) {
+
+		if (!hasValidAffiliation && !isAdministrator(ubcEduCwlPuid)) {
 			return done(new Error('Access denied. This application is only available to UBC faculty, staff, and students.'));
 		}
 
@@ -150,7 +154,7 @@ const strategy = new Strategy(
 				}
 			}
 
-			// Get user role for session
+			// Role for this login request only; the session keeps just the id.
 			const role = await getUserRole(user);
 
 			return done(null, { 
@@ -184,34 +188,18 @@ strategy._saml.options.audience = process.env.SAML_ISSUER;
 
 passport.use(strategy);
 
-// Serialize user to session
-// Runs ONCE on login - stores full user data in session
+// The session keeps only the user's id and the SAML logout fields; req.user
+// is loaded from the database on every request (middleware/session-user.js).
 passport.serializeUser((user, done) => {
-	// Convert MongoDB document to plain JavaScript object
-	const userObj = {
-		...user,
-		_id: user._id ? user._id.toString() : user._id,
-		// Alias so controllers can use either req.user.id or req.user._id
-		id: user._id ? user._id.toString() : user._id,
-		nameID: user.nameID,
-		nameIDFormat: user.nameIDFormat,
-		nameIDNameQualifier: user.nameIDNameQualifier,
-		nameIDSPNameQualifier: user.nameIDSPNameQualifier
-	};
-
-	// Store full user object in session
-	done(null, userObj);
+	try {
+		done(null, serializeSessionUser(user));
+	} catch (error) {
+		done(error);
+	}
 });
 
-// Deserialize user from session
-// Runs on EVERY authenticated request
-passport.deserializeUser((user, done) => {
-	// User is already stored in session from serializeUser.
-	// Backfill the id alias for sessions created before it was added.
-	if (user && !user.id && user._id) {
-		user.id = user._id;
-	}
-	done(null, user);
+passport.deserializeUser((stored, done) => {
+	deserializeSessionUser(stored).then((user) => done(null, user), done);
 });
 
 module.exports = { passport, strategy, VALID_AFFILIATIONS, ROLES };

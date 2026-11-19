@@ -32,17 +32,32 @@ const CANVAS_TILE = {
   hint: "Pick files from your Canvas course",
 };
 
+// Offered wherever this deployment has Panopto configured; the picker asks an
+// instructor who has not connected yet to connect first.
+const PANOPTO_TILE = {
+  type: "panopto",
+  icon: "fa-video",
+  label: "From Panopto",
+  hint: "Import a video's captions",
+};
+
 const SUPPORTED_FORMATS = Object.values(MATERIAL_UPLOAD_TYPES);
 
-// Panopto stays hidden until there is an integration to connect this flow to.
+// Columns for 2, 3 or 4 method tiles.
+const TILE_GRID = {
+  2: "sm:grid-cols-2",
+  3: "sm:grid-cols-3",
+  4: "sm:grid-cols-2 lg:grid-cols-4",
+};
 
-// Two-step upload modal: pick a method (file upload, pasted text, or Canvas
-// when available), then the file step exposes the drag-and-drop zone for every
-// supported format.
+// Two-step upload modal: pick a method (file upload, pasted text, and Canvas
+// or Panopto when available), then the file step exposes the drag-and-drop
+// zone for every supported format.
 export default function UploadSection({
   open,
   uploading,
   canvasAvailable = false,
+  panoptoAvailable = false,
   onClose,
   onFiles,
   onAddContent,
@@ -52,7 +67,11 @@ export default function UploadSection({
   // "choose" shows the method tiles; "file" shows the drop zone.
   const [step, setStep] = useState("choose");
 
-  const tiles = canvasAvailable ? [...METHOD_TILES, CANVAS_TILE] : METHOD_TILES;
+  const tiles = [
+    ...METHOD_TILES,
+    ...(canvasAvailable ? [CANVAS_TILE] : []),
+    ...(panoptoAvailable ? [PANOPTO_TILE] : []),
+  ];
 
   const handleFiles = (files) => {
     if (!files || files.length === 0) return;
@@ -76,11 +95,7 @@ export default function UploadSection({
       }
     >
       {step === "choose" ? (
-        <div
-          className={`grid grid-cols-1 gap-4 ${
-            tiles.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"
-          }`}
-        >
+        <div className={`grid grid-cols-1 gap-4 ${TILE_GRID[tiles.length]}`}>
           {tiles.map((tile) => (
             <button
               key={tile.type}

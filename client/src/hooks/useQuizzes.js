@@ -33,7 +33,7 @@ export function useQuizzesWithQuestions(courseId) {
   return { ...query, quizzes: query.data || [] };
 }
 
-function useInvalidateQuizzes(courseId) {
+export function useInvalidateQuizzes(courseId) {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.quizzes(courseId) });
@@ -179,6 +179,24 @@ export function useQuizScores(quizId) {
   return {
     ...query,
     scores: query.data?.success ? query.data.data || [] : [],
+  };
+}
+
+// One section's quizzes for the grade CSV dialog (#126): state per quiz and
+// how many disputed AI grades each still has. Instructors and admins only.
+export function useGradeExportOverview(courseId, sectionId, { enabled = true } = {}) {
+  const query = useQuery({
+    queryKey: queryKeys.gradeExport(courseId, sectionId),
+    queryFn: () =>
+      api.get(
+        `/api/quiz/course/${courseId}/grade-export?sectionId=${encodeURIComponent(sectionId)}`
+      ),
+    enabled: !!courseId && !!sectionId && enabled,
+  });
+  return {
+    ...query,
+    quizzes: query.data?.quizzes || [],
+    studentCount: query.data?.studentCount ?? 0,
   };
 }
 

@@ -758,6 +758,89 @@ describe('mapCanvasQuizzes: multiple choice', () => {
   });
 });
 
+// Multiple answers: the same options as multiple choice, with every correct
+// one kept. Canvas Classic gives them partial credit and GRASP grades the
+// exact set, which the quiz notes say; nothing is lost, so no Draft.
+describe('mapCanvasQuizzes: multiple answers', () => {
+  const MA = 'multiple_answers_question';
+
+  test('keeps every correct option through the seeded shuffle, and is not a Draft', () => {
+    const quiz = mapSlots([mcItem({
+      ident: 'gshuffle02',
+      type: MA,
+      stemHtml: '<div><p>Which of these are <em>synthetic</em>?</p></div>',
+      choices: choices(['Alpha', 'Bravo', 'Charlie', 'Delta']),
+      correct: ['1001', '1003'],
+    })]);
+    const [draft] = quiz.slots[0].questions;
+
+    // Canvas order [3, 2, 0, 1]: Alpha lands on C and Charlie on B.
+    expect(draft.payload).toEqual({
+      questionType: 'multiple-answer',
+      title: 'Which of these are synthetic?',
+      stem: 'Which of these are synthetic?',
+      bloom: 'Understand',
+      options: {
+        A: { text: 'Delta', feedback: '' },
+        B: { text: 'Charlie', feedback: '' },
+        C: { text: 'Alpha', feedback: '' },
+        D: { text: 'Bravo', feedback: '' },
+      },
+      correctAnswer: ['B', 'C'],
+    });
+    expect(draft.warnings).toEqual([]);
+    expect(quiz.notes).toEqual([
+      'Canvas gives partial credit on the multiple-answer questions in Question 1; GRASP marks them right only when exactly the correct options are ticked.',
+    ]);
+  });
+
+  test("keeps Canvas order and each option's feedback", () => {
+    const draft = onlyDraft(
+      mcItem({
+        ident: 'gma02',
+        type: MA,
+        choices: choices(['Alpha', 'Bravo', 'Charlie']),
+        correct: ['1002', '1003'],
+        answerFeedback: { 1001: 'Alpha is not one of them.' },
+      }),
+      NO_SHUFFLE,
+    );
+
+    expect(draft.payload.options).toEqual({
+      A: { text: 'Alpha', feedback: 'Alpha is not one of them.' },
+      B: { text: 'Bravo', feedback: '' },
+      C: { text: 'Charlie', feedback: '' },
+    });
+    expect(draft.payload.correctAnswer).toEqual(['B', 'C']);
+  });
+
+  test('imports a question whose every option is correct', () => {
+    const draft = onlyDraft(
+      mcItem({ ident: 'gma03', type: MA, choices: choices(['Alpha', 'Bravo']), correct: ['1001', '1002'] }),
+      NO_SHUFFLE,
+    );
+    expect(draft.payload.correctAnswer).toEqual(['A', 'B']);
+  });
+
+  test('skips one with no correct option', () => {
+    expect(onlySkip(mcItem({ ident: 'gma04', type: MA, correct: null })).reason).toBe(
+      'Canvas marks no answer as correct; GRASP multiple answer needs at least one.'
+    );
+  });
+
+  test('names every slot that has one in a single note', () => {
+    const quiz = mapSlots([
+      groupSection({ ident: 'gma05', title: 'Q01', items: [mcItem({ ident: 'gma06', type: MA, correct: ['1001', '1002'] })] }),
+      groupSection({ ident: 'gma07', title: 'Q02', items: [mcItem({ ident: 'gma08' })] }),
+      groupSection({ ident: 'gma09', title: 'Q03', items: [mcItem({ ident: 'gma10', type: MA, correct: ['1004'] })] }),
+    ]);
+
+    expect(quiz.notes).toEqual([
+      'Canvas gives partial credit on the multiple-answer questions in Q01 and Q03; GRASP marks them right only when exactly the correct options are ticked.',
+    ]);
+  });
+});
+
 describe('mapCanvasQuizzes: numerical', () => {
   const numericalDraft = (answers, extra = {}) => onlyDraft(numericalItem({ ident: 'gnum1', answers, ...extra }));
 
@@ -987,12 +1070,6 @@ describe('mapCanvasQuizzes: fill in the blank', () => {
 describe('mapCanvasQuizzes: skipped items', () => {
   test.each([
     [
-      'multiple answers',
-      mcItem({ ident: 'gskip1', type: 'multiple_answers_question', correct: ['1001', '1003'] }),
-      'multiple_answers_question',
-      "Multiple-answer questions aren't supported in GRASP yet.",
-    ],
-    [
       'multiple dropdowns',
       fimbItem({ ident: 'gskip1', type: 'multiple_dropdowns_question' }),
       'multiple_dropdowns_question',
@@ -1056,7 +1133,7 @@ describe('mapCanvasQuizzes: skipped items', () => {
     const quiz = mapSlots([groupSection({
       ident: 'gmixed',
       title: 'Q10',
-      items: [mcItem({ ident: 'gmix1' }), mcItem({ ident: 'gmix2', type: 'multiple_answers_question' }), mcItem({ ident: 'gmix3' })],
+      items: [mcItem({ ident: 'gmix1' }), fimbItem({ ident: 'gmix2', type: 'multiple_dropdowns_question' }), mcItem({ ident: 'gmix3' })],
     })]);
 
     expect(quiz.slots[0].questions.map((q) => q.itemIdent)).toEqual(['gmix1', 'gmix3']);
@@ -1293,6 +1370,11 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     ['e as a power', 'e^x', { x: '2.0' }, '7.0', 'E^x'],
     ['a factorial and pi', 'fact(x)*pi()', { x: '3.0' }, '19.0', 'fac(x)*PI'],
     ['implicit multiplication', '5x', { x: '3.0' }, '15.0', '5*x'],
+    // Canvas's "-" belongs to the name after it, and ^ goes left to right.
+    ['a minus before a power', '-x^2', { x: '3.0' }, '9.0', '(-x)^2'],
+    ['a chain of powers', '2^x^2', { x: '3.0' }, '64.0', '(2^x)^2'],
+    // Canvas's round() ignores a second argument: round(2.34, 1) is 2 there.
+    ['a two-argument round', 'round(x, 1)', { x: '2.34' }, '2', 'round(x)'],
   ])('translates %s and confirms it against the recorded answer', (_, formula, vars, answer, translated) => {
     const draft = calcDraft({ formula, varSets: [{ ident: '1', vars, answer }] });
 
@@ -1311,6 +1393,17 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     expectUsable(draft.payload);
   });
 
+  test("reads an earlier line's name as Canvas does when a minus comes before it", () => {
+    // Canvas stores k = 6, so -k^2 is (-6)^2 = 36, not -36.
+    const draft = calcDraft({
+      formulas: ['k = 2*x', '-k^2'],
+      varSets: [{ ident: '1', vars: { x: '3.0' }, answer: '36.0' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('(-(2*x))^2');
+    expect(draft.warnings).toEqual([]);
+  });
+
   test("saves a Draft with both numbers when GRASP's formula disagrees with Canvas's recorded answers", () => {
     const draft = calcDraft({
       formula: 'x*3',
@@ -1319,6 +1412,21 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
 
     expect(draft.payload.calculationFormula).toBe('x*3');
     expect(draft.warnings).toEqual([MISMATCH]);
+  });
+
+  test("saves a Draft when Canvas's calculator disagrees by less than the recorded rounding", () => {
+    // Canvas's fact() drops the fraction, so it recorded fact(1.5) = 1; GRASP's
+    // fac(1.5) = 1.329… rounds to that too at 0 decimals.
+    const draft = calcDraft({
+      formula: 'fact(x)',
+      variables: [{ name: 'x', min: '1.0', max: '9.0', scale: 1 }],
+      varSets: [{ ident: '1', vars: { x: '1.5' }, answer: '1' }],
+    });
+
+    expect(draft.payload.calculationFormula).toBe('fac(x)');
+    expect(draft.warnings).toEqual([
+      "For Canvas's sample values x = 1.5, GRASP's formula gives 1.329340388179 where Canvas's calculator gives 1. Check the formula.",
+    ]);
   });
 
   test('warns when the formula gives no number for a recorded value set', () => {
@@ -1350,6 +1458,8 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
     ['a list function', { formula: 'mean(x, 2)' }, "The formula uses mean(), which GRASP doesn't support."],
     ['an undeclared name', { formula: '2*k' }, 'The formula uses "k", which isn\'t one of the question\'s variables.'],
     ['a variable used like a function', { formula: 'x(2)' }, 'The formula uses the variable "x" like a function.'],
+    ['a dangling operator', { formula: 'x+' }, "GRASP can't read the formula: an operator with nothing after it."],
+    ['a function with too many arguments', { formula: 'sqrt(x, 2)' }, "GRASP can't read the formula: sqrt() takes 1 argument, not 2."],
     ['no formula', { formulas: [''] }, 'The formula question has no formula.'],
     ['formula lines that do not define values', { formulas: ['2*x', 'x'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
     ['an answer line with an equals sign', { formulas: ['k = 2*x', 'y = k'] }, 'The formula has several lines; GRASP can only combine them when every line but the last reads "name = expression".'],
@@ -1379,8 +1489,8 @@ describe('mapCanvasQuizzes: formula (calculated) questions', () => {
   });
 
   test('skips, with its reason, a formula GRASP itself would refuse to save', () => {
-    // Parses here but not in expr-eval: a dangling operator.
-    expect(calcSkip({ formula: 'x+' })).toMatch(/^GRASP can't use the formula: /);
+    // Translates, but a question with no variables needs a finite answer.
+    expect(calcSkip({ variables: [], formula: '1/0', varSets: [] })).toMatch(/^GRASP can't use the formula: Formula evaluation produced a non-finite value/);
   });
 
   test('warns once when Canvas feedback is dropped and keeps the Canvas title or the slot name like a numerical question', () => {

@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
+import AutoHeightTextarea from "../../components/AutoHeightTextarea";
 import {
   MC_MAX_OPTIONS,
   MC_MIN_OPTIONS,
   addOptionRow,
+  answerKeysOf,
   optionRowsToObject,
   removeOptionRow,
+  toggleAnswerKey,
 } from "../../lib/mcOptions";
 import QuestionImage from "../../components/QuestionImage";
 import QuestionImageField from "../../components/QuestionImageField";
@@ -38,7 +41,6 @@ export default function QuestionCard({
   question,
   onChange,
   onDelete,
-  onSaveDraft,
   detailsOpen = false,
 }) {
   const showToast = useToast();
@@ -56,7 +58,13 @@ export default function QuestionCard({
   const isFib = qType === QUESTION_TYPES.FILL_IN_THE_BLANK;
   const isCalc = qType === QUESTION_TYPES.CALCULATION;
   const isOpen = qType === QUESTION_TYPES.OPEN_ENDED;
+  // Multiple choice and multiple answer share the option list; a
+  // multiple-answer question marks its correct options with checkboxes and
+  // keeps them as a list of letters.
   const isMcq = !isFib && !isCalc && !isOpen;
+  const isMultipleAnswer = qType === QUESTION_TYPES.MULTIPLE_ANSWER;
+  const isCorrectKey = (correct, key) =>
+    isMultipleAnswer ? answerKeysOf(correct).includes(key) : key === correct;
 
   // Coalesce the current array field with the legacy single-image field.
   const stemImages =
@@ -131,7 +139,9 @@ export default function QuestionCard({
       title: question.title || "",
       stem: question.stem || "",
       stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
-      correctAnswer: question.correctAnswer ?? "",
+      correctAnswer: isMultipleAnswer
+        ? answerKeysOf(question.correctAnswer)
+        : question.correctAnswer ?? "",
       acceptableAnswers: Array.isArray(question.acceptableAnswers)
         ? question.acceptableAnswers.join("\n")
         : "",
@@ -233,7 +243,11 @@ export default function QuestionCard({
       updates.openEndedGradingCriteria = criteria;
     } else {
       const optionKeys = Object.keys(draft.options);
-      if (optionKeys.length > 0 && !optionKeys.includes(draft.correctAnswer)) {
+      if (isMultipleAnswer) {
+        if (optionKeys.length > 0 && !draft.correctAnswer.some((key) => optionKeys.includes(key))) {
+          return showToast("Tick at least one correct option", "error");
+        }
+      } else if (optionKeys.length > 0 && !optionKeys.includes(draft.correctAnswer)) {
         return showToast("Select which option is the correct answer", "error");
       }
       updates.options = Object.fromEntries(
@@ -247,7 +261,9 @@ export default function QuestionCard({
           },
         ])
       );
-      updates.correctAnswer = draft.correctAnswer;
+      updates.correctAnswer = isMultipleAnswer
+        ? draft.correctAnswer.filter((key) => optionKeys.includes(key))
+        : draft.correctAnswer;
     }
     updates.stemImages = draft.stemImages || [];
 
@@ -256,7 +272,6 @@ export default function QuestionCard({
     setIsEditing(false);
     setDraft(null);
     showToast("Question updated successfully", "success");
-    onSaveDraft();
   };
 
   const typeChipLabel = isFib
@@ -265,7 +280,9 @@ export default function QuestionCard({
       ? "Calculation"
       : isOpen
         ? "Open-ended"
-        : null;
+        : isMultipleAnswer
+          ? "Multiple answer"
+          : null;
 
   const altAccepted = isFib
     ? (Array.isArray(question.acceptableAnswers) ? question.acceptableAnswers : [])
@@ -282,14 +299,22 @@ export default function QuestionCard({
       {/* Header */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {isEditing ? (
-            <input
-              type="text"
+          {/* A choice question's title is the prompt students see, which can
+              run to several lines; other types' titles are short topic labels. */}
+          {isEditing && isMcq ? (
+            <AutoHeightTextarea
+              aria-label="Question title"
               value={draft.title}
               onChange={setField("title")}
-              placeholder={
-                isMcq ? undefined : "Topic title (short; do not reveal the answer)"
-              }
+              className={`${fieldInput} mb-2 font-semibold`}
+            />
+          ) : isEditing ? (
+            <input
+              type="text"
+              aria-label="Topic title"
+              value={draft.title}
+              onChange={setField("title")}
+              placeholder="Topic title (short; do not reveal the answer)"
               className={`${fieldInput} mb-2 font-semibold`}
             />
           ) : (
@@ -390,7 +415,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question stem</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={5}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -445,7 +470,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question template</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -525,7 +550,7 @@ export default function QuestionCard({
           <div className="space-y-3">
             <div>
               <label className={fieldLabel}>Question prompt</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={5}
                 value={draft.stem}
                 onChange={setField("stem")}
@@ -538,7 +563,7 @@ export default function QuestionCard({
               <label className={fieldLabel}>
                 Sample answer <span className="font-normal">(shown after submit)</span>
               </label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.openEndedSampleAnswer}
                 onChange={setField("openEndedSampleAnswer")}
@@ -548,11 +573,11 @@ export default function QuestionCard({
             </div>
             <div>
               <label className={fieldLabel}>Grading criteria</label>
-              <textarea
+              <AutoHeightTextarea
                 rows={4}
                 value={draft.openEndedGradingCriteria}
                 onChange={setField("openEndedGradingCriteria")}
-                placeholder="Rubric or bullet criteria"
+                placeholder="Numbered, one criterion per line"
                 className={fieldInput}
               />
             </div>
@@ -564,10 +589,16 @@ export default function QuestionCard({
             </FibBlock>
             {stemImageDisplay}
             <FibBlock label="Sample answer">
-              <RichText text={escapeHtml(question.openEndedSampleAnswer || "")} />
+              <RichText
+                text={escapeHtml(question.openEndedSampleAnswer || "")}
+                className="whitespace-pre-line"
+              />
             </FibBlock>
             <FibBlock label="Grading criteria">
-              <RichText text={escapeHtml(question.openEndedGradingCriteria || "")} />
+              <RichText
+                text={escapeHtml(question.openEndedGradingCriteria || "")}
+                className="whitespace-pre-line"
+              />
             </FibBlock>
           </div>
         ))}
@@ -576,8 +607,9 @@ export default function QuestionCard({
         <div>
           {isEditing ? (
             <div className="mb-3 space-y-2">
-              <textarea
+              <AutoHeightTextarea
                 rows={2}
+                aria-label="Question stem"
                 value={draft.stem}
                 onChange={setField("stem")}
                 className={fieldInput}
@@ -604,9 +636,10 @@ export default function QuestionCard({
           )}
           <div className="space-y-2">
             {(isEditing ? draftOptionRows : Object.values(question.options || {})).map((option) => {
-              const isCorrect = isEditing
-                ? option.id === draft.correctAnswer
-                : option.id === question.correctAnswer;
+              const isCorrect = isCorrectKey(
+                isEditing ? draft.correctAnswer : question.correctAnswer,
+                option.id
+              );
               return (
                 <div key={option.id}>
                   <div
@@ -615,8 +648,8 @@ export default function QuestionCard({
                     }`}
                   >
                     <input
-                      type="radio"
-                      name={`q-${question.id}`}
+                      type={isMultipleAnswer ? "checkbox" : "radio"}
+                      name={isMultipleAnswer ? undefined : `q-${question.id}`}
                       checked={isCorrect}
                       disabled={!isEditing}
                       readOnly={!isEditing}
@@ -625,13 +658,17 @@ export default function QuestionCard({
                           ? () =>
                               setDraft((prev) => ({
                                 ...prev,
-                                correctAnswer: option.id,
+                                correctAnswer: isMultipleAnswer
+                                  ? toggleAnswerKey(prev.correctAnswer, option.id)
+                                  : option.id,
                               }))
                           : undefined
                       }
                       aria-label={
                         isEditing
-                          ? `Mark option ${option.id} as the correct answer`
+                          ? isMultipleAnswer
+                            ? `Mark option ${option.id} as a correct answer`
+                            : `Mark option ${option.id} as the correct answer`
                           : undefined
                       }
                       className={`mt-1 h-4 w-4 accent-success ${
@@ -727,7 +764,6 @@ export default function QuestionCard({
           <textarea
             value={question.flagReason || ""}
             onChange={(event) => onChange({ flagReason: event.target.value })}
-            onBlur={onSaveDraft}
             rows={2}
             placeholder="Add a note explaining why this question is flagged…"
             className="w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-red-400 focus:outline-none"
@@ -744,7 +780,6 @@ export default function QuestionCard({
               onChange({
                 status: question.status === "Approved" ? "Draft" : "Approved",
               });
-              onSaveDraft();
             }}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
               question.status === "Approved"
@@ -783,7 +818,6 @@ export default function QuestionCard({
                 `Question ${nextFlag ? "Flagged" : "Unflagged"}`,
                 "success"
               );
-              onSaveDraft();
             }}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               question.flagStatus

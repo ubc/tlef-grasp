@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { normalizeQuestionTypeKey, QUESTION_TYPE_CHIP_CLASSES } from "../../lib/utils";
 import { useQuestionDetail, useUpdateQuestion } from "../../hooks/useQuestions";
-import Modal from "../../components/ui/Modal";
+import Modal, { AlertModal } from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import QuestionImageField from "../../components/QuestionImageField";
 import McOptionEditor from "../../components/McOptionEditor";
@@ -12,6 +12,7 @@ import {
   optionRowsOf,
   optionRowsToObject,
   optionRowsError,
+  answerKeysOf,
   MC_OPTION_KEYS,
 } from "../../lib/mcOptions";
 import {
@@ -93,6 +94,21 @@ function buildFormState(question) {
 
   // Rows for whatever options the question has (two to eight, issue #144).
   const options = optionRowsOf(question.options);
+
+  // Multiple answer: the correct letters, among the options it has.
+  if (qType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+    return {
+      questionType: qType,
+      title: question.title || question.stem || "",
+      stem: question.stem || question.title || "",
+      stemImages: question.stemImages || (question.stemImage ? [question.stemImage] : []),
+      options,
+      correctAnswer: answerKeysOf(question.correctAnswer).filter((key) =>
+        options.some((option) => option.id === key)
+      ),
+    };
+  }
+
   let correct = question.correctAnswer;
   if (typeof correct === "number") {
     correct = MC_OPTION_KEYS[correct] || "A";
@@ -116,6 +132,9 @@ function buildFormState(question) {
 export default function QuestionEditModal({ questionId, canEdit, courseId, onClose }) {
   const showToast = useToast();
   const [form, setForm] = useState(null);
+  // Set when the server refuses the edit as a duplicate; shown in a popup
+  // over the form so the instructor can change the question and try again.
+  const [duplicateMessage, setDuplicateMessage] = useState(null);
 
   const { question, isPending: loading, error } = useQuestionDetail(questionId);
   const loadError = error?.message || null;
@@ -130,6 +149,10 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
       onClose();
     },
     onError: (err) => {
+      if (err.body?.code === "DUPLICATE_QUESTION") {
+        setDuplicateMessage(err.message);
+        return;
+      }
       console.error("Error saving question:", err);
       showToast(err.message || "Failed to save question", "error");
     },
@@ -248,6 +271,23 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
         acceptableAnswers: acceptable,
         options: {},
       };
+    } else if (form.questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      if (!title && !stem) {
+        return showToast("Question title or stem is required", "error");
+      }
+      const optionsError = optionRowsError(form.options);
+      if (optionsError) return showToast(optionsError, "error");
+      if (!form.options.some((opt) => form.correctAnswer.includes(opt.id))) {
+        return showToast("Tick at least one correct option", "error");
+      }
+      updateData = {
+        title: title || stem,
+        stem: stem || title,
+        stemImages: form.stemImages || [],
+        questionType: QUESTION_TYPES.MULTIPLE_ANSWER,
+        options: optionRowsToObject(form.options),
+        correctAnswer: form.correctAnswer,
+      };
     } else {
       // Multiple choice
       if (!title && !stem) {
@@ -272,6 +312,11 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
   };
 
   const readOnly = !canEdit;
+  // Multiple choice and multiple answer keep the prompt students see in the
+  // title; the other types' titles are short topic labels.
+  const titleIsPrompt =
+    form?.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
+    form?.questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
 
   return (
     <Modal
@@ -298,6 +343,14 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
               {saving ? "Saving..." : "Save Changes"}
             </button>
           )}
+          {/* Portaled to the page body, so it opens over this dialog. */}
+          <AlertModal
+            open={!!duplicateMessage}
+            onClose={() => setDuplicateMessage(null)}
+            title="Duplicate detected"
+            message={duplicateMessage}
+            closeLabel="Back to editing"
+          />
         </>
       }
     >
@@ -340,6 +393,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
               type={form.questionType}
               label={
                 {
+                  [QUESTION_TYPES.MULTIPLE_ANSWER]: "Multiple answer",
                   [QUESTION_TYPES.FILL_IN_THE_BLANK]: "Fill-in-the-blank",
                   [QUESTION_TYPES.CALCULATION]: "Calculation",
                   [QUESTION_TYPES.OPEN_ENDED]: "Open-ended",
@@ -350,13 +404,11 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
 
           <div>
             <label htmlFor="qem-title" className={labelClass}>
-              {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
-                ? "Question Title"
-                : "Topic title"}
+              {titleIsPrompt ? "Question Title" : "Topic title"}
             </label>
             {/* The MC title is the prompt students see, which can run to
                 several lines; other types' titles are short topic labels. */}
-            {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE ? (
+            {titleIsPrompt ? (
               <AutoHeightTextarea
                 id="qem-title"
                 value={form.title}
@@ -377,14 +429,15 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="qem-stem" className={labelClass}>
               {form.questionType === QUESTION_TYPES.CALCULATION
                 ? "Question template"
                 : form.questionType === QUESTION_TYPES.OPEN_ENDED
                   ? "Question prompt"
                   : "Question Stem"}
             </label>
-            <textarea
+            <AutoHeightTextarea
+              id="qem-stem"
               rows={form.questionType === QUESTION_TYPES.OPEN_ENDED ? 6 : 4}
               value={form.stem}
               onChange={set("stem")}
@@ -501,7 +554,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   Sample answer{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   rows={6}
                   value={form.openEndedSampleAnswer}
                   onChange={set("openEndedSampleAnswer")}
@@ -514,7 +567,7 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                   Grading criteria{" "}
                   <span className="font-normal text-muted">(shown after submit)</span>
                 </label>
-                <textarea
+                <AutoHeightTextarea
                   rows={6}
                   value={form.openEndedGradingCriteria}
                   onChange={set("openEndedGradingCriteria")}
@@ -523,6 +576,26 @@ export default function QuestionEditModal({ questionId, canEdit, courseId, onClo
                 />
               </div>
             </>
+          )}
+
+          {form.questionType === QUESTION_TYPES.MULTIPLE_ANSWER && (
+            <div>
+              <label className={labelClass}>
+                Options{" "}
+                <span className="font-normal text-muted">— tick every correct answer</span>
+              </label>
+              <McOptionEditor
+                multiple
+                options={form.options}
+                correctAnswer={form.correctAnswer}
+                onChange={({ options, correctAnswer }) =>
+                  setForm((prev) => ({ ...prev, options, correctAnswer }))
+                }
+                readOnly={readOnly}
+                inputClass={inputClass}
+                courseId={courseId}
+              />
+            </div>
           )}
 
           {form.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (

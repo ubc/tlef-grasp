@@ -186,7 +186,7 @@ jobs:
       # --- GRASP + Playwright ---
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://npm.pkg.github.com
           scope: '@ubc'
 
@@ -207,6 +207,15 @@ jobs:
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+
+      # Throwaway keys for this run only; the real ones live on the servers.
+      - name: Generate field-encryption keys for this run
+        run: |
+          for name in GRASP_DATA_ENCRYPTION_KEY GRASP_BLIND_INDEX_KEY; do
+            key=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
+            echo "::add-mask::$key"
+            echo "$name=$key" >> "$GITHUB_ENV"
+          done
 
       # Playwright boots GRASP itself (npm run build && npm run start:test) and
       # global-setup logs in through the IdP before the specs run.

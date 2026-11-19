@@ -48,7 +48,9 @@ describe('initializeCollections index definitions', () => {
   // of the new shell would still fail with a duplicate-key error whatever the
   // application looked up first. The index has to exclude archived courses for
   // the release to be real.
-  const runInitializeCollections = async () => {
+  // Keyless by default: the app's Db is the raw driver Db. `encrypted` gives
+  // the raw Db collections of its own, as the encryption wrapper does.
+  const runInitializeCollections = async ({ encrypted = false, rawUserIndexes = [] } = {}) => {
     const collections = new Map();
     const collectionFor = (name) => {
       if (!collections.has(name)) {
@@ -56,21 +58,66 @@ describe('initializeCollections index definitions', () => {
           createIndex: jest.fn().mockResolvedValue(undefined),
           dropIndex: jest.fn().mockResolvedValue(undefined),
           updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+          indexes: jest.fn().mockResolvedValue(rawUserIndexes),
         });
       }
       return collections.get(name);
     };
+    const rawCollections = new Map();
+    const rawCollectionFor = (name) => {
+      if (!rawCollections.has(name)) {
+        rawCollections.set(name, {
+          createIndex: jest.fn().mockResolvedValue(undefined),
+          indexes: jest.fn().mockResolvedValue(rawUserIndexes),
+        });
+      }
+      return rawCollections.get(name);
+    };
 
     const originalDb = databaseService.db;
+    const originalRawDb = databaseService.rawDb;
     databaseService.db = { collection: jest.fn((name) => collectionFor(name)) };
+    databaseService.rawDb = encrypted
+      ? { collection: jest.fn((name) => rawCollectionFor(name)) }
+      : databaseService.db;
 
     try {
       await databaseService.initializeCollections();
     } finally {
       databaseService.db = originalDb;
+      databaseService.rawDb = originalRawDb;
     }
+    collectionFor.raw = encrypted ? rawCollectionFor : collectionFor;
     return collectionFor;
   };
+
+  describe('the unique PUID index', () => {
+    let warn;
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('is built on the raw Db, which the encryption wrapper does not refuse', async () => {
+      const collectionFor = await runInitializeCollections({ encrypted: true });
+
+      expect(collectionFor.raw('grasp_user').createIndex).toHaveBeenCalledWith({ puid: 1 }, { unique: true });
+      expect(collectionFor('grasp_user').createIndex).not.toHaveBeenCalledWith({ puid: 1 }, expect.anything());
+    });
+
+    it('warns when encryption is on and ensure-indexes has not built the blind index', async () => {
+      await runInitializeCollections({ encrypted: true, rawUserIndexes: [{ key: { _id: 1 } }, { key: { puid: 1 } }] });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/no index on puid__bidx/));
+    });
+
+    it('stays quiet once the blind index exists, or while encryption is off', async () => {
+      await runInitializeCollections({ encrypted: true, rawUserIndexes: [{ key: { puid__bidx: 1 } }] });
+      await runInitializeCollections();
+
+      expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/puid__bidx/));
+    });
+  });
 
   it('makes courseCode unique across live courses only', async () => {
     const collectionFor = await runInitializeCollections();

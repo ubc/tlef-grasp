@@ -1,9 +1,7 @@
 import { formatQuestionTypeLabel } from "../lib/utils";
 import { importQuestionLabel, importedGranularKey, isRowResolved } from "../lib/questionImport";
 import ImportObjectiveReview from "./ImportObjectiveReview";
-
-const selectClass =
-  "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none";
+import SearchableSelect from "./ui/SearchableSelect";
 
 // Shared review list for the two question-import flows (Add Question → Import,
 // Create Quiz → Import). Each parsed question is shown with the objective it
@@ -19,6 +17,13 @@ export default function ImportQuestionReview({
 }) {
   if (rows.length === 0) return null;
 
+  const objectiveOptions = granularGroups.flatMap((group) =>
+    group.items.map((granular) => ({
+      value: granular.id,
+      label: granular.name,
+      group: group.metaName,
+    }))
+  );
   const checked = objectives.checkedKeys;
   const unresolvedCount = rows.filter((row) => !isRowResolved(row, checked)).length;
   // Only a dead end when the course has no objectives and the file carries none.
@@ -92,23 +97,14 @@ export default function ImportQuestionReview({
                     {row.question.granularObjectiveName}
                   </p>
                 ) : (
-                <select
-                  aria-label={`Learning objective for question ${index + 1}`}
-                  value={row.granularId}
-                  onChange={(event) => onChangeRow(index, event.target.value)}
-                  className={selectClass}
-                >
-                  <option value="">— Select a learning objective —</option>
-                  {granularGroups.map((group) => (
-                    <optgroup key={group.metaName} label={group.metaName}>
-                      {group.items.map((granular) => (
-                        <option key={granular.id} value={granular.id}>
-                          {granular.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  <SearchableSelect
+                    ariaLabel={`Learning objective for question ${index + 1}`}
+                    value={row.granularId}
+                    onChange={(granularId) => onChangeRow(index, granularId)}
+                    options={objectiveOptions}
+                    placeholder="— Select a learning objective —"
+                    searchPlaceholder="Search learning objectives..."
+                  />
                 )}
               </div>
             );

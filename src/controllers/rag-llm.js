@@ -8,7 +8,8 @@ const databaseService = require('../services/database');
 const { ObjectId } = require('mongodb');
 
 // Import services
-const { getMaterialCourseId, getMaterialBySourceId } = require('../services/material');
+const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial } = require('../services/material');
+const { getObjectiveWithMaterials } = require('../services/objective');
 const outlineService = require('../services/material-outline');
 const { renderOutlineBlock } = require('../utils/outline-text');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -21,7 +22,7 @@ const { isRetryableLLMError } = require('../utils/llm-limiter');
 const { effortForStage } = require('../utils/llm-effort');
 const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType, normalizeQuestionTypes } = require('../utils/question-type-selection');
-const { normalizeMcOptionCount, optionKeysOf } = require('../utils/mc-options');
+const { normalizeMcOptionCount, optionKeysOf, answerKeysOf } = require('../utils/mc-options');
 const settingsService = require('../services/settings');
 const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
@@ -30,7 +31,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_CALCULATION_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -40,6 +41,35 @@ const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_
  * past its default, which is worth surfacing rather than silently trimming.
  */
 const OBJECTIVE_CONTEXT_WARN_CHARS = 300000;
+
+/**
+ * Largest combined material text review is given whole (about 15k tokens).
+ * Longer materials fall back to the excerpts retrieved for generation.
+ */
+const REVIEW_MATERIAL_MAX_CHARS = parseInt(process.env.REVIEW_MATERIAL_MAX_CHARS) || 60000;
+
+// The material review checks coverage against: the whole of each linked
+// material, not the excerpts retrieved for generation. Against excerpts, a
+// concept taught on a page the search did not return looks untaught, and the
+// fix that follows writes the very rule being assessed into the stem.
+async function getReviewMaterial(learningObjectiveId, materialIds, ragContext) {
+  try {
+    let materials = [];
+    if (learningObjectiveId) {
+      materials = (await getObjectiveWithMaterials(learningObjectiveId))?.materials || [];
+    } else if (materialIds && materialIds.length > 0) {
+      materials = (await Promise.all(materialIds.map((id) => getMaterialBySourceId(id)))).filter(Boolean);
+    }
+    const text = materials
+      .filter((material) => !isCanvasImportMaterial(material) && material.fileContent && material.fileContent.trim())
+      .map((material) => `### ${material.documentTitle || 'Untitled'}\n${material.fileContent}`)
+      .join('\n\n');
+    if (text && text.length <= REVIEW_MATERIAL_MAX_CHARS) return text;
+  } catch (error) {
+    console.warn('Could not load the full material for review; using the retrieved excerpts:', error.message);
+  }
+  return ragContext;
+}
 
 // Pricing per 1M tokens (input / output) for known models
 const MODEL_PRICING = {
@@ -481,7 +511,19 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       );
     }
 
-    //console.log("RAG Context:", ragContext);
+    // Questions must come from what the course teaches. With nothing retrieved —
+    // no material attached, every attached one deleted, or only the empty "From
+    // Canvas" placeholder a quiz import links to — the model would write from
+    // general knowledge instead, so refuse with a reason the instructor can act
+    // on. The question generation page does not offer such objectives; this
+    // covers requests that reach here anyway.
+    if (!ragContext || !ragContext.trim()) {
+      return res.status(409).json({
+        success: false,
+        code: 'NO_COURSE_MATERIAL',
+        error: 'This learning objective has no course material to generate questions from. Attach a course material to it, then try again.',
+      });
+    }
 
     // Use LLM service for generation
     console.log("=== USING LLM SERVICE FOR GENERATION ===");
@@ -548,11 +590,17 @@ const generateQuestionsWithRagHandler = async (req, res) => {
       // for with its rules absent, which is the bug that started this. The turn
       // itself names which type is in force.
       //
+      // Multiple answer is the exception: its rules join only a batch that asks
+      // for it, so every other batch opens with exactly the rules it did before
+      // the type existed.
+      //
       // Content-bearing values are substituted via replacer functions: a plain
       // string replacement would interpret `$$`, `$&` and `` $` `` inside it, so
       // LaTeX in course material or objective text ("$$E = mc^2$$") would arrive
       // at the model corrupted.
-      const allTypeInstructions = Object.values(QUESTION_TYPES)
+      const batchAsksFor = (type) => workItems.some((item) => item.questionType === type);
+      const allTypeInstructions = GENERATED_QUESTION_TYPES
+        .filter((type) => type !== QUESTION_TYPES.MULTIPLE_ANSWER || batchAsksFor(type))
         .map((type) => `--- Instructions for question type "${type}" ---\n${QuestionFactory.getModel(type).getPromptInstruction({ mcOptionCount })}`)
         .join("\n\n");
 
@@ -663,6 +711,7 @@ const generateQuestionsWithRagHandler = async (req, res) => {
             // reviewer's issue text names from what the instructor eventually
             // sees, since nothing re-derives that text after a later shuffle.
             scrambleMultipleChoiceOptions(parsed);
+            scrambleMultipleAnswerOptions(parsed);
             const questionData = model.validateAndNormalize(parsed);
 
             const normalizedQuestionText = normalizeQuestionText(
@@ -772,7 +821,8 @@ const generateQuestionsWithRagHandler = async (req, res) => {
         learningObjectiveText,
         granularLearningObjectiveText,
         effortForStage(settings, 'question-review'),
-        settings?.autoFixEnabled !== false
+        settings?.autoFixEnabled !== false,
+        await getReviewMaterial(learningObjectiveId, materialIds, ragContext)
       );
       questionsData = reviewFixResult.questionsData;
       const { review: reviewTokens, fix: fixTokens } = reviewFixResult.tokenUsage;
@@ -1020,7 +1070,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
       operation: 'objective-generate',
       effort: effortForStage(settings, 'objective-generate'),
     });
-    console.log("Full Prompt: ", fullPrompt);
+    console.log(`Objective prompt: ${fullPrompt.length} characters`);
 
     console.log("✅ LLM service response received");
 
@@ -1028,7 +1078,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
       throw new Error("Empty response from LLM");
     }
 
-    console.log("Response content:", responseContent.substring(0, 1000));
+    console.log(`Response content: ${responseContent.length} characters`);
 
     // Try to parse JSON response
     try {
@@ -1073,7 +1123,11 @@ Include foundational concepts, practical applications, and assessment criteria.`
                 // and whose type/count are valid. Any Bloom level left with no
                 // valid entry gets a default type so the UI never shows an
                 // empty per-type breakdown for a selected level.
-                const questionTypes = normalizeQuestionTypes(go.questionTypes, {
+                // Only types objective generation may suggest: a model that
+                // ignores the schema's enum still never suggests multiple answer.
+                const suggestedTypes = (Array.isArray(go.questionTypes) ? go.questionTypes : [])
+                  .filter((qt) => qt && SUGGESTED_QUESTION_TYPES.includes(qt.questionType));
+                const questionTypes = normalizeQuestionTypes(suggestedTypes, {
                   allowedBloomLevels: bloomTaxonomies,
                 });
                 bloomTaxonomies.forEach((level) => {
@@ -1121,10 +1175,12 @@ Include foundational concepts, practical applications, and assessment criteria.`
   }
 };
 
-async function rateQuestions(questions, courseName, effort = null) {
+async function rateQuestions(questions, courseName, effort = null, ragContext = null) {
   const formattedQuestions = questions.map(q => {
-    // Determine the question stem based on type (MC vs others)
-    const questionStem = (q.questionType === 'multiple-choice') ? (q.title || q.question) : (q.stem || q.question);
+    // Determine the question stem based on type (MC and multiple answer keep
+    // it in the title, the others in the stem)
+    const titleFirst = q.questionType === 'multiple-choice' || q.questionType === 'multiple-answer';
+    const questionStem = titleFirst ? (q.title || q.question) : (q.stem || q.question);
 
     const base = {
       id: q.id,
@@ -1135,14 +1191,16 @@ async function rateQuestions(questions, courseName, effort = null) {
       questionStem: questionStem
     };
 
-    if (base.questionType === 'multiple-choice') {
+    if (base.questionType === 'multiple-choice' || base.questionType === 'multiple-answer') {
       base.options = Object.fromEntries(
         Object.entries(q.options || {}).map(([k, v]) => [
           k,
           typeof v === 'string' ? { text: v, feedback: '' } : { text: v.text || '', feedback: v.feedback || '' }
         ])
       );
-      base.correctAnswer = q.correctAnswer;
+      // Every correct letter of a multiple-answer question, as a list.
+      if (base.questionType === 'multiple-answer') base.correctAnswers = answerKeysOf(q.correctAnswer);
+      else base.correctAnswer = q.correctAnswer;
     } else if (base.questionType === 'fill-in-the-blank') {
       base.acceptableAnswers = q.acceptableAnswers || [];
     } else if (base.questionType === 'calculation') {
@@ -1156,9 +1214,18 @@ async function rateQuestions(questions, courseName, effort = null) {
     return base;
   });
 
+  // The multiple-answer checks join only a review that has such a question,
+  // so every other review gets the prompt it did before the type existed.
+  const hasMultipleAnswer = formattedQuestions.some((q) => q.questionType === 'multiple-answer');
+  const hasCalculation = formattedQuestions.some((q) => q.questionType === 'calculation');
   const prompt = QUESTION_REVIEW_PROMPT
     .replace('{courseName}', courseName || 'N/A')
-    .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2));
+    .replace('{questionsJson}', JSON.stringify(formattedQuestions, null, 2))
+    + (hasMultipleAnswer ? QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE : '')
+    + (hasCalculation ? QUESTION_REVIEW_CALCULATION_NOTE : '')
+    // Review checks coverage only when it is handed the material the questions
+    // came from; the standalone review route has none to give it.
+    + (ragContext && ragContext.trim() ? QUESTION_REVIEW_MATERIAL_NOTE.replace('{ragContext}', () => ragContext) : '');
 
   // Schema-constrained decoding guarantees the { ratings: [...] } shape.
   const { content: responseContent, usage } = await generationLimiter.run(() => generateStructured({
@@ -1228,6 +1295,29 @@ function scrambleMultipleChoiceOptions(questionData) {
   console.log(`🔀 Programmatically shuffled correct answer from ${correctOptionLetter} to ${newCorrectKey}`);
 }
 
+// The multiple-answer counterpart, under the same timing rule: shuffle a raw
+// response's options and move each letter in correctAnswers with its option.
+// A response naming a letter it has no option for is left alone, so
+// validation still refuses it.
+function scrambleMultipleAnswerOptions(questionData) {
+  if (!questionData.options || !Array.isArray(questionData.correctAnswers)) return;
+  const optionKeys = optionKeysOf(questionData.options);
+  const correctLetters = questionData.correctAnswers.map((letter) => String(letter ?? '').trim().toUpperCase());
+  if (correctLetters.some((letter) => !optionKeys.includes(letter))) return;
+
+  const optionValues = optionKeys.map((k) => questionData.options[k]);
+  const correctValues = new Set(correctLetters.map((letter) => questionData.options[letter]));
+  for (let j = optionValues.length - 1; j > 0; j--) {
+    const k = Math.floor(Math.random() * (j + 1));
+    [optionValues[j], optionValues[k]] = [optionValues[k], optionValues[j]];
+  }
+  optionKeys.forEach((key, j) => {
+    questionData.options[key] = optionValues[j];
+  });
+  questionData.correctAnswers = optionKeys.filter((key, j) => correctValues.has(optionValues[j]));
+  console.log(`🔀 Programmatically shuffled correct answers from ${correctLetters.join(',')} to ${questionData.correctAnswers.join(',')}`);
+}
+
 // Attempt a single targeted-patch fix for one flagged question, branching off
 // its own slice of the original generation conversation. Never throws — a
 // failed attempt (validation never succeeds within maxRetries) resolves with
@@ -1269,6 +1359,7 @@ async function attemptFix(questionData, rating, questionContext, maxRetries, eff
       // in the generation loop: it must happen before this ever gets
       // re-reviewed or shipped, and never again after.
       scrambleMultipleChoiceOptions(parsed);
+      scrambleMultipleAnswerOptions(parsed);
       const fixed = model.validateAndNormalize(parsed);
       return { fixed, promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens };
     } catch (error) {
@@ -1327,7 +1418,8 @@ async function reviewAndFixQuestions(
   learningObjectiveText,
   granularLearningObjectiveText,
   effort = null,
-  autoFix = true
+  autoFix = true,
+  ragContext = null
 ) {
   // Each fix call replays its question's whole context — the opening message,
   // retrieved material and all — so this is the most expensive knob in the loop.
@@ -1362,7 +1454,7 @@ async function reviewAndFixQuestions(
 
   let ratings;
   try {
-    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort);
+    const initialReview = await rateQuestions(questionsData.map(forReview), courseName, effort, ragContext);
     ratings = initialReview.ratings;
     reviewPromptTokens += initialReview.usage.promptTokens;
     reviewCompletionTokens += initialReview.usage.completionTokens;
@@ -1433,7 +1525,7 @@ async function reviewAndFixQuestions(
     if (patched.length > 0) {
       let reReviewRatings = [];
       try {
-        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort);
+        const reReview = await rateQuestions(patched.map((i) => forReview(questionsData[i], i)), courseName, effort, ragContext);
         reReviewRatings = reReview.ratings;
         reviewPromptTokens += reReview.usage.promptTokens;
         reviewCompletionTokens += reReview.usage.completionTokens;

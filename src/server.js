@@ -48,7 +48,9 @@ const helmet = require("helmet");
 const { sessionMiddleware } = require('./middleware/session');
 const { passport } = require('./middleware/passport');
 const { dbMiddleware } = require('./middleware/database');
+const databaseService = require('./services/database');
 const { samlErrorHandler } = require('./middleware/samlErrorHandler');
+const { createCrossOriginProtection } = require('./middleware/cross-origin');
 
 const authRoutes = require('./routes/auth');
 const questionRoutes = require("./routes/question");
@@ -65,12 +67,14 @@ const analyticsRoutes = require("./routes/analytics");
 const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
 const profileRoutes = require("./routes/profile");
+const adminRoutes = require("./routes/admin");
 const { createCanvasRouter } = require('./routes/lms-canvas');
 const { createMoodleRouter } = require('./routes/lms-moodle');
+const { createPanoptoRouter } = require('./routes/panopto');
 const lmsRoutes = require('./routes/lms');
 
 const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
-const { ensureAuthenticatedAPI, requireRole } = require('./middleware/auth');
+const { ensureAuthenticatedAPI, requireRole, requireAppAdministrator } = require('./middleware/auth');
 const { apiLimiter } = require('./middleware/rate-limit');
 
 const app = express();
@@ -116,17 +120,38 @@ app.use(
     },
   })
 );
+// CSRF: refuse a POST, PUT, PATCH or DELETE that another site's page sends
+// with the user's session cookie, before any body is parsed. The UBC IdP
+// posts SAML messages to these two endpoints from its own origin;
+// passport-saml checks their signatures.
+app.use(
+  createCrossOriginProtection({
+    exemptPaths: ['/Shibboleth.sso/SAML2/POST', '/auth/saml/callback'],
+  })
+);
 // Default body limit is deliberately small: parsing a huge JSON body blocks
 // the event loop for every request in flight. Material routes carry full
 // parsed document text, so they are excluded here and mount their own
 // express.json({ limit: "50mb" }) parser in routes/material.js — the global
 // parser must not touch them or its 1mb cap would reject the body first.
+//
+// There is deliberately no global urlencoded parser: the client sends JSON
+// or multipart, and only the SAML endpoints below take form posts, so they
+// parse their own. With one, every JSON route would also accept a plain
+// HTML form posted from another site.
 const defaultJsonParser = express.json({ limit: '1mb' });
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/material')) return next();
   return defaultJsonParser(req, res, next);
 });
-app.use(express.urlencoded({ limit: '1mb', extended: true }));
+// Serve the built React client (client/dist). In development the client is
+// served by Vite on port 5173 with /api and /auth proxied to this server.
+// Ahead of the session: client files are public, and Passport loads the
+// signed-in user from the database on every request it sees.
+const clientDistPath = path.join(__dirname, "../client/dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
+app.use(express.static(clientDistPath));
+
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
@@ -136,18 +161,15 @@ app.use(passport.session());
 app.use('/api', apiLimiter);
 app.use(dbMiddleware);
 
-// Serve the built React client (client/dist). In development the client is
-// served by Vite on port 5173 with /api and /auth proxied to this server.
-const clientDistPath = path.join(__dirname, "../client/dist");
-const clientIndexPath = path.join(clientDistPath, "index.html");
-app.use(express.static(clientDistPath));
-
 // Authentication routes (no /api prefix as they serve HTML too)
-// Shibboleth SP endpoint - traditional Shibboleth callback path
+// Shibboleth SP endpoint - traditional Shibboleth callback path.
+// The IdP form-posts SAML messages here and to /auth/saml/callback. They are
+// signed and may be encrypted, so they get the same 1mb limit as JSON bodies.
+const samlFormParser = express.urlencoded({ limit: '1mb', extended: true });
 app.post(
   '/Shibboleth.sso/SAML2/POST',
   express.json(),
-  express.urlencoded({ extended: true }),
+  samlFormParser,
   passport.authenticate('ubcshib', { failureRedirect: '/auth/login' }),
   (req, res) => {
     res.redirect('/onboarding');
@@ -155,7 +177,7 @@ app.post(
   samlErrorHandler
 );
 
-app.use('/auth', express.json(), express.urlencoded({ extended: true }), authRoutes);
+app.use('/auth', express.json(), samlFormParser, authRoutes);
 
 // Page routes are handled client-side by the React SPA (see fallback below).
 // Role-based access is enforced on the API routes and mirrored by client guards.
@@ -191,6 +213,8 @@ app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRout
 
 // Course analytics - class-level aggregates, faculty only (no staff or TAs).
 app.use("/api/analytics", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), analyticsRoutes);
+// App-wide administration - APP_ADMINISTRATOR only (acts on every course)
+app.use("/api/admin", ensureAuthenticatedAPI, requireAppAdministrator, express.json(), adminRoutes);
 
 // UBC API proxy - faculty/staff only (campus, period, instructor sections lookups)
 app.use("/api/ubc", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), ubcApiRoutes);
@@ -222,6 +246,16 @@ app.use(
   ensureAuthenticatedAPI,
   requireRole(ROLES.STAFF),
   createMoodleRouter()
+);
+
+// Panopto sign-in, and importing a video's captions into Course Materials.
+// Returns 404 for every endpoint when any required PANOPTO_* variable is
+// absent, which lets the client hide Panopto completely.
+app.use(
+  "/api/panopto",
+  ensureAuthenticatedAPI,
+  requireRole(ROLES.STAFF),
+  createPanoptoRouter()
 );
 
 // Current user endpoint - all authenticated users
@@ -300,6 +334,14 @@ app.use((err, req, res, next) => {
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
   res.status(tooLarge ? 413 : 500).send(tooLarge ? '413: Payload Too Large' : '500: Internal Server Error');
+});
+
+// The database connects lazily, so without this a malformed field-encryption
+// key would surface only as a 500 on every request. A missing key is allowed:
+// encryption is then off (logged).
+databaseService.checkEncryptionKey().catch((error) => {
+  console.error(`❌ Field-encryption key check failed (${error.code || error.name}): ${error.message}`);
+  process.exit(1);
 });
 
 app.listen(port, async () => {

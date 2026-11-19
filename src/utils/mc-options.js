@@ -32,6 +32,21 @@ function optionTextOf(raw) {
   return raw === undefined || raw === null ? '' : String(raw);
 }
 
+// The feedback of one option value, trimmed ('' for a bare string).
+function optionFeedbackOf(raw) {
+  return raw && typeof raw === 'object' ? String(raw.feedback ?? '').trim() : '';
+}
+
+// Multiple choice and multiple answer keep their prompt in the title. The
+// stem a student sees beneath it, only when it adds something: a stem that
+// repeats the title, or a title-less question's stem (already the prompt),
+// would be shown twice.
+function stemBesideTitle(question) {
+  const title = String(question?.title ?? '').trim();
+  const stem = String(question?.stem ?? '').trim();
+  return title && stem && stem !== title ? stem : '';
+}
+
 // correctAnswer as a letter. Old rows may hold a numeric index.
 function correctAnswerKey(correctAnswer, fallback = 'A') {
   if (typeof correctAnswer === 'number') return MC_OPTION_KEYS[correctAnswer] || fallback;
@@ -49,6 +64,60 @@ function normalizeMcOptionCount(value, fallback = MC_DEFAULT_OPTION_COUNT) {
   return n;
 }
 
+// Multiple answer ("select all that apply") uses the same options. Its
+// correctAnswer is the list of correct letters, e.g. ["A", "C"], and a check is
+// right only when the student ticks exactly that set.
+
+// The letters a value names, in A to H order without repeats: the stored list,
+// a lone letter, a comma-separated string from a hand-written import, or
+// positions. Anything else names nothing.
+function answerKeysOf(value) {
+  let raw = [];
+  if (Array.isArray(value)) raw = value;
+  else if (typeof value === 'string') raw = value.split(',');
+  else if (typeof value === 'number') raw = [value];
+  const named = new Set(
+    raw.map((item) =>
+      typeof item === 'number' ? MC_OPTION_KEYS[item] : String(item ?? '').trim().toUpperCase()
+    )
+  );
+  return MC_OPTION_KEYS.filter((key) => named.has(key));
+}
+
+// Why a multiple-answer question could not be graded, or '' when it can: it
+// needs at least two options, at least one of them correct, and no letter
+// marked correct that names an option it doesn't have.
+function multipleAnswerError(options, correctAnswer) {
+  const keys = optionKeysOf(options);
+  if (keys.length < MC_MIN_OPTIONS) {
+    return `A multiple-answer question needs at least ${MC_MIN_OPTIONS} options.`;
+  }
+  const correct = answerKeysOf(correctAnswer);
+  if (correct.length === 0) return 'Mark at least one option as correct.';
+  const missing = correct.filter((key) => !keys.includes(key));
+  if (missing.length > 0) {
+    return `Option ${missing.join(', ')} is marked correct, but the question has no such option.`;
+  }
+  return '';
+}
+
+// Grade one multiple-answer check, all-or-nothing. A wrong check may tell the
+// student which of the options they ticked are wrong and whether they left a
+// correct one unticked, but never which one.
+function gradeMultipleAnswer(correctAnswer, selected) {
+  const correctKeys = answerKeysOf(correctAnswer);
+  const selectedKeys = answerKeysOf(selected);
+  const wrongKeys = selectedKeys.filter((key) => !correctKeys.includes(key));
+  const missedCorrect = correctKeys.some((key) => !selectedKeys.includes(key));
+  return {
+    isCorrect: correctKeys.length > 0 && wrongKeys.length === 0 && !missedCorrect,
+    correctKeys,
+    selectedKeys,
+    wrongKeys,
+    missedCorrect,
+  };
+}
+
 module.exports = {
   MC_OPTION_KEYS,
   MC_MIN_OPTIONS,
@@ -57,6 +126,11 @@ module.exports = {
   optionKeysOf,
   optionAt,
   optionTextOf,
+  optionFeedbackOf,
+  stemBesideTitle,
   correctAnswerKey,
   normalizeMcOptionCount,
+  answerKeysOf,
+  multipleAnswerError,
+  gradeMultipleAnswer,
 };

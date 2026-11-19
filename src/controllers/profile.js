@@ -56,8 +56,8 @@ async function updateProfileHandler(req, res) {
       return res.status(404).json({ success: false, error: 'User profile not found.' });
     }
 
-    // Keep the current session in sync so the header/sidebar and the current-user
-    // endpoint reflect the change immediately without requiring a new login.
+    // req.user was loaded before the update; the response is built from it.
+    // Later requests load the user afresh, so nothing else needs syncing.
     req.user.displayName = updatedUser.displayName;
     req.user.email = updatedUser.email;
 

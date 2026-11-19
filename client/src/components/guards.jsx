@@ -79,3 +79,13 @@ export function RequireTaPermission({ permission }) {
   if (!canTa(permission)) return <Navigate to={firstAllowedPath()} replace />;
   return <Outlet />;
 }
+
+// Requires an app administrator (APP_ADMINISTRATOR). Their tools act on every
+// course at once; anyone else is sent back to the course picker.
+export function RequireAppAdministrator() {
+  const { user, isLoading } = useCurrentUser();
+
+  if (isLoading) return <FullPageSpinner />;
+  if (!user?.isAppAdministrator) return <Navigate to="/onboarding" replace />;
+  return <Outlet />;
+}

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const quizController = require("../controllers/quiz");
+const gradeExportController = require("../controllers/grade-export");
 const { requireRole } = require("../middleware/auth");
 const { ROLES } = require("../utils/auth");
 const { checkLimiter } = require("../middleware/rate-limit");
@@ -52,6 +53,23 @@ router.get(
 
 /** Quiz release/deadline events scoped to the current viewer. */
 router.get("/course/:courseId/calendar", quizController.getQuizCalendarHandler);
+
+/**
+ * GET /api/quiz/course/:courseId/grade-export?sectionId=
+ * GET /api/quiz/course/:courseId/grade-export/csv?sectionId=&quizIds=a,b[&questionsCorrect=1]
+ * One section's grades as a CSV for Canvas's gradebook import (#126).
+ * Instructors and app administrators only, not TAs.
+ */
+router.get(
+  "/course/:courseId/grade-export",
+  requireRole(ROLES.FACULTY),
+  gradeExportController.getGradeExportOverviewHandler
+);
+router.get(
+  "/course/:courseId/grade-export/csv",
+  requireRole(ROLES.FACULTY),
+  gradeExportController.downloadGradeCsvHandler
+);
 
 /**
  * POST /api/quiz/course/:courseId/schedules/shift

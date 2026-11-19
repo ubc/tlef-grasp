@@ -42,6 +42,8 @@ export default function Quizzes() {
 
   const [activeTab, setActiveTab] = useState("manage-quizzes");
   const [exportQuiz, setExportQuiz] = useState(null);
+  // What the last export left out, shown in the export dialog.
+  const [exportNotice, setExportNotice] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -92,14 +94,23 @@ export default function Quizzes() {
     onError: (error) => showToast(error.message || "Failed to delete quiz", "error"),
   });
 
+  const closeExport = () => {
+    setExportQuiz(null);
+    setExportNotice(null);
+  };
+
   const handleExport = async (format) => {
     if (!exportQuiz) return;
+    setExportNotice(null);
     try {
-      await downloadQuizExport({ courseId, quiz: exportQuiz, format });
-      setExportQuiz(null);
+      const { leftOut } = await downloadQuizExport({ courseId, quiz: exportQuiz, format });
+      // Keep the dialog open to say which questions the file doesn't have.
+      if (leftOut) setExportNotice({ downloaded: true, leftOut });
+      else closeExport();
     } catch (error) {
       console.error("Error exporting quiz:", error);
-      showToast("Failed to export quiz", "error");
+      if (error.leftOut) setExportNotice({ downloaded: false, message: error.message, leftOut: error.leftOut });
+      else showToast(error.message || "Failed to export quiz", "error");
     }
   };
 
@@ -201,7 +212,8 @@ export default function Quizzes() {
 
       <ExportQuizModal
         quiz={exportQuiz}
-        onClose={() => setExportQuiz(null)}
+        notice={exportNotice}
+        onClose={closeExport}
         onExport={handleExport}
       />
 

@@ -25,6 +25,7 @@ export const queryKeys = {
   quizSchedules: (quizId) => ["quiz-schedules", quizId],
   quizCalendar: (courseId, from, to) => ["quiz-calendar", courseId, from, to],
   quizScores: (quizId) => ["quiz-scores", quizId],
+  gradeExport: (courseId, sectionId) => ["grade-export", courseId, sectionId],
   quizStudentAttempts: (quizId, userId) => ["quiz-attempts", quizId, userId],
   myQuizQuestionFlags: (courseId) => ["quiz-question-flags", "mine", courseId],
   courseQuizQuestionFlags: (courseId) => ["quiz-question-flags", "course", courseId],
@@ -43,6 +44,7 @@ export const queryKeys = {
 
   courseSettings: (courseId) => ["course-settings", courseId],
   settingsDefaults: ["course-settings-defaults"],
+  adminPromptOverrides: ["admin-prompt-overrides"],
   enrollmentCode: (courseId) => ["enrollment-code", courseId],
 
   canvasStatus: ["canvas", "status"],
@@ -72,6 +74,14 @@ export const queryKeys = {
     "section-quiz-assignments",
     courseId,
     sectionId,
+  ],
+  panoptoStatus: ["panopto", "status"],
+  panoptoFolders: ["panopto", "folders"],
+  panoptoFolderSessions: (courseId, folderId) => [
+    "panopto",
+    "folder-sessions",
+    courseId,
+    folderId,
   ],
   moodleStatus: ["moodle", "status"],
   moodleAvailableCourses: (courseId, sectionId) => [

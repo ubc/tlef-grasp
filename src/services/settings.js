@@ -153,8 +153,47 @@ const updateSettings = async (courseId, updateData) => {
     }
 };
 
+/**
+ * How many courses store their own copy of each prompt, and how many of those
+ * copies still match the current default. A stored copy overrides the default
+ * for good, so a course that saved its settings before a default changed keeps
+ * the old text until the copy is removed.
+ */
+const getStoredPromptCounts = async () => {
+    const db = await databaseService.connect();
+    const collection = db.collection('grasp_settings');
+    const counts = {};
+    for (const promptKey in DEFAULT_PROMPTS) {
+        const dbKey = KEY_MAP[`prompts.${promptKey}`];
+        if (!dbKey) continue;
+        const rows = await collection.find({ name: dbKey }, { projection: { value: 1 } }).toArray();
+        counts[promptKey] = {
+            courses: rows.length,
+            matchingDefault: rows.filter((row) => row.value === DEFAULT_PROMPTS[promptKey]).length,
+        };
+    }
+    return counts;
+};
+
+/**
+ * Put one prompt back to the default in every course, archived ones included,
+ * by removing each course's stored copy so getSettings falls back to
+ * DEFAULT_PROMPTS. Returns how many courses had a copy.
+ */
+const resetPromptForAllCourses = async (promptKey) => {
+    const dbKey = Object.prototype.hasOwnProperty.call(DEFAULT_PROMPTS, promptKey)
+        ? KEY_MAP[`prompts.${promptKey}`]
+        : null;
+    if (!dbKey) throw new Error(`Unknown prompt: ${promptKey}`);
+    const db = await databaseService.connect();
+    const result = await db.collection('grasp_settings').deleteMany({ name: dbKey });
+    return result.deletedCount;
+};
+
 module.exports = {
     getSettings,
     updateSettings,
+    getStoredPromptCounts,
+    resetPromptForAllCourses,
     DEFAULT_PROMPTS
 };

@@ -20,6 +20,9 @@ router.get("/:questionId", questionController.getQuestionByIdHandler);
 // Save questions to question bank
 router.post("/save", questionController.saveQuestionHandler);
 
+// Which of the given question ids still exist
+router.post("/existing", questionController.existingQuestionsHandler);
+
 // Update question
 router.put("/:questionId", questionController.updateQuestionHandler);
 

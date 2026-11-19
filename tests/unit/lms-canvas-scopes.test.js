@@ -99,6 +99,8 @@ const { createCanvasRouter } = require('../../src/routes/lms-canvas');
 const {
   CANVAS_CAPABILITIES,
   CANVAS_CAPABILITY_SCOPES,
+  CANVAS_CONNECT_SCOPES,
+  missingConnectScopes,
   parseCanvasScopes,
   resolveCanvasCapabilities,
 } = require('../../src/lms/canvas-scopes');
@@ -106,6 +108,7 @@ const { canvasScopesFromEnv } = require('../../src/lms/canvas');
 
 const CANVAS_DOMAIN = 'https://canvas.example.test';
 const USER_ID = '507f1f77bcf86cd799439011';
+const PROF_PUID = 'PUID-PROF-1';
 const SECTION_BASE = '/api/lms/canvas/courses/course-1/sections/101';
 const MATERIALS_BASE = '/api/lms/canvas/courses/course-1/materials/canvas-courses';
 
@@ -144,8 +147,9 @@ const CANVAS_FILE = {
 };
 const CANVAS_FILE_PUBLIC_URL = `${CANVAS_DOMAIN}/files/7001/download?verifier=signed`;
 
-// The value README/.env.example recommend for UBC's current production key.
+// The value README/.env.example recommend.
 const UBC_RECOMMENDED_SCOPES = [
+  'url:GET|/api/v1/users/:user_id/profile',
   'url:GET|/api/v1/courses',
   'url:GET|/api/v1/courses/:course_id/sections',
   'url:GET|/api/v1/courses/:course_id/enrollments',
@@ -188,6 +192,10 @@ function cannedResponse(apiPath) {
   if (/^\/api\/v1\/courses\/[^/]+\/files$/.test(apiPath)) return [CANVAS_FILE];
   if (/^\/api\/v1\/courses\/[^/]+\/files\/[^/]+$/.test(apiPath)) return CANVAS_FILE;
   if (/^\/api\/v1\/files\/[^/]+\/public_url$/.test(apiPath)) return { public_url: CANVAS_FILE_PUBLIC_URL };
+  // The connecting instructor's own profile (the OAuth callback's identity check).
+  if (apiPath === '/api/v1/users/self/profile') {
+    return { id: 7, name: 'Prof One', integration_id: PROF_PUID };
+  }
   if (/^\/api\/v1\/courses\/[^/]+\/enrollments$/.test(apiPath)) {
     return [{
       id: 9001,
@@ -255,6 +263,40 @@ function buildApp(calls, capabilities, downloads) {
     next();
   });
   app.use('/api/lms/canvas', createCanvasRouter({ configured: true, canvas, config: {}, capabilities }));
+  return app;
+}
+
+// The OAuth callback, with the token endpoint (/login/oauth2/token, which no
+// scope covers) stubbed and the API client recording what it is asked.
+function buildConnectApp(calls, tokens) {
+  const canvas = {
+    ...toolkitCanvas,
+    createAuthRouter: () => express.Router(),
+    exchangeCodeForTokens: async () => ({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      expiresAt: Date.now() + 3600_000,
+      canvasUserId: '7',
+    }),
+    revokeToken: jest.fn(),
+    createApiClient: () => recordingClient(calls),
+  };
+  const config = {
+    canvasDomain: CANVAS_DOMAIN,
+    getUserKey: (req) => String(req.user._id),
+    tokenStore: {
+      get: async (key) => tokens.get(key) ?? null,
+      set: async (key, value) => { tokens.set(key, value); },
+      delete: async (key) => { tokens.delete(key); },
+    },
+  };
+  const app = express();
+  app.use((req, _res, next) => {
+    req.user = { _id: USER_ID, puid: PROF_PUID };
+    req.session = { canvasOAuthState: 'state-1', canvasOAuthReturnTo: '/settings?canvas=connected' };
+    next();
+  });
+  app.use('/api/lms/canvas', createCanvasRouter({ configured: true, canvas, config }));
   return app;
 }
 
@@ -355,6 +397,21 @@ describe('Canvas scope coverage', () => {
     }
   );
 
+  it('connecting reads only the instructor\'s own profile, which the connect scope covers', async () => {
+    const calls = [];
+    const tokens = new Map();
+
+    const response = await request(buildConnectApp(calls, tokens))
+      .get('/api/lms/canvas/auth/callback')
+      .query({ code: 'auth-code', state: 'state-1' });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('/settings?canvas=connected');
+    expect(tokens.has(USER_ID)).toBe(true);
+    expect(calls).toEqual([{ method: 'GET', path: '/api/v1/users/self/profile' }]);
+    expect(uncovered(calls, CANVAS_CONNECT_SCOPES)).toEqual([]);
+  });
+
   it('the roster sync reads enrollments, not the include-dependent users endpoint', async () => {
     const calls = [];
     await ROUTES_BY_CAPABILITY.rosterSync[0](buildApp(calls));
@@ -441,8 +498,10 @@ describe('Canvas scope coverage', () => {
     expect(uncovered(calls, UBC_RECOMMENDED_SCOPES)).toEqual([]);
   });
 
-  it('the recommended UBC scopes are a subset of UBC\'s production key', () => {
-    const productionKey = new Set([
+  it('the recommended scopes add only the connect scope to the 13-scope key list from #124', () => {
+    // The scopes of a UBC production developer key, recorded with #124. Not
+    // GRASP's: GRASP has no production key yet.
+    const keyFrom124 = new Set([
       'url:GET|/api/v1/users/:id',
       'url:GET|/api/v1/courses',
       'url:GET|/api/v1/courses/:course_id/sections',
@@ -457,8 +516,19 @@ describe('Canvas scope coverage', () => {
       'url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/submissions/update_grades',
       'url:GET|/api/v1/progress/:id',
     ]);
-    // Requesting a scope the key lacks fails the whole OAuth request.
-    expect(UBC_RECOMMENDED_SCOPES.filter((scope) => !productionKey.has(scope))).toEqual([]);
+    // Requesting a scope the key lacks fails the whole OAuth request, so a key
+    // like this one needs the connect scope too. Its url:GET|/api/v1/users/:id
+    // (Canvas's /users/self) does not do instead: that leaves integration_id
+    // out for anyone but account admins.
+    expect(UBC_RECOMMENDED_SCOPES.filter((scope) => !keyFrom124.has(scope)))
+      .toEqual(CANVAS_CONNECT_SCOPES);
+  });
+
+  it('warns about a scope list that cannot connect, but not about no list', () => {
+    expect(missingConnectScopes(UBC_RECOMMENDED_SCOPES)).toEqual([]);
+    expect(missingConnectScopes(UBC_RECOMMENDED_SCOPES.slice(1))).toEqual(CANVAS_CONNECT_SCOPES);
+    // No CANVAS_SCOPES: a key without Enforce Scopes allows every endpoint.
+    expect(missingConnectScopes([])).toEqual([]);
   });
 
   it('a disabled capability refuses its routes before any Canvas call', async () => {
@@ -480,10 +550,13 @@ describe('Canvas scope coverage', () => {
     const EXERCISED_TOOLKIT_API_FUNCTIONS = new Set([
       'getCourses', 'getCourseSections', 'getCourseFiles', 'downloadFile',
     ]);
-    // Toolkit Canvas members that never call the Canvas REST API.
+    // Toolkit Canvas members that never call the Canvas REST API. The OAuth
+    // calls go to /login/oauth2/token, which no scope covers, and
+    // createApiClient's calls are checked by the raw-call scan below.
     const NON_API_TOOLKIT_MEMBERS = new Set([
       'requireAuth', 'ensureAuth', 'createAuthRouter', 'loadConfigFromEnv',
       'CanvasApiError', 'CanvasOAuthError',
+      'exchangeCodeForTokens', 'revokeToken', 'createApiClient',
     ]);
 
     function sourceFiles(dir) {
@@ -514,8 +587,11 @@ describe('Canvas scope coverage', () => {
       expect(unknown).toEqual([]);
     });
 
-    it('every raw Canvas client call in src/ is covered by some capability\'s scopes', () => {
-      const allScopes = CANVAS_CAPABILITIES.flatMap((name) => CANVAS_CAPABILITY_SCOPES[name]);
+    it('every raw Canvas client call in src/ is covered by the connect or some capability\'s scopes', () => {
+      const allScopes = [
+        ...CANVAS_CONNECT_SCOPES,
+        ...CANVAS_CAPABILITIES.flatMap((name) => CANVAS_CAPABILITY_SCOPES[name]),
+      ];
       const METHODS = { getAll: 'GET', get: 'GET', post: 'POST', put: 'PUT', delete: 'DELETE' };
       const rawCalls = [];
       for (const { file, text } of sources) {
@@ -531,9 +607,10 @@ describe('Canvas scope coverage', () => {
         }
       }
 
-      expect(rawCalls.map(({ method, path: p }) => `${method} ${p}`)).toContain(
-        'GET /api/v1/courses/:param/enrollments'
-      );
+      expect(rawCalls.map(({ method, path: p }) => `${method} ${p}`)).toEqual(expect.arrayContaining([
+        'GET /api/v1/courses/:param/enrollments',
+        'GET /api/v1/users/self/profile',
+      ]));
       expect(uncovered(rawCalls, allScopes)).toEqual([]);
     });
   });

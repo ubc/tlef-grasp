@@ -24,7 +24,9 @@ describe('ubcshib strategy request-ID cache', () => {
   });
 
   it('validates InResponseTo — the check that makes a shared cache necessary', () => {
-    expect(strategy._saml.options.validateInResponseTo).toBe(true);
+    // passport-ubcshib keeps the boolean option; from 0.1.7 it maps `true` to
+    // @node-saml's string enum, so the underlying provider sees 'always'.
+    expect(strategy._saml.options.validateInResponseTo).toBe('always');
   });
 
   it('uses the shared MongoDB cache, not node-saml per-process memory', () => {

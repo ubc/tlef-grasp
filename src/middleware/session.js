@@ -27,6 +27,12 @@ const sessionConfig = {
     cookie: {
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true, // Prevent client-side JS from accessing the cookie
+        // From another site, the browser sends the cookie only on top-level
+        // GET navigations (a link, Canvas's OAuth redirect back), never with
+        // that site's POSTs or embedded requests (CSRF). Browsers differ when
+        // this is left unset. Other *.ubc.ca sites count as same-site and do
+        // get it sent; middleware/cross-origin.js refuses their writes.
+        sameSite: 'lax',
         maxAge
     },
     name: 'grasp.sid' // Custom session ID name

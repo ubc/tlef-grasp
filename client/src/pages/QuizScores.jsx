@@ -6,6 +6,8 @@ import { formatTimeSpent, formatDateTime } from "../lib/format";
 import Pagination from "../components/ui/Pagination";
 import ScoreBadge from "./quiz-scores/ScoreBadge";
 import StudentReviewModal from "./quiz-scores/StudentReviewModal";
+import GradeExportModal from "./quiz-scores/GradeExportModal";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 
 const ITEMS_PER_PAGE = 15;
 
@@ -23,6 +25,9 @@ export default function QuizScores() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [review, setReview] = useState(null);
+  const [gradeExportOpen, setGradeExportOpen] = useState(false);
+  // The grade CSV is for instructors and admins only, not TAs (#126).
+  const { isFaculty } = useCurrentUser();
 
   const { quizzes } = useCourseQuizzes(courseId);
   const { sections: courseSections } = useVisibleCourseSections(courseId);
@@ -75,7 +80,18 @@ export default function QuizScores() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <h1 className="mb-6 text-2xl font-bold text-ink">Quiz Scores</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-ink">Quiz Scores</h1>
+        {isFaculty && courseSections.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setGradeExportOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-ink hover:bg-gray-50"
+          >
+            <i className="fas fa-file-csv" aria-hidden="true" /> Download grades (CSV)
+          </button>
+        )}
+      </div>
 
       {/* Controls */}
       <div className="mb-5 flex flex-wrap items-center gap-4">
@@ -279,6 +295,15 @@ export default function QuizScores() {
       </div>
 
       {review && <StudentReviewModal review={review} onClose={() => setReview(null)} />}
+      {gradeExportOpen && (
+        <GradeExportModal
+          open
+          courseId={courseId}
+          sections={courseSections}
+          initialSectionId={sectionFilter}
+          onClose={() => setGradeExportOpen(false)}
+        />
+      )}
     </div>
   );
 }

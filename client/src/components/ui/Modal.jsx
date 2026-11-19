@@ -8,28 +8,47 @@ import { createPortal } from "react-dom";
 // in the padding gutter beside the panel, and — because the DOM dispatches
 // click on the nearest common ancestor of mousedown/mouseup — releasing a text
 // selection that started inside the panel over the backdrop.
+//
+// Modals can stack (a warning popup over an edit form). Open modals are kept
+// in order so Escape closes only the top one, and the page stays locked until
+// the last one closes.
+const openModals = [];
+
 export default function Modal({ open, onClose, title, children, footer, wide = false }) {
   const titleId = useId();
   const closeButtonRef = useRef(null);
+  const stackEntry = useRef({});
+  // Callers pass inline closures; reading the latest through a ref keeps a
+  // re-render from re-running the effect, which would pull focus back here
+  // from a modal opened on top.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
+    const entry = stackEntry.current;
+    openModals.push(entry);
     // Move focus into the dialog on open and restore it to whatever was focused
     // (typically the trigger) when the dialog closes.
     const previouslyFocused = document.activeElement;
     closeButtonRef.current?.focus();
 
     const handleKey = (event) => {
-      if (event.key === "Escape") onClose?.();
+      if (event.key === "Escape" && openModals[openModals.length - 1] === entry) {
+        onCloseRef.current?.();
+      }
     };
     document.addEventListener("keydown", handleKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = "";
+      openModals.splice(openModals.indexOf(entry), 1);
+      if (openModals.length === 0) document.body.style.overflow = "";
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -64,6 +83,28 @@ export default function Modal({ open, onClose, title, children, footer, wide = f
       </div>
     </div>,
     document.body
+  );
+}
+
+// A message the user acknowledges with one button, built on Modal.
+export function AlertModal({ open, onClose, title, message, closeLabel = "OK" }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
+        >
+          {closeLabel}
+        </button>
+      }
+    >
+      <p className="text-ink">{message}</p>
+    </Modal>
   );
 }
 

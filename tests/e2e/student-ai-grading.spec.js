@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
-const { SEED, resetSeededAiQuizAttemptState } = require('./seed');
-const { selectSeededCourse, startQuizFromList } = require('./helpers');
+const { SEED, getRawStudentRecords, resetSeededAiQuizAttemptState } = require('./seed');
+const { FIELD_ENCRYPTION_ON, selectSeededCourse, startQuizFromList } = require('./helpers');
 
 // LLM-graded question types (issue #45) end to end, against the seeded
 // AI-graded quiz (one open-ended + one fill-in-the-blank question in the BIOC
@@ -97,6 +97,18 @@ test.describe('Student AI-graded quiz (issue #45)', () => {
     await expect(page.getByText(/Graded by AI/)).toBeVisible();
     await expect(page.getByText('Key concept coverage', { exact: false })).toBeVisible();
     await expect(page.getByText('Accuracy', { exact: false })).toBeVisible();
+
+    // The answer and the AI's judgement of it are stored encrypted
+    // (src/services/encryption.config.cjs); only the student's answer
+    // carries the pass marker, so it must not appear anywhere in plaintext.
+    if (FIELD_ENCRYPTION_ON) {
+      const { attempts } = await getRawStudentRecords();
+      const attempt = attempts.find((row) => row.questionType === 'open-ended');
+      for (const field of ['selectedAnswer', 'feedbackText', 'aiCriteria']) {
+        expect(attempt[field]).toMatchObject({ __ubc_enc: 1, alg: 'A256GCM' });
+      }
+      expect(JSON.stringify(attempt)).not.toContain(SEED.AI_PASS_MARKER);
+    }
   });
 
   test('open-ended answer that misses the criteria is graded incorrect', async ({

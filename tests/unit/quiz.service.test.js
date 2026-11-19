@@ -128,7 +128,12 @@ describe('addExistingQuestionsToQuiz', () => {
         courseId.toString(),
         [newQuestionId.toString(), existingQuestionId.toString(), invalidQuestionId.toString()]
       )
-    ).resolves.toEqual({ insertedCount: 1, skippedCount: 2 });
+    ).resolves.toEqual({
+      insertedCount: 1,
+      skippedCount: 2,
+      alreadyInQuizCount: 1,
+      ineligibleCount: 1,
+    });
 
     expect(questionCollection.find).toHaveBeenCalledWith(
       expect.objectContaining({

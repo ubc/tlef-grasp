@@ -8,7 +8,7 @@ import {
 import { useAddExistingQuestionsToQuiz } from "../../hooks/useQuizzes";
 import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useToast } from "../../components/ui/Toast";
-import Modal, { ConfirmModal } from "../../components/ui/Modal";
+import Modal, { AlertModal, ConfirmModal } from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
 import {
@@ -35,7 +35,7 @@ const STATUS_PILL_CLASSES = {
 
 const SORT_COLUMNS = [
   { key: "title", label: "Question Title" },
-  { key: "glo", label: "Associated GLO" },
+  { key: "mlo", label: "Meta LO" },
   { key: "bloom", label: "Bloom's Level", nowrap: true },
   { key: "questionType", label: "Question Type", nowrap: true },
   { key: "status", label: "Status", nowrap: true },
@@ -225,7 +225,7 @@ function AddExistingQuestionsModal({
       .filter((question) => {
         if (question.orphaned || !question.hasGranularObjective) return false;
         if (!term) return true;
-        return [question.title, question.stem, question.glo, question.bloom]
+        return [question.title, question.stem, question.mlo, question.bloom]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(term));
       })
@@ -319,7 +319,7 @@ function AddExistingQuestionsModal({
                     className="block whitespace-pre-line text-sm font-medium text-ink"
                   />
                   <span className="mt-1 block text-xs text-muted">
-                    {question.glo || "Learning objective unavailable"}
+                    {question.mlo || "Learning objective unavailable"}
                     {question.bloom ? ` · ${question.bloom}` : ""}
                   </span>
                 </span>
@@ -447,6 +447,8 @@ export default function QuestionsTab({ courseId, isFaculty }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editTarget, setEditTarget] = useState(null);
   const [reassignTarget, setReassignTarget] = useState(null);
+  // Set when attaching an objective is refused as a duplicate.
+  const [duplicateMessage, setDuplicateMessage] = useState(null);
   const [showAddWizard, setShowAddWizard] = useState(false);
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -466,8 +468,21 @@ export default function QuestionsTab({ courseId, isFaculty }) {
     onSuccess: (data, variables) => {
       if (variables.successMessage) showToast(variables.successMessage, "success");
     },
-    onError: (error, variables) =>
-      showToast(variables.errorMessage || "Failed to update question", "error"),
+    // A duplicate gets a popup. Any other 409 carries a reason the
+    // instructor can act on (an orphan that can't be approved), so show it
+    // over the generic message.
+    onError: (error, variables) => {
+      if (error.body?.code === "DUPLICATE_QUESTION") {
+        setDuplicateMessage(error.message);
+        return;
+      }
+      showToast(
+        (error.status === 409 && error.message) ||
+          variables.errorMessage ||
+          "Failed to update question",
+        "error"
+      );
+    },
   });
 
   const bulkUpdateMutation = useBulkUpdateQuestions(courseId, {
@@ -671,7 +686,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
         return (
           (q.title && q.title.toLowerCase().includes(term)) ||
           (q.stem && q.stem.toLowerCase().includes(term)) ||
-          (q.glo && q.glo.toLowerCase().includes(term)) ||
+          (q.mlo && q.mlo.toLowerCase().includes(term)) ||
           (q.calculationFormula &&
             String(q.calculationFormula).toLowerCase().includes(term)) ||
           typeLabel.includes(term)
@@ -997,12 +1012,12 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                         {question.orphaned ? (
                           <span
                             title="The learning objective this question was generated from has been deleted. This question can no longer be added to quizzes."
-                            className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
+                            className="inline-block whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800"
                           >
-                            <i className="fas fa-unlink text-[10px]" /> Objective deleted
+                            Objective deleted
                           </span>
                         ) : (
-                          question.glo
+                          question.mlo
                         )}
                       </td>
                       <td className="border-b border-gray-100 px-4 py-3 whitespace-nowrap">
@@ -1080,6 +1095,13 @@ export default function QuestionsTab({ courseId, isFaculty }) {
         onClose={() => setReassignTarget(null)}
         onConfirm={confirmReassign}
         isSubmitting={updateMutation.isPending}
+      />
+
+      <AlertModal
+        open={!!duplicateMessage}
+        onClose={() => setDuplicateMessage(null)}
+        title="Duplicate detected"
+        message={duplicateMessage}
       />
 
       <ConfirmModal

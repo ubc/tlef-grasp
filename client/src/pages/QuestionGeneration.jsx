@@ -1,9 +1,13 @@
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelectedCourse } from "../stores/appStore";
 import { useCourseMaterials } from "../hooks/useMaterials";
-import { useCourseQuizzes, useCreateQuiz } from "../hooks/useQuizzes";
-import { useSaveQuestions } from "../hooks/useQuestions";
+import { useCourseQuizzes, useInvalidateQuizzes } from "../hooks/useQuizzes";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateQuestions } from "../hooks/useQuestions";
+import { fetchDetailedObjectives } from "../hooks/useObjectives";
+import { api } from "../lib/api";
+import { flattenGranulars } from "../lib/questionImport";
 import { useToast } from "../components/ui/Toast";
 import Modal from "../components/ui/Modal";
 import ObjectivesStep from "./question-generation/ObjectivesStep";
@@ -11,11 +15,14 @@ import QuestionsStep from "./question-generation/QuestionsStep";
 import SaveQuizStep from "./question-generation/SaveQuizStep";
 import { useQuestionDraft } from "./question-generation/useQuestionDraft";
 import { normalizeMcOptionCount } from "../lib/mcOptions";
+import { generateQuestions, convertQuestionsToGroups } from "./question-generation/generationApi";
+import { attachSavedIds } from "./question-generation/savedQuestionIds";
+import { saveQuestionsToBank, quizSkipNote, orphanedNote } from "./question-generation/bankSave";
 import {
-  generateQuestions,
-  convertQuestionsToGroups,
-  buildQuestionPayload,
-} from "./question-generation/generationApi";
+  questionsWithDeletedObjective,
+  applyObjectivePicks,
+} from "./question-generation/objectiveReselect";
+import ReselectObjectivesModal from "./question-generation/ReselectObjectivesModal";
 
 const STEP_TITLES = {
   1: "Create Objectives",
@@ -164,12 +171,15 @@ export default function QuestionGeneration() {
   const [quizForm, setQuizForm] = useState(EMPTY_QUIZ_FORM);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  const questionGroupsRef = useRef(questionGroups);
-  questionGroupsRef.current = questionGroups;
+  // Which save ("bank" or "quiz") is checking the course's objectives, and the
+  // questions waiting for a new objective before that save goes ahead.
+  const [checkingObjectives, setCheckingObjectives] = useState(null);
+  const [objectiveReselect, setObjectiveReselect] = useState(null);
 
-  const { draftPrompt, dismissDraftPrompt, saveDraft, clearDraft } =
-    useQuestionDraft(courseId);
-  const persistDraft = () => saveDraft(questionGroupsRef.current);
+  const { draftPrompt, dismissDraftPrompt, clearDraft } = useQuestionDraft(
+    courseId,
+    questionGroups
+  );
 
   const materialsQuery = useCourseMaterials(courseId);
   const hasMaterials =
@@ -180,42 +190,29 @@ export default function QuestionGeneration() {
 
   /* ------------------------------ Mutations ------------------------------ */
 
-  const createQuizMutation = useCreateQuiz(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.questionsAdded || variables.newQuestions.length;
-      clearDraft();
-      setSuccessMessage(
-        `Successfully created quiz and added ${count} question${count !== 1 ? "s" : ""}!`
-      );
-      setQuizForm((prev) => ({ ...prev, quizName: "", quizDescription: "" }));
-    },
-    onError: (error) => {
-      console.error("Error adding questions to quiz:", error);
-      showToast(error.message || "Failed to add questions to quiz", "error");
-    },
-  });
+  // Records what was saved before rethrowing any failure, so a retry cannot
+  // save a question twice.
+  const invalidateQuestions = useInvalidateQuestions(courseId);
+  const invalidateQuizzes = useInvalidateQuizzes(courseId);
+  const saveToBank = async (pageQuestions) => {
+    const { saved, ids, savedCount, orphanedCount, error } = await saveQuestionsToBank({
+      api,
+      courseId,
+      pageQuestions,
+    });
+    // Record the bank ids so Step 2 can offer to delete from the bank.
+    setQuestionGroups((prev) => attachSavedIds(prev, saved));
+    if (saved.size > 0) invalidateQuestions();
+    if (error) throw error;
+    return { ids, savedCount, orphanedCount };
+  };
 
-  const addToQuizMutation = useSaveQuestions(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.questionsAdded || variables.questions.length;
-      clearDraft();
+  const addToBankMutation = useMutation({
+    mutationFn: saveToBank,
+    onSuccess: ({ savedCount: count, orphanedCount }) => {
       setSuccessMessage(
-        `Successfully added ${count} question${count !== 1 ? "s" : ""} to quiz!`
-      );
-      setQuizForm((prev) => ({ ...prev, selectedQuizId: "" }));
-    },
-    onError: (error) => {
-      console.error("Error adding questions to quiz:", error);
-      showToast(error.message || "Failed to add questions to quiz", "error");
-    },
-  });
-
-  const addToBankMutation = useSaveQuestions(courseId, {
-    onSuccess: (data, variables) => {
-      const count = data.savedCount || variables.questions.length;
-      clearDraft();
-      setSuccessMessage(
-        `Successfully added ${count} question${count !== 1 ? "s" : ""} to the Question Bank!`
+        `Successfully saved ${count} question${count !== 1 ? "s" : ""} to the Question Bank!` +
+          orphanedNote(orphanedCount)
       );
     },
     onError: (error) => {
@@ -224,8 +221,39 @@ export default function QuestionGeneration() {
     },
   });
 
-  const saving = createQuizMutation.isPending || addToQuizMutation.isPending;
-  const addingToBank = addToBankMutation.isPending;
+  // Step 3 goes through the bank first, so a quiz only ever gets the bank's
+  // own questions: never a second copy of one already saved.
+  const saveToQuizMutation = useMutation({
+    mutationFn: async ({ pageQuestions, quiz }) => {
+      const questionIds = (await saveToBank(pageQuestions)).ids.filter(Boolean);
+      if (quiz.quizId) {
+        return api.post(`/api/quiz/${quiz.quizId}/existing-questions`, { questionIds });
+      }
+      const data = await api.post("/api/quiz", { courseId, ...quiz, questionIds });
+      return { insertedCount: data.questionsAdded, ineligibleCount: data.skippedCount };
+    },
+    onSuccess: (result, { quiz }) => {
+      invalidateQuizzes();
+      const count = result.insertedCount || 0;
+      const plural = count !== 1 ? "s" : "";
+      const message = quiz.quizId
+        ? `Successfully added ${count} question${plural} to quiz!`
+        : `Successfully created quiz and added ${count} question${plural}!`;
+      setSuccessMessage(message + quizSkipNote(result));
+      if (quiz.quizId) {
+        setQuizForm((prev) => ({ ...prev, selectedQuizId: "" }));
+      } else {
+        setQuizForm((prev) => ({ ...prev, quizName: "", quizDescription: "" }));
+      }
+    },
+    onError: (error) => {
+      console.error("Error adding questions to quiz:", error);
+      showToast(error.message || "Failed to add questions to quiz", "error");
+    },
+  });
+
+  const saving = saveToQuizMutation.isPending || checkingObjectives === "quiz";
+  const addingToBank = addToBankMutation.isPending || checkingObjectives === "bank";
 
   /* ------------------------------ Generation ------------------------------ */
 
@@ -253,6 +281,7 @@ export default function QuestionGeneration() {
 
       if (failures?.length > 0) {
         const rateLimited = failures.filter((failure) => failure.rateLimited).length;
+        const noMaterial = failures.filter((failure) => failure.code === "NO_COURSE_MATERIAL").length;
         // Name the failed objectives so the instructor knows what to
         // regenerate, but cap the list so a large failure set doesn't
         // produce an unreadable toast.
@@ -264,6 +293,9 @@ export default function QuestionGeneration() {
           `${failures.length} objective${failures.length === 1 ? "" : "s"} could not be generated` +
             (nameList ? `: ${nameList}` : "") +
             (rateLimited > 0 ? " (the AI provider was rate limiting)" : "") +
+            (noMaterial > 0
+              ? ` (${noMaterial === 1 ? "one has" : `${noMaterial} have`} no course material attached — attach material to ${noMaterial === 1 ? "it" : "them"} first)`
+              : "") +
             ". The rest are ready below.",
           "warning"
         );
@@ -272,8 +304,6 @@ export default function QuestionGeneration() {
       const groups = convertQuestionsToGroups(questions);
 
       setQuestionGroups(groups);
-      questionGroupsRef.current = groups;
-      persistDraft();
     } catch (error) {
       console.error("Failed to generate questions from content:", error);
       setGenerationError(error.message);
@@ -340,49 +370,72 @@ export default function QuestionGeneration() {
 
   /* ------------------------------ Step 3 save ------------------------------ */
 
-  const collectQuestions = () =>
-    questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
-    );
+  const questionsOf = (groups) =>
+    groups.flatMap((group) => group.los.flatMap((lo) => lo.questions));
+  const collectQuestions = () => questionsOf(questionGroups);
+
+  // Runs `save` with the page's questions once every one has an objective
+  // that still exists; any whose objective was deleted get a new one first.
+  const saveWithLiveObjectives = async (kind, save) => {
+    setCheckingObjectives(kind);
+    let granulars;
+    try {
+      granulars = flattenGranulars(await fetchDetailedObjectives(courseId));
+    } catch (error) {
+      showToast(error.message, "error");
+      return;
+    } finally {
+      setCheckingObjectives(null);
+    }
+    const pageQuestions = collectQuestions();
+    const needObjective = questionsWithDeletedObjective(pageQuestions, granulars);
+    if (needObjective.length === 0) save(pageQuestions);
+    else setObjectiveReselect({ questions: needObjective, granulars, save });
+  };
+
+  const confirmObjectivePicks = (picks) => {
+    const { granulars, save } = objectiveReselect;
+    const groups = applyObjectivePicks(questionGroups, picks, granulars);
+    setQuestionGroups(groups);
+    setObjectiveReselect(null);
+    save(questionsOf(groups));
+  };
 
   const handleSaveToQuiz = () => {
-    const questions = collectQuestions();
-    if (questions.length === 0) {
+    if (collectQuestions().length === 0) {
       showToast("No questions to save", "error");
       return;
     }
 
+    let quiz;
     if (quizTab === "create") {
       if (!quizForm.quizName.trim()) {
         showToast("Please enter a quiz name", "error");
         return;
       }
-      createQuizMutation.mutate({
-        courseId,
+      quiz = {
         name: quizForm.quizName.trim(),
         description: quizForm.quizDescription.trim() || "",
         deliveryFormat: quizForm.deliveryFormat || "all-approved",
-        newQuestions: questions,
-      });
+      };
     } else {
       if (!quizForm.selectedQuizId) {
         showToast("Please select or create a quiz", "error");
         return;
       }
-      addToQuizMutation.mutate({ questions, quizId: quizForm.selectedQuizId });
+      quiz = { quizId: quizForm.selectedQuizId };
     }
+    saveWithLiveObjectives("quiz", (pageQuestions) =>
+      saveToQuizMutation.mutate({ pageQuestions, quiz })
+    );
   };
 
   const handleAddAllToBank = () => {
-    const questions = questionGroups.flatMap((group) =>
-      group.los.flatMap((lo) => lo.questions.map(buildQuestionPayload))
-    );
-
-    if (questions.length === 0) {
+    if (collectQuestions().length === 0) {
       showToast("No questions to add", "warning");
       return;
     }
-    addToBankMutation.mutate({ questions });
+    saveWithLiveObjectives("bank", (pageQuestions) => addToBankMutation.mutate(pageQuestions));
   };
 
   /* --------------------------------- Render -------------------------------- */
@@ -426,7 +479,7 @@ export default function QuestionGeneration() {
             runGeneration();
           }}
           onRetry={runGeneration}
-          onSaveDraft={persistDraft}
+          courseId={courseId}
         />
       )}
 
@@ -457,7 +510,7 @@ export default function QuestionGeneration() {
       >
         <button
           type="button"
-          disabled={step === 1 || generating}
+          disabled={step === 1 || generating || addingToBank || saving}
           onClick={() => setStep(step - 1)}
           className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-40"
         >
@@ -478,6 +531,7 @@ export default function QuestionGeneration() {
           disabled={
             generating ||
             regeneratingObjectives ||
+            addingToBank ||
             saving ||
             (step === 1 && objectiveGroups.length === 0) ||
             (step === 2 &&
@@ -495,6 +549,14 @@ export default function QuestionGeneration() {
                 : "Continue"}
         </button>
       </div>
+
+      <ReselectObjectivesModal
+        open={!!objectiveReselect}
+        questions={objectiveReselect?.questions || []}
+        granulars={objectiveReselect?.granulars || []}
+        onCancel={() => setObjectiveReselect(null)}
+        onConfirm={confirmObjectivePicks}
+      />
 
       {/* Draft restore modal */}
       <Modal
@@ -530,12 +592,9 @@ export default function QuestionGeneration() {
         <div className="py-3 text-center">
           <i className="fas fa-history mb-4 text-5xl text-warning" />
           <p className="mb-2 text-ink">
-            You have {draftPrompt?.totalQuestions} question
-            {draftPrompt?.totalQuestions !== 1 ? "s" : ""} from {draftPrompt?.savedAt}{" "}
-            that were not saved to the question bank.
-          </p>
-          <p className="text-sm text-muted">
-            These questions have not been saved to the question bank yet.
+            You have {draftPrompt?.unsavedQuestions} question
+            {draftPrompt?.unsavedQuestions !== 1 ? "s" : ""} from {draftPrompt?.savedAt}{" "}
+            with changes that were not saved to the question bank.
           </p>
         </div>
       </Modal>

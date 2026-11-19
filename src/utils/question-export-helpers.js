@@ -1,10 +1,11 @@
 const { QUESTION_TYPES } = require('../constants/app-constants');
-const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey } = require('./mc-options');
+const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey, answerKeysOf } = require('./mc-options');
 
 // Shared helpers for the quiz export paths (Canvas QTI, H5P, CSV). Questions
-// are stored inconsistently across types: multiple-choice keeps its prompt in
-// `title` (its `stem` is a generic "Select the best answer:"), while the other
-// types keep the real prompt in `stem`. These helpers hide that.
+// are stored inconsistently across types: multiple-choice and multiple-answer
+// keep their prompt in `title` (a multiple-choice `stem` is a generic "Select
+// the best answer:"), while the other types keep the real prompt in `stem`.
+// These helpers hide that.
 
 // Resolve a question's internal type, defaulting to multiple-choice for legacy rows.
 function normalizeQuestionType(q) {
@@ -15,7 +16,8 @@ function normalizeQuestionType(q) {
 
 // The student-facing question text.
 function getQuestionText(q) {
-  if (normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
+  const type = normalizeQuestionType(q);
+  if (type === QUESTION_TYPES.MULTIPLE_CHOICE || type === QUESTION_TYPES.MULTIPLE_ANSWER) {
     return String(q.title || q.stem || q.text || q.question || '').trim();
   }
   return String(q.stem || q.question || q.text || q.title || '').trim();
@@ -70,6 +72,12 @@ function getCorrectAnswerIndex(q) {
   return idx === -1 ? 0 : idx;
 }
 
+// A multiple-answer question's correct letters, among those it exports.
+function getCorrectAnswerKeys(q) {
+  const keys = getOptionKeys(q);
+  return answerKeysOf(q.correctAnswer).filter((key) => keys.includes(key));
+}
+
 // Instructor-attached stem images as an array (handles the legacy
 // single-image field).
 function stemImagesOf(q) {
@@ -98,6 +106,7 @@ module.exports = {
   getOptionTextOrImageLabel,
   getOptionFeedback,
   getCorrectAnswerIndex,
+  getCorrectAnswerKeys,
   getAcceptableAnswers,
   stemImagesOf,
 };

@@ -1,7 +1,7 @@
 const archiver = require('archiver');
 const { saveQuestion, updateQuestion, deleteQuestion, getQuestions } = require('../services/question');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
-const { getQuestionCourseId, getQuestion } = require('../services/question');
+const { getQuestionCourseId, getQuestion, findExistingQuestionIds } = require('../services/question');
 const { isFaculty } = require('../utils/auth');
 const { assertCoInstructorPermission, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissions");
@@ -17,13 +17,16 @@ const {
   getOptionText,
   getOptionImage,
   getOptionTextOrImageLabel,
+  getOptionFeedback,
   getCorrectAnswerIndex,
   getAcceptableAnswers,
+  getCorrectAnswerKeys,
   stemImagesOf,
 } = require('../utils/question-export-helpers');
 const { MC_OPTION_KEYS, correctAnswerKey } = require('../utils/mc-options');
 const { withoutImportFields } = require('../utils/import-provenance');
-const { filterH5PExportableQuestions, buildH5PPackage } = require('../utils/h5p-export');
+const { filterH5PExportableQuestions, buildH5PPackage, labelText } = require('../utils/h5p-export');
+const { toCanvasCalculation } = require('../utils/canvas-calculation-export');
 const databaseService = require('../services/database');
 
 // --- Objective enrichment for export ----------------------------------------
@@ -176,14 +179,30 @@ function escapeXml(text) {
     .replace(/'/g, '&apos;');
 }
 
-// Canvas expects HTML content escaped, wrapping bare text in div/p like Canvas does.
-function escapeHtmlForQTI(text) {
-  if (!text) return '';
-  const textStr = String(text).trim();
-  if (/<[^>]+>/.test(textStr)) {
-    return escapeXml(textStr);
-  }
-  return escapeXml(`<div><p>${textStr}</p></div>`);
+// GRASP question text is plain text: the app escapes it before showing it, so
+// "x<y" or "<b>" is something the student reads, not markup. As Canvas HTML,
+// it is escaped once more, and a blank line starts a new paragraph. With
+// lineBreaks, a single line break inside a paragraph becomes a <br> as well.
+function plainTextToHtml(text, { lineBreaks = false } = {}) {
+  return String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) =>
+      lineBreaks
+        ? paragraph.split('\n').map((line) => escapeXml(line.trim())).join('<br>')
+        : escapeXml(paragraph)
+    )
+    .map((paragraph) => `<p>${paragraph}</p>`)
+    .join('');
+}
+
+// Plain text as the escaped HTML a QTI <mattext texttype="text/html"> holds,
+// wrapped in a div like Canvas's own export.
+function escapeHtmlForQTI(text, options) {
+  const html = plainTextToHtml(text, options);
+  return html ? escapeXml(`<div>${html}</div>`) : '';
 }
 
 // Wrap a value as a properly-escaped CSV field (double embedded quotes).
@@ -191,14 +210,54 @@ function csvField(value) {
   return `"${String(value === null || value === undefined ? '' : value).replace(/"/g, '""')}"`;
 }
 
-// Calculation questions have no QTI export: they were cut from the Canvas
-// export (issue #46) because their parameterized model needs verification
-// against a live Canvas import before we ship it. CSV and JSON still include
-// them as data.
-function filterQTIExportableQuestions(questions) {
-  return questions.filter(
-    (q) => normalizeQuestionType(q) !== QUESTION_TYPES.CALCULATION
-  );
+// What a Canvas (QTI) export contains (#63): every question, each calculation
+// question with its Canvas content worked out once (its value sets are drawn
+// at random), and the calculation questions Canvas can't represent, left out
+// with the reason.
+function prepareQTIQuestions(questions) {
+  const items = [];
+  const leftOut = [];
+  questions.forEach((question, index) => {
+    if (normalizeQuestionType(question) !== QUESTION_TYPES.CALCULATION) {
+      items.push({ question, calculation: null });
+      return;
+    }
+    let calculation;
+    try {
+      calculation = toCanvasCalculation(question);
+    } catch (error) {
+      calculation = { skip: `GRASP couldn't read this question: ${error.message}` };
+    }
+    if (calculation.skip) leftOut.push({ index, reason: calculation.skip });
+    else items.push({ question, calculation });
+  });
+  return { items, leftOut };
+}
+
+const H5P_LEFT_OUT_REASON = 'H5P has no question type for calculation questions.';
+
+// The questions an export left out, for the export dialog: their positions in
+// the request's question list (the client has the questions) and the reasons.
+// Sent as a response header beside the file, so it is kept to a couple of
+// kilobytes, well inside proxy header limits; `count` is always the full number.
+const LEFT_OUT_HEADER = 'X-Export-Left-Out';
+const LEFT_OUT_HEADER_MAX_LENGTH = 2000;
+
+function leftOutSummary(leftOut) {
+  const summary = { count: leftOut.length, questions: [] };
+  for (const { index, reason } of leftOut) {
+    summary.questions.push({ index, reason: String(reason).slice(0, 300) });
+    if (encodeURIComponent(JSON.stringify(summary)).length > LEFT_OUT_HEADER_MAX_LENGTH) {
+      summary.questions.pop();
+      break;
+    }
+  }
+  return summary;
+}
+
+function setLeftOutHeader(res, leftOut) {
+  if (leftOut.length === 0) return;
+  res.setHeader(LEFT_OUT_HEADER, encodeURIComponent(JSON.stringify(leftOutSummary(leftOut))));
 }
 
 // Get questions for a course
@@ -297,16 +356,30 @@ const saveQuestionHandler = async (req, res) => {
     // Import sets dedupe: reject questions that already exist in the course
     // rather than creating duplicates.
     const savedQuestionIds = [];
+    // One entry per submitted question, in request order, null where the save
+    // failed. savedQuestionIds skips failures, so it cannot be lined up by index.
+    const questionIdsByIndex = [];
+    // Saved as orphaned because their objective no longer exists.
+    const orphanedIds = [];
     let duplicateCount = 0;
+    // Why questions that could never be graded were refused (a multiple-answer
+    // question with no correct option, say).
+    const invalidReasons = [];
     for (const questionData of questionsArray) {
       try {
         // Canvas provenance is set only by the Canvas importer; a client could
         // otherwise mark a question as an already-imported Canvas item.
         const questionResult = await saveQuestion(courseId, withoutImportFields(questionData), { dedupe: dedupe === true });
-        savedQuestionIds.push(questionResult.insertedId.toString());
+        const savedId = questionResult.insertedId.toString();
+        savedQuestionIds.push(savedId);
+        questionIdsByIndex.push(savedId);
+        if (questionResult.orphaned) orphanedIds.push(savedId);
       } catch (error) {
+        questionIdsByIndex.push(null);
         if (error.code === "DUPLICATE_QUESTION") {
           duplicateCount += 1;
+        } else if (error.code === "INVALID_QUESTION") {
+          invalidReasons.push(error.message);
         } else {
           console.error("Error saving individual question:", error);
         }
@@ -323,6 +396,15 @@ const saveQuestionHandler = async (req, res) => {
       });
     }
 
+    if (savedQuestionIds.length === 0 && invalidReasons.length > 0) {
+      return res.status(400).json({
+        error: invalidReasons[0],
+        savedCount: 0,
+        duplicateCount,
+        invalidCount: invalidReasons.length,
+      });
+    }
+
     if (savedQuestionIds.length === 0) {
       return res.status(500).json({ error: "Failed to save any questions" });
     }
@@ -332,11 +414,40 @@ const saveQuestionHandler = async (req, res) => {
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
       duplicateCount,
-      questionIds: savedQuestionIds
+      questionIds: savedQuestionIds,
+      questionIdsByIndex,
+      orphanedIds,
     });
   } catch (error) {
     console.error("Error saving question:", error);
     res.status(500).json({ error: "Failed to save question" });
+  }
+};
+
+// Which of the given question ids still exist, so the wizard can re-create
+// deleted ones. Same permissions as saving from the wizard.
+const existingQuestionsHandler = async (req, res) => {
+  try {
+    const { courseId, questionIds } = req.body || {};
+
+    if (!courseId) {
+      return res.status(400).json({ error: "Course ID is required" });
+    }
+    if (!Array.isArray(questionIds)) {
+      return res.status(400).json({ error: "questionIds must be an array" });
+    }
+
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+
+    const existingIds = await findExistingQuestionIds(courseId, questionIds);
+    res.json({ success: true, existingIds });
+  } catch (error) {
+    console.error("Error checking questions:", error);
+    res.status(500).json({ error: "Failed to check questions" });
   }
 };
 
@@ -347,6 +458,12 @@ const updateQuestionHandler = async (req, res) => {
     const updateData = req.body;
 
     const courseId = await getQuestionCourseId(questionId);
+
+    // As in deleteQuestionHandler: a missing question is a 404, not an access
+    // failure. The wizard re-saves a question as new when its update 404s.
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
 
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
@@ -384,7 +501,17 @@ const updateQuestionHandler = async (req, res) => {
   } catch (error) {
     console.error("Error updating question:", error);
     if (error.code === "ORPHANED_APPROVAL_BLOCKED") {
-      return res.status(409).json({ error: error.message });
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
+    if (error.code === "INVALID_OBJECTIVE") {
+      return res.status(400).json({ error: error.message });
+    }
+    // The code tells the client to show the duplicate popup.
+    if (error.code === "DUPLICATE_QUESTION") {
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
+    if (error.code === "INVALID_QUESTION") {
+      return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: "Failed to update question" });
   }
@@ -447,6 +574,13 @@ const deleteQuestionHandler = async (req, res) => {
 
     const courseId = await getQuestionCourseId(questionId);
 
+    // A question that no longer exists has no course to check access against,
+    // so say so instead of reporting it as an access failure. Clients treat
+    // 404 as "already deleted" (e.g. removed from the Question Bank tab first).
+    if (!courseId) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
@@ -484,17 +618,20 @@ const exportQuestionsHandler = async (req, res) => {
     const { course, summary, questionIds, quizName, quizDescription, quizMeta } = req.body;
     const format = req.query.format || 'qti';
 
+    // Exports are for the course's staff, whichever way the questions arrive
+    // (and a Canvas export of calculation questions is real work per question).
+    if (!course) {
+      return res.status(400).json({ error: "Course ID is required to export" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, course))) {
+      return res.status(403).json({ error: "User is not in course" });
+    }
+
     // Two entry points: quiz export sends full question objects in `questions`;
     // individual export from the bank sends `questionIds`, and we fetch the full,
     // current docs from the database (the bank list carries only a slim shape).
     let questions = req.body.questions;
     if ((!questions || questions.length === 0) && Array.isArray(questionIds) && questionIds.length > 0) {
-      if (!course) {
-        return res.status(400).json({ error: "Course ID is required to export by question ID" });
-      }
-      if (!(await hasStaffAccessInCourse(req.user, course))) {
-        return res.status(403).json({ error: "User is not in course" });
-      }
       const allQuestions = await getQuestions(course);
       const wanted = new Set(questionIds.map((id) => String(id)));
       questions = (allQuestions || []).filter((q) => wanted.has(String(q._id)));
@@ -539,23 +676,29 @@ const exportQuestionsHandler = async (req, res) => {
         break;
       case 'h5p': {
         const h5pQuestions = filterH5PExportableQuestions(questions);
+        const leftOut = questions.flatMap((question, index) =>
+          (h5pQuestions.includes(question) ? [] : [{ index, reason: H5P_LEFT_OUT_REASON }]));
         if (h5pQuestions.length === 0) {
           return res.status(400).json({
-            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use CSV or JSON instead."
+            error: "This quiz only contains calculation questions, which have no H5P equivalent. Use Canvas (QTI), CSV or JSON instead.",
+            leftOut: leftOutSummary(leftOut),
           });
         }
+        setLeftOutHeader(res, leftOut);
         return await createH5PZipExport(res, course, h5pQuestions, quizName);
       }
       case 'qti':
       default: {
         // Canvas requires QTI in ZIP format
-        const qtiQuestions = filterQTIExportableQuestions(questions);
-        if (qtiQuestions.length === 0) {
+        const { items, leftOut } = prepareQTIQuestions(questions);
+        if (items.length === 0) {
           return res.status(400).json({
-            error: "This quiz only contains calculation questions, which are not yet supported in Canvas (QTI) export. Use CSV or JSON instead."
+            error: "None of these questions can be exported to Canvas (QTI). Use CSV or JSON instead.",
+            leftOut: leftOutSummary(leftOut),
           });
         }
-        return await createQTIZipExport(res, course, qtiQuestions, quizName, quizDescription);
+        setLeftOutHeader(res, leftOut);
+        return await createQTIZipExport(res, course, items, quizName, quizDescription);
       }
     }
 
@@ -576,7 +719,10 @@ const exportQuestionsHandler = async (req, res) => {
 // five-option question is never truncated.
 function createCSVExport(course, questions) {
   const optionColumnCount = questions.reduce((max, q) => {
-    if (normalizeQuestionType(q) !== QUESTION_TYPES.MULTIPLE_CHOICE) return max;
+    const type = normalizeQuestionType(q);
+    if (type !== QUESTION_TYPES.MULTIPLE_CHOICE && type !== QUESTION_TYPES.MULTIPLE_ANSWER) {
+      return max;
+    }
     return Math.max(max, getOptionKeys(q).length);
   }, 4);
   const optionColumns = MC_OPTION_KEYS.slice(0, optionColumnCount);
@@ -622,6 +768,12 @@ function createCSVExport(course, questions) {
       // correctAnswer may be a letter or a numeric index.
       const letter = correctAnswerKey(q.correctAnswer);
       row.correctAnswer = getOptionTextOrImageLabel(q, letter) || letter;
+    } else if (type === QUESTION_TYPES.MULTIPLE_ANSWER) {
+      row.options = optionColumns.map((key) => getOptionTextOrImageLabel(q, key));
+      // Every correct option, in letter order.
+      row.correctAnswer = getCorrectAnswerKeys(q)
+        .map((key) => getOptionTextOrImageLabel(q, key) || key)
+        .join('; ');
     } else if (type === QUESTION_TYPES.FILL_IN_THE_BLANK) {
       const acceptable = getAcceptableAnswers(q);
       row.correctAnswer = String(q.correctAnswer || acceptable[0] || '');
@@ -697,7 +849,10 @@ function collectExportImageRefs(questions, { includeOptionImages = false } = {})
   };
   for (const q of questions) {
     stemImagesOf(q).forEach(add);
-    if (includeOptionImages && normalizeQuestionType(q) === QUESTION_TYPES.MULTIPLE_CHOICE) {
+    const type = normalizeQuestionType(q);
+    const hasOptions =
+      type === QUESTION_TYPES.MULTIPLE_CHOICE || type === QUESTION_TYPES.MULTIPLE_ANSWER;
+    if (includeOptionImages && hasOptions) {
       getOptionKeys(q).forEach((key) => add(getOptionImage(q, key)));
     }
   }
@@ -806,7 +961,8 @@ async function createH5PZipExport(res, course, questions, quizName) {
 /**
  * Create QTI export as ZIP file (Canvas requires ZIP format with specific structure)
  */
-async function createQTIZipExport(res, course, questions, quizName, quizDescription) {
+async function createQTIZipExport(res, course, items, quizName, quizDescription) {
+  const questions = items.map((item) => item.question);
   const timestamp = Date.now();
   const filename = `questions-${course}-${timestamp}.zip`;
 
@@ -841,7 +997,7 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
   const title = quizName || course || 'Quiz';
 
   // Generate QTI XML (Canvas format)
-  const qtiXml = createQTIExport(title, questions, assessmentId, imageMap);
+  const qtiXml = createQTIExport(title, items, assessmentId, imageMap);
 
   // Create manifest (Canvas Common Cartridge format)
   const { manifest, metaId } = createIMSManifest(course, assessmentId, timestamp, imageFiles);
@@ -870,9 +1026,8 @@ async function createQTIZipExport(res, course, questions, quizName, quizDescript
  */
 function createAssessmentMeta(quizName, quizDescription, assessmentId, metaId, questionCount) {
   const safeQuizName = escapeXml(quizName || 'Quiz');
-  const safeDescription = escapeXml(quizDescription || '');
-  // Canvas expects description to be wrapped in <p> tags if it contains HTML
-  const descriptionXml = safeDescription ? `&lt;p&gt;${safeDescription}&lt;/p&gt;` : '';
+  // The description is HTML in Canvas and plain text in GRASP.
+  const descriptionXml = escapeHtmlForQTI(quizDescription);
   const assignmentId = generateCanvasId('g');
   // Canvas sets points_possible to the number of questions (1 point per question)
   const totalPoints = questionCount || 1;
@@ -1029,9 +1184,7 @@ function buildHtmlWithImages(text, imageRefs, imageMap) {
     .filter((x) => x.entry);
   if (bundled.length === 0) return escapeHtmlForQTI(text);
 
-  const textHtml = String(text || '').trim()
-    ? `<p>${escapeXml(String(text).trim())}</p>`
-    : '';
+  const textHtml = plainTextToHtml(text);
   const imgsHtml = bundled
     .map(({ ref, entry }) => {
       // Instructor caption doubles as alt text and a visible caption line.
@@ -1044,8 +1197,9 @@ function buildHtmlWithImages(text, imageRefs, imageMap) {
   return escapeXml(html);
 }
 
-function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map()) {
-  const questions = filterQTIExportableQuestions(allQuestions);
+// `items` is prepareQTIQuestions(questions).items: the questions to write, each
+// calculation question with the Canvas content the left-out report was made from.
+function createQTIExport(course, items, assessmentId, imageMap = new Map()) {
   // Sanitize course name for title (Canvas is sensitive to special characters)
   const assessmentTitle = escapeXml(course || 'Quiz');
 
@@ -1060,8 +1214,8 @@ function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map(
     </qtimetadata>
     <section ident="root_section">`;
 
-  questions.forEach((q, index) => {
-    qti += createQTIItem(q, index, imageMap);
+  items.forEach(({ question, calculation }, index) => {
+    qti += createQTIItem(question, index, imageMap, calculation);
   });
 
   qti += `
@@ -1072,9 +1226,17 @@ function createQTIExport(course, allQuestions, assessmentId, imageMap = new Map(
   return qti;
 }
 
-// Dispatch a single question to the appropriate Canvas QTI item builder.
-function createQTIItem(q, index, imageMap) {
+// Dispatch a single question to the appropriate Canvas QTI item builder. A
+// calculation question's Canvas content is worked out here unless the caller
+// already did (prepareQTIQuestions); one Canvas can't represent writes nothing.
+function createQTIItem(q, index, imageMap, calculation) {
   const type = normalizeQuestionType(q);
+  if (type === QUESTION_TYPES.CALCULATION) {
+    const canvas = calculation || toCanvasCalculation(q);
+    if (canvas.skip) return '';
+    const html = buildHtmlWithImages(canvas.stem.trim() ? canvas.stem : `Question ${index + 1}`, stemImagesOf(q), imageMap);
+    return canvas.type === 'numerical_question' ? buildNumericalItem(canvas, html) : buildCalculatedItem(canvas, html);
+  }
   let questionText = getQuestionText(q);
   if (!questionText.trim()) {
     questionText = `Question ${index + 1}`;
@@ -1088,10 +1250,8 @@ function createQTIItem(q, index, imageMap) {
       return buildShortAnswerItem(q, questionHtml);
     case QUESTION_TYPES.OPEN_ENDED:
       return buildEssayItem(q, questionHtml);
-    case QUESTION_TYPES.CALCULATION:
-      // No QTI representation shipped; filtered out upstream. Guard against
-      // direct calls so a calc question can never masquerade as another type.
-      return '';
+    case QUESTION_TYPES.MULTIPLE_ANSWER:
+      return buildMultipleAnswersItem(q, index, questionHtml, imageMap);
     case QUESTION_TYPES.MULTIPLE_CHOICE:
     default:
       return buildMultipleChoiceItem(q, index, questionHtml, imageMap);
@@ -1138,15 +1298,60 @@ function buildOptionMattext(q, key, imageMap) {
   return `<mattext texttype="text/plain">${escapeXml(label)}</mattext>`;
 }
 
+// Canvas uses numeric string IDs (4+ digits) for answer choices. They must
+// differ within an item, or the scoring condition would name two choices.
+function generateAnswerIds(count) {
+  const ids = [];
+  while (ids.length < count) {
+    let id = Math.floor(Math.random() * 9000) + 1000;
+    while (ids.includes(String(id))) id += 1;
+    ids.push(String(id));
+  }
+  return ids;
+}
+
 function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
+  return buildChoiceItem(q, index, questionHtml, imageMap, {
+    qtiType: 'multiple_choice_question',
+    cardinality: 'Single',
+    scoringCondition: (responseId, answerIds) => `
+              <varequal respident="${responseId}">${answerIds[getCorrectAnswerIndex(q)]}</varequal>`,
+  });
+}
+
+// Canvas's own Multiple Answers shape (lib/cc/qti/qti_items.rb in Canvas): one
+// scoring condition that needs every correct choice and none of the others.
+// Canvas grades the question with partial credit; GRASP grades the exact set.
+function buildMultipleAnswersItem(q, index, questionHtml, imageMap) {
+  const correctKeys = getCorrectAnswerKeys(q);
+  return buildChoiceItem(q, index, questionHtml, imageMap, {
+    qtiType: 'multiple_answers_question',
+    cardinality: 'Multiple',
+    scoringCondition: (responseId, answerIds, keys) => `
+              <and>${keys
+                .map((key, i) =>
+                  correctKeys.includes(key)
+                    ? `
+                <varequal respident="${responseId}">${answerIds[i]}</varequal>`
+                    : `
+                <not>
+                  <varequal respident="${responseId}">${answerIds[i]}</varequal>
+                </not>`
+                )
+                .join('')}
+              </and>`,
+  });
+}
+
+// An item whose answer is picked from the question's options (two to eight):
+// `cardinality` says whether one or several can be picked, and
+// `scoringCondition(responseId, answerIds, keys)` is the condition that earns
+// the full score.
+function buildChoiceItem(q, index, questionHtml, imageMap, { qtiType, cardinality, scoringCondition }) {
   // Every option the question has (two to eight).
-  const options = getOptionKeys(q).map((key) => buildOptionMattext(q, key, imageMap));
-
-  // Canvas uses numeric string IDs (4+ digits) for answer choices.
-  const generateNumericId = () => String(Math.floor(Math.random() * 9000) + 1000);
-  const answerIds = options.map(() => generateNumericId());
-
-  const correctAnswerId = answerIds[getCorrectAnswerIndex(q)];
+  const keys = getOptionKeys(q);
+  const options = keys.map((key) => buildOptionMattext(q, key, imageMap));
+  const answerIds = generateAnswerIds(options.length);
 
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
@@ -1163,6 +1368,36 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
     )
     .join('');
 
+  // Per-option feedback, written the way Canvas exports answer comments: a
+  // condition that only shows the comment when that choice is picked, ahead of
+  // the scoring condition, and the comment itself as an <itemfeedback>.
+  const feedback = keys
+    .map((key, i) => ({ id: answerIds[i], text: getOptionFeedback(q, key).trim() }))
+    .filter((entry) => entry.text);
+  const feedbackConditions = feedback
+    .map(
+      ({ id }) => `
+          <respcondition continue="Yes">
+            <conditionvar>
+              <varequal respident="${responseId}">${id}</varequal>
+            </conditionvar>
+            <displayfeedback feedbacktype="Response" linkrefid="${id}_fb"/>
+          </respcondition>`
+    )
+    .join('');
+  const feedbackBlocks = feedback
+    .map(
+      ({ id, text }) => `
+        <itemfeedback ident="${id}_fb">
+          <flow_mat>
+            <material>
+              <mattext texttype="text/plain">${escapeXml(text)}</mattext>
+            </material>
+          </flow_mat>
+        </itemfeedback>`
+    )
+    .join('');
+
   const extraFields = `
             <qtimetadatafield>
               <fieldlabel>original_answer_ids</fieldlabel>
@@ -1170,12 +1405,12 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
             </qtimetadatafield>`;
 
   return `
-      <item ident="${questionId}" title="Question">${qtiItemMetadata('multiple_choice_question', assessmentQuestionId, extraFields)}
+      <item ident="${questionId}" title="Question">${qtiItemMetadata(qtiType, assessmentQuestionId, extraFields)}
         <presentation>
           <material>
             <mattext texttype="text/html">${questionHtml}</mattext>
           </material>
-          <response_lid ident="${responseId}" rcardinality="Single">
+          <response_lid ident="${responseId}" rcardinality="${cardinality}">
             <render_choice>${choices}
             </render_choice>
           </response_lid>
@@ -1183,14 +1418,13 @@ function buildMultipleChoiceItem(q, index, questionHtml, imageMap) {
         <resprocessing>
           <outcomes>
             <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
-          </outcomes>
+          </outcomes>${feedbackConditions}
           <respcondition continue="No">
-            <conditionvar>
-              <varequal respident="${responseId}">${correctAnswerId}</varequal>
+            <conditionvar>${scoringCondition(responseId, answerIds, keys)}
             </conditionvar>
             <setvar action="Set" varname="SCORE">100</setvar>
           </respcondition>
-        </resprocessing>
+        </resprocessing>${feedbackBlocks}
       </item>`;
 }
 
@@ -1234,8 +1468,150 @@ ${conditions}
       </item>`;
 }
 
+// Numeric ids for a Canvas item's answers (value sets, a numerical answer),
+// distinct within the item.
+function generateNumericIds(count) {
+  const first = Math.floor(Math.random() * 9000) + 1000;
+  return Array.from({ length: count }, (_, i) => String(first + i));
+}
+
+// Calculation question with variables -> Canvas formula question, from
+// toCanvasCalculation. Canvas scores it from <itemproc_extension>, not from
+// the <other/> conditions, which only mirror Canvas's own export.
+function buildCalculatedItem(calculation, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const setIds = generateNumericIds(calculation.valueSets.length);
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${setIds.join(',')}</fieldentry>
+            </qtimetadatafield>`;
+  const variables = calculation.variables
+    .map(
+      (variable) => `
+              <var name="${escapeXml(variable.name)}" scale="${variable.scale}">
+                <min>${escapeXml(variable.min)}</min>
+                <max>${escapeXml(variable.max)}</max>
+              </var>`
+    )
+    .join('');
+  const valueSets = calculation.valueSets
+    .map((set, i) => {
+      const values = Object.entries(set.values)
+        .map(([name, value]) => `
+                <var name="${escapeXml(name)}">${escapeXml(value)}</var>`)
+        .join('');
+      return `
+              <var_set ident="${setIds[i]}">${values}
+                <answer>${escapeXml(set.answer)}</answer>
+              </var_set>`;
+    })
+    .join('');
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('calculated_question', assessmentQuestionId, extraFields)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition title="correct">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">100</setvar>
+          </respcondition>
+          <respcondition title="incorrect">
+            <conditionvar>
+              <not>
+                <other/>
+              </not>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">0</setvar>
+          </respcondition>
+        </resprocessing>
+        <itemproc_extension>
+          <calculated>
+            <answer_tolerance>${escapeXml(calculation.tolerance)}</answer_tolerance>
+            <formulas decimal_places="${calculation.decimalPlaces}">
+              <formula>${escapeXml(calculation.formula)}</formula>
+            </formulas>
+            <vars>${variables}
+            </vars>
+            <var_sets>${valueSets}
+            </var_sets>
+          </calculated>
+        </itemproc_extension>
+      </item>`;
+}
+
+// Calculation question with a fixed answer -> Canvas numerical question, from
+// toCanvasCalculation: an exact answer with a margin (Canvas's <or> of the
+// value and its bounds), or for a range tolerance just the bounds.
+function buildNumericalItem(calculation, questionHtml) {
+  const questionId = generateCanvasId('g');
+  const assessmentQuestionId = generateCanvasId('g');
+  const [answerId] = generateNumericIds(1);
+  const { exact, min, max } = calculation.answer;
+
+  const test = exact === undefined
+    ? `
+              <vargte respident="response1">${escapeXml(min)}</vargte>
+              <varlte respident="response1">${escapeXml(max)}</varlte>`
+    : `
+              <or>
+                <varequal respident="response1">${escapeXml(exact)}</varequal>
+                <and>
+                  <vargte respident="response1">${escapeXml(min)}</vargte>
+                  <varlte respident="response1">${escapeXml(max)}</varlte>
+                </and>
+              </or>`;
+
+  const extraFields = `
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${answerId}</fieldentry>
+            </qtimetadatafield>`;
+
+  return `
+      <item ident="${questionId}" title="Question">${qtiItemMetadata('numerical_question', assessmentQuestionId, extraFields)}
+        <presentation>
+          <material>
+            <mattext texttype="text/html">${questionHtml}</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>${test}
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+}
+
 // Open-ended -> Canvas "essay" question (manually graded). Sample answer and
-// grading criteria are attached as general feedback so instructors keep them.
+// grading criteria are attached as general feedback so instructors keep them,
+// line breaks included, so numbered criteria stay one per line.
 function buildEssayItem(q, questionHtml) {
   const questionId = generateCanvasId('g');
   const assessmentQuestionId = generateCanvasId('g');
@@ -1244,8 +1620,8 @@ function buildEssayItem(q, questionHtml) {
   const sample = String(q.openEndedSampleAnswer || '').trim();
   const criteria = String(q.openEndedGradingCriteria || '').trim();
   const feedbackParts = [];
-  if (sample) feedbackParts.push(`Sample answer: ${sample}`);
-  if (criteria) feedbackParts.push(`Grading criteria: ${criteria}`);
+  if (sample) feedbackParts.push(labelText('Sample answer', sample));
+  if (criteria) feedbackParts.push(labelText('Grading criteria', criteria));
   const hasFeedback = feedbackParts.length > 0;
 
   const feedbackDisplay = hasFeedback
@@ -1257,7 +1633,7 @@ function buildEssayItem(q, questionHtml) {
         <itemfeedback ident="general_fb">
           <flow_mat>
             <material>
-              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'))}</mattext>
+              <mattext texttype="text/html">${escapeHtmlForQTI(feedbackParts.join('\n\n'), { lineBreaks: true })}</mattext>
             </material>
           </flow_mat>
         </itemfeedback>`
@@ -1292,6 +1668,7 @@ module.exports = {
   getQuestionsHandler,
   getQuestionByIdHandler,
   saveQuestionHandler,
+  existingQuestionsHandler,
   updateQuestionHandler,
   updateQuestionStatusHandler,
   deleteQuestionHandler,
@@ -1300,6 +1677,9 @@ module.exports = {
   createCSVExport,
   createQTIExport,
   createQTIItem,
+  createAssessmentMeta,
   buildObjectivesSummary,
   normalizeQuizMeta,
+  prepareQTIQuestions,
+  leftOutSummary,
 };

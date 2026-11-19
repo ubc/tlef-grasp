@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { QUESTION_TYPES } from "../../lib/constants";
 import { escapeHtml } from "../../lib/format";
 import RichText from "../../components/RichText";
-import { canRetry, isSolved, latestResult } from "./answerState";
-import { optionImageOf, optionIndexOf, optionKeysOf, optionTextOf } from "../../lib/mcOptions";
+import { answerSetKey, canRetry, isSolved, latestResult } from "./answerState";
+import {
+  optionImageOf,
+  optionIndexOf,
+  optionKeysOf,
+  optionTextOf,
+  toggleAnswerKey,
+} from "../../lib/mcOptions";
 import { ImageZoomOverlay } from "../../components/QuestionImage";
 import { questionImageSrc } from "../../lib/questionImages";
 
@@ -205,6 +211,204 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
   );
 }
 
+// "A", "A and B", "A, B and C".
+function listLetters(keys) {
+  if (keys.length <= 1) return keys.join("");
+  return `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+}
+
+// Multiple answer: the student ticks every option that applies, then checks.
+// Options a check found to be wrong stay marked and can't be ticked again;
+// nothing marks a correct option until the student finds the whole set (issue
+// #128). Remount per question (key) so the ticks start from that question's
+// last check.
+export function MaOptions({ question, feedback, submitting, onCheck }) {
+  const questionId = question.id;
+  const entry = feedback[questionId];
+  const solved = isSolved(entry);
+  const wrongKeys = entry?.wrongKeys || [];
+  const foundKeys = solved ? latestResult(entry).selectedKeys || [] : [];
+  const [ticked, setTicked] = useState(() => latestResult(entry)?.selectedKeys || []);
+  // The option image open in the zoom overlay, if any.
+  const [zoomedImage, setZoomedImage] = useState(null);
+
+  // A tick on an option since found wrong doesn't count.
+  const current = ticked.filter((key) => !wrongKeys.includes(key));
+  const alreadyChecked = (entry?.triedSets || []).includes(answerSetKey(current));
+  const locked = solved || (!!entry && !canRetry(entry));
+  const canCheck = !locked && !submitting && current.length > 0 && !alreadyChecked;
+  const hintId = `ma-hint-${questionId}`;
+
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-3 text-sm font-semibold text-ink">Select all that apply.</legend>
+      {optionKeysOf(question.options).map((key) => {
+        const optionText = optionTextOf(question.options[key]);
+        // An option may be an image alone (issue #146).
+        const image = optionImageOf(question.options[key]);
+        if (!optionText && !image) return null;
+
+        const foundWrong = wrongKeys.includes(key);
+        const found = foundKeys.includes(key);
+        const checked = solved ? found : current.includes(key);
+        const disabled = locked || foundWrong || submitting;
+        let stateClass = "border-gray-200 hover:border-primary/50";
+        if (found) {
+          stateClass = "border-success bg-success/5";
+        } else if (foundWrong) {
+          stateClass = "border-danger bg-danger/5";
+        } else if (solved) {
+          stateClass = "border-gray-200 opacity-70";
+        } else if (checked) {
+          stateClass = "border-primary bg-primary/5";
+        }
+        const inputId = `ma-option-${questionId}-${key}`;
+
+        // The whole option, image included, is the checkbox's label. Zooming
+        // has its own button beside it, so it never ticks the option.
+        return (
+          <div key={key} className="relative">
+            <label
+              htmlFor={inputId}
+              className={`flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors ${
+                disabled ? "cursor-default" : "cursor-pointer"
+              } ${stateClass} ${image ? "pr-14" : ""}`}
+            >
+              <input
+                id={inputId}
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => setTicked(toggleAnswerKey(current, key))}
+                className="mt-2 h-4 w-4 shrink-0 accent-primary"
+              />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-page font-bold text-ink">
+                {key}
+              </span>
+              <div className="min-w-0 flex-1 pt-1">
+                {optionText && (
+                  <RichText text={escapeHtml(optionText)} className="whitespace-pre-line text-ink" />
+                )}
+                {image && (
+                  // The caption is the image's alt text and part of the
+                  // option's name; it is not shown, as it could name the answer.
+                  <img
+                    src={questionImageSrc(image)}
+                    alt={image.caption || ""}
+                    loading="lazy"
+                    className={`block max-h-56 max-w-full rounded-lg border border-gray-200 bg-white object-contain ${optionText ? "mt-2" : ""}`}
+                  />
+                )}
+              </div>
+              {found && <span className="sr-only"> (correct)</span>}
+              {foundWrong && <span className="sr-only"> (incorrect)</span>}
+            </label>
+            {image && (
+              <button
+                type="button"
+                onClick={() => setZoomedImage(image)}
+                aria-label={`Enlarge the image in option ${key}`}
+                title="Enlarge image"
+                className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-muted shadow-sm transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                <i className="fas fa-search-plus" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {!locked && (
+        <div>
+          <button
+            type="button"
+            disabled={!canCheck}
+            aria-describedby={alreadyChecked && current.length > 0 ? hintId : undefined}
+            onClick={() => onCheck(questionId, current)}
+            className="rounded-lg bg-primary px-5 py-2 font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+          >
+            {submitting ? "Checking..." : entry ? "Check again" : "Check answer"}
+          </button>
+          {alreadyChecked && current.length > 0 && (
+            <p id={hintId} className="mt-2 text-sm text-muted">
+              You already checked these options. Change your selection to try again.
+            </p>
+          )}
+        </div>
+      )}
+      {zoomedImage && (
+        <ImageZoomOverlay
+          image={zoomedImage}
+          showCaption={false}
+          onClose={() => setZoomedImage(null)}
+        />
+      )}
+    </fieldset>
+  );
+}
+
+// What a multiple-answer check told the student. A wrong one names the wrong
+// options they ticked, with each one's feedback, and says when a correct
+// option was left unticked, but never which. Once found, the correct options
+// are marked on the options themselves.
+function MultipleAnswerFeedback({ feedback, practice }) {
+  const latest = latestResult(feedback);
+  const notes = latest.optionFeedback || [];
+  const noteList = notes.length > 0 && (
+    <ul className="mt-2 space-y-1 text-sm text-gray-600">
+      {notes.map((note) => (
+        <li key={note.key} className="flex items-start gap-2">
+          <span className="font-semibold text-ink">{note.key}:</span>
+          <RichText text={escapeHtml(note.feedback)} className="whitespace-pre-line" />
+        </li>
+      ))}
+    </ul>
+  );
+
+  if (isSolved(feedback)) {
+    return (
+      <div className="mt-5 rounded-xl border border-success/40 bg-success/5 p-5">
+        <div className="font-semibold text-success">
+          <i className="fas fa-check-circle mr-2" />
+          Correct!
+        </div>
+        {noteList}
+        {feedback.retry && !practice && (
+          <p className="mt-2 text-sm text-gray-600">
+            Your grade uses your first answer, so this question still counts as missed.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const wrongTicks = latest.wrongTicks || [];
+  return (
+    <div className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-5">
+      <div className="font-semibold text-danger">
+        <i className="fas fa-times-circle mr-2" />
+        Incorrect.
+      </div>
+      {wrongTicks.length > 0 && (
+        <p className="mt-2 text-sm text-gray-600">
+          {wrongTicks.length === 1
+            ? `Option ${wrongTicks[0]}, which you ticked, is not correct.`
+            : `Options ${listLetters(wrongTicks)}, which you ticked, are not correct.`}
+        </p>
+      )}
+      {noteList}
+      {latest.missedCorrect && (
+        <p className="mt-2 text-sm text-gray-600">You missed at least one correct option.</p>
+      )}
+      {canRetry(feedback) && (
+        <p className="mt-2 text-sm text-gray-600">
+          Try again until you find the right answer.
+          {!practice && " Only your first answer counts toward your grade."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Accept/Deny control for an AI grade (issue #76). Shown only for AI-graded
 // answers; the default is Accept, so a missing studentGradeReview reads as
 // accepted. Denying flags the attempt for the instructor to review.
@@ -374,6 +578,10 @@ export function FeedbackPanel({ feedback, questionId, onGradeReview, practice = 
         )}
       </div>
     );
+  }
+
+  if (feedback.questionType === QUESTION_TYPES.MULTIPLE_ANSWER) {
+    return <MultipleAnswerFeedback feedback={feedback} practice={practice} />;
   }
 
   // Multiple-choice, fill-in-the-blank and calculation: the panel describes the

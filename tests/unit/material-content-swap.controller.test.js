@@ -1,19 +1,20 @@
 /**
  * H3: editing or refetching a material must not be able to destroy it.
  *
- * saveMaterial inserts and sourceId is uniquely indexed, so a content change is a
- * delete-then-reinsert. That made the sequence destructive: the Mongo row was
- * deleted, then addDocumentToRAG ran, and if it threw — Qdrant restarting, the
- * embedding provider rate-limiting, a network blip — the request 500'd with the
- * row already gone and never re-inserted. The extracted text exists nowhere else,
- * so an instructor fixing a typo could permanently lose the material, its
- * outline, and every objective link pointing at it.
+ * A content change used to be a delete-then-reinsert. If the vector write in
+ * between threw — Qdrant restarting, the embedding provider rate-limiting, a
+ * network blip — the row was already gone, and the extracted text exists nowhere
+ * else. Even when it succeeded, the reinsert gave the material a new _id, so
+ * every objective link (stored by _id) was left pointing at nothing.
+ *
+ * The row is now rewritten in place, last, so it is never absent and keeps its
+ * _id; only the vector chunks need putting back when a step fails.
  */
 
 jest.mock('../../src/services/material', () => ({
   saveMaterial: jest.fn(),
   deleteMaterial: jest.fn(),
-  restoreMaterialDocument: jest.fn(),
+  replaceMaterial: jest.fn(),
   getMaterialBySourceId: jest.fn(),
   getMaterialCourseId: jest.fn(),
   getCourseMaterials: jest.fn(),
@@ -92,9 +93,10 @@ beforeEach(() => {
   materialService.getMaterialBySourceId.mockResolvedValue({ ...STORED });
   ragService.deleteDocumentFromRAG.mockResolvedValue(undefined);
   ragService.addDocumentToRAG.mockResolvedValue(['chunk-1']);
-  materialService.deleteMaterial.mockResolvedValue(undefined);
-  materialService.saveMaterial.mockResolvedValue(undefined);
-  materialService.restoreMaterialDocument.mockResolvedValue(undefined);
+  materialService.deleteMaterial.mockReset();
+  materialService.saveMaterial.mockReset();
+  materialService.replaceMaterial.mockReset().mockResolvedValue(undefined);
+  materialService.clearMaterialOutline.mockReset();
 });
 
 const textEditRequest = () => ({
@@ -110,18 +112,18 @@ const textEditRequest = () => ({
 });
 
 describe('updateMaterialHandler content swap', () => {
-  it('replaces the material when every step succeeds, without restoring', async () => {
+  it('rewrites the stored material in place when every step succeeds', async () => {
     const res = makeRes();
 
     await updateMaterialHandler(textEditRequest(), res);
 
-    expect(materialService.deleteMaterial).toHaveBeenCalledWith('source-1');
-    expect(materialService.saveMaterial).toHaveBeenCalledWith(
-      'source-1',
-      'course-1',
+    // In place, against the stored row: it keeps the _id objectives link to.
+    expect(materialService.replaceMaterial).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'mongo-id-1', sourceId: 'source-1' }),
       expect.objectContaining({ fileContent: 'Revised lecture text.' })
     );
-    expect(materialService.restoreMaterialDocument).not.toHaveBeenCalled();
+    expect(materialService.deleteMaterial).not.toHaveBeenCalled();
+    expect(materialService.saveMaterial).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
@@ -133,46 +135,42 @@ describe('updateMaterialHandler content swap', () => {
 
     await updateMaterialHandler(textEditRequest(), makeRes());
 
-    expect(materialService.saveMaterial).toHaveBeenCalledWith(
-      'source-1', 'course-1', expect.objectContaining({ lms })
+    expect(materialService.replaceMaterial).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ lms })
     );
   });
 
   it('adds no lms field when editing a material that was not imported', async () => {
     await updateMaterialHandler(textEditRequest(), makeRes());
 
-    expect(materialService.saveMaterial.mock.calls.at(-1)[2]).not.toHaveProperty('lms');
+    expect(materialService.replaceMaterial.mock.calls.at(-1)[1]).not.toHaveProperty('lms');
   });
 
-  it('restores the original document when the vector write fails', async () => {
+  it('leaves the stored document untouched when the vector write fails', async () => {
     ragService.addDocumentToRAG.mockRejectedValueOnce(new Error('Qdrant unavailable'));
     const res = makeRes();
 
     await updateMaterialHandler(textEditRequest(), res);
 
-    // The row was deleted, so it must be put back byte-for-byte — _id, createdAt
-    // and the outline included, not just the text.
-    expect(materialService.restoreMaterialDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        _id: 'mongo-id-1',
-        sourceId: 'source-1',
-        fileContent: 'The original extracted lecture text.',
-        createdAt: STORED.createdAt,
-        outline: STORED.outline,
-      })
-    );
+    // The row is only rewritten after the chunks are in, so it is never absent.
+    expect(materialService.replaceMaterial).not.toHaveBeenCalled();
+    expect(materialService.deleteMaterial).not.toHaveBeenCalled();
     // And the edit is reported as failed rather than silently swallowed.
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
-  it('restores the original document when the re-insert fails', async () => {
-    materialService.saveMaterial.mockRejectedValueOnce(new Error('E11000 duplicate key'));
+  it('puts the original chunks back when the database write fails', async () => {
+    materialService.replaceMaterial.mockRejectedValueOnce(new Error('Mongo unavailable'));
     const res = makeRes();
 
     await updateMaterialHandler(textEditRequest(), res);
 
-    expect(materialService.restoreMaterialDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ fileContent: 'The original extracted lecture text.' })
+    // The stored text is still the original, so the chunks must match it again.
+    expect(ragService.deleteDocumentFromRAG).toHaveBeenLastCalledWith('source-1', 'course-1');
+    expect(ragService.addDocumentToRAG).toHaveBeenLastCalledWith(
+      'The original extracted lecture text.',
+      expect.objectContaining({ sourceId: 'source-1' }),
+      'course-1'
     );
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -193,8 +191,7 @@ describe('updateMaterialHandler content swap', () => {
 
     await updateMaterialHandler(textEditRequest(), res);
 
-    expect(materialService.saveMaterial).toHaveBeenCalled();
-    expect(materialService.restoreMaterialDocument).not.toHaveBeenCalled();
+    expect(materialService.replaceMaterial).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
@@ -213,13 +210,13 @@ describe('updateMaterialHandler content swap', () => {
     );
   });
 
-  it('still restores the document when the rollback chunk re-add also fails', async () => {
+  it('still reports the original failure when the rollback chunk re-add also fails', async () => {
     ragService.addDocumentToRAG.mockRejectedValue(new Error('Qdrant unavailable'));
     const res = makeRes();
 
     await updateMaterialHandler(textEditRequest(), res);
 
-    expect(materialService.restoreMaterialDocument).toHaveBeenCalled();
+    expect(materialService.replaceMaterial).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
@@ -245,7 +242,7 @@ describe('updateMaterialHandler content swap', () => {
       res
     );
 
-    expect(materialService.deleteMaterial).not.toHaveBeenCalled();
+    expect(materialService.replaceMaterial).not.toHaveBeenCalled();
     expect(ragService.addDocumentToRAG).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
@@ -268,20 +265,21 @@ describe('refetchMaterialHandler content swap', () => {
 
     await refetchMaterialHandler(refetchRequest(), res);
 
-    expect(materialService.saveMaterial).toHaveBeenCalled();
-    expect(materialService.restoreMaterialDocument).not.toHaveBeenCalled();
+    expect(materialService.replaceMaterial).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'mongo-id-1' }),
+      expect.objectContaining({ fileType: 'link', fileContent: 'https://example.com/lecture' })
+    );
+    expect(materialService.deleteMaterial).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
-  it('restores the original document when the vector write fails', async () => {
+  it('leaves the stored document untouched when the vector write fails', async () => {
     ragService.addDocumentToRAG.mockRejectedValueOnce(new Error('Qdrant unavailable'));
     const res = makeRes();
 
     await refetchMaterialHandler(refetchRequest(), res);
 
-    expect(materialService.restoreMaterialDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceId: 'source-1', _id: 'mongo-id-1' })
-    );
+    expect(materialService.replaceMaterial).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });

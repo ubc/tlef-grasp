@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { MongoClient } = require('mongodb');
 const { BIO_PROF2_AUTH_FILE, BIO_STUDENT_AUTH_FILE } = require('./auth');
-const { SEED } = require('./seed');
+const { SEED, getUserByPuid } = require('./seed');
 const { getQuizCard, selectSeededCourse, completeSeededQuiz } = require('./helpers');
 
 const IDP_ENABLED = process.env.E2E_SAML === '1';
@@ -54,7 +54,7 @@ async function withSeededDb(fn) {
 // returns the quiz's existing schedule rows so they can be put back afterwards.
 async function addSecondSection() {
   return withSeededDb(async (db, { course, quiz }) => {
-    const prof = await db.collection('grasp_user').findOne({ puid: SEED.BIO_PROF2_PUID });
+    const prof = await getUserByPuid(db, SEED.BIO_PROF2_PUID);
     await db.collection('grasp_course_section').updateOne(
       { courseId: course._id, sectionId: SECOND_SECTION_ID },
       {
@@ -454,6 +454,86 @@ test.describe('Instructor seeded course management (authenticated)', () => {
       await expect(getQuizCard(page, quizName)).toBeVisible();
     } finally {
       await deleteImportedQuiz(quizName, [questionTitle]);
+    }
+  });
+
+  test('the quiz import objective picker matches its field width and highlights whole rows', async ({
+    page,
+  }) => {
+    const stamp = Date.now();
+    // Longer than the field is wide, so it has to wrap.
+    const longGranular =
+      '[[e2e-import]] ' +
+      'Relate the length of a learning objective to the width of the picker that lists it. '.repeat(4) +
+      stamp;
+    const importFile = {
+      quiz: { name: `[[e2e-import]] Picker Quiz ${stamp}`, timeLimitMinutes: 10 },
+      questions: [
+        {
+          title: `[[e2e-import]] Picker MC ${stamp}`,
+          stem: 'Select the best answer:',
+          questionType: 'multiple-choice',
+          options: {
+            A: { text: 'Correct choice', feedback: '' },
+            B: { text: 'Wrong', feedback: '' },
+          },
+          correctAnswer: 'A',
+          bloom: 'Understand',
+          granularObjectiveName: SEED.GRANULAR_NAME,
+          learningObjectiveName: SEED.OBJECTIVE_NAME,
+        },
+      ],
+    };
+
+    const course = await selectSeededCourse(page, { role: 'instructor' });
+    const created = await page.request.post('/api/objective', {
+      data: {
+        name: `[[e2e-import]] Picker objective ${stamp}`,
+        courseId: course.id,
+        granularObjectives: [{ text: longGranular }],
+      },
+    });
+    expect(created.ok(), `objective created (HTTP ${created.status()})`).toBe(true);
+    const objectiveId = String((await created.json()).objective._id);
+
+    try {
+      await page.goto('/quizzes');
+      await page.getByRole('button', { name: 'Create New Quiz' }).click();
+      await page.getByRole('button', { name: 'Import a Quiz' }).click();
+      await page.locator('input[type="file"]').setInputFiles({
+        name: `picker-${stamp}.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(importFile)),
+      });
+
+      const field = page.getByRole('button', { name: 'Learning objective for question 1' });
+      const list = page.getByRole('listbox');
+      const longOption = list.getByRole('option', { name: longGranular });
+
+      await page.setViewportSize({ width: 1920, height: 900 });
+      await field.click();
+      await expect(list).toBeVisible();
+
+      const fieldBox = await field.boundingBox();
+      const panelBox = await list.locator('xpath=..').boundingBox();
+      expect(
+        Math.abs(panelBox.width - fieldBox.width),
+        `dropdown width ${panelBox.width} vs field ${fieldBox.width}`
+      ).toBeLessThanOrEqual(1);
+
+      await longOption.hover();
+      const row = await longOption.evaluate((el) => ({
+        width: el.getBoundingClientRect().width,
+        listInnerWidth: el.closest('[role="listbox"]').clientWidth,
+        background: getComputedStyle(el).backgroundColor,
+      }));
+      expect(
+        Math.abs(row.width - row.listInnerWidth),
+        `hovered row ${row.width}px vs list ${row.listInnerWidth}px`
+      ).toBeLessThanOrEqual(1);
+      expect(row.background, 'the hovered row itself is highlighted').not.toBe('rgba(0, 0, 0, 0)');
+    } finally {
+      await page.request.delete(`/api/objective/${objectiveId}`);
     }
   });
 

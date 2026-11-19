@@ -11,6 +11,8 @@ import {
   optionRowsError,
   optionImageOf,
   normalizeMcOptionCount,
+  answerKeysOf,
+  toggleAnswerKey,
 } from '../../client/src/lib/mcOptions.js';
 
 // Issue #144: multiple-choice forms edit two to eight option rows and the
@@ -62,6 +64,33 @@ describe('adding and removing rows', () => {
   it('refuses to go below two rows', () => {
     const two = emptyOptionRows(2);
     expect(removeOptionRow(two, 0, 'A')).toEqual({ rows: two, correctAnswer: 'A' });
+  });
+
+  // Multiple answer: the list of correct letters follows its rows.
+  it('moves every correct letter of a multiple-answer question with its row', () => {
+    const { rows: next, correctAnswer } = removeOptionRow(rows, 1, ['A', 'C', 'D']);
+    expect(next.map((r) => [r.id, r.text])).toEqual([['A', 'a'], ['B', 'c'], ['C', 'd']]);
+    expect(correctAnswer).toEqual(['A', 'B', 'C']);
+  });
+
+  it('drops a removed row from the correct letters', () => {
+    expect(removeOptionRow(rows, 2, ['A', 'C']).correctAnswer).toEqual(['A']);
+    expect(removeOptionRow(rows, 0, ['A']).correctAnswer).toEqual([]);
+  });
+});
+
+describe('multiple-answer letters', () => {
+  it('reads the stored list, or a lone letter, in A to H order', () => {
+    expect(answerKeysOf(['c', 'A', 'C'])).toEqual(['A', 'C']);
+    expect(answerKeysOf('b')).toEqual(['B']);
+    expect(answerKeysOf(undefined)).toEqual([]);
+    expect(answerKeysOf(['Z', ''])).toEqual([]);
+  });
+
+  it('ticks and unticks a letter, keeping the order', () => {
+    expect(toggleAnswerKey(['C'], 'A')).toEqual(['A', 'C']);
+    expect(toggleAnswerKey(['A', 'C'], 'A')).toEqual(['C']);
+    expect(toggleAnswerKey([], 'H')).toEqual(['H']);
   });
 });
 

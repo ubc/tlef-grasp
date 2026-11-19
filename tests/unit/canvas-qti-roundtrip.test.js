@@ -2,21 +2,29 @@
  * Round trip (#140): GRASP's own Canvas (QTI) export, read back by the Canvas
  * quiz import. A quiz an instructor exported from GRASP to Canvas should come
  * back as the same questions: multiple choice with 2 to 8 options (shuffled
- * once, the correct answer following its option), option and stem images as
- * references into the zip, and fill-in-the-blank (exported as a Canvas short
- * answer) with its accepted answers.
+ * once, the correct answer following its option) and their feedback, text that
+ * looks like markup, option and stem images as
+ * references into the zip, multiple answer with every correct option,
+ * and fill-in-the-blank (exported as a Canvas short answer) with its accepted
+ * answers.
  *
  * The QTI comes from the real export code (createQTIExport); the manifest and
  * zip come from the Canvas fixture builders, laid out the way the export's
  * zip is (images under web_resources/grasp/). Math.random is replaced so the
  * export's random idents, and so the import's seeded shuffle, are repeatable.
+ *
+ * Calculation questions (#63) come back from their Canvas formula or numerical
+ * question. The import evaluates its reading of each formula at every exported
+ * value set and warns when an answer differs, so an empty warning list is the
+ * main check that the exported answers are right.
  */
 
-const { createQTIExport } = require('../../src/controllers/question');
+const { createQTIExport, prepareQTIQuestions } = require('../../src/controllers/question');
 const { readCanvasPackage } = require('../../src/utils/canvas-qti-package');
 const { parseCanvasQuiz } = require('../../src/utils/canvas-qti-parse');
 const { mapCanvasQuizzes } = require('../../src/utils/canvas-qti-map');
 const { MC_OPTION_KEYS } = require('../../src/utils/mc-options');
+const CalculationQuestion = require('../../src/models/questions/CalculationQuestion');
 const { buildManifest, buildExportZip } = require('../fixtures/canvas-qti/zip');
 const { metaXml } = require('../fixtures/canvas-qti/items');
 
@@ -63,7 +71,7 @@ async function exportThenImport(questions) {
 
   const entries = {
     'imsmanifest.xml': buildManifest({ quizzes: [{ ident: QUIZ }], files: [...images.values()].map((image) => image.zipPath) }),
-    [`${QUIZ}/${QUIZ}.xml`]: createQTIExport(QUIZ_TITLE, questions, QUIZ, imageMap),
+    [`${QUIZ}/${QUIZ}.xml`]: createQTIExport(QUIZ_TITLE, prepareQTIQuestions(questions).items, QUIZ, imageMap),
     // GRASP's export writes shuffle_answers true, as here.
     [`${QUIZ}/assessment_meta.xml`]: metaXml({ ident: QUIZ, title: QUIZ_TITLE, description: '' }),
   };
@@ -156,6 +164,60 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
     expect(reordered).toBeGreaterThan(0);
   });
 
+  test('multiple answer comes back with the same options, every correct one and their feedback', async () => {
+    const original = {
+      questionType: 'multiple-answer',
+      title: 'Which of these synthetic gases are noble?',
+      stem: 'Which of these synthetic gases are noble?',
+      options: {
+        A: { text: 'Neon', feedback: '' },
+        B: { text: 'Nitrogen', feedback: 'Nitrogen is in group 15.' },
+        C: { text: 'Argon', feedback: '' },
+        D: { text: 'Chlorine', feedback: 'Chlorine is a halogen.' },
+        E: { text: 'Xenon', feedback: '' },
+      },
+      correctAnswer: ['A', 'C', 'E'],
+    };
+    const { quiz, drafts } = await exportThenImport([original]);
+    const [draft] = drafts;
+
+    expect(quiz.skipped).toEqual([]);
+    expect(draft.payload.questionType).toBe('multiple-answer');
+    expect(draft.payload.title).toBe(original.title);
+    const correctTexts = draft.payload.correctAnswer.map((key) => draft.payload.options[key].text);
+    expect(correctTexts.sort()).toEqual(['Argon', 'Neon', 'Xenon']);
+    const byText = Object.fromEntries(Object.values(draft.payload.options).map((option) => [option.text, option.feedback]));
+    expect(byText).toEqual(Object.fromEntries(Object.values(original.options).map((option) => [option.text, option.feedback])));
+    expect(draft.warnings).toEqual([]);
+  });
+
+  test('text that looks like markup, paragraphs and option feedback come back as written', async () => {
+    const original = {
+      questionType: 'multiple-choice',
+      title: 'If x<y and y>z, is <b>x</b> & z ordered?\n\nAnswer for the synthetic case.',
+      stem: 'Select the best answer:',
+      options: {
+        A: { text: 'x<z', feedback: 'Not implied: x<y and y>z say nothing about x and z.' },
+        B: { text: 'Cannot tell', feedback: 'Right, the order of x & z is unknown.' },
+        C: { text: 'z<x', feedback: '' },
+      },
+      correctAnswer: 'B',
+    };
+    const { drafts } = await exportThenImport([original]);
+    const [draft] = drafts;
+
+    // The import writes one line per Canvas paragraph.
+    expect(draft.payload.title).toBe('If x<y and y>z, is <b>x</b> & z ordered?\nAnswer for the synthetic case.');
+    const byText = Object.fromEntries(Object.values(draft.payload.options).map((option) => [option.text, option.feedback]));
+    expect(byText).toEqual({
+      'x<z': original.options.A.feedback,
+      'Cannot tell': original.options.B.feedback,
+      'z<x': '',
+    });
+    expect(draft.payload.options[draft.payload.correctAnswer].text).toBe('Cannot tell');
+    expect(draft.warnings).toEqual([]);
+  });
+
   test('a stem image keeps its caption, without the caption paragraph in the question text', async () => {
     const original = mcQuestion(4, { stemImages: [imageRef(91, 'Cell diagram')] });
     const { drafts, bytesOf } = await exportThenImport([original]);
@@ -225,5 +287,78 @@ describe('GRASP QTI export -> Canvas import round trip', () => {
       canvasType: 'essay_question',
       reason: "Essay questions aren't imported yet: GRASP needs a sample answer and grading criteria for them.",
     }]);
+  });
+
+  describe('calculation questions (#63)', () => {
+    const calc = (overrides) => ({
+      questionType: 'calculation',
+      title: 'Synthetic calculation',
+      stem: 'A synthetic solution has {{c}} mol/L and volume {{v}} L. How many mol, as a log?',
+      calculationFormula: 'log10(c*v) + 6.022e-3',
+      calculationVariables: [
+        { name: 'c', min: 0.05, max: 2, decimals: 2 },
+        { name: 'v', min: 1, max: 4, integerOnly: true },
+      ],
+      calculationAnswerDecimals: 3,
+      calculationTolerance: { mode: 'percent', value: 2 },
+      ...overrides,
+    });
+    const evaluateAt = (formula, values) => CalculationQuestion.evaluateCalculationFormula(formula, values);
+
+    test('a formula question comes back with the same text, variables, decimals and tolerance, and every Canvas answer checks out', async () => {
+      const original = calc();
+      const { quiz, drafts } = await exportThenImport([original]);
+      const [draft] = drafts;
+
+      expect(quiz.skipped).toEqual([]);
+      expect(draft.payload).toMatchObject({
+        questionType: 'calculation',
+        stem: original.stem,
+        calculationVariables: original.calculationVariables,
+        calculationAnswerDecimals: 3,
+        calculationTolerance: { mode: 'percent', value: 2 },
+      });
+      // The import evaluates its reading of the formula at the exported value
+      // sets and compares with the exported answers: no warning means they agree.
+      expect(draft.warnings).toEqual([]);
+      for (const values of [{ c: 0.05, v: 1 }, { c: 1.37, v: 3 }, { c: 2, v: 4 }]) {
+        expect(evaluateAt(draft.payload.calculationFormula, values)).toBeCloseTo(evaluateAt(original.calculationFormula, values), 12);
+      }
+    });
+
+    test('no tolerance comes back as half a unit of the last shown digit', async () => {
+      const { drafts } = await exportThenImport([calc({ calculationTolerance: null })]);
+      expect(drafts[0].payload.calculationTolerance).toEqual({ mode: 'absolute', value: 0.0005 });
+      expect(drafts[0].warnings).toEqual([]);
+    });
+
+    test('no tolerance with answers shown as a × 10^n at different powers of ten comes back as a percent', async () => {
+      const { drafts } = await exportThenImport([calc({
+        stem: 'What is [H+] at pH {{p}}?',
+        calculationFormula: '10^(-p)',
+        calculationVariables: [{ name: 'p', min: 2.1, max: 6, decimals: 1 }],
+        calculationAnswerDecimals: 2,
+        calculationTolerance: null,
+      })]);
+      const [draft] = drafts;
+      expect(draft.payload.stem).toBe('What is [H+] at pH {{p}}?');
+      expect(draft.payload.calculationTolerance.mode).toBe('percent');
+      expect(draft.payload.calculationTolerance.value).toBeLessThanOrEqual(1);
+      expect(draft.warnings).toEqual([]);
+    });
+
+    test('a fixed-answer question comes back from its Canvas numerical question', async () => {
+      const { drafts } = await exportThenImport([
+        calc({ stem: 'What is one third?', calculationFormula: '1/3', calculationVariables: [], calculationAnswerDecimals: 2, calculationTolerance: { mode: 'absolute', value: 0.01 } }),
+        calc({ stem: 'Any value from 10 to 12?', calculationFormula: '11', calculationVariables: [], calculationAnswerDecimals: 0, calculationTolerance: { mode: 'range', min: 10, max: 12 } }),
+      ]);
+      // The margin comes back grown by the gap between 1/3 and 0.33, rounded
+      // up: in Canvas it counts from 0.33, in GRASP from 0.33 or 1/3.
+      expect(drafts.map((draft) => draft.payload)).toEqual([
+        expect.objectContaining({ stem: 'What is one third?', calculationFormula: '0.33', calculationVariables: [], calculationTolerance: { mode: 'absolute', value: 0.014 } }),
+        expect.objectContaining({ stem: 'Any value from 10 to 12?', calculationFormula: '11', calculationVariables: [], calculationTolerance: { mode: 'range', min: 10, max: 12 } }),
+      ]);
+      expect(drafts.flatMap((draft) => draft.warnings)).toEqual([]);
+    });
   });
 });

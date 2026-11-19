@@ -50,43 +50,63 @@ describe('searchUsersNotInCourse', () => {
   });
 
   it('matches email or either name case-insensitively, excluding current members', async () => {
-    const results = await searchUsersNotInCourse(COURSE_ID, 'Guest');
-
-    const [filter, options] = userFind.mock.calls[0];
-    expect(filter._id.$nin).toEqual(expect.arrayContaining([MEMBER_ID, String(MEMBER_ID)]));
-    expect(filter.$or.map((clause) => Object.keys(clause)[0])).toEqual([
-      'email',
-      'displayName',
-      'legalName',
+    userCursor.toArray.mockResolvedValue([
+      { _id: GUEST_ID, email: 'guest@ubc.ca', affiliation: ['student'] },
+      { _id: GUEST2_ID, email: 'x@ubc.ca', displayName: 'A GUEST two', affiliation: ['staff'] },
+      { _id: new ObjectId(), email: 'nobody@ubc.ca', legalName: 'Some One' },
+      { _id: new ObjectId(), email: 'other@ubc.ca', legalName: 'Guestson, Pat' },
     ]);
-    const pattern = filter.$or[0].email;
-    expect(pattern).toBeInstanceOf(RegExp);
-    expect(pattern.flags).toContain('i');
-    expect(pattern.test('a.GUEST.b')).toBe(true);
+
+    const results = await searchUsersNotInCourse(COURSE_ID, ' Guest ');
+
+    // Names and email are encrypted at rest, so MongoDB only excludes the
+    // members; the matching happens in the app.
+    const [filter, options] = userFind.mock.calls[0];
+    expect(Object.keys(filter)).toEqual(['_id']);
+    expect(filter._id.$nin).toEqual(expect.arrayContaining([MEMBER_ID, String(MEMBER_ID)]));
+    expect(userCursor.sort).not.toHaveBeenCalled();
     // Only fields the picker needs leave the database.
     expect(Object.keys(options.projection).sort()).toEqual(
       ['_id', 'affiliation', 'displayName', 'email', 'legalName', 'puid', 'staffViaTaPromotion'].sort()
     );
-    expect(userCursor.limit).toHaveBeenCalledWith(10);
 
-    expect(results.map((u) => [String(u._id), u.courseCount])).toEqual([
-      [String(GUEST_ID), 0],
-      [String(GUEST2_ID), 2],
+    expect(results.map((u) => [u.email, u.courseCount])).toEqual([
+      ['guest@ubc.ca', 0],
+      ['x@ubc.ca', 2],
+      ['other@ubc.ca', 0],
     ]);
   });
 
-  it('treats the query as literal text, not a regular expression', async () => {
-    await searchUsersNotInCourse(COURSE_ID, 'a.b+c(d)');
+  it('orders matches by legal name, then display name, then email, a missing name first', async () => {
+    userCursor.toArray.mockResolvedValue([
+      { _id: new ObjectId(), email: 'c@ubc.ca', legalName: 'Bea Guest' },
+      { _id: new ObjectId(), email: 'b@ubc.ca', displayName: 'Guest Zed' },
+      { _id: new ObjectId(), email: 'a@ubc.ca', displayName: 'Guest Zed' },
+      { _id: new ObjectId(), email: 'd@ubc.ca', legalName: 'Al Guest' },
+    ]);
 
-    const pattern = userFind.mock.calls[0][0].$or[0].email;
-    expect(pattern.source).toBe('a\\.b\\+c\\(d\\)');
-    expect(pattern.test('xa.b+c(d)y')).toBe(true);
-    expect(pattern.test('aXb+c(d)')).toBe(false);
+    const results = await searchUsersNotInCourse(COURSE_ID, 'guest');
+
+    expect(results.map((u) => u.email)).toEqual(['a@ubc.ca', 'b@ubc.ca', 'd@ubc.ca', 'c@ubc.ca']);
+  });
+
+  it('treats the query as literal text, not a regular expression', async () => {
+    userCursor.toArray.mockResolvedValue([
+      { _id: GUEST_ID, email: 'xa.b+c(d)y@ubc.ca' },
+      { _id: GUEST2_ID, email: 'aXb+c(d)@ubc.ca' },
+    ]);
+
+    const results = await searchUsersNotInCourse(COURSE_ID, 'a.b+c(d)');
+
+    expect(results.map((u) => String(u._id))).toEqual([String(GUEST_ID)]);
   });
 
   it('caps the limit and returns nothing for a blank query without querying', async () => {
-    await searchUsersNotInCourse(COURSE_ID, 'guest', { limit: 999 });
-    expect(userCursor.limit).toHaveBeenCalledWith(50);
+    userCursor.toArray.mockResolvedValue(
+      Array.from({ length: 60 }, (_, i) => ({ _id: new ObjectId(), email: `guest${String(i).padStart(2, '0')}@ubc.ca` }))
+    );
+    expect(await searchUsersNotInCourse(COURSE_ID, 'guest', { limit: 999 })).toHaveLength(50);
+    expect(await searchUsersNotInCourse(COURSE_ID, 'guest')).toHaveLength(10);
 
     userFind.mockClear();
     expect(await searchUsersNotInCourse(COURSE_ID, '   ')).toEqual([]);

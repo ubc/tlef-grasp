@@ -36,8 +36,12 @@ const saveMaterial = async (sourceId, courseId, materialData) => {
  * externalUpdatedAt, importedAt }`, which is how an import recognises a file it
  * has already brought in.
  *
+ * A Panopto import (routes/panopto.js) uses the same fields: the video's folder
+ * is its externalCourseId and the video its externalFileId. It leaves
+ * externalCourseId out of the query, since a video can move between folders.
+ *
  * @param {string|ObjectId} courseId - The GRASP course
- * @param {{ provider: string, instance: string|null, externalCourseId: string, externalFileId?: string }} source
+ * @param {{ provider: string, instance: string|null, externalCourseId?: string, externalFileId?: string }} source
  * @returns {Promise<Array<{ sourceId: string, documentTitle: string|null, lms: Object }>>}
  */
 const findLmsImportedMaterials = async (courseId, { provider, instance, externalCourseId, externalFileId }) => {
@@ -50,8 +54,8 @@ const findLmsImportedMaterials = async (courseId, { provider, instance, external
             courseId: courseIdObj,
             'lms.provider': provider,
             'lms.instance': instance,
-            'lms.externalCourseId': String(externalCourseId),
         };
+        if (externalCourseId !== undefined) query['lms.externalCourseId'] = String(externalCourseId);
         if (externalFileId !== undefined) query['lms.externalFileId'] = String(externalFileId);
 
         return await collection
@@ -119,27 +123,38 @@ const deleteMaterial = async (sourceId) => {
 };
 
 /**
- * Put a material document back exactly as it was — same _id, createdAt, and any
- * outline fields. Used to undo the delete half of a content swap that failed
- * partway through: editing a material deletes the row and re-inserts it, and the
- * extracted text lives nowhere else, so a failure between the two used to lose
- * the material permanently.
+ * Replace a material's content in place. The row keeps its _id, sourceId,
+ * courseId and createdAt; everything else comes from `materialData`, so the
+ * outline fields go — the outline described text that no longer exists.
  *
- * Upserts rather than inserts so a retry is idempotent.
+ * In place rather than delete-then-insert: learning objectives link to a
+ * material by its _id (grasp_objective_material.materialId), and a reinserted
+ * row gets a new one, which silently cut the material off from every objective
+ * that used it.
+ *
+ * @param {object} existingMaterial - The stored document being replaced
+ * @param {object} materialData - The new fields, as saveMaterial takes them
  */
-const restoreMaterialDocument = async (document) => {
-    try {
-        const db = await databaseService.connect();
-        const collection = db.collection("grasp_material");
-        await collection.replaceOne(
-            { sourceId: document.sourceId },
-            document,
-            { upsert: true }
-        );
-    }
-    catch (error) {
-        console.error("Error restoring material:", error);
-        throw error;
+const replaceMaterial = async (existingMaterial, materialData) => {
+    const db = await databaseService.connect();
+    const collection = db.collection("grasp_material");
+    const result = await collection.replaceOne(
+        { _id: existingMaterial._id },
+        {
+            _id: existingMaterial._id,
+            sourceId: existingMaterial.sourceId,
+            courseId: existingMaterial.courseId,
+            fileType: materialData.fileType,
+            fileSize: materialData.fileSize,
+            fileContent: materialData.fileContent || null,
+            documentTitle: materialData.documentTitle || null,
+            ...(materialData.lms ? { lms: materialData.lms } : {}),
+            createdAt: existingMaterial.createdAt,
+            updatedAt: new Date(),
+        }
+    );
+    if (result.matchedCount === 0) {
+        throw new Error(`Material ${existingMaterial.sourceId} no longer exists`);
     }
 };
 
@@ -166,7 +181,7 @@ const getCourseMaterials = async (courseId) => {
         const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(courseId) : courseId;
 
         const materials = await collection.find({ courseId: courseIdObj }).toArray();
-        console.log("Found materials:", materials);
+        console.log(`Found ${materials.length} materials for course ${courseId}`);
         return materials;
     }
     catch (error) {
@@ -235,7 +250,7 @@ module.exports = {
     isCanvasImportMaterial,
     ensureCanvasImportMaterial,
     deleteMaterial,
-    restoreMaterialDocument,
+    replaceMaterial,
     getCourseMaterials,
     getMaterialCourseId,
     getMaterialBySourceId,

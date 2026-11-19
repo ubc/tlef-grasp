@@ -1,4 +1,4 @@
-// Thin fetch wrapper for all GRASP API calls.
+// Thin fetch wrapper for all GRASP API call
 // Throws an ApiError on non-2xx responses; callers get parsed JSON back.
 
 export class ApiError extends Error {

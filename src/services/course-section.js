@@ -1,5 +1,6 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
+const { getUsersByIds } = require('./user');
 
 const toObjectId = (id) =>
   typeof id === 'string' && ObjectId.isValid(id) ? new ObjectId(id) : id;
@@ -148,29 +149,27 @@ const getUserCourseSections = async (userId, courseId) => {
 /** Active students of one section (dropped rows excluded). */
 const getSectionStudents = async (courseId, sectionId) => {
   const db = await databaseService.connect();
-  return db.collection('grasp_user_course_section').aggregate([
-    { $match: { courseId: toObjectId(courseId), sectionId, ...ACTIVE_ENROLLMENT } },
-    {
-      $lookup: {
-        from: 'grasp_user',
-        let: { uid: '$userId' },
-        pipeline: [{ $match: { $expr: { $eq: ['$_id', '$$uid'] } } }],
-        as: 'user',
-      },
-    },
-    { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-    {
-      $project: {
-        _id: 0,
-        userId: 1,
-        sectionId: 1,
-        puid: '$user.puid',
-        displayName: '$user.displayName',
-        legalName: '$user.legalName',
-        email: '$user.email',
-      },
-    },
-  ]).toArray();
+  const enrollments = await db.collection('grasp_user_course_section')
+    .find(
+      { courseId: toObjectId(courseId), sectionId, ...ACTIVE_ENROLLMENT },
+      { projection: { _id: 0, userId: 1, sectionId: 1 } }
+    )
+    .toArray();
+  const usersById = await getUsersByIds(
+    enrollments.map((enrollment) => enrollment.userId),
+    { puid: 1, displayName: 1, legalName: 1, email: 1 }
+  );
+  return enrollments.map(({ userId, sectionId: enrolledSectionId }) => {
+    const user = usersById.get(String(userId));
+    return {
+      userId,
+      sectionId: enrolledSectionId,
+      puid: user?.puid,
+      displayName: user?.displayName,
+      legalName: user?.legalName,
+      email: user?.email,
+    };
+  });
 };
 
 /**

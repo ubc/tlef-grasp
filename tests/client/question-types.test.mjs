@@ -76,10 +76,10 @@ describe('seedQuestionTypes', () => {
   });
 
   it('preserves the count when it does not divide evenly', () => {
-    const seeded = seedQuestionTypes(['Remember', 'Understand', 'Apply'], 7);
+    const seeded = seedQuestionTypes(['Remember', 'Understand', 'Apply'], 5);
 
-    expect(totalQuestions(seeded)).toBe(7);
-    expect(seeded.map((e) => e.count)).toEqual([3, 2, 2]);
+    expect(totalQuestions(seeded)).toBe(5);
+    expect(seeded.map((e) => e.count)).toEqual([2, 2, 1]);
   });
 
   it('keeps every original Bloom level selected', () => {

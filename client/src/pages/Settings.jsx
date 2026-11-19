@@ -12,13 +12,16 @@ import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
 import { ArchiveCourseButton } from "../components/course/CourseArchiveActions";
 import { useCanvasStatus } from "../hooks/useCanvasIntegration";
 import { useMoodleStatus } from "../hooks/useMoodleIntegration";
+import { usePanoptoStatus } from "../hooks/usePanopto";
 import { useToast } from "../components/ui/Toast";
 import { ConfirmModal } from "../components/ui/Modal";
 import {
   CanvasConnectionPanel,
   MoodleConnectionPanel,
+  PanoptoConnectionPanel,
 } from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
+import { PROMPT_FIELDS } from "../lib/prompts";
 
 // Pipeline stages a course owner can tune, keyed to the server's
 // OPERATION_GROUPS so the labels match what the usage report prints.
@@ -75,83 +78,6 @@ const buildEffortState = (source = {}) =>
     ])
   );
 
-const PROMPT_FIELDS = [
-  {
-    key: "questionGeneration",
-    label: "Question Generation Prompt",
-    rows: 15,
-    description:
-      "Handles the creation of multiple-choice questions based on selected objectives.",
-    variables: [
-      ["{learningObjectiveText}", "The text of the parent learning objective."],
-      ["{granularLearningObjectiveText}", "The specific sub-objective text."],
-      ["{bloomLevel}", "The targeted Bloom's Taxonomy level(s)."],
-      ["{questionType}", "The type of question to generate."],
-      ["{ragContext}", "Relevant educational content retrieved from course materials."],
-    ],
-  },
-  {
-    key: "objectiveGenerationAuto",
-    label: "Learning Objective Generation Prompt - Auto Mode",
-    rows: 12,
-    description:
-      "Used when the AI generates a set of course learning objectives from scratch based on processed materials.",
-    variables: [
-      ["{courseName}", "The name of the current course."],
-      ["{ragContext}", "Comprehensive content extracted from all selected materials."],
-    ],
-  },
-  {
-    key: "objectiveGenerationManual",
-    label: "Learning Objective Generation Prompt - Manual Mode",
-    rows: 12,
-    description:
-      "Used when you provide specific main objectives and want the AI to generate detailed sub-objectives and taxonomy levels for them.",
-    variables: [
-      ["{courseName}", "The name of the current course."],
-      ["{userObjectivesList}", "The list of main objectives you provided."],
-      ["{ragContext}", "Relevant content from materials to support sub-objective generation."],
-    ],
-  },
-  {
-    key: "powerPointImageDescription",
-    label: "PowerPoint Image Extraction Prompt",
-    rows: 8,
-    description:
-      "Used when PowerPoint uploads contain embedded images, charts, screenshots, or diagrams that need vision-model descriptions.",
-    variables: [
-      ["{slideNumber}", "The slide number containing the embedded image."],
-      ["{fileName}", "The embedded image filename from the PowerPoint archive, when available."],
-    ],
-  },
-  {
-    key: "openEndedGrading",
-    label: "Open-Ended Answer Grading Prompt",
-    rows: 12,
-    description:
-      "Used when the AI grades a student's open-ended answer against the question's grading criteria and sample answer. Returns a pass/fail verdict with per-criterion feedback; instructors can override the grade in Quiz Scores.",
-    variables: [
-      ["{question}", "The open-ended question shown to the student."],
-      ["{studentAnswer}", "The student's submitted answer."],
-      ["{gradingCriteria}", "The grading criteria/rubric from the question."],
-      ["{sampleAnswer}", "The sample strong answer from the question."],
-    ],
-  },
-  {
-    key: "fillInTheBlankGrading",
-    label: "Fill-in-the-Blank Fallback Grading Prompt",
-    rows: 12,
-    description:
-      "Used only when a fill-in-the-blank answer does not exactly match an accepted answer. The AI decides whether the answer is equivalent (synonym, alternate notation) and writes brief feedback; it can only upgrade an answer to correct, never downgrade an exact match.",
-    variables: [
-      ["{question}", "The fill-in-the-blank question with its blank."],
-      ["{studentAnswer}", "The student's submitted answer."],
-      ["{correctAnswer}", "The canonical correct answer."],
-      ["{acceptableAnswers}", "Instructor-provided acceptable alternatives."],
-    ],
-  },
-];
-
 const secondaryBtnClass =
   "inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-60";
 
@@ -165,9 +91,16 @@ export default function Settings() {
   const selectedCourse = useSelectedCourse();
   const canvasReturnState = new URLSearchParams(window.location.search).get("canvas");
   const openMoodleSettings = new URLSearchParams(window.location.search).has("moodle");
+  const panoptoReturnState = new URLSearchParams(window.location.search).get("panopto");
 
   const [activeTab, setActiveTab] = useState(
-    canvasReturnState ? "canvas" : openMoodleSettings ? "moodle" : "general"
+    canvasReturnState
+      ? "canvas"
+      : openMoodleSettings
+        ? "moodle"
+        : panoptoReturnState
+          ? "panopto"
+          : "general"
   );
   const [prompts, setPrompts] = useState(() => buildPromptState());
   // Co-instructor permission toggles (owner only). Default every feature to
@@ -190,6 +123,8 @@ export default function Settings() {
   const moodleStatus = useMoodleStatus();
   const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
   const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
+  const panoptoStatus = usePanoptoStatus();
+  const showPanoptoIntegration = panoptoStatus.configured || panoptoStatus.isError;
 
   useEffect(() => {
     if (!canvasStatus.isPending && !showCanvasIntegration && activeTab === "canvas") {
@@ -202,6 +137,12 @@ export default function Settings() {
       setActiveTab("general");
     }
   }, [activeTab, moodleStatus.isPending, showMoodleIntegration]);
+
+  useEffect(() => {
+    if (!panoptoStatus.isPending && !showPanoptoIntegration && activeTab === "panopto") {
+      setActiveTab("general");
+    }
+  }, [activeTab, panoptoStatus.isPending, showPanoptoIntegration]);
 
   // Hydrate the form when settings arrive
   useEffect(() => {
@@ -282,6 +223,9 @@ export default function Settings() {
     ...(showMoodleIntegration
       ? [{ id: "moodle", icon: "fa-graduation-cap", label: "Moodle LMS" }]
       : []),
+    ...(showPanoptoIntegration
+      ? [{ id: "panopto", icon: "fa-video", label: "Panopto" }]
+      : []),
     // Owner-only: control what co-instructors can access in this course.
     ...(isOwner
       ? [
@@ -326,7 +270,7 @@ export default function Settings() {
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Settings</h1>
-        {!["canvas", "moodle"].includes(activeTab) && (
+        {!["canvas", "moodle", "panopto"].includes(activeTab) && (
           <button
             type="button"
             onClick={handleSave}
@@ -664,6 +608,13 @@ export default function Settings() {
 
       {activeTab === "moodle" && showMoodleIntegration && (
         <MoodleConnectionPanel status={moodleStatus} />
+      )}
+
+      {activeTab === "panopto" && showPanoptoIntegration && (
+        <PanoptoConnectionPanel
+          status={panoptoStatus}
+          returnState={panoptoReturnState}
+        />
       )}
 
       <ConfirmModal
