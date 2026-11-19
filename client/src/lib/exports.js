@@ -113,6 +113,18 @@ export async function downloadAnalyticsCsv({ courseId, view, quizId, sectionId }
 
   const disposition = response.headers.get("content-disposition") || "";
   const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || `analytics-${view}.csv`;
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // One section's grades as a CSV for Canvas's gradebook import (#126), with
 // each quiz's "4 of 5" column when questionsCorrect is set. The server names
 // the file; a refused export throws with the server's message.
