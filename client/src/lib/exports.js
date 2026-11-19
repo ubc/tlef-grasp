@@ -99,6 +99,32 @@ export async function downloadQuestionsExport({ courseId, questionIds, format })
   window.URL.revokeObjectURL(url);
 }
 
+// Analytics view ("questions" | "quizzes" | "objectives") as a CSV download,
+// with the same quiz/section filters as the page. The server names the file.
+export async function downloadAnalyticsCsv({ courseId, view, quizId, sectionId }) {
+  const params = new URLSearchParams();
+  if (quizId) params.set("quizId", quizId);
+  if (sectionId) params.set("sectionId", sectionId);
+  const search = params.toString();
+  const response = await fetch(
+    `/api/analytics/course/${courseId}/export/${view}${search ? `?${search}` : ""}`
+  );
+  if (!response.ok) throw new Error("Export failed");
+
+  const disposition = response.headers.get("content-disposition") || "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || `analytics-${view}.csv`;
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // One section's grades as a CSV for Canvas's gradebook import (#126), with
 // each quiz's "4 of 5" column when questionsCorrect is set. The server names
 // the file; a refused export throws with the server's message.
