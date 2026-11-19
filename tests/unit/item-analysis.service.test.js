@@ -141,6 +141,26 @@ describe("quizReliability", () => {
     expect(reliability).toMatchObject({ items: 4, students: 7, band: "low", lowN: true, reason: null });
   });
 
+  it("averages each shared question's D and point-biserial for the quiz", () => {
+    const reliability = quizReliability(quizOf(MATRIX));
+    const items = [...analyzeQuizItems(quizOf(MATRIX)).values()];
+    const avg = (field) => items.reduce((sum, item) => sum + item[field], 0) / items.length;
+    expect(reliability.discrimination).toBeCloseTo(avg("discrimination"), 2);
+    expect(reliability.pointBiserial).toBeCloseTo(avg("pointBiserial"), 2);
+    expect(reliability).toMatchObject({ discriminationBand: "good", pointBiserialBand: "good" });
+  });
+
+  it("leaves an item everyone got right out of the point-biserial mean", () => {
+    // q2 has no point-biserial; the mean is q0's and q1's.
+    const matrix = [[1, 1, 1], [1, 0, 1], [0, 1, 1], [0, 0, 1]];
+    const reliability = quizReliability(quizOf(matrix));
+    const items = analyzeQuizItems(quizOf(matrix));
+    expect(items.get("q2").pointBiserial).toBeNull();
+    expect(reliability.pointBiserial).toBeCloseTo(
+      (items.get("q0").pointBiserial + items.get("q1").pointBiserial) / 2, 2
+    );
+  });
+
   it("uses only the questions every student answered", () => {
     // A spaced quiz: q2 was served to only some students.
     const reliability = quizReliability(quizOf([
@@ -159,7 +179,9 @@ describe("quizReliability", () => {
       [null, null, 1, 0],
       [1, null, 0, null],
     ]));
-    expect(reliability).toMatchObject({ kr20: null, reason: "different-questions" });
+    expect(reliability).toMatchObject({
+      kr20: null, discrimination: null, pointBiserial: null, reason: "different-questions",
+    });
   });
 
   it("is withheld when everyone scored the same, or there are too few students", () => {

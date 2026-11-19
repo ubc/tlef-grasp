@@ -54,7 +54,8 @@ function ScoreDistribution({ distribution, quizName }) {
   );
 }
 
-// KR-20, its standard error, and how much data is behind it.
+// KR-20, its standard error, the quiz's mean discrimination (D and r_pb),
+// and how much data is behind them.
 function Reliability({ reliability, limits }) {
   if (!reliability) {
     return <p className="text-sm text-muted">No graded answers in this quiz yet.</p>;
@@ -62,8 +63,8 @@ function Reliability({ reliability, limits }) {
   if (reliability.kr20 === null) {
     return (
       <p className="text-sm text-muted">
-        Reliability (KR-20) not available.{" "}
-        {RELIABILITY_REASONS[reliability.reason] || ""}
+        Reliability (KR-20), discrimination index (D) and point-biserial (r<sub>pb</sub>) not
+        available. {RELIABILITY_REASONS[reliability.reason] || ""}
       </p>
     );
   }
@@ -78,6 +79,20 @@ function Reliability({ reliability, limits }) {
       <div>
         <dt className="text-muted">Standard error (SEM)</dt>
         <dd className="text-xl font-bold text-ink tabular-nums">±{reliability.sem} pts</dd>
+      </div>
+      <div>
+        <dt className="text-muted">Discrimination index (D)</dt>
+        <dd className="text-xl font-bold text-ink">
+          <StatWithBand value={reliability.discrimination} band={reliability.discriminationBand} />
+        </dd>
+      </div>
+      <div>
+        <dt className="text-muted">
+          Point-biserial (r<sub>pb</sub>)
+        </dt>
+        <dd className="text-xl font-bold text-ink">
+          <StatWithBand value={reliability.pointBiserial} band={reliability.pointBiserialBand} />
+        </dd>
       </div>
       <div>
         <dt className="text-muted">Based on</dt>

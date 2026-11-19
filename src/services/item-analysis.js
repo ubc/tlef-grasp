@@ -204,6 +204,37 @@ function analyzeQuizItems(students, minStudents = MIN_STUDENTS_ITEM_ANALYSIS) {
 }
 
 /**
+ * Quiz-level discrimination: the mean discrimination index (D) and mean
+ * point-biserial (r_pb) of the questions every student answered, on the same
+ * students × questions matrix as KR-20. Each question is compared with the
+ * student's share correct on the other shared questions. A question everyone
+ * got right (or wrong) has no point-biserial and is left out of that mean.
+ *
+ * @param {Array<Map<string, 0|1>>} vectors - each student's answers
+ * @param {string[]} common - questions every student answered (at least 2)
+ * @param {number[]} totals - each student's raw total on `common`
+ */
+function quizDiscrimination(vectors, common, totals) {
+    const k = common.length;
+    const ds = [];
+    const rs = [];
+    for (const key of common) {
+        const rows = vectors.map((answers, i) => {
+            const item = answers.get(key);
+            return { item, rest: (totals[i] - item) / (k - 1) };
+        });
+        const d = discriminationIndex(rows);
+        const r = pointBiserial(rows);
+        if (d !== null) ds.push(d);
+        if (r !== null) rs.push(r);
+    }
+    return {
+        discrimination: ds.length ? mean(ds) : null,
+        pointBiserial: rs.length ? mean(rs) : null,
+    };
+}
+
+/**
  * KR-20 = k/(k−1) · (1 − Σpq / σ²) over the questions every student in the
  * quiz answered, with σ² the population variance of their raw totals on
  * those questions. Also the standard error of measurement, SEM = σ·√(1−KR-20),
@@ -217,7 +248,18 @@ function analyzeQuizItems(students, minStudents = MIN_STUDENTS_ITEM_ANALYSIS) {
  */
 function quizReliability(students, minStudents = MIN_STUDENTS_ITEM_ANALYSIS) {
     const withheld = (reason, extra = {}) => ({
-        kr20: null, sem: null, band: null, lowN: false, items: 0, students: students.size, reason, ...extra,
+        kr20: null,
+        sem: null,
+        band: null,
+        discrimination: null,
+        discriminationBand: null,
+        pointBiserial: null,
+        pointBiserialBand: null,
+        lowN: false,
+        items: 0,
+        students: students.size,
+        reason,
+        ...extra,
     });
 
     if (students.size < minStudents) return withheld("too-few-students");
@@ -237,11 +279,16 @@ function quizReliability(students, minStudents = MIN_STUDENTS_ITEM_ANALYSIS) {
     }, 0);
     const kr20 = (k / (k - 1)) * (1 - sumPQ / totalVariance);
     const sem = (Math.sqrt(totalVariance) * Math.sqrt(Math.max(0, 1 - kr20)) / k) * 100;
+    const { discrimination, pointBiserial: rpb } = quizDiscrimination(vectors, common, totals);
 
     return {
         kr20: round(kr20),
         sem: round(sem, 1),
         band: reliabilityBand(kr20),
+        discrimination: round(discrimination),
+        discriminationBand: discriminationBand(round(discrimination)),
+        pointBiserial: round(rpb),
+        pointBiserialBand: pointBiserialBand(round(rpb)),
         lowN: students.size < LOW_N_BELOW,
         items: k,
         students: students.size,
@@ -319,6 +366,7 @@ module.exports = {
     discriminationIndex,
     pointBiserial,
     analyzeQuizItems,
+    quizDiscrimination,
     quizReliability,
     analyzeItems,
 };

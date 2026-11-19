@@ -116,7 +116,9 @@ describe("quizzesCsv", () => {
         {
           name: "=Quiz 1", assigned: 6, submitted: 5, completionRate: 5 / 6, enoughData: true,
           meanScore: 95, medianScore: 94.5, averageTimeSpent: 630000, distribution, pendingSubmissions: 1,
-          reliability: { kr20: 0.81, sem: 6.2, items: 10, students: 5, reason: null },
+          reliability: {
+            kr20: 0.81, sem: 6.2, discrimination: 0.42, pointBiserial: 0.35, items: 10, students: 5, reason: null,
+          },
         },
         {
           name: "Quiz 2", assigned: 6, submitted: 2, completionRate: 2 / 6, enoughData: false,
@@ -127,9 +129,12 @@ describe("quizzesCsv", () => {
     });
     const [header, first, second] = rowsOf(csv);
     expect(header).toContain("Scored 90-100%");
-    expect(header).toContain("Reliability (KR-20),SEM (% points),KR-20 questions,KR-20 students");
-    expect(first).toBe("'=Quiz 1,6,5,83.3,95,94.5,10.5,0,0,0,0,0,0,0,0,0,5,1,0.81,6.2,10,5");
-    expect(second).toContain(`${NOT_ENOUGH_DATA}: students answered different questions,,1,4`);
+    expect(header).toContain(
+      "Reliability (KR-20),SEM (% points),Quiz discrimination index (D),Quiz point-biserial (r_pb),KR-20 questions,KR-20 students"
+    );
+    expect(first).toBe("'=Quiz 1,6,5,83.3,95,94.5,10.5,0,0,0,0,0,0,0,0,0,5,1,0.81,6.2,0.42,0.35,10,5");
+    const reason = `${NOT_ENOUGH_DATA}: students answered different questions`;
+    expect(second).toContain(`${reason},,${reason},${reason},1,4`);
     expect(second.split(",").slice(0, 7)).toEqual([
       "Quiz 2", "6", "2", "33.3", NOT_ENOUGH_DATA, NOT_ENOUGH_DATA, NOT_ENOUGH_DATA,
     ]);

@@ -169,6 +169,14 @@ export function ItemAnalysisExplainer({ limits }) {
           students?); KR-20 judges the whole quiz (do its questions measure the same thing
           consistently?).
         </p>
+        <p>
+          Next to KR-20, each quiz also shows its <strong className="text-ink">D</strong> and{" "}
+          <strong className="text-ink">
+            r<sub>pb</sub>
+          </strong>
+          : the average over the questions every student answered, from the same first graded
+          attempts as KR-20, read with the same bands as for a single question.
+        </p>
         {limits && (
           <p>
             Figures appear from {limits.minStudents} students. Below {limits.lowNBelow} they are marked

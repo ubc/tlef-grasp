@@ -121,12 +121,20 @@ function questionsCsv(data) {
 }
 
 function reliabilityCells(reliability) {
-    if (!reliability) return [NOT_ENOUGH_DATA, "", "", ""];
+    if (!reliability) return [NOT_ENOUGH_DATA, "", "", "", "", ""];
     if (reliability.kr20 === null) {
         const reason = RELIABILITY_REASONS[reliability.reason];
-        return [reason ? `${NOT_ENOUGH_DATA}: ${reason}` : NOT_ENOUGH_DATA, "", reliability.items, reliability.students];
+        const marker = reason ? `${NOT_ENOUGH_DATA}: ${reason}` : NOT_ENOUGH_DATA;
+        return [marker, "", marker, marker, reliability.items, reliability.students];
     }
-    return [reliability.kr20, reliability.sem, reliability.items, reliability.students];
+    return [
+        reliability.kr20,
+        reliability.sem,
+        reliability.discrimination ?? "",
+        reliability.pointBiserial ?? "",
+        reliability.items,
+        reliability.students,
+    ];
 }
 
 function quizzesCsv(data) {
@@ -137,7 +145,9 @@ function quizzesCsv(data) {
         "Quiz", "Assigned", "Submitted", "Completion (%)", "Average score (%)", "Median score (%)",
         "Average time (minutes)", ...binLabels.map((label) => `Scored ${label}%`),
         "Submissions awaiting grading",
-        "Reliability (KR-20)", "SEM (% points)", "KR-20 questions", "KR-20 students",
+        "Reliability (KR-20)", "SEM (% points)",
+        "Quiz discrimination index (D)", "Quiz point-biserial (r_pb)",
+        "KR-20 questions", "KR-20 students",
     ];
 
     const rows = data.quizzes.map((quiz) => {
