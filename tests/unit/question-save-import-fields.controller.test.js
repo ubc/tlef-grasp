@@ -96,6 +96,8 @@ describe('POST /api/question/save ignores client-sent provenance', () => {
       message: '1 question(s) saved successfully',
       savedCount: 1,
       duplicateCount: 0,
+      invalidCount: 0,
+      invalidReason: null,
       questionIds: [insertedId.toString()],
       questionIdsByIndex: [insertedId.toString()],
       orphanedIds: [],

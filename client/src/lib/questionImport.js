@@ -286,3 +286,19 @@ export function isRowResolved(row, checkedKeys) {
   const key = row.granularId ? "" : importedGranularKey(row.question);
   return Boolean(row.granularId || (key && checkedKeys?.has(key)));
 }
+
+// The toast after a bank import that saved at least one question. Names the
+// duplicates skipped and the questions refused (with the first reason), so a
+// refused question is never silently dropped.
+export function describeImportResult(data, fallbackCount = 0) {
+  const count = data?.savedCount ?? fallbackCount;
+  const skipped = data?.duplicateCount || 0;
+  const refused = data?.invalidCount || 0;
+  let message = `Imported ${count} question${count === 1 ? "" : "s"}`;
+  if (skipped) message += ` (skipped ${skipped} duplicate${skipped === 1 ? "" : "s"})`;
+  if (refused) {
+    const reason = String(data?.invalidReason || "").replace(/\.$/, "");
+    message += `. ${refused} ${refused === 1 ? "was" : "were"} refused${reason ? `: ${reason}` : ""}.`;
+  }
+  return { message, type: refused ? "warning" : "success" };
+}

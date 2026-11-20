@@ -331,6 +331,20 @@ const getQuestionByIdHandler = async (req, res) => {
   }
 };
 
+// The error for an import where nothing saved and at least one question was
+// refused, naming the duplicates too so neither reason hides the other.
+// e.g. "1 question already exists; 1 was refused: Mark at least one option as correct."
+const describeNothingSaved = (duplicateCount, invalidCount, invalidReason) => {
+  const reason = String(invalidReason || "").replace(/\.$/, "");
+  if (duplicateCount === 0) {
+    return invalidCount === 1 ? invalidReason : `${invalidCount} questions were refused: ${reason}.`;
+  }
+  const duplicates = duplicateCount === 1
+    ? "1 question already exists"
+    : `${duplicateCount} questions already exist`;
+  return `${duplicates}; ${invalidCount} ${invalidCount === 1 ? "was" : "were"} refused: ${reason}.`;
+};
+
 // Save questions to question bank
 const saveQuestionHandler = async (req, res) => {
   try {
@@ -386,22 +400,30 @@ const saveQuestionHandler = async (req, res) => {
       }
     }
 
-    // When every question was a duplicate, surface that plainly rather than a
-    // generic failure.
+    const invalidCount = invalidReasons.length;
+    const invalidReason = invalidReasons[0] ?? null;
+
+    // Refusals are checked before duplicates: a single duplicate must not hide
+    // questions that were refused for another reason.
+    if (savedQuestionIds.length === 0 && invalidCount > 0) {
+      return res.status(400).json({
+        error: describeNothingSaved(duplicateCount, invalidCount, invalidReason),
+        savedCount: 0,
+        duplicateCount,
+        invalidCount,
+        invalidReason,
+      });
+    }
+
+    // Every question really was a duplicate: surface that plainly rather than
+    // a generic failure.
     if (savedQuestionIds.length === 0 && duplicateCount > 0) {
       return res.status(409).json({
         error: "Every question already exists in this course.",
         savedCount: 0,
         duplicateCount,
-      });
-    }
-
-    if (savedQuestionIds.length === 0 && invalidReasons.length > 0) {
-      return res.status(400).json({
-        error: invalidReasons[0],
-        savedCount: 0,
-        duplicateCount,
-        invalidCount: invalidReasons.length,
+        invalidCount: 0,
+        invalidReason: null,
       });
     }
 
@@ -414,6 +436,8 @@ const saveQuestionHandler = async (req, res) => {
       message: `${savedQuestionIds.length} question(s) saved successfully`,
       savedCount: savedQuestionIds.length,
       duplicateCount,
+      invalidCount,
+      invalidReason,
       questionIds: savedQuestionIds,
       questionIdsByIndex,
       orphanedIds,
