@@ -10,6 +10,7 @@ import {
   matchGranular,
   toSavePayload,
   isRowResolved,
+  describeImportResult,
 } from "../../lib/questionImport";
 import {
   COURSE_EXPORT_MESSAGE,
@@ -96,10 +97,8 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
 
   const saveMutation = useSaveQuestions(courseId, {
     onSuccess: (data) => {
-      const count = data?.savedCount ?? rows.length;
-      const skipped = data?.duplicateCount || 0;
-      const suffix = skipped ? ` (skipped ${skipped} duplicate${skipped === 1 ? "" : "s"})` : "";
-      showToast(`Imported ${count} question${count === 1 ? "" : "s"}${suffix}`, "success");
+      const { message, type } = describeImportResult(data, rows.length);
+      showToast(message, type);
       onImported?.();
       onClose();
     },
