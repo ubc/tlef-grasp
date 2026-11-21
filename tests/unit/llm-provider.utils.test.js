@@ -21,6 +21,76 @@ describe('LLM provider utilities', () => {
 
     process.env.LLM_PROVIDER = 'local';
     expect(provider.getLLMProvider()).toBe('openai');
+
+    // The sandbox has no embeddings support yet, so it must not be selectable
+    // app-wide: uploads and question generation would break. It is reached only
+    // through GRADING_LLM_PROVIDER.
+    process.env.LLM_PROVIDER = 'ubc-llm-sandbox';
+    expect(provider.getLLMProvider()).toBe('openai');
+  });
+
+  it('routes grading operations to GRADING_LLM_PROVIDER and everything else to LLM_PROVIDER', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    process.env.GRADING_LLM_PROVIDER = 'ubc-llm-sandbox';
+
+    expect(provider.getProviderForOperation('grade-open-ended')).toBe('ubc-llm-sandbox');
+    expect(provider.getProviderForOperation('grade-fill-in-the-blank')).toBe('ubc-llm-sandbox');
+    expect(provider.getProviderForOperation('question-generate')).toBe('openai');
+    expect(provider.getProviderForOperation('outline-batch')).toBe('openai');
+    expect(provider.getProviderForOperation(undefined)).toBe('openai');
+  });
+
+  it('sends grading to LLM_PROVIDER when GRADING_LLM_PROVIDER is unset or blank', () => {
+    process.env.LLM_PROVIDER = 'ollama';
+    delete process.env.GRADING_LLM_PROVIDER;
+    expect(provider.getProviderForOperation('grade-open-ended')).toBe('ollama');
+
+    process.env.GRADING_LLM_PROVIDER = '  ';
+    expect(provider.getProviderForOperation('grade-open-ended')).toBe('ollama');
+  });
+
+  it('accepts GRADING_LLM_PROVIDER ignoring case and surrounding whitespace', () => {
+    delete process.env.LLM_PROVIDER;
+    process.env.GRADING_LLM_PROVIDER = ' UBC-LLM-Sandbox ';
+    expect(provider.getProviderForOperation('grade-open-ended')).toBe('ubc-llm-sandbox');
+
+    process.env.GRADING_LLM_PROVIDER = 'Ollama';
+    expect(provider.getProviderForOperation('grade-open-ended')).toBe('ollama');
+  });
+
+  it('warns once and falls back to LLM_PROVIDER for an unrecognised GRADING_LLM_PROVIDER', () => {
+    const fresh = require('../../src/utils/llm-provider');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.LLM_PROVIDER = 'ollama';
+    process.env.GRADING_LLM_PROVIDER = 'ubc-llm-sanbox';
+
+    expect(fresh.getProviderForOperation('grade-open-ended')).toBe('ollama');
+    expect(fresh.getProviderForOperation('grade-fill-in-the-blank')).toBe('ollama');
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('ubc-llm-sanbox');
+    warn.mockRestore();
+  });
+
+  it('picks the main model of the requested provider regardless of LLM_PROVIDER', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    process.env.OPENAI_LLM_MODEL = 'gpt-test';
+    process.env.OLLAMA_LLM_MODEL = 'llama3';
+    process.env.SANDBOX_LLM_MODEL = 'qwen-test';
+
+    expect(provider.getModelForProvider('ubc-llm-sandbox')).toBe('qwen-test');
+    expect(provider.getModelForProvider('ollama')).toBe('llama3');
+    expect(provider.getModelForProvider('openai')).toBe('gpt-test');
+  });
+
+  // Every consumer (the toolkit config and the usage log) reads the model from
+  // here, so the default must live here too or the log records "undefined".
+  it('defaults the sandbox model to qwen3.6-35b-a3b when SANDBOX_LLM_MODEL is unset', () => {
+    delete process.env.SANDBOX_LLM_MODEL;
+    expect(provider.getModelForProvider('ubc-llm-sandbox')).toBe('qwen3.6-35b-a3b');
+
+    process.env.SANDBOX_LLM_MODEL = '';
+    expect(provider.getModelForProvider('ubc-llm-sandbox')).toBe('qwen3.6-35b-a3b');
   });
 
   it('selects model environment variables for the active provider', () => {

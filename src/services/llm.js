@@ -1,7 +1,14 @@
 // LLM Service - Singleton pattern
 // Handles all LLM operations for question generation
 
-const { getLLMProvider, getLLMModel } = require("../utils/llm-provider");
+const { getLLMProvider, getModelForProvider } = require("../utils/llm-provider");
+
+// Model used when OPENAI_LLM_MODEL / OLLAMA_LLM_MODEL is unset. The sandbox's
+// default lives in getModelForProvider, so the usage log sees it too.
+const FALLBACK_MODELS = {
+  openai: "gpt-4o-mini",
+  ollama: "llama3.1:8b",
+};
 
 // The newer OpenAI models reject an explicit `temperature` (only the default is
 // allowed) and expose `reasoning_effort` instead, so nothing on the OpenAI path
@@ -19,7 +26,6 @@ class LLMService {
     this.LLMModule = null;
     this.isInitialized = false;
     this.initializationPromise = null;
-    this.provider = getLLMProvider();
 
     // Initialize on first instantiation
     this.initializationPromise = this.initializeLLM();
@@ -31,8 +37,9 @@ class LLMService {
     try {
       console.log("Initializing LLM Service on server...");
 
-      // Import LLM module dynamically
-      const llmModule = await import("ubc-genai-toolkit-llm");
+      // The toolkit is CommonJS, so a plain require works (and, unlike a
+      // dynamic import, can be mocked by the unit tests).
+      const llmModule = require("ubc-genai-toolkit-llm");
 
       // Try different ways to access the module
       this.LLMModule =
@@ -54,9 +61,13 @@ class LLMService {
   /**
    * Get LLM instance with proper configuration
    * @param {string|null} [overrideModel=null] - Optional model to override the default model
+   * @param {object} [overrideOptions={}] - Options merged over the defaults; a null value removes that option
+   * @param {string} [provider] - "openai" | "ollama" | "ubc-llm-sandbox"; defaults to LLM_PROVIDER.
+   *                              generateStructured passes the provider for its operation, so grading
+   *                              can go to GRADING_LLM_PROVIDER.
    * @returns {Promise<Object>} LLM instance
    */
-  async getLLMInstance(overrideModel = null, overrideOptions = {}) {
+  async getLLMInstance(overrideModel = null, overrideOptions = {}, provider = getLLMProvider()) {
     if (!this.isInitialized) {
       await this.initializationPromise;
     }
@@ -65,35 +76,42 @@ class LLMService {
       throw new Error("LLM service not initialized");
     }
 
-    // Import ConsoleLogger for LLM config
-    const coreModule = await import("ubc-genai-toolkit-core");
-    const ConsoleLogger =
-      coreModule.ConsoleLogger ||
-      coreModule.default?.ConsoleLogger ||
-      coreModule.default;
+    const { ConsoleLogger } = require("ubc-genai-toolkit-core");
 
     // Build config based on provider
     let llmConfig;
-    const model =
-      overrideModel ||
-      getLLMModel() ||
-      (this.provider === 'openai' ? 'gpt-4o-mini' : 'llama3.1:8b');
+    const model = overrideModel || getModelForProvider(provider) || FALLBACK_MODELS[provider];
 
-    if (this.provider === 'openai') {
+    // OpenAI and the UBC LLM Sandbox take the same OpenAI-style options. The
+    // sandbox's toolkit provider translates them per model: for Qwen,
+    // reasoning_effort "none" becomes enable_thinking: false, and other values
+    // are forwarded (and currently ignored by the gateway).
+    const openAIStyleOptions = () => {
+      const opts = {
+        reasoning_effort: resolveEffort(),
+        max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
+        response_format: { type: 'json_object' },
+        ...overrideOptions
+      };
+      Object.keys(opts).forEach(k => opts[k] === null && delete opts[k]);
+      return opts;
+    };
+
+    if (provider === 'openai') {
       llmConfig = {
         provider: 'openai',
         apiKey: process.env.OPENAI_API_KEY,
         defaultModel: model,
-        defaultOptions: (() => {
-          const opts = {
-            reasoning_effort: resolveEffort(),
-            max_completion_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 2000,
-            response_format: { type: 'json_object' },
-            ...overrideOptions
-          };
-          Object.keys(opts).forEach(k => opts[k] === null && delete opts[k]);
-          return opts;
-        })(),
+        defaultOptions: openAIStyleOptions(),
+        logger: new ConsoleLogger('LLM'),
+      };
+    } else if (provider === 'ubc-llm-sandbox') {
+      llmConfig = {
+        provider: 'ubc-llm-sandbox',
+        apiKey: process.env.UBC_LLM_SANDBOX_API_KEY,
+        endpoint: process.env.UBC_LLM_SANDBOX_ENDPOINT,
+        defaultModel: model,
+        defaultOptions: openAIStyleOptions(),
         logger: new ConsoleLogger('LLM'),
       };
     } else {
