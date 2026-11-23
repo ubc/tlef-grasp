@@ -16,6 +16,8 @@ the same way the E2E workflow does.
 - Authenticated instructor pages: onboarding, Dashboard, Course Materials,
   Question Generation, Question Bank tabs, Quizzes, Quiz Scores,
   My Sections, Users, and Settings.
+- Analytics (faculty only): each tab on the seeded course, the tab keyboard
+  pattern, and the CSV export control.
 - Authenticated student-view pages: Student Dashboard, Available Quizzes,
   Achievements, and Quiz Summary error state.
 - Course Materials text-content modal open and Escape-close states.

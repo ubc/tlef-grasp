@@ -25,6 +25,7 @@ const INSTRUCTOR_ITEMS = [
   { to: "/quizzes", icon: "fa-clipboard-list", label: "Quizzes" },
   { to: "/quiz-scores", icon: "fa-chart-bar", label: "Quiz Scores" },
   { to: "/question-flags", icon: "fa-flag", label: "Question Flags" },
+  { to: "/analytics", icon: "fa-chart-line", label: "Analytics", facultyOnly: true },
 ];
 
 const INSTRUCTOR_MANAGEMENT_ITEMS = [
@@ -211,6 +212,7 @@ export default function Sidebar({ open = false, onClose }) {
   // Hide instructor links a co-instructor isn't permitted to see, and links a
   // TA's per-course permission map withholds (canTa is all-true for non-TAs).
   const instructorItems = INSTRUCTOR_ITEMS.filter((item) => {
+    if (item.facultyOnly && courseRole !== "faculty") return false;
     const permission = PATH_PERMISSION[item.to];
     if (permission && !can(permission)) return false;
     const taPermission = TA_PATH_PERMISSION[item.to];

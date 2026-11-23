@@ -63,6 +63,7 @@ const objectiveRoutes = require("./routes/objective");
 const quizRoutes = require("./routes/quiz");
 const userRoutes = require("./routes/users");
 const achievementRoutes = require("./routes/achievement");
+const analyticsRoutes = require("./routes/analytics");
 const ubcApiRoutes = require("./routes/ubcApi");
 const imageRoutes = require("./routes/image");
 const profileRoutes = require("./routes/profile");
@@ -210,6 +211,8 @@ app.use("/api/achievement", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT), 
 // faculty-only access themselves. Promoted TA access is checked per course.
 app.use("/api/users", ensureAuthenticatedAPI, requireRole(ROLES.STAFF), userRoutes);
 
+// Course analytics - class-level aggregates, faculty only (no staff or TAs).
+app.use("/api/analytics", ensureAuthenticatedAPI, requireRole(ROLES.FACULTY), analyticsRoutes);
 // App-wide administration - APP_ADMINISTRATOR only (acts on every course)
 app.use("/api/admin", ensureAuthenticatedAPI, requireAppAdministrator, express.json(), adminRoutes);
 
