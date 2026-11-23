@@ -843,6 +843,57 @@ async function seedGradeCsvQuizzes() {
 }
 
 /** Remove the grade CSV quizzes and their schedules and scores. */
+// --- Analytics (PR #171) ------------------------------------------------------
+// One open-ended answer awaiting grading (isCorrect: null) from bio_student on
+// the AI-graded quiz, so the Quizzes tab's "awaiting grading" lookup returns a
+// row. That lookup reads grasp_student_attempt, which has encrypted fields; it
+// once used a $group stage, which the encryption layer rejects, so the tab
+// failed only where field encryption is on (staging, and the CI e2e run).
+// Marked with seedKey so removal never touches an attempt a spec made itself.
+const ANALYTICS_PENDING_SEED_KEY = 'e2e-analytics-pending';
+
+async function seedAnalyticsPendingAnswer() {
+  return withSeedDb(async (db) => {
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    if (!course) throw new Error('Seeded BIOC 302 course is missing; run seedStudentJourneyCourse first');
+    const quiz = await db.collection('grasp_quiz').findOne({ courseId: course._id, name: AI_QUIZ_NAME });
+    const question = await db
+      .collection('grasp_question')
+      .findOne({ courseId: course._id, seedKey: 'e2e-bioc302-oe1' });
+    const student = await getUserByPuid(db, BIO_STUDENT_PUID);
+    if (!quiz || !question || !student) throw new Error('Seeded AI quiz, open-ended question or bio_student is missing');
+
+    // Upsert on the unique (userId, quizId, questionId) key: if the AI-grading
+    // spec already left a real answer here, keep it and add nothing.
+    await db.collection('grasp_student_attempt').updateOne(
+      { userId: student._id, quizId: quiz._id, questionId: question._id },
+      {
+        $setOnInsert: {
+          seedKey: ANALYTICS_PENDING_SEED_KEY,
+          userId: student._id,
+          quizId: quiz._id,
+          questionId: question._id,
+          courseId: course._id,
+          questionType: 'open-ended',
+          isCorrect: null,
+          isFirstAttempt: true,
+          learningObjectiveId: question.learningObjectiveId || null,
+          granularObjectiveId: question.granularObjectiveId || null,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    return { courseId: String(course._id), quizId: String(quiz._id) };
+  });
+}
+
+async function removeAnalyticsPendingAnswer() {
+  await withSeedDb(async (db) => {
+    await db.collection('grasp_student_attempt').deleteMany({ seedKey: ANALYTICS_PENDING_SEED_KEY });
+  });
+}
+
 async function removeGradeCsvQuizzes() {
   await withSeedDb(async (db) => {
     const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
@@ -1116,6 +1167,8 @@ module.exports = {
   removeMultipleAnswerQuiz,
   seedGradeCsvQuizzes,
   removeGradeCsvQuizzes,
+  seedAnalyticsPendingAnswer,
+  removeAnalyticsPendingAnswer,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,

@@ -459,19 +459,21 @@ async function getQuizAnalytics(courseId, { quizId = null, students }) {
                     )
                     .toArray()
                 : [],
+            // A plain find, de-duplicated below: grasp_student_attempt has
+            // encrypted fields, and the encryption layer rejects aggregation
+            // stages such as $group on such collections (only $match, $sort,
+            // $skip, $limit and $project are allowed).
             studentIds.length
                 ? db.collection("grasp_student_attempt")
-                    .aggregate([
+                    .find(
                         {
-                            $match: {
-                                quizId: { $in: quizIds },
-                                userId: { $in: studentIds },
-                                isCorrect: null,
-                                isFirstAttempt: { $ne: false },
-                            },
+                            quizId: { $in: quizIds },
+                            userId: { $in: studentIds },
+                            isCorrect: null,
+                            isFirstAttempt: { $ne: false },
                         },
-                        { $group: { _id: { quizId: "$quizId", userId: "$userId" } } },
-                    ])
+                        { projection: { quizId: 1, userId: 1 } }
+                    )
                     .toArray()
                 : [],
             studentIds.length
@@ -502,10 +504,11 @@ async function getQuizAnalytics(courseId, { quizId = null, students }) {
     }
 
     const pendingUsers = new Map();
-    for (const { _id } of pending) {
-        const key = String(_id.quizId);
+    // One row per pending answer; the Set keeps each student once per quiz.
+    for (const { quizId, userId } of pending) {
+        const key = String(quizId);
         if (!pendingUsers.has(key)) pendingUsers.set(key, new Set());
-        pendingUsers.get(key).add(String(_id.userId));
+        pendingUsers.get(key).add(String(userId));
     }
 
     const { byQuiz } = analyzeItems(attempts);
