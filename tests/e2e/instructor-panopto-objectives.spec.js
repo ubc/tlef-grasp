@@ -15,17 +15,28 @@ const {
 // There is no fake Panopto, so the browser's /api/panopto calls are answered
 // here and the "import" names a transcript material the seed already put in
 // the course. Generation and saving go through the real server (with the
-// stubbed LLM). Opt-in (E2E_SAML=1).
+// stubbed LLM). The server runs with PANOPTO_OBJECTIVES_ENABLED=true
+// (playwright.config.js); the last test has the status say it is off.
+// Opt-in (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 
 const EDITED_NAME = 'Explain how inhibitors change Km and Vmax';
 const ADDED_SUB = 'Distinguish competitive from noncompetitive inhibition on a plot';
 
-async function answerPanoptoCalls(page, transcript) {
+// `panopto.objectives` is what /api/panopto/status reports for the flag.
+async function answerPanoptoCalls(page, transcript, panopto) {
   await page.route('**/api/panopto/**', async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === '/api/panopto/status') {
-      return route.fulfill({ json: { success: true, configured: true, connected: true, host: 'panopto.e2e.invalid' } });
+      return route.fulfill({
+        json: {
+          success: true,
+          configured: true,
+          connected: true,
+          host: 'panopto.e2e.invalid',
+          objectives: panopto.objectives,
+        },
+      });
     }
     if (pathname === '/api/panopto/folders') {
       return route.fulfill({
@@ -71,12 +82,13 @@ test.describe('Learning objectives from a Panopto transcript (seeded course)', (
   /** @type {import('@playwright/test').Page} */
   let page;
   let transcript;
+  const panopto = { objectives: true };
 
   test.beforeAll(async ({ browser }) => {
     await removePanoptoTranscript();
     transcript = await seedPanoptoTranscript();
     page = await browser.newPage();
-    await answerPanoptoCalls(page, transcript);
+    await answerPanoptoCalls(page, transcript, panopto);
     await selectSeededCourse(page, { role: 'instructor' });
   });
 
@@ -147,5 +159,33 @@ test.describe('Learning objectives from a Panopto transcript (seeded course)', (
 
     // Still only what the first test saved.
     expect(await getPanoptoTranscriptObjectives()).toHaveLength(1);
+  });
+
+  test('while the feature is off, an import offers nothing and the card has no link', async () => {
+    panopto.objectives = false;
+    try {
+      await page.goto('/course-materials', { waitUntil: 'networkidle' });
+      await expect(page.getByRole('heading', { name: transcript.documentTitle })).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: `Create learning objectives from ${transcript.documentTitle}` })
+      ).toHaveCount(0);
+
+      const panoptoTile = page.getByRole('button', { name: /From Panopto/ });
+      if (!(await panoptoTile.isVisible())) {
+        await page.getByRole('button', { name: 'Upload Materials' }).click();
+      }
+      await panoptoTile.click();
+      const picker = page.getByRole('dialog', { name: 'Import from Panopto' });
+      await picker.getByRole('checkbox', { name: transcript.documentTitle }).check();
+      await picker.getByRole('button', { name: 'Import 1 video' }).click();
+
+      // The import finishes as it did before the feature: the picker closes
+      // with its toast, and no offer follows.
+      await expect(page.getByText('Captions of 1 video imported from Panopto')).toBeVisible();
+      await expect(picker).toBeHidden();
+      await expect(page.getByRole('dialog', { name: 'Create learning objectives' })).toHaveCount(0);
+    } finally {
+      panopto.objectives = true;
+    }
   });
 });

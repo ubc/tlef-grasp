@@ -80,8 +80,16 @@ const buildResponse = () => {
 
 const sentPrompt = () => mockGenerateStructured.mock.calls[0][0].prompt;
 
+const savedFlag = process.env.PANOPTO_OBJECTIVES_ENABLED;
+
+afterAll(() => {
+  if (savedFlag === undefined) delete process.env.PANOPTO_OBJECTIVES_ENABLED;
+  else process.env.PANOPTO_OBJECTIVES_ENABLED = savedFlag;
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
+  process.env.PANOPTO_OBJECTIVES_ENABLED = 'true';
   mockHasStaffAccessInCourse.mockResolvedValue(true);
   mockAssertCoInstructorPermission.mockResolvedValue(true);
   mockAssertTaPermission.mockResolvedValue(true);
@@ -111,6 +119,21 @@ describe('the transcript prompt', () => {
 });
 
 describe('generateTranscriptObjectivesHandler', () => {
+  it.each([undefined, '', 'false', '0'])(
+    'answers 404 without reading anything while PANOPTO_OBJECTIVES_ENABLED is %p',
+    async (value) => {
+      if (value === undefined) delete process.env.PANOPTO_OBJECTIVES_ENABLED;
+      else process.env.PANOPTO_OBJECTIVES_ENABLED = value;
+      const res = buildResponse();
+      await generateTranscriptObjectivesHandler(buildRequest(), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ success: false, code: 'FEATURE_DISABLED' });
+      expect(mockHasStaffAccessInCourse).not.toHaveBeenCalled();
+      expect(mockGetMaterialBySourceId).not.toHaveBeenCalled();
+      expect(mockGenerateStructured).not.toHaveBeenCalled();
+    }
+  );
+
   it('sends the whole transcript through the transcript prompt and returns cleaned objectives', async () => {
     const res = buildResponse();
     await generateTranscriptObjectivesHandler(buildRequest(), res);

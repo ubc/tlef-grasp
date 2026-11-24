@@ -277,6 +277,24 @@ describe('Panopto routes', () => {
   });
 
   describe('connection', () => {
+    // Learning objectives from transcripts (issue #218) are off unless the
+    // deployment turns them on; the client hides them on this field.
+    it('reports learning objectives from transcripts as off unless turned on', async () => {
+      const { app } = setup();
+      const saved = process.env.PANOPTO_OBJECTIVES_ENABLED;
+      try {
+        delete process.env.PANOPTO_OBJECTIVES_ENABLED;
+        expect((await request(app).get('/api/panopto/status')).body.objectives).toBe(false);
+        process.env.PANOPTO_OBJECTIVES_ENABLED = 'false';
+        expect((await request(app).get('/api/panopto/status')).body.objectives).toBe(false);
+        process.env.PANOPTO_OBJECTIVES_ENABLED = 'true';
+        expect((await request(app).get('/api/panopto/status')).body.objectives).toBe(true);
+      } finally {
+        if (saved === undefined) delete process.env.PANOPTO_OBJECTIVES_ENABLED;
+        else process.env.PANOPTO_OBJECTIVES_ENABLED = saved;
+      }
+    });
+
     it('says so when the user has not connected', async () => {
       const { app } = setup();
       const status = await request(app).get('/api/panopto/status');
