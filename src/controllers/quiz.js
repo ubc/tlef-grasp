@@ -400,6 +400,16 @@ const getQuizByIdHandler = async (req, res) => {
   }
 };
 
+// The error for a quiz import whose every question was refused, with the first
+// reason. e.g. "No quiz was created: all 3 questions were refused. Mark at
+// least one option as correct."
+const describeAllRefused = (invalidCount, invalidReason) => {
+  const what = invalidCount === 1
+    ? "its only question was refused"
+    : `all ${invalidCount} questions were refused`;
+  return `No quiz was created: ${what}.${invalidReason ? ` ${invalidReason}` : ""}`;
+};
+
 /**
  * Create a new quiz
  */
@@ -449,15 +459,6 @@ const createQuizHandler = async (req, res) => {
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
 
-    const quiz = await quizService.createQuiz(courseId, {
-      name,
-      description,
-      deliveryFormat,
-      disablePreviousNavigation,
-      timeLimitMinutes: timeLimitMinutes === undefined ? undefined : Number(timeLimitMinutes)
-    });
-    
-    const quizId = quiz._id.toString();
     const finalQuestionIds = [];
 
     // Attach existing questions
@@ -465,10 +466,16 @@ const createQuizHandler = async (req, res) => {
       finalQuestionIds.push(...questionIds);
     }
 
-    // Create and attach new questions. These only arrive from quiz import, so
+    // Create the new questions before the quiz, so a file whose every question
+    // is refused creates nothing at all. These only arrive from quiz import, so
     // de-duplicate against the course to avoid re-creating questions that are
     // already there (same text + answers + granular objective).
     let duplicateCount = 0;
+    // Questions refused because they could never be graded (a multiple-answer
+    // question with no correct option, say), and the first reason why, so the
+    // instructor is told rather than the question vanishing.
+    let invalidCount = 0;
+    let invalidReason = null;
     if (newQuestions && Array.isArray(newQuestions)) {
       for (const questionData of newQuestions) {
         try {
@@ -482,12 +489,39 @@ const createQuizHandler = async (req, res) => {
         } catch (error) {
           if (error.code === "DUPLICATE_QUESTION") {
             duplicateCount += 1;
+          } else if (error.code === "INVALID_QUESTION") {
+            invalidCount += 1;
+            invalidReason = invalidReason || error.message;
           } else {
             console.error("Error saving new question during quiz creation:", error);
           }
         }
       }
     }
+
+    // Every question in the file was refused: an empty quiz is not what the
+    // instructor asked for, so create none and say why. Nothing was saved.
+    const newCount = Array.isArray(newQuestions) ? newQuestions.length : 0;
+    if (newCount > 0 && invalidCount === newCount && finalQuestionIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: "ALL_QUESTIONS_REFUSED",
+        error: describeAllRefused(invalidCount, invalidReason),
+        questionsAdded: 0,
+        duplicateCount,
+        invalidCount,
+        invalidReason,
+      });
+    }
+
+    const quiz = await quizService.createQuiz(courseId, {
+      name,
+      description,
+      deliveryFormat,
+      disablePreviousNavigation,
+      timeLimitMinutes: timeLimitMinutes === undefined ? undefined : Number(timeLimitMinutes)
+    });
+    const quizId = quiz._id.toString();
 
     // Orphaned questions are left out, so report what was actually inserted.
     let questionsAdded = 0;
@@ -502,6 +536,8 @@ const createQuizHandler = async (req, res) => {
       questionsAdded,
       skippedCount: finalQuestionIds.length - questionsAdded,
       duplicateCount,
+      invalidCount,
+      invalidReason,
     });
   } catch (error) {
     console.error("Error creating quiz:", error);
@@ -620,10 +656,11 @@ const addQuizQuestionsHandler = async (req, res) => {
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
 
     const savedQuestionIds = [];
-    // Why a question that could never be graded was refused, to tell the
-    // instructor when nothing was saved.
+    // Questions refused because they could never be graded, and the first
+    // reason why, so the instructor is told whether or not the others saved.
+    let invalidCount = 0;
     let invalidReason = null;
-    
+
     for (const questionData of questions) {
       try {
         // Save the question. Canvas provenance (#140) is written only by the
@@ -632,6 +669,7 @@ const addQuizQuestionsHandler = async (req, res) => {
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
         if (error.code === "INVALID_QUESTION") {
+          invalidCount += 1;
           invalidReason = invalidReason || error.message;
         } else {
           console.error("Error saving question:", error);
@@ -644,16 +682,21 @@ const addQuizQuestionsHandler = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: invalidReason || "No questions were saved successfully",
+        questionsAdded: 0,
+        invalidCount,
+        invalidReason,
       });
     }
-    
+
     // Add questions to quiz
     const result = await quizService.addQuestionsToQuiz(quizId, savedQuestionIds);
-    
+
     res.json({
       success: true,
       result,
       questionsAdded: savedQuestionIds.length,
+      invalidCount,
+      invalidReason,
     });
   } catch (error) {
     console.error("Error adding questions to quiz:", error);

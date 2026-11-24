@@ -8,6 +8,8 @@ import {
   matchGranular,
   toSavePayload,
   isRowResolved,
+  describeQuizImportResult,
+  describeQuizImportError,
 } from "../../lib/questionImport";
 import { useImportedObjectives } from "../../hooks/useImportedObjectives";
 import ImportQuestionReview from "../../components/ImportQuestionReview";
@@ -56,16 +58,14 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
 
   const createMutation = useCreateQuiz(courseId, {
     onSuccess: (data) => {
-      const added = data?.questionsAdded ?? rows.length;
-      const skipped = data?.duplicateCount || 0;
-      const suffix = skipped ? ` (skipped ${skipped} duplicate${skipped === 1 ? "" : "s"})` : "";
-      showToast(
-        `Imported quiz with ${added} question${added === 1 ? "" : "s"}${suffix}`,
-        "success"
-      );
+      const { message, type } = describeQuizImportResult(data, rows.length);
+      showToast(message, type, { sticky: type === "warning" });
       onCreated();
     },
-    onError: (error) => showToast(error.message || "Failed to import quiz", "error"),
+    onError: (error) => {
+      const { message, type } = describeQuizImportError(error);
+      showToast(message, type, { sticky: type === "warning" });
+    },
   });
 
   const handleFile = async (event) => {
