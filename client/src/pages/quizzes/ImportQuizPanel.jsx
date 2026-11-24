@@ -59,12 +59,12 @@ export default function ImportQuizPanel({ courseId, onBack, onCreated }) {
   const createMutation = useCreateQuiz(courseId, {
     onSuccess: (data) => {
       const { message, type } = describeQuizImportResult(data, rows.length);
-      showToast(message, type);
+      showToast(message, type, { sticky: type === "warning" });
       onCreated();
     },
     onError: (error) => {
       const { message, type } = describeQuizImportError(error);
-      showToast(message, type);
+      showToast(message, type, { sticky: type === "warning" });
     },
   });
 

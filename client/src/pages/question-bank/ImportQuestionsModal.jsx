@@ -98,7 +98,7 @@ export default function ImportQuestionsModal({ courseId, onClose, onBack, onImpo
   const saveMutation = useSaveQuestions(courseId, {
     onSuccess: (data) => {
       const { message, type } = describeImportResult(data, rows.length);
-      showToast(message, type);
+      showToast(message, type, { sticky: type === "warning" });
       onImported?.();
       onClose();
     },
