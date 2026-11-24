@@ -656,10 +656,11 @@ const addQuizQuestionsHandler = async (req, res) => {
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.CREATE_QUIZ))) return;
 
     const savedQuestionIds = [];
-    // Why a question that could never be graded was refused, to tell the
-    // instructor when nothing was saved.
+    // Questions refused because they could never be graded, and the first
+    // reason why, so the instructor is told whether or not the others saved.
+    let invalidCount = 0;
     let invalidReason = null;
-    
+
     for (const questionData of questions) {
       try {
         // Save the question. Canvas provenance (#140) is written only by the
@@ -668,6 +669,7 @@ const addQuizQuestionsHandler = async (req, res) => {
         savedQuestionIds.push(questionResult.insertedId.toString());
       } catch (error) {
         if (error.code === "INVALID_QUESTION") {
+          invalidCount += 1;
           invalidReason = invalidReason || error.message;
         } else {
           console.error("Error saving question:", error);
@@ -680,16 +682,21 @@ const addQuizQuestionsHandler = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: invalidReason || "No questions were saved successfully",
+        questionsAdded: 0,
+        invalidCount,
+        invalidReason,
       });
     }
-    
+
     // Add questions to quiz
     const result = await quizService.addQuestionsToQuiz(quizId, savedQuestionIds);
-    
+
     res.json({
       success: true,
       result,
       questionsAdded: savedQuestionIds.length,
+      invalidCount,
+      invalidReason,
     });
   } catch (error) {
     console.error("Error adding questions to quiz:", error);

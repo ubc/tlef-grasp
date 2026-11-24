@@ -330,3 +330,17 @@ export function describeQuizImportError(error) {
   const message = error?.message || "Failed to import quiz";
   return { message, type: error?.body?.code === "ALL_QUESTIONS_REFUSED" ? "warning" : "error" };
 }
+
+// The toast after the Add Question wizard saves, to the bank or straight into
+// a quiz. Both endpoints report questions refused as ungradable; any that were
+// are named, as a warning, so one is never silently left out.
+export function describeAddQuestionsResult(data) {
+  const refused = data?.invalidCount || 0;
+  if (!refused) return { message: "Question added successfully", type: "success" };
+  const added = data?.questionsAdded ?? data?.savedCount ?? 0;
+  const reason = String(data?.invalidReason || "").trim();
+  return {
+    message: `Added ${added} question${added === 1 ? "" : "s"} (${refused} refused${reason ? `: ${reason}` : ""})`,
+    type: "warning",
+  };
+}

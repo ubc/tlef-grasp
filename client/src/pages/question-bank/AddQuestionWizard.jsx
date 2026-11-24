@@ -3,6 +3,7 @@ import { QUESTION_TYPES, BLOOM_LEVELS } from "../../lib/constants";
 import { getObjectId } from "../../lib/utils";
 import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { useSaveQuestions } from "../../hooks/useQuestions";
+import { describeAddQuestionsResult } from "../../lib/questionImport";
 import { useSelectedCourse } from "../../stores/appStore";
 import { generateWizardQuestion } from "../question-generation/generationApi";
 import Modal from "../../components/ui/Modal";
@@ -268,8 +269,9 @@ export default function AddQuestionWizard({ courseId, quizzes, onClose }) {
   };
 
   const saveMutation = useSaveQuestions(courseId, {
-    onSuccess: () => {
-      showToast("Question added successfully", "success");
+    onSuccess: (data) => {
+      const { message, type } = describeAddQuestionsResult(data);
+      showToast(message, type, { sticky: type === "warning" });
       onClose();
     },
     onError: (error) => {

@@ -1,5 +1,9 @@
 import { describe, it, expect } from '@jest/globals';
-import { describeQuizImportResult, describeQuizImportError } from '../../client/src/lib/questionImport.js';
+import {
+  describeQuizImportResult,
+  describeQuizImportError,
+  describeAddQuestionsResult,
+} from '../../client/src/lib/questionImport.js';
 import { ApiError } from '../../client/src/lib/api.js';
 
 // The toast after a quiz import must name refused questions, not just the
@@ -63,5 +67,29 @@ describe('describeQuizImportError', () => {
 
   it('falls back to a generic message', () => {
     expect(describeQuizImportError(undefined)).toEqual({ message: 'Failed to import quiz', type: 'error' });
+  });
+});
+
+// The Add Question wizard saves to the bank or straight into a quiz; either
+// can refuse a question, and the toast must say so.
+describe('describeAddQuestionsResult', () => {
+  it('keeps the plain success message when nothing was refused', () => {
+    expect(describeAddQuestionsResult({ questionsAdded: 1, invalidCount: 0 })).toEqual({
+      message: 'Question added successfully',
+      type: 'success',
+    });
+    expect(describeAddQuestionsResult(undefined).type).toBe('success');
+  });
+
+  it('names a refusal when adding to a quiz', () => {
+    expect(
+      describeAddQuestionsResult({ questionsAdded: 1, invalidCount: 1, invalidReason: 'Mark at least one option as correct.' })
+    ).toEqual({ message: 'Added 1 question (1 refused: Mark at least one option as correct.)', type: 'warning' });
+  });
+
+  it('reads the bank endpoint\'s savedCount too', () => {
+    expect(describeAddQuestionsResult({ savedCount: 2, invalidCount: 1, invalidReason: 'Bad.' }).message).toBe(
+      'Added 2 questions (1 refused: Bad.)'
+    );
   });
 });

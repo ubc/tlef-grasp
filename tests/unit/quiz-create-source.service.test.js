@@ -278,6 +278,8 @@ describe('client-sent provenance', () => {
       success: true,
       result: { insertedCount: 1 },
       questionsAdded: 1,
+      invalidCount: 0,
+      invalidReason: null,
     });
 
     const questionDoc = collection('grasp_question').insertOne.mock.calls[0][0];

@@ -192,3 +192,57 @@ describe('quiz import with a refused multiple-answer question', () => {
     expect(body).toMatchObject({ questionsAdded: 2, invalidCount: 0, invalidReason: null });
   });
 });
+
+// POST /api/quiz/:quizId/questions saves new questions straight into an
+// existing quiz. It used to report a refusal only when nothing saved.
+describe('adding new questions to an existing quiz', () => {
+  const { addQuizQuestionsHandler } = require('../../src/controllers/quiz');
+
+  const addQuestions = async (questions) => {
+    const res = {};
+    res.status = jest.fn(() => res);
+    res.json = jest.fn(() => res);
+    await addQuizQuestionsHandler(
+      { user: { id: 'u1' }, params: { quizId: new ObjectId().toString() }, body: { courseId: COURSE_ID, questions } },
+      res
+    );
+    return { status: res.status.mock.calls[0]?.[0] ?? 200, body: res.json.mock.calls[0][0] };
+  };
+
+  it('adds the valid question and reports the refused one', async () => {
+    mockDb();
+
+    const { status, body } = await addQuestions([mcQuestion(), maQuestion([])]);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      success: true,
+      questionsAdded: 1,
+      invalidCount: 1,
+      invalidReason: expect.stringMatching(/at least one option as correct/),
+    });
+    expect(loggedAnError()).toBe(false);
+  });
+
+  it('gives the reason and the count when nothing saved', async () => {
+    mockDb();
+
+    const { status, body } = await addQuestions([maQuestion([], 'M1'), maQuestion(['A', 'D'], 'M2')]);
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/at least one option as correct/),
+      questionsAdded: 0,
+      invalidCount: 2,
+    });
+  });
+
+  it('reports no refusals when every question saved', async () => {
+    mockDb();
+
+    const { body } = await addQuestions([mcQuestion()]);
+
+    expect(body).toMatchObject({ success: true, questionsAdded: 1, invalidCount: 0, invalidReason: null });
+  });
+});
