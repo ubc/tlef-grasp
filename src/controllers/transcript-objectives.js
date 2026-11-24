@@ -10,6 +10,7 @@
 // through POST /api/objective, linked to this one transcript.
 
 const { getMaterialBySourceId } = require('../services/material');
+const { panoptoObjectivesEnabled } = require('../services/panopto');
 const outlineService = require('../services/material-outline');
 const settingsService = require('../services/settings');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -59,6 +60,15 @@ function buildTranscriptObjectivesPrompt(template, values) {
 }
 
 async function generateTranscriptObjectivesHandler(req, res) {
+  // Off unless the deployment turns it on (PANOPTO_OBJECTIVES_ENABLED).
+  if (!panoptoObjectivesEnabled()) {
+    return res.status(404).json({
+      success: false,
+      code: 'FEATURE_DISABLED',
+      error: 'Creating learning objectives from Panopto videos is not turned on.',
+    });
+  }
+
   const { courseId, materialId, courseName } = req.body || {};
   if (!courseId || typeof materialId !== 'string' || !materialId.trim()) {
     return res.status(400).json({ success: false, error: 'A course and a video are required.' });

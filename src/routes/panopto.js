@@ -20,6 +20,7 @@ const {
   panoptoConfigFromEnv,
   panoptoGet,
   panoptoGetAllPages,
+  panoptoObjectivesEnabled,
   revokeToken,
 } = require('../services/panopto');
 
@@ -248,6 +249,8 @@ function createPanoptoRouter(integration = createPanoptoIntegration()) {
       configured: true,
       connected: Boolean(accessToken),
       host: config.host,
+      // Whether Course Materials offers learning objectives from transcripts.
+      objectives: panoptoObjectivesEnabled(),
       ...(accessToken ? {} : { connectUrl: CONNECT_URL }),
     });
   }));

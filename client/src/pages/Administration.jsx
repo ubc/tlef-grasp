@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
-import { PROMPT_FIELDS } from "../lib/prompts";
+import { PROMPT_FIELDS, visiblePromptFields } from "../lib/prompts";
+import { usePanoptoStatus } from "../hooks/usePanopto";
 import {
   useAdminPromptOverrides,
   useResetPromptForAllCourses,
@@ -14,6 +15,8 @@ const courseCount = (n) => `${n} course${n === 1 ? "" : "s"}`;
 export default function Administration() {
   const showToast = useToast();
   const { prompts, isPending, isError } = useAdminPromptOverrides();
+  const panopto = usePanoptoStatus();
+  const promptFields = visiblePromptFields({ panoptoObjectives: panopto.objectives });
   const [confirmField, setConfirmField] = useState(null);
   const navigate = useNavigate();
   const selectedCourse = useAppStore((state) => state.selectedCourse);
@@ -76,7 +79,7 @@ export default function Administration() {
           )}
 
           <ul className="divide-y divide-gray-200">
-            {PROMPT_FIELDS.map((field) => {
+            {promptFields.map((field) => {
               const counts = prompts[field.key];
               const stored = counts?.courses || 0;
               const outdated = stored - (counts?.matchingDefault || 0);

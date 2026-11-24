@@ -49,6 +49,8 @@ export function usePanoptoStatus() {
     configured: query.data?.configured === true,
     connected: query.data?.connected === true,
     host: query.data?.host || "",
+    // Learning objectives from transcripts (PANOPTO_OBJECTIVES_ENABLED).
+    objectives: query.data?.objectives === true,
   };
 }
 

@@ -46,6 +46,15 @@ function isPanoptoConfigured(env = process.env) {
   );
 }
 
+// Learning objectives from Panopto transcripts (issue #218) stay off until a
+// deployment sets PANOPTO_OBJECTIVES_ENABLED, so the code can ship before the
+// feature is rolled out. Importing captions does not depend on it.
+const FLAG_ON_VALUES = new Set(['true', '1', 'yes', 'on']);
+
+function panoptoObjectivesEnabled(env = process.env) {
+  return FLAG_ON_VALUES.has(String(env.PANOPTO_OBJECTIVES_ENABLED || '').trim().toLowerCase());
+}
+
 function panoptoConfigFromEnv(env = process.env) {
   return {
     host: env.PANOPTO_HOST.trim(),
@@ -341,6 +350,7 @@ module.exports = {
   identityProblem,
   isPanoptoConfigured,
   panoptoConfigFromEnv,
+  panoptoObjectivesEnabled,
   panoptoGet,
   panoptoGetAllPages,
   panoptoUserIdFromToken,
