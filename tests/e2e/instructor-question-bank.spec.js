@@ -27,6 +27,12 @@ async function deleteQuestionsByTitle(titles) {
 // skips. Opt-in (E2E_SAML=1).
 const IDP_ENABLED = process.env.E2E_SAML === '1';
 
+// The row checkbox is named "Select question: <title>" (issue #178), so its
+// cell's accessible name also contains the title. Match the title cell by its
+// visible text instead, which the checkbox's aria-label doesn't add to.
+const titleCell = (page, title) =>
+  page.getByRole('cell').filter({ hasText: title });
+
 test.describe('Instructor question bank (seeded course)', () => {
   test.skip(!IDP_ENABLED, 'Requires the SAML IdP - run with E2E_SAML=1');
   test.use({ storageState: BIO_PROF2_AUTH_FILE });
@@ -51,7 +57,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
 
     for (const title of SEED.QUESTION_TITLES) {
-      await expect(page.getByRole('cell', { name: title })).toBeVisible();
+      await expect(titleCell(page, title)).toBeVisible();
     }
     // Every seeded question is Approved. Cell-scoped so the identical entries
     // in the filter dropdowns don't match.
@@ -71,7 +77,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     await page.goto('/question-bank');
     await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeVisible();
 
     await page
@@ -79,10 +85,10 @@ test.describe('Instructor question bank (seeded course)', () => {
       .fill('Michaelis constant');
 
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeVisible();
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[1] })
+      titleCell(page, SEED.QUESTION_TITLES[1])
     ).toBeHidden();
   });
 
@@ -90,19 +96,19 @@ test.describe('Instructor question bank (seeded course)', () => {
     await selectSeededCourse(page, { role: 'instructor' });
     await page.goto('/question-bank');
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeVisible();
 
     // Other local course questions may be drafts; the seeded Approved rows must
     // still disappear when the Draft filter is selected.
     await page.getByLabel('Status').selectOption('Draft');
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeHidden();
 
     await page.getByLabel('Status').selectOption('Approved');
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeVisible();
   });
 
@@ -141,7 +147,7 @@ test.describe('Instructor question bank (seeded course)', () => {
       await dialog.getByRole('button', { name: 'Add 1 question' }).click();
       await expect(page.getByText('Added 1 question to the quiz')).toBeVisible();
       await expect(dialog).toBeHidden();
-      await expect(page.getByRole('cell', { name: SEED.AI_OPEN_ENDED_TITLE })).toBeVisible();
+      await expect(titleCell(page, SEED.AI_OPEN_ENDED_TITLE)).toBeVisible();
     } finally {
       await seedStudentJourneyCourse();
     }
@@ -154,9 +160,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     await page.goto('/question-bank');
 
     // The row action buttons reveal on hover.
-    const firstTitleCell = page.getByRole('cell', {
-      name: SEED.QUESTION_TITLES[0],
-    });
+    const firstTitleCell = titleCell(page, SEED.QUESTION_TITLES[0]);
     await firstTitleCell.hover();
     // The button's accessible name carries the FontAwesome glyph as a prefix,
     // so match the end of the name. /Flag$/ (case-sensitive) hits "Flag" but
@@ -188,7 +192,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     await page.getByRole('checkbox', { name: 'Show flagged only' }).check();
     await expect(firstTitleCell).toBeVisible();
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[1] })
+      titleCell(page, SEED.QUESTION_TITLES[1])
     ).toBeHidden();
 
     // Unflag to restore the seeded state; the filtered view empties.
@@ -214,7 +218,7 @@ test.describe('Instructor question bank (seeded course)', () => {
     // other approved questions the local course may hold.
     await page.getByLabel('Quiz').selectOption({ label: SEED.QUIZ_NAME });
     await expect(
-      page.getByRole('cell', { name: SEED.QUESTION_TITLES[0] })
+      titleCell(page, SEED.QUESTION_TITLES[0])
     ).toBeVisible();
 
     await page.getByLabel('Select all questions').check();
@@ -331,8 +335,8 @@ test.describe('Instructor question bank (seeded course)', () => {
       await expect(dialog).toBeHidden();
 
       // The imported questions now appear in the bank.
-      await expect(page.getByRole('cell', { name: matchedTitle })).toBeVisible();
-      await expect(page.getByRole('cell', { name: unmatchedTitle })).toBeVisible();
+      await expect(titleCell(page, matchedTitle)).toBeVisible();
+      await expect(titleCell(page, unmatchedTitle)).toBeVisible();
 
       // Re-importing the very same file must not create duplicates: the first
       // question already matches an objective, so it is rejected as a duplicate.
@@ -352,7 +356,7 @@ test.describe('Instructor question bank (seeded course)', () => {
         .click();
       await expect(page.getByText(/already exist/i)).toBeVisible();
       // Still exactly one copy of the matched question in the bank.
-      await expect(page.getByRole('cell', { name: matchedTitle })).toHaveCount(1);
+      await expect(titleCell(page, matchedTitle)).toHaveCount(1);
     } finally {
       await deleteQuestionsByTitle([matchedTitle, unmatchedTitle]);
     }

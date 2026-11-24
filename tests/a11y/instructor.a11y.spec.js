@@ -233,7 +233,7 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     });
   });
 
-  test('populated question bank table documents filter-label violations', async ({
+  test('populated question bank table has no blocking axe violations', async ({
     page,
   }) => {
     await prepareSeededInstructorCourse(page);
@@ -249,9 +249,11 @@ test.describe('Accessibility: seeded instructor populated states', () => {
     await expect(page.getByText(`${SEED.QUESTION_COUNT} questions selected`)).toBeVisible();
     await expect(page.getByRole('button', { name: /Approve$/ }).first()).toBeVisible();
 
-    // FINDINGS.md Accessibility: QuestionBank filter selects/search input have
-    // visible labels/placeholders but no programmatic names.
-    await expectNoA11yViolations(page, { disableRules: ['label'] });
+    // Issue #178: each row checkbox is named after its question.
+    await expect(
+      page.getByRole('checkbox', { name: /^Select question: / })
+    ).toHaveCount(await page.locator('tbody tr.group').count());
+    await expectNoA11yViolations(page);
   });
 
   test('add-existing-questions dialog has no blocking axe violations', async ({ page }) => {
