@@ -39,6 +39,18 @@ export const PROMPT_FIELDS = [
     ],
   },
   {
+    key: "objectiveGenerationTranscript",
+    label: "Learning Objective Generation Prompt - Panopto Transcripts",
+    rows: 12,
+    description:
+      "Used when you create learning objectives from a video imported from Panopto. It reads the lecture's transcript and is told to skip announcements and asides and to correct misheard technical terms.",
+    variables: [
+      ["{courseName}", "The name of the current course."],
+      ["{videoTitle}", "The video's title in Panopto."],
+      ["{transcript}", "The video's transcript (for a very long recording, an outline of it)."],
+    ],
+  },
+  {
     key: "powerPointImageDescription",
     label: "PowerPoint Image Extraction Prompt",
     rows: 8,

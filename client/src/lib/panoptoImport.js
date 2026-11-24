@@ -82,3 +82,17 @@ export function describePanoptoImportResult({ imported = [], errors = [] } = {})
     type: imported.length > 0 ? "warning" : "error",
   };
 }
+
+/**
+ * The imported videos to offer learning objectives for (issue #218), as
+ * { sourceId, documentTitle }. A video whose material the server did not
+ * name is left out: there is nothing to read.
+ */
+export function importedTranscripts({ imported = [] } = {}) {
+  return imported
+    .filter((entry) => entry?.material?.sourceId)
+    .map((entry) => ({
+      sourceId: entry.material.sourceId,
+      documentTitle: entry.material.documentTitle || entry.name || "",
+    }));
+}

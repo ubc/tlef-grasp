@@ -1152,6 +1152,92 @@ async function getPersonaUser(puid) {
   });
 }
 
+// --- A Panopto transcript in the seeded course (issue #218) ---
+// There is no fake Panopto: the spec answers the browser's /api/panopto calls
+// itself, and this is the material its "import" names. Shaped like a real
+// import (routes/panopto.js): text/plain with lms.provider 'panopto'.
+const PANOPTO_TRANSCRIPT = Object.freeze({
+  sourceId: 'e2e-panopto-transcript-1',
+  documentTitle: 'Lecture 7: Enzyme inhibition (seeded Panopto)',
+  sessionId: '0f6c9a52-6b1e-4a43-9d39-2f1f5b3a7e11',
+  folderId: '5d1e2c3b-4a59-4e68-9a7b-8c9d0e1f2a3b',
+});
+
+async function seedPanoptoTranscript() {
+  return withSeedDb(async (db) => {
+    const course = await db.collection('grasp_course').findOne({ courseCode: COURSE_CODE });
+    if (!course) {
+      throw new Error('seedPanoptoTranscript: the seeded BIOC 302 course is missing — saml.setup.js must run first');
+    }
+    const now = new Date();
+    const text =
+      "Okay, let's get started. Reminder, the problem set is due Friday. " +
+      'Today is enzyme inhibition. A competitive inhibitor binds the active site, so it raises the apparent Km ' +
+      'while Vmax stays the same. A noncompetitive inhibitor lowers Vmax and leaves Km unchanged.';
+    await db.collection('grasp_material').updateOne(
+      { courseId: course._id, sourceId: PANOPTO_TRANSCRIPT.sourceId },
+      {
+        $set: {
+          documentTitle: PANOPTO_TRANSCRIPT.documentTitle,
+          fileType: 'text/plain',
+          fileSize: text.length,
+          fileContent: text,
+          lms: {
+            provider: 'panopto',
+            instance: 'panopto.e2e.invalid',
+            externalFileId: PANOPTO_TRANSCRIPT.sessionId,
+            externalCourseId: PANOPTO_TRANSCRIPT.folderId,
+            externalFileName: PANOPTO_TRANSCRIPT.documentTitle,
+            importedAt: now,
+          },
+          updatedAt: now,
+        },
+        $setOnInsert: { courseId: course._id, sourceId: PANOPTO_TRANSCRIPT.sourceId, createdAt: now },
+      },
+      { upsert: true }
+    );
+    return { ...PANOPTO_TRANSCRIPT, courseId: String(course._id) };
+  });
+}
+
+/** The objectives linked to the seeded transcript, with their sub-objective names. */
+async function getPanoptoTranscriptObjectives() {
+  return withSeedDb(async (db) => {
+    const material = await db.collection('grasp_material').findOne({ sourceId: PANOPTO_TRANSCRIPT.sourceId });
+    if (!material) return [];
+    const links = await db.collection('grasp_objective_material').find({ materialId: material._id }).toArray();
+    const parents = await db
+      .collection('grasp_objective')
+      .find({ _id: { $in: links.map((link) => link.objectiveId) } })
+      .toArray();
+    return Promise.all(
+      parents.map(async (parent) => ({
+        name: parent.name,
+        granulars: (await db.collection('grasp_objective').find({ parent: parent._id }).toArray()).map(
+          (granular) => granular.name
+        ),
+      }))
+    );
+  });
+}
+
+/** Remove the seeded transcript and every objective a run linked to it. */
+async function removePanoptoTranscript() {
+  return withSeedDb(async (db) => {
+    const material = await db.collection('grasp_material').findOne({ sourceId: PANOPTO_TRANSCRIPT.sourceId });
+    if (!material) return;
+    const links = await db.collection('grasp_objective_material').find({ materialId: material._id }).toArray();
+    const objectiveIds = links.map((link) => link.objectiveId);
+    if (objectiveIds.length > 0) {
+      await db.collection('grasp_objective').deleteMany({
+        $or: [{ _id: { $in: objectiveIds } }, { parent: { $in: objectiveIds } }],
+      });
+    }
+    await db.collection('grasp_objective_material').deleteMany({ materialId: material._id });
+    await db.collection('grasp_material').deleteOne({ _id: material._id });
+  });
+}
+
 module.exports = {
   FIELD_ENCRYPTION_ON,
   usersCollection,
@@ -1169,6 +1255,9 @@ module.exports = {
   removeGradeCsvQuizzes,
   seedAnalyticsPendingAnswer,
   removeAnalyticsPendingAnswer,
+  seedPanoptoTranscript,
+  getPanoptoTranscriptObjectives,
+  removePanoptoTranscript,
   SEED: {
     COURSE_CODE,
     COURSE_NAME,

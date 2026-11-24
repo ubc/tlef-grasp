@@ -20,7 +20,9 @@ import {
   describeCanvasImportResult,
 } from "../lib/canvasMaterialImport";
 import { usePanoptoStatus, useImportPanoptoSessions } from "../hooks/usePanopto";
-import { describePanoptoImportResult } from "../lib/panoptoImport";
+import { describePanoptoImportResult, importedTranscripts } from "../lib/panoptoImport";
+import { useCoInstructorAccess } from "../hooks/useCoInstructorAccess";
+import { useTaAccess } from "../hooks/useTaAccess";
 import {
   filterSupportedDocuments,
   getUploadValidationMessage,
@@ -32,6 +34,7 @@ import MaterialCard from "./course-materials/MaterialCard";
 import OutlineModal from "./course-materials/OutlineModal";
 import CanvasImportModal from "./course-materials/CanvasImportModal";
 import PanoptoImportModal from "./course-materials/PanoptoImportModal";
+import TranscriptObjectivesModal from "./course-materials/TranscriptObjectivesModal";
 import {
   MaterialFormModal,
   DeleteMaterialModal,
@@ -82,7 +85,7 @@ export default function CourseMaterials() {
 
   const [showUpload, setShowUpload] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
-  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete' | 'outline' | 'canvas-import' | 'panopto-import', material? }
+  // { kind: 'text-add' | 'link-add' | 'text-edit' | 'file-edit' | 'link-edit' | 'delete' | 'outline' | 'canvas-import' | 'panopto-import' | 'transcript-objectives', material?, videos?, askFirst? }
   // Back from connecting Panopto (?panopto=import): reopen its picker.
   const [modal, setModal] = useState(() =>
     new URLSearchParams(window.location.search).get("panopto") === "import"
@@ -104,6 +107,17 @@ export default function CourseMaterials() {
   // "From Panopto" is offered wherever Panopto is configured; its picker asks
   // an instructor who has not connected yet to connect first.
   const panopto = usePanoptoStatus();
+
+  // Learning objectives from Panopto transcripts (issue #218) are question
+  // generation work, so they follow its permission, not this page's.
+  const { can } = useCoInstructorAccess();
+  const { canTa } = useTaAccess();
+  const canMakeObjectives = can("questionGeneration") && canTa("questionGeneration");
+  // Videos imported while the picker stayed open over a failed one: offered
+  // objectives once the instructor closes the picker.
+  const [objectiveOffer, setObjectiveOffer] = useState([]);
+  const offerObjectives = (videos) =>
+    setModal(videos.length > 0 ? { kind: "transcript-objectives", videos, askFirst: true } : null);
 
   // Drop ?panopto=import so a reload does not reopen the picker.
   useEffect(() => {
@@ -153,12 +167,23 @@ export default function CourseMaterials() {
       showToast(error.message || "Error importing from Canvas. Please try again.", "error"),
   });
 
-  // Like the Canvas import: stays open when a video failed.
+  // Like the Canvas import: stays open when a video failed. Once it closes,
+  // the instructor is asked about objectives for every video it brought in.
   const panoptoImportMutation = useImportPanoptoSessions(courseId, {
     onSuccess: (result) => {
       const { message, type } = describePanoptoImportResult(result);
       showToast(message, type);
-      if (result.errors.length === 0) setModal(null);
+      const fresh = canMakeObjectives ? importedTranscripts(result) : [];
+      const videos = [
+        ...objectiveOffer.filter((video) => !fresh.some((other) => other.sourceId === video.sourceId)),
+        ...fresh,
+      ];
+      if (result.errors.length === 0) {
+        setObjectiveOffer([]);
+        offerObjectives(videos);
+      } else {
+        setObjectiveOffer(videos);
+      }
     },
     onError: (error) =>
       showToast(error.message || "Error importing from Panopto. Please try again.", "error"),
@@ -371,12 +396,22 @@ export default function CourseMaterials() {
               onRefetch={handleRefetch}
               onDelete={(m) => setModal({ kind: "delete", material: m })}
               onViewOutline={(m) => setModal({ kind: "outline", material: m })}
+              onCreateObjectives={
+                canMakeObjectives
+                  ? (m) =>
+                      setModal({
+                        kind: "transcript-objectives",
+                        videos: [{ sourceId: m.sourceId, documentTitle: m.documentTitle }],
+                        askFirst: false,
+                      })
+                  : undefined
+              }
             />
           ))}
         </div>
       )}
 
-      {modal && !["delete", "outline", "canvas-import", "panopto-import"].includes(modal.kind) && (
+      {modal && !["delete", "outline", "canvas-import", "panopto-import", "transcript-objectives"].includes(modal.kind) && (
         <MaterialFormModal
           kind={modal.kind}
           material={modal.material}
@@ -418,10 +453,22 @@ export default function CourseMaterials() {
           courseId={courseId}
           status={panopto}
           importing={panoptoImportMutation.isPending}
-          onClose={() => setModal(null)}
+          onClose={() => {
+            offerObjectives(objectiveOffer);
+            setObjectiveOffer([]);
+          }}
           onImport={(sessions, onProgress) =>
             panoptoImportMutation.mutate({ sessions, onProgress })
           }
+        />
+      )}
+
+      {modal?.kind === "transcript-objectives" && selectedCourse && (
+        <TranscriptObjectivesModal
+          course={selectedCourse}
+          videos={modal.videos}
+          askFirst={modal.askFirst}
+          onClose={() => setModal(null)}
         />
       )}
 

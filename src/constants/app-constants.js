@@ -157,6 +157,75 @@ FINAL INSTRUCTIONS:
 1. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
 2. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).`;
 
+const OBJECTIVE_GENERATION_TRANSCRIPT_PROMPT = `You are an expert educational content designer. Below is the transcript of a recorded lecture from a university course. Write the learning objectives a student who attended this lecture is expected to meet: clear, measurable, and aligned with educational best practices.
+
+COURSE: {courseName}
+RECORDING: {videoTitle}
+
+LECTURE TRANSCRIPT:
+{transcript}
+
+ABOUT THE TRANSCRIPT:
+- It is speech, usually captioned automatically. Expect filler words, false starts, repetition and unfinished sentences. Slides and board work are not included: only what was said aloud.
+- Automatic captions often mishear technical terms, names, units and formulas (for example "die hybrid" for "dihybrid"). When the context makes the intended term clear, use the correct term in the objectives. Never build an objective on words you cannot make sense of.
+- Remarks about something on screen ("as you can see here", "this structure") carry no content of their own. Use them only when the surrounding speech says what was shown.
+
+INSTRUCTIONS:
+1. First decide whether the recording teaches enough course content to support learning objectives. If it does not (for example, it only covers course logistics, is a test recording, is mostly silence, music or small talk, or is unrelated to the course), set materialIsRelevant to false, explain why in relevanceReason, and return an empty objectives array. Never invent objectives for a recording that does not teach. This decision always takes priority over every instruction below.
+2. Only when materialIsRelevant is true: base the objectives on what the instructor actually teaches: concepts they explain, procedures and derivations they work through, worked examples, and points they stress ("this is important", "you need to know this").
+3. Only when materialIsRelevant is true: leave out what this recording does not teach: announcements, deadlines, exam and assignment logistics, schedule changes, technical trouble, jokes and asides, and topics only named in passing or left for another class ("we'll get to that next week"). A student question counts only for what the instructor's answer teaches.
+4. Only when materialIsRelevant is true: create one meta learning objective per topic the lecture teaches, or per group of closely related topics, in the order the lecture covers them. There is no target number: let the lecture decide how many there are. Every topic the lecture genuinely teaches must be covered by at least one meta learning objective.
+5. Only when materialIsRelevant is true: for each meta learning objective, write granular objectives covering what the lecture teaches about that topic. Create as many as the lecture requires. Do not pad with weak or overlapping objectives, and do not drop points the lecture teaches to keep the list short.
+6. For each granular objective, identify the most appropriate Bloom's Taxonomy level(s) based on the nature of the skill or concept being assessed (choose from: Remember, Understand, Apply, Analyze, Evaluate, Create). A worked example or a problem solved in class usually supports Apply or higher.
+7. Write each granular objective as a clear, concise statement beginning with an active verb (e.g., "Apply...", "Distinguish between...", "Derive..."). Do not add boilerplate prefixes, and do not refer to the lecture or recording itself ("as discussed in the video").
+8. Ensure objectives are specific to what was taught, not generic. Use the course's terminology, spelled correctly.
+9. For each Bloom level you assigned to a granular objective, recommend which question type(s) would best assess it there, and how many (1-5) of each. Choose from: multiple-choice, fill-in-the-blank, calculation, open-ended.
+
+Bloom's level guidance (sample verbs in parentheses):
+- Remember: recall a definition or fact (define, list, identify, name)
+- Understand: explain, paraphrase, or classify in own words (explain, describe, summarize, classify)
+- Apply: use a concept or formula in a novel scenario (apply, solve, use, demonstrate)
+- Analyze: compare, differentiate, or break down components (compare, differentiate, examine, contrast)
+- Evaluate: justify, critique, or defend a choice (evaluate, critique, justify, judge)
+- Create: design, construct, or propose something new (design, construct, propose, formulate)
+
+Question-type guidance:
+- multiple-choice: default choice when there are clear correct/incorrect alternatives — most Remember/Understand/Apply/Analyze content.
+- fill-in-the-blank: short factual recall, a single term or value.
+- calculation: only when the lecture works through a numeric formula/procedure the student must execute.
+- open-ended: Create/Evaluate-level reasoning that can't be reduced to one correct option.
+A Bloom level may map to more than one type when genuinely useful, but don't pad — keep totals per granular objective small (2-4) unless the lecture clearly supports more.
+
+RULES FOR GRANULAR OBJECTIVES:
+- Each granular objective under a main objective must test a DISTINCT concept or skill — not a rephrasing of the same idea.
+- A granular objective must not restate the meta objective in different words; it must test a specific sub-skill the meta encompasses.
+- Do not generate two granular objectives that a student could satisfy by knowing the same single fact.
+- Each granular objective must be assessable with a question that is fundamentally different from questions assessing the other granular objectives under the same main objective.
+- Let the content drive the Bloom's level — do not force a level that does not fit what was taught.
+- Avoid granular objectives that are too shallow to assess meaningfully on their own, such as recalling a single definition or performing a trivial isolated task. Instead, embed such skills within a richer, more substantive objective.
+
+SELF-CHECK BEFORE RETURNING YOUR RESPONSE:
+- If materialIsRelevant is false, objectives is empty — none of the checks below apply.
+- If materialIsRelevant is true: every topic the lecture teaches is covered by at least one meta objective, and nothing comes from announcements, logistics or asides.
+- No two meta objectives cover the same topic.
+- No two granular objectives under the same main objective test the same fact or skill.
+- No granular objective is a rephrasing of its parent meta objective.
+- Every meta objective has at least one granular objective.
+- Every granular objective begins with an active verb and has at least one Bloom level.
+- Every Bloom level on a granular objective has at least one recommended question type with a count.
+
+IMPORTANT RULES:
+1. Base objectives strictly on what is taught in the transcript.
+2. CRITICAL LaTeX FORMATTING: You must enclose all mathematical notation and chemical formulas in \\\\( and \\\\) for inline math (e.g., \\\\( x^2 \\\\) or \\\\( H_2O \\\\)). Do NOT use parentheses () or $ for math delimiters.
+3. CRITICAL SMILES FORMATTING: To draw 2D chemical structures, return the SMILES string wrapped exactly in [SMILES] and [/SMILES] tags (e.g., [SMILES]C1=CC=CC=C1[/SMILES]).`;
+
+/**
+ * Longest Panopto transcript sent to the model whole, about two and a half
+ * hours of speech. A longer one is represented by the outline made when it was
+ * imported, which already covers the whole recording.
+ */
+const TRANSCRIPT_OBJECTIVES_MAX_CHARS = 120000;
+
 const POWERPOINT_IMAGE_DESCRIPTION_PROMPT = `You are an expert lecture-slide content extractor. Precisely transcribe visible text, numbers, equations, axis labels, legends, and chart labels from this PowerPoint image. Then describe the educational meaning of diagrams, charts, screenshots, or relationships. This image appears on slide {slideNumber}. Respond ONLY in valid JSON format with a single key "description". If the image is decorative, set the description to "decorative".`;
 
 const QUESTION_REVIEW_PROMPT = `The following quiz questions were generated by AI for a university course. Evaluate each one and identify anything that is weak, problematic, or worth an instructor's attention — errors, poor design, inflated Bloom labels, weak distractors, anything.
@@ -398,6 +467,7 @@ const DEFAULT_PROMPTS = {
   questionGeneration: QUESTION_GENERATION_PROMPT,
   objectiveGenerationAuto: OBJECTIVE_GENERATION_AUTO_PROMPT,
   objectiveGenerationManual: OBJECTIVE_GENERATION_MANUAL_PROMPT,
+  objectiveGenerationTranscript: OBJECTIVE_GENERATION_TRANSCRIPT_PROMPT,
   powerPointImageDescription: POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   openEndedGrading: OPEN_ENDED_GRADING_PROMPT,
   fillInTheBlankGrading: FILL_IN_THE_BLANK_GRADING_PROMPT,
@@ -465,6 +535,8 @@ module.exports = {
   QUESTION_FIX_PROMPT,
   OBJECTIVE_GENERATION_AUTO_PROMPT,
   OBJECTIVE_GENERATION_MANUAL_PROMPT,
+  OBJECTIVE_GENERATION_TRANSCRIPT_PROMPT,
+  TRANSCRIPT_OBJECTIVES_MAX_CHARS,
   POWERPOINT_IMAGE_DESCRIPTION_PROMPT,
   OPEN_ENDED_GRADING_PROMPT,
   FILL_IN_THE_BLANK_GRADING_PROMPT,

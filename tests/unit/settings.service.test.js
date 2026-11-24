@@ -47,6 +47,16 @@ describe('settings service', () => {
       });
     });
 
+    it("reads a course's own Panopto transcript prompt (issue #218)", async () => {
+      mockSettingsCollection([
+        { name: 'prompt_objective_generation_transcript', value: 'Custom transcript prompt {transcript}' },
+      ]);
+
+      const settings = await settingsService.getSettings('course-1');
+      expect(settings.prompts.objectiveGenerationTranscript).toBe('Custom transcript prompt {transcript}');
+      expect(settings.prompts.objectiveGenerationAuto).toBe(DEFAULT_PROMPTS.objectiveGenerationAuto);
+    });
+
     it('falls back to defaults when stored JSON is missing or malformed', async () => {
       mockSettingsCollection([{ name: 'co_instructor_permissions', value: '{also bad' }]);
 
