@@ -896,14 +896,20 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                         <td className="border-b border-gray-100 px-4 py-3">
                           <input
                             type="checkbox"
+                            id={`question-select-${question.id}`}
                             checked={isSelected}
                             onChange={() => toggleSelection(question.id)}
+                            // Name reads "Select question: <rendered title>";
+                            // labelledby keeps KaTeX/SMILES titles readable.
+                            aria-label="Select question:"
+                            aria-labelledby={`question-select-${question.id} question-title-${question.id}`}
                             className="h-4 w-4 accent-primary"
                           />
                         </td>
                       )}
                       <td className="border-b border-gray-100 px-4 py-3">
                         <div
+                          id={`question-title-${question.id}`}
                           className={`flex items-start gap-1.5 text-sm font-medium ${
                             question.flagged ? "text-danger" : "text-ink"
                           }`}
