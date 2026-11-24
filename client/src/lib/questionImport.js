@@ -302,3 +302,31 @@ export function describeImportResult(data, fallbackCount = 0) {
   }
   return { message, type: refused ? "warning" : "success" };
 }
+
+// The toast after a quiz import. Names the duplicates skipped and the questions
+// refused (with the first reason), so a refused question is never silently
+// left out of the quiz.
+export function describeQuizImportResult(data, fallbackCount = 0) {
+  const added = data?.questionsAdded ?? fallbackCount;
+  const skipped = data?.duplicateCount || 0;
+  const refused = data?.invalidCount || 0;
+  const notes = [];
+  if (skipped) notes.push(`skipped ${skipped} duplicate${skipped === 1 ? "" : "s"}`);
+  if (refused) {
+    const reason = String(data?.invalidReason || "").trim();
+    notes.push(`${refused} refused${reason ? `: ${reason}` : ""}`);
+  }
+  const suffix = notes.length ? ` (${notes.join("; ")})` : "";
+  return {
+    message: `Imported quiz with ${added} question${added === 1 ? "" : "s"}${suffix}`,
+    type: refused ? "warning" : "success",
+  };
+}
+
+// The toast when a quiz import fails. A file whose every question was refused
+// creates no quiz; that is the file's fault, not a server failure, so it is a
+// warning the instructor can act on (fix the file and import again).
+export function describeQuizImportError(error) {
+  const message = error?.message || "Failed to import quiz";
+  return { message, type: error?.body?.code === "ALL_QUESTIONS_REFUSED" ? "warning" : "error" };
+}

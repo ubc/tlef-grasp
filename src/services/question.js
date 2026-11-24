@@ -184,6 +184,9 @@ const editIdentity = (q) =>
         String(q.granularObjectiveId ?? ""),
     ].join("\n");
 
+// Error codes saveQuestion throws on purpose; callers count and report them.
+const EXPECTED_SAVE_ERRORS = new Set(["DUPLICATE_QUESTION", "INVALID_QUESTION"]);
+
 const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => {
     try {
         const db = await databaseService.connect();
@@ -340,7 +343,11 @@ const saveQuestion = async (courseId, questionData, { dedupe = false } = {}) => 
         console.log("Question saved with ID:", question.insertedId);
         return { ...question, orphaned };
     } catch (error) {
-        console.error("Error creating question:", error);
+        // A duplicate or an ungradable question is an expected outcome the
+        // caller reports to the instructor, not a server error.
+        if (!EXPECTED_SAVE_ERRORS.has(error.code)) {
+            console.error("Error creating question:", error);
+        }
         throw error;
     }
 };
