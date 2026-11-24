@@ -9,6 +9,7 @@ import {
   objectivePayloads,
 } from "../../client/src/lib/transcriptObjectives.js";
 import { importedTranscripts } from "../../client/src/lib/panoptoImport.js";
+import { PROMPT_FIELDS, visiblePromptFields } from "../../client/src/lib/prompts.js";
 
 const generated = [
   {
@@ -159,5 +160,19 @@ describe("importedTranscripts", () => {
   it("offers nothing for an empty run", () => {
     expect(importedTranscripts({})).toEqual([]);
     expect(importedTranscripts()).toEqual([]);
+  });
+});
+
+describe("visiblePromptFields", () => {
+  const keys = (fields) => fields.map((field) => field.key);
+
+  it("leaves the transcript prompt out unless the deployment turns the feature on", () => {
+    expect(keys(visiblePromptFields())).not.toContain("objectiveGenerationTranscript");
+    expect(keys(visiblePromptFields({ panoptoObjectives: false }))).not.toContain("objectiveGenerationTranscript");
+    expect(keys(visiblePromptFields({ panoptoObjectives: true }))).toEqual(keys(PROMPT_FIELDS));
+  });
+
+  it("keeps every other prompt either way", () => {
+    expect(visiblePromptFields()).toHaveLength(PROMPT_FIELDS.length - 1);
   });
 });

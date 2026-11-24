@@ -116,7 +116,8 @@ module.exports = defineConfig({
   webServer: {
     command:
       'npm run build && cross-env NODE_ENV=test node tests/e2e/start-server-with-stubs.js',
-    env: fakeCanvasEnv,
+    // Learning objectives from Panopto transcripts are off unless turned on.
+    env: { ...fakeCanvasEnv, PANOPTO_OBJECTIVES_ENABLED: 'true' },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

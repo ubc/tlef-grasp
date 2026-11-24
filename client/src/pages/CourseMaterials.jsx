@@ -108,11 +108,13 @@ export default function CourseMaterials() {
   // an instructor who has not connected yet to connect first.
   const panopto = usePanoptoStatus();
 
-  // Learning objectives from Panopto transcripts (issue #218) are question
-  // generation work, so they follow its permission, not this page's.
+  // Learning objectives from Panopto transcripts (issue #218): only where the
+  // deployment turns them on, and, being question generation work, under its
+  // permission rather than this page's.
   const { can } = useCoInstructorAccess();
   const { canTa } = useTaAccess();
-  const canMakeObjectives = can("questionGeneration") && canTa("questionGeneration");
+  const canMakeObjectives =
+    panopto.objectives && can("questionGeneration") && canTa("questionGeneration");
   // Videos imported while the picker stayed open over a failed one: offered
   // objectives once the instructor closes the picker.
   const [objectiveOffer, setObjectiveOffer] = useState([]);

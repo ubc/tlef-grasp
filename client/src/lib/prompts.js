@@ -42,6 +42,8 @@ export const PROMPT_FIELDS = [
     key: "objectiveGenerationTranscript",
     label: "Learning Objective Generation Prompt - Panopto Transcripts",
     rows: 12,
+    // Shown only where the deployment turns the feature on.
+    requiresPanoptoObjectives: true,
     description:
       "Used when you create learning objectives from a video imported from Panopto. It reads the lecture's transcript and is told to skip announcements and asides and to correct misheard technical terms.",
     variables: [
@@ -88,3 +90,12 @@ export const PROMPT_FIELDS = [
     ],
   },
 ];
+
+/**
+ * The prompts to list on this deployment. The Panopto transcript prompt is
+ * left out unless learning objectives from transcripts are turned on
+ * (PANOPTO_OBJECTIVES_ENABLED, reported by /api/panopto/status).
+ */
+export function visiblePromptFields({ panoptoObjectives = false } = {}) {
+  return PROMPT_FIELDS.filter((field) => !field.requiresPanoptoObjectives || panoptoObjectives);
+}

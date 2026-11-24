@@ -21,7 +21,7 @@ import {
   PanoptoConnectionPanel,
 } from "../components/lms/LmsConnectionPanels";
 import { CO_INSTRUCTOR_PERMISSIONS } from "../lib/permissions";
-import { PROMPT_FIELDS } from "../lib/prompts";
+import { PROMPT_FIELDS, visiblePromptFields } from "../lib/prompts";
 
 // Pipeline stages a course owner can tune, keyed to the server's
 // OPERATION_GROUPS so the labels match what the usage report prints.
@@ -124,6 +124,7 @@ export default function Settings() {
   const showCanvasIntegration = canvasStatus.configured || canvasStatus.isError;
   const showMoodleIntegration = moodleStatus.configured || moodleStatus.isError;
   const panoptoStatus = usePanoptoStatus();
+  const promptFields = visiblePromptFields({ panoptoObjectives: panoptoStatus.objectives });
   const showPanoptoIntegration = panoptoStatus.configured || panoptoStatus.isError;
 
   useEffect(() => {
@@ -182,7 +183,8 @@ export default function Settings() {
       return;
     }
     saveMutation.mutate({
-      prompts,
+      // Only the prompts shown here, so a hidden one is never stored.
+      prompts: Object.fromEntries(promptFields.map((field) => [field.key, prompts[field.key]])),
       // Only the owner may change co-instructor permissions or the generation
       // controls; the server strips them from a non-owner's update regardless.
       ...(isOwner
@@ -400,7 +402,7 @@ export default function Settings() {
           </p>
 
           <div className="space-y-8">
-            {PROMPT_FIELDS.map((field) => (
+            {promptFields.map((field) => (
               <div key={field.key}>
                 <div className="mb-2 flex items-center justify-between">
                   <label
