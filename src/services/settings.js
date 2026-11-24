@@ -6,6 +6,7 @@ const KEY_MAP = {
     'prompts.questionGeneration': 'prompt_question_generation',
     'prompts.objectiveGenerationAuto': 'prompt_objective_generation_auto',
     'prompts.objectiveGenerationManual': 'prompt_objective_generation_manual',
+    'prompts.objectiveGenerationTranscript': 'prompt_objective_generation_transcript',
     'prompts.powerPointImageDescription': 'prompt_powerpoint_image_description',
     'prompts.openEndedGrading': 'prompt_open_ended_grading',
     'prompts.fillInTheBlankGrading': 'prompt_fill_in_the_blank_grading',

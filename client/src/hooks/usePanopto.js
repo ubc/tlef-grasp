@@ -138,17 +138,17 @@ export function useImportPanoptoSessions(courseId, options) {
         }
         onProgress?.(session.id, "importing");
         try {
-          await lmsRequest(
+          const data = await lmsRequest(
             `${materialsBase(courseId)}/sessions/${encodeURIComponent(session.id)}/import`,
             { method: "POST" }
           );
-          imported.push({ id: session.id, name: session.name });
+          imported.push({ id: session.id, name: session.name, material: data?.material || null });
           onProgress?.(session.id, "imported");
         } catch (error) {
           // Imported by someone else in the meantime: it is in the course,
           // which is what was asked for.
           if (error.body?.code === "already-imported") {
-            imported.push({ id: session.id, name: session.name });
+            imported.push({ id: session.id, name: session.name, material: error.body?.material || null });
             onProgress?.(session.id, "imported");
             continue;
           }

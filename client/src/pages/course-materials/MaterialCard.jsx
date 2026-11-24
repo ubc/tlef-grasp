@@ -8,7 +8,7 @@ const PANOPTO_CAPTIONS_META = {
   badgeClasses: "bg-purple-100 text-purple-600",
 };
 
-export default function MaterialCard({ material, onEdit, onRefetch, onDelete, onViewOutline }) {
+export default function MaterialCard({ material, onEdit, onRefetch, onDelete, onViewOutline, onCreateObjectives }) {
   const fileType = (material.fileType || "").toLowerCase();
   const fromPanopto = material.lms?.provider === "panopto";
   const meta = fromPanopto ? PANOPTO_CAPTIONS_META : getMaterialTypeMeta(fileType);
@@ -59,6 +59,16 @@ export default function MaterialCard({ material, onEdit, onRefetch, onDelete, on
                   : "Uploaded"}{" "}
             on {new Date(material.createdAt).toLocaleDateString()}
           </p>
+          {fromPanopto && onCreateObjectives && (
+            <button
+              type="button"
+              aria-label={`Create learning objectives from ${material.documentTitle || "this video"}`}
+              onClick={() => onCreateObjectives(material)}
+              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              <i className="fas fa-bullseye" aria-hidden="true" /> Create learning objectives
+            </button>
+          )}
         </div>
       </div>
 

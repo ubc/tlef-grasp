@@ -9,6 +9,7 @@ const { ObjectId } = require('mongodb');
 
 // Import services
 const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial } = require('../services/material');
+const { cleanGeneratedObjectives } = require('../utils/generated-objectives');
 const { getObjectiveWithMaterials } = require('../services/objective');
 const outlineService = require('../services/material-outline');
 const { renderOutlineBlock } = require('../utils/outline-text');
@@ -31,7 +32,7 @@ const {
   getGeneratedQuestionText,
   normalizeQuestionText,
 } = require('../utils/question-generation');
-const { DEFAULT_PROMPTS, BLOOM_LEVELS, DEFAULT_BLOOM_TYPE_PREFERENCES, QUESTION_TYPES, GENERATED_QUESTION_TYPES, SUGGESTED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_CALCULATION_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
+const { DEFAULT_PROMPTS, QUESTION_TYPES, GENERATED_QUESTION_TYPES, QUESTION_REVIEW_PROMPT, QUESTION_REVIEW_MULTIPLE_ANSWER_NOTE, QUESTION_REVIEW_CALCULATION_NOTE, QUESTION_REVIEW_MATERIAL_NOTE, QUESTION_FIX_PROMPT, MAX_QUESTIONS_PER_OBJECTIVE } = require('../constants/app-constants');
 
 /**
  * Objective-generation context size that warrants a warning. Not a limit:
@@ -1102,52 +1103,7 @@ Include foundational concepts, practical applications, and assessment criteria.`
         });
       }
 
-      // Clean and validate objectives
-      const validBloomLevels = BLOOM_LEVELS;
-      const cleanedObjectives = objectivesData.objectives
-        .filter((obj) => obj.name && obj.name.trim() && obj.granularObjectives && Array.isArray(obj.granularObjectives))
-        .map((obj) => {
-          return {
-            name: obj.name.trim(),
-            granularObjectives: obj.granularObjectives
-              .filter((go) => go && (typeof go === "string" ? go.trim() : (go.text && go.text.trim())))
-              .map((go) => {
-                const text = typeof go === "string" ? go.trim() : go.text.trim();
-                let bloomTaxonomies = ["Understand"]; // default
-                if (go.bloomTaxonomies && Array.isArray(go.bloomTaxonomies)) {
-                  const mappedBlooms = go.bloomTaxonomies.filter(b => validBloomLevels.includes(b));
-                  if (mappedBlooms.length > 0) bloomTaxonomies = mappedBlooms;
-                }
-
-                // Keep only entries whose bloomLevel survived the filter above
-                // and whose type/count are valid. Any Bloom level left with no
-                // valid entry gets a default type so the UI never shows an
-                // empty per-type breakdown for a selected level.
-                // Only types objective generation may suggest: a model that
-                // ignores the schema's enum still never suggests multiple answer.
-                const suggestedTypes = (Array.isArray(go.questionTypes) ? go.questionTypes : [])
-                  .filter((qt) => qt && SUGGESTED_QUESTION_TYPES.includes(qt.questionType));
-                const questionTypes = normalizeQuestionTypes(suggestedTypes, {
-                  allowedBloomLevels: bloomTaxonomies,
-                });
-                bloomTaxonomies.forEach((level) => {
-                  if (!questionTypes.some((qt) => qt.bloomLevel === level)) {
-                    // The schema asks the model for a type per Bloom level but
-                    // cannot enforce it, so this is the only place a type is
-                    // chosen for a level it skipped. The instructor adjusts it
-                    // per level in the generation step, which is why there is no
-                    // course-wide override to consult here.
-                    const fallbackType = (DEFAULT_BLOOM_TYPE_PREFERENCES[level] || [])[0]
-                      || QUESTION_TYPES.MULTIPLE_CHOICE;
-                    questionTypes.push({ bloomLevel: level, questionType: fallbackType, count: 1 });
-                  }
-                });
-
-                return { text, bloomTaxonomies, questionTypes };
-              }),
-          };
-        })
-        .filter((obj) => obj.granularObjectives.length > 0);
+      const cleanedObjectives = cleanGeneratedObjectives(objectivesData.objectives);
 
       if (cleanedObjectives.length === 0) {
         throw new Error("No valid objectives generated");
