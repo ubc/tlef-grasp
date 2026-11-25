@@ -183,6 +183,7 @@ export default function QuestionsStep({
                           onChange={(updates) => updateQuestion(question.id, updates)}
                           onDelete={() => deleteQuestion(question)}
                           detailsOpen={showDetails}
+                          canApprove={isFaculty}
                         />
                       ))}
                     </div>

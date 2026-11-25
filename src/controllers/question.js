@@ -367,6 +367,11 @@ const saveQuestionHandler = async (req, res) => {
       return res.status(400).json({ error: "No questions provided to save" });
     }
 
+    // Approving is faculty-only (see updateQuestionStatusHandler). Staff and
+    // TAs may still save, but whatever status they send, a question they
+    // create lands in the bank as a Draft for an instructor to approve.
+    const canApprove = await isFaculty(req.user);
+
     // Import sets dedupe: reject questions that already exist in the course
     // rather than creating duplicates.
     const savedQuestionIds = [];
@@ -383,7 +388,9 @@ const saveQuestionHandler = async (req, res) => {
       try {
         // Canvas provenance is set only by the Canvas importer; a client could
         // otherwise mark a question as an already-imported Canvas item.
-        const questionResult = await saveQuestion(courseId, withoutImportFields(questionData), { dedupe: dedupe === true });
+        const toSave = withoutImportFields(questionData);
+        if (!canApprove) toSave.status = "Draft";
+        const questionResult = await saveQuestion(courseId, toSave, { dedupe: dedupe === true });
         const savedId = questionResult.insertedId.toString();
         savedQuestionIds.push(savedId);
         questionIdsByIndex.push(savedId);
@@ -511,6 +518,16 @@ const updateQuestionHandler = async (req, res) => {
       if (questionStatus.toLowerCase() === "approved") {
         return res.status(403).json({ 
           error: "You cannot edit approved questions" 
+        });
+      }
+      // Nor approve one through an edit: the status route refuses them, and
+      // this route must not be a way around it. Draft is what it already is.
+      if (
+        updateData.status !== undefined &&
+        String(updateData.status).toLowerCase() !== "draft"
+      ) {
+        return res.status(403).json({
+          error: "Only faculty can approve or unapprove questions",
         });
       }
     }

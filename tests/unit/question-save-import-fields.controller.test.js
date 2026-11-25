@@ -26,7 +26,8 @@ const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
 const { saveQuestionHandler } = require('../../src/controllers/question');
 
 const COURSE_ID = new ObjectId().toString();
-const USER = { _id: new ObjectId().toString() };
+// Faculty, so a requested status is kept (approving is faculty-only).
+const USER = { _id: new ObjectId().toString(), puid: 'PUID-FAC', affiliation: ['faculty'] };
 
 const FORGED_SOURCE = {
   kind: 'canvas-classic',

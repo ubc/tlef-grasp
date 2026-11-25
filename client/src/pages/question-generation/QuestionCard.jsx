@@ -42,6 +42,9 @@ export default function QuestionCard({
   onChange,
   onDelete,
   detailsOpen = false,
+  // Approving is faculty-only; the server saves anyone else's questions as
+  // Draft, so the approve-on-save toggle is not offered to them.
+  canApprove = false,
 }) {
   const showToast = useToast();
   const [isEditing, setIsEditing] = useState(false);
@@ -773,6 +776,7 @@ export default function QuestionCard({
 
       {/* Footer */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
+        {canApprove ? (
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -796,6 +800,11 @@ export default function QuestionCard({
               : "approve when saved to the bank"}
           </span>
         </div>
+        ) : (
+          <span className="text-xs text-muted">
+            Saved as Draft for an instructor to approve
+          </span>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
