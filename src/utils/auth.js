@@ -111,6 +111,21 @@ async function isStaff(user) {
 }
 
 /**
+ * Whether the user may browse courses and join one with an invite code. Meant
+ * for instructors and staff: faculty (app administrators included) and staff
+ * whose affiliation came from SAML. A promoted TA also carries staff, but only
+ * so the staff-tier routes admit them in their TA course; they are a student
+ * everywhere else, so they may not join courses the way staff can.
+ * @param {Object} user - User document (affiliation, staffViaTaPromotion)
+ * @returns {Promise<boolean>}
+ */
+async function canUseEnrollmentCode(user) {
+  if (!user) return false;
+  if (await isFaculty(user)) return true;
+  return (await isStaff(user)) && !user.staffViaTaPromotion;
+}
+
+/**
  * Check if user is a student (has student or affiliate affiliation)
  * @param {Object} user - User object with affiliation
  * @returns {Promise<boolean>} True if user is a student
@@ -193,6 +208,7 @@ module.exports = {
   isStudent,
   isAppAdministrator,
   isAdministrator,
+  canUseEnrollmentCode,
   getUserRole,
   hasMinimumRole,
   parseAffiliations,

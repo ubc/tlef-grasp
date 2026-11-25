@@ -73,7 +73,7 @@ const { createMoodleRouter } = require('./routes/lms-moodle');
 const { createPanoptoRouter } = require('./routes/panopto');
 const lmsRoutes = require('./routes/lms');
 
-const { getUserRole, isAppAdministrator, ROLES } = require("./utils/auth");
+const { getUserRole, isAppAdministrator, canUseEnrollmentCode, ROLES } = require("./utils/auth");
 const { ensureAuthenticatedAPI, requireRole, requireAppAdministrator } = require('./middleware/auth');
 const { apiLimiter } = require('./middleware/rate-limit');
 
@@ -281,6 +281,9 @@ app.use("/api/current-user", ensureAuthenticatedAPI, requireRole(ROLES.STUDENT),
         isStaff: userIsStaff,
         isStudent: userIsStudent,
         isAppAdministrator: userIsAppAdministrator,
+        // Browse and join courses by invite code. False for a promoted TA,
+        // whose staff affiliation only counts in their TA course.
+        canJoinCourses: await canUseEnrollmentCode(req.user),
       },
     });
   } catch (error) {

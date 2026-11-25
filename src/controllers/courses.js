@@ -18,16 +18,14 @@ const { createUserCourse, getUserCourses, setUserCourseOrder, isUserInCourse, ge
 const { upsertCourseSection, getCourseSections, upsertUserCourseSection, getUserCourseSections, getSectionStudents, getSectionsByOwner, getSectionsForViewer } = require('../services/course-section');
 const materialService = require('../services/material');
 const questionService = require('../services/question');
-const { isFaculty, isStaff } = require('../utils/auth');
+const { isFaculty, canUseEnrollmentCode } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
 const { assertCoInstructorPermission, isCourseManager, PERMISSION_KEYS } = require('../utils/co-instructor-permissions');
 const { assertTaPermission, TA_PERMISSION_KEYS } = require('../utils/ta-permissions');
 
-// Enrollment-code flows are available to faculty, staff, and app administrators
-// (administrators are already covered by isFaculty), but not students.
-async function canUseEnrollmentCode(user) {
-  return (await isFaculty(user)) || (await isStaff(user));
-}
+// Enrollment-code flows (browsing courses, joining with an invite code) are for
+// faculty, app administrators and SAML staff — not students, and not promoted
+// TAs, who are students outside their TA course (see utils/auth).
 const { createOrUpdateUser, getUserByPuid, updateUserLegalName } = require('../services/user');
 const ubcApiService = require('../services/ubcApiService');
 const { isCanvasConfigured } = require('../lms/canvas');

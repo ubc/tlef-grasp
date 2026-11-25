@@ -10,7 +10,7 @@ import SetupWizard from "./onboarding/SetupWizard";
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { user, isFaculty, isStaff, isStudent } = useCurrentUser();
+  const { user, isFaculty, isStudent, canJoinCourses } = useCurrentUser();
   const selectedCourse = useAppStore((state) => state.selectedCourse);
   const setSelectedCourse = useAppStore((state) => state.setSelectedCourse);
 
@@ -55,9 +55,9 @@ export default function Onboarding() {
 
   const [activeTab, setActiveTab] = useState(null);
 
-  // Enrollment-code "Join a course" is for faculty, staff, and administrators
-  // (admins are reported as faculty by the API), not students.
-  const canJoinByCode = isFaculty || isStaff;
+  // Enrollment-code "Join a course" is for faculty, SAML staff, and
+  // administrators; not students, and not promoted TAs (server decides).
+  const canJoinByCode = canJoinCourses;
 
   // Pick the initial tab once the course list arrives (legacy determineInitialTab)
   useEffect(() => {

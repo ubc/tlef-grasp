@@ -64,7 +64,7 @@ function NavItem({ to, icon, label }) {
 }
 
 function CourseSelector() {
-  const { isFaculty, isStaff } = useCurrentUser();
+  const { isFaculty, canJoinCourses } = useCurrentUser();
   const { courses, isLoading, isError } = useMyCourses();
   // Archived courses are excluded from /api/courses/my, so without this the
   // effect below would eject an owner the moment they opened one from the
@@ -82,7 +82,9 @@ function CourseSelector() {
 
   // Only faculty and staff can create or join a course, so only they get a
   // route back to the onboarding hub.
-  const canManageCourses = isFaculty || isStaff;
+  // Manage courses opens onboarding, whose only extra for non-faculty is
+  // joining a course, so it follows who may join (not a promoted TA).
+  const canManageCourses = isFaculty || canJoinCourses;
 
   // Keep the session course in sync with what the API says the user can access.
   // resolveCourseSelection is called inside the effect, not above it: the hooks

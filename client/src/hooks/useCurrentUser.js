@@ -18,6 +18,8 @@ export function useCurrentUser() {
     isFaculty: user?.isFaculty || false,
     isStaff: user?.isStaff || false,
     isStudent: user?.isStudent || false,
+    // Faculty and SAML staff; not a promoted TA (see /api/current-user).
+    canJoinCourses: user?.canJoinCourses || false,
     role: user?.role || null,
   };
 }
