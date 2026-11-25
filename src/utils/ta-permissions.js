@@ -17,7 +17,7 @@
  * client/src/lib/permissions.js (TA_PERMISSIONS).
  */
 
-const { isFaculty } = require('./auth');
+const { isFaculty, isAppAdministrator } = require('./auth');
 const { getUserCourseMembership } = require('../services/user-course');
 const { TA_COURSE_ROLE } = require('./course-access');
 
@@ -71,10 +71,12 @@ function sanitizeTaPermissions(permissions) {
 }
 
 /**
- * Resolve whether a user may use a TA-gated feature in a course. Faculty (and
- * app administrators, via isFaculty) always may; so does anyone whose
- * membership is not a TA membership — genuine staff scoping is handled by
- * hasStaffAccessInCourse, not here. Only TAs are checked against their map.
+ * Resolve whether a user may use a TA-gated feature in a course. App
+ * administrators always may. Anyone else must be a member of the course: a
+ * non-member is refused here rather than waved through, so this check is safe
+ * even where a handler forgets hasStaffAccessInCourse. Faculty members may;
+ * so does any member whose membership is not a TA membership. Only TAs are
+ * checked against their map.
  * @param {Object} user - The authenticated user (req.user)
  * @param {string} courseId - The course the action targets
  * @param {string} key - One of TA_PERMISSION_KEYS (or 'settings')
@@ -83,10 +85,12 @@ function sanitizeTaPermissions(permissions) {
 async function hasTaPermission(user, courseId, key) {
   if (!user || !courseId) return false;
 
-  if (await isFaculty(user)) return true;
+  if (await isAppAdministrator(user)) return true;
 
   const membership = await getUserCourseMembership(user._id || user.id, courseId);
-  if (membership?.courseRole !== TA_COURSE_ROLE) return true;
+  if (!membership) return false;
+  if (await isFaculty(user)) return true;
+  if (membership.courseRole !== TA_COURSE_ROLE) return true;
 
   if (key === TA_SETTINGS_KEY) return false;
   return membership.taPermissions?.[key] !== false;

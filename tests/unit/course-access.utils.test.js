@@ -1,6 +1,7 @@
 // Course-scoped staff/TA access (issue #40): promoted TAs act as staff only
 // in courses where their membership carries courseRole 'ta'; genuine SAML
-// staff keep course-wide staff access; faculty always pass.
+// staff keep course-wide staff access; faculty pass only in courses they are
+// members of; app administrators (APP_ADMINISTRATOR) reach every course.
 
 jest.mock('../../src/services/database', () => ({
   connect: jest.fn(),
@@ -40,9 +41,29 @@ describe('hasStaffAccessInCourse', () => {
     getUserById.mockReset();
   });
 
-  it('always allows faculty', async () => {
+  it('allows faculty who are members of the course', async () => {
+    getUserCourseMembership.mockResolvedValue({ userId: 'prof-1', courseId: COURSE_ID });
     await expect(hasStaffAccessInCourse(faculty, COURSE_ID)).resolves.toBe(true);
-    expect(getUserCourseMembership).not.toHaveBeenCalled();
+  });
+
+  // Being an instructor somewhere is not access to someone else's course.
+  it('denies faculty who are not members of the course', async () => {
+    getUserCourseMembership.mockResolvedValue(null);
+    await expect(hasStaffAccessInCourse(faculty, COURSE_ID)).resolves.toBe(false);
+  });
+
+  it('allows an app administrator in any course without a membership lookup', async () => {
+    const previous = process.env.APP_ADMINISTRATOR;
+    process.env.APP_ADMINISTRATOR = 'admin-1';
+    try {
+      await expect(
+        hasStaffAccessInCourse({ _id: 'admin-1', puid: 'admin-1', affiliation: [] }, COURSE_ID)
+      ).resolves.toBe(true);
+      expect(getUserCourseMembership).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.APP_ADMINISTRATOR;
+      else process.env.APP_ADMINISTRATOR = previous;
+    }
   });
 
   it('denies plain students', async () => {

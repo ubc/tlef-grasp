@@ -11,12 +11,14 @@
  * Staff-level access is course-scoped: a promoted TA only acts as staff in
  * courses where their membership says 'ta'. In every other course they are a
  * regular student. Genuine SAML staff keep staff access in any course they
- * belong to, as before. Role changes are written to the database and apply on
+ * belong to, as before. Faculty, too, act only in courses they are members
+ * of; app administrators are the one exception and reach every course. Role
+ * changes are written to the database and apply on
  * the affected user's next request: the session holds only the user's id, and
  * req.user is loaded fresh each time (middleware/session-user.js).
  */
 
-const { isFaculty, isStaff, parseAffiliations } = require('./auth');
+const { isFaculty, isStaff, isAppAdministrator, parseAffiliations } = require('./auth');
 const { getUserCourseMembership } = require('../services/user-course');
 const { getUserById } = require('../services/user');
 
@@ -25,9 +27,9 @@ const TA_COURSE_ROLE = 'ta';
 /**
  * Whether the user may exercise staff-level powers (upload materials,
  * generate objectives/questions, edit drafts) inside a specific course.
- * Faculty and app administrators always may; staff-affiliated users must be
- * members of the course, and promoted TAs additionally need the 'ta' course
- * role on that membership.
+ * App administrators always may. Everyone else must be a member of the course:
+ * faculty members may, staff-affiliated members may, and promoted TAs
+ * additionally need the 'ta' course role on that membership.
  * @param {Object} user - Authenticated user (req.user)
  * @param {string|ObjectId} courseId - Course the action targets
  * @returns {Promise<boolean>}
@@ -35,12 +37,16 @@ const TA_COURSE_ROLE = 'ta';
 async function hasStaffAccessInCourse(user, courseId) {
   if (!user || !courseId) return false;
 
-  if (await isFaculty(user)) return true;
-  if (!(await isStaff(user))) return false;
+  if (await isAppAdministrator(user)) return true;
+  const userIsFaculty = await isFaculty(user);
+  if (!userIsFaculty && !(await isStaff(user))) return false;
 
+  // Membership first, faculty included: being an instructor somewhere is not
+  // access to someone else's course.
   const userId = user._id || user.id;
   const membership = await getUserCourseMembership(userId, courseId);
   if (!membership) return false;
+  if (userIsFaculty) return true;
   if (membership.courseRole === TA_COURSE_ROLE) return true;
 
   // Staff member without a TA designation here: SAML staff keep course-wide

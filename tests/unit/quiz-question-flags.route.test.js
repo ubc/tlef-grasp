@@ -14,10 +14,12 @@ jest.mock("../../src/services/quiz-question-flag", () => ({
 }));
 jest.mock("../../src/services/user-course", () => ({
   isUserInCourse: jest.fn(),
+  getUserCourseMembership: jest.fn(),
 }));
 jest.mock("../../src/utils/auth", () => ({
   ROLES: { FACULTY: "faculty", STAFF: "staff", STUDENT: "student" },
   isFaculty: jest.fn(),
+  isAppAdministrator: jest.fn(),
   isStudent: jest.fn(),
 }));
 jest.mock("../../src/utils/course-access", () => ({
@@ -30,9 +32,9 @@ jest.mock("../../src/services/answer-grading", () => ({}));
 
 const quizService = require("../../src/services/quiz");
 const flagService = require("../../src/services/quiz-question-flag");
-const { isFaculty, isStudent } = require("../../src/utils/auth");
+const { isFaculty, isAppAdministrator, isStudent } = require("../../src/utils/auth");
 const { hasStaffAccessInCourse } = require("../../src/utils/course-access");
-const { isUserInCourse } = require("../../src/services/user-course");
+const { isUserInCourse, getUserCourseMembership } = require("../../src/services/user-course");
 const quizRouter = require("../../src/routes/quiz");
 
 const USER_ID = "student-1";
@@ -58,6 +60,9 @@ describe("quiz question flag routes", () => {
     isFaculty.mockResolvedValue(false);
     hasStaffAccessInCourse.mockResolvedValue(false);
     isUserInCourse.mockResolvedValue(true);
+    isAppAdministrator.mockResolvedValue(false);
+    // Everyone here is a member of the course, none of them a TA.
+    getUserCourseMembership.mockResolvedValue({ userId: USER_ID, courseId: COURSE_ID });
     quizService.getQuizById.mockResolvedValue({ _id: QUIZ_ID, courseId: COURSE_ID });
   });
 

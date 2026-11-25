@@ -1,5 +1,6 @@
-// Per-TA capability resolution (utils/ta-permissions.js): faculty and
-// non-TA memberships are never restricted; TAs default to full access
+// Per-TA capability resolution (utils/ta-permissions.js): non-members are
+// refused (app administrators excepted); faculty and non-TA memberships are
+// never restricted; TAs default to full access
 // (grandfathered) with individual keys switchable off; the 'settings' key is
 // always denied for TAs regardless of the stored map.
 
@@ -76,11 +77,38 @@ describe('sanitizeTaPermissions', () => {
 });
 
 describe('hasTaPermission', () => {
-  it('always allows faculty without a membership lookup', async () => {
+  it('allows faculty who are members of the course', async () => {
+    getUserCourseMembership.mockResolvedValue({ userId: 'prof-1', courseId: COURSE_ID });
     await expect(
       hasTaPermission(faculty, COURSE_ID, TA_PERMISSION_KEYS.QUESTION_BANK)
     ).resolves.toBe(true);
-    expect(getUserCourseMembership).not.toHaveBeenCalled();
+  });
+
+  // A non-member used to pass (they are not a TA there), which made the check
+  // unsafe wherever a handler forgot hasStaffAccessInCourse.
+  it.each([
+    ['faculty', faculty],
+    ['SAML staff', samlStaff],
+    ['a promoted TA from another course', taUser],
+  ])('refuses %s who are not members of the course', async (_label, user) => {
+    getUserCourseMembership.mockResolvedValue(null);
+    await expect(
+      hasTaPermission(user, COURSE_ID, TA_PERMISSION_KEYS.QUESTION_GENERATION)
+    ).resolves.toBe(false);
+  });
+
+  it('allows an app administrator in any course', async () => {
+    const previous = process.env.APP_ADMINISTRATOR;
+    process.env.APP_ADMINISTRATOR = 'admin-1';
+    try {
+      await expect(
+        hasTaPermission({ _id: 'admin-1', puid: 'admin-1' }, COURSE_ID, TA_PERMISSION_KEYS.USERS)
+      ).resolves.toBe(true);
+      expect(getUserCourseMembership).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.APP_ADMINISTRATOR;
+      else process.env.APP_ADMINISTRATOR = previous;
+    }
   });
 
   it('never restricts a non-TA membership (genuine SAML staff)', async () => {

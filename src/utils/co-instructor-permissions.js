@@ -2,8 +2,9 @@
  * Co-instructor permission enforcement (backend, Tier 1: writes/actions).
  *
  * Mirrors the client's useCoInstructorAccess: the course owner and app
- * administrators always have full access. Any other instructor in the course is
- * allowed unless the owner has explicitly turned the permission off (stored in
+ * administrators always have full access. Anyone else must be a member of the
+ * course (a non-member is refused, so this check is safe on its own); a member
+ * is allowed unless the owner has explicitly turned the permission off (stored in
  * course settings under coInstructorPermissions). An absent map or key means
  * "allowed", so the default is full access and existing co-instructors are
  * unaffected until an owner restricts something.
@@ -14,6 +15,7 @@
 const { isAppAdministrator } = require('./auth');
 const { getCourseById } = require('../services/course');
 const settingsService = require('../services/settings');
+const { isUserInCourse } = require('../services/user-course');
 
 const PERMISSION_KEYS = {
   COURSE_MATERIALS: 'courseMaterials',
@@ -42,6 +44,9 @@ async function hasCoInstructorPermission(user, courseId, key) {
   // The course owner always has full access.
   const userId = String(user._id || user.id || '');
   if (course.owner && String(course.owner) === userId) return true;
+
+  // Nobody outside the course, whatever their affiliation.
+  if (!(await isUserInCourse(userId, courseId))) return false;
 
   // Otherwise this is a co-instructor: allowed unless explicitly turned off.
   const settings = await settingsService.getSettings(courseId);

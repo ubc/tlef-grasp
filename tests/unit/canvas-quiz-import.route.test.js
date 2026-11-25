@@ -27,7 +27,7 @@ jest.mock('../../src/utils/auth', () => ({
 }));
 jest.mock('../../src/services/course', () => ({ getCourseById: jest.fn() }));
 jest.mock('../../src/services/settings', () => ({ getSettings: jest.fn() }));
-jest.mock('../../src/services/user-course', () => ({ getUserCourseMembership: jest.fn() }));
+jest.mock('../../src/services/user-course', () => ({ getUserCourseMembership: jest.fn(), isUserInCourse: jest.fn() }));
 
 const databaseService = require('../../src/services/database');
 const importService = require('../../src/services/canvas-quiz-import');
@@ -35,7 +35,7 @@ const { hasStaffAccessInCourse } = require('../../src/utils/course-access');
 const { isFaculty, isAppAdministrator } = require('../../src/utils/auth');
 const { getCourseById } = require('../../src/services/course');
 const { getSettings } = require('../../src/services/settings');
-const { getUserCourseMembership } = require('../../src/services/user-course');
+const { getUserCourseMembership, isUserInCourse } = require('../../src/services/user-course');
 const canvasQuizImportRouter = require('../../src/routes/canvas-quiz-import');
 const { buildManifest, buildExportZip } = require('../fixtures/canvas-qti/zip');
 const items = require('../fixtures/canvas-qti/items');
@@ -104,6 +104,7 @@ beforeEach(() => {
   isAppAdministrator.mockResolvedValue(false);
   getCourseById.mockResolvedValue({ _id: COURSE_ID, owner: OWNER._id });
   getSettings.mockResolvedValue({});
+  isUserInCourse.mockResolvedValue(true);
   getUserCourseMembership.mockImplementation(async (userId) =>
     (userId === TA._id ? { courseRole: 'ta' } : { courseRole: 'instructor' }));
 });

@@ -5,10 +5,9 @@
  * two different audiences, and neither can be done by filtering course lists:
  *
  *  1. Students, co-instructors, and TAs lose access outright. Hiding the course
- *     from their list is not enough — `hasStaffAccessInCourse` grants any
- *     faculty user staff-level access to any course, member or not, so a
- *     co-instructor who is faculty would keep full API access to a course that
- *     had merely vanished from their sidebar.
+ *     from their list is not enough: co-instructors and TAs are still members,
+ *     so `hasStaffAccessInCourse` would keep giving them full API access to a
+ *     course that had merely vanished from their sidebar.
  *  2. The owner keeps access, but read-only. That guarantee has to hold against
  *     a request, not against which buttons the client chose to render.
  *

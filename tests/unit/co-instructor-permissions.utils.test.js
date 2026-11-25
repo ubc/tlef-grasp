@@ -10,9 +10,14 @@ jest.mock('../../src/services/settings', () => ({
   getSettings: jest.fn(),
 }));
 
+jest.mock('../../src/services/user-course', () => ({
+  isUserInCourse: jest.fn(),
+}));
+
 const { isAppAdministrator } = require('../../src/utils/auth');
 const { getCourseById } = require('../../src/services/course');
 const settingsService = require('../../src/services/settings');
+const { isUserInCourse } = require('../../src/services/user-course');
 const {
   PERMISSION_KEYS,
   assertCoInstructorPermission,
@@ -25,6 +30,7 @@ describe('co-instructor permission utilities', () => {
     isAppAdministrator.mockResolvedValue(false);
     getCourseById.mockResolvedValue({ _id: 'course-1', owner: 'owner-1' });
     settingsService.getSettings.mockResolvedValue({});
+    isUserInCourse.mockResolvedValue(true);
   });
 
   it('denies missing users or missing course IDs before loading course settings', async () => {
@@ -84,6 +90,26 @@ describe('co-instructor permission utilities', () => {
         PERMISSION_KEYS.QUESTION_BANK
       )
     ).resolves.toBe(false);
+  });
+
+  // A non-member used to pass (an absent permission map means "allowed"),
+  // which made the check unsafe wherever a handler forgot course access.
+  it('refuses anyone who is not a member of the course', async () => {
+    isUserInCourse.mockResolvedValue(false);
+
+    await expect(
+      hasCoInstructorPermission({ _id: 'outsider-1' }, 'course-1', PERMISSION_KEYS.QUESTION_BANK)
+    ).resolves.toBe(false);
+    expect(isUserInCourse).toHaveBeenCalledWith('outsider-1', 'course-1');
+  });
+
+  it('lets the owner through without a membership lookup', async () => {
+    isUserInCourse.mockResolvedValue(false);
+
+    await expect(
+      hasCoInstructorPermission({ _id: 'owner-1' }, 'course-1', PERMISSION_KEYS.QUESTION_BANK)
+    ).resolves.toBe(true);
+    expect(isUserInCourse).not.toHaveBeenCalled();
   });
 
   it('recognizes only app administrators and owners as course managers', async () => {
