@@ -5,7 +5,7 @@
  * saveQuizScore, markSubmitted and the achievement award used to share one
  * try/catch that logged and fell through to `res.json({ success: true, ... })`.
  * A failed score write therefore looked identical to a good one: the student
- * saw a score, the instructor's roster showed them as not having taken the
+ * saw a score, the instructor's roster showed them as not having taken t
  * quiz, and nothing prompted a retry. The two are now separated — achievements
  * stay best-effort, the score write is reported.
  */
