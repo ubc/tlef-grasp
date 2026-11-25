@@ -187,11 +187,6 @@ export default function StudentQuiz() {
         ? "Previous questions are disabled for this quiz"
         : undefined;
 
-  const rawStem = (question.stem || "").trim();
-  const isGenericFibStem =
-    question.questionType === QUESTION_TYPES.FILL_IN_THE_BLANK &&
-    /^fill\s+in\s+the\s+blank:?\s*$/i.test(rawStem);
-
   return (
     <div className="mx-auto max-w-3xl p-4 md:p-8">
       {/* Header */}
@@ -257,19 +252,12 @@ export default function StudentQuiz() {
           </div>
         )}
 
+        {/* One prompt per question, the same on a first attempt and a retake:
+            the server picks it (issues #177, #223). */}
         <RichText
-          text={escapeHtml(
-            question.question || question.title || "Question text not available"
-          )}
-          className="mb-2 whitespace-pre-line text-ink"
+          text={escapeHtml(question.question || "Question text not available")}
+          className="mb-4 whitespace-pre-line text-ink"
         />
-
-        {question.stem && !isGenericFibStem && (
-          <RichText
-            text={escapeHtml(question.stem)}
-            className="mb-4 whitespace-pre-line text-[1.05em] font-medium text-[#34495e]"
-          />
-        )}
 
         {(question.stemImages || (question.stemImage ? [question.stemImage] : [])).length > 0 && (
           <div className="mb-4 flex flex-wrap gap-2">

@@ -1,23 +1,20 @@
 const { getStudentCourses } = require('../services/user-course');
 const quizService = require('../services/quiz');
-const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const achievementService = require('../services/achievement');
 const { getCourseById } = require('../services/course');
 const { ObjectId } = require('mongodb');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const {
   MC_OPTION_KEYS,
-  optionKeysOf,
   optionAt,
-  optionTextOf,
   optionFeedbackOf,
   gradeMultipleAnswer,
-  stemBesideTitle,
 } = require('../utils/mc-options');
 const databaseService = require('../services/database');
 const quizSessionService = require('../services/quiz-session');
 const { resolveStudentQuizAccess } = require('../services/student-quiz-access');
 const studentQuizDelivery = require('../services/student-quiz-delivery');
+const { toStudentQuestions } = require('../services/student-question-view');
 
 const getStudentCoursesHandler = async (req, res) => {
   try {
@@ -96,18 +93,6 @@ const startQuizHandler = async (req, res) => {
 };
 
 
-function resolveQuestionType(q) {
-  const t = String(q.questionType || q.type || "").trim().toLowerCase();
-  const known = [
-    QUESTION_TYPES.FILL_IN_THE_BLANK,
-    QUESTION_TYPES.CALCULATION,
-    QUESTION_TYPES.OPEN_ENDED,
-    QUESTION_TYPES.MULTIPLE_ANSWER,
-  ];
-  return known.includes(t) ? t : QUESTION_TYPES.MULTIPLE_CHOICE;
-}
-
-
 const getQuizQuestionsHandler = async (req, res) => {
   try {
     const { quizId } = req.params;
@@ -159,129 +144,8 @@ const getQuizQuestionsHandler = async (req, res) => {
       });
     }
 
-    const transformedQuestions = questions.map((q, index) => {
-      const questionType = resolveQuestionType(q);
-      const questionText = (q.title || q.stem || "").trim();
-      // Fill-in-the-blank and open-ended store the actual prompt in `stem`;
-      // `title` is only a short topic label, so prefer `stem` for those types.
-      const stemFirstTypes =
-        questionType === QUESTION_TYPES.FILL_IN_THE_BLANK ||
-        questionType === QUESTION_TYPES.OPEN_ENDED;
-      const fibMainText = stemFirstTypes
-        ? (q.stem || q.title || "").trim()
-        : questionText;
-
-      if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-        return {
-          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-          question: fibMainText || questionText || "Question text not available",
-          questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
-          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-          options: {},
-          learningObjectiveId: q.learningObjectiveId,
-          granularObjectiveId: q.granularObjectiveId,
-          bloom: q.bloom,
-        };
-      }
-
-      if (questionType === QUESTION_TYPES.OPEN_ENDED) {
-        return {
-          id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-          question: fibMainText || questionText || "Question text not available",
-          questionType: QUESTION_TYPES.OPEN_ENDED,
-          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-          options: {},
-          learningObjectiveId: q.learningObjectiveId,
-          granularObjectiveId: q.granularObjectiveId,
-          bloom: q.bloom,
-        };
-      }
-
-      if (questionType === QUESTION_TYPES.CALCULATION) {
-        const vars = q.calculationVariables;
-        const template = CalculationQuestion.resolveCalculationDisplayTemplate(
-          q.stem,
-          q.title,
-          vars
-        );
-        const formula = (q.calculationFormula || "").trim();
-        const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
-        const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
-        const built = CalculationQuestion.buildStudentCalculationInstance({
-          template,
-          formula,
-          variableSpecs: vars,
-          qid,
-          answerDec,
-        });
-        if (built.ok) {
-          return {
-            id: qid,
-            question: built.rendered,
-            questionType: QUESTION_TYPES.CALCULATION,
-            stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-            calculationToken: built.token,
-            answerDecimalPlaces: built.answerDecimalPlaces,
-            // The rule the student is graded by, minus a range's bounds.
-            calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
-            calculationAnswerTolerancePercent: tolerancePercent,
-            options: {},
-            learningObjectiveId: q.learningObjectiveId,
-            granularObjectiveId: q.granularObjectiveId,
-            bloom: q.bloom,
-          };
-        }
-        console.error(
-          "Calculation question instance failed:",
-          qid,
-          built.error && built.error.message
-        );
-        return {
-          id: qid,
-          question:
-            template ||
-            "This calculation question could not be loaded. Please contact your instructor.",
-          questionType: QUESTION_TYPES.CALCULATION,
-          stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-          calculationToken: null,
-          answerDecimalPlaces: answerDec,
-          calculationLoadError: true,
-          options: {},
-          learningObjectiveId: q.learningObjectiveId,
-          granularObjectiveId: q.granularObjectiveId,
-          bloom: q.bloom,
-        };
-      }
-
-      // Multiple choice and multiple answer. Only the option text goes to the
-      // student; feedback and the answer stay on the server. Whatever letters
-      // the question has (two to eight). An option with an image (issue #146)
-      // is sent as { text, image } with just the file id and the alt text: the
-      // stored filename could name the answer.
-      const optionsObj = {};
-      optionKeysOf(q.options).forEach((key) => {
-        const raw = optionAt(q.options, key);
-        const text = optionTextOf(raw);
-        const image = raw && typeof raw === 'object' ? raw.image : null;
-        optionsObj[key] = image?.fileId
-          ? { text, image: { fileId: String(image.fileId), caption: image.caption || '' } }
-          : text;
-      });
-
-      return {
-        id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-        question: questionText || "Question text not available",
-        questionType,
-        // A multiple-answer question's stem is shown under its prompt when it
-        // adds something (an instructor may write the question there).
-        ...(questionType === QUESTION_TYPES.MULTIPLE_ANSWER ? { stem: stemBesideTitle(q) } : {}),
-        stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-        options: optionsObj,
-        learningObjectiveId: q.learningObjectiveId,
-        granularObjectiveId: q.granularObjectiveId,
-        bloom: q.bloom
-      };
-    });
+    // The same view a retake gets (issues #177, #223).
+    const transformedQuestions = toStudentQuestions(questions);
 
     let courseName = "";
     if (quiz.courseId) {

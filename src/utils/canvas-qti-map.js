@@ -22,6 +22,7 @@ const { convertCanvasHtml, convertCanvasPlainText } = require('./canvas-qti-html
 const { canvasFormulaToGrasp, canvasPlaceholdersToGrasp, evaluateCanvasFormula, FormulaError } = require('./canvas-formula');
 const { CANVAS_QUESTION_TYPES, PARSE_WARNINGS } = require('./canvas-qti-parse');
 const { MC_OPTION_KEYS, MC_MIN_OPTIONS, MC_MAX_OPTIONS } = require('./mc-options');
+const { MC_GENERIC_STEM } = require('./question-prompt');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 
@@ -29,7 +30,7 @@ const SOURCE_KIND = 'canvas-classic';
 // Every variant of a slot gets the same level: phase 1 serves the lowest level
 // first, so mixed levels would always serve the same variant.
 const BLOOM = 'Understand';
-const MC_STEM = 'Select the best answer:';
+const MC_STEM = MC_GENERIC_STEM;
 const BLANK = '_________';
 // The blank where it falls inside converted math (a table, a LaTeX
 // super/subscript, an equation): KaTeX refuses a raw "_" there, in \text{} and

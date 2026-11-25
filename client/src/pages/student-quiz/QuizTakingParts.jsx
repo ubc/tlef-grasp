@@ -133,8 +133,11 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
   // The option image open in the zoom overlay, if any.
   const [zoomedImage, setZoomedImage] = useState(null);
 
+  // The instruction comes from the question type, not from the stored
+  // question, as for multiple answer below (issue #223).
   return (
-    <div className="space-y-3">
+    <fieldset className="space-y-3">
+      <legend className="mb-3 text-sm font-semibold text-ink">Select the best answer.</legend>
       {optionKeysOf(question.options).map((key) => {
         // The server maps selectedIndex back to a letter by position in A
         // to H, so the index sent is the letter's, not the row's.
@@ -207,7 +210,7 @@ export function McqOptions({ question, feedback, submitting, onSelect }) {
           onClose={() => setZoomedImage(null)}
         />
       )}
-    </div>
+    </fieldset>
   );
 }
 

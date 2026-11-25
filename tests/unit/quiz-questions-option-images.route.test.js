@@ -96,12 +96,12 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
 
     expect(res.status).toBe(200);
     const [sent] = res.body.questions;
+    // The same option shape the student quiz page serves (#223).
     expect(sent.options.A).toEqual({
       text: '',
       image: { fileId: IMAGE.fileId, caption: IMAGE.caption },
-      index: 0,
     });
-    expect(sent.options.B).toEqual({ text: 'Cyclohexane', index: 1 });
+    expect(sent.options.B).toBe('Cyclohexane');
     expect(sent.correctAnswer).toBeUndefined();
   });
 
@@ -172,11 +172,12 @@ describe('GET /api/quiz/:quizId/questions multiple-answer', () => {
     expect(sent.questionType).toBe('multiple-answer');
     expect(sent.correctAnswer).toBeUndefined();
     expect(sent.options).toEqual({
-      A: { text: '', image: { fileId: IMAGE.fileId, caption: IMAGE.caption }, index: 0 },
-      B: { text: 'Cyclohexane', index: 1 },
-      C: { text: 'Pyridine', index: 2 },
+      A: { text: '', image: { fileId: IMAGE.fileId, caption: IMAGE.caption } },
+      B: 'Cyclohexane',
+      C: 'Pyridine',
     });
-    // A stem that only repeats the title isn't shown twice.
-    expect(sent.stem).toBe('');
+    // One prompt per question; the stem is not sent as a second line (#223).
+    expect(sent.question).toBe('Which of these are aromatic?');
+    expect(sent).not.toHaveProperty('stem');
   });
 });

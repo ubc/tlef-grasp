@@ -312,13 +312,11 @@ describe("student quiz questions include stem images", () => {
       },
     ]);
 
-    // No correct letters, no feedback, no filename; a stem that only repeats
-    // the title is not sent to be shown twice.
+    // No correct letters, no feedback, no filename, and one prompt (#223).
     expect(questions[0]).toEqual({
       id: id.toString(),
       question: "Which of these are noble gases?",
       questionType: "multiple-answer",
-      stem: "",
       stemImages: [],
       options: {
         A: "Neon",
@@ -330,7 +328,7 @@ describe("student quiz questions include stem images", () => {
     });
   });
 
-  it("shows a multiple-answer stem that adds to the title", async () => {
+  it("shows a multiple-answer question's stem as its prompt, not its title (#223)", async () => {
     const questions = await getQuestions([
       {
         _id: new ObjectId(),
@@ -342,9 +340,7 @@ describe("student quiz questions include stem images", () => {
       },
     ]);
 
-    expect(questions[0]).toMatchObject({
-      question: "Noble gases",
-      stem: "Which of these elements are noble gases?",
-    });
+    expect(questions[0].question).toBe("Which of these elements are noble gases?");
+    expect(questions[0]).not.toHaveProperty("stem");
   });
 });
