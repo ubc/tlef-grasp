@@ -31,6 +31,7 @@ const { TA_COURSE_ROLE, hasStaffAccessInCourse, resolveCourseRole } = require('.
 const { isCourseManager } = require('../utils/co-instructor-permissions');
 const {
   TA_PERMISSION_KEYS,
+  ALL_TA_PERMISSION_KEYS,
   getEffectiveTaPermissions,
   sanitizeTaPermissions,
   assertTaPermission,
@@ -327,11 +328,12 @@ const getCourseAccessHandler = async (req, res) => {
       ? resolveCourseRole(req.user, membership, userIsFaculty)
       : "student";
 
-    // TAs get their configured capability map; everyone else with staff
-    // access is unrestricted by this layer, so their map is all-true.
-    const taPermissions = getEffectiveTaPermissions(
-      role === "ta" ? membership.taPermissions : null
-    );
+    // TAs get their configured capability map (capped to the pages TAs can be
+    // granted); everyone else with staff access is unrestricted by this layer,
+    // so their map is all-true.
+    const taPermissions = role === "ta"
+      ? getEffectiveTaPermissions(membership.taPermissions)
+      : Object.fromEntries(ALL_TA_PERMISSION_KEYS.map((key) => [key, true]));
 
     return res.json({ success: true, hasStaffAccess, role, taPermissions });
   } catch (error) {

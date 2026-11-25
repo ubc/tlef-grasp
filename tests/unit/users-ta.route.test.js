@@ -84,6 +84,7 @@ function buildApp(user) {
 }
 
 // Effective TA permission map when nothing has been restricted (the default).
+// Someone the TA layer does not restrict (not a TA in this course).
 const FULL_TA_PERMISSIONS = {
   dashboard: true,
   courseMaterials: true,
@@ -93,6 +94,20 @@ const FULL_TA_PERMISSIONS = {
   quizScores: true,
   questionFlags: true,
   users: true,
+  mySections: true,
+};
+
+// A freshly promoted TA: every page TAs can be granted, and nothing else.
+const NEW_TA_PERMISSIONS = {
+  dashboard: true,
+  courseMaterials: true,
+  questionGeneration: true,
+  questionBank: true,
+  quizzes: false,
+  quizScores: false,
+  questionFlags: false,
+  users: false,
+  mySections: false,
 };
 
 const promoteUrl = `/api/users/course/${COURSE_ID}/promote`;
@@ -118,7 +133,7 @@ describe('GET /api/users/course/:courseId/access', () => {
       success: true,
       hasStaffAccess: true,
       role: 'ta',
-      taPermissions: FULL_TA_PERMISSIONS,
+      taPermissions: NEW_TA_PERMISSIONS,
     });
   });
 
@@ -142,19 +157,15 @@ describe('GET /api/users/course/:courseId/access', () => {
 });
 
 describe('GET /api/users/course/:courseId', () => {
-  it('lets a TA view the Users page roster in their TA course', async () => {
+  // Users is not a page TAs can be granted, even in their TA course.
+  it('refuses a TA the Users page roster in their TA course', async () => {
     userCourseService.isUserInCourse.mockResolvedValue(true);
-    userCourseService.getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
-    userCourseService.getCourseUsers.mockResolvedValue([
-      { userId: 'ta-1', courseRole: 'ta', user: taUser, sections: [] },
-    ]);
-    courseSectionService.getSectionsOwnedByUser.mockResolvedValue([]);
+    userCourseService.getUserCourseMembership.mockResolvedValue({ courseRole: 'ta', taPermissions: { users: true } });
 
     const res = await request(buildApp(taUser)).get(`/api/users/course/${COURSE_ID}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.users).toHaveLength(1);
-    expect(res.body.users[0].courseRole).toBe('ta');
+    expect(res.status).toBe(403);
+    expect(userCourseService.getCourseUsers).not.toHaveBeenCalled();
   });
 
   it('blocks a promoted TA from viewing another course roster as staff', async () => {

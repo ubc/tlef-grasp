@@ -94,8 +94,14 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+const { grantTaPage } = require('../fixtures/ta-grant');
+
 describe('GET /api/users/course/:courseId', () => {
+  // Users is not a page TAs can be granted today; this keeps the privacy of a
+  // TA's roster covered for when it is.
   it('sends a TA the roster without anyone\'s user document or Canvas identities', async () => {
+    const release = grantTaPage('users');
+    try {
     userCourseService.isUserInCourse.mockResolvedValue(true);
     userCourseService.getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
     // getCourseUsers keeps the full document under `user` for the role checks.
@@ -130,6 +136,9 @@ describe('GET /api/users/course/:courseId', () => {
     );
     for (const row of res.body.users) expect(row).not.toHaveProperty('user');
     expect(JSON.stringify(res.body)).not.toMatch(CANVAS_VALUES);
+    } finally {
+      release();
+    }
   });
 
   it('sends an instructor their section\'s students without Canvas identities', async () => {

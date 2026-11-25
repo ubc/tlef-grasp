@@ -85,7 +85,9 @@ export default function App() {
                 <Route element={<RequireRole min="faculty" />}>
                   <Route path="/analytics" element={<Analytics />} />
                 </Route>
-                <Route path="/my-sections" element={<MySections />} />
+                <Route element={<RequireTaPermission permission="mySections" />}>
+                  <Route path="/my-sections" element={<MySections />} />
+                </Route>
                 <Route element={<RequireTaPermission permission="quizzes" />}>
                   <Route path="/quizzes" element={<Quizzes />} />
                 </Route>

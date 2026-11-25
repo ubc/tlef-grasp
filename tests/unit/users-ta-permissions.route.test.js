@@ -87,6 +87,8 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+const { grantTaPage } = require('../fixtures/ta-grant');
+
 describe('PUT /api/users/course/:courseId/ta-permissions', () => {
   const taMembership = { userId: 'ta-1', courseId: COURSE_ID, courseRole: 'ta' };
 
@@ -104,10 +106,12 @@ describe('PUT /api/users/course/:courseId/ta-permissions', () => {
       COURSE_ID,
       { questionBank: false, users: false }
     );
-    // The reply expands the stored map to the full effective map.
+    // The reply expands the stored map to the full effective map: grantable
+    // pages default on, pages TAs can't be granted stay off.
     expect(res.body.permissions.questionBank).toBe(false);
     expect(res.body.permissions.users).toBe(false);
-    expect(res.body.permissions.questionFlags).toBe(true);
+    expect(res.body.permissions.dashboard).toBe(true);
+    expect(res.body.permissions.questionFlags).toBe(false);
   });
 
   it('rejects a TA caller: TAs cannot edit permissions (including their own)', async () => {
@@ -194,7 +198,9 @@ describe('GET /api/users/course/:courseId/access (TA permission map)', () => {
     expect(res.status).toBe(200);
     expect(res.body.role).toBe('ta');
     expect(res.body.taPermissions.questionBank).toBe(false);
-    expect(res.body.taPermissions.questionFlags).toBe(true);
+    expect(res.body.taPermissions.dashboard).toBe(true);
+    // Not a page TAs can be granted.
+    expect(res.body.taPermissions.questionFlags).toBe(false);
   });
 });
 
@@ -214,7 +220,27 @@ describe('GET /api/users/course/:courseId (roster gated by the users permission)
     expect(userCourseService.getCourseUsers).not.toHaveBeenCalled();
   });
 
-  it('still allows a TA whose map grants the users permission', async () => {
+  // Users is not a page TAs can be granted, so a map saying otherwise is
+  // ignored. When it is added to TA_GRANTABLE_PERMISSION_KEYS, the next test
+  // shows what such a TA then gets.
+  it('refuses a TA even when their map grants the users permission', async () => {
+    userCourseService.isUserInCourse.mockResolvedValue(true);
+    userCourseService.getUserCourseMembership.mockResolvedValue({
+      userId: 'ta-1',
+      courseId: COURSE_ID,
+      courseRole: 'ta',
+      taPermissions: { users: true },
+    });
+
+    const res = await request(buildApp(taUser)).get(rosterUrl);
+
+    expect(res.status).toBe(403);
+    expect(userCourseService.getCourseUsers).not.toHaveBeenCalled();
+  });
+
+  it('allows a TA whose map grants the users permission once Users is grantable', async () => {
+    const release = grantTaPage('users');
+    try {
     userCourseService.isUserInCourse.mockResolvedValue(true);
     userCourseService.getUserCourseMembership.mockResolvedValue({
       userId: 'ta-1',
@@ -240,5 +266,8 @@ describe('GET /api/users/course/:courseId (roster gated by the users permission)
     // TA rows carry the effective map so the editor modal can prefill.
     expect(res.body.users[0].taPermissions.questionBank).toBe(false);
     expect(res.body.users[0].taPermissions.dashboard).toBe(true);
+    } finally {
+      release();
+    }
   });
 });

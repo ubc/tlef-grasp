@@ -17,11 +17,14 @@ const {
   TA_PERMISSION_KEYS,
   TA_SETTINGS_KEY,
   ALL_TA_PERMISSION_KEYS,
+  TA_GRANTABLE_PERMISSION_KEYS,
   getEffectiveTaPermissions,
   sanitizeTaPermissions,
   hasTaPermission,
   assertTaPermission,
 } = require('../../src/utils/ta-permissions');
+
+const { grantTaPage } = require('../fixtures/ta-grant');
 
 const COURSE_ID = 'course-1';
 const faculty = { _id: 'prof-1', puid: 'prof-1', affiliation: ['faculty'] };
@@ -38,18 +41,24 @@ afterEach(() => {
 });
 
 describe('getEffectiveTaPermissions', () => {
-  it('defaults every key to true when no map is stored (grandfathered access)', () => {
+  it('turns on every grantable page, and only those, when no map is stored', () => {
     const effective = getEffectiveTaPermissions(null);
     for (const key of ALL_TA_PERMISSION_KEYS) {
-      expect(effective[key]).toBe(true);
+      expect(effective[key]).toBe(TA_GRANTABLE_PERMISSION_KEYS.includes(key));
     }
   });
 
-  it('keeps explicit false values and fills in missing keys as true', () => {
+  it('keeps explicit false values and fills in missing grantable keys as true', () => {
     const effective = getEffectiveTaPermissions({ questionBank: false });
     expect(effective.questionBank).toBe(false);
-    expect(effective.questionFlags).toBe(true);
     expect(effective.dashboard).toBe(true);
+  });
+
+  it('keeps pages TAs cannot be granted off even when the map turns them on', () => {
+    const effective = getEffectiveTaPermissions({ quizzes: true, users: true, questionFlags: true });
+    expect(effective.quizzes).toBe(false);
+    expect(effective.users).toBe(false);
+    expect(effective.questionFlags).toBe(false);
   });
 });
 
@@ -118,11 +127,43 @@ describe('hasTaPermission', () => {
     ).resolves.toBe(true);
   });
 
-  it('allows a TA whose map does not mention the key (default allow)', async () => {
+  it('allows a TA whose map does not mention a grantable key (default allow)', async () => {
     getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
     await expect(
-      hasTaPermission(taUser, COURSE_ID, TA_PERMISSION_KEYS.QUESTION_FLAGS)
+      hasTaPermission(taUser, COURSE_ID, TA_PERMISSION_KEYS.QUESTION_BANK)
     ).resolves.toBe(true);
+  });
+
+  // TAs only get Dashboard, Course Materials, Question Generation and the
+  // Question Bank; everything else is closed whatever the instructor stored.
+  it.each([
+    TA_PERMISSION_KEYS.QUIZZES,
+    TA_PERMISSION_KEYS.QUIZ_SCORES,
+    TA_PERMISSION_KEYS.QUESTION_FLAGS,
+    TA_PERMISSION_KEYS.USERS,
+    TA_PERMISSION_KEYS.MY_SECTIONS,
+  ])('denies a TA the %s page even when their map grants it', async (key) => {
+    getUserCourseMembership.mockResolvedValue({ courseRole: 'ta', taPermissions: { [key]: true } });
+    await expect(hasTaPermission(taUser, COURSE_ID, key)).resolves.toBe(false);
+  });
+
+  it('never restricts SAML staff on pages TAs cannot be granted', async () => {
+    getUserCourseMembership.mockResolvedValue({ userId: 'staff-1', courseId: COURSE_ID });
+    await expect(
+      hasTaPermission(samlStaff, COURSE_ID, TA_PERMISSION_KEYS.QUIZ_SCORES)
+    ).resolves.toBe(true);
+  });
+
+  it('allows a page once it is added to the grantable list', async () => {
+    const release = grantTaPage(TA_PERMISSION_KEYS.QUIZ_SCORES);
+    try {
+      getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
+      await expect(
+        hasTaPermission(taUser, COURSE_ID, TA_PERMISSION_KEYS.QUIZ_SCORES)
+      ).resolves.toBe(true);
+    } finally {
+      release();
+    }
   });
 
   it('denies a TA whose map switches the key off', async () => {
@@ -158,7 +199,7 @@ describe('assertTaPermission', () => {
     getUserCourseMembership.mockResolvedValue({ courseRole: 'ta' });
     const res = mockRes();
     await expect(
-      assertTaPermission({ user: taUser }, res, COURSE_ID, TA_PERMISSION_KEYS.USERS)
+      assertTaPermission({ user: taUser }, res, COURSE_ID, TA_PERMISSION_KEYS.DASHBOARD)
     ).resolves.toBe(true);
     expect(res.status).not.toHaveBeenCalled();
   });

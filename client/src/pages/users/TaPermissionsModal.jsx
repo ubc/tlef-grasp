@@ -1,12 +1,13 @@
 import { useEffect, useId, useState } from "react";
 import Modal from "../../components/ui/Modal";
 import {
-  TA_PERMISSIONS,
+  TA_GRANTABLE_PERMISSIONS,
   TA_PERMISSION_PRESETS,
 } from "../../lib/permissions";
 
+// Only the pages a TA can be granted are offered; the rest are closed to TAs.
 const fullMap = (value) =>
-  TA_PERMISSIONS.reduce((map, perm) => ({ ...map, [perm.key]: value }), {});
+  TA_GRANTABLE_PERMISSIONS.reduce((map, perm) => ({ ...map, [perm.key]: value }), {});
 
 // Instructor-facing editor for one TA's per-course permission map. Presets
 // fill the checkboxes; individual toggles fine-tune. Saving replaces the whole
@@ -18,12 +19,17 @@ export default function TaPermissionsModal({ open, ta, onClose, onSave, saving }
 
   useEffect(() => {
     if (open) {
-      setDraft({ ...fullMap(true), ...(ta?.taPermissions || {}) });
+      const stored = ta?.taPermissions || {};
+      const draftMap = fullMap(true);
+      for (const key of Object.keys(draftMap)) {
+        if (stored[key] === false) draftMap[key] = false;
+      }
+      setDraft(draftMap);
     }
   }, [open, ta]);
 
   const matchesPreset = (preset) =>
-    TA_PERMISSIONS.every((perm) => draft[perm.key] === preset.permissions[perm.key]);
+    TA_GRANTABLE_PERMISSIONS.every((perm) => draft[perm.key] === preset.permissions[perm.key]);
 
   return (
     <Modal
@@ -53,7 +59,8 @@ export default function TaPermissionsModal({ open, ta, onClose, onSave, saving }
     >
       <p className="mb-4 text-sm text-muted">
         Choose what this TA can see and do in this course. Changes apply
-        immediately. Course settings and user management actions always stay
+        immediately. TAs can only be given the pages below; quizzes, scores,
+        question flags, users, sections and course settings stay
         instructor-only.
       </p>
 
@@ -87,7 +94,7 @@ export default function TaPermissionsModal({ open, ta, onClose, onSave, saving }
           Individual permissions
         </legend>
         <ul className="grid gap-2 sm:grid-cols-2">
-          {TA_PERMISSIONS.map((perm) => {
+          {TA_GRANTABLE_PERMISSIONS.map((perm) => {
             const inputId = `ta-perm-${perm.key}`;
             return (
               <li

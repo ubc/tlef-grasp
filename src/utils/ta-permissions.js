@@ -12,6 +12,11 @@
  * (that is where their own permissions are managed), so that key is denied for
  * TAs regardless of the stored map.
  *
+ * On top of the map, TAs only ever get the pages in TA_GRANTABLE_PERMISSION_KEYS.
+ * Every other key is denied for a TA whatever the stored map says, and the
+ * instructor is not offered it. To let TAs use another page, add its key there
+ * (and to TA_GRANTABLE_PERMISSION_KEYS in client/src/lib/permissions.js).
+ *
  * Faculty and genuine SAML staff are never restricted by this module — only
  * memberships with courseRole 'ta' are. Keep the keys in sync with
  * client/src/lib/permissions.js (TA_PERMISSIONS).
@@ -30,7 +35,20 @@ const TA_PERMISSION_KEYS = {
   QUIZ_SCORES: 'quizScores',
   QUESTION_FLAGS: 'questionFlags',
   USERS: 'users',
+  MY_SECTIONS: 'mySections',
 };
+
+// The pages a TA can be granted at all. An instructor may switch any of these
+// off for a TA; nothing outside this list can be switched on. Grant TAs a new
+// page by adding its key here and in the client's list.
+const TA_GRANTABLE_PERMISSION_KEYS = [
+  TA_PERMISSION_KEYS.DASHBOARD,
+  TA_PERMISSION_KEYS.COURSE_MATERIALS,
+  TA_PERMISSION_KEYS.QUESTION_GENERATION,
+  TA_PERMISSION_KEYS.QUESTION_BANK,
+];
+
+const isTaGrantable = (key) => TA_GRANTABLE_PERMISSION_KEYS.includes(key);
 
 // Course settings are never TA-accessible; not part of the configurable set.
 const TA_SETTINGS_KEY = 'settings';
@@ -39,14 +57,15 @@ const ALL_TA_PERMISSION_KEYS = Object.values(TA_PERMISSION_KEYS);
 
 /**
  * Expand a stored (possibly partial or missing) permission map into the full
- * effective map for a TA. Missing keys default to true (grandfathered access).
+ * effective map for a TA. Keys outside TA_GRANTABLE_PERMISSION_KEYS are always
+ * false; a grantable key missing from the map defaults to true.
  * @param {Object|null|undefined} stored - membership.taPermissions
  * @returns {Object} key -> boolean for every configurable key
  */
 function getEffectiveTaPermissions(stored) {
   const effective = {};
   for (const key of ALL_TA_PERMISSION_KEYS) {
-    effective[key] = stored?.[key] !== false;
+    effective[key] = isTaGrantable(key) && stored?.[key] !== false;
   }
   return effective;
 }
@@ -92,7 +111,8 @@ async function hasTaPermission(user, courseId, key) {
   if (await isFaculty(user)) return true;
   if (membership.courseRole !== TA_COURSE_ROLE) return true;
 
-  if (key === TA_SETTINGS_KEY) return false;
+  // Settings and every page outside the grantable list stay closed to TAs.
+  if (key === TA_SETTINGS_KEY || !isTaGrantable(key)) return false;
   return membership.taPermissions?.[key] !== false;
 }
 
@@ -117,6 +137,7 @@ module.exports = {
   TA_PERMISSION_KEYS,
   TA_SETTINGS_KEY,
   ALL_TA_PERMISSION_KEYS,
+  TA_GRANTABLE_PERMISSION_KEYS,
   getEffectiveTaPermissions,
   sanitizeTaPermissions,
   hasTaPermission,

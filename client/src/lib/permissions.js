@@ -60,6 +60,10 @@ export const PATH_PERMISSION = CO_INSTRUCTOR_PERMISSIONS.reduce((map, perm) => {
 // client mirrors it to hide navigation and guard routes. A key missing from
 // the stored map means "allowed", so a freshly promoted TA has full access.
 // Settings is intentionally absent: TAs can never open course settings.
+//
+// TA_PERMISSIONS lists every instructor page that has a TA key. TAs can only
+// ever use the ones in TA_GRANTABLE_PERMISSION_KEYS below; the rest are closed
+// to them and not offered to the instructor.
 
 export const TA_PERMISSIONS = [
   {
@@ -121,7 +125,32 @@ export const TA_PERMISSIONS = [
     description:
       "View the course roster. Adding, removing, and promoting users stay instructor-only.",
   },
+  {
+    key: "mySections",
+    label: "My Sections",
+    icon: "fa-layer-group",
+    path: "/my-sections",
+    description: "View the sections linked to this course.",
+  },
 ];
+
+// The pages a TA can be granted at all. An instructor may switch any of these
+// off for a TA; nothing outside this list can be switched on, and the API
+// refuses it too. Grant TAs a new page by adding its key here and in
+// TA_GRANTABLE_PERMISSION_KEYS in the server's utils/ta-permissions.js.
+export const TA_GRANTABLE_PERMISSION_KEYS = [
+  "dashboard",
+  "courseMaterials",
+  "questionGeneration",
+  "questionBank",
+];
+
+export const isTaGrantable = (key) => TA_GRANTABLE_PERMISSION_KEYS.includes(key);
+
+// What the instructor's TA-permissions editor offers.
+export const TA_GRANTABLE_PERMISSIONS = TA_PERMISSIONS.filter((perm) =>
+  isTaGrantable(perm.key)
+);
 
 export const TA_PATH_PERMISSION = TA_PERMISSIONS.reduce((map, perm) => {
   if (perm.path) map[perm.path] = perm.key;
@@ -129,34 +158,41 @@ export const TA_PATH_PERMISSION = TA_PERMISSIONS.reduce((map, perm) => {
 }, {});
 
 const taPermissionMap = (allowedKeys) =>
-  TA_PERMISSIONS.reduce((map, perm) => {
+  TA_GRANTABLE_PERMISSIONS.reduce((map, perm) => {
     map[perm.key] = allowedKeys.includes(perm.key);
     return map;
   }, {});
 
 // Presets fill in the checkbox grid; the instructor can fine-tune afterwards.
-export const TA_PERMISSION_PRESETS = [
+// A preset is offered only once every page it grants is grantable, and not
+// when it would grant exactly what an earlier preset does.
+const PRESET_DEFINITIONS = [
   {
     id: "full",
     label: "Full Access",
     description: "Everything a TA can do: all pages and features.",
-    permissions: taPermissionMap(TA_PERMISSIONS.map((perm) => perm.key)),
+    keys: TA_GRANTABLE_PERMISSION_KEYS,
   },
   {
     id: "grader",
     label: "Grader",
     description: "Scores and student-reported question flags only.",
-    permissions: taPermissionMap(["dashboard", "quizScores", "questionFlags"]),
+    keys: ["dashboard", "quizScores", "questionFlags"],
   },
   {
     id: "content",
     label: "Content Assistant",
     description: "Materials, question generation, and the question bank.",
-    permissions: taPermissionMap([
-      "dashboard",
-      "courseMaterials",
-      "questionGeneration",
-      "questionBank",
-    ]),
+    keys: ["dashboard", "courseMaterials", "questionGeneration", "questionBank"],
   },
 ];
+
+const sameKeys = (a, b) => a.length === b.length && a.every((key) => b.includes(key));
+
+export const TA_PERMISSION_PRESETS = PRESET_DEFINITIONS.filter(
+  (preset, index) =>
+    preset.keys.every(isTaGrantable) &&
+    !PRESET_DEFINITIONS.slice(0, index).some(
+      (earlier) => earlier.keys.every(isTaGrantable) && sameKeys(earlier.keys, preset.keys)
+    )
+).map(({ keys, ...preset }) => ({ ...preset, permissions: taPermissionMap(keys) }));

@@ -317,7 +317,10 @@ export default function Sidebar({ open = false, onClose }) {
                 Management
               </p>
               <ul>
-                {INSTRUCTOR_MANAGEMENT_ITEMS.map((item) => (
+                {INSTRUCTOR_MANAGEMENT_ITEMS.filter((item) => {
+                  const taPermission = TA_PATH_PERMISSION[item.to];
+                  return !taPermission || canTa(taPermission);
+                }).map((item) => (
                   <NavItem key={item.to} {...item} />
                 ))}
                 {hasStaffAccess && canTa("users") && (
