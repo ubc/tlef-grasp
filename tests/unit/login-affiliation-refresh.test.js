@@ -10,7 +10,7 @@ const { resolveLoginAffiliation, refreshLoginAffiliation } = require('../../src/
 describe('resolveLoginAffiliation', () => {
   it('replaces a stale stored affiliation with the SAML one', () => {
     const result = resolveLoginAffiliation({ affiliation: ['faculty'] }, ['student']);
-    expect(result).toEqual({ affiliation: ['student'], clearPromotion: false, changed: true });
+    expect(result).toEqual({ affiliation: ['student'], clearPromotion: false, setPromotion: false, changed: true });
   });
 
   it('drops an affiliation SAML no longer releases', () => {
@@ -39,7 +39,7 @@ describe('resolveLoginAffiliation', () => {
   it('keeps the staff affiliation granted by a TA promotion', () => {
     const user = { affiliation: ['student', 'staff'], staffViaTaPromotion: true };
     const result = resolveLoginAffiliation(user, ['student']);
-    expect(result).toEqual({ affiliation: ['student', 'staff'], clearPromotion: false, changed: false });
+    expect(result).toEqual({ affiliation: ['student', 'staff'], clearPromotion: false, setPromotion: false, changed: false });
   });
 
   it('keeps the promoted staff affiliation even when the rest changes', () => {
@@ -52,7 +52,20 @@ describe('resolveLoginAffiliation', () => {
   it('clears the promotion marker once SAML releases staff itself', () => {
     const user = { affiliation: ['student', 'staff'], staffViaTaPromotion: true };
     const result = resolveLoginAffiliation(user, ['student', 'staff']);
-    expect(result).toEqual({ affiliation: ['student', 'staff'], clearPromotion: true, changed: true });
+    expect(result).toEqual({ affiliation: ['student', 'staff'], clearPromotion: true, setPromotion: false, changed: true });
+  });
+
+  // A TA who was already staff when promoted carries no promotion marker. If
+  // SAML stops releasing staff while they are still a TA, dropping it would
+  // lock them out of their TA course.
+  it('keeps staff that SAML dropped while the user is still a TA, as promotion-granted', () => {
+    const result = resolveLoginAffiliation({ affiliation: ['staff'] }, ['student'], { isStillTa: true });
+    expect(result).toEqual({ affiliation: ['student', 'staff'], clearPromotion: false, setPromotion: true, changed: true });
+  });
+
+  it('drops staff that SAML dropped once the user is no longer a TA', () => {
+    const result = resolveLoginAffiliation({ affiliation: ['staff'] }, ['student'], { isStillTa: false });
+    expect(result).toEqual({ affiliation: ['student'], clearPromotion: false, setPromotion: false, changed: true });
   });
 
   it('upgrades a roster-sync placeholder to the real affiliation', () => {
@@ -64,11 +77,17 @@ describe('resolveLoginAffiliation', () => {
 
 describe('refreshLoginAffiliation', () => {
   let userCollection;
+  let membershipCollection;
+  let taMemberships;
 
   beforeEach(() => {
     jest.clearAllMocks();
     userCollection = { updateOne: jest.fn().mockResolvedValue({ acknowledged: true }) };
-    databaseService.connect.mockResolvedValue({ collection: jest.fn(() => userCollection) });
+    taMemberships = 0;
+    membershipCollection = { countDocuments: jest.fn(async () => taMemberships) };
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) => (name === 'grasp_user_course' ? membershipCollection : userCollection)),
+    });
   });
 
   it('writes the refreshed affiliation by PUID', async () => {
@@ -96,6 +115,33 @@ describe('refreshLoginAffiliation', () => {
     expect(result).toEqual({ affiliation: ['student', 'staff'], staffViaTaPromotion: undefined });
     const [, update] = userCollection.updateOne.mock.calls[0];
     expect(update.$unset).toEqual({ staffViaTaPromotion: '' });
+  });
+
+  it('marks staff kept for a TA course as promotion-granted', async () => {
+    taMemberships = 1;
+    const result = await refreshLoginAffiliation({ _id: 'u1', puid: 'PUID1', affiliation: ['staff'] }, ['student']);
+
+    expect(result).toEqual({ affiliation: ['student', 'staff'], staffViaTaPromotion: true });
+    const [, update] = userCollection.updateOne.mock.calls[0];
+    expect(update.$set).toEqual(expect.objectContaining({ affiliation: ['student', 'staff'], staffViaTaPromotion: true }));
+  });
+
+  it('drops SAML-dropped staff for someone who is no longer a TA', async () => {
+    taMemberships = 0;
+    const result = await refreshLoginAffiliation({ _id: 'u1', puid: 'PUID1', affiliation: ['staff'] }, ['student']);
+
+    expect(result).toEqual({ affiliation: ['student'] });
+  });
+
+  it('looks up TA roles only when SAML dropped staff that SAML gave', async () => {
+    await refreshLoginAffiliation({ _id: 'u1', puid: 'PUID1', affiliation: ['faculty'] }, ['student']);
+    await refreshLoginAffiliation({ _id: 'u1', puid: 'PUID1', affiliation: ['staff'] }, ['staff']);
+    await refreshLoginAffiliation(
+      { _id: 'u1', puid: 'PUID1', affiliation: ['student', 'staff'], staffViaTaPromotion: true },
+      ['student']
+    );
+
+    expect(membershipCollection.countDocuments).not.toHaveBeenCalled();
   });
 
   it('rethrows a database failure', async () => {

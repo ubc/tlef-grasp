@@ -335,28 +335,35 @@ function normalizeAffiliations(affiliation) {
  * Work out the affiliation a returning user should have after a SAML login.
  * SAML is the source of truth: a user who left UBC or changed roles must not
  * keep a stale affiliation. The one thing SAML does not know about is a TA
- * promotion, so a staff affiliation granted by us (staffViaTaPromotion) is
- * kept. If SAML now releases staff itself, the staff status is genuine and
- * the promotion marker is dropped, so a later TA demotion leaves it alone.
+ * role, so staff is kept while the user still needs it for one:
+ *  - staff granted by a promotion (staffViaTaPromotion) stays;
+ *  - staff that came from SAML, for someone who is still a TA somewhere
+ *    (isStillTa), stays too, and becomes promotion-granted, so it is revoked
+ *    with their last TA role like any promoted TA's.
+ * If SAML releases staff itself, the staff status is genuine and the promotion
+ * marker is dropped, so a later TA demotion leaves it alone.
  * @param {Object} user - Stored user (affiliation, staffViaTaPromotion)
  * @param {string|string[]|undefined} samlAffiliation - Released by the IdP
- * @returns {{ affiliation: string[], clearPromotion: boolean, changed: boolean }}
+ * @param {{ isStillTa?: boolean }} [options] - Whether the user holds a TA
+ *   course role anywhere; only consulted when SAML dropped their staff
+ * @returns {{ affiliation: string[], clearPromotion: boolean, setPromotion: boolean, changed: boolean }}
  */
-function resolveLoginAffiliation(user, samlAffiliation) {
+function resolveLoginAffiliation(user, samlAffiliation, { isStillTa = false } = {}) {
     const fromSaml = [...new Set(normalizeAffiliations(samlAffiliation))];
+    const samlHasStaff = fromSaml.includes('staff');
     const promoted = Boolean(user?.staffViaTaPromotion);
-    const clearPromotion = promoted && fromSaml.includes('staff');
-    const affiliation = promoted && !fromSaml.includes('staff')
-        ? [...fromSaml, 'staff']
-        : fromSaml;
+    const keepTaStaff = !samlHasStaff && (promoted || isStillTa);
+    const clearPromotion = promoted && samlHasStaff;
+    const setPromotion = keepTaStaff && !promoted;
+    const affiliation = keepTaStaff ? [...fromSaml, 'staff'] : fromSaml;
 
     const stored = new Set(normalizeAffiliations(user?.affiliation));
     const sameSet = stored.size === affiliation.length
         && affiliation.every((a) => stored.has(a));
     // A string-shaped stored value is rewritten as an array even when the
     // members match, so the stored shape converges on one form.
-    const changed = !sameSet || !Array.isArray(user?.affiliation) || clearPromotion;
-    return { affiliation, clearPromotion, changed };
+    const changed = !sameSet || !Array.isArray(user?.affiliation) || clearPromotion || setPromotion;
+    return { affiliation, clearPromotion, setPromotion, changed };
 }
 
 /**
@@ -370,18 +377,35 @@ function resolveLoginAffiliation(user, samlAffiliation) {
 async function refreshLoginAffiliation(user, samlAffiliation) {
     try {
         if (!user?.puid) throw new Error("Puid is required");
-        const { affiliation, clearPromotion, changed } = resolveLoginAffiliation(user, samlAffiliation);
+
+        // Only worth a lookup when SAML just dropped staff that SAML gave:
+        // a TA who is genuinely staff never got the promotion marker, and
+        // must not lose their TA course with it.
+        const samlHasStaff = normalizeAffiliations(samlAffiliation).includes('staff');
+        const hadSamlStaff = normalizeAffiliations(user.affiliation).includes('staff')
+            && !user.staffViaTaPromotion;
+        let isStillTa = false;
+        if (hadSamlStaff && !samlHasStaff && user._id) {
+            // Required here: user-course loads this module at its top.
+            const { countTaMemberships } = require('./user-course');
+            isStillTa = (await countTaMemberships(user._id)) > 0;
+        }
+
+        const { affiliation, clearPromotion, setPromotion, changed } =
+            resolveLoginAffiliation(user, samlAffiliation, { isStillTa });
         if (!changed) return null;
 
         const db = await databaseService.connect();
         const collection = db.collection("grasp_user");
-        const update = { $set: { affiliation, updatedAt: new Date() } };
+        const set = { affiliation, updatedAt: new Date() };
+        if (setPromotion) set.staffViaTaPromotion = true;
+        const update = { $set: set };
         if (clearPromotion) update.$unset = { staffViaTaPromotion: '' };
         await collection.updateOne({ puid: user.puid }, update);
 
-        return clearPromotion
-            ? { affiliation, staffViaTaPromotion: undefined }
-            : { affiliation };
+        if (clearPromotion) return { affiliation, staffViaTaPromotion: undefined };
+        if (setPromotion) return { affiliation, staffViaTaPromotion: true };
+        return { affiliation };
     } catch (error) {
         console.error("Error refreshing login affiliation:", error);
         throw error;
