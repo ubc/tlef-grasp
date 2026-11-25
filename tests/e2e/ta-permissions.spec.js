@@ -143,9 +143,13 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await page.goto('/dashboard');
 
       // Sidebar: granted links present…
+      // A nav link's accessible name starts with its icon glyph, so match the
+      // label at the end of the name rather than exactly.
       const sidebar = page.locator('aside');
-      await expect(sidebar.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-      await expect(sidebar.getByRole('link', { name: 'Question Generation' })).toBeVisible();
+      const navLink = (name) =>
+        sidebar.getByRole('link', { name: new RegExp(`(^|\\s)${name}$`) });
+      await expect(navLink('Dashboard')).toBeVisible();
+      await expect(navLink('Question Generation')).toBeVisible();
       // …withheld links absent, and so are the pages a TA can never have
       // (nav + management section + settings icon).
       for (const name of [
@@ -159,7 +163,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
         'Users',
         'Settings',
       ]) {
-        await expect(sidebar.getByRole('link', { name, exact: true })).toHaveCount(0);
+        await expect(navLink(name)).toHaveCount(0);
       }
 
       // Dashboard widgets follow the map too: no upload card, no schedule
