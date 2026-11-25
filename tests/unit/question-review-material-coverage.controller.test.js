@@ -128,7 +128,7 @@ describe('question review checks material coverage', () => {
     mockGenerateStructured.mockResolvedValueOnce(rating(false));
 
     await reviewQuestionsHandler(
-      { body: { questions: [{ id: '0', questionType: 'multiple-choice', title: 'How long are eyes flushed?' }] } },
+      { body: { questions: [{ id: '0', courseId: 'course-1', questionType: 'multiple-choice', title: 'How long are eyes flushed?' }] }, user: { _id: 'u1' } },
       buildResponse()
     );
 
@@ -176,7 +176,7 @@ describe('question review of calculation formulas', () => {
 
   const reviewOne = async (question) => {
     mockGenerateStructured.mockResolvedValueOnce(rating(false));
-    await reviewQuestionsHandler({ body: { questions: [{ id: '0', ...question }] } }, buildResponse());
+    await reviewQuestionsHandler({ body: { questions: [{ id: '0', courseId: 'course-1', ...question }] }, user: { _id: 'u1' } }, buildResponse());
     return reviewPrompts()[0];
   };
 

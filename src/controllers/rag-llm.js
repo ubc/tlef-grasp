@@ -880,6 +880,11 @@ const deleteDocumentHandler = async (req, res) => {
     if (!(await hasStaffAccessInCourse(req.user, courseId))) {
       return res.status(403).json({ error: "User is not in course" });
     }
+    // Same permissions as deleting the material itself (material controller):
+    // removing its chunks is a course-materials write, which an instructor
+    // may have withheld from a co-instructor or TA.
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.COURSE_MATERIALS))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.COURSE_MATERIALS))) return;
 
     if (!sourceId) {
       return res.status(400).json({
@@ -1534,10 +1539,24 @@ const reviewQuestionsHandler = async (req, res) => {
       return res.status(400).json({ success: false, error: "questions array is required" });
     }
 
-    // Resolve Course Name from courseId
+    // The course is named on each question (the client sends it on every
+    // one). It is required and must be the same throughout: without it the
+    // permission checks below would be skipped, and the staff role on the
+    // mount alone admits every promoted TA in every course.
     const courseId = questions[0]?.courseId || null;
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: "courseId is required" });
+    }
+    if (questions.some((q) => String(q?.courseId) !== String(courseId))) {
+      return res.status(400).json({ success: false, error: "All questions must belong to the same course" });
+    }
+    if (!(await hasStaffAccessInCourse(req.user, courseId))) {
+      return res.status(403).json({ success: false, error: "User is not in course" });
+    }
+
+    // Resolve Course Name from courseId
     let courseName = "N/A";
-    if (courseId && ObjectId.isValid(courseId)) {
+    if (ObjectId.isValid(courseId)) {
       try {
         const db = await databaseService.connect();
         const course = await db.collection('grasp_course').findOne({ _id: new ObjectId(courseId) });
@@ -1548,11 +1567,11 @@ const reviewQuestionsHandler = async (req, res) => {
         console.warn("Failed to fetch course details for review:", dbErr.message);
       }
     }
-    if (courseId && !(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
-    if (courseId && !(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
 
     console.log(`=== REVIEWING ${questions.length} QUESTIONS FOR COURSE: ${courseName} ===`);
-    const reviewSettings = courseId ? await settingsService.getSettings(courseId) : null;
+    const reviewSettings = await settingsService.getSettings(courseId);
     const { ratings } = await rateQuestions(
       questions,
       courseName,

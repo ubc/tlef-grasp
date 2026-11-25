@@ -23,6 +23,7 @@ jest.mock('../../src/services/user-course', () => {
     setUserCourseRole: jest.fn(),
     setUserCourseTaPermissions: jest.fn(),
     countTaMemberships: jest.fn(),
+    revokePromotedStaffIfNoTaCourses: (...args) => require('../fixtures/ta-demotion').revokeViaMocks(...args),
   };
 });
 

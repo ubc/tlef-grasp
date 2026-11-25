@@ -6,7 +6,7 @@ const {
   getUserCourseMembership,
   setUserCourseRole,
   setUserCourseTaPermissions,
-  countTaMemberships,
+  revokePromotedStaffIfNoTaCourses,
   MEMBERSHIP_SOURCES,
 } = require('../services/user-course');
 const {
@@ -15,7 +15,6 @@ const {
   searchUsersNotInCourse,
   getUserById,
   grantPromotedStaffAffiliation,
-  revokePromotedStaffAffiliation,
 } = require('../services/user');
 const {
   ACCESS_ACTIONS,
@@ -103,12 +102,7 @@ async function applyTaDemotion(userId, courseId, actorId, { membershipRemoved = 
     await setUserCourseTaPermissions(userId, courseId, null);
   }
 
-  const remainingTaCourses = await countTaMemberships(userId);
-  const targetUser = await getUserById(userId);
-  if (remainingTaCourses === 0 && targetUser?.staffViaTaPromotion) {
-    await revokePromotedStaffAffiliation(userId);
-  }
-  return targetUser;
+  return revokePromotedStaffIfNoTaCourses(userId);
 }
 
 /**

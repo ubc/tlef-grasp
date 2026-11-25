@@ -1,6 +1,7 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
 const { getUsersByIds } = require('./user');
+const { revokePromotedStaffIfNoTaCourses } = require('./user-course');
 
 const toObjectId = (id) =>
   typeof id === 'string' && ObjectId.isValid(id) ? new ObjectId(id) : id;
@@ -278,10 +279,17 @@ const recycleSection = async (courseId, sectionId) => {
       });
 
       if (remaining === 0) {
-        await db.collection('grasp_user_course').deleteMany({
-          courseId: cId,
-          userId: uId
-        });
+        const membershipFilter = { courseId: cId, userId: uId };
+        // Read before the delete: a TA's promoted staff affiliation has to be
+        // reconsidered once their TA membership is gone, exactly as when an
+        // instructor removes or demotes them. Otherwise it outlives the last
+        // course it was granted for.
+        const wasTa = (await db.collection('grasp_user_course').countDocuments({
+          ...membershipFilter,
+          courseRole: 'ta',
+        })) > 0;
+        await db.collection('grasp_user_course').deleteMany(membershipFilter);
+        if (wasTa) await revokePromotedStaffIfNoTaCourses(uId);
       }
     }
   }

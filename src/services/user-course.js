@@ -1,6 +1,6 @@
 const databaseService = require('./database');
 const { ObjectId } = require('mongodb');
-const { getUsersByIds } = require('./user');
+const { getUsersByIds, getUserById, revokePromotedStaffAffiliation } = require('./user');
 
 // How a membership came to exist. Only 'manual' memberships are granted by an
 // instructor by hand (issue #115); the rest are produced by GRASP itself.
@@ -504,6 +504,22 @@ const setUserCourseTaPermissions = async (userId, courseId, permissions) => {
 };
 
 /**
+ * Revoke the staff affiliation a TA promotion granted, once the user holds
+ * the 'ta' course role in no course at all. Staff that came from SAML carries
+ * no promotion marker and is never touched. Call it after anything that takes
+ * a TA role away: a demotion, or a TA membership being deleted.
+ * @param {string|ObjectId} userId - User ID
+ * @returns {Promise<Object|null>} The user document as read before any revoke
+ */
+const revokePromotedStaffIfNoTaCourses = async (userId) => {
+    const user = await getUserById(userId);
+    if (!user?.staffViaTaPromotion) return user;
+    if ((await countTaMemberships(userId)) > 0) return user;
+    await revokePromotedStaffAffiliation(userId);
+    return user;
+};
+
+/**
  * Count how many courses a user holds the 'ta' course role in.
  * Used to decide whether a demotion should also revoke the promoted staff
  * affiliation (only when this drops to zero).
@@ -678,5 +694,6 @@ module.exports = {
     setUserCourseRole,
     setUserCourseTaPermissions,
     countTaMemberships,
+    revokePromotedStaffIfNoTaCourses,
     getStudentCourses,
 };
