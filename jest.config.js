@@ -13,6 +13,7 @@ module.exports = {
   roots: ['<rootDir>/tests/unit'],
   testMatch: ['**/*.test.js'],
   clearMocks: true,
+  setupFiles: ['<rootDir>/tests/jest.setup.js'],
   coverageProvider: 'v8',
   collectCoverageFrom: [
     'src/**/*.js',
