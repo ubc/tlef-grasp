@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { queryKeys } from "../../lib/queryKeys";
 import { toStringId, getObjectId, normalizeQuestionTypeKey } from "../../lib/utils";
-import { promptOf } from "../../lib/questionPrompt";
 
 // Questions for the course enriched with objective names and quiz membership
 // (port of legacy loadQuestionsForOverview + loadQuizRelationships).
@@ -17,8 +16,6 @@ export function useQuestionBankData(courseId) {
           id: getObjectId(question),
           title: question.title || question.stem || "",
           stem: question.stem || question.title || "",
-          // The question text students see, for listing and sorting (#223).
-          prompt: promptOf(question),
           objectiveId,
           hasGranularObjective: Boolean(question.granularObjectiveId),
           mlo: objectiveId || "",

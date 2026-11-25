@@ -3,7 +3,7 @@
 // framework-free so both the Add-Question import step and the Create-Quiz import
 // step can reuse the same parsing, objective matching, and save-payload mapping.
 
-import { promptOf } from "./questionPrompt";
+import { titleAndStem } from "./questionPrompt";
 
 // Parse an uploaded export file. Accepts the object form ({ questions, quiz,
 // objectives }) or a bare array of questions. Throws on anything else so the UI
@@ -70,10 +70,10 @@ export function matchGranular(question, flatGranulars) {
   return "";
 }
 
-// The student-facing text used to identify a question in the review list
-// (issue #223).
+// The title used to identify a question in the review list; its stem is shown
+// beneath it (issue #223).
 export function importQuestionLabel(question) {
-  return promptOf(question);
+  return titleAndStem(question).title;
 }
 
 const VALID_STATUSES = ["Draft", "Approved", "Flagged"];

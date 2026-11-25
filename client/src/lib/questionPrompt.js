@@ -35,3 +35,17 @@ export function promptOf(question) {
     cleanText(question?.text)
   );
 }
+
+/**
+ * What an instructor sees for a question in the bank and other review lists:
+ * the title as the main line, and the stem beneath it for reference when it
+ * says something the title doesn't. A generic stem ("Select the best answer:")
+ * or one that repeats the title is left out. A question without a title is
+ * named by its question text.
+ */
+export function titleAndStem(question) {
+  const title = cleanText(question?.title) || promptOf(question);
+  const stem = cleanText(question?.stem);
+  const showStem = stem && !isGenericStem(stem) && stem !== title;
+  return { title, stem: showStem ? stem : "" };
+}

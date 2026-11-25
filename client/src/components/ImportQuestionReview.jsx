@@ -1,5 +1,7 @@
 import { formatQuestionTypeLabel } from "../lib/utils";
 import { importQuestionLabel, importedGranularKey, isRowResolved } from "../lib/questionImport";
+import { titleAndStem } from "../lib/questionPrompt";
+import QuestionStemLine from "./QuestionStemLine";
 import ImportObjectiveReview from "./ImportObjectiveReview";
 import SearchableSelect from "./ui/SearchableSelect";
 
@@ -69,9 +71,12 @@ export default function ImportQuestionReview({
                 className={`rounded-xl border p-3 ${settled ? "border-gray-200" : "border-amber-300 bg-amber-50/40"}`}
               >
                 <div className="mb-2 flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-ink line-clamp-2">
-                    {importQuestionLabel(row.question) || "(untitled question)"}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink line-clamp-2">
+                      {importQuestionLabel(row.question) || "(untitled question)"}
+                    </p>
+                    <QuestionStemLine stem={titleAndStem(row.question).stem} className="mt-0.5 line-clamp-2" />
+                  </div>
                   <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-muted">
                     {formatQuestionTypeLabel(row.question.questionType || row.question.type)}
                   </span>
