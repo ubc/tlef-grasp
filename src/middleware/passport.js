@@ -7,7 +7,7 @@
 const passport = require('passport');
 const { Strategy } = require('passport-ubcshib');
 const fs = require('fs');
-const { createOrUpdateUser, getUserByPuid, updateUserNames, backfillUserEmail } = require('../services/user');
+const { createOrUpdateUser, getUserByPuid, updateUserNames, backfillUserEmail, refreshLoginAffiliation } = require('../services/user');
 const { getUserRole, isAdministrator, ROLES } = require('../utils/auth');
 const ubcApiService = require('../services/ubcApiService');
 const { samlRequestCache } = require('../services/samlRequestCache');
@@ -94,6 +94,7 @@ const strategy = new Strategy(
 		// Get database connection and save user
 		try {
 			let user = await getUserByPuid(ubcEduCwlPuid);
+			const isNewUser = null === user;
 
 			// CWL releases no usable name to this app, so enrich the
 			// authoritative legal name and the displayName from the academic
@@ -152,6 +153,17 @@ const strategy = new Strategy(
 				} catch (backfillError) {
 					console.warn('Email backfill failed:', backfillError.message);
 				}
+			}
+
+			// A returning user's affiliation is refreshed from SAML on every
+			// login, so someone who left UBC or changed roles does not keep a
+			// stale one (a new user was just created with it). A TA promotion's
+			// staff affiliation, which SAML knows nothing about, is preserved.
+			// Not best-effort: the role below is derived from it, so a failed
+			// refresh fails the login rather than granting a stale role.
+			if (!isNewUser) {
+				const refreshed = await refreshLoginAffiliation(user, affiliations);
+				if (refreshed) user = { ...user, ...refreshed };
 			}
 
 			// Role for this login request only; the session keeps just the id.

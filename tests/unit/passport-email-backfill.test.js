@@ -11,6 +11,7 @@ jest.mock('../../src/services/user', () => ({
   getUserByPuid: jest.fn(),
   updateUserNames: jest.fn(),
   backfillUserEmail: jest.fn(),
+  refreshLoginAffiliation: jest.fn(),
 }));
 jest.mock('../../src/services/ubcApiService', () => ({ getPersonByPuid: jest.fn() }));
 jest.mock('../../src/services/database', () => ({ connect: jest.fn() }));

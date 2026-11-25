@@ -332,6 +332,63 @@ function normalizeAffiliations(affiliation) {
 }
 
 /**
+ * Work out the affiliation a returning user should have after a SAML login.
+ * SAML is the source of truth: a user who left UBC or changed roles must not
+ * keep a stale affiliation. The one thing SAML does not know about is a TA
+ * promotion, so a staff affiliation granted by us (staffViaTaPromotion) is
+ * kept. If SAML now releases staff itself, the staff status is genuine and
+ * the promotion marker is dropped, so a later TA demotion leaves it alone.
+ * @param {Object} user - Stored user (affiliation, staffViaTaPromotion)
+ * @param {string|string[]|undefined} samlAffiliation - Released by the IdP
+ * @returns {{ affiliation: string[], clearPromotion: boolean, changed: boolean }}
+ */
+function resolveLoginAffiliation(user, samlAffiliation) {
+    const fromSaml = [...new Set(normalizeAffiliations(samlAffiliation))];
+    const promoted = Boolean(user?.staffViaTaPromotion);
+    const clearPromotion = promoted && fromSaml.includes('staff');
+    const affiliation = promoted && !fromSaml.includes('staff')
+        ? [...fromSaml, 'staff']
+        : fromSaml;
+
+    const stored = new Set(normalizeAffiliations(user?.affiliation));
+    const sameSet = stored.size === affiliation.length
+        && affiliation.every((a) => stored.has(a));
+    // A string-shaped stored value is rewritten as an array even when the
+    // members match, so the stored shape converges on one form.
+    const changed = !sameSet || !Array.isArray(user?.affiliation) || clearPromotion;
+    return { affiliation, clearPromotion, changed };
+}
+
+/**
+ * Refresh a returning user's affiliation from SAML at login (see
+ * resolveLoginAffiliation). Writes only when something changed.
+ * @param {Object} user - Stored user document (needs puid)
+ * @param {string|string[]|undefined} samlAffiliation - Released by the IdP
+ * @returns {Promise<{ affiliation: string[], staffViaTaPromotion?: boolean }|null>}
+ *   The fields to merge into the in-memory user, or null when unchanged.
+ */
+async function refreshLoginAffiliation(user, samlAffiliation) {
+    try {
+        if (!user?.puid) throw new Error("Puid is required");
+        const { affiliation, clearPromotion, changed } = resolveLoginAffiliation(user, samlAffiliation);
+        if (!changed) return null;
+
+        const db = await databaseService.connect();
+        const collection = db.collection("grasp_user");
+        const update = { $set: { affiliation, updatedAt: new Date() } };
+        if (clearPromotion) update.$unset = { staffViaTaPromotion: '' };
+        await collection.updateOne({ puid: user.puid }, update);
+
+        return clearPromotion
+            ? { affiliation, staffViaTaPromotion: undefined }
+            : { affiliation };
+    } catch (error) {
+        console.error("Error refreshing login affiliation:", error);
+        throw error;
+    }
+}
+
+/**
  * Grant the staff affiliation as part of a TA promotion. The student
  * affiliation is untouched, and staffViaTaPromotion records that the staff
  * affiliation was granted by us (not by SAML), so demotion knows it is safe
@@ -637,6 +694,8 @@ module.exports = {
     updateUserLegalName,
     updateUserNames,
     backfillUserEmail,
+    resolveLoginAffiliation,
+    refreshLoginAffiliation,
     upsertUserLmsAccount,
     grantPromotedStaffAffiliation,
     revokePromotedStaffAffiliation,
