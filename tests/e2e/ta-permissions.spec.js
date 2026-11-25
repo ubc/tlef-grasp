@@ -4,9 +4,12 @@ const { SEED } = require('./seed');
 const { BIO_STUDENT3_AUTH_FILE } = require('./auth');
 
 // Per-TA permissions (branch ta_access): the instructor promotes a seeded
-// student to TA on the Users page, restricts them with the Grader preset in
-// the permissions modal, and the TA then sees only the granted pages — nav,
-// dashboard widgets, route guards, and the API all agree.
+// student to TA on the Users page and restricts them in the permissions
+// modal, and the TA then sees only the granted pages — nav, dashboard
+// widgets, route guards, and the API all agree. TAs can only ever be granted
+// Dashboard, Course Materials, Question Generation and the Question Bank
+// (TA_GRANTABLE_PERMISSION_KEYS); every other instructor page is closed to
+// them and the modal does not offer it.
 // Opt-in (E2E_SAML=1). The suite runs serially and demotes the TA again in
 // afterAll so the shared seed state is restored for other specs.
 const IDP_ENABLED = process.env.E2E_SAML === '1';
@@ -68,7 +71,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
     await login(page, INSTRUCTOR_USERNAME, INSTRUCTOR_PASSWORD);
   });
 
-  test('instructor promotes a student and applies the Grader preset', async ({
+  test('instructor promotes a student and restricts them to Question Generation', async ({
     page,
   }) => {
     const course = await selectSeededCourse(page, { role: 'instructor' });
@@ -89,30 +92,45 @@ test.describe.serial('TA permissions (seeded course)', () => {
     expect(promotionResponse[0].status(), 'TA promotion succeeds').toBe(200);
     await expect(row.getByText('TA', { exact: true })).toBeVisible();
 
-    // Open the permissions editor and apply the Grader preset.
+    // Open the permissions editor. Only the grantable pages are offered, and
+    // only the presets made of them: the old Grader preset (scores and flags)
+    // is gone because neither page can be granted to a TA.
     await row.getByRole('button', { name: 'Permissions' }).click();
     const dialog = page.getByRole('dialog');
     await expect(
       dialog.getByRole('heading', { name: /TA Permissions/ })
     ).toBeVisible();
-    await dialog.getByRole('button', { name: 'Grader' }).click();
-    await expect(dialog.getByRole('checkbox', { name: /Question Flags/ })).toBeChecked();
-    await expect(dialog.getByRole('checkbox', { name: /Quiz Scores/ })).toBeChecked();
-    await expect(dialog.getByRole('checkbox', { name: /Question Bank/ })).not.toBeChecked();
-    await expect(dialog.getByRole('checkbox', { name: /Course Materials/ })).not.toBeChecked();
+    await expect(dialog.getByRole('checkbox')).toHaveCount(4);
+    for (const label of [/^Dashboard/, /^Course Materials/, /^Question Generation/, /^Question Bank/]) {
+      await expect(dialog.getByRole('checkbox', { name: label })).toBeVisible();
+    }
+    for (const label of [/^Quizzes/, /^Quiz Scores/, /^Question Flags/, /^Users/, /^My Sections/, /^Settings/]) {
+      await expect(dialog.getByRole('checkbox', { name: label })).toHaveCount(0);
+    }
+    await expect(dialog.getByRole('button', { name: 'Grader' })).toHaveCount(0);
+
+    // Start from Full Access, then withhold Course Materials and the Bank.
+    await dialog.getByRole('button', { name: 'Full Access' }).click();
+    await expect(dialog.getByRole('checkbox')).toHaveCount(4);
+    await dialog.getByRole('checkbox', { name: /^Course Materials/ }).uncheck();
+    await dialog.getByRole('checkbox', { name: /^Question Bank/ }).uncheck();
+    await expect(dialog.getByRole('checkbox', { name: /^Dashboard/ })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: /^Question Generation/ })).toBeChecked();
+    await expect(dialog.getByRole('button', { name: 'Full Access' })).toHaveAttribute('aria-pressed', 'false');
     await dialog.getByRole('button', { name: 'Save Permissions' }).click();
     await expect(page.getByText('TA permissions updated')).toBeVisible();
 
     // Reopen: the restricted map round-trips through the API.
     await row.getByRole('button', { name: 'Permissions' }).click();
     const reopened = page.getByRole('dialog');
-    await expect(reopened.getByRole('checkbox', { name: /Question Flags/ })).toBeChecked();
-    await expect(reopened.getByRole('checkbox', { name: /Question Bank/ })).not.toBeChecked();
-    await expect(reopened.getByRole('checkbox', { name: /Users/ })).not.toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /^Dashboard/ })).toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /^Question Generation/ })).toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /^Course Materials/ })).not.toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /^Question Bank/ })).not.toBeChecked();
     await reopened.getByRole('button', { name: 'Cancel' }).click();
   });
 
-  test('the grader TA only gets the granted pages, and the API enforces it', async ({
+  test('the restricted TA only gets the granted pages, and the API enforces it', async ({
     browser,
   }) => {
     // The TA's session was saved by saml.setup.js, before the promotion: the
@@ -125,34 +143,40 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await page.goto('/dashboard');
 
       // Sidebar: granted links present…
-      await expect(page.getByRole('link', { name: 'Quiz Scores' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Question Flags' })).toBeVisible();
-      // …withheld links absent (nav + management section + settings icon).
-      await expect(page.getByRole('link', { name: 'Course Materials' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Question Generation' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Question Bank' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Analytics' })).toHaveCount(0);
+      const sidebar = page.locator('aside');
+      await expect(sidebar.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+      await expect(sidebar.getByRole('link', { name: 'Question Generation' })).toBeVisible();
+      // …withheld links absent, and so are the pages a TA can never have
+      // (nav + management section + settings icon).
+      for (const name of [
+        'Course Materials',
+        'Question Bank',
+        'Quizzes',
+        'Quiz Scores',
+        'Question Flags',
+        'Analytics',
+        'My Sections',
+        'Users',
+        'Settings',
+      ]) {
+        await expect(sidebar.getByRole('link', { name, exact: true })).toHaveCount(0);
+      }
 
-      // Dashboard widgets follow the map too: no content quick-start cards,
-      // no course-building path, no schedule nudge — but flags stay.
+      // Dashboard widgets follow the map too: no upload card, no schedule
+      // nudge, and no flags card now that flags are closed to TAs.
       await expect(page.getByRole('link', { name: 'Upload Materials' })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Generate Questions' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { name: /course progress|build your first quiz|continue building|course is ready/i })).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'Schedule quizzes' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { name: 'Flagged Questions' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Flagged Questions' })).toHaveCount(0);
 
-      // Route guards bounce direct navigation to a withheld page.
-      await page.goto('/question-bank');
-      await expect(page).not.toHaveURL(/question-bank/);
-      await page.goto('/analytics');
-      await expect(page).not.toHaveURL(/analytics/);
+      // Route guards bounce direct navigation to a withheld or closed page.
+      for (const path of ['/question-bank', '/quiz-scores', '/question-flags', '/analytics']) {
+        await page.goto(path);
+        await expect(page).not.toHaveURL(new RegExp(path));
+      }
 
       // A granted page still renders.
-      await page.goto('/question-flags');
-      await expect(page).toHaveURL(/question-flags/);
+      await page.goto('/question-generation');
+      await expect(page).toHaveURL(/question-generation/);
 
       // API enforcement is independent of the client: roster read and
       // self-escalation are both 403 for this TA.
@@ -171,9 +195,9 @@ test.describe.serial('TA permissions (seeded course)', () => {
   });
 
   // The database-delete option is faculty-only, so a TA who can reach the
-  // wizard is still offered the page-only removal — and only that. The
-  // Content Assistant preset is what puts Question Generation in reach; the
-  // demotion test below restores the seed state.
+  // wizard is still offered the page-only removal — and only that. Full
+  // Access puts Question Generation in reach; the demotion test below
+  // restores the seed state.
   test('a TA with question generation is not offered the database delete', async ({
     page,
     browser,
@@ -182,7 +206,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
     await page.goto('/users');
     await student3Row(page).getByRole('button', { name: 'Permissions' }).click();
     const permissions = page.getByRole('dialog');
-    await permissions.getByRole('button', { name: 'Content Assistant' }).click();
+    await permissions.getByRole('button', { name: 'Full Access' }).click();
     await permissions.getByRole('button', { name: 'Save Permissions' }).click();
     await expect(page.getByText('TA permissions updated')).toBeVisible();
 
