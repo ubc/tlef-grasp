@@ -37,16 +37,6 @@ function optionFeedbackOf(raw) {
   return raw && typeof raw === 'object' ? String(raw.feedback ?? '').trim() : '';
 }
 
-// Multiple choice and multiple answer keep their prompt in the title. The
-// stem a student sees beneath it, only when it adds something: a stem that
-// repeats the title, or a title-less question's stem (already the prompt),
-// would be shown twice.
-function stemBesideTitle(question) {
-  const title = String(question?.title ?? '').trim();
-  const stem = String(question?.stem ?? '').trim();
-  return title && stem && stem !== title ? stem : '';
-}
-
 // correctAnswer as a letter. Old rows may hold a numeric index.
 function correctAnswerKey(correctAnswer, fallback = 'A') {
   if (typeof correctAnswer === 'number') return MC_OPTION_KEYS[correctAnswer] || fallback;
@@ -127,7 +117,6 @@ module.exports = {
   optionAt,
   optionTextOf,
   optionFeedbackOf,
-  stemBesideTitle,
   correctAnswerKey,
   normalizeMcOptionCount,
   answerKeysOf,
