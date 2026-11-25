@@ -11,24 +11,11 @@ const { QUESTION_TYPES } = require('../constants/app-constants');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
 const { optionKeysOf, optionAt, optionTextOf } = require('../utils/mc-options');
 const { promptOf } = require('../utils/question-prompt');
+const { resolveQuestionType } = require('../utils/question-type');
 
 const MISSING_TEXT = 'Question text not available';
 const CALCULATION_LOAD_ERROR =
   'This calculation question could not be loaded. Please contact your instructor.';
-
-const KNOWN_TYPES = [
-  QUESTION_TYPES.MULTIPLE_CHOICE,
-  QUESTION_TYPES.MULTIPLE_ANSWER,
-  QUESTION_TYPES.FILL_IN_THE_BLANK,
-  QUESTION_TYPES.OPEN_ENDED,
-  QUESTION_TYPES.CALCULATION,
-];
-
-// A question's type; legacy rows without one are multiple choice.
-function resolveQuestionType(question) {
-  const type = String(question?.questionType || question?.type || '').trim().toLowerCase();
-  return KNOWN_TYPES.includes(type) ? type : QUESTION_TYPES.MULTIPLE_CHOICE;
-}
 
 function questionIdOf(question, index) {
   if (question._id) return String(question._id);
@@ -136,7 +123,6 @@ function toStudentQuestions(questions) {
 }
 
 module.exports = {
-  resolveQuestionType,
   toStudentQuestion,
   toStudentQuestions,
 };

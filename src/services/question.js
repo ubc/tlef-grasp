@@ -2,6 +2,7 @@ const databaseService = require('./database');
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const { MC_OPTION_KEYS, answerKeysOf, multipleAnswerError } = require('../utils/mc-options');
 const CalculationQuestion = require('../models/questions/CalculationQuestion');
+const { promptOf } = require('../utils/question-prompt');
 const { deleteImages, collectQuestionImageIds } = require('./image');
 const {
     QUESTION_SOURCE_KEYS,
@@ -458,17 +459,8 @@ const getQuestionTextsByGranularObjective = async (courseId, granularObjectiveId
             if (typeof question.question === "string" && question.question.trim()) {
                 return question.question.trim();
             }
-
-            const questionType = String(
-                question.questionType || question.type || QUESTION_TYPES.MULTIPLE_CHOICE
-            ).toLowerCase();
-            // Multiple choice and multiple answer keep their prompt in the title.
-            const titleFirst =
-                questionType === QUESTION_TYPES.MULTIPLE_CHOICE ||
-                questionType === QUESTION_TYPES.MULTIPLE_ANSWER;
-            const preferred = titleFirst ? question.title : question.stem;
-            const fallback = titleFirst ? question.stem : question.title;
-            return String(preferred || fallback || "").trim();
+            // The same question text students see (issue #223).
+            return promptOf(question);
         })
         .filter(Boolean);
 };

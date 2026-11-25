@@ -1,26 +1,16 @@
 const { QUESTION_TYPES } = require('../constants/app-constants');
 const { MC_OPTION_KEYS, optionKeysOf, optionAt, correctAnswerKey, answerKeysOf } = require('./mc-options');
+const { promptOf } = require('./question-prompt');
+const { resolveQuestionType } = require('./question-type');
 
-// Shared helpers for the quiz export paths (Canvas QTI, H5P, CSV). Questions
-// are stored inconsistently across types: multiple-choice and multiple-answer
-// keep their prompt in `title` (a multiple-choice `stem` is a generic "Select
-// the best answer:"), while the other types keep the real prompt in `stem`.
-// These helpers hide that.
+// Shared helpers for the quiz export paths (Canvas QTI, H5P, CSV).
 
-// Resolve a question's internal type, defaulting to multiple-choice for legacy rows.
-function normalizeQuestionType(q) {
-  const t = String(q.questionType || q.type || '').toLowerCase().trim();
-  if (Object.values(QUESTION_TYPES).includes(t)) return t;
-  return QUESTION_TYPES.MULTIPLE_CHOICE;
-}
+// A question's internal type, defaulting to multiple-choice for legacy rows.
+const normalizeQuestionType = resolveQuestionType;
 
-// The student-facing question text.
+// The question text, the same rule the student quiz page uses (issue #223).
 function getQuestionText(q) {
-  const type = normalizeQuestionType(q);
-  if (type === QUESTION_TYPES.MULTIPLE_CHOICE || type === QUESTION_TYPES.MULTIPLE_ANSWER) {
-    return String(q.title || q.stem || q.text || q.question || '').trim();
-  }
-  return String(q.stem || q.question || q.text || q.title || '').trim();
+  return promptOf(q);
 }
 
 // The letters a multiple-choice question exports, in order: whatever it has

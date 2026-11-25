@@ -3,6 +3,7 @@ import Modal from "../../components/ui/Modal";
 import SearchableSelect from "../../components/ui/SearchableSelect";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
+import { promptOf } from "../../lib/questionPrompt";
 
 // Asks for a new learning objective for each question whose objective was
 // deleted. The save waits until every one has a pick; cancelling saves nothing.
@@ -70,7 +71,7 @@ export default function ReselectObjectivesModal({
               <div key={question.id} className="rounded-xl border border-gray-200 p-3">
                 <RichText
                   as="p"
-                  text={escapeHtml(question.title || question.stem || "Untitled question")}
+                  text={escapeHtml(promptOf(question) || "Untitled question")}
                   className="mb-1 whitespace-pre-line text-sm font-medium text-ink"
                 />
                 {question.loCode && (

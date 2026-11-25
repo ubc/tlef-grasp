@@ -572,3 +572,30 @@ describe('leftOutSummary', () => {
     expect(encodeURIComponent(JSON.stringify(summary)).length).toBeLessThanOrEqual(2000);
   });
 });
+
+// Issue #223: exports carry the text students see.
+describe('exported question text', () => {
+  const wizard = {
+    ...mcQuestion,
+    title: 'Gas exchange',
+    stem: 'Which gas do plants absorb during photosynthesis?',
+  };
+
+  test('CSV writes a wizard-made multiple-choice question its stem, not its label', () => {
+    const row = createCSVExport('COURSE', [wizard]).trim().split('\n')[1];
+    expect(row).toContain('"Which gas do plants absorb during photosynthesis?"');
+    expect(row).not.toContain('Gas exchange');
+  });
+
+  test('QTI writes a wizard-made multiple-choice question its stem, not its label', () => {
+    const xml = createQTIItem(wizard, 0);
+    expect(xml).toContain('Which gas do plants absorb during photosynthesis?');
+    expect(xml).not.toContain('<mattext texttype="text/html">Gas exchange');
+  });
+
+  test('an AI-made multiple-choice question still exports its title', () => {
+    const row = createCSVExport('COURSE', [mcQuestion]).trim().split('\n')[1];
+    expect(row).toContain('"Which gas do plants absorb?"');
+    expect(row).not.toContain('Select the best answer');
+  });
+});

@@ -89,6 +89,24 @@ describe('GET /api/quiz/:quizId/questions option images', () => {
     expect(res.body.questions[0].options.A.image).toEqual(IMAGE);
   });
 
+  it('gives staff the same question text students see (#223)', async () => {
+    hasStaffAccessInCourse.mockResolvedValue(true);
+    quizService.getQuizQuestions.mockResolvedValue([
+      { ...question, _id: 'wizard-1', title: 'Benzene', stem: 'Which structure is benzene?' },
+      { ...question, _id: 'ai-1', stem: 'Select the best answer:' },
+    ]);
+
+    const res = await request(buildApp()).get('/api/quiz/quiz-1/questions');
+
+    expect(res.status).toBe(200);
+    expect(res.body.questions.map((q) => q.question)).toEqual([
+      'Which structure is benzene?',
+      'Which structure is benzene?',
+    ]);
+    // The instructor view still carries the stored fields for editing.
+    expect(res.body.questions[0].title).toBe('Benzene');
+  });
+
   it('withholds the filename along with the feedback and the answer', async () => {
     hasStaffAccessInCourse.mockResolvedValue(false);
 

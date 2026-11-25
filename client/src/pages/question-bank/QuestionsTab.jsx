@@ -34,7 +34,7 @@ const STATUS_PILL_CLASSES = {
 };
 
 const SORT_COLUMNS = [
-  { key: "title", label: "Question Title" },
+  { key: "prompt", label: "Question" },
   { key: "mlo", label: "Meta LO" },
   { key: "bloom", label: "Bloom's Level", nowrap: true },
   { key: "questionType", label: "Question Type", nowrap: true },
@@ -315,7 +315,7 @@ function AddExistingQuestionsModal({
                 <span className="min-w-0 flex-1">
                   <RichText
                     as="span"
-                    text={escapeHtml(question.title || question.stem || "Untitled question")}
+                    text={escapeHtml(question.prompt || "Untitled question")}
                     className="block whitespace-pre-line text-sm font-medium text-ink"
                   />
                   <span className="mt-1 block text-xs text-muted">
@@ -443,7 +443,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
     );
   };
 
-  const [sort, setSort] = useState({ key: "title", dir: "asc" });
+  const [sort, setSort] = useState({ key: "prompt", dir: "asc" });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editTarget, setEditTarget] = useState(null);
   const [reassignTarget, setReassignTarget] = useState(null);
@@ -919,7 +919,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                           )}
                           <RichText
                             as="span"
-                            text={escapeHtml(question.title)}
+                            text={escapeHtml(question.prompt || "Untitled question")}
                             className="min-w-0 whitespace-pre-line"
                           />
                         </div>
@@ -999,7 +999,7 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                               />
                               <button
                                 type="button"
-                                aria-label={`Save flag reason for ${question.title}`}
+                                aria-label={`Save flag reason for ${question.prompt}`}
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => saveReason(question)}
                                 disabled={

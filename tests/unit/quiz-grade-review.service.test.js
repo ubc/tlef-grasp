@@ -162,3 +162,43 @@ describe('getStudentQuizAttempt exposes studentGradeReview', () => {
     expect(mcq.studentGradeReview).toBeNull();
   });
 });
+
+// Issue #223: results show the question text students saw.
+describe('getStudentQuizAttempt question text', () => {
+  it('is the stem for a wizard-made question and the title for an AI-made one', async () => {
+    const attemptCollection = {
+      find: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([
+          { _id: 'attempt-1', questionId: 'wizard-1', selectedAnswer: 'A', isCorrect: true },
+          { _id: 'attempt-2', questionId: 'ai-1', selectedAnswer: 'B', isCorrect: false },
+        ]),
+      }),
+    };
+    const questionsCollection = {
+      find: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([
+          {
+            _id: 'wizard-1',
+            questionType: 'multiple-choice',
+            title: 'Kinetic energy formula',
+            stem: 'What is the kinetic energy of a 2 kg object moving at 3 m/s?',
+          },
+          { _id: 'ai-1', questionType: 'multiple-choice', title: 'What is 2 + 2?', stem: 'Select the best answer:' },
+        ]),
+      }),
+    };
+    databaseService.connect.mockResolvedValue({
+      collection: jest.fn((name) => {
+        if (name === 'grasp_student_attempt') return attemptCollection;
+        if (name === 'grasp_question') return questionsCollection;
+        throw new Error(`Unexpected collection: ${name}`);
+      }),
+    });
+
+    const attempts = await quizService.getStudentQuizAttempt('quiz-1', 'student-1');
+
+    expect(attempts.find((a) => a.questionId === 'wizard-1').questionText)
+      .toBe('What is the kinetic energy of a 2 kg object moving at 3 m/s?');
+    expect(attempts.find((a) => a.questionId === 'ai-1').questionText).toBe('What is 2 + 2?');
+  });
+});
