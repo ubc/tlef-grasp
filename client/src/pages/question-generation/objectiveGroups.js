@@ -68,6 +68,26 @@ export function granularObjectivesPayload(group) {
 
 const newGroupId = () => Date.now() + Math.random();
 
+// An objective already on the page, with any granulars it has gained since it
+// was added (generating can add to a saved objective). Granulars the card
+// already shows, or that the instructor removed from the page, are left out.
+function withNewGranulars(group, granulars, materialIds, makeId) {
+  const known = new Set(
+    [...(group.items || []), ...(group.detachedItems || [])]
+      .map((item) => item.granularId)
+      .filter(Boolean)
+  );
+  const added = (granulars || [])
+    .filter((granular) => granular._id && !known.has(String(granular._id)))
+    .map((granular) => itemFromGranular(granular, makeId()));
+  if (added.length === 0) return group;
+  return {
+    ...group,
+    materialIds: materialIds?.length ? materialIds : group.materialIds,
+    items: [...group.items, ...added],
+  };
+}
+
 /**
  * Append objectives to the page's group list.
  *
@@ -77,7 +97,8 @@ const newGroupId = () => Date.now() + Math.random();
  * adding them one after another — the batch path and the single path cannot
  * disagree about what an item is called.
  *
- * Objectives already on the page are skipped rather than duplicated. The
+ * Objectives already on the page are not added again; only granulars their
+ * card does not have yet are added to it (see withNewGranulars). The
  * dropdown disables their rows, but the check also covers a stale selection
  * (the same objective added in another tab, say) between opening the list and
  * confirming it — a duplicate group would generate every question twice.
@@ -93,7 +114,11 @@ export function appendObjectiveGroups(existingGroups, additions, makeId = newGro
   );
 
   (additions || []).forEach(({ objectiveId, title, materialIds, granulars }) => {
-    if (objectiveId && present.has(String(objectiveId))) return;
+    if (objectiveId && present.has(String(objectiveId))) {
+      const index = next.findIndex((group) => String(group.objectiveId) === String(objectiveId));
+      if (index !== -1) next[index] = withNewGranulars(next[index], granulars, materialIds, makeId);
+      return;
+    }
     if (objectiveId) present.add(String(objectiveId));
 
     const groupNumber = next.length + 1;

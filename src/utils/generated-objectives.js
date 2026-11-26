@@ -80,37 +80,47 @@ function normalizeObjectiveText(text) {
 /**
  * Drop generated objectives that repeat ones already saved. The prompt already
  * tells the model not to, so this is the safety net for when it does anyway:
- * an objective whose name matches an existing one is dropped, as is any
- * granular objective whose text matches an existing granular objective. An
- * objective left with no granular objectives is dropped too. Only exact
- * repeats (after normalizeObjectiveText) are caught; rewordings are the
- * prompt's job.
+ * any granular objective whose text matches an existing granular objective is
+ * dropped. An objective whose name matches an existing one keeps only its new
+ * granular objectives, which go under the existing objective: it comes back
+ * with that objective's name, `existingObjectiveId` and `existingMaterialIds`
+ * so the caller adds to it rather than saving a second copy. An objective left
+ * with no granular objectives is dropped. Only exact repeats (after
+ * normalizeObjectiveText) are caught; rewordings are the prompt's job.
  *
  * @param {Array} objectives cleaned objectives (cleanGeneratedObjectives)
- * @param {Array<{ name: string, granularObjectives?: Array<{ name?: string }> }>} existing
- *   saved parent objectives, with their granular objectives
- * @returns {Array} the objectives that are new
+ * @param {Array<{ _id?: *, name: string, granularObjectives?: Array<{ name?: string }>,
+ *   materialSourceIds?: string[] }>} existing saved parent objectives, with their
+ *   granular objectives and linked materials
+ * @returns {Array} the objectives and granular objectives that are new
  */
 function dropExistingObjectives(objectives, existing) {
-  const existingNames = new Set();
+  const existingByName = new Map();
   const existingGranulars = new Set();
   for (const objective of existing || []) {
-    existingNames.add(normalizeObjectiveText(objective.name));
+    const key = normalizeObjectiveText(objective.name);
+    if (key && !existingByName.has(key)) existingByName.set(key, objective);
     for (const granular of objective.granularObjectives || []) {
       existingGranulars.add(normalizeObjectiveText(granular.name || granular.text));
     }
   }
-  existingNames.delete('');
   existingGranulars.delete('');
 
   return (objectives || [])
-    .filter((objective) => !existingNames.has(normalizeObjectiveText(objective.name)))
-    .map((objective) => ({
-      ...objective,
-      granularObjectives: objective.granularObjectives.filter(
+    .map((objective) => {
+      const granularObjectives = objective.granularObjectives.filter(
         (granular) => !existingGranulars.has(normalizeObjectiveText(granular.text))
-      ),
-    }))
+      );
+      const match = existingByName.get(normalizeObjectiveText(objective.name));
+      if (!match) return { ...objective, granularObjectives };
+      return {
+        ...objective,
+        name: match.name,
+        granularObjectives,
+        existingObjectiveId: String(match._id),
+        existingMaterialIds: (match.materialSourceIds || []).map(String),
+      };
+    })
     .filter((objective) => objective.granularObjectives.length > 0);
 }
 

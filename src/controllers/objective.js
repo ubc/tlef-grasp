@@ -4,7 +4,20 @@ const { assertTaPermission, TA_PERMISSION_KEYS } = require("../utils/ta-permissi
 const { getObjectiveCourseId, getParentObjectives, getDetailedObjectives, getGranularObjectives, createObjective, updateObjective, appendGranularObjectives, getObjectiveDeletionImpact, deleteObjective } = require('../services/objective');
 const { updateObjectiveMaterialRelations, getMaterialsForObjective, assertWithinMaterialCap } = require('../services/objective-material');
 const { isFaculty } = require('../utils/auth');
-const { isCanvasImportMaterial } = require('../services/material');
+const { isCanvasImportMaterial, findMaterialsOutsideCourse } = require('../services/material');
+
+// Answer for materialIds that are not all this course's materials. Sent before
+// any write, so a rejected request changes nothing.
+const rejectMaterialsOutsideCourse = async (res, materialIds, courseId) => {
+  const outside = await findMaterialsOutsideCourse(materialIds, courseId);
+  if (outside.length === 0) return false;
+  res.status(400).json({
+    success: false,
+    code: 'MATERIAL_NOT_IN_COURSE',
+    error: "A selected material is not in this course's materials.",
+  });
+  return true;
+};
 
 // Deleting an objective's questions removes them from the Question Bank for
 // good, and only faculty may delete questions (see deleteQuestionHandler).
@@ -148,6 +161,7 @@ const createObjectiveHandler = async (req, res) => {
     // with no materials attached. Throws MaterialCapExceededError, caught
     // below and mapped to the same 400 as updateObjectiveMaterialRelations.
     assertWithinMaterialCap(materialIds);
+    if (await rejectMaterialsOutsideCourse(res, materialIds, courseId)) return;
 
     const result = await createObjective({
       name: name.trim(),
@@ -217,6 +231,7 @@ const updateObjectiveMaterials = async (req, res) => {
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+    if (await rejectMaterialsOutsideCourse(res, materialIds, courseId)) return;
 
     await updateObjectiveMaterialRelations(
       objectiveId,

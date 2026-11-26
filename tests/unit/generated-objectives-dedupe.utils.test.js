@@ -27,8 +27,25 @@ describe('dropExistingObjectives', () => {
     expect(dropExistingObjectives(objectives, [])).toEqual(objectives);
   });
 
-  it('drops an objective whose name repeats a saved one', () => {
-    const result = dropExistingObjectives([generated('Explain the Krebs cycle.', 'x')], [saved('explain the krebs cycle', 'y')]);
+  // A repeated name used to drop the whole objective, new granular objectives
+  // and all. They now go under the saved objective instead.
+  it('adds the new granular objectives of a repeated name to the saved objective', () => {
+    const existing = { ...saved('explain the krebs cycle', 'Name the steps'), _id: 'lo-1', materialSourceIds: ['m-1'] };
+    const result = dropExistingObjectives(
+      [generated('Explain the Krebs cycle.', 'name the steps', 'Trace the carbons')],
+      [existing]
+    );
+    expect(result).toEqual([
+      {
+        ...generated('explain the krebs cycle', 'Trace the carbons'),
+        existingObjectiveId: 'lo-1',
+        existingMaterialIds: ['m-1'],
+      },
+    ]);
+  });
+
+  it('drops a repeated name that brings no new granular objectives', () => {
+    const result = dropExistingObjectives([generated('Explain the Krebs cycle.', 'x')], [saved('explain the krebs cycle', 'x')]);
     expect(result).toEqual([]);
   });
 

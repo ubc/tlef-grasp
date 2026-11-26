@@ -8,7 +8,7 @@ const databaseService = require('../services/database');
 const { ObjectId } = require('mongodb');
 
 // Import services
-const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial } = require('../services/material');
+const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial, findMaterialsOutsideCourse } = require('../services/material');
 const {
   cleanGeneratedObjectives,
   dropExistingObjectives,
@@ -950,6 +950,16 @@ const generateLearningObjectivesHandler = async (req, res) => {
     }
     if (!(await assertCoInstructorPermission(req, res, courseId, PERMISSION_KEYS.QUESTION_GENERATION))) return;
     if (!(await assertTaPermission(req, res, courseId, TA_PERMISSION_KEYS.QUESTION_GENERATION))) return;
+
+    // Outlines are read by sourceId alone, across every course, so each
+    // selected material must be checked to be this course's.
+    if ((await findMaterialsOutsideCourse(materialIds, courseId)).length > 0) {
+      return res.status(404).json({
+        success: false,
+        code: "MATERIAL_NOT_FOUND",
+        error: "A selected material is not in this course's materials.",
+      });
+    }
 
     // Get RAG instance for the course
     const ragInstance = await ragService.getOrCreateInstance(courseId);

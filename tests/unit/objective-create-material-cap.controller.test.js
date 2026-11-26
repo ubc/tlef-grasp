@@ -20,6 +20,12 @@ jest.mock('../../src/services/objective-material', () => ({
   assertWithinMaterialCap: jest.requireActual('../../src/services/objective-material')
     .assertWithinMaterialCap,
 }));
+// Every material is in the course; that check has its own test
+// (objective-material-course.controller.test.js).
+jest.mock('../../src/services/material', () => ({
+  isCanvasImportMaterial: jest.fn(() => false),
+  findMaterialsOutsideCourse: jest.fn().mockResolvedValue([]),
+}));
 jest.mock('../../src/utils/course-access', () => ({
   hasStaffAccessInCourse: jest.fn().mockResolvedValue(true),
 }));

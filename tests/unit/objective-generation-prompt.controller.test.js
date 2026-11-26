@@ -35,6 +35,7 @@ jest.mock('../../src/services/material-outline', () => ({
 jest.mock('../../src/services/material', () => ({
   getMaterialBySourceId: jest.fn(),
   getMaterialCourseId: jest.fn(),
+  findMaterialsOutsideCourse: jest.fn().mockResolvedValue([]),
 }));
 // No saved objectives unless a test says otherwise.
 jest.mock('../../src/services/objective', () => ({
@@ -364,8 +365,15 @@ describe('objective generation with existing objectives', () => {
     await generateLearningObjectivesHandler(buildRequest(), res);
 
     const { objectives } = res.json.mock.calls[0][0];
-    expect(objectives.map((o) => o.name)).toEqual(['Apply conservation of momentum']);
-    expect(objectives[0].granularObjectives.map((g) => g.text)).toEqual(['Solve a collision problem']);
+    // The repeated name keeps its new granular objective, under the saved objective.
+    expect(objectives.map((o) => [o.name, o.existingObjectiveId])).toEqual([
+      ['Explain mass-energy equivalence', 'obj-Explain mass-energy equivalence'],
+      ['Apply conservation of momentum', undefined],
+    ]);
+    expect(objectives.map((o) => o.granularObjectives.map((g) => g.text))).toEqual([
+      ['Anything'],
+      ['Solve a collision problem'],
+    ]);
   });
 
   it('answers "already covered" when nothing new is left, and saves nothing', async () => {
@@ -470,5 +478,30 @@ describe('objective generation material attribution', () => {
     const body = await run();
 
     expect(body.objectives[0].sourceMaterialIds).toEqual(['material-a', 'material-b']);
+  });
+});
+
+// Outlines are read by sourceId alone, so a material from another course used
+// to reach the prompt. Every selected material must be in the course.
+describe('objective generation from another course\'s material', () => {
+  beforeEach(() => {
+    mockGenerateStructured.mockReset();
+    mockGetRagContentFromMaterials.mockReset();
+  });
+  afterEach(() => materialService.findMaterialsOutsideCourse.mockResolvedValue([]));
+
+  it('refuses before reading any material or calling the model', async () => {
+    materialService.findMaterialsOutsideCourse.mockResolvedValue(['material-b']);
+    outlineService.getOutline.mockClear();
+    const res = buildResponse();
+
+    await generateLearningObjectivesHandler(buildRequest(), res);
+
+    expect(materialService.findMaterialsOutsideCourse).toHaveBeenCalledWith(['material-a', 'material-b'], 'course-1');
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'MATERIAL_NOT_FOUND' }));
+    expect(outlineService.getOutline).not.toHaveBeenCalled();
+    expect(mockGetRagContentFromMaterials).not.toHaveBeenCalled();
+    expect(mockGenerateStructured).not.toHaveBeenCalled();
   });
 });

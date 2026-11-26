@@ -10,6 +10,42 @@
 // objective is linked only to the materials it was generated from.
 
 import { api } from "../../lib/api";
+import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
+
+async function saveNewObjective(course, objective, granularObjectives, materialIds) {
+  const result = await api.post("/api/objective", {
+    name: objective.name,
+    courseId: course.id,
+    materialIds,
+    granularObjectives,
+  });
+  if (!result.success) {
+    throw new Error(result.error || `Failed to save objective: ${objective.name}`);
+  }
+  return { objective: result.objective, granulars: result.granularObjectives, materialIds };
+}
+
+// A generated objective with the name of a saved one: its new granular
+// objectives are added to the saved objective, and the materials they came
+// from are linked to it too, so long as that stays within the cap. Links are
+// only ever added here, never removed.
+async function addToExistingObjective(objective, granularObjectives, sourceMaterialIds) {
+  const id = objective.existingObjectiveId;
+  const result = await api.post(`/api/objective/${id}/granular`, { granularObjectives });
+  if (!result.success) {
+    throw new Error(result.error || `Failed to add to objective: ${objective.name}`);
+  }
+
+  const linked = objective.existingMaterialIds || [];
+  const merged = [...new Set([...linked, ...sourceMaterialIds])];
+  let materialIds = linked;
+  if (merged.length > linked.length && merged.length <= MAX_MATERIALS_PER_OBJECTIVE) {
+    const links = await api.put(`/api/objective/${id}/materials`, { materialIds: merged });
+    if (links?.success) materialIds = merged;
+  }
+
+  return { objective: result.objective, granulars: result.granularObjectives, materialIds };
+}
 
 /**
  * Generate objectives from the given materials and save each one.
@@ -49,25 +85,17 @@ export async function generateAndSaveObjectives({
     const objectiveMaterialIds = objective.sourceMaterialIds?.length
       ? objective.sourceMaterialIds
       : materialIds;
+    const granularObjectives = objective.granularObjectives.map((go) => ({
+      text: typeof go === "string" ? go : go.text,
+      bloomTaxonomies: typeof go === "string" ? [] : go.bloomTaxonomies || [],
+      questionTypes: typeof go === "string" ? [] : go.questionTypes || [],
+    }));
     try {
-      const result = await api.post("/api/objective", {
-        name: objective.name,
-        courseId: course.id,
-        materialIds: objectiveMaterialIds,
-        granularObjectives: objective.granularObjectives.map((go) => ({
-          text: typeof go === "string" ? go : go.text,
-          bloomTaxonomies: typeof go === "string" ? [] : go.bloomTaxonomies || [],
-          questionTypes: typeof go === "string" ? [] : go.questionTypes || [],
-        })),
-      });
-      if (!result.success) {
-        throw new Error(result.error || `Failed to save objective: ${objective.name}`);
-      }
-      saved.push({
-        objective: result.objective,
-        granulars: result.granularObjectives,
-        materialIds: objectiveMaterialIds,
-      });
+      saved.push(
+        objective.existingObjectiveId
+          ? await addToExistingObjective(objective, granularObjectives, objectiveMaterialIds)
+          : await saveNewObjective(course, objective, granularObjectives, objectiveMaterialIds)
+      );
     } catch (error) {
       console.error(`Error saving objective "${objective.name}":`, error);
       failed.push({ name: objective.name, error });
