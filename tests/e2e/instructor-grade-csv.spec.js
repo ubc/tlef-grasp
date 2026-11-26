@@ -142,7 +142,7 @@ test.describe('Grade CSV', () => {
     }
   });
 
-  test('refuses a TA and shows them no download button', async ({ browser, playwright }) => {
+  test('refuses a TA and keeps them out of Quiz Scores', async ({ browser, playwright }) => {
     const instructor = await playwright.request.newContext({ baseURL: BASE_URL, storageState: BIO_PROF2_AUTH_FILE });
     const student3 = await getPersonaUser(SEED.BIO_STUDENT3_PUID);
     const promotion = await instructor.post(`/api/users/course/${courseId}/promote`, {
@@ -164,9 +164,14 @@ test.describe('Grade CSV', () => {
 
       await expectRefused(page.request, courseId);
 
+      // Quiz Scores is closed to TAs (it is not in TA_GRANTABLE_PERMISSION_KEYS),
+      // so the route guard sends them to a page they do have and the sidebar
+      // never links it: there is no page to put a download button on.
       await selectSeededCourse(page, { role: 'instructor' });
       await page.goto('/quiz-scores');
-      await expect(page.getByRole('heading', { name: 'Quiz Scores' })).toBeVisible();
+      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page.locator('aside').getByRole('link', { name: 'Quiz Scores' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Quiz Scores' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Download grades (CSV)' })).toHaveCount(0);
     } finally {
       await context.close();

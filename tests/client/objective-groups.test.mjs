@@ -83,6 +83,26 @@ describe('appendObjectiveGroups', () => {
     expect(groups.map((group) => group.objectiveId)).toEqual(['lo-1', 'lo-2']);
   });
 
+  // Generating can add granular objectives to an objective already on the
+  // page; they must reach its card rather than be skipped with it.
+  it('adds the new granulars of an objective already on the page to its card', () => {
+    const existing = appendObjectiveGroups([], [addition('lo-1', [granular('a'), granular('b')])], counter());
+    existing[0].items = existing[0].items.filter((item) => item.text !== 'b');
+    existing[0].detachedItems = [itemFromGranular(granular('b'), 1.2)];
+
+    const groups = appendObjectiveGroups(
+      existing,
+      [addition('lo-1', [granular('a'), granular('b'), granular('c')])],
+      counter()
+    );
+
+    expect(groups).toHaveLength(1);
+    // 'b' was removed from the page by the instructor and stays removed.
+    expect(groups[0].items.map((item) => item.text)).toEqual(['a', 'c']);
+    expect(new Set(groups[0].items.map((item) => item.id)).size).toBe(2);
+    expect(existing[0].items).toHaveLength(1);
+  });
+
   it('skips a duplicate inside one batch', () => {
     const groups = appendObjectiveGroups([], [addition('lo-1'), addition('lo-1')], counter());
 

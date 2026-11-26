@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatFileSize } from "../../lib/format";
 import { useCourseMaterials } from "../../hooks/useMaterials";
+import { useDetailedObjectives } from "../../hooks/useObjectives";
 import { isCanvasImportMaterial } from "../../lib/materials";
 import { MAX_MATERIALS_PER_OBJECTIVE } from "../../lib/constants";
 import Modal from "../../components/ui/Modal";
 import { useToast } from "../../components/ui/Toast";
 import { generateAndSaveObjectives } from "./objectiveGeneration";
+import { existingObjectiveCoverage } from "./existingObjectiveCoverage";
 
 function getMaterialTypeLabel(fileType) {
   if (!fileType) return "Unknown";
@@ -24,8 +26,15 @@ function getMaterialTypeLabel(fileType) {
 // preview to tick through and a Save Selected button, but instructors did not
 // want to confirm a list they cannot edit (#101): everything the generator
 // returns is saved and the modal closes onto the editable page, where
-// rewording, removing and regenerating already live.
-export default function AIGenerateModal({ course, onClose, onSaved }) {
+// rewording and removing already live.
+//
+// Generating never replaces or deletes anything. When the selected materials
+// already have saved objectives, the modal lists them; generating shows the
+// model those objectives so it only adds what they do not cover, instead of
+// saving another reworded copy. "Use existing" is offered only when every
+// selected material has objectives; otherwise one of them still needs
+// generating.
+export default function AIGenerateModal({ course, onClose, onSaved, onUseExisting }) {
   const showToast = useToast();
   const [customRows, setCustomRows] = useState([]);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -39,6 +48,37 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
   );
   // The "From Canvas" material has no content to generate objectives from.
   const materials = courseMaterials.filter((material) => !isCanvasImportMaterial(material));
+
+  const { objectives: courseObjectives, isPending: objectivesPending } =
+    useDetailedObjectives(course?.id);
+  // Saved objectives linked to any of the selected materials, and which
+  // selected materials have none yet.
+  const {
+    existing: existingObjectives,
+    uncoveredMaterialIds,
+    fullyCovered,
+  } = useMemo(
+    () => existingObjectiveCoverage(courseObjectives, selectedMaterialIds),
+    [courseObjectives, selectedMaterialIds]
+  );
+  const hasExisting = existingObjectives.length > 0;
+  const uncoveredTitles = uncoveredMaterialIds.map(
+    (sourceId) => materials.find((m) => m.sourceId === sourceId)?.documentTitle || "Untitled"
+  );
+  // Until the course's objectives load, generating could not show the model
+  // what already exists, so it waits for them.
+  const checkingExisting = selectedMaterialIds.length > 0 && objectivesPending;
+
+  const handleUseExisting = () => {
+    onUseExisting(existingObjectives);
+    showToast(
+      `Added ${existingObjectives.length} existing learning objective${
+        existingObjectives.length === 1 ? "" : "s"
+      } to the page`,
+      "success"
+    );
+    onClose();
+  };
 
   // Cap is enforced here as well as server-side so the instructor is stopped
   // before a rejected save, not after.
@@ -95,18 +135,28 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
         return;
       }
 
-      // The run itself travels with the result: Regenerate on the page reruns
-      // exactly these inputs, and it cannot ask this modal for them once the
-      // modal is gone.
-      onSaved(saved, { materialIds: selectedMaterialIds, materialTitles, userObjectives });
+      // The selection's existing objectives go on the page too: generating
+      // only adds what they do not cover, so the new ones alone would leave
+      // the materials' other objectives off the list. Ones already on the
+      // page are skipped.
+      if (hasExisting) onUseExisting(existingObjectives);
+      onSaved(saved);
+      const plural = (n) => (n === 1 ? "" : "s");
       showToast(
-        `Added ${saved.length} learning objective${saved.length === 1 ? "" : "s"} to the page`,
+        hasExisting
+          ? `Added ${saved.length} new and ${existingObjectives.length} existing learning objective${plural(existingObjectives.length)} to the page`
+          : `Added ${saved.length} learning objective${plural(saved.length)} to the page`,
         "success"
       );
       onClose();
     } catch (error) {
       console.error("Error generating learning objectives:", error);
-      const message = error.message || "Failed to generate learning objectives";
+      // ALREADY_COVERED: the existing objectives cover the materials, so the
+      // model had nothing new to add. Nothing was saved.
+      const message =
+        error.body?.code === "ALREADY_COVERED" && error.body?.details
+          ? `${error.message} ${error.body.details}`
+          : error.message || "Failed to generate learning objectives";
       setGenerationMessage(message);
       showToast(message, "error");
     } finally {
@@ -132,9 +182,13 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           </button>
           <button
             type="button"
-            disabled={selectedMaterialIds.length === 0 || generating}
+            disabled={selectedMaterialIds.length === 0 || generating || checkingExisting}
             onClick={handleGenerate}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+            className={
+              fullyCovered
+                ?"inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gray-50 disabled:opacity-50"
+                : "inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+            }
           >
             {generating ? (
               <>
@@ -142,10 +196,22 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
               </>
             ) : (
               <>
-                <i className="fas fa-magic" /> Generate
+                <i className="fas fa-magic" /> {fullyCovered ? "Generate more" : "Generate"}
               </>
             )}
           </button>
+          {/* Only a complete answer when no selected material is left without
+              objectives. */}
+          {fullyCovered && (
+            <button
+              type="button"
+              disabled={generating}
+              onClick={handleUseExisting}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark disabled:opacity-50"
+            >
+              <i className="fas fa-check" /> Use existing ({existingObjectives.length})
+            </button>
+          )}
         </>
       }
     >
@@ -154,7 +220,8 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
         learning objectives from. The AI will analyze the content and create relevant learning objectives. If you
         provide your own learning objectives, the AI will reorganize them into a proper
         hierarchy rather than generating new ones (optional). Generated objectives
-        are saved automatically and opened on the edit page.
+        are saved automatically and opened on the edit page. Existing learning
+        objectives are never changed or removed by generating.
       </p>
 
       {/* Custom objectives */}
@@ -308,6 +375,49 @@ export default function AIGenerateModal({ course, onClose, onSaved }) {
           })
         )}
       </div>
+
+      {/* Objectives already saved for the selection */}
+      {checkingExisting && (
+        <p className="mt-4 text-sm text-muted" role="status">
+          <i className="fas fa-spinner fa-spin mr-2" /> Checking for existing learning objectives...
+        </p>
+      )}
+      {hasExisting && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4" role="region" aria-label="Existing learning objectives">
+          <p className="font-semibold text-emerald-900">
+            {existingObjectives.length} learning objective
+            {existingObjectives.length === 1 ? " already exists" : "s already exist"} for the
+            selected materials
+          </p>
+          {fullyCovered ? (
+            <p className="mt-1 text-sm text-emerald-800">
+              Use them as they are, or generate more: new objectives are only added
+              for content these do not cover yet, and both go on the page.
+              Nothing here is changed or removed.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-emerald-800">
+              No learning objectives yet for{" "}
+              <span className="font-semibold">{uncoveredTitles.join(", ")}</span>.
+              Generate creates them, without repeating the ones below, and adds
+              both to the page. Nothing here is changed or removed.
+            </p>
+          )}
+          <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm text-emerald-950">
+            {existingObjectives.map((objective) => (
+              <li key={objective.id} className="flex items-start gap-2">
+                <i className="fas fa-bullseye mt-1 text-xs text-emerald-600" aria-hidden="true" />
+                <span>
+                  {objective.name}
+                  <span className="ml-1 text-xs text-emerald-700">
+                    ({objective.granular.length} granular)
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Generation status */}
       </fieldset>

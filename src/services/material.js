@@ -244,8 +244,31 @@ const clearMaterialOutline = async (sourceId) => {
     }
 };
 
+/**
+ * The sourceIds among these that are not materials of this course: another
+ * course's, or none at all. Materials are otherwise looked up by sourceId
+ * alone, across every course, so anything that takes sourceIds from a request
+ * checks them here first.
+ *
+ * @param {string[]} sourceIds
+ * @param {string|ObjectId} courseId
+ * @returns {Promise<string[]>} empty when every one is in the course
+ */
+const findMaterialsOutsideCourse = async (sourceIds, courseId) => {
+    const ids = (Array.isArray(sourceIds) ? sourceIds : []).map(String);
+    if (ids.length === 0) return [];
+    const db = await databaseService.connect();
+    const courseIdObj = ObjectId.isValid(courseId) ? new ObjectId(String(courseId)) : courseId;
+    const inCourse = await db.collection("grasp_material")
+        .find({ sourceId: { $in: ids }, courseId: courseIdObj }, { projection: { sourceId: 1 } })
+        .toArray();
+    const found = new Set(inCourse.map((material) => String(material.sourceId)));
+    return ids.filter((id) => !found.has(id));
+};
+
 module.exports = {
     saveMaterial,
+    findMaterialsOutsideCourse,
     findLmsImportedMaterials,
     isCanvasImportMaterial,
     ensureCanvasImportMaterial,
