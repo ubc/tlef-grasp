@@ -154,9 +154,22 @@ test.describe('Instructor journey: bio_prof2 builds and publishes a quiz', () =>
     // The saved objective group is now rendered as an editable card on step 1.
     await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
 
-    // Regenerating moved out of the modal and onto this page, where it only
-    // appears once there is a run to redo.
-    await expect(page.getByRole('button', { name: /Regenerate/ })).toBeVisible();
+    // Generating only ever adds: there is no Regenerate to replace a run (and
+    // orphan the questions written against it).
+    await expect(page.getByRole('button', { name: /Regenerate/ })).toHaveCount(0);
+
+    // Opening the generator again on the same material offers the objectives
+    // it already has, rather than generating another reworded copy.
+    await page.getByRole('button', { name: 'Create Learning Objectives' }).click();
+    await page.getByRole('checkbox', { name: MATERIAL_TITLE }).check();
+    await expect(
+      page.getByRole('region', { name: 'Existing learning objectives' })
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /Generate more$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use existing/ }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Generate Learning Objectives' })
+    ).toHaveCount(0);
 
     // Issue #31: the per-objective number must read clearly as "how many
     // questions to generate". The card totals them explicitly.

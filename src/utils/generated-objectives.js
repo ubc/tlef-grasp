@@ -25,6 +25,9 @@ function cleanGeneratedObjectives(objectives) {
     .filter((obj) => obj && obj.name && obj.name.trim() && Array.isArray(obj.granularObjectives))
     .map((obj) => ({
       name: obj.name.trim(),
+      // Only generation from course materials asks for these; attributed by
+      // resolveSourceMaterialIds.
+      ...(Array.isArray(obj.sourceMaterialIds) ? { sourceMaterialIds: obj.sourceMaterialIds } : {}),
       granularObjectives: obj.granularObjectives
         .filter((go) => go && (typeof go === 'string' ? go.trim() : go.text && go.text.trim()))
         .map((go) => {
@@ -65,4 +68,114 @@ function cleanGeneratedObjectives(objectives) {
     .filter((obj) => obj.granularObjectives.length > 0);
 }
 
-module.exports = { cleanGeneratedObjectives };
+// Compare objective text the way a reader would: case, punctuation and
+// spacing differences do not make two objectives different.
+function normalizeObjectiveText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/**
+ * Drop generated objectives that repeat ones already saved. The prompt already
+ * tells the model not to, so this is the safety net for when it does anyway:
+ * an objective whose name matches an existing one is dropped, as is any
+ * granular objective whose text matches an existing granular objective. An
+ * objective left with no granular objectives is dropped too. Only exact
+ * repeats (after normalizeObjectiveText) are caught; rewordings are the
+ * prompt's job.
+ *
+ * @param {Array} objectives cleaned objectives (cleanGeneratedObjectives)
+ * @param {Array<{ name: string, granularObjectives?: Array<{ name?: string }> }>} existing
+ *   saved parent objectives, with their granular objectives
+ * @returns {Array} the objectives that are new
+ */
+function dropExistingObjectives(objectives, existing) {
+  const existingNames = new Set();
+  const existingGranulars = new Set();
+  for (const objective of existing || []) {
+    existingNames.add(normalizeObjectiveText(objective.name));
+    for (const granular of objective.granularObjectives || []) {
+      existingGranulars.add(normalizeObjectiveText(granular.name || granular.text));
+    }
+  }
+  existingNames.delete('');
+  existingGranulars.delete('');
+
+  return (objectives || [])
+    .filter((objective) => !existingNames.has(normalizeObjectiveText(objective.name)))
+    .map((objective) => ({
+      ...objective,
+      granularObjectives: objective.granularObjectives.filter(
+        (granular) => !existingGranulars.has(normalizeObjectiveText(granular.text))
+      ),
+    }))
+    .filter((objective) => objective.granularObjectives.length > 0);
+}
+
+/**
+ * The block appended to an objective-generation prompt when the selected
+ * materials already have saved objectives, so the model adds to them rather
+ * than rewording them. Appended rather than templated: course prompts are
+ * editable in Settings and saved ones have no placeholder for it.
+ *
+ * @param {Array<{ name: string, granularObjectives?: Array<{ name?: string }> }>} existing
+ * @returns {string} empty when there is nothing to show
+ */
+function existingObjectivesPromptBlock(existing) {
+  if (!existing || existing.length === 0) return '';
+  const list = existing
+    .map((objective, index) => {
+      const granulars = (objective.granularObjectives || [])
+        .map((granular) => `   - ${granular.name || granular.text}`)
+        .join('\n');
+      return `${index + 1}. ${objective.name}${granulars ? `\n${granulars}` : ''}`;
+    })
+    .join('\n');
+  return `
+
+EXISTING LEARNING OBJECTIVES
+These learning objectives are already saved for the selected materials:
+${list}
+
+Do not repeat or reword any of them. Only create learning objectives for content in the materials that the existing ones do not already cover. If the existing objectives already cover the materials, return an empty objectives array. Keep materialIsRelevant about whether the materials are course content, not about whether new objectives are needed.`;
+}
+
+/**
+ * The selected materials an objective should be linked to: the ones the model
+ * said it draws on, in selection order. Ids that were not selected are
+ * ignored, and with none left the objective is linked to every selected
+ * material, so it is never linked to nothing.
+ *
+ * @param {string[]|undefined} sourceMaterialIds what the model returned
+ * @param {string[]} selectedIds the materials selected for the run
+ */
+function resolveSourceMaterialIds(sourceMaterialIds, selectedIds) {
+  const named = new Set((Array.isArray(sourceMaterialIds) ? sourceMaterialIds : []).map(String));
+  const kept = selectedIds.map(String).filter((id) => named.has(id));
+  return kept.length > 0 ? kept : selectedIds.map(String);
+}
+
+/**
+ * The block appended to an objective-generation prompt asking which selected
+ * materials each objective draws on. Appended for the same reason as
+ * existingObjectivesPromptBlock: saved course prompts have no placeholder.
+ *
+ * @param {string[]} materialIds the selected materials' source ids
+ */
+function sourceMaterialsPromptBlock(materialIds) {
+  return `
+
+SOURCE MATERIALS
+For each meta learning objective, set sourceMaterialIds to the SOURCE ID of each material its content comes from. The selected materials are: ${materialIds.join(', ')}. Use one id when the objective comes from a single material. List several only when the objective's content is genuinely covered in each of them. Do not list a material just because it was selected.`;
+}
+
+module.exports = {
+  cleanGeneratedObjectives,
+  resolveSourceMaterialIds,
+  sourceMaterialsPromptBlock,
+  dropExistingObjectives,
+  existingObjectivesPromptBlock,
+  normalizeObjectiveText,
+};

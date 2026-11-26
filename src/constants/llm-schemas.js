@@ -69,6 +69,39 @@ const OBJECTIVES_SCHEMA = {
   required: ["materialIsRelevant", "relevanceReason", "objectives"],
 };
 
+/**
+ * OBJECTIVES_SCHEMA plus, on each objective, the selected materials it draws
+ * on. Used when generating from course materials, so each objective is linked
+ * to its own source materials instead of every material in the run. The enum
+ * limits the answer to the ids that were selected. Transcript generation has
+ * no materials to name and keeps OBJECTIVES_SCHEMA.
+ *
+ * @param {string[]} materialIds the selected materials' source ids
+ */
+function materialObjectivesSchema(materialIds) {
+  const item = OBJECTIVES_SCHEMA.properties.objectives.items;
+  return {
+    ...OBJECTIVES_SCHEMA,
+    properties: {
+      ...OBJECTIVES_SCHEMA.properties,
+      objectives: {
+        type: "array",
+        items: {
+          ...item,
+          properties: {
+            ...item.properties,
+            sourceMaterialIds: {
+              type: "array",
+              items: { type: "string", enum: materialIds.map(String) },
+            },
+          },
+          required: [...item.required, "sourceMaterialIds"],
+        },
+      },
+    },
+  };
+}
+
 // Image transcription/description for PDF visual content: { description }.
 const IMAGE_DESCRIPTION_SCHEMA = {
   type: "object",
@@ -172,6 +205,7 @@ const MATERIAL_OUTLINE_SCHEMA = {
 
 module.exports = {
   OBJECTIVES_SCHEMA,
+  materialObjectivesSchema,
   IMAGE_DESCRIPTION_SCHEMA,
   QUESTION_REVIEW_SCHEMA,
   OPEN_ENDED_GRADING_SCHEMA,

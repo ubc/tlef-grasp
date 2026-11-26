@@ -9,8 +9,14 @@ const { ObjectId } = require('mongodb');
 
 // Import services
 const { getMaterialCourseId, getMaterialBySourceId, isCanvasImportMaterial } = require('../services/material');
-const { cleanGeneratedObjectives } = require('../utils/generated-objectives');
-const { getObjectiveWithMaterials } = require('../services/objective');
+const {
+  cleanGeneratedObjectives,
+  dropExistingObjectives,
+  existingObjectivesPromptBlock,
+  resolveSourceMaterialIds,
+  sourceMaterialsPromptBlock,
+} = require('../utils/generated-objectives');
+const { getObjectiveWithMaterials, getDetailedObjectives } = require('../services/objective');
 const outlineService = require('../services/material-outline');
 const { renderOutlineBlock } = require('../utils/outline-text');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -21,7 +27,7 @@ const { generateStructured } = require('../utils/structured-llm');
 const { generationLimiter } = require('../utils/generation-limiter');
 const { isRetryableLLMError } = require('../utils/llm-limiter');
 const { effortForStage } = require('../utils/llm-effort');
-const { OBJECTIVES_SCHEMA, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
+const { materialObjectivesSchema, QUESTION_REVIEW_SCHEMA } = require('../constants/llm-schemas');
 const { resolveGenerationQuestionType, normalizeQuestionTypes } = require('../utils/question-type-selection');
 const { normalizeMcOptionCount, optionKeysOf, answerKeysOf } = require('../utils/mc-options');
 const settingsService = require('../services/settings');
@@ -1045,6 +1051,14 @@ Include foundational concepts, practical applications, and assessment criteria.`
       );
     }
 
+    // Objectives already saved for any of the selected materials. Generating
+    // again only ever adds: the model is shown these and told not to repeat
+    // or reword them, and exact repeats are dropped below in case it does.
+    const selectedSourceIds = new Set(materialIds.map(String));
+    const existingObjectives = (await getDetailedObjectives(courseId)).filter((objective) =>
+      (objective.materialSourceIds || []).some((sourceId) => selectedSourceIds.has(String(sourceId)))
+    );
+
     // Determine which prompt to use (Auto vs Manual)
     let promptTemplate;
     let fullPrompt;
@@ -1068,11 +1082,14 @@ Include foundational concepts, practical applications, and assessment criteria.`
         .replace('{ragContext}', () => ragContext);
     }
 
-    // Schema-constrained decoding guarantees the response matches OBJECTIVES_SCHEMA.
+    fullPrompt += existingObjectivesPromptBlock(existingObjectives);
+    fullPrompt += sourceMaterialsPromptBlock(materialIds);
+
+    // Schema-constrained decoding guarantees the response matches the schema.
     console.log("Sending prompt to LLM service...");
     const { content: responseContent } = await generateStructured({
       prompt: fullPrompt,
-      schema: OBJECTIVES_SCHEMA,
+      schema: materialObjectivesSchema(materialIds),
       operation: 'objective-generate',
       effort: effortForStage(settings, 'objective-generate'),
     });
@@ -1108,7 +1125,25 @@ Include foundational concepts, practical applications, and assessment criteria.`
         });
       }
 
-      const cleanedObjectives = cleanGeneratedObjectives(objectivesData.objectives);
+      // Each objective is linked only to the selected materials it draws on.
+      const cleanedObjectives = dropExistingObjectives(
+        cleanGeneratedObjectives(objectivesData.objectives),
+        existingObjectives
+      ).map((objective) => ({
+        ...objective,
+        sourceMaterialIds: resolveSourceMaterialIds(objective.sourceMaterialIds, materialIds),
+      }));
+
+      // Nothing new left over is an answer, not a failure, once the materials
+      // already have objectives: they are covered.
+      if (cleanedObjectives.length === 0 && existingObjectives.length > 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ALREADY_COVERED",
+          error: "The selected materials are already covered by their existing learning objectives.",
+          details: "Use the existing objectives, or pick other materials.",
+        });
+      }
 
       if (cleanedObjectives.length === 0) {
         throw new Error("No valid objectives generated");
