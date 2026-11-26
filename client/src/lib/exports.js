@@ -2,6 +2,8 @@
 //
 // Uses raw fetch because the response is a binary blob, not JSON.
 
+import { titleAndStem } from "./questionPrompt";
+
 // The questions an export left out (#63), from the server's summary: their
 // positions in the quiz's question list and the reasons. Returns null when
 // nothing was left out, else { count, questions: [{ title, reason }] }; count
@@ -10,7 +12,8 @@ export function describeLeftOut(summary, questions = []) {
   if (!summary || !(summary.count > 0)) return null;
   const listed = (Array.isArray(summary.questions) ? summary.questions : []).map(({ index, reason }) => {
     const question = questions[index] || {};
-    const text = String(question.title || question.stem || "").replace(/\s+/g, " ").trim();
+    // Named by its title, as in the question bank (issue #223).
+    const text = titleAndStem(question).title.replace(/\s+/g, " ").trim();
     const title = text.length > 80 ? `${text.slice(0, 79)}…` : text || `Question ${index + 1}`;
     return { title, reason: String(reason || "") };
   });

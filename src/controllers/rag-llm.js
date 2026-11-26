@@ -33,6 +33,7 @@ const { normalizeMcOptionCount, optionKeysOf, answerKeysOf } = require('../utils
 const settingsService = require('../services/settings');
 const questionService = require('../services/question');
 const QuestionFactory = require('../models/questions/QuestionFactory');
+const { promptOf } = require('../utils/question-prompt');
 const {
   buildExistingQuestionsContext,
   getGeneratedQuestionText,
@@ -1183,10 +1184,8 @@ Include foundational concepts, practical applications, and assessment criteria.`
 
 async function rateQuestions(questions, courseName, effort = null, ragContext = null) {
   const formattedQuestions = questions.map(q => {
-    // Determine the question stem based on type (MC and multiple answer keep
-    // it in the title, the others in the stem)
-    const titleFirst = q.questionType === 'multiple-choice' || q.questionType === 'multiple-answer';
-    const questionStem = titleFirst ? (q.title || q.question) : (q.stem || q.question);
+    // The same question text students see (issue #223).
+    const questionStem = promptOf(q);
 
     const base = {
       id: q.id,

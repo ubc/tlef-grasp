@@ -17,6 +17,8 @@ const {
   gradeMultipleAnswer,
 } = require("../utils/mc-options");
 const { toStudentQuestions } = require('../services/student-question-view');
+const { promptOf } = require('../utils/question-prompt');
+const { resolveQuestionType } = require('../utils/question-type');
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -742,25 +744,6 @@ const addExistingQuizQuestionsHandler = async (req, res) => {
 };
 
 
-function resolveQuestionType(q) {
-  const t = String(q.questionType || q.type || "")
-    .trim()
-    .toLowerCase();
-  if (t === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-    return QUESTION_TYPES.FILL_IN_THE_BLANK;
-  }
-  if (t === QUESTION_TYPES.CALCULATION) {
-    return QUESTION_TYPES.CALCULATION;
-  }
-  if (t === QUESTION_TYPES.OPEN_ENDED) {
-    return QUESTION_TYPES.OPEN_ENDED;
-  }
-  if (t === QUESTION_TYPES.MULTIPLE_ANSWER) {
-    return QUESTION_TYPES.MULTIPLE_ANSWER;
-  }
-  return QUESTION_TYPES.MULTIPLE_CHOICE;
-}
-
 
 /**
  * Get all questions in a quiz.
@@ -821,14 +804,14 @@ const getQuizQuestionsHandler = async (req, res) => {
     // shape the quiz editor reads.
     const transformedQuestions = questions.map((q, index) => {
       const questionType = resolveQuestionType(q);
-      const questionText = (q.title || q.stem || "").trim();
+      // The same question text students see (issue #223).
+      const questionText = promptOf(q);
 
       if (questionType === QUESTION_TYPES.FILL_IN_THE_BLANK) {
-        const fibMainText = (q.stem || q.title || "").trim();
         const formattedQuestion = {
           ...q,
           id: q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1),
-          question: fibMainText || questionText || "Question text not available",
+          question: questionText || "Question text not available",
           questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           options: {},
         };
@@ -836,12 +819,11 @@ const getQuizQuestionsHandler = async (req, res) => {
       }
 
       if (questionType === QUESTION_TYPES.OPEN_ENDED) {
-        const fibMainText = (q.stem || q.title || "").trim();
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
         const formattedQuestion = {
           ...q,
           id: qid,
-          question: fibMainText || questionText || "Question text not available",
+          question: questionText || "Question text not available",
           questionType: QUESTION_TYPES.OPEN_ENDED,
           options: {},
           learningObjectiveId: q.learningObjectiveId,

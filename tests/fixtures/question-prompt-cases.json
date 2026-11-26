@@ -1,0 +1,23 @@
+{
+  "promptOf": [
+    { "name": "wizard multiple choice: the stem", "question": { "title": "Kinetic energy formula", "stem": " What is the kinetic energy? " }, "expected": "What is the kinetic energy?" },
+    { "name": "fill-in-the-blank: the stem", "question": { "questionType": "fill-in-the-blank", "title": "Cells", "stem": "The ___ is..." }, "expected": "The ___ is..." },
+    { "name": "AI multiple choice: generic stem, so the title", "question": { "title": "What is 2 + 2?", "stem": "Select the best answer:" }, "expected": "What is 2 + 2?" },
+    { "name": "generic stem in any case, no colon", "question": { "title": "What is 2 + 2?", "stem": "select the best answer" }, "expected": "What is 2 + 2?" },
+    { "name": "generic fill-in-the-blank stem", "question": { "title": "The ___ is...", "stem": "Fill in the blank:" }, "expected": "The ___ is..." },
+    { "name": "blank stem", "question": { "title": "What is 2 + 2?", "stem": "   " }, "expected": "What is 2 + 2?" },
+    { "name": "no stem", "question": { "title": "What is 2 + 2?" }, "expected": "What is 2 + 2?" },
+    { "name": "older row with only `question`", "question": { "question": "Legacy prompt?" }, "expected": "Legacy prompt?" },
+    { "name": "AI card with only `text`", "question": { "stem": "Select the best answer:", "text": "Card prompt?" }, "expected": "Card prompt?" },
+    { "name": "a title wins over `question`", "question": { "title": "Title prompt?", "question": "Other?" }, "expected": "Title prompt?" },
+    { "name": "nothing usable", "question": { "stem": "Select the best answer:" }, "expected": "" },
+    { "name": "empty question", "question": {}, "expected": "" },
+    { "name": "null", "question": null, "expected": "" }
+  ],
+  "isGenericStem": [
+    { "stem": "Select the best answer:", "expected": true },
+    { "stem": " Fill in the blank ", "expected": true },
+    { "stem": "Select the best answer: which is a noble gas?", "expected": false },
+    { "stem": "", "expected": false }
+  ]
+}

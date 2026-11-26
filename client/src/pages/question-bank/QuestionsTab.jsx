@@ -11,6 +11,8 @@ import { useToast } from "../../components/ui/Toast";
 import Modal, { AlertModal, ConfirmModal } from "../../components/ui/Modal";
 import RichText from "../../components/RichText";
 import { escapeHtml } from "../../lib/format";
+import { titleAndStem } from "../../lib/questionPrompt";
+import QuestionStemLine from "../../components/QuestionStemLine";
 import {
   toStringId,
   getObjectId,
@@ -34,7 +36,7 @@ const STATUS_PILL_CLASSES = {
 };
 
 const SORT_COLUMNS = [
-  { key: "title", label: "Question Title" },
+  { key: "title", label: "Question" },
   { key: "mlo", label: "Meta LO" },
   { key: "bloom", label: "Bloom's Level", nowrap: true },
   { key: "questionType", label: "Question Type", nowrap: true },
@@ -315,9 +317,10 @@ function AddExistingQuestionsModal({
                 <span className="min-w-0 flex-1">
                   <RichText
                     as="span"
-                    text={escapeHtml(question.title || question.stem || "Untitled question")}
+                    text={escapeHtml(titleAndStem(question).title || "Untitled question")}
                     className="block whitespace-pre-line text-sm font-medium text-ink"
                   />
+                  <QuestionStemLine stem={titleAndStem(question).stem} className="mt-0.5" />
                   <span className="mt-1 block text-xs text-muted">
                     {question.mlo || "Learning objective unavailable"}
                     {question.bloom ? ` · ${question.bloom}` : ""}
@@ -919,10 +922,13 @@ export default function QuestionsTab({ courseId, isFaculty }) {
                           )}
                           <RichText
                             as="span"
-                            text={escapeHtml(question.title)}
+                            text={escapeHtml(titleAndStem(question).title || "Untitled question")}
                             className="min-w-0 whitespace-pre-line"
                           />
                         </div>
+                        {/* The stem for reference, outside the title the
+                            row checkbox is named after (issue #223). */}
+                        <QuestionStemLine stem={titleAndStem(question).stem} className="mt-0.5" />
                         <div className="mt-1.5 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
                             type="button"

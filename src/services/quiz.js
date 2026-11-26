@@ -3,6 +3,7 @@ const databaseService = require("./database");
 const quizScheduleService = require("./quiz-schedule");
 const { BLOOM_LEVELS } = require("../constants/app-constants");
 const { QUIZ_SOURCE_KEYS, pickImportSource } = require("../utils/import-provenance");
+const { promptOf } = require("../utils/question-prompt");
 
 const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 
@@ -1418,7 +1419,7 @@ const getStudentQuizAttempt = async (quizId, userId) => {
                 attemptId: attempt._id,
                 questionId: questionData._id,
                 questionType,
-                questionText: questionData.title || questionData.stem || "Unknown Question",
+                questionText: promptOf(questionData) || "Unknown Question",
                 options: questionData.options || {},
                 selectedAnswer: attempt.selectedAnswer,
                 correctAnswer: attempt.correctAnswer || questionData.correctAnswer,

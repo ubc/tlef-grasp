@@ -324,3 +324,27 @@ describe('question images', () => {
     expect(manifest.preloadedDependencies).not.toContainEqual(H5P_LIBRARIES.image);
   });
 });
+
+// Issue #223: the exported question is the text students see. A wizard-made
+// multiple-choice question keeps its question in the stem and a short label in
+// the title; an AI-made one keeps it in the title with a generic stem.
+describe('question text', () => {
+  test('a wizard-made multiple-choice question exports its stem, not its label', () => {
+    const wizard = {
+      ...mcQuestion,
+      title: 'Gas exchange',
+      stem: 'Which gas do plants absorb during photosynthesis?',
+    };
+    const { content } = buildH5PPackage('Quiz', [wizard]);
+    const { params } = content.questions[0];
+    expect(params.question).toContain('Which gas do plants absorb during photosynthesis?');
+    expect(params.question).not.toContain('Gas exchange');
+  });
+
+  test('an AI-made multiple-choice question exports its title, without the generic line', () => {
+    const { content } = buildH5PPackage('Quiz', [mcQuestion]);
+    const { params } = content.questions[0];
+    expect(params.question).toContain('Which gas do plants absorb?');
+    expect(params.question).not.toContain('Select the best answer');
+  });
+});

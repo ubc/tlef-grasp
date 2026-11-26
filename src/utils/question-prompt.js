@@ -27,10 +27,16 @@ function isGenericStem(stem) {
 }
 
 // The question text: the stem, or the title when the stem is empty or generic.
+// Older rows and AI-generated question cards may carry it as `question` or
+// `text` instead, so those are the last fallbacks.
 function promptOf(question) {
   const stem = cleanText(question?.stem);
   if (stem && !isGenericStem(stem)) return stem;
-  return cleanText(question?.title);
+  return (
+    cleanText(question?.title) ||
+    cleanText(question?.question) ||
+    cleanText(question?.text)
+  );
 }
 
 module.exports = {

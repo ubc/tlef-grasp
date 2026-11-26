@@ -12,7 +12,10 @@ describe('question generation exclusions', () => {
     const courseId = new ObjectId();
     const granularObjectiveId = new ObjectId();
     const toArray = jest.fn().mockResolvedValue([
-      { questionType: 'multiple-choice', title: 'Existing MCQ', stem: 'Select one' },
+      // AI-made: the question in the title, a generic stem.
+      { questionType: 'multiple-choice', title: 'Existing MCQ', stem: 'Select the best answer:' },
+      // Wizard-made: the question in the stem, a short label as the title (#223).
+      { questionType: 'multiple-choice', title: 'Label', stem: 'Wizard MCQ?' },
       { questionType: 'open-ended', title: 'Topic', stem: 'Explain the pathway' },
       { question: 'Legacy generated question' },
     ]);
@@ -28,6 +31,7 @@ describe('question generation exclusions', () => {
       )
     ).resolves.toEqual([
       'Existing MCQ',
+      'Wizard MCQ?',
       'Explain the pathway',
       'Legacy generated question',
     ]);
