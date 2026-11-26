@@ -101,10 +101,10 @@ test.describe.serial('TA permissions (seeded course)', () => {
       dialog.getByRole('heading', { name: /TA Permissions/ })
     ).toBeVisible();
     await expect(dialog.getByRole('checkbox')).toHaveCount(4);
-    for (const label of [/^Dashboard/, /^Course Materials/, /^Question Generation/, /^Question Bank/]) {
+    for (const label of [/Dashboard/, /Course Materials/, /Question Generation/, /Question Bank/]) {
       await expect(dialog.getByRole('checkbox', { name: label })).toBeVisible();
     }
-    for (const label of [/^Quizzes/, /^Quiz Scores/, /^Question Flags/, /^Users/, /^My Sections/, /^Settings/]) {
+    for (const label of [/Quizzes/, /Quiz Scores/, /Question Flags/, /Users/, /My Sections/, /Settings/]) {
       await expect(dialog.getByRole('checkbox', { name: label })).toHaveCount(0);
     }
     await expect(dialog.getByRole('button', { name: 'Grader' })).toHaveCount(0);
@@ -112,10 +112,10 @@ test.describe.serial('TA permissions (seeded course)', () => {
     // Start from Full Access, then withhold Course Materials and the Bank.
     await dialog.getByRole('button', { name: 'Full Access' }).click();
     await expect(dialog.getByRole('checkbox')).toHaveCount(4);
-    await dialog.getByRole('checkbox', { name: /^Course Materials/ }).uncheck();
-    await dialog.getByRole('checkbox', { name: /^Question Bank/ }).uncheck();
-    await expect(dialog.getByRole('checkbox', { name: /^Dashboard/ })).toBeChecked();
-    await expect(dialog.getByRole('checkbox', { name: /^Question Generation/ })).toBeChecked();
+    await dialog.getByRole('checkbox', { name: /Course Materials/ }).uncheck();
+    await dialog.getByRole('checkbox', { name: /Question Bank/ }).uncheck();
+    await expect(dialog.getByRole('checkbox', { name: /Dashboard/ })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: /Question Generation/ })).toBeChecked();
     await expect(dialog.getByRole('button', { name: 'Full Access' })).toHaveAttribute('aria-pressed', 'false');
     await dialog.getByRole('button', { name: 'Save Permissions' }).click();
     await expect(page.getByText('TA permissions updated')).toBeVisible();
@@ -123,10 +123,10 @@ test.describe.serial('TA permissions (seeded course)', () => {
     // Reopen: the restricted map round-trips through the API.
     await row.getByRole('button', { name: 'Permissions' }).click();
     const reopened = page.getByRole('dialog');
-    await expect(reopened.getByRole('checkbox', { name: /^Dashboard/ })).toBeChecked();
-    await expect(reopened.getByRole('checkbox', { name: /^Question Generation/ })).toBeChecked();
-    await expect(reopened.getByRole('checkbox', { name: /^Course Materials/ })).not.toBeChecked();
-    await expect(reopened.getByRole('checkbox', { name: /^Question Bank/ })).not.toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /Dashboard/ })).toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /Question Generation/ })).toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /Course Materials/ })).not.toBeChecked();
+    await expect(reopened.getByRole('checkbox', { name: /Question Bank/ })).not.toBeChecked();
     await reopened.getByRole('button', { name: 'Cancel' }).click();
   });
 
@@ -143,9 +143,13 @@ test.describe.serial('TA permissions (seeded course)', () => {
       await page.goto('/dashboard');
 
       // Sidebar: granted links present…
+      // A nav link's accessible name starts with its icon glyph, so match the
+      // label at the end of the name rather than exactly.
       const sidebar = page.locator('aside');
-      await expect(sidebar.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-      await expect(sidebar.getByRole('link', { name: 'Question Generation' })).toBeVisible();
+      const navLink = (name) =>
+        sidebar.getByRole('link', { name: new RegExp(`(^|\\s)${name}$`) });
+      await expect(navLink('Dashboard')).toBeVisible();
+      await expect(navLink('Question Generation')).toBeVisible();
       // …withheld links absent, and so are the pages a TA can never have
       // (nav + management section + settings icon).
       for (const name of [
@@ -159,7 +163,7 @@ test.describe.serial('TA permissions (seeded course)', () => {
         'Users',
         'Settings',
       ]) {
-        await expect(sidebar.getByRole('link', { name, exact: true })).toHaveCount(0);
+        await expect(navLink(name)).toHaveCount(0);
       }
 
       // Dashboard widgets follow the map too: no upload card, no schedule
