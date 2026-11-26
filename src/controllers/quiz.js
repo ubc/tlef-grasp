@@ -15,8 +15,8 @@ const {
   correctAnswerKey,
   answerKeysOf,
   gradeMultipleAnswer,
-  stemBesideTitle,
 } = require("../utils/mc-options");
+const { toStudentQuestions } = require('../services/student-question-view');
 const { isUserInCourse } = require('../services/user-course');
 const { isFaculty } = require('../utils/auth');
 const { hasStaffAccessInCourse } = require('../utils/course-access');
@@ -810,6 +810,15 @@ const getQuizQuestionsHandler = async (req, res) => {
         questions = await quizService.getQuizQuestions(quizId, false);
     }
 
+    if (withholdAnswers) {
+      // The same view the student quiz page serves (issues #177, #223). It
+      // lists the fields it sends, so answers, feedback and Canvas import
+      // provenance (#140) never reach a student.
+      return res.json({ success: true, questions: toStudentQuestions(questions) });
+    }
+
+    // Instructor view: the whole document, with the prompt and options in the
+    // shape the quiz editor reads.
     const transformedQuestions = questions.map((q, index) => {
       const questionType = resolveQuestionType(q);
       const questionText = (q.title || q.stem || "").trim();
@@ -823,14 +832,7 @@ const getQuizQuestionsHandler = async (req, res) => {
           questionType: QUESTION_TYPES.FILL_IN_THE_BLANK,
           options: {},
         };
-        let finalQuestion = formattedQuestion;
-        if (withholdAnswers) {
-          delete finalQuestion.correctAnswer;
-          delete finalQuestion.acceptableAnswers;
-          // Avoid duplicating the same stem under `question` and `stem` in the student UI
-          delete finalQuestion.stem;
-        }
-        return finalQuestion;
+        return formattedQuestion;
       }
 
       if (questionType === QUESTION_TYPES.OPEN_ENDED) {
@@ -846,16 +848,6 @@ const getQuizQuestionsHandler = async (req, res) => {
           granularObjectiveId: q.granularObjectiveId,
           bloom: q.bloom,
         };
-        if (withholdAnswers) {
-          delete formattedQuestion.openEndedSampleAnswer;
-          delete formattedQuestion.openEndedGradingCriteria;
-          delete formattedQuestion.stem;
-          // Normally empty on an open-ended question, but an imported or
-          // hand-edited one can carry them — this branch spreads the whole
-          // document, so redact by field rather than by expected type.
-          delete formattedQuestion.correctAnswer;
-          delete formattedQuestion.acceptableAnswers;
-        }
         return formattedQuestion;
       }
 
@@ -869,53 +861,6 @@ const getQuizQuestionsHandler = async (req, res) => {
         const formula = (q.calculationFormula || "").trim();
         const { answerDec, tolerance, tolerancePercent } = CalculationQuestion.readGradingSettings(q);
         const qid = q._id ? (q._id.toString ? q._id.toString() : String(q._id)) : String(q.id || index + 1);
-
-        if (withholdAnswers) {
-          const built = CalculationQuestion.buildStudentCalculationInstance({
-            template,
-            formula,
-            variableSpecs: vars,
-            qid,
-            answerDec,
-          });
-          if (built.ok) {
-            return {
-              id: qid,
-              question: built.rendered,
-              questionType: QUESTION_TYPES.CALCULATION,
-              stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-              calculationToken: built.token,
-              answerDecimalPlaces: built.answerDecimalPlaces,
-              // The rule the student is graded by, minus a range's bounds.
-              calculationTolerance: CalculationQuestion.toleranceForStudent(tolerance),
-              calculationAnswerTolerancePercent: tolerancePercent,
-              options: {},
-              learningObjectiveId: q.learningObjectiveId,
-              granularObjectiveId: q.granularObjectiveId,
-              bloom: q.bloom,
-            };
-          }
-          console.error(
-            "Calculation question instance failed:",
-            qid,
-            built.error && built.error.message
-          );
-          return {
-            id: qid,
-            question:
-              template ||
-              "This calculation question could not be loaded. Please contact your instructor.",
-            questionType: QUESTION_TYPES.CALCULATION,
-            stemImages: q.stemImages || (q.stemImage ? [q.stemImage] : []),
-            calculationToken: null,
-            answerDecimalPlaces: answerDec,
-            calculationLoadError: true,
-            options: {},
-            learningObjectiveId: q.learningObjectiveId,
-            granularObjectiveId: q.granularObjectiveId,
-            bloom: q.bloom,
-          };
-        }
 
         return {
           ...q,
@@ -940,18 +885,6 @@ const getQuizQuestionsHandler = async (req, res) => {
         const option = raw && typeof raw === "object" ? { ...raw } : { text: raw ?? "" };
         optionsObj[key] = { ...option, index: MC_OPTION_KEYS.indexOf(key) };
       });
-      if (withholdAnswers) {
-        Object.values(optionsObj).forEach((option) => {
-          delete option.feedback;
-          // An option image's filename could name the answer; keep only what
-          // the student view needs.
-          if (option.image?.fileId) {
-            option.image = { fileId: String(option.image.fileId), caption: option.image.caption || "" };
-          } else {
-            delete option.image;
-          }
-        });
-      }
 
       const formattedQuestion = {
         ...q,
@@ -964,25 +897,10 @@ const getQuizQuestionsHandler = async (req, res) => {
           : correctAnswerKey(q.correctAnswer)
       };
 
-      const finalQuestion = formattedQuestion;
-
-      if (withholdAnswers) {
-        delete finalQuestion.correctAnswer;
-        // The same prompt the student quiz page serves: the stem only when it
-        // adds something to the title.
-        if (isMultipleAnswer) finalQuestion.stem = stemBesideTitle(q);
-      }
-
-      return finalQuestion;
+      return formattedQuestion;
     });
 
-    // Canvas import provenance and conversion warnings (#140) are for
-    // instructors. The branches above spread the whole document, so drop them
-    // here for every type.
-    res.json({
-      success: true,
-      questions: withholdAnswers ? transformedQuestions.map(withoutImportFields) : transformedQuestions,
-    });
+    res.json({ success: true, questions: transformedQuestions });
   } catch (error) {
     console.error("Error fetching quiz questions:", error);
     res.status(500).json({ success: false, error: error.message });

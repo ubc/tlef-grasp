@@ -4,13 +4,22 @@
 // so the decoder physically cannot emit other field names. We call the SDK
 // directly because the toolkit only exposes plain `'json'` mode.
 //
-// OpenAI (gpt-*): the toolkit's `json` mode is sufficient — the model reliably
-// follows the schema described in the prompt — so we keep it on the toolkit
-// abstraction and avoid pulling in the openai SDK as a direct dependency.
+// OpenAI (gpt-*): the toolkit forwards a strict json_schema response_format to
+// the OpenAI call (see callProvider), so the output is schema-constrained while
+// we stay on the toolkit abstraction, without the openai SDK as a direct
+// dependency.
+//
+// UBC LLM Sandbox (Qwen): takes the same toolkit path and the same strict
+// json_schema as OpenAI. Checked against the gateway on 2026-11-18: the decoder
+// enforces the schema (it emits the schema's field names even when the prompt
+// asks for others), so no <think> text or code fences can reach the parser.
+//
+// The provider is chosen per call from the operation label, so grading can go
+// to GRADING_LLM_PROVIDER while everything else uses LLM_PROVIDER.
 
 const { Ollama } = require("ollama");
 const llmService = require("../services/llm");
-const { getLLMProvider, getLLMModel } = require("./llm-provider");
+const { getProviderForOperation, getModelForProvider } = require("./llm-provider");
 const { recordUsage } = require("./llm-usage-log");
 const { resolveEffort } = require("./llm-effort");
 
@@ -53,12 +62,14 @@ async function generateStructured({ prompt, messages = null, schema, images = nu
   // A caller-supplied effort is already the course's resolved choice; only fall
   // back to the env vars when no course expressed one.
   const effort = requestedEffort || resolveEffort(operation);
+  const provider = getProviderForOperation(operation);
+  const loggedModel = model || getModelForProvider(provider);
   try {
-    const result = await callProvider({ prompt, messages, schema, effort, images, model, schemaName });
+    const result = await callProvider({ provider, prompt, messages, schema, effort, images, model, schemaName });
     recordUsage({
       operation,
-      provider: getLLMProvider(),
-      model: model || getLLMModel(),
+      provider,
+      model: loggedModel,
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       ms: Date.now() - startedAt,
@@ -70,8 +81,8 @@ async function generateStructured({ prompt, messages = null, schema, images = nu
     // Omitting it would make this log quietly disagree with the provider's bill.
     recordUsage({
       operation,
-      provider: getLLMProvider(),
-      model: model || getLLMModel(),
+      provider,
+      model: loggedModel,
       ms: Date.now() - startedAt,
       ok: false,
       error: error.message,
@@ -81,7 +92,7 @@ async function generateStructured({ prompt, messages = null, schema, images = nu
   }
 }
 
-async function callProvider({ prompt, messages, schema, effort, images, model, schemaName }) {
+async function callProvider({ provider, prompt, messages, schema, effort, images, model, schemaName }) {
   const normalizedImages = Array.isArray(images)
     ? images.map((image) =>
         typeof image === "string"
@@ -91,7 +102,7 @@ async function callProvider({ prompt, messages, schema, effort, images, model, s
     : [];
   const hasImages = normalizedImages.length > 0;
 
-  if (getLLMProvider() === "ollama") {
+  if (provider === "ollama") {
     const client = new Ollama({
       host: process.env.OLLAMA_ENDPOINT || "http://localhost:11434",
     });
@@ -104,7 +115,7 @@ async function callProvider({ prompt, messages, schema, effort, images, model, s
       ollamaMessages = [message];
     }
     const response = await client.chat({
-      model: model || getLLMModel(),
+      model: model || getModelForProvider(provider),
       messages: ollamaMessages,
       stream: false,
       format: schema,
@@ -118,10 +129,11 @@ async function callProvider({ prompt, messages, schema, effort, images, model, s
     };
   }
 
-  // OpenAI via the toolkit. We pass an OpenAI strict json_schema response_format
-  // through the toolkit — it forwards unknown options straight to the OpenAI
-  // call — so the output is schema-constrained (a hard guarantee, same as the
-  // Ollama path) without needing a direct openai SDK dependency.
+  // OpenAI or the UBC LLM Sandbox via the toolkit. We pass an OpenAI strict
+  // json_schema response_format through the toolkit — it forwards unknown
+  // options straight to the OpenAI call — so the output is schema-constrained
+  // (a hard guarantee, same as the Ollama path) without needing a direct openai
+  // SDK dependency.
   const response_format = {
     type: "json_schema",
     json_schema: { name: schemaName, strict: true, schema },
@@ -130,7 +142,7 @@ async function callProvider({ prompt, messages, schema, effort, images, model, s
     reasoning_effort: effort,
     max_completion_tokens: null,
     response_format,
-  });
+  }, provider);
   let response;
   if (messages) {
     response = await llmModule.sendConversation(messages, {});

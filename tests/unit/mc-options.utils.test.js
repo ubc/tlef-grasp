@@ -6,7 +6,6 @@ const {
   correctAnswerKey,
   normalizeMcOptionCount,
   optionFeedbackOf,
-  stemBesideTitle,
   answerKeysOf,
   multipleAnswerError,
   gradeMultipleAnswer,
@@ -93,20 +92,6 @@ describe('optionFeedbackOf', () => {
     expect(optionFeedbackOf('a')).toBe('');
     expect(optionFeedbackOf(undefined)).toBe('');
     expect(optionFeedbackOf({ text: 'a' })).toBe('');
-  });
-});
-
-describe('stemBesideTitle', () => {
-  test('is the stem when it adds something to the title', () => {
-    expect(stemBesideTitle({ title: 'Noble gases', stem: 'Which are noble gases?' }))
-      .toBe('Which are noble gases?');
-  });
-
-  test('is empty when the stem repeats the title or the title is missing', () => {
-    expect(stemBesideTitle({ title: 'Which?', stem: ' Which? ' })).toBe('');
-    // Without a title the stem is already the prompt.
-    expect(stemBesideTitle({ title: '', stem: 'Which?' })).toBe('');
-    expect(stemBesideTitle({ title: 'Which?' })).toBe('');
   });
 });
 
